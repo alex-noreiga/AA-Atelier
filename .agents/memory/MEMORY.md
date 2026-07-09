@@ -1,0 +1,1 @@
+- [Notion status-property filter gotcha](notion-status-filters.md) — Notion filter type must match the DB property's actual type; a "number"-looking field can be rich_text, causing 400s.

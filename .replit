@@ -1,11 +1,32 @@
-modules = ["nodejs-20"]
+modules = ["nodejs-24"]
+
+[deployment]
+router = "application"
+deploymentTarget = "autoscale"
+
+[deployment.postBuild]
+args = ["pnpm", "store", "prune"]
+env = { "CI" = "true" }
+
+[workflows]
+runButton = "Project"
+
 [agent]
+stack = "PNPM_WORKSPACE"
 expertMode = true
+integrations = ["notion:1.0.0"]
 
-[[ports]]
-localPort = 8080
-externalPort = 8080
+[postMerge]
+path = "scripts/post-merge.sh"
+timeoutMs = 20000
 
-[[ports]]
-localPort = 25946
-externalPort = 80
+[nix]
+channel = "stable-25_05"
+
+[userenv]
+
+[userenv.shared]
+NOTION_ORDERS_DATABASE_ID = "72ab2818-7cc8-4479-a685-41ebc4c368e8"
+
+[objectStorage]
+defaultBucketID = "replit-objstore-dff13cf3-d781-43d4-8418-6ac6c0599e52"
