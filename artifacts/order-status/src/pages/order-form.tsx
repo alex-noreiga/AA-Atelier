@@ -1,4 +1,4 @@
-import { useState, useRef } from "react";
+import { useState } from "react";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
@@ -7,7 +7,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
-import { ArrowLeft, Upload, X, CheckCircle, Loader2, ImageIcon } from "lucide-react";
+import { ArrowLeft, CheckCircle, Loader2 } from "lucide-react";
 
 const formSchema = z.object({
   fullName: z.string().min(1, "Full name is required"),
@@ -28,42 +28,9 @@ const formSchema = z.object({
 
 type FormValues = z.infer<typeof formSchema>;
 
-interface UploadedImage {
-  file: File;
-  preview: string;
-  objectPath?: string;
-  uploading: boolean;
-  error?: string;
-}
-
 const BASE_URL = import.meta.env.BASE_URL.replace(/\/$/, "");
 
-async function requestUploadUrl(file: File): Promise<{ uploadURL: string; objectPath: string }> {
-  const res = await fetch(`${BASE_URL}/api/storage/uploads/request-url`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ name: file.name, size: file.size, contentType: file.type }),
-  });
-  if (!res.ok) throw new Error("Failed to get upload URL");
-  return res.json();
-}
-
-async function uploadFileToBucket(uploadURL: string, file: File): Promise<void> {
-  const res = await fetch(uploadURL, {
-    method: "PUT",
-    headers: { "Content-Type": file.type },
-    body: file,
-  });
-  if (!res.ok) throw new Error("Upload failed");
-}
-
-function buildServingUrl(objectPath: string): string {
-  return `${window.location.origin}${BASE_URL}/api/storage${objectPath}`;
-}
-
 export default function OrderForm() {
-  const fileInputRef = useRef<HTMLInputElement>(null);
-  const [images, setImages] = useState<UploadedImage[]>([]);
   const [submitting, setSubmitting] = useState(false);
   const [successOrderNumber, setSuccessOrderNumber] = useState<string | null>(null);
 
@@ -81,53 +48,9 @@ export default function OrderForm() {
   const measurementUnit = watch("measurementUnit");
   const preferredContact = watch("preferredContact");
 
-  const handleFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
-    const files = Array.from(e.target.files ?? []);
-    const remaining = 5 - images.length;
-    const toAdd = files.slice(0, remaining);
-    if (toAdd.length === 0) return;
-
-    const newImages: UploadedImage[] = toAdd.map((file) => ({
-      file,
-      preview: URL.createObjectURL(file),
-      uploading: true,
-    }));
-    setImages((prev) => [...prev, ...newImages]);
-
-    for (const img of newImages) {
-      try {
-        const { uploadURL, objectPath } = await requestUploadUrl(img.file);
-        await uploadFileToBucket(uploadURL, img.file);
-        setImages((prev) =>
-          prev.map((i) =>
-            i.preview === img.preview ? { ...i, uploading: false, objectPath } : i
-          )
-        );
-      } catch {
-        setImages((prev) =>
-          prev.map((i) =>
-            i.preview === img.preview
-              ? { ...i, uploading: false, error: "Upload failed" }
-              : i
-          )
-        );
-      }
-    }
-
-    if (fileInputRef.current) fileInputRef.current.value = "";
-  };
-
-  const removeImage = (preview: string) => {
-    setImages((prev) => prev.filter((i) => i.preview !== preview));
-  };
-
   const onSubmit = async (values: FormValues) => {
     setSubmitting(true);
     try {
-      const uploadedImageUrls = images
-        .filter((i) => i.objectPath && !i.error)
-        .map((i) => buildServingUrl(i.objectPath!));
-
       const payload: Record<string, unknown> = {
         fullName: values.fullName,
         email: values.email,
@@ -139,7 +62,6 @@ export default function OrderForm() {
         hips: values.hips,
         height: values.height,
         bodyGirth: values.bodyGirth,
-        imageUrls: uploadedImageUrls,
       };
       if (values.description) payload.description = values.description;
       if (values.neededBy) payload.neededBy = values.neededBy;
@@ -210,7 +132,6 @@ export default function OrderForm() {
         </div>
 
         <form onSubmit={handleSubmit(onSubmit)} className="space-y-12">
-          {/* Contact Information */}
           <section>
             <h2 className="text-xs tracking-[0.2em] uppercase text-muted-foreground mb-6 pb-2 border-b border-border">
               Contact Information
@@ -249,7 +170,7 @@ export default function OrderForm() {
                 </div>
                 <div>
                   <Label htmlFor="phone" className="text-sm font-light tracking-wide">
-                    Phone Number <span className="text-primary">*</span>
+                    Phone Number <span className="text/primary">*</span>
                   </Label>
                   <Input
                     id="phone"
@@ -291,7 +212,6 @@ export default function OrderForm() {
             </div>
           </section>
 
-          {/* Measurements */}
           <section>
             <div className="flex items-center justify-between mb-6 pb-2 border-b border-border">
               <h2 className="text-xs tracking-[0.2em] uppercase text-muted-foreground">
@@ -345,83 +265,11 @@ export default function OrderForm() {
             </div>
           </section>
 
-          {/* Dress Details */}
           <section>
             <h2 className="text-xs tracking-[0.2em] uppercase text-muted-foreground mb-6 pb-2 border-b border-border">
               Dress Details
             </h2>
             <div className="space-y-6">
-              <div>
-                <Label className="text-sm font-light tracking-wide mb-2 block">
-                  Inspiration Images
-                  <span className="text-muted-foreground/60 ml-1 text-xs">(up to 5)</span>
-                </Label>
-
-                <div className="flex flex-wrap gap-3 mb-3">
-                  {images.map((img) => (
-                    <div
-                      key={img.preview}
-                      className="relative w-20 h-20 rounded-lg overflow-hidden border border-border group"
-                    >
-                      <img
-                        src={img.preview}
-                        alt="Inspiration"
-                        className="w-full h-full object-cover"
-                      />
-                      {img.uploading && (
-                        <div className="absolute inset-0 bg-background/70 flex items-center justify-center">
-                          <Loader2 className="w-4 h-4 animate-spin text-primary" />
-                        </div>
-                      )}
-                      {img.error && (
-                        <div className="absolute inset-0 bg-destructive/20 flex items-center justify-center">
-                          <span className="text-destructive text-xs">!</span>
-                        </div>
-                      )}
-                      <button
-                        type="button"
-                        onClick={() => removeImage(img.preview)}
-                        className="absolute top-1 right-1 bg-background/80 rounded-full p-0.5 opacity-0 group-hover:opacity-100 transition-opacity"
-                      >
-                        <X className="w-3 h-3" />
-                      </button>
-                    </div>
-                  ))}
-
-                  {images.length < 5 && (
-                    <button
-                      type="button"
-                      onClick={() => fileInputRef.current?.click()}
-                      className="w-20 h-20 rounded-lg border border-dashed border-border flex flex-col items-center justify-center gap-1 text-muted-foreground hover:border-primary/50 hover:text-primary transition-colors"
-                    >
-                      <ImageIcon className="w-5 h-5" />
-                      <span className="text-xs">Add</span>
-                    </button>
-                  )}
-                </div>
-
-                <input
-                  ref={fileInputRef}
-                  type="file"
-                  accept="image/*"
-                  multiple
-                  className="hidden"
-                  onChange={handleFileChange}
-                />
-
-                {images.length === 0 && (
-                  <button
-                    type="button"
-                    onClick={() => fileInputRef.current?.click()}
-                    className="w-full border border-dashed border-border rounded-lg py-8 flex flex-col items-center gap-2 text-muted-foreground hover:border-primary/50 hover:text-primary transition-colors"
-                  >
-                    <Upload className="w-6 h-6" strokeWidth={1.5} />
-                    <span className="text-sm">Click to upload inspiration images</span>
-                    <span className="text-xs opacity-60">PNG, JPG, WEBP up to 10MB each</span>
-                  </button>
-                )}
-              </div>
-
               <div>
                 <Label htmlFor="description" className="text-sm font-light tracking-wide">
                   Description / Notes
@@ -451,11 +299,10 @@ export default function OrderForm() {
             </div>
           </section>
 
-          {/* Submit */}
           <div className="flex justify-center pt-4 pb-8">
             <Button
               type="submit"
-              disabled={submitting || images.some((i) => i.uploading)}
+              disabled={submitting}
               className="bg-primary text-primary-foreground hover:bg-primary/90 px-10 py-6 rounded-full tracking-widest uppercase text-xs transition-all duration-300 hover:shadow-[0_0_20px_rgba(209,156,151,0.2)] disabled:opacity-50"
             >
               {submitting ? (

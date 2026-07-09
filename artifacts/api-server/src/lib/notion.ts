@@ -1,11 +1,10 @@
-// Notion integration (connector: notion) — https://developers.notion.com/reference/intro
-// Uses the Replit connectors proxy for authenticated requests. Never cache the client;
-// tokens can expire and refresh, so a fresh proxy fetch is created per call.
-import { ReplitConnectors } from "@replit/connectors-sdk";
+// Notion API client — uses NOTION_API_KEY environment variable.
+// Set this in your Vercel project environment variables.
+// Get your key at https://www.notion.so/my-integrations
 
-const connectors = new ReplitConnectors();
-
+const NOTION_API_KEY = process.env.NOTION_API_KEY ?? "";
 const NOTION_VERSION = "2022-06-28";
+const NOTION_BASE_URL = "https://api.notion.com";
 
 export const ORDERS_DATABASE_ID = process.env.NOTION_ORDERS_DATABASE_ID ?? "";
 
@@ -29,16 +28,29 @@ interface NotionDatabaseSchema {
 let cachedStages: { stages: string[]; fetchedAt: number } | null = null;
 const STAGE_CACHE_TTL_MS = 60_000;
 
+async function notionFetch(path: string, init?: RequestInit): Promise<Response> {
+  if (!NOTION_API_KEY) {
+    throw new Error("NOTION_API_KEY environment variable is not set");
+  }
+  return fetch(`${NOTION_BASE_URL}${path}`, {
+    ...init,
+    headers: {
+      Authorization: `Bearer ${NOTION_API_KEY}`,
+      "Notion-Version": NOTION_VERSION,
+      "Content-Type": "application/json",
+      ...(init?.headers as Record<string, string> | undefined),
+    },
+  });
+}
+
 async function fetchLiveOrderStages(): Promise<string[]> {
   if (cachedStages && Date.now() - cachedStages.fetchedAt < STAGE_CACHE_TTL_MS) {
     return cachedStages.stages;
   }
 
-  const response = await notionProxy(`/v1/databases/${ORDERS_DATABASE_ID}`);
+  const response = await notionFetch(`/v1/databases/${ORDERS_DATABASE_ID}`);
   if (!response.ok) {
     if (cachedStages) {
-      // Serve the last known-good list rather than failing the whole lookup
-      // if Notion is briefly unreachable.
       return cachedStages.stages;
     }
     throw new Error(
@@ -77,18 +89,6 @@ export interface OrderRecord {
   stages: string[];
 }
 
-async function notionProxy(path: string, init?: RequestInit): Promise<Response> {
-  return connectors.proxy("notion", path, {
-    method: init?.method ?? "GET",
-    headers: {
-      "Notion-Version": NOTION_VERSION,
-      "Content-Type": "application/json",
-      ...(init?.headers as Record<string, string> | undefined),
-    },
-    body: init?.body,
-  });
-}
-
 export interface NewOrderData {
   fullName: string;
   email: string;
@@ -100,7 +100,6 @@ export interface NewOrderData {
   height: number;
   bodyGirth: number;
   measurementUnit: "inches" | "cm";
-  imageUrls?: string[];
   description?: string;
   neededBy?: Date;
 }
@@ -189,23 +188,10 @@ export async function createOrder(data: NewOrderData): Promise<string> {
   }
   dressSection.push(dividerBlock());
 
-  const imageBlocks =
-    data.imageUrls && data.imageUrls.length > 0
-      ? [
-          headingBlock("Inspiration Images"),
-          ...data.imageUrls.map((url) => ({
-            object: "block",
-            type: "image",
-            image: { type: "external", external: { url } },
-          })),
-        ]
-      : [];
-
   const children = [
     ...contactSection,
     ...measurementSection,
     ...dressSection,
-    ...imageBlocks,
   ];
 
   const body: Record<string, unknown> = {
@@ -214,7 +200,7 @@ export async function createOrder(data: NewOrderData): Promise<string> {
     children,
   };
 
-  const response = await notionProxy("/v1/pages", {
+  const response = await notionFetch("/v1/pages", {
     method: "POST",
     body: JSON.stringify(body),
   });
@@ -244,7 +230,7 @@ export async function findOrderByNumber(
   }
 
   const [response, stages] = await Promise.all([
-    notionProxy(`/v1/databases/${ORDERS_DATABASE_ID}/query`, {
+    notionFetch(`/v1/databases/${ORDERS_DATABASE_ID}/query`, {
       method: "POST",
       body: JSON.stringify({
         filter: {
