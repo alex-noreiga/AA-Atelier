@@ -10,8 +10,12 @@ import {
 
 const NAV_LINKS = [
   { to: "/", label: "Home" },
+  { to: "/services", label: "Services" },
+  { to: "/about", label: "About" },
+  { to: "/shop", label: "Shop" },
   { to: "/status", label: "Order Status" },
-  { to: "/order", label: "Place an Order" },
+  { to: "/order", label: "Order" },
+  { to: "/contact", label: "Contact" },
 ] as const;
 
 function isActive(current: string, to: string) {
@@ -36,7 +40,7 @@ export default function Navbar() {
         </Link>
 
         {/* Desktop links */}
-        <div className="hidden md:flex items-center gap-10">
+        <div className="hidden md:flex items-center gap-6">
           {NAV_LINKS.map((link) => (
             <Link
               key={link.to}
