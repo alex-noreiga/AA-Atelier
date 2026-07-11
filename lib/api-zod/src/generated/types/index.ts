@@ -6,13 +6,13 @@
  * OpenAPI spec version: 0.1.0
  */
 
-export * from './errorEnvelope';
-export * from './healthStatus';
-export * from './newOrderRequest';
-export * from './newOrderRequestMeasurementUnit';
-export * from './newOrderRequestPreferredContact';
-export * from './newOrderResponse';
-export * from './orderNotFound';
-export * from './orderStatus';
-export * from './uploadUrlRequest';
-export * from './uploadUrlResponse';
+export * from './errorEnvelope.js';
+export * from './healthStatus.js';
+export * from './newOrderRequest.js';
+export * from './newOrderRequestMeasurementUnit.js';
+export * from './newOrderRequestPreferredContact.js';
+export * from './newOrderResponse.js';
+export * from './orderNotFound.js';
+export * from './orderStatus.js';
+export * from './uploadUrlRequest.js';
+export * from './uploadUrlResponse.js';

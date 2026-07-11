@@ -5,7 +5,7 @@
  * API specification
  * OpenAPI spec version: 0.1.0
  */
-import type { UploadUrlRequest } from './uploadUrlRequest';
+import type { UploadUrlRequest } from './uploadUrlRequest.js';
 
 export interface UploadUrlResponse {
   uploadURL: string;
