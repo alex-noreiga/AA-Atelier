@@ -10,11 +10,9 @@ import {
 
 const NAV_LINKS = [
   { to: "/", label: "Home" },
-  { to: "/services", label: "Services" },
   { to: "/about", label: "About" },
+  { to: "/services", label: "Services" },
   { to: "/shop", label: "Shop" },
-  { to: "/status", label: "Order Status" },
-  { to: "/order", label: "Order" },
   { to: "/contact", label: "Contact" },
 ] as const;
 
@@ -36,7 +34,7 @@ export default function Navbar() {
           className="font-serif text-xl tracking-[0.2em] uppercase text-foreground hover:text-primary transition-colors"
           data-testid="link-brand"
         >
-          Atelier
+          A.A Atelier
         </Link>
 
         {/* Desktop links */}
@@ -78,7 +76,7 @@ export default function Navbar() {
             >
               <div className="flex items-center justify-between mb-12">
                 <span className="font-serif text-lg tracking-[0.2em] uppercase">
-                  Atelier
+                  A.A Atelier
                 </span>
                 <SheetClose
                   className="text-muted-foreground hover:text-primary transition-colors"

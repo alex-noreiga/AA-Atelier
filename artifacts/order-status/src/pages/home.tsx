@@ -8,19 +8,19 @@ export default function Home() {
       <div className="w-full max-w-2xl z-10 mx-auto text-center animate-in fade-in zoom-in-95 duration-1000">
         {/* Eyebrow */}
         <p className="text-primary text-xs tracking-[0.35em] uppercase mb-8">
-          Custom Dress Atelier
+          A Custom Figure Skating Costume Atelier
         </p>
 
         {/* Hero */}
         <h1 className="text-5xl md:text-7xl font-serif text-foreground leading-[1.05] mb-8">
-          Garments made
+          Costumes made
           <br />
           <span className="italic text-primary">just for you</span>
         </h1>
 
         <p className="text-muted-foreground font-light text-lg md:text-xl max-w-xl mx-auto mb-14 leading-relaxed">
           From first sketch to final stitch, we craft one-of-a-kind pieces by
-          hand. Begin a new commission, or follow your garment's journey through
+          hand. Begin a new commission, or follow your costume's journey through
           our atelier.
         </p>
 
@@ -36,7 +36,7 @@ export default function Home() {
             <ArrowRight className="w-4 h-4 group-hover:translate-x-1 transition-transform" />
           </Link>
           <Link
-            to="/status"
+            to="/shop/status"
             className="group inline-flex items-center gap-2 border border-border text-foreground hover:border-primary hover:text-primary px-8 py-4 rounded-full tracking-widest uppercase text-xs transition-all duration-300"
             data-testid="cta-order-status"
           >
