@@ -1,4 +1,3 @@
-import "dotenv/config";
 // The Express app is pre-bundled to plain JS by `@workspace/api-server`'s
 // esbuild build (run in `build:vercel`). Importing the built artifact keeps
 // @vercel/node from type-checking/resolving the workspace TypeScript source
