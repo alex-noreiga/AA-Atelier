@@ -10,8 +10,6 @@ import {
 
 const NAV_LINKS = [
   { to: "/", label: "Home" },
-  { to: "/order", label: "Custom Order" },
-  { to: "/status", label: "Order Status" },
   { to: "/about", label: "About" },
   { to: "/services", label: "Services" },
   { to: "/shop", label: "Shop" },

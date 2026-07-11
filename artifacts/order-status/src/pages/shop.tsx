@@ -1,3 +1,5 @@
+import { Link } from "wouter";
+import { ArrowRight } from "lucide-react";
 import { PageShell } from "@/components/page-shell";
 
 export default function Shop() {
@@ -15,6 +17,17 @@ export default function Shop() {
             Our boutique is coming soon.
           </span>
         </p>
+
+        <div className="mt-12">
+          <Link
+            to="/shop/status"
+            className="group inline-flex items-center gap-2 border border-border text-foreground hover:border-primary hover:text-primary px-8 py-4 rounded-full tracking-widest uppercase text-xs transition-all duration-300"
+            data-testid="link-order-status"
+          >
+            Track Your Order
+            <ArrowRight className="w-4 h-4 group-hover:translate-x-1 transition-transform" />
+          </Link>
+        </div>
       </div>
     </PageShell>
   );

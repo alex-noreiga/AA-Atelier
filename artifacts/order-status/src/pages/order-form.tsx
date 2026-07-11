@@ -103,7 +103,7 @@ export default function OrderForm() {
             Save this number — you can use it to track your order status at any time.
           </p>
           <a
-            href={BASE_URL + "/status"}
+            href={BASE_URL + "/shop/status"}
             className="inline-flex items-center gap-2 text-sm tracking-widest uppercase text-muted-foreground hover:text-primary transition-colors"
           >
             <ArrowLeft className="w-4 h-4" />
@@ -119,7 +119,7 @@ export default function OrderForm() {
       <div className="max-w-2xl mx-auto px-6 pt-24 pb-12">
         <div className="mb-10">
           <Link
-            to="/status"
+            to="/shop/status"
             className="inline-flex items-center gap-2 text-sm text-muted-foreground hover:text-primary transition-colors tracking-widest uppercase mb-8 group"
           >
             <ArrowLeft className="w-4 h-4 group-hover:-translate-x-1 transition-transform" />
