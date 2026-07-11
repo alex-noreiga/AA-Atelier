@@ -1,4 +1,4 @@
-import { Router, type IRouter } from "express";
+import { Router } from "express";
 import {
   GetOrderStatusResponse,
   CreateOrderBody,
@@ -8,7 +8,7 @@ import {
 import { findOrderByNumber, createOrder } from "../lib/notion";
 import { logger } from "../lib/logger";
 
-const router: IRouter = Router();
+const router = Router();
 
 router.get("/orders/:orderNumber", async (req, res) => {
   const { orderNumber } = req.params;
