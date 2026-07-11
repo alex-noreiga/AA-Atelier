@@ -3,12 +3,19 @@ import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
 import { Link } from "wouter";
+import { useCreateOrder } from "@workspace/api-client-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
+import { PageShell } from "@/components/page-shell";
+import { useToast } from "@/hooks/use-toast";
 import { ArrowLeft, CheckCircle, Loader2 } from "lucide-react";
 
+// Form-friendly schema (string inputs coerced to numbers, friendly messages).
+// Its output shape is checked against the generated `NewOrderRequest` contract
+// where it is handed to the `useCreateOrder` mutation below, so the form cannot
+// silently drift from the API spec.
 const formSchema = z.object({
   fullName: z.string().min(1, "Full name is required"),
   email: z.string().email("Please enter a valid email address"),
@@ -31,8 +38,25 @@ type FormValues = z.infer<typeof formSchema>;
 const BASE_URL = import.meta.env.BASE_URL.replace(/\/$/, "");
 
 export default function OrderForm() {
-  const [submitting, setSubmitting] = useState(false);
   const [successOrderNumber, setSuccessOrderNumber] = useState<string | null>(null);
+  const { toast } = useToast();
+
+  const createOrder = useCreateOrder({
+    mutation: {
+      onSuccess: (data) => setSuccessOrderNumber(data.orderNumber),
+      onError: (error) => {
+        const message =
+          error.data?.error ||
+          error.message ||
+          "Something went wrong. Please try again.";
+        toast({
+          variant: "destructive",
+          title: "Submission failed",
+          description: message,
+        });
+      },
+    },
+  });
 
   const {
     register,
@@ -45,50 +69,26 @@ export default function OrderForm() {
     defaultValues: { measurementUnit: "inches", preferredContact: undefined },
   });
 
+  const submitting = createOrder.isPending;
   const measurementUnit = watch("measurementUnit");
   const preferredContact = watch("preferredContact");
 
-  const onSubmit = async (values: FormValues) => {
-    setSubmitting(true);
-    try {
-      const payload: Record<string, unknown> = {
-        fullName: values.fullName,
-        email: values.email,
-        phone: values.phone,
-        preferredContact: values.preferredContact,
-        measurementUnit: values.measurementUnit,
-        waist: values.waist,
-        bust: values.bust,
-        hips: values.hips,
-        height: values.height,
-        bodyGirth: values.bodyGirth,
-      };
-      if (values.description) payload.description = values.description;
-      if (values.neededBy) payload.neededBy = values.neededBy;
-
-      const res = await fetch(`${BASE_URL}/api/orders`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(payload),
-      });
-
-      if (!res.ok) {
-        const err = await res.json().catch(() => ({}));
-        throw new Error(err.error ?? "Submission failed");
-      }
-
-      const data = await res.json();
-      setSuccessOrderNumber(data.orderNumber);
-    } catch (err) {
-      alert((err as Error).message ?? "Something went wrong. Please try again.");
-    } finally {
-      setSubmitting(false);
-    }
+  const onSubmit = (values: FormValues) => {
+    const { description, neededBy, ...rest } = values;
+    // Omit empty optional fields so the server never receives an empty date
+    // string (which would fail its date coercion).
+    createOrder.mutate({
+      data: {
+        ...rest,
+        ...(description ? { description } : {}),
+        ...(neededBy ? { neededBy } : {}),
+      },
+    });
   };
 
   if (successOrderNumber) {
     return (
-      <div className="min-h-[100dvh] w-full flex flex-col items-center justify-center p-6 pt-24 bg-background">
+      <PageShell noise={false}>
         <div className="w-full max-w-lg text-center animate-in fade-in zoom-in-95 duration-700">
           <CheckCircle className="w-16 h-16 text-primary mx-auto mb-6" strokeWidth={1} />
           <h1 className="text-3xl font-serif mb-3">Order Received</h1>
@@ -110,12 +110,12 @@ export default function OrderForm() {
             Track order status
           </a>
         </div>
-      </div>
+      </PageShell>
     );
   }
 
   return (
-    <div className="min-h-[100dvh] w-full bg-background">
+    <PageShell align="top" noise={false}>
       <div className="max-w-2xl mx-auto px-6 pt-24 pb-12">
         <div className="mb-10">
           <Link
@@ -170,7 +170,7 @@ export default function OrderForm() {
                 </div>
                 <div>
                   <Label htmlFor="phone" className="text-sm font-light tracking-wide">
-                    Phone Number <span className="text/primary">*</span>
+                    Phone Number <span className="text-primary">*</span>
                   </Label>
                   <Input
                     id="phone"
@@ -317,6 +317,6 @@ export default function OrderForm() {
           </div>
         </form>
       </div>
-    </div>
+    </PageShell>
   );
 }
