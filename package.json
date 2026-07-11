@@ -15,8 +15,7 @@
   "devDependencies": {
     "@types/cors": "^2.8.19",
     "@types/express": "^5.0.6",
-    "@types/node": "^26.1.1",
-    "@types/pino-http": "^5.8.4",
+    "@types/node": "catalog:",
     "prettier": "^3.8.4",
     "tsx": "^4.23.0",
     "typescript": "~5.9.3"

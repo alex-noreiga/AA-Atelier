@@ -5,8 +5,8 @@
  * API specification
  * OpenAPI spec version: 0.1.0
  */
-import type { NewOrderRequestMeasurementUnit } from './newOrderRequestMeasurementUnit.js';
-import type { NewOrderRequestPreferredContact } from './newOrderRequestPreferredContact.js';
+import type { NewOrderRequestMeasurementUnit } from './newOrderRequestMeasurementUnit';
+import type { NewOrderRequestPreferredContact } from './newOrderRequestPreferredContact';
 
 export interface NewOrderRequest {
   /** @minLength 1 */
@@ -26,8 +26,6 @@ export interface NewOrderRequest {
   /** @minimum 0 */
   bodyGirth: number;
   measurementUnit: NewOrderRequestMeasurementUnit;
-  /** @maxItems 5 */
-  imageUrls?: string[];
   description?: string;
   neededBy?: Date;
 }

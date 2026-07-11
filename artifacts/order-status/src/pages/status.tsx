@@ -6,6 +6,8 @@ import {
 } from "@workspace/api-client-react";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
+import { PageShell } from "@/components/page-shell";
+import { getStageDescription } from "@/lib/stage-descriptions";
 import { Loader2, ArrowRight, PenLine } from "lucide-react";
 
 export default function Status() {
@@ -46,16 +48,7 @@ export default function Status() {
     "We couldn't find an order with that number. Please check and try again.";
 
   return (
-    <div className="min-h-[100dvh] w-full flex flex-col items-center justify-center p-6 pt-24 relative overflow-hidden bg-background">
-      {/* Subtle background noise texture */}
-      <div
-        className="pointer-events-none fixed inset-0 z-0 opacity-[0.03] mix-blend-overlay"
-        style={{
-          backgroundImage:
-            "url(\"data:image/svg+xml,%3Csvg viewBox='0 0 200 200' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='noiseFilter'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.85' numOctaves='3' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23noiseFilter)'/%3E%3C/svg%3E\")",
-        }}
-      ></div>
-
+    <PageShell>
       <div className="w-full max-w-lg z-10 mx-auto animate-in fade-in zoom-in-95 duration-1000">
         {/* Header Section */}
         <div className="text-center mb-12">
@@ -230,34 +223,6 @@ export default function Status() {
           </div>
         )}
       </div>
-    </div>
-  );
-}
-
-// Helper to add flavor text based on the active stage
-function getStageDescription(stage: string): string {
-  const descriptions: Record<string, string> = {
-    Consultation:
-      "We're still discussing your vision, measurements, and stylistic desires.",
-    Sketching:
-      "We're translating your ideas into the preliminary designs and technical flats.",
-    Sourcing:
-      "We're currently curating fabrics, laces, and embellishments from our trusted suppliers.",
-    "Pattern Design":
-      "Drafting the precise pattern pieces that will shape your garment.",
-    "Cutting/Pinning":
-      "Cutting fabric to pattern and pinning the foundational silhouette.",
-    "Sewing/Construction":
-      "We're currently sewing and constructing the garment by hand and machine.",
-    Assembly: "We're now assembling all the pieces of your final costume.",
-    Fitting: "We're currently in the process of scheduling your fitting(s)!",
-    "Rhinestoning/Deatiling":
-      "We're now applying hand-beading, crystals, and all the artistic final touches for your costume.",
-    "Ready for delivery/pickup":
-      "Your garment is complete and awaiting delivery or pickup.",
-    Delivery: "Your costume is now delivered!",
-  };
-  return (
-    descriptions[stage] || "Carefully working on this stage of your garment."
+    </PageShell>
   );
 }

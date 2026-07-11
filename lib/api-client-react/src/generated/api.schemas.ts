@@ -55,29 +55,12 @@ export interface NewOrderRequest {
   /** @minimum 0 */
   bodyGirth: number;
   measurementUnit: NewOrderRequestMeasurementUnit;
-  /** @maxItems 5 */
-  imageUrls?: string[];
   description?: string;
   neededBy?: string;
 }
 
 export interface NewOrderResponse {
   orderNumber: string;
-}
-
-export interface UploadUrlRequest {
-  /** @minLength 1 */
-  name: string;
-  /** @minimum 1 */
-  size: number;
-  /** @minLength 1 */
-  contentType: string;
-}
-
-export interface UploadUrlResponse {
-  uploadURL: string;
-  objectPath: string;
-  metadata?: UploadUrlRequest;
 }
 
 export interface ErrorEnvelope {
