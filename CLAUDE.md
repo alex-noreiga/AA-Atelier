@@ -4,16 +4,21 @@ Guidance for AI assistants (and humans) working in this repository.
 
 ## What this is
 
-**AA-Atelier** is the order-management web app for a custom-dress atelier. It has
-two customer-facing flows:
+**AA-Atelier** is the order-management web app for a custom figure skating/dance costume business. Its
+two core customer-facing flows are:
 
 1. **Order status lookup** — a customer enters their order number and sees a
    vertical timeline of their garment's progress through the atelier's stages.
 2. **New order intake** — a customer submits contact details, body
    measurements, and dress notes to place a custom order.
 
+These sit inside a small marketing site: a landing page (`pages/home.tsx`) and
+informational pages — **Services, About, Shop, Contact** — reachable from a
+global navbar. The informational pages are currently styled placeholders
+("coming soon") awaiting real content.
+
 There is **no traditional database for orders**. Orders live in a **Notion
-database**, which the atelier team manages directly through the Notion UI. The
+database**, which the team manages directly through the Notion UI. The
 API server talks to the Notion REST API.
 
 The app is deployed on **Vercel** (migrated off Replit — see
@@ -28,6 +33,11 @@ workspace package is named `@workspace/<name>`.
 ```
 artifacts/
   order-status/      Frontend SPA (Vite + React 19 + Tailwind v4 + shadcn/ui)
+    src/App.tsx      wouter routes + a global <Navbar />
+    src/pages/       one component per route (home landing, status, order-form,
+                     services, about, shop, contact, not-found)
+    src/components/  navbar.tsx (global nav), page-shell.tsx (page wrapper),
+                     ui/ (shadcn primitives)
   api-server/        Backend (Express 5) — talks to Notion, bundled by esbuild
     src/routes/      thin HTTP handlers (validate → service → respond)
     src/services/    HTTP-agnostic order use-cases
@@ -194,6 +204,15 @@ exercises the live Notion write path.
   wouter for routing, TanStack Query for data, shadcn/ui ("new-york" style) in
   `src/components/ui`, react-hook-form + zod for forms. The design is an
   intentionally minimal editorial/serif aesthetic — match it.
+- **Navigation & page shell.** Routes are declared with wouter in
+  `src/App.tsx`; add a `<Route>` there for each new page (before the `NotFound`
+  fallback). The header is a single global `components/navbar.tsx` rendered once
+  in `App.tsx` — its `NAV_LINKS` array is the **one place** to add/rename nav
+  links (it drives both the desktop bar and the mobile `Sheet` menu, and
+  `data-testid`s are auto-derived from each label). Pages wrap their content in
+  `components/page-shell.tsx` (`<PageShell>`), which supplies the background,
+  navbar clearance, and optional centering — follow `pages/home.tsx` as the
+  scaffold.
 - **Prettier** is the formatter (root devDependency).
 - **Image upload is not supported.** The GCS/Replit-sidecar upload path was
   deleted during the Vercel migration, and the `/storage/*` endpoints,
@@ -224,6 +243,9 @@ exercises the live Notion write path.
 | Add request validation / error mapping  | `artifacts/api-server/src/middlewares/*`                  |
 | Change the status-lookup UI             | `artifacts/order-status/src/pages/status.tsx`             |
 | Change the order intake form            | `artifacts/order-status/src/pages/order-form.tsx`         |
+| Change the landing page                 | `artifacts/order-status/src/pages/home.tsx`               |
+| Add a page / route                      | new `src/pages/*.tsx` + `<Route>` in `src/App.tsx`        |
+| Add or rename a nav link                | `NAV_LINKS` in `artifacts/order-status/src/components/navbar.tsx` |
 | Add a shared UI component               | `artifacts/order-status/src/components/ui/`               |
 | Understand a past decision / gotcha     | `.agents/memory/`                                         |
 | Adjust the Vercel serverless entrypoint | `api/index.ts` + `vercel.json`                            |

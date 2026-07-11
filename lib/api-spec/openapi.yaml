@@ -13,7 +13,7 @@ tags:
   - name: orders
     description: Customer order status lookup
 paths:
-  /healthz:
+  /health:
     get:
       operationId: healthCheck
       tags: [health]
