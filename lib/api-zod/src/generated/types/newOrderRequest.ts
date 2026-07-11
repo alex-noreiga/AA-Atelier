@@ -5,8 +5,8 @@
  * API specification
  * OpenAPI spec version: 0.1.0
  */
-import type { NewOrderRequestMeasurementUnit } from './newOrderRequestMeasurementUnit';
-import type { NewOrderRequestPreferredContact } from './newOrderRequestPreferredContact';
+import type { NewOrderRequestMeasurementUnit } from './newOrderRequestMeasurementUnit.js';
+import type { NewOrderRequestPreferredContact } from './newOrderRequestPreferredContact.js';
 
 export interface NewOrderRequest {
   /** @minLength 1 */
