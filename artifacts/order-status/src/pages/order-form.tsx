@@ -88,7 +88,7 @@ export default function OrderForm() {
 
   if (successOrderNumber) {
     return (
-      <div className="min-h-[100dvh] w-full flex flex-col items-center justify-center p-6 bg-background">
+      <div className="min-h-[100dvh] w-full flex flex-col items-center justify-center p-6 pt-24 bg-background">
         <div className="w-full max-w-lg text-center animate-in fade-in zoom-in-95 duration-700">
           <CheckCircle className="w-16 h-16 text-primary mx-auto mb-6" strokeWidth={1} />
           <h1 className="text-3xl font-serif mb-3">Order Received</h1>
@@ -103,7 +103,7 @@ export default function OrderForm() {
             Save this number — you can use it to track your order status at any time.
           </p>
           <a
-            href={BASE_URL + "/"}
+            href={BASE_URL + "/status"}
             className="inline-flex items-center gap-2 text-sm tracking-widest uppercase text-muted-foreground hover:text-primary transition-colors"
           >
             <ArrowLeft className="w-4 h-4" />
@@ -116,10 +116,10 @@ export default function OrderForm() {
 
   return (
     <div className="min-h-[100dvh] w-full bg-background">
-      <div className="max-w-2xl mx-auto px-6 py-12">
+      <div className="max-w-2xl mx-auto px-6 pt-24 pb-12">
         <div className="mb-10">
           <Link
-            to="/"
+            to="/status"
             className="inline-flex items-center gap-2 text-sm text-muted-foreground hover:text-primary transition-colors tracking-widest uppercase mb-8 group"
           >
             <ArrowLeft className="w-4 h-4 group-hover:-translate-x-1 transition-transform" />
