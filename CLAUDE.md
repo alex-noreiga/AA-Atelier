@@ -4,18 +4,22 @@ Guidance for AI assistants (and humans) working in this repository.
 
 ## What this is
 
-**AA-Atelier** is the order-management web app for a custom-dress atelier. It has
-two customer-facing flows:
+**AA-Atelier** is the order-management web app for a custom figure skating/dance costume business. Its
+two core customer-facing flows are:
 
 1. **Order status lookup** — a customer enters their order number and sees a
    vertical timeline of their garment's progress through the atelier's stages.
 2. **New order intake** — a customer submits contact details, body
    measurements, and dress notes to place a custom order.
 
+These sit inside a small marketing site: a landing page (`pages/home.tsx`) and
+informational pages — **Services, About, Shop, Contact** — reachable from a
+global navbar. The informational pages are currently styled placeholders
+("coming soon") awaiting real content.
+
 There is **no traditional database for orders**. Orders live in a **Notion
-database**, which the atelier team manages directly through the Notion UI. The
-API server talks to the Notion REST API. (A Postgres/Drizzle package exists and
-is wired up, but currently has no order tables — see `lib/db`.)
+database**, which the team manages directly through the Notion UI. The
+API server talks to the Notion REST API.
 
 The app is deployed on **Vercel** (migrated off Replit — see
 `.agents/memory/vercel-migration.md`).
@@ -23,21 +27,28 @@ The app is deployed on **Vercel** (migrated off Replit — see
 ## Repository layout
 
 This is a **pnpm workspace monorepo**. Package globs are defined in
-`pnpm-workspace.yaml`: `artifacts/*`, `lib/*`, `lib/integrations/*`, `scripts`,
-`tests`. Every workspace package is named `@workspace/<name>`.
+`pnpm-workspace.yaml`: `artifacts/*`, `lib/*`, `scripts`, `tests`. Every
+workspace package is named `@workspace/<name>`.
 
 ```
 artifacts/
   order-status/      Frontend SPA (Vite + React 19 + Tailwind v4 + shadcn/ui)
+    src/App.tsx      wouter routes + a global <Navbar />
+    src/pages/       one component per route (home landing, status, order-form,
+                     services, about, shop, contact, not-found)
+    src/components/  navbar.tsx (global nav), page-shell.tsx (page wrapper),
+                     ui/ (shadcn primitives)
   api-server/        Backend (Express 5) — talks to Notion, bundled by esbuild
+    src/routes/      thin HTTP handlers (validate → service → respond)
+    src/services/    HTTP-agnostic order use-cases
+    src/middlewares/ reusable zod validation + central error handler
+    src/lib/notion/  Notion adapter: client, schema mapping, block builder, repository
 api/
   index.ts           Vercel serverless entrypoint — re-exports the built Express app
 lib/
   api-spec/          OpenAPI spec (openapi.yaml) + orval codegen config — SOURCE OF TRUTH
   api-zod/           GENERATED zod schemas from the spec (server-side validation)
   api-client-react/  GENERATED react-query hooks + typed fetch client (frontend)
-  db/                Drizzle ORM + Postgres setup (schema currently empty)
-  object-storage-web/  Uppy-based upload widget (NOT wired into the app right now)
 scripts/             One-off tsx scripts + post-merge git hook
 tests/               Playwright end-to-end tests
 .agents/memory/      Durable notes on past decisions & gotchas — READ THESE
@@ -52,7 +63,7 @@ Browser (order-status SPA)
   ▼
 Express app (artifacts/api-server)  ──►  Notion REST API (orders database)
   │
-  ├─ GET  /api/health              → { status: "ok" }
+  ├─ GET  /api/healthz             → { status: "ok" }
   ├─ GET  /api/orders/:orderNumber → order status + stage list
   └─ POST /api/orders              → creates a Notion page, returns order number
 ```
@@ -89,16 +100,19 @@ Note: `lib/api-client-react/src/custom-fetch.ts` is the **mutator** (hand-writte
 not generated) — the fetch/error-handling layer all generated hooks route
 through. It's safe to edit.
 
-> Reality check: the frontend order **status** page uses the generated
-> `useGetOrderStatus` hook, but the order **intake** form
-> (`pages/order-form.tsx`) currently calls `fetch("/api/orders")` directly
-> rather than a generated mutation hook. Keep that in mind when reasoning about
-> request shapes.
+Both frontend flows go through the generated client: the status page
+(`pages/status.tsx`) uses `useGetOrderStatus`, and the intake form
+(`pages/order-form.tsx`) uses the `useCreateOrder` mutation. The form's local
+zod schema is checked against the generated `NewOrderRequest` where it hands
+data to the mutation, so it can't silently drift from the contract.
 
 ## Working with Notion (read `.agents/memory/` first)
 
-The Notion integration in `artifacts/api-server/src/lib/notion.ts` encodes two
-hard-won lessons captured in `.agents/memory/`:
+The Notion integration lives in `artifacts/api-server/src/lib/notion/`
+(`client.ts` for the REST client, `schema.ts` for property-name constants +
+extraction helpers, `blocks.ts` for the order page-body builder, and
+`orders.repository.ts` for create/lookup). It encodes two hard-won lessons
+captured in `.agents/memory/`:
 
 1. **Property types must match the live schema, not the property name.**
    "Order Number" is a Notion `rich_text` property, **not** `number` — values
@@ -108,14 +122,16 @@ hard-won lessons captured in `.agents/memory/`:
 
 2. **Never hardcode the stage/status option list.** The atelier team edits the
    "Stage" status options directly in Notion and expects changes to appear
-   without a redeploy. `fetchLiveOrderStages()` reads the options live from
-   `GET /v1/databases/{id}` with a 60s in-memory TTL cache, and falls back to
-   the cached list on error. Don't reintroduce a hardcoded stage constant. (The
-   per-stage *description text* in `pages/home.tsx` is cosmetic flavor only.)
+   without a redeploy. `fetchLiveOrderStages()` (in `notion/orders.repository.ts`)
+   reads the options live from `GET /v1/databases/{id}` with a 60s in-memory TTL
+   cache, and falls back to the cached list on error. Don't reintroduce a
+   hardcoded stage constant. (The per-stage *description text* in
+   `lib/stage-descriptions.ts` is cosmetic flavor only.)
 
 Auth: the server reads `NOTION_API_KEY` and `NOTION_ORDERS_DATABASE_ID` from
-environment variables (`notionFetch()` in `notion.ts`). On Replit these came
-from a sidecar; that path is gone.
+environment variables (via `createNotionClient` in `notion/client.ts`, read at
+first use rather than module load). On Replit these came from a sidecar; that
+path is gone.
 
 ## Development workflow
 
@@ -188,14 +204,23 @@ exercises the live Notion write path.
   wouter for routing, TanStack Query for data, shadcn/ui ("new-york" style) in
   `src/components/ui`, react-hook-form + zod for forms. The design is an
   intentionally minimal editorial/serif aesthetic — match it.
+- **Navigation & page shell.** Routes are declared with wouter in
+  `src/App.tsx`; add a `<Route>` there for each new page (before the `NotFound`
+  fallback). The header is a single global `components/navbar.tsx` rendered once
+  in `App.tsx` — its `NAV_LINKS` array is the **one place** to add/rename nav
+  links (it drives both the desktop bar and the mobile `Sheet` menu, and
+  `data-testid`s are auto-derived from each label). Pages wrap their content in
+  `components/page-shell.tsx` (`<PageShell>`), which supplies the background,
+  navbar clearance, and optional centering — follow `pages/home.tsx` as the
+  scaffold.
 - **Prettier** is the formatter (root devDependency).
-- **Image upload is intentionally removed.** The GCS/Replit-sidecar upload path
-  was deleted during the Vercel migration; the OpenAPI spec still lists
-  `/storage/*` endpoints and `imageUrls`, but they are **not implemented** on
-  the server. `lib/object-storage-web` exists but isn't wired into the app.
-- **`lib/db`** requires `DATABASE_URL` and has an **empty schema** — it's
-  scaffolding, not currently used for orders. `scripts/post-merge.sh` runs
-  `pnpm --filter db push`, so a schema change would be applied on merge.
+- **Image upload is not supported.** The GCS/Replit-sidecar upload path was
+  deleted during the Vercel migration, and the `/storage/*` endpoints,
+  `imageUrls` field, and the `lib/object-storage-web` widget have since been
+  removed from the spec and workspace. If upload is ever reintroduced, add it
+  to `openapi.yaml` first and regenerate.
+- **No relational database.** Orders live in Notion; there is no Postgres/Drizzle
+  package. (An empty `lib/db` scaffold used to exist but was removed.)
 
 ## Git & deployment
 
@@ -212,12 +237,16 @@ exercises the live Notion write path.
 | I want to…                              | Go to                                                     |
 |-----------------------------------------|-----------------------------------------------------------|
 | Change an API request/response shape    | `lib/api-spec/openapi.yaml` → run codegen                 |
-| Change server order logic / Notion I/O  | `artifacts/api-server/src/lib/notion.ts`                  |
+| Change order use-case logic             | `artifacts/api-server/src/services/orders.service.ts`     |
+| Change Notion I/O                       | `artifacts/api-server/src/lib/notion/*`                   |
 | Add/modify an API route                 | `artifacts/api-server/src/routes/*`                       |
-| Change the status-lookup UI             | `artifacts/order-status/src/pages/home.tsx`               |
+| Add request validation / error mapping  | `artifacts/api-server/src/middlewares/*`                  |
+| Change the status-lookup UI             | `artifacts/order-status/src/pages/status.tsx`             |
 | Change the order intake form            | `artifacts/order-status/src/pages/order-form.tsx`         |
+| Change the landing page                 | `artifacts/order-status/src/pages/home.tsx`               |
+| Add a page / route                      | new `src/pages/*.tsx` + `<Route>` in `src/App.tsx`        |
+| Add or rename a nav link                | `NAV_LINKS` in `artifacts/order-status/src/components/navbar.tsx` |
 | Add a shared UI component               | `artifacts/order-status/src/components/ui/`               |
 | Understand a past decision / gotcha     | `.agents/memory/`                                         |
 | Adjust the Vercel serverless entrypoint | `api/index.ts` + `vercel.json`                            |
-| Add a DB table                          | `lib/db/src/schema/` (empty scaffold today)               |
 ```
