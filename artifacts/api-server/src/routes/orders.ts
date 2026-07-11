@@ -5,8 +5,8 @@ import {
   CreateOrderResponse,
   type OrderNotFound,
 } from "@workspace/api-zod";
-import { findOrderByNumber, createOrder } from "../lib/notion";
-import { logger } from "../lib/logger";
+import { findOrderByNumber, createOrder } from "../lib/notion.js";
+import { logger } from "../lib/logger.js";
 
 const router = Router();
 
