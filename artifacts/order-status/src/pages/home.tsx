@@ -8,7 +8,7 @@ export default function Home() {
       <div className="w-full max-w-2xl z-10 mx-auto text-center animate-in fade-in zoom-in-95 duration-1000">
         {/* Eyebrow */}
         <p className="text-primary text-xs tracking-[0.35em] uppercase mb-8">
-          Custom Dress Atelier
+          A Custom Figure Skating Costume Atelier
         </p>
 
         {/* Hero */}
