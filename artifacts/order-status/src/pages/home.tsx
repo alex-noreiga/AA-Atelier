@@ -13,14 +13,14 @@ export default function Home() {
 
         {/* Hero */}
         <h1 className="text-5xl md:text-7xl font-serif text-foreground leading-[1.05] mb-8">
-          Garments made
+          Costumes made
           <br />
           <span className="italic text-primary">just for you</span>
         </h1>
 
         <p className="text-muted-foreground font-light text-lg md:text-xl max-w-xl mx-auto mb-14 leading-relaxed">
           From first sketch to final stitch, we craft one-of-a-kind pieces by
-          hand. Begin a new commission, or follow your garment's journey through
+          hand. Begin a new commission, or follow your costume's journey through
           our atelier.
         </p>
 

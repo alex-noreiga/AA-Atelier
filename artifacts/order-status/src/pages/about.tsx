@@ -11,7 +11,7 @@ export default function About() {
           About
         </h1>
         <p className="text-muted-foreground font-light text-lg md:text-xl max-w-xl mx-auto leading-relaxed">
-          A small atelier devoted to garments made just for you.{" "}
+          A small atelier devoted to costumes made just for you.{" "}
           <span className="italic text-primary">Our story, coming soon.</span>
         </p>
       </div>
