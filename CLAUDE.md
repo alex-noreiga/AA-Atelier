@@ -1,0 +1,223 @@
+# CLAUDE.md
+
+Guidance for AI assistants (and humans) working in this repository.
+
+## What this is
+
+**AA-Atelier** is the order-management web app for a custom-dress atelier. It has
+two customer-facing flows:
+
+1. **Order status lookup** — a customer enters their order number and sees a
+   vertical timeline of their garment's progress through the atelier's stages.
+2. **New order intake** — a customer submits contact details, body
+   measurements, and dress notes to place a custom order.
+
+There is **no traditional database for orders**. Orders live in a **Notion
+database**, which the atelier team manages directly through the Notion UI. The
+API server talks to the Notion REST API. (A Postgres/Drizzle package exists and
+is wired up, but currently has no order tables — see `lib/db`.)
+
+The app is deployed on **Vercel** (migrated off Replit — see
+`.agents/memory/vercel-migration.md`).
+
+## Repository layout
+
+This is a **pnpm workspace monorepo**. Package globs are defined in
+`pnpm-workspace.yaml`: `artifacts/*`, `lib/*`, `lib/integrations/*`, `scripts`,
+`tests`. Every workspace package is named `@workspace/<name>`.
+
+```
+artifacts/
+  order-status/      Frontend SPA (Vite + React 19 + Tailwind v4 + shadcn/ui)
+  api-server/        Backend (Express 5) — talks to Notion, bundled by esbuild
+api/
+  index.ts           Vercel serverless entrypoint — re-exports the built Express app
+lib/
+  api-spec/          OpenAPI spec (openapi.yaml) + orval codegen config — SOURCE OF TRUTH
+  api-zod/           GENERATED zod schemas from the spec (server-side validation)
+  api-client-react/  GENERATED react-query hooks + typed fetch client (frontend)
+  db/                Drizzle ORM + Postgres setup (schema currently empty)
+  object-storage-web/  Uppy-based upload widget (NOT wired into the app right now)
+scripts/             One-off tsx scripts + post-merge git hook
+tests/               Playwright end-to-end tests
+.agents/memory/      Durable notes on past decisions & gotchas — READ THESE
+vercel.json          Vercel build + routing config
+```
+
+## Architecture & data flow
+
+```
+Browser (order-status SPA)
+  │  fetch /api/*
+  ▼
+Express app (artifacts/api-server)  ──►  Notion REST API (orders database)
+  │
+  ├─ GET  /api/health              → { status: "ok" }
+  ├─ GET  /api/orders/:orderNumber → order status + stage list
+  └─ POST /api/orders              → creates a Notion page, returns order number
+```
+
+- **Locally:** the Vite dev server proxies `/api` to the Express server on
+  `localhost:3000` (see `artifacts/order-status/vite.config.ts`).
+- **On Vercel:** `vercel.json` rewrites `/api/:path*` → `/api/index`, which is
+  the serverless function at `api/index.ts`. That file imports the
+  **pre-bundled** Express app from `artifacts/api-server/dist/app.mjs` (built by
+  esbuild during `build:vercel`). It imports the built artifact — not the TS
+  source — deliberately, so `@vercel/node` doesn't try to type-check the whole
+  workspace TypeScript graph. Don't "fix" this by importing the source.
+
+### The API is contract-first — this is the most important convention
+
+`lib/api-spec/openapi.yaml` is the **single source of truth** for the HTTP API.
+Two packages are **generated from it** by [orval](https://orval.dev) and must
+never be hand-edited:
+
+- `lib/api-zod` — zod schemas used by the **server** to validate/parse
+  requests and responses (`CreateOrderBody`, `GetOrderStatusResponse`, …).
+- `lib/api-client-react` — **react-query hooks** (`useGetOrderStatus`, …) and a
+  typed `customFetch` client, consumed by the frontend.
+
+Files under `src/generated/` carry a "Do not edit manually" header. To change
+the API:
+
+1. Edit `lib/api-spec/openapi.yaml`.
+2. Run codegen: `pnpm --filter @workspace/api-spec run codegen`
+   (runs orval, then re-typechecks the libs).
+3. Update the server route handlers and frontend as needed.
+
+Note: `lib/api-client-react/src/custom-fetch.ts` is the **mutator** (hand-written,
+not generated) — the fetch/error-handling layer all generated hooks route
+through. It's safe to edit.
+
+> Reality check: the frontend order **status** page uses the generated
+> `useGetOrderStatus` hook, but the order **intake** form
+> (`pages/order-form.tsx`) currently calls `fetch("/api/orders")` directly
+> rather than a generated mutation hook. Keep that in mind when reasoning about
+> request shapes.
+
+## Working with Notion (read `.agents/memory/` first)
+
+The Notion integration in `artifacts/api-server/src/lib/notion.ts` encodes two
+hard-won lessons captured in `.agents/memory/`:
+
+1. **Property types must match the live schema, not the property name.**
+   "Order Number" is a Notion `rich_text` property, **not** `number` — values
+   have leading zeros (`"000002"`). Filters must use `rich_text: { equals }`.
+   Before writing any Notion filter, inspect the actual `type` of the property
+   on a sample page. See `notion-status-filters.md`.
+
+2. **Never hardcode the stage/status option list.** The atelier team edits the
+   "Stage" status options directly in Notion and expects changes to appear
+   without a redeploy. `fetchLiveOrderStages()` reads the options live from
+   `GET /v1/databases/{id}` with a 60s in-memory TTL cache, and falls back to
+   the cached list on error. Don't reintroduce a hardcoded stage constant. (The
+   per-stage *description text* in `pages/home.tsx` is cosmetic flavor only.)
+
+Auth: the server reads `NOTION_API_KEY` and `NOTION_ORDERS_DATABASE_ID` from
+environment variables (`notionFetch()` in `notion.ts`). On Replit these came
+from a sidecar; that path is gone.
+
+## Development workflow
+
+### Prerequisites
+
+- **pnpm is required** (the `preinstall` hook fails the install for npm/yarn).
+- Node with the versions implied by `@types/node` ^26.
+- Copy `.env.example` → `.env` and fill in `NOTION_API_KEY` +
+  `NOTION_ORDERS_DATABASE_ID`.
+
+### Install & run
+
+```bash
+pnpm install
+
+# Run backend (:3000) and frontend (Vite) together in parallel:
+pnpm dev
+```
+
+`pnpm dev` runs the `@workspace/api-server` and `@workspace/order-status` dev
+scripts in parallel. The frontend proxies `/api` to the backend. The
+api-server `dev` script builds with esbuild and runs the bundled output; it
+reads env from the repo-root `.env` via `DOTENV_CONFIG_PATH`.
+
+### Build
+
+```bash
+pnpm build          # typecheck everything, then build all packages
+pnpm build:vercel   # what Vercel runs: build api-server (esbuild) + frontend (vite)
+```
+
+### Typecheck
+
+```bash
+pnpm typecheck      # tsc --build across project references + per-package typechecks
+```
+
+TypeScript uses **project references** (`tsconfig.json` → `lib/*`,
+`tsconfig.base.json` for shared compiler options). The `customConditions:
+["workspace"]` setting lets packages resolve each other from **source** during
+typecheck. Config highlights: `strict` null checks on, `module: esnext`,
+`moduleResolution: bundler`, `noEmitOnError`, ESM everywhere (`"type":
+"module"`).
+
+### Tests
+
+```bash
+pnpm test:e2e       # Playwright e2e (tests/e2e/*.spec.ts)
+```
+
+Playwright targets `PLAYWRIGHT_BASE_URL` (default `http://localhost:3001`) — so
+the app must be running/served before the e2e run. `order-form.spec.ts` submits
+a real order and asserts the returned order number matches `ORD-...`, so it
+exercises the live Notion write path.
+
+## Conventions & gotchas
+
+- **ESM only.** Server-side relative imports use explicit `.js` extensions
+  (e.g. `import router from "./routes/index.js"`) even though the source is
+  `.ts` — this is required so `@vercel/node`/Node ESM can resolve the compiled
+  output. Don't drop the extensions. Frontend imports use the `@/` alias
+  (`@/components/...`) resolving to `artifacts/order-status/src`.
+- **Shared dependency versions** live in the `catalog:` section of
+  `pnpm-workspace.yaml`. Reference them as `"react": "catalog:"` rather than
+  pinning per package.
+- **`minimumReleaseAge: 1440`** — pnpm won't install package versions younger
+  than 24h (supply-chain hardening). Expect this if adding a brand-new release.
+- **Frontend stack:** React 19, Vite 7, Tailwind **v4** (via
+  `@tailwindcss/vite`, no `tailwind.config` — config lives in `src/index.css`),
+  wouter for routing, TanStack Query for data, shadcn/ui ("new-york" style) in
+  `src/components/ui`, react-hook-form + zod for forms. The design is an
+  intentionally minimal editorial/serif aesthetic — match it.
+- **Prettier** is the formatter (root devDependency).
+- **Image upload is intentionally removed.** The GCS/Replit-sidecar upload path
+  was deleted during the Vercel migration; the OpenAPI spec still lists
+  `/storage/*` endpoints and `imageUrls`, but they are **not implemented** on
+  the server. `lib/object-storage-web` exists but isn't wired into the app.
+- **`lib/db`** requires `DATABASE_URL` and has an **empty schema** — it's
+  scaffolding, not currently used for orders. `scripts/post-merge.sh` runs
+  `pnpm --filter db push`, so a schema change would be applied on merge.
+
+## Git & deployment
+
+- Default branch: **`main`**. Feature work happens on branches; changes reach
+  `main` via pull requests.
+- Do **not** open a pull request unless explicitly asked.
+- Vercel deploys from the repo using `vercel.json`:
+  `installCommand: pnpm install`, `buildCommand: pnpm run build:vercel`,
+  output `artifacts/order-status/dist/public`.
+- **Required Vercel env vars:** `NOTION_API_KEY`, `NOTION_ORDERS_DATABASE_ID`.
+
+## Quick reference — where things live
+
+| I want to…                              | Go to                                                     |
+|-----------------------------------------|-----------------------------------------------------------|
+| Change an API request/response shape    | `lib/api-spec/openapi.yaml` → run codegen                 |
+| Change server order logic / Notion I/O  | `artifacts/api-server/src/lib/notion.ts`                  |
+| Add/modify an API route                 | `artifacts/api-server/src/routes/*`                       |
+| Change the status-lookup UI             | `artifacts/order-status/src/pages/home.tsx`               |
+| Change the order intake form            | `artifacts/order-status/src/pages/order-form.tsx`         |
+| Add a shared UI component               | `artifacts/order-status/src/components/ui/`               |
+| Understand a past decision / gotcha     | `.agents/memory/`                                         |
+| Adjust the Vercel serverless entrypoint | `api/index.ts` + `vercel.json`                            |
+| Add a DB table                          | `lib/db/src/schema/` (empty scaffold today)               |
+```

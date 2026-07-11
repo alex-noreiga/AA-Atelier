@@ -15,7 +15,7 @@ tags:
   - name: storage
     description: Object storage upload and serving endpoints
 paths:
-  /healthz:
+  /health:
     get:
       operationId: healthCheck
       tags: [health]
