@@ -14,6 +14,8 @@ tags:
     description: Customer order status lookup
   - name: contact
     description: Customer contact messages
+  - name: products
+    description: Shop inventory (ready-to-ship items)
 paths:
   /health:
     get:
@@ -109,6 +111,27 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/ErrorEnvelope"
+        "500":
+          description: Server error
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorEnvelope"
+  /products:
+    get:
+      operationId: getProducts
+      tags: [products]
+      summary: List shop products
+      description: >-
+        Returns published, in-stock shop items from the Notion inventory
+        database, grouped into cards with selectable variants.
+      responses:
+        "200":
+          description: Products list
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ProductList"
         "500":
           description: Server error
           content:
@@ -230,6 +253,57 @@ components:
       properties:
         success:
           type: boolean
+    ProductVariant:
+      type: object
+      required:
+        - id
+        - name
+        - available
+        - photos
+      properties:
+        id:
+          type: string
+        name:
+          type: string
+        available:
+          type: boolean
+        price:
+          type: number
+        description:
+          type: string
+        photos:
+          type: array
+          items:
+            type: string
+        quantityAvailable:
+          type: number
+    Product:
+      type: object
+      required:
+        - id
+        - title
+        - category
+        - variants
+      properties:
+        id:
+          type: string
+        title:
+          type: string
+        category:
+          type: string
+        variants:
+          type: array
+          items:
+            $ref: "#/components/schemas/ProductVariant"
+    ProductList:
+      type: object
+      required:
+        - products
+      properties:
+        products:
+          type: array
+          items:
+            $ref: "#/components/schemas/Product"
     ErrorEnvelope:
       type: object
       required: [error]

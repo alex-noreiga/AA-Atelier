@@ -3,6 +3,7 @@ import { Link } from "wouter";
 import { ArrowRight, PenLine } from "lucide-react";
 import { PageShell } from "@/components/page-shell";
 import { SizeChartDialog } from "@/components/size-chart-dialog";
+import { InStockSection } from "@/components/in-stock-section";
 import { AspectRatio } from "@/components/ui/aspect-ratio";
 import {
   Dialog,
@@ -364,6 +365,9 @@ export default function Shop() {
             <ProductCard key={product.slug} product={product} />
           ))}
         </div>
+
+        {/* Live inventory synced from Notion */}
+        <InStockSection />
 
         {/* Closing CTA */}
         <div className="mt-24 text-center">
