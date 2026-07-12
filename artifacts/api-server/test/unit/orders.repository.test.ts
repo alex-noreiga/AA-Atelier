@@ -1,4 +1,5 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
+import { createOrderInput } from "@workspace/test-fixtures";
 import {
   makeFakeClient,
   jsonResponse,
@@ -18,18 +19,7 @@ beforeEach(async () => {
   repo = await import("../../src/lib/notion/orders.repository.js");
 });
 
-const validOrder: CreateOrderInput = {
-  fullName: "Ada Lovelace",
-  email: "ada@example.com",
-  phone: "+1 555 000 1234",
-  preferredContact: "email",
-  measurementUnit: "inches",
-  waist: 28,
-  bust: 36,
-  hips: 38,
-  height: 65,
-  bodyGirth: 32,
-};
+const validOrder: CreateOrderInput = createOrderInput();
 
 const isQuery = (path: string) => path.endsWith("/query");
 const isSchema = (path: string) => /\/v1\/databases\/[^/]+$/.test(path);

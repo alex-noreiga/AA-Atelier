@@ -1,22 +1,12 @@
 import { describe, it, expect } from "vitest";
+import { createOrderInput } from "@workspace/test-fixtures";
 import {
   buildOrderProperties,
   buildOrderPageBlocks,
 } from "../../src/lib/notion/blocks.js";
 import type { CreateOrderInput } from "../../src/lib/notion/schema.js";
 
-const baseOrder: CreateOrderInput = {
-  fullName: "Ada Lovelace",
-  email: "ada@example.com",
-  phone: "+1 555 000 1234",
-  preferredContact: "email",
-  measurementUnit: "inches",
-  waist: 28,
-  bust: 36,
-  hips: 38,
-  height: 65,
-  bodyGirth: 32,
-};
+const baseOrder: CreateOrderInput = createOrderInput();
 
 /** Collect the "Label: value" pairs out of the paragraph blocks. */
 function textPairs(blocks: unknown[]): Record<string, string> {

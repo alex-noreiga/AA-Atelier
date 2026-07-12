@@ -1,5 +1,8 @@
 import { test, expect } from "@playwright/test";
+import { contactInput, GENERIC_ERROR } from "@workspace/test-fixtures";
 import { mockCreateContact } from "./support/mock-api";
+
+const CONTACT = contactInput();
 
 test.describe("Contact form", () => {
   test("submits a message and shows the confirmation screen (API mocked)", async ({
@@ -12,9 +15,9 @@ test.describe("Contact form", () => {
       page.getByRole("heading", { name: "Contact Us" }),
     ).toBeVisible();
 
-    await page.locator("#name").fill("Grace Hopper");
-    await page.locator("#email").fill("grace@example.com");
-    await page.locator("#message").fill("Do you ship internationally?");
+    await page.locator("#name").fill(CONTACT.name);
+    await page.locator("#email").fill(CONTACT.email);
+    await page.locator("#message").fill(CONTACT.message);
     await page.getByRole("button", { name: "Send Message" }).click();
 
     await expect(
@@ -47,12 +50,12 @@ test.describe("Contact form", () => {
   }) => {
     await mockCreateContact(page, {
       status: 500,
-      body: { error: "Something went wrong. Please try again later." },
+      body: { error: GENERIC_ERROR },
     });
 
     await page.goto("/contact");
-    await page.locator("#name").fill("Grace Hopper");
-    await page.locator("#email").fill("grace@example.com");
+    await page.locator("#name").fill(CONTACT.name);
+    await page.locator("#email").fill(CONTACT.email);
     await page.locator("#message").fill("Hello there");
     await page.getByRole("button", { name: "Send Message" }).click();
 

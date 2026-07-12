@@ -1,0 +1,16 @@
+{
+  "extends": "../tsconfig.base.json",
+  "compilerOptions": {
+    "noEmit": true,
+    "types": ["node"],
+    // Playwright does not transpile TypeScript inside `node_modules` and does
+    // not read Vite's `customConditions`, so a bare specifier would fail to
+    // resolve the source-only fixtures package. Playwright *does* honour
+    // tsconfig `paths`, and mapping to source puts the file outside
+    // node_modules where Playwright will happily transpile it.
+    "paths": {
+      "@workspace/test-fixtures": ["../lib/test-fixtures/src/index.ts"]
+    }
+  },
+  "include": ["e2e", "playwright.config.ts"]
+}

@@ -38,6 +38,8 @@ testem.log
 /typings
 *.env
 /scripts/*
+# ...but the shell scripts in there are ours (cleanup, git hooks) and must be tracked.
+!/scripts/*.sh
 
 # System Files
 .DS_Store
@@ -48,3 +50,5 @@ Thumbs.db
 
 # Playwright test artifacts
 tests/test-results/
+tests/playwright-report/
+tests/blob-report/

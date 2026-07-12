@@ -117,6 +117,9 @@ importers:
       '@types/supertest':
         specifier: ^6.0.3
         version: 6.0.3
+      '@workspace/test-fixtures':
+        specifier: workspace:*
+        version: link:../../lib/test-fixtures
       esbuild:
         specifier: 0.27.3
         version: 0.27.3
@@ -258,6 +261,9 @@ importers:
       '@workspace/api-client-react':
         specifier: workspace:*
         version: link:../../lib/api-client-react
+      '@workspace/test-fixtures':
+        specifier: workspace:*
+        version: link:../../lib/test-fixtures
       class-variance-authority:
         specifier: 'catalog:'
         version: 0.7.1
@@ -355,6 +361,15 @@ importers:
         specifier: 'catalog:'
         version: 3.25.76
 
+  lib/test-fixtures:
+    dependencies:
+      '@workspace/api-zod':
+        specifier: workspace:*
+        version: link:../api-zod
+      zod:
+        specifier: 'catalog:'
+        version: 3.25.76
+
   scripts:
     devDependencies:
       '@types/node':
@@ -369,6 +384,12 @@ importers:
       '@playwright/test':
         specifier: ^1.53.0
         version: 1.61.1
+      '@workspace/test-fixtures':
+        specifier: workspace:*
+        version: link:../lib/test-fixtures
+      typescript:
+        specifier: ~5.9.3
+        version: 5.9.3
 
 packages:
 

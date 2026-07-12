@@ -1,4 +1,5 @@
-import { describe, it, expect, vi, beforeEach } from "vitest";
+import { describe, it, expect, vi } from "vitest";
+import { orderRecord } from "@workspace/test-fixtures";
 import type { OrderRecord } from "../../src/lib/notion/schema.js";
 
 // The service talks to the repository by direct import, so mock that module to
@@ -22,10 +23,6 @@ import { NotFoundError } from "../../src/lib/errors.js";
 const mockFind = vi.mocked(findOrderByNumber);
 const mockCreate = vi.mocked(createOrder);
 
-beforeEach(() => {
-  vi.clearAllMocks();
-});
-
 describe("getOrderStatus", () => {
   it("throws NotFoundError when the order does not exist", async () => {
     mockFind.mockResolvedValue(null);
@@ -35,12 +32,11 @@ describe("getOrderStatus", () => {
   });
 
   it("returns the record unchanged when the current stage is in the list", async () => {
-    const record: OrderRecord = {
+    const record: OrderRecord = orderRecord({
       orderNumber: "000002",
-      orderName: "Ada – Custom Dress",
       currentStage: "Sewing",
       stages: ["Consultation", "Sewing", "Delivery"],
-    };
+    });
     mockFind.mockResolvedValue(record);
 
     const result = await getOrderStatus("000002");
@@ -50,12 +46,13 @@ describe("getOrderStatus", () => {
   it("appends the current stage when it is missing from the live list", async () => {
     // Guards against a stage option that was renamed/removed in Notion after
     // the order was set to it — the timeline must still show where it is.
-    mockFind.mockResolvedValue({
-      orderNumber: "000002",
-      orderName: "Ada – Custom Dress",
-      currentStage: "Archived",
-      stages: ["Consultation", "Sewing", "Delivery"],
-    });
+    mockFind.mockResolvedValue(
+      orderRecord({
+        orderNumber: "000002",
+        currentStage: "Archived",
+        stages: ["Consultation", "Sewing", "Delivery"],
+      }),
+    );
 
     const result = await getOrderStatus("000002");
     expect(result.stages).toEqual([

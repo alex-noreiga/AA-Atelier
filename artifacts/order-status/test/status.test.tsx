@@ -1,6 +1,8 @@
-import { describe, it, expect, vi, beforeEach } from "vitest";
+import { describe, it, expect, vi } from "vitest";
 import { render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
+import { orderRecord } from "@workspace/test-fixtures";
+import { stubHook } from "./support/mock-hook.js";
 
 // Control the data-fetching hook so we can drive each render state directly.
 vi.mock("@workspace/api-client-react", () => ({
@@ -18,11 +20,7 @@ function setHook(state: {
   isLoading?: boolean;
   error?: unknown;
 }) {
-  mockHook.mockReturnValue({
-    data: state.data,
-    isLoading: state.isLoading ?? false,
-    error: state.error ?? null,
-  } as any);
+  stubHook(mockHook, state);
 }
 
 async function submitLookup(orderNumber = "ORD-1") {
@@ -30,10 +28,6 @@ async function submitLookup(orderNumber = "ORD-1") {
   await userEvent.type(screen.getByTestId("input-order-number"), orderNumber);
   await userEvent.click(screen.getByTestId("button-lookup"));
 }
-
-beforeEach(() => {
-  vi.clearAllMocks();
-});
 
 describe("Status page render states", () => {
   it("shows the loading state after a lookup", async () => {
@@ -63,17 +57,8 @@ describe("Status page render states", () => {
 });
 
 describe("Status timeline completed/active/future computation", () => {
-  const stages = ["Consultation", "Sewing/Construction", "Delivery"];
-
   it("marks stages before the current one completed and the current one active", async () => {
-    setHook({
-      data: {
-        orderNumber: "ORD-1",
-        orderName: "Ada – Custom Dress",
-        currentStage: "Sewing/Construction",
-        stages,
-      },
-    });
+    setHook({ data: orderRecord({ currentStage: "Sewing/Construction" }) });
     await submitLookup();
 
     expect(screen.getByText("Order ORD-1")).toBeInTheDocument();
@@ -92,14 +77,7 @@ describe("Status timeline completed/active/future computation", () => {
   });
 
   it("marks nothing completed when the current stage is the first", async () => {
-    setHook({
-      data: {
-        orderNumber: "ORD-1",
-        orderName: "Ada – Custom Dress",
-        currentStage: "Consultation",
-        stages,
-      },
-    });
+    setHook({ data: orderRecord({ currentStage: "Consultation" }) });
     await submitLookup();
     expect(screen.queryByText("Completed")).not.toBeInTheDocument();
     expect(screen.getByTestId("row-stage-0")).toHaveTextContent(
@@ -108,14 +86,7 @@ describe("Status timeline completed/active/future computation", () => {
   });
 
   it("marks every earlier stage completed when the current stage is the last", async () => {
-    setHook({
-      data: {
-        orderNumber: "ORD-1",
-        orderName: "Ada – Custom Dress",
-        currentStage: "Delivery",
-        stages,
-      },
-    });
+    setHook({ data: orderRecord({ currentStage: "Delivery" }) });
     await submitLookup();
     expect(screen.getByTestId("row-stage-0")).toHaveTextContent("Completed");
     expect(screen.getByTestId("row-stage-1")).toHaveTextContent("Completed");
@@ -126,12 +97,10 @@ describe("Status timeline completed/active/future computation", () => {
 describe("Status reset", () => {
   it("returns to the lookup form after 'Check another order'", async () => {
     setHook({
-      data: {
-        orderNumber: "ORD-1",
-        orderName: "Ada – Custom Dress",
+      data: orderRecord({
         currentStage: "Delivery",
         stages: ["Consultation", "Delivery"],
-      },
+      }),
     });
     await submitLookup();
     expect(screen.getByTestId("status-success")).toBeInTheDocument();
