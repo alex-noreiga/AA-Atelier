@@ -28,8 +28,15 @@ import { cn } from "@/lib/utils";
 
 const ALL = "All";
 
+/** Notion's "Listed Price" is optional — an unpriced item invites an enquiry. */
 function formatPrice(price?: number): string {
-  return typeof price === "number" ? `$${price}` : "inquire for price";
+  if (typeof price !== "number") return "inquire for price";
+  // Whole dollars stay clean ("$22"); anything with cents shows both ("$22.50").
+  return price.toLocaleString("en-US", {
+    style: "currency",
+    currency: "USD",
+    minimumFractionDigits: Number.isInteger(price) ? 0 : 2,
+  });
 }
 
 function contactHref(variant: ProductVariant): string {

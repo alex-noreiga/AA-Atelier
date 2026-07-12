@@ -92,7 +92,19 @@ describe("Shop render states", () => {
     expect(screen.getByText("$22")).toBeInTheDocument();
   });
 
-  it("falls back to an inquire-for-price line when a variant has no price", () => {
+  it("shows cents only when the Listed Price has them", () => {
+    setHook({
+      products: [
+        product({ id: "p1", variants: [variant({ id: "v1", price: 22 })] }),
+        product({ id: "p2", variants: [variant({ id: "v2", price: 22.5 })] }),
+      ],
+    });
+    render(<Shop />);
+    expect(screen.getByText("$22")).toBeInTheDocument();
+    expect(screen.getByText("$22.50")).toBeInTheDocument();
+  });
+
+  it("falls back to an inquire-for-price line when Listed Price is empty in Notion", () => {
     setHook({ products: [product()] });
     render(<Shop />);
     expect(screen.getByText("inquire for price")).toBeInTheDocument();
