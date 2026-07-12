@@ -14,15 +14,23 @@ export const PRODUCT_TYPE_PROPERTY = "Item Type"; // select
 export const PRODUCT_PRICE_PROPERTY = "Listed Price"; // number
 export const PRODUCT_STATUS_PROPERTY = "Status"; // status
 export const PRODUCT_QTY_AVAILABLE_PROPERTY = "Quantity Available"; // formula (number)
-export const PRODUCT_NOTES_PROPERTY = "Notes"; // rich_text
+export const PRODUCT_NOTES_PROPERTY = "Listing Notes"; // rich_text — the shop card's description
 export const PRODUCT_PUBLISH_PROPERTY = "Show on website"; // checkbox
 export const PRODUCT_PHOTOS_PROPERTY = "Website Photos"; // files
 export const PRODUCT_GROUP_PROPERTY = "Website Group"; // select
+export const PRODUCT_SIZES_AVAILABLE_PROPERTY = "Sizes Available"; // multi_select
+export const PRODUCT_SIZES_OFFERED_PROPERTY = "Sizes Offered"; // multi_select
 
 // The single status value that counts as sellable. This is an intentional,
 // targeted business rule (not a hardcoded copy of the full option list, which
 // the atelier edits live) — a row must be "In Stock" to be marked available.
 export const STATUS_IN_STOCK = "In Stock";
+
+/** One size band the item is offered in, and whether it's currently in stock. */
+export interface SizeOptionRecord {
+  name: string;
+  available: boolean;
+}
 
 /** A single inventory row, mapped to the shape the shop cares about. */
 export interface VariantRecord {
@@ -32,6 +40,7 @@ export interface VariantRecord {
   price?: number;
   description?: string;
   photos: string[];
+  sizes: SizeOptionRecord[];
   quantityAvailable?: number;
   /** Item Type — used as the card category. */
   category: string;
@@ -47,6 +56,7 @@ export interface ProductVariantRecord {
   price?: number;
   description?: string;
   photos: string[];
+  sizes: SizeOptionRecord[];
   quantityAvailable?: number;
 }
 
@@ -78,6 +88,7 @@ type NotionPropertyValue =
   | { type: "title"; title: Array<{ plain_text: string }> }
   | { type: "rich_text"; rich_text: Array<{ plain_text: string }> }
   | { type: "select"; select: { name: string } | null }
+  | { type: "multi_select"; multi_select: Array<{ name: string }> }
   | { type: "status"; status: { name: string } | null }
   | { type: "number"; number: number | null }
   | { type: "checkbox"; checkbox: boolean }
@@ -93,6 +104,33 @@ export interface NotionInventoryQueryResponse {
   results: NotionInventoryPage[];
   has_more: boolean;
   next_cursor: string | null;
+}
+
+/** The database schema, as returned by `GET /v1/databases/{id}`. */
+export interface NotionInventoryDatabaseSchema {
+  properties: Record<
+    string,
+    {
+      type: string;
+      select?: { options: Array<{ name: string }> };
+    }
+  >;
+}
+
+/**
+ * The shop's category list — the live "Item Type" select options, in the order
+ * the atelier arranged them in Notion. Never hardcode this list: the team edits
+ * the options directly and expects the shop's filters to follow without a
+ * redeploy (the same rule as the order "Stage" options, see `schema.ts`).
+ */
+export function extractCategoryOptions(
+  schema: NotionInventoryDatabaseSchema,
+): string[] {
+  return (
+    schema.properties[PRODUCT_TYPE_PROPERTY]?.select?.options.map(
+      (option) => option.name,
+    ) ?? []
+  );
 }
 
 // --- Extractors (narrow by the runtime `type` discriminator) ---
@@ -142,6 +180,15 @@ function extractFormulaNumber(
   return typeof p.formula.number === "number" ? p.formula.number : null;
 }
 
+function extractMultiSelect(
+  page: NotionInventoryPage,
+  name: string,
+): string[] {
+  const p = page.properties[name];
+  if (p?.type !== "multi_select") return [];
+  return p.multi_select.map((option) => option.name);
+}
+
 function extractFiles(page: NotionInventoryPage, name: string): string[] {
   const p = page.properties[name];
   if (p?.type !== "files") return [];
@@ -168,6 +215,28 @@ export function computeVariantAvailability(
   return quantityAvailable > 0;
 }
 
+/**
+ * The size bands to show on a card: everything in "Sizes Offered", each flagged
+ * with whether it's also in "Sizes Available" (i.e. in stock). Offered-but-not-
+ * available means sold out, which is what lets the shop offer a per-size
+ * back-in-stock request.
+ *
+ * A size marked available but never offered is still shown (available) rather
+ * than dropped — the team ticking only "Sizes Available" is the likely slip, and
+ * silently hiding a size we *do* have in stock is the worse failure.
+ */
+export function computeSizeOptions(
+  offered: string[],
+  available: string[],
+): SizeOptionRecord[] {
+  const inStock = new Set(available);
+  const bands = [...offered];
+  for (const size of available) {
+    if (!offered.includes(size)) bands.push(size);
+  }
+  return bands.map((name) => ({ name, available: inStock.has(name) }));
+}
+
 /** Map a raw inventory page into a domain variant record. */
 export function extractVariant(page: NotionInventoryPage): VariantRecord {
   const status = extractStatus(page, PRODUCT_STATUS_PROPERTY);
@@ -185,6 +254,10 @@ export function extractVariant(page: NotionInventoryPage): VariantRecord {
     ...(price !== null ? { price } : {}),
     ...(description ? { description } : {}),
     photos: extractFiles(page, PRODUCT_PHOTOS_PROPERTY),
+    sizes: computeSizeOptions(
+      extractMultiSelect(page, PRODUCT_SIZES_OFFERED_PROPERTY),
+      extractMultiSelect(page, PRODUCT_SIZES_AVAILABLE_PROPERTY),
+    ),
     ...(quantityAvailable !== null ? { quantityAvailable } : {}),
     category: extractSelect(page, PRODUCT_TYPE_PROPERTY) ?? "",
     group: extractSelect(page, PRODUCT_GROUP_PROPERTY),

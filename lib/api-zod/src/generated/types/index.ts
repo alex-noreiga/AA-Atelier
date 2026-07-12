@@ -19,3 +19,4 @@ export * from './orderStatus';
 export * from './product';
 export * from './productList';
 export * from './productVariant';
+export * from './sizeOption';

@@ -107,9 +107,14 @@ export const GetProductsResponse = zod.object({
   "price": zod.number().optional(),
   "description": zod.string().optional(),
   "photos": zod.array(zod.string()),
+  "sizes": zod.array(zod.object({
+  "name": zod.string().describe('A size band, e.g. \"Adult M\".'),
+  "available": zod.boolean().describe('False when the size is offered but currently sold out.')
+})).describe('Every size band this item is offered in (\"Sizes Offered\" in Notion), each flagged with whether it is currently in stock (\"Sizes Available\"). A size that is offered but not available is sold out, and the shop offers a per-size back-in-stock request. Empty for one-size items (soakers, cloths).'),
   "quantityAvailable": zod.number().optional()
 }))
-}))
+})),
+  "categories": zod.array(zod.string()).describe('The shop\'s category filters, read live from the \"Item Type\" select options on the Notion inventory database and returned in the order the atelier arranged them. Editing the options in Notion changes this list without a redeploy, so clients must not hardcode it.')
 })
 
 
