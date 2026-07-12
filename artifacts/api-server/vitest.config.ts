@@ -28,5 +28,9 @@ export default defineConfig({
     environment: "node",
     include: ["test/**/*.test.ts"],
     setupFiles: ["./test/support/setup.ts"],
+    // Equivalent to a `beforeEach(() => vi.clearAllMocks())` in every file.
+    // Clears calls/results but keeps implementations and return values, which
+    // is what the suites relied on when they each did this by hand.
+    clearMocks: true,
   },
 });

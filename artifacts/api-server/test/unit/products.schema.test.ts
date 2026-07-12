@@ -45,7 +45,11 @@ describe("extractCategoryOptions", () => {
           "Item Type": {
             type: "select",
             select: {
-              options: [{ name: "Dress" }, { name: "Soaker" }, { name: "Other" }],
+              options: [
+                { name: "Dress" },
+                { name: "Soaker" },
+                { name: "Other" },
+              ],
             },
           },
         },
@@ -64,7 +68,10 @@ describe("extractVariant sizes", () => {
     const page = {
       id: "page-1",
       properties: {
-        "Item Name": { type: "title", title: [{ plain_text: "Keyhole Dress" }] },
+        "Item Name": {
+          type: "title",
+          title: [{ plain_text: "Keyhole Dress" }],
+        },
         "Sizes Offered": {
           type: "multi_select",
           multi_select: [{ name: "Adult S" }, { name: "Adult M" }],

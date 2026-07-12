@@ -4,9 +4,12 @@
   "private": true,
   "scripts": {
     "test": "playwright test",
-    "test:report": "playwright show-report"
+    "test:report": "playwright show-report",
+    "typecheck": "tsc -p tsconfig.json"
   },
   "devDependencies": {
-    "@playwright/test": "^1.53.0"
+    "@playwright/test": "^1.53.0",
+    "@workspace/test-fixtures": "workspace:*",
+    "typescript": "~5.9.3"
   }
 }

@@ -1,6 +1,7 @@
-import { describe, it, expect, vi, beforeEach } from "vitest";
+import { describe, it, expect, vi } from "vitest";
 import { render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
+import { stubHook } from "./support/mock-hook.js";
 
 // Control the data-fetching hook so we can drive each render state directly.
 vi.mock("@workspace/api-client-react", () => ({
@@ -40,18 +41,14 @@ function setHook(state: {
   isLoading?: boolean;
   isError?: boolean;
 }) {
-  mockHook.mockReturnValue({
+  stubHook(mockHook, {
     data: state.products
       ? { products: state.products, categories: state.categories ?? [] }
       : undefined,
-    isLoading: state.isLoading ?? false,
-    isError: state.isError ?? false,
-  } as any);
+    isLoading: state.isLoading,
+    isError: state.isError,
+  });
 }
-
-beforeEach(() => {
-  vi.clearAllMocks();
-});
 
 describe("Shop render states", () => {
   it("shows a spinner while inventory loads", () => {

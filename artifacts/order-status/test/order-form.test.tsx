@@ -1,6 +1,7 @@
-import { describe, it, expect, vi, beforeEach } from "vitest";
+import { describe, it, expect, vi } from "vitest";
 import { render, screen, fireEvent, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
+import { createOrderInput } from "@workspace/test-fixtures";
 
 // Capture what the create-order mutation is called with, without hitting the
 // network. `vi.hoisted` makes the spy available inside the hoisted vi.mock.
@@ -17,21 +18,24 @@ function byId(id: string): HTMLElement {
   return el;
 }
 
+/**
+ * Type the shared valid-order fixture into the form. The assertions below are
+ * written out by hand rather than derived from the fixture: this is a
+ * round-trip test (type a value, expect it in the payload), so the expectation
+ * has to be able to disagree with the input.
+ */
 async function fillRequired(user: ReturnType<typeof userEvent.setup>) {
-  await user.type(byId("fullName"), "Ada Lovelace");
-  await user.type(byId("email"), "ada@example.com");
-  await user.type(byId("phone"), "+1 555 000 1234");
+  const order = createOrderInput();
+  await user.type(byId("fullName"), order.fullName);
+  await user.type(byId("email"), order.email);
+  await user.type(byId("phone"), order.phone);
   await user.click(screen.getByRole("button", { name: "Email" }));
-  await user.type(byId("waist"), "28");
-  await user.type(byId("bust"), "36");
-  await user.type(byId("hips"), "38");
-  await user.type(byId("height"), "65");
-  await user.type(byId("bodyGirth"), "32");
+  await user.type(byId("waist"), String(order.waist));
+  await user.type(byId("bust"), String(order.bust));
+  await user.type(byId("hips"), String(order.hips));
+  await user.type(byId("height"), String(order.height));
+  await user.type(byId("bodyGirth"), String(order.bodyGirth));
 }
-
-beforeEach(() => {
-  vi.clearAllMocks();
-});
 
 describe("OrderForm submission mapping", () => {
   it("omits empty optional fields (description, neededBy) from the payload", async () => {

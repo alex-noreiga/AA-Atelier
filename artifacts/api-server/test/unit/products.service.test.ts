@@ -20,7 +20,10 @@ describe("visibleCategories", () => {
   it("drops an option the team defined but hasn't stocked", () => {
     // Otherwise the chip renders and clicking it shows an empty grid.
     expect(
-      visibleCategories(["Costume", "Dress", "Hair Accessory"], [card("Dress")]),
+      visibleCategories(
+        ["Costume", "Dress", "Hair Accessory"],
+        [card("Dress")],
+      ),
     ).toEqual(["Dress"]);
   });
 

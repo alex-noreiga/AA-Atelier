@@ -49,6 +49,7 @@ lib/
   api-spec/          OpenAPI spec (openapi.yaml) + orval codegen config — SOURCE OF TRUTH
   api-zod/           GENERATED zod schemas from the spec (server-side validation)
   api-client-react/  GENERATED react-query hooks + typed fetch client (frontend)
+  test-fixtures/     Shared domain fixtures for all three test suites
 scripts/             One-off tsx scripts + post-merge git hook
 tests/               Playwright end-to-end tests
 .agents/memory/      Durable notes on past decisions & gotchas — READ THESE
@@ -131,10 +132,10 @@ captured in `.agents/memory/`:
    `fetchLiveOrderStages()` (order **Stage**, in `notion/orders.repository.ts`)
    and `listCategories()` (shop **Item Type** → the shop's filter chips, in
    `notion/products.repository.ts`). Don't reintroduce a hardcoded constant for
-   either. (The per-stage *description text* in `lib/stage-descriptions.ts` is
+   either. (The per-stage _description text_ in `lib/stage-descriptions.ts` is
    cosmetic flavor only.)
 
-   The one deliberate exception is a *targeted business rule* naming specific
+   The one deliberate exception is a _targeted business rule_ naming specific
    option values — `STATUS_IN_STOCK` ("In Stock" is the only sellable status)
    and `SIZED_CATEGORIES` in `pages/shop.tsx` (only Dress / Ready to Wear show
    the size chart). These name values, not the list; rename those options in
@@ -195,20 +196,67 @@ pnpm test          # all unit + integration tests (Vitest, no network)
 pnpm test:e2e      # Playwright e2e (tests/e2e/*.spec.ts)
 ```
 
+**Layout convention.** Every package with Vitest tests keeps them in `test/` at
+the package root (never co-located in `src/`, so they stay out of the _build_
+graph), with `test/support/` holding the setup file plus package-local helpers.
+Shared domain fixtures come from `@workspace/test-fixtures` (see below).
+
+**`.test.ts` vs `.spec.ts` is load-bearing, not an accident.** Vitest files are
+`*.test.ts(x)`, Playwright files are `*.spec.ts`. The extension tracks the
+runner: Vitest's `include` glob can then never match an e2e spec, and
+Playwright's default `testMatch` (which _does_ match `.test.ts`) can never pick
+up a Vitest suite. Don't "unify" these.
+
+**Shared fixtures — `lib/test-fixtures`.** `@workspace/test-fixtures` holds the
+domain fixtures used by all three suites (`createOrderInput()`, `orderRecord()`,
+`contactInput()`, `STAGES`, `GENERIC_ERROR`), typed against the generated
+`@workspace/api-zod` contract so a fixture can't silently drift from the API.
+Two rules, both explained in that package's header comment:
+
+1. **A fixture is only ever a _stub input_** — a request body, a mocked repo
+   return, a stubbed hook result, a mocked HTTP response. Never the _expected
+   output_ of the mapper that consumes it, or a bug in the fixture cancels a bug
+   in the mapper. Where a test both stubs and asserts (e.g.
+   `orders.routes.test.ts`), the stub uses the fixture and the expectation stays
+   written out by hand.
+2. **Notion-wire-shaped fakes stay local** to
+   `artifacts/api-server/test/support/fake-notion.ts` (`orderPage()`,
+   `databaseSchemaWithStages()`). Those are raw Notion page JSON — a different
+   layer from the DTOs above, and keeping them apart is what lets `schema.test.ts`
+   take its input from one place and write its expectation in another.
+
+**Tests are typechecked.** Each package has a `tsconfig.test.json` (and `tests/`
+a `tsconfig.json`) that covers the test dir without adding it to the build/emit
+graph; `pnpm typecheck` runs them. `tests/tsconfig.json` also carries a `paths`
+mapping for `@workspace/test-fixtures` — Playwright won't transpile TypeScript
+inside `node_modules` and ignores Vite's `customConditions`, so mapping the
+package to source is what makes the import resolve from an e2e spec.
+
 **Backend unit / integration (Vitest).** The `@workspace/api-server` suite in
-`artifacts/api-server/test/` — pure-function tests for the Notion schema mapping
-and block builders, repository tests driving the **injected** `NotionClient` with
-a fake (`test/support/fake-notion.ts`), service-logic tests, and supertest route
-tests over the real Express stack with the Notion repository mocked. No server,
-no network, no Notion. A vitest-config plugin maps the source's `.js` import
-specifiers to the on-disk `.ts` files so tests run with no build step.
+`artifacts/api-server/test/` — `unit/` (pure-function tests for the Notion schema
+mapping and block builders, repository tests driving the **injected**
+`NotionClient` with a fake, service logic) and `integration/` (supertest route
+tests over the real Express stack with the Notion repository mocked). No server,
+no network, no Notion. `vitest run test/unit` is the fast loop. A vitest-config
+plugin maps the source's `.js` import specifiers to the on-disk `.ts` files so
+tests run with no build step.
 
 **Frontend component (Vitest + Testing Library).** The `@workspace/order-status`
 suite in `artifacts/order-status/test/` (jsdom) — the status-timeline
-completed/active/future logic and render states (the generated react-query hook
-is mocked to drive each state), and the order-form validation + submit-payload
-mapping (asserting empty optional fields are omitted). `pnpm test` runs both
-Vitest suites; each package also has its own `test` / `test:watch`.
+completed/active/future logic and render states, the shop's render states and
+category filter, and the order-form validation + submit-payload mapping
+(asserting empty optional fields are omitted). Each file mocks the generated
+react-query hook it needs (`vi.mock("@workspace/api-client-react")`) and drives
+the page through its states via `test/support/mock-hook.ts`. `pnpm test` runs
+both Vitest suites; each package also has its own `test` / `test:watch`.
+
+Both Vitest configs set `clearMocks: true`, so tests don't hand-roll a
+`beforeEach(() => vi.clearAllMocks())`.
+
+Note `pnpm test` filters on `./artifacts/**` rather than using `-r`: the
+`@workspace/tests` package's `test` script is `playwright test`, and `-r` would
+drag Playwright into the unit-test run (which CI executes _before_ it installs a
+browser).
 
 **End-to-end (Playwright).** By default the e2e run is self-contained: Playwright
 starts the frontend dev server itself (`webServer` in `playwright.config.ts`) and
@@ -277,20 +325,24 @@ and in the maintainer's env without edits.
 
 ## Quick reference — where things live
 
-| I want to…                              | Go to                                                     |
-|-----------------------------------------|-----------------------------------------------------------|
-| Change an API request/response shape    | `lib/api-spec/openapi.yaml` → run codegen                 |
-| Change order use-case logic             | `artifacts/api-server/src/services/orders.service.ts`     |
-| Change Notion I/O                       | `artifacts/api-server/src/lib/notion/*`                   |
-| Add/modify an API route                 | `artifacts/api-server/src/routes/*`                       |
-| Add request validation / error mapping  | `artifacts/api-server/src/middlewares/*`                  |
-| Change the status-lookup UI             | `artifacts/order-status/src/pages/status.tsx`             |
-| Change the order intake form            | `artifacts/order-status/src/pages/order-form.tsx`         |
-| Change the landing page                 | `artifacts/order-status/src/pages/home.tsx`               |
+| I want to…                              | Go to                                                                                                  |
+| --------------------------------------- | ------------------------------------------------------------------------------------------------------ |
+| Change an API request/response shape    | `lib/api-spec/openapi.yaml` → run codegen                                                              |
+| Change order use-case logic             | `artifacts/api-server/src/services/orders.service.ts`                                                  |
+| Change Notion I/O                       | `artifacts/api-server/src/lib/notion/*`                                                                |
+| Add/modify an API route                 | `artifacts/api-server/src/routes/*`                                                                    |
+| Add request validation / error mapping  | `artifacts/api-server/src/middlewares/*`                                                               |
+| Change the status-lookup UI             | `artifacts/order-status/src/pages/status.tsx`                                                          |
+| Change the order intake form            | `artifacts/order-status/src/pages/order-form.tsx`                                                      |
+| Change the landing page                 | `artifacts/order-status/src/pages/home.tsx`                                                            |
 | Change the shop (live Notion inventory) | `artifacts/order-status/src/pages/shop.tsx` + `services/products.service.ts` + `lib/notion/products.*` |
-| Add a page / route                      | new `src/pages/*.tsx` + `<Route>` in `src/App.tsx`        |
-| Add or rename a nav link                | `NAV_LINKS` in `artifacts/order-status/src/components/navbar.tsx` |
-| Add a shared UI component               | `artifacts/order-status/src/components/ui/`               |
-| Understand a past decision / gotcha     | `.agents/memory/`                                         |
-| Adjust the Vercel serverless entrypoint | `api/index.ts` + `vercel.json`                            |
+| Add a page / route                      | new `src/pages/*.tsx` + `<Route>` in `src/App.tsx`                                                     |
+| Add or rename a nav link                | `NAV_LINKS` in `artifacts/order-status/src/components/navbar.tsx`                                      |
+| Add a shared UI component               | `artifacts/order-status/src/components/ui/`                                                            |
+| Add/change a shared test fixture        | `lib/test-fixtures/src/index.ts` (read its guardrail first)                                            |
+| Understand a past decision / gotcha     | `.agents/memory/`                                                                                      |
+| Adjust the Vercel serverless entrypoint | `api/index.ts` + `vercel.json`                                                                         |
+
+```
+
 ```
