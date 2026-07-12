@@ -24,6 +24,8 @@ import type {
   HealthStatus,
   NewContactRequest,
   NewContactResponse,
+  NewNotifyRequest,
+  NewNotifyResponse,
   NewOrderRequest,
   NewOrderResponse,
   OrderNotFound,
@@ -354,6 +356,77 @@ export const useCreateContactMessage = <TError = ErrorType<ErrorEnvelope>,
         TContext
       > => {
       return useMutation(getCreateContactMessageMutationOptions(options));
+    }
+
+export const getCreateBackInStockRequestUrl = () => {
+
+
+
+
+  return `/api/notify`
+}
+
+/**
+ * Saves a customer's request to be told when a sold-out shop item is back in stock, to the Notion back-in-stock database.
+ * @summary Request a back-in-stock notification
+ */
+export const createBackInStockRequest = async (newNotifyRequest: NewNotifyRequest, options?: RequestInit): Promise<NewNotifyResponse> => {
+
+  return customFetch<NewNotifyResponse>(getCreateBackInStockRequestUrl(),
+  {
+    ...options,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    body: JSON.stringify(newNotifyRequest)
+  }
+);}
+
+
+
+
+export const getCreateBackInStockRequestMutationOptions = <TError = ErrorType<ErrorEnvelope>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof createBackInStockRequest>>, TError,{data: BodyType<NewNotifyRequest>}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof createBackInStockRequest>>, TError,{data: BodyType<NewNotifyRequest>}, TContext> => {
+
+const mutationKey = ['createBackInStockRequest'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof createBackInStockRequest>>, {data: BodyType<NewNotifyRequest>}> = (props) => {
+          const {data} = props ?? {};
+
+          return  createBackInStockRequest(data,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type CreateBackInStockRequestMutationResult = NonNullable<Awaited<ReturnType<typeof createBackInStockRequest>>>
+    export type CreateBackInStockRequestMutationBody = BodyType<NewNotifyRequest>
+    export type CreateBackInStockRequestMutationError = ErrorType<ErrorEnvelope>
+
+    /**
+ * @summary Request a back-in-stock notification
+ */
+export const useCreateBackInStockRequest = <TError = ErrorType<ErrorEnvelope>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof createBackInStockRequest>>, TError,{data: BodyType<NewNotifyRequest>}, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof createBackInStockRequest>>,
+        TError,
+        {data: BodyType<NewNotifyRequest>},
+        TContext
+      > => {
+      return useMutation(getCreateBackInStockRequestMutationOptions(options));
     }
 
 export const getGetProductsUrl = () => {

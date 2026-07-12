@@ -1,28 +1,21 @@
-import { describe, it, expect, vi, beforeEach } from "vitest";
+import { describe, it, expect, vi } from "vitest";
 
 vi.mock("../../src/lib/notion/contact.repository.js", () => ({
   createContactMessage: vi.fn(),
 }));
 
 import request from "supertest";
+import { contactInput, GENERIC_ERROR } from "@workspace/test-fixtures";
 import app from "../../src/app.js";
 import { createContactMessage } from "../../src/lib/notion/contact.repository.js";
 
 const mockCreate = vi.mocked(createContactMessage);
 
-beforeEach(() => {
-  vi.clearAllMocks();
-});
-
 describe("POST /api/contact", () => {
   it("returns 201 { success: true } for a valid message", async () => {
     mockCreate.mockResolvedValue(undefined);
 
-    const res = await request(app).post("/api/contact").send({
-      name: "Grace Hopper",
-      email: "grace@example.com",
-      message: "Do you ship internationally?",
-    });
+    const res = await request(app).post("/api/contact").send(contactInput());
 
     expect(res.status).toBe(201);
     expect(res.body).toEqual({ success: true });
@@ -44,15 +37,11 @@ describe("POST /api/contact", () => {
       new Error("NOTION_CONTACT_DATABASE_ID is not configured"),
     );
 
-    const res = await request(app).post("/api/contact").send({
-      name: "Grace Hopper",
-      email: "grace@example.com",
-      message: "Hello",
-    });
+    const res = await request(app)
+      .post("/api/contact")
+      .send(contactInput({ message: "Hello" }));
 
     expect(res.status).toBe(500);
-    expect(res.body).toEqual({
-      error: "Something went wrong. Please try again later.",
-    });
+    expect(res.body).toEqual({ error: GENERIC_ERROR });
   });
 });

@@ -10,6 +10,8 @@ export * from './errorEnvelope';
 export * from './healthStatus';
 export * from './newContactRequest';
 export * from './newContactResponse';
+export * from './newNotifyRequest';
+export * from './newNotifyResponse';
 export * from './newOrderRequest';
 export * from './newOrderRequestMeasurementUnit';
 export * from './newOrderRequestPreferredContact';

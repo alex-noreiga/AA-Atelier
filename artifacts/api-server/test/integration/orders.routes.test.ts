@@ -1,4 +1,4 @@
-import { describe, it, expect, vi, beforeEach } from "vitest";
+import { describe, it, expect, vi } from "vitest";
 
 // Mock the Notion repository so the HTTP stack (routing → validation → service →
 // response schema parse → error handler) runs end-to-end without the network.
@@ -8,6 +8,7 @@ vi.mock("../../src/lib/notion/orders.repository.js", () => ({
 }));
 
 import request from "supertest";
+import { createOrderInput, orderRecord } from "@workspace/test-fixtures";
 import app from "../../src/app.js";
 import {
   findOrderByNumber,
@@ -17,31 +18,20 @@ import {
 const mockFind = vi.mocked(findOrderByNumber);
 const mockCreate = vi.mocked(createOrder);
 
-const validBody = {
-  fullName: "Ada Lovelace",
-  email: "ada@example.com",
-  phone: "+1 555 000 1234",
-  preferredContact: "email",
-  measurementUnit: "inches",
-  waist: 28,
-  bust: 36,
-  hips: 38,
-  height: 65,
-  bodyGirth: 32,
-};
-
-beforeEach(() => {
-  vi.clearAllMocks();
-});
+const validBody = createOrderInput();
 
 describe("GET /api/orders/:orderNumber", () => {
   it("returns 200 with the order status payload", async () => {
-    mockFind.mockResolvedValue({
-      orderNumber: "000002",
-      orderName: "Ada – Custom Dress",
-      currentStage: "Sewing",
-      stages: ["Consultation", "Sewing", "Delivery"],
-    });
+    // Stub input only — the expectation below stays written out by hand so the
+    // route is asserted against an independent literal, not against the very
+    // fixture it was fed (see the guardrail in @workspace/test-fixtures).
+    mockFind.mockResolvedValue(
+      orderRecord({
+        orderNumber: "000002",
+        currentStage: "Sewing",
+        stages: ["Consultation", "Sewing", "Delivery"],
+      }),
+    );
 
     const res = await request(app).get("/api/orders/000002");
 

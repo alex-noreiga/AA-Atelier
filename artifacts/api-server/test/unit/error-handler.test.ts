@@ -57,6 +57,10 @@ describe("errorHandler", () => {
     const res = makeRes();
     errorHandler(new Error("secret db string"), req, res, vi.fn());
     expect(res.statusCode).toBe(500);
+    // Deliberately spelled out rather than imported from
+    // @workspace/test-fixtures' GENERIC_ERROR: this test owns the user-facing
+    // copy. Asserting against the shared constant would let someone change the
+    // string in both places and keep every suite green.
     expect(res.body).toEqual({
       error: "Something went wrong. Please try again later.",
     });

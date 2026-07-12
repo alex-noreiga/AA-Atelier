@@ -1,4 +1,5 @@
 import { test, expect } from "@playwright/test";
+import { orderRecord } from "@workspace/test-fixtures";
 import { mockOrderStatus } from "./support/mock-api";
 
 test.describe("Order status lookup", () => {
@@ -6,12 +7,7 @@ test.describe("Order status lookup", () => {
     page,
   }) => {
     await mockOrderStatus(page, {
-      body: {
-        orderNumber: "ORD-ABC-1",
-        orderName: "Ada – Custom Dress",
-        currentStage: "Sewing/Construction",
-        stages: ["Consultation", "Sewing/Construction", "Delivery"],
-      },
+      body: orderRecord({ orderNumber: "ORD-ABC-1" }),
     });
 
     await page.goto("/shop/status");
@@ -64,12 +60,11 @@ test.describe("Order status lookup", () => {
     page,
   }) => {
     const { requestedOrderNumbers } = await mockOrderStatus(page, {
-      body: {
+      body: orderRecord({
         orderNumber: "ORD-ABC-1",
-        orderName: "Ada – Custom Dress",
         currentStage: "Consultation",
         stages: ["Consultation", "Delivery"],
-      },
+      }),
     });
 
     await page.goto("/shop/status");

@@ -16,6 +16,8 @@ tags:
     description: Customer contact messages
   - name: products
     description: Shop inventory (ready-to-ship items)
+  - name: notify
+    description: Back-in-stock notification requests
 paths:
   /health:
     get:
@@ -105,6 +107,39 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/NewContactResponse"
+        "400":
+          description: Validation error
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorEnvelope"
+        "500":
+          description: Server error
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorEnvelope"
+  /notify:
+    post:
+      operationId: createBackInStockRequest
+      tags: [notify]
+      summary: Request a back-in-stock notification
+      description: >-
+        Saves a customer's request to be told when a sold-out shop item is back
+        in stock, to the Notion back-in-stock database.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/NewNotifyRequest"
+      responses:
+        "201":
+          description: Request received
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/NewNotifyResponse"
         "400":
           description: Validation error
           content:
@@ -247,6 +282,31 @@ components:
           type: string
           minLength: 1
     NewContactResponse:
+      type: object
+      required:
+        - success
+      properties:
+        success:
+          type: boolean
+    NewNotifyRequest:
+      type: object
+      required:
+        - email
+        - item
+      properties:
+        email:
+          type: string
+          format: email
+        item:
+          type: string
+          minLength: 1
+          description: The sold-out variant's name, e.g. "Bow Fleece Soaker — Black".
+        size:
+          type: string
+          description: >-
+            Set only when the customer asked about one specific sold-out size
+            band; absent when the whole variant is sold out.
+    NewNotifyResponse:
       type: object
       required:
         - success

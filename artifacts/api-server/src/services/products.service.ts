@@ -31,7 +31,7 @@ function toVariantRecord(variant: VariantRecord): ProductVariantRecord {
  * unit-tested directly. Rows sharing a `Website Group` merge into one card
  * (first-seen order preserved); ungrouped rows become standalone cards.
  */
-export function groupVariants(variants: VariantRecord[]): ProductRecord[] {
+function groupVariants(variants: VariantRecord[]): ProductRecord[] {
   const cards: ProductRecord[] = [];
   // Grouped cards, keyed by the group value; preserves first-seen order.
   const groups = new Map<string, ProductRecord>();

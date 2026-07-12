@@ -8,7 +8,7 @@
 const NOTION_VERSION = "2022-06-28";
 const NOTION_BASE_URL = "https://api.notion.com";
 
-export interface NotionClientConfig {
+interface NotionClientConfig {
   apiKey: string;
   databaseId: string;
 }
@@ -18,7 +18,7 @@ export interface NotionClient {
   fetch(path: string, init?: RequestInit): Promise<Response>;
 }
 
-export function createNotionClient(config: NotionClientConfig): NotionClient {
+function createNotionClient(config: NotionClientConfig): NotionClient {
   const { apiKey, databaseId } = config;
 
   return {

@@ -1,16 +1,34 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import { render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
+import { stubHook } from "./support/mock-hook.js";
 
 // Control the data-fetching hook so we can drive each render state directly.
+// The notify dialog's mutation hook is mocked here too — the shop imports it
+// transitively, and this factory replaces the whole module.
 vi.mock("@workspace/api-client-react", () => ({
   useGetProducts: vi.fn(),
+  useCreateBackInStockRequest: vi.fn(),
 }));
 
-import { useGetProducts } from "@workspace/api-client-react";
+import {
+  useGetProducts,
+  useCreateBackInStockRequest,
+} from "@workspace/api-client-react";
 import Shop from "@/pages/shop";
 
 const mockHook = vi.mocked(useGetProducts);
+const mockNotify = vi.mocked(useCreateBackInStockRequest);
+
+/** The notify mutation, stubbed to capture what the dialog submits. */
+const notifyMutate = vi.fn();
+beforeEach(() => {
+  notifyMutate.mockReset();
+  mockNotify.mockReturnValue({
+    mutate: notifyMutate,
+    isPending: false,
+  } as never);
+});
 
 function variant(overrides: Record<string, unknown> = {}) {
   return {
@@ -40,18 +58,14 @@ function setHook(state: {
   isLoading?: boolean;
   isError?: boolean;
 }) {
-  mockHook.mockReturnValue({
+  stubHook(mockHook, {
     data: state.products
       ? { products: state.products, categories: state.categories ?? [] }
       : undefined,
-    isLoading: state.isLoading ?? false,
-    isError: state.isError ?? false,
-  } as any);
+    isLoading: state.isLoading,
+    isError: state.isError,
+  });
 }
-
-beforeEach(() => {
-  vi.clearAllMocks();
-});
 
 describe("Shop render states", () => {
   it("shows a spinner while inventory loads", () => {
@@ -205,7 +219,7 @@ describe("Shop sizes", () => {
     expect(screen.getAllByTestId("size-v1-adult-s").length).toBeGreaterThan(0);
   });
 
-  it("offers a per-size back-in-stock request for a sold-out size", () => {
+  it("offers a per-size back-in-stock request for a sold-out size", async () => {
     setHook({
       products: [
         dress([
@@ -215,15 +229,26 @@ describe("Shop sizes", () => {
       ],
     });
     render(<Shop />);
-    // The in-stock size is an inert label, not a notify link.
+    // The in-stock size is an inert label, not a notify trigger.
     expect(
       screen.queryByTestId("size-notify-v1-adult-xs"),
     ).not.toBeInTheDocument();
-    // The sold-out size links to a request naming that exact size.
-    expect(screen.getAllByTestId("size-notify-v1-adult-s")[0]).toHaveAttribute(
-      "href",
-      "/contact?item=Keyhole%20Test%20Dress%20%E2%80%94%20Adult%20S&notify=1",
+
+    // The sold-out size opens a request naming that exact size.
+    await userEvent.click(screen.getAllByTestId("size-notify-v1-adult-s")[0]);
+    await userEvent.type(
+      screen.getByTestId("notify-email"),
+      "grace@example.com",
     );
+    await userEvent.click(screen.getByTestId("notify-submit"));
+
+    expect(notifyMutate).toHaveBeenCalledWith({
+      data: {
+        email: "grace@example.com",
+        item: "Keyhole Test Dress",
+        size: "Adult S",
+      },
+    });
   });
 
   it("shows the size chart on garments but not on accessories", () => {
@@ -249,15 +274,70 @@ describe("Shop contact CTAs", () => {
     );
   });
 
-  it("offers a back-in-stock request for a sold-out item", () => {
+  it("takes an email for a sold-out item instead of sending them to the contact form", async () => {
     setHook({
       products: [product({ variants: [variant({ available: false })] })],
     });
     render(<Shop />);
     expect(screen.getByText("Sold Out")).toBeInTheDocument();
-    expect(screen.getByTestId("cta-notify-v1")).toHaveAttribute(
-      "href",
-      "/contact?item=Bow%20Fleece%20Soaker&notify=1",
+
+    // The dialog only appears once the notify CTA is clicked.
+    expect(screen.queryByTestId("notify-dialog")).not.toBeInTheDocument();
+    await userEvent.click(screen.getByTestId("cta-notify-v1"));
+    expect(screen.getByTestId("notify-dialog")).toBeInTheDocument();
+
+    await userEvent.type(
+      screen.getByTestId("notify-email"),
+      "grace@example.com",
     );
+    await userEvent.click(screen.getByTestId("notify-submit"));
+
+    // No size — the whole variant is sold out.
+    expect(notifyMutate).toHaveBeenCalledWith({
+      data: { email: "grace@example.com", item: "Bow Fleece Soaker" },
+    });
+  });
+
+  it("rejects a malformed email without calling the API", async () => {
+    setHook({
+      products: [product({ variants: [variant({ available: false })] })],
+    });
+    render(<Shop />);
+    await userEvent.click(screen.getByTestId("cta-notify-v1"));
+    await userEvent.type(screen.getByTestId("notify-email"), "not-an-email");
+    await userEvent.click(screen.getByTestId("notify-submit"));
+
+    expect(
+      await screen.findByText("Please enter a valid email address"),
+    ).toBeInTheDocument();
+    expect(notifyMutate).not.toHaveBeenCalled();
+  });
+
+  it("confirms the request once it is saved", async () => {
+    // The mutation reports success by invoking its onSuccess callback.
+    mockNotify.mockImplementation((options) => {
+      return {
+        mutate: () =>
+          options?.mutation?.onSuccess?.(
+            { success: true },
+            { data: { email: "grace@example.com", item: "Bow Fleece Soaker" } },
+            undefined,
+            undefined as never,
+          ),
+        isPending: false,
+      } as never;
+    });
+    setHook({
+      products: [product({ variants: [variant({ available: false })] })],
+    });
+    render(<Shop />);
+    await userEvent.click(screen.getByTestId("cta-notify-v1"));
+    await userEvent.type(
+      screen.getByTestId("notify-email"),
+      "grace@example.com",
+    );
+    await userEvent.click(screen.getByTestId("notify-submit"));
+
+    expect(await screen.findByTestId("notify-success")).toBeInTheDocument();
   });
 });

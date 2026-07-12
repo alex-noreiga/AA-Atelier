@@ -1,14 +1,11 @@
 import { describe, it, expect } from "vitest";
+import { contactInput } from "@workspace/test-fixtures";
 import {
   buildContactProperties,
   type CreateContactInput,
 } from "../../src/lib/notion/contact.blocks.js";
 
-const baseContact: CreateContactInput = {
-  name: "Grace Hopper",
-  email: "grace@example.com",
-  message: "Do you ship internationally?",
-};
+const baseContact: CreateContactInput = contactInput();
 
 describe("buildContactProperties", () => {
   it("maps each field to the correct live Notion property type", () => {

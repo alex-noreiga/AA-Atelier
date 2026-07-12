@@ -61,3 +61,31 @@ export async function mockCreateContact(
     await json(route, opts.status ?? 201, opts.body);
   });
 }
+
+/** Mock `GET /api/products` — the shop's live inventory. */
+export async function mockProducts(
+  page: Page,
+  opts: { status?: number; body: unknown },
+): Promise<void> {
+  await page.route("**/api/products", async (route) => {
+    if (route.request().method() !== "GET") return route.fallback();
+    await json(route, opts.status ?? 200, opts.body);
+  });
+}
+
+/**
+ * Mock `POST /api/notify` (the notify dialog's submit). Records each request
+ * body so a test can assert the item/size the shop attached to the email.
+ */
+export async function mockCreateNotify(
+  page: Page,
+  opts: { status?: number; body: unknown },
+): Promise<{ requests: unknown[] }> {
+  const requests: unknown[] = [];
+  await page.route("**/api/notify", async (route) => {
+    if (route.request().method() !== "POST") return route.fallback();
+    requests.push(route.request().postDataJSON());
+    await json(route, opts.status ?? 201, opts.body);
+  });
+  return { requests };
+}

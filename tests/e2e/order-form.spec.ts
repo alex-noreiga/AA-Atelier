@@ -1,16 +1,26 @@
 import { test, expect } from "@playwright/test";
+import { createOrderInput, GENERIC_ERROR } from "@workspace/test-fixtures";
 import { mockCreateOrder } from "./support/mock-api";
 
+// Measurements come from the shared fixture, but the *identity* stays
+// Playwright-specific on purpose: the opt-in live-Notion test below submits
+// this same form against the real database, and the atelier team relies on
+// those rows being recognisable as test writes.
+const E2E_ORDER = createOrderInput({
+  fullName: "Playwright Test User",
+  email: "playwright@example.com",
+});
+
 async function fillValidOrder(page: import("@playwright/test").Page) {
-  await page.locator("#fullName").fill("Playwright Test User");
-  await page.locator("#email").fill("playwright@example.com");
-  await page.locator("#phone").fill("+1 555 000 1234");
+  await page.locator("#fullName").fill(E2E_ORDER.fullName);
+  await page.locator("#email").fill(E2E_ORDER.email);
+  await page.locator("#phone").fill(E2E_ORDER.phone);
   await page.getByRole("button", { name: "Email" }).click();
-  await page.locator("#waist").fill("28");
-  await page.locator("#bust").fill("36");
-  await page.locator("#hips").fill("38");
-  await page.locator("#height").fill("65");
-  await page.locator("#bodyGirth").fill("32");
+  await page.locator("#waist").fill(String(E2E_ORDER.waist));
+  await page.locator("#bust").fill(String(E2E_ORDER.bust));
+  await page.locator("#hips").fill(String(E2E_ORDER.hips));
+  await page.locator("#height").fill(String(E2E_ORDER.height));
+  await page.locator("#bodyGirth").fill(String(E2E_ORDER.bodyGirth));
   await page.locator("#description").fill("A-line silhouette, ivory chiffon");
 }
 
@@ -43,7 +53,7 @@ test.describe("Order form", () => {
   }) => {
     await mockCreateOrder(page, {
       status: 500,
-      body: { error: "Something went wrong. Please try again later." },
+      body: { error: GENERIC_ERROR },
     });
 
     await page.goto("/order");

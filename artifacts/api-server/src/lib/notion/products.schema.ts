@@ -9,25 +9,25 @@
 // share a `Website Group` value are grouped into a single shop card by the
 // service layer; each row becomes a selectable variant.
 
-export const PRODUCT_NAME_PROPERTY = "Item Name"; // title
-export const PRODUCT_TYPE_PROPERTY = "Item Type"; // select
-export const PRODUCT_PRICE_PROPERTY = "Listed Price"; // number
-export const PRODUCT_STATUS_PROPERTY = "Status"; // status
-export const PRODUCT_QTY_AVAILABLE_PROPERTY = "Quantity Available"; // formula (number)
-export const PRODUCT_NOTES_PROPERTY = "Listing Notes"; // rich_text — the shop card's description
+const PRODUCT_NAME_PROPERTY = "Item Name"; // title
+const PRODUCT_TYPE_PROPERTY = "Item Type"; // select
+const PRODUCT_PRICE_PROPERTY = "Listed Price"; // number
+const PRODUCT_STATUS_PROPERTY = "Status"; // status
+const PRODUCT_QTY_AVAILABLE_PROPERTY = "Quantity Available"; // formula (number)
+const PRODUCT_NOTES_PROPERTY = "Listing Notes"; // rich_text — the shop card's description
 export const PRODUCT_PUBLISH_PROPERTY = "Show on website"; // checkbox
-export const PRODUCT_PHOTOS_PROPERTY = "Website Photos"; // files
-export const PRODUCT_GROUP_PROPERTY = "Website Group"; // select
-export const PRODUCT_SIZES_AVAILABLE_PROPERTY = "Sizes Available"; // multi_select
-export const PRODUCT_SIZES_OFFERED_PROPERTY = "Sizes Offered"; // multi_select
+const PRODUCT_PHOTOS_PROPERTY = "Website Photos"; // files
+const PRODUCT_GROUP_PROPERTY = "Website Group"; // select
+const PRODUCT_SIZES_AVAILABLE_PROPERTY = "Sizes Available"; // multi_select
+const PRODUCT_SIZES_OFFERED_PROPERTY = "Sizes Offered"; // multi_select
 
 // The single status value that counts as sellable. This is an intentional,
 // targeted business rule (not a hardcoded copy of the full option list, which
 // the atelier edits live) — a row must be "In Stock" to be marked available.
-export const STATUS_IN_STOCK = "In Stock";
+const STATUS_IN_STOCK = "In Stock";
 
 /** One size band the item is offered in, and whether it's currently in stock. */
-export interface SizeOptionRecord {
+interface SizeOptionRecord {
   name: string;
   available: boolean;
 }
@@ -206,7 +206,7 @@ export function extractIsPublished(page: NotionInventoryPage): boolean {
  * A row is available only when its status is "In Stock" and it isn't at zero
  * quantity. A null quantity (common for one-off items) is treated as available.
  */
-export function computeVariantAvailability(
+function computeVariantAvailability(
   status: string | null,
   quantityAvailable: number | null,
 ): boolean {
