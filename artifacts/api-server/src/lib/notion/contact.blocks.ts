@@ -8,13 +8,13 @@ import type { z } from "zod";
 import type { CreateContactMessageBody } from "@workspace/api-zod";
 
 // Live-schema property names (a Notion rename is a one-line change here).
-export const CONTACT_SUBJECT_PROPERTY = "Message (subject)"; // title
-export const CONTACT_NAME_PROPERTY = "Customer name"; // rich_text
-export const CONTACT_EMAIL_PROPERTY = "Email"; // email
-export const CONTACT_PHONE_PROPERTY = "Phone"; // phone_number
-export const CONTACT_MESSAGE_PROPERTY = "Message"; // rich_text
-export const CONTACT_STAGE_PROPERTY = "Stage"; // select
-export const CONTACT_DEFAULT_STAGE = "New";
+const CONTACT_SUBJECT_PROPERTY = "Message (subject)"; // title
+const CONTACT_NAME_PROPERTY = "Customer name"; // rich_text
+const CONTACT_EMAIL_PROPERTY = "Email"; // email
+const CONTACT_PHONE_PROPERTY = "Phone"; // phone_number
+const CONTACT_MESSAGE_PROPERTY = "Message"; // rich_text
+const CONTACT_STAGE_PROPERTY = "Stage"; // select
+const CONTACT_DEFAULT_STAGE = "New";
 
 /** Validated contact-message payload, derived from the OpenAPI contract. */
 export type CreateContactInput = z.infer<typeof CreateContactMessageBody>;

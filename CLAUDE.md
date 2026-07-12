@@ -27,8 +27,9 @@ The app is deployed on **Vercel** (migrated off Replit — see
 ## Repository layout
 
 This is a **pnpm workspace monorepo**. Package globs are defined in
-`pnpm-workspace.yaml`: `artifacts/*`, `lib/*`, `scripts`, `tests`. Every
-workspace package is named `@workspace/<name>`.
+`pnpm-workspace.yaml`: `artifacts/*`, `lib/*`, `tests`. Every
+workspace package is named `@workspace/<name>`. (`scripts/` is plain bash
+tooling, deliberately *not* a workspace package.)
 
 ```
 artifacts/
@@ -37,7 +38,8 @@ artifacts/
     src/pages/       one component per route (home landing, status, order-form,
                      services, about, shop, contact, not-found)
     src/components/  navbar.tsx (global nav), page-shell.tsx (page wrapper),
-                     ui/ (shadcn primitives)
+                     ui/ (shadcn primitives — pruned to only the 12 actually
+                     used; re-add others with `npx shadcn add <name>`)
   api-server/        Backend (Express 5) — talks to Notion, bundled by esbuild
     src/routes/      thin HTTP handlers (validate → service → respond)
     src/services/    HTTP-agnostic order use-cases
@@ -50,7 +52,9 @@ lib/
   api-zod/           GENERATED zod schemas from the spec (server-side validation)
   api-client-react/  GENERATED react-query hooks + typed fetch client (frontend)
   test-fixtures/     Shared domain fixtures for all three test suites
-scripts/             One-off tsx scripts + post-merge git hook
+scripts/             Bash tooling: cleanup.sh (disk reclaim, `pnpm clean`),
+                     install-hooks.sh (`pnpm hooks:install`), pre-push +
+                     post-merge git hooks
 tests/               Playwright end-to-end tests
 .agents/memory/      Durable notes on past decisions & gotchas — READ THESE
 vercel.json          Vercel build + routing config
@@ -307,7 +311,20 @@ and in the maintainer's env without edits.
   removed from the spec and workspace. If upload is ever reintroduced, add it
   to `openapi.yaml` first and regenerate.
 - **No relational database.** Orders live in Notion; there is no Postgres/Drizzle
-  package. (An empty `lib/db` scaffold used to exist but was removed.)
+  package. (An empty `lib/db` scaffold used to exist but was removed, along with
+  its stale `drizzle-orm` catalog entry.)
+- **Dependencies are pruned — keep them that way.** The repo shipped an unpruned
+  shadcn/Replit scaffold: 43 of 55 `ui/` components and 32 frontend deps were dead
+  weight (`react-icons` alone was 85M). They were deleted. When you add a shadcn
+  component, add only the one you use; don't bulk-import the set. A few deps look
+  unused but are **load-bearing** — don't "clean" them up: `pino-pretty` (a *string*
+  transport target in `logger.ts`), `thread-stream` (version pin for
+  `esbuild-plugin-pino`), `@testing-library/dom` (required peer;
+  `autoInstallPeers: false`), `tw-animate-css` / `@tailwindcss/typography` (pulled in
+  by `src/index.css`, not by JS), and root `prettier` (orval's codegen calls it).
+- **Reclaiming disk.** `pnpm clean` removes regenerable build output; `pnpm clean:deep`
+  also prunes stale Playwright browser builds (the shared cache never evicts old ones
+  and runs ~540M).
 
 ## Git & deployment
 
