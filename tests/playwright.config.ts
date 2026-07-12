@@ -25,6 +25,11 @@ export default defineConfig({
   fullyParallel: false,
   retries: 1,
   timeout: 30_000,
+  // On CI also emit an HTML report (uploaded as a workflow artifact); `list`
+  // keeps the console output readable.
+  reporter: process.env.CI
+    ? [["list"], ["html", { outputFolder: "playwright-report", open: "never" }]]
+    : "list",
   use: {
     baseURL: BASE_URL,
     trace: "on-first-retry",

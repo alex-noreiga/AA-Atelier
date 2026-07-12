@@ -50,7 +50,11 @@ test.describe("Order form", () => {
     await fillValidOrder(page);
     await page.getByRole("button", { name: "Submit Order" }).click();
 
-    await expect(page.getByText("Submission failed")).toBeVisible();
+    // `exact` avoids matching sonner's aria-live announcement span, which
+    // concatenates the toast title and description into one text node.
+    await expect(
+      page.getByText("Submission failed", { exact: true }),
+    ).toBeVisible();
     // Stays on the form; no success screen.
     await expect(
       page.getByRole("heading", { name: "Order Received" }),

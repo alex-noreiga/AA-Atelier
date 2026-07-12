@@ -56,7 +56,11 @@ test.describe("Contact form", () => {
     await page.locator("#message").fill("Hello there");
     await page.getByRole("button", { name: "Send Message" }).click();
 
-    await expect(page.getByText("Message failed to send")).toBeVisible();
+    // `exact` avoids matching sonner's aria-live announcement span, which
+    // concatenates the toast title and description into one text node.
+    await expect(
+      page.getByText("Message failed to send", { exact: true }),
+    ).toBeVisible();
     await expect(
       page.getByRole("heading", { name: "Message Sent" }),
     ).toHaveCount(0);
