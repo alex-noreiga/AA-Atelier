@@ -181,18 +181,24 @@ typecheck. Config highlights: `strict` null checks on, `module: esnext`,
 ### Tests
 
 ```bash
-pnpm test          # api-server unit + integration tests (Vitest, no network)
+pnpm test          # all unit + integration tests (Vitest, no network)
 pnpm test:e2e      # Playwright e2e (tests/e2e/*.spec.ts)
 ```
 
-**Unit / integration (Vitest).** `pnpm test` runs the `@workspace/api-server`
-suite in `artifacts/api-server/test/` — pure-function tests for the Notion
-schema mapping and block builders, repository tests driving the **injected**
-`NotionClient` with a fake (`test/support/fake-notion.ts`), service-logic tests,
-and supertest route tests over the real Express stack with the Notion repository
-mocked. No server, no network, no Notion. A vitest-config plugin maps the
-source's `.js` import specifiers to the on-disk `.ts` files so tests run with no
-build step.
+**Backend unit / integration (Vitest).** The `@workspace/api-server` suite in
+`artifacts/api-server/test/` — pure-function tests for the Notion schema mapping
+and block builders, repository tests driving the **injected** `NotionClient` with
+a fake (`test/support/fake-notion.ts`), service-logic tests, and supertest route
+tests over the real Express stack with the Notion repository mocked. No server,
+no network, no Notion. A vitest-config plugin maps the source's `.js` import
+specifiers to the on-disk `.ts` files so tests run with no build step.
+
+**Frontend component (Vitest + Testing Library).** The `@workspace/order-status`
+suite in `artifacts/order-status/test/` (jsdom) — the status-timeline
+completed/active/future logic and render states (the generated react-query hook
+is mocked to drive each state), and the order-form validation + submit-payload
+mapping (asserting empty optional fields are omitted). `pnpm test` runs both
+Vitest suites; each package also has its own `test` / `test:watch`.
 
 **End-to-end (Playwright).** By default the e2e run is self-contained: Playwright
 starts the frontend dev server itself (`webServer` in `playwright.config.ts`) and
@@ -202,6 +208,13 @@ so no api-server or Notion is required and the runs are deterministic. Set
 won't spawn its own server). `order-form.spec.ts` also carries an **opt-in**
 live-Notion smoke test guarded by `E2E_LIVE_NOTION=1` — that's the only path that
 writes to the real Notion database.
+
+**CI.** `.github/workflows/ci.yml` runs on every pull request and push to `main`:
+install → `pnpm typecheck` → `pnpm test` (both Vitest suites) → `pnpm test:e2e`
+(Playwright installs its own Chromium; the mocked specs need no backend). The
+Playwright config prefers `PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH`, then a NixOS
+system Chromium, then Playwright's managed browser — so it runs in CI, locally,
+and in the maintainer's env without edits.
 
 ## Conventions & gotchas
 
