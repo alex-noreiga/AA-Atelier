@@ -36,7 +36,8 @@ export default function Contact() {
   const { toast } = useToast();
 
   // When arriving from the Shop via `/contact?item=<name>`, prefill the message.
-  // `item` is the live inventory item's name, straight from Notion.
+  // `item` is the live inventory item's name, straight from Notion — and for a
+  // sold-out size, the name with that size appended ("Keyhole Dress — Adult S").
   // `notify=1` switches to a back-in-stock request.
   const search = useSearch();
   const params = new URLSearchParams(search);

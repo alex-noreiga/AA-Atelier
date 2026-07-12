@@ -68,7 +68,7 @@ Express app (artifacts/api-server)  ──►  Notion REST API (orders database)
   ├─ POST /api/orders              → creates a Notion page, returns order number
   ├─ POST /api/contact             → saves a contact message to the Notion
   │                                  "Website Contact Messages" database
-  └─ GET  /api/products            → shop inventory (published in-stock items)
+  └─ GET  /api/products            → shop inventory + the live category list,
                                      from the Notion "inventory" database
 ```
 
@@ -124,13 +124,21 @@ captured in `.agents/memory/`:
    Before writing any Notion filter, inspect the actual `type` of the property
    on a sample page. See `notion-status-filters.md`.
 
-2. **Never hardcode the stage/status option list.** The atelier team edits the
-   "Stage" status options directly in Notion and expects changes to appear
-   without a redeploy. `fetchLiveOrderStages()` (in `notion/orders.repository.ts`)
-   reads the options live from `GET /v1/databases/{id}` with a 60s in-memory TTL
-   cache, and falls back to the cached list on error. Don't reintroduce a
-   hardcoded stage constant. (The per-stage *description text* in
-   `lib/stage-descriptions.ts` is cosmetic flavor only.)
+2. **Never hardcode a Notion option list.** The atelier team edits select/status
+   options directly in Notion and expects changes to appear without a redeploy.
+   Two places read their options live from `GET /v1/databases/{id}` with a 60s
+   in-memory TTL cache, falling back to the cached list on error:
+   `fetchLiveOrderStages()` (order **Stage**, in `notion/orders.repository.ts`)
+   and `listCategories()` (shop **Item Type** → the shop's filter chips, in
+   `notion/products.repository.ts`). Don't reintroduce a hardcoded constant for
+   either. (The per-stage *description text* in `lib/stage-descriptions.ts` is
+   cosmetic flavor only.)
+
+   The one deliberate exception is a *targeted business rule* naming specific
+   option values — `STATUS_IN_STOCK` ("In Stock" is the only sellable status)
+   and `SIZED_CATEGORIES` in `pages/shop.tsx` (only Dress / Ready to Wear show
+   the size chart). These name values, not the list; rename those options in
+   Notion and you must update them here too.
 
 Auth: the server reads `NOTION_API_KEY` and `NOTION_ORDERS_DATABASE_ID` from
 environment variables (via `createNotionClient` in `notion/client.ts`, read at

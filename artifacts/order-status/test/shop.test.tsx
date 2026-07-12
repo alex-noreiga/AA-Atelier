@@ -18,6 +18,7 @@ function variant(overrides: Record<string, unknown> = {}) {
     name: "Bow Fleece Soaker",
     available: true,
     photos: [],
+    sizes: [],
     ...overrides,
   };
 }
@@ -32,13 +33,17 @@ function product(overrides: Record<string, unknown> = {}) {
   };
 }
 
+/** The server sends the live Item Type options; the page prepends "All". */
 function setHook(state: {
   products?: unknown[];
+  categories?: string[];
   isLoading?: boolean;
   isError?: boolean;
 }) {
   mockHook.mockReturnValue({
-    data: state.products ? { products: state.products } : undefined,
+    data: state.products
+      ? { products: state.products, categories: state.categories ?? [] }
+      : undefined,
     isLoading: state.isLoading ?? false,
     isError: state.isError ?? false,
   } as any);
@@ -71,7 +76,9 @@ describe("Shop render states", () => {
   });
 
   it("renders a card per product", () => {
-    setHook({ products: [product(), product({ id: "p2", title: "Scrunchie" })] });
+    setHook({
+      products: [product(), product({ id: "p2", title: "Scrunchie" })],
+    });
     render(<Shop />);
     expect(screen.getByTestId("product-p1")).toBeInTheDocument();
     expect(screen.getByTestId("product-p2")).toBeInTheDocument();
@@ -112,23 +119,27 @@ describe("Shop render states", () => {
 });
 
 describe("Shop category filter", () => {
-  it("derives its chips from the categories present in the inventory", () => {
+  it("renders the live Item Type options the server sent, in Notion's order", () => {
     setHook({
       products: [
         product({ id: "p1", category: "Soaker" }),
         product({ id: "p2", category: "Dress" }),
       ],
+      // Notion's ordering — deliberately NOT alphabetical.
+      categories: ["Soaker", "Dress"],
     });
     render(<Shop />);
-    expect(screen.getByTestId("filter-all")).toBeInTheDocument();
-    expect(screen.getByTestId("filter-dress")).toBeInTheDocument();
-    expect(screen.getByTestId("filter-soaker")).toBeInTheDocument();
-    // Nothing invented — "Accessories" was a curated-catalogue category.
-    expect(screen.queryByTestId("filter-accessories")).not.toBeInTheDocument();
+    const chips = screen
+      .getAllByTestId(/^filter-/)
+      .map((chip) => chip.textContent);
+    expect(chips).toEqual(["All", "Soaker", "Dress"]);
   });
 
-  it("hides the filter bar when everything shares one category", () => {
-    setHook({ products: [product({ id: "p1" }), product({ id: "p2" })] });
+  it("hides the filter bar when the server sends a single category", () => {
+    setHook({
+      products: [product({ id: "p1" }), product({ id: "p2" })],
+      categories: ["Soaker"],
+    });
     render(<Shop />);
     expect(screen.queryByTestId("filter-all")).not.toBeInTheDocument();
   });
@@ -139,6 +150,7 @@ describe("Shop category filter", () => {
         product({ id: "p1", category: "Soaker" }),
         product({ id: "p2", category: "Dress" }),
       ],
+      categories: ["Dress", "Soaker"],
     });
     render(<Shop />);
     await userEvent.click(screen.getByTestId("filter-dress"));
@@ -146,17 +158,84 @@ describe("Shop category filter", () => {
     expect(screen.queryByTestId("product-p1")).not.toBeInTheDocument();
   });
 
-  it("only surfaces uncategorised items under All", () => {
+  it("falls back to All when the active category disappears from a refetch", async () => {
     setHook({
       products: [
-        product({ id: "p1", category: "" }),
+        product({ id: "p1", category: "Soaker" }),
         product({ id: "p2", category: "Dress" }),
+      ],
+      categories: ["Dress", "Soaker"],
+    });
+    const { rerender } = render(<Shop />);
+    await userEvent.click(screen.getByTestId("filter-dress"));
+
+    // The team retires the "Dress" option in Notion.
+    setHook({
+      products: [product({ id: "p1", category: "Soaker" })],
+      categories: ["Soaker"],
+    });
+    rerender(<Shop />);
+
+    // Not stranded on a dead chip showing an empty grid.
+    expect(screen.getByTestId("product-p1")).toBeInTheDocument();
+    expect(screen.queryByTestId("shop-empty")).not.toBeInTheDocument();
+  });
+});
+
+describe("Shop sizes", () => {
+  const dress = (sizes: Array<{ name: string; available: boolean }>) =>
+    product({
+      id: "p1",
+      title: "Keyhole Test Dress",
+      category: "Dress",
+      variants: [variant({ id: "v1", name: "Keyhole Test Dress", sizes })],
+    });
+
+  it("lists the sizes the item is offered in", () => {
+    setHook({
+      products: [
+        dress([
+          { name: "Adult XS", available: true },
+          { name: "Adult S", available: true },
+        ]),
       ],
     });
     render(<Shop />);
-    // An empty Item Type must not produce an orphan chip.
-    expect(screen.queryByTestId("filter-")).not.toBeInTheDocument();
-    expect(screen.getByTestId("product-p1")).toBeInTheDocument();
+    expect(screen.getAllByTestId("size-v1-adult-xs").length).toBeGreaterThan(0);
+    expect(screen.getAllByTestId("size-v1-adult-s").length).toBeGreaterThan(0);
+  });
+
+  it("offers a per-size back-in-stock request for a sold-out size", () => {
+    setHook({
+      products: [
+        dress([
+          { name: "Adult XS", available: true },
+          { name: "Adult S", available: false },
+        ]),
+      ],
+    });
+    render(<Shop />);
+    // The in-stock size is an inert label, not a notify link.
+    expect(
+      screen.queryByTestId("size-notify-v1-adult-xs"),
+    ).not.toBeInTheDocument();
+    // The sold-out size links to a request naming that exact size.
+    expect(screen.getAllByTestId("size-notify-v1-adult-s")[0]).toHaveAttribute(
+      "href",
+      "/contact?item=Keyhole%20Test%20Dress%20%E2%80%94%20Adult%20S&notify=1",
+    );
+  });
+
+  it("shows the size chart on garments but not on accessories", () => {
+    setHook({ products: [dress([{ name: "Adult S", available: true }])] });
+    const { unmount } = render(<Shop />);
+    expect(screen.getAllByTestId("link-size-chart").length).toBeGreaterThan(0);
+    unmount();
+
+    // A soaker has no size bands and no size guide — it doesn't apply.
+    setHook({ products: [product()] });
+    render(<Shop />);
+    expect(screen.queryByTestId("link-size-chart")).not.toBeInTheDocument();
   });
 });
 

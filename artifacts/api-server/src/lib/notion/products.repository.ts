@@ -13,8 +13,10 @@
 import { getInventoryNotionClient, type NotionClient } from "./client.js";
 import {
   PRODUCT_PUBLISH_PROPERTY,
+  extractCategoryOptions,
   extractIsPublished,
   extractVariant,
+  type NotionInventoryDatabaseSchema,
   type NotionInventoryQueryResponse,
   type VariantRecord,
 } from "./products.schema.js";
@@ -22,6 +24,7 @@ import {
 const PRODUCTS_CACHE_TTL_MS = 60_000;
 let cachedVariants: { variants: VariantRecord[]; fetchedAt: number } | null =
   null;
+let cachedCategories: { categories: string[]; fetchedAt: number } | null = null;
 
 function assertConfigured(client: NotionClient): void {
   if (!client.databaseId) {
@@ -68,6 +71,46 @@ async function queryAllPublishedPages(
   } while (cursor);
 
   return variants;
+}
+
+/**
+ * The live "Item Type" select options, in the order the atelier arranged them.
+ * Read from the database schema (not derived from the rows) so a newly added
+ * option is a real, empty category rather than an invisible one — and so the
+ * team's ordering is preserved. Cached for {@link PRODUCTS_CACHE_TTL_MS};
+ * falls back to the cached list on error, and to an empty list if we've never
+ * fetched it (a missing filter bar must not fail the whole shop).
+ */
+export async function listCategories(
+  client: NotionClient = getInventoryNotionClient(),
+): Promise<string[]> {
+  assertConfigured(client);
+
+  if (
+    cachedCategories &&
+    Date.now() - cachedCategories.fetchedAt < PRODUCTS_CACHE_TTL_MS
+  ) {
+    return cachedCategories.categories;
+  }
+
+  try {
+    const response = await client.fetch(`/v1/databases/${client.databaseId}`);
+    if (!response.ok) {
+      throw new Error(
+        `Notion database schema fetch failed with status ${response.status}`,
+      );
+    }
+
+    const schema = (await response.json()) as NotionInventoryDatabaseSchema;
+    const categories = extractCategoryOptions(schema);
+    cachedCategories = { categories, fetchedAt: Date.now() };
+    return categories;
+  } catch (error) {
+    if (cachedCategories) {
+      return cachedCategories.categories;
+    }
+    throw error;
+  }
 }
 
 /**

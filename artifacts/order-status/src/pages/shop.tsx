@@ -5,6 +5,7 @@ import {
   useGetProducts,
   type Product,
   type ProductVariant,
+  type SizeOption,
 } from "@workspace/api-client-react";
 import { PageShell } from "@/components/page-shell";
 import { SizeChartDialog } from "@/components/size-chart-dialog";
@@ -28,6 +29,18 @@ import { cn } from "@/lib/utils";
 
 const ALL = "All";
 
+// The size guide describes body measurements for garments, so it's only shown
+// on garment cards — it means nothing for soakers, cloths, or hair accessories.
+// A targeted business rule keyed to Notion's "Item Type" values (like the
+// server's STATUS_IN_STOCK), NOT a hardcoded copy of the category list: the
+// full list is still read live from Notion. Rename these options in Notion and
+// the size chart stops appearing, so keep them in sync.
+const SIZED_CATEGORIES = ["Dress", "Ready to Wear"];
+
+function hasSizeChart(product: Product): boolean {
+  return SIZED_CATEGORIES.includes(product.category);
+}
+
 /** Notion's "Listed Price" is optional — an unpriced item invites an enquiry. */
 function formatPrice(price?: number): string {
   if (typeof price !== "number") return "inquire for price";
@@ -44,21 +57,53 @@ function contactHref(variant: ProductVariant): string {
   return variant.available ? base : `${base}&notify=1`;
 }
 
-function testId(value: string): string {
-  return value.toLowerCase().replace(/\s+/g, "-");
+/** A sold-out size gets its own back-in-stock request, naming that exact size. */
+function sizeNotifyHref(variant: ProductVariant, size: SizeOption): string {
+  const item = `${variant.name} — ${size.name}`;
+  return `/contact?item=${encodeURIComponent(item)}&notify=1`;
 }
 
 /**
- * Filter chips, derived from the categories actually present in the inventory.
- * The atelier team edits the "Item Type" select in Notion and new values must
- * appear without a redeploy — so never hardcode this list. Items with no
- * category are reachable only under "All".
+ * The size bands an item is offered in. In-stock sizes are inert labels; a
+ * sold-out size is a link that prefills a back-in-stock request for that size.
  */
-function categoriesOf(products: Product[]): string[] {
-  const found = new Set(
-    products.map((product) => product.category).filter(Boolean),
+function SizeChips({ variant }: { variant: ProductVariant }) {
+  if (variant.sizes.length === 0) return null;
+  return (
+    <div className="mt-4">
+      <p className="text-xs uppercase tracking-widest text-muted-foreground mb-2">
+        Sizes
+      </p>
+      <div className="flex flex-wrap gap-2">
+        {variant.sizes.map((size) =>
+          size.available ? (
+            <span
+              key={size.name}
+              className="rounded-full border border-border/60 px-3 py-1 text-xs text-muted-foreground"
+              data-testid={`size-${variant.id}-${size.name.toLowerCase().replace(/\s+/g, "-")}`}
+            >
+              {size.name}
+            </span>
+          ) : (
+            <Link
+              key={size.name}
+              to={sizeNotifyHref(variant, size)}
+              title={`${size.name} is sold out — get notified when it's back`}
+              className="group inline-flex items-center gap-1.5 rounded-full border border-border/40 px-3 py-1 text-xs text-muted-foreground/60 transition-colors hover:border-primary hover:text-primary"
+              data-testid={`size-notify-${variant.id}-${size.name.toLowerCase().replace(/\s+/g, "-")}`}
+            >
+              <span className="line-through">{size.name}</span>
+              <Bell className="w-3 h-3 shrink-0" />
+            </Link>
+          ),
+        )}
+      </div>
+    </div>
   );
-  return [ALL, ...[...found].sort((a, b) => a.localeCompare(b))];
+}
+
+function testId(value: string): string {
+  return value.toLowerCase().replace(/\s+/g, "-");
 }
 
 /** A single photo, the whole gallery, or a monogram placeholder. */
@@ -232,6 +277,9 @@ function ProductCard({ product }: { product: Product }) {
                 onSelect={setSelected}
               />
 
+              <SizeChips variant={variant} />
+              {hasSizeChart(product) && <SizeChartDialog className="mt-3" />}
+
               {!variant.available && (
                 <p className="mt-4 text-sm text-muted-foreground">
                   <span className="text-foreground">{variant.name}</span> is
@@ -263,6 +311,10 @@ function ProductCard({ product }: { product: Product }) {
             {variant.description}
           </p>
         )}
+
+        <SizeChips variant={variant} />
+        {hasSizeChart(product) && <SizeChartDialog className="mt-3" />}
+
         <div className="mt-6 pt-2">
           <CtaLink variant={variant} />
         </div>
@@ -281,7 +333,10 @@ export default function Shop() {
   const { data, isLoading, isError } = useGetProducts();
 
   const products = data?.products ?? [];
-  const categories = categoriesOf(products);
+  // The server reads these live from the "Item Type" options in Notion and drops
+  // any with no stock — so editing the options there changes the chips here with
+  // no redeploy. Never hardcode them.
+  const categories = [ALL, ...(data?.categories ?? [])];
   // A category can vanish between refetches (the team retires an Item Type);
   // fall back to "All" rather than stranding the user on a dead chip.
   const active = categories.includes(filter) ? filter : ALL;
@@ -306,7 +361,6 @@ export default function Shop() {
             <span className="italic text-primary">ready to ship</span>, alongside
             the small skate accessories we keep on hand.
           </p>
-          <SizeChartDialog className="mt-8" />
         </div>
 
         {/* Category filter — only meaningful once there's more than one category */}

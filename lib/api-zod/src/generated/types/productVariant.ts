@@ -5,6 +5,7 @@
  * API specification
  * OpenAPI spec version: 0.1.0
  */
+import type { SizeOption } from './sizeOption';
 
 export interface ProductVariant {
   id: string;
@@ -13,5 +14,7 @@ export interface ProductVariant {
   price?: number;
   description?: string;
   photos: string[];
+  /** Every size band this item is offered in ("Sizes Offered" in Notion), each flagged with whether it is currently in stock ("Sizes Available"). A size that is offered but not available is sold out, and the shop offers a per-size back-in-stock request. Empty for one-size items (soakers, cloths). */
+  sizes: SizeOption[];
   quantityAvailable?: number;
 }

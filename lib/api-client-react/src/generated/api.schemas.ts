@@ -76,6 +76,13 @@ export interface NewContactResponse {
   success: boolean;
 }
 
+export interface SizeOption {
+  /** A size band, e.g. "Adult M". */
+  name: string;
+  /** False when the size is offered but currently sold out. */
+  available: boolean;
+}
+
 export interface ProductVariant {
   id: string;
   name: string;
@@ -83,6 +90,8 @@ export interface ProductVariant {
   price?: number;
   description?: string;
   photos: string[];
+  /** Every size band this item is offered in ("Sizes Offered" in Notion), each flagged with whether it is currently in stock ("Sizes Available"). A size that is offered but not available is sold out, and the shop offers a per-size back-in-stock request. Empty for one-size items (soakers, cloths). */
+  sizes: SizeOption[];
   quantityAvailable?: number;
 }
 
@@ -95,6 +104,8 @@ export interface Product {
 
 export interface ProductList {
   products: Product[];
+  /** The shop's category filters, read live from the "Item Type" select options on the Notion inventory database and returned in the order the atelier arranged them. Editing the options in Notion changes this list without a redeploy, so clients must not hardcode it. */
+  categories: string[];
 }
 
 export interface ErrorEnvelope {
