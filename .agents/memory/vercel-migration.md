@@ -24,3 +24,7 @@ Object storage (GCS) also used the Replit sidecar for credentials and signed URL
 
 - `NOTION_API_KEY` — from https://www.notion.so/my-integrations
 - `NOTION_ORDERS_DATABASE_ID` — the Notion DB ID (was `72ab2818-7cc8-4479-a685-41ebc4c368e8`)
+- `NOTION_CONTACT_DATABASE_ID` — the "Website Contact Messages" DB the `/contact` form writes to
+- `NOTION_INVENTORY_DATABASE_ID` — the finished-goods "inventory" DB the shop's `/products` endpoint reads
+
+The Notion integration must be shared with each of these databases (Notion → database → ••• → Connections) or queries return 404.

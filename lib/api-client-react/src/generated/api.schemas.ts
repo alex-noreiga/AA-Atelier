@@ -76,6 +76,27 @@ export interface NewContactResponse {
   success: boolean;
 }
 
+export interface ProductVariant {
+  id: string;
+  name: string;
+  available: boolean;
+  price?: number;
+  description?: string;
+  photos: string[];
+  quantityAvailable?: number;
+}
+
+export interface Product {
+  id: string;
+  title: string;
+  category: string;
+  variants: ProductVariant[];
+}
+
+export interface ProductList {
+  products: Product[];
+}
+
 export interface ErrorEnvelope {
   error: string;
 }

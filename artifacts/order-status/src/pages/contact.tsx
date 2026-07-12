@@ -36,14 +36,24 @@ export default function Contact() {
   const [submitted, setSubmitted] = useState(false);
   const { toast } = useToast();
 
-  // When arriving from the Shop via `/contact?item=<slug>`, prefill the message
-  // with a reservation enquiry so the customer only has to add their size.
+  // When arriving from the Shop via `/contact?item=<slug-or-name>`, prefill the
+  // message. Curated items resolve by slug; live inventory items pass their name
+  // through directly. `notify=1` switches to a back-in-stock request.
   const search = useSearch();
-  const itemSlug = new URLSearchParams(search).get("item");
-  const itemName = itemSlug ? getProductName(itemSlug) : undefined;
-  const defaultMessage = itemName
-    ? `I'd like to reserve: ${itemName}.\nMy size: `
-    : "";
+  const params = new URLSearchParams(search);
+  const itemParam = params.get("item");
+  const isNotify = params.get("notify") === "1";
+  // Curated catalogue items arrive as a slug that resolves to a name; live
+  // inventory items pass their name through directly.
+  const curatedName = itemParam ? getProductName(itemParam) : undefined;
+  const itemName = curatedName ?? itemParam ?? undefined;
+  const defaultMessage = !itemName
+    ? ""
+    : isNotify
+      ? `Please let me know when "${itemName}" is back in stock. You can reach me at this email.`
+      : curatedName
+        ? `I'd like to reserve: ${itemName}.\nMy size: `
+        : `I'd like to enquire about: ${itemName}.`;
 
   const createMessage = useCreateContactMessage({
     mutation: {

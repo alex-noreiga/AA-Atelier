@@ -66,8 +66,10 @@ Express app (artifacts/api-server)  ──►  Notion REST API (orders database)
   ├─ GET  /api/healthz             → { status: "ok" }
   ├─ GET  /api/orders/:orderNumber → order status + stage list
   ├─ POST /api/orders              → creates a Notion page, returns order number
-  └─ POST /api/contact             → saves a contact message to the Notion
-                                     "Website Contact Messages" database
+  ├─ POST /api/contact             → saves a contact message to the Notion
+  │                                  "Website Contact Messages" database
+  └─ GET  /api/products            → shop inventory (published in-stock items)
+                                     from the Notion "inventory" database
 ```
 
 - **Locally:** the Vite dev server proxies `/api` to the Express server on
@@ -234,7 +236,9 @@ exercises the live Notion write path.
   output `artifacts/order-status/dist/public`.
 - **Required Vercel env vars:** `NOTION_API_KEY`, `NOTION_ORDERS_DATABASE_ID`,
   `NOTION_CONTACT_DATABASE_ID` (the "Website Contact Messages" database that the
-  `/contact` form writes to).
+  `/contact` form writes to), and `NOTION_INVENTORY_DATABASE_ID` (the finished-
+  goods "inventory" database the shop's `/products` endpoint reads). The Notion
+  integration must be shared with each database or queries 404.
 
 ## Quick reference — where things live
 
@@ -248,6 +252,8 @@ exercises the live Notion write path.
 | Change the status-lookup UI             | `artifacts/order-status/src/pages/status.tsx`             |
 | Change the order intake form            | `artifacts/order-status/src/pages/order-form.tsx`         |
 | Change the landing page                 | `artifacts/order-status/src/pages/home.tsx`               |
+| Change the shop (curated catalogue)     | `artifacts/order-status/src/pages/shop.tsx`               |
+| Change the live inventory shop section  | `artifacts/order-status/src/components/in-stock-section.tsx` + `services/products.service.ts` + `lib/notion/products.*` |
 | Add a page / route                      | new `src/pages/*.tsx` + `<Route>` in `src/App.tsx`        |
 | Add or rename a nav link                | `NAV_LINKS` in `artifacts/order-status/src/components/navbar.tsx` |
 | Add a shared UI component               | `artifacts/order-status/src/components/ui/`               |
