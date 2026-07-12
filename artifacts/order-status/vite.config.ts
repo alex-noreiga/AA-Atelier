@@ -22,6 +22,20 @@ export default defineConfig({
   build: {
     outDir: path.resolve(import.meta.dirname, "dist/public"),
     emptyOutDir: true,
+    rollupOptions: {
+      output: {
+        // Split large, rarely-changing vendor code into its own chunks so the
+        // main app chunk stays small and browsers can cache vendors across
+        // deploys. Keeps the build under the 500 kB per-chunk warning.
+        manualChunks(id) {
+          if (!id.includes("node_modules")) return;
+          if (/[\\/]node_modules[\\/](react|react-dom|scheduler)[\\/]/.test(id))
+            return "react-vendor";
+          if (id.includes("@radix-ui")) return "radix-vendor";
+          return "vendor";
+        },
+      },
+    },
   },
   server: {
     port,
