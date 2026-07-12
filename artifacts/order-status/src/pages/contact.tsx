@@ -2,8 +2,9 @@ import { useState } from "react";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
-import { Link } from "wouter";
+import { Link, useSearch } from "wouter";
 import { useCreateContactMessage } from "@workspace/api-client-react";
+import { getProductName } from "@/pages/shop";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -35,6 +36,15 @@ export default function Contact() {
   const [submitted, setSubmitted] = useState(false);
   const { toast } = useToast();
 
+  // When arriving from the Shop via `/contact?item=<slug>`, prefill the message
+  // with a reservation enquiry so the customer only has to add their size.
+  const search = useSearch();
+  const itemSlug = new URLSearchParams(search).get("item");
+  const itemName = itemSlug ? getProductName(itemSlug) : undefined;
+  const defaultMessage = itemName
+    ? `I'd like to reserve: ${itemName}.\nMy size: `
+    : "";
+
   const createMessage = useCreateContactMessage({
     mutation: {
       onSuccess: () => setSubmitted(true),
@@ -58,6 +68,7 @@ export default function Contact() {
     formState: { errors },
   } = useForm<FormValues>({
     resolver: zodResolver(formSchema),
+    defaultValues: { message: defaultMessage },
   });
 
   const submitting = createMessage.isPending;
