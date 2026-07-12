@@ -15,7 +15,7 @@ import type { CreateOrderBody } from "@workspace/api-zod";
 
 export const ORDER_NAME_PROPERTY = "Order Name";
 export const ORDER_NUMBER_PROPERTY = "Order Number";
-export const STAGE_PROPERTY_NAME = "Stage";
+const STAGE_PROPERTY_NAME = "Stage";
 
 /** Validated new-order payload, derived from the OpenAPI contract. */
 export type CreateOrderInput = z.infer<typeof CreateOrderBody>;

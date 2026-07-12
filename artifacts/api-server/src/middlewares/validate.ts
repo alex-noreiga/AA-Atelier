@@ -6,7 +6,7 @@
 import type { RequestHandler } from "express";
 import type { ZodTypeAny } from "zod";
 
-export interface ValidateSchemas {
+interface ValidateSchemas {
   params?: ZodTypeAny;
   body?: ZodTypeAny;
 }
