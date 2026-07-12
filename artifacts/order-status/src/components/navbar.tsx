@@ -1,6 +1,12 @@
 import { useState } from "react";
 import { Link, useLocation } from "wouter";
-import { Menu, X } from "lucide-react";
+import { ChevronDown, Menu, X } from "lucide-react";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
 import {
   Sheet,
   SheetContent,
@@ -8,17 +14,37 @@ import {
   SheetClose,
 } from "@/components/ui/sheet";
 
-const NAV_LINKS = [
+type NavLink = {
+  to: string;
+  label: string;
+  children?: readonly { to: string; label: string }[];
+};
+
+const NAV_LINKS: readonly NavLink[] = [
   { to: "/", label: "Home" },
   { to: "/about", label: "About" },
-  { to: "/services", label: "Services" },
+  {
+    to: "/services",
+    label: "Services",
+    children: [
+      { to: "/services", label: "Overview" },
+      { to: "/order", label: "Place an Order" },
+      { to: "/shop/status", label: "Track Your Order" },
+    ],
+  },
   { to: "/shop", label: "Shop" },
   { to: "/contact", label: "Contact" },
-] as const;
+];
 
-function isActive(current: string, to: string) {
-  if (to === "/") return current === "/";
-  return current === to || current.startsWith(to + "/");
+const testId = (label: string) => label.toLowerCase().replace(/\s+/g, "-");
+
+// Exact match only: /shop/status belongs to the Services group, so a prefix
+// match on /shop would light up the wrong link.
+function isActive(current: string, link: NavLink) {
+  return (
+    current === link.to ||
+    (link.children?.some((c) => c.to === current) ?? false)
+  );
 }
 
 export default function Navbar() {
@@ -39,25 +65,72 @@ export default function Navbar() {
 
         {/* Desktop links */}
         <div className="hidden md:flex items-center gap-6">
-          {NAV_LINKS.map((link) => (
-            <Link
-              key={link.to}
-              to={link.to}
-              className={`text-xs tracking-[0.15em] uppercase transition-colors relative group ${
-                isActive(location, link.to)
-                  ? "text-primary"
-                  : "text-muted-foreground hover:text-foreground"
-              }`}
-              data-testid={`nav-${link.label.toLowerCase().replace(/\s+/g, "-")}`}
-            >
-              {link.label}
+          {NAV_LINKS.map((link) => {
+            const active = isActive(location, link);
+            const linkClass = `text-xs tracking-[0.15em] uppercase transition-colors relative group ${
+              active
+                ? "text-primary"
+                : "text-muted-foreground hover:text-foreground"
+            }`;
+            const underline = (
               <span
                 className={`absolute -bottom-1 left-0 h-[1px] bg-primary transition-all duration-300 ${
-                  isActive(location, link.to) ? "w-full" : "w-0 group-hover:w-full"
+                  active ? "w-full" : "w-0 group-hover:w-full"
                 }`}
               />
-            </Link>
-          ))}
+            );
+
+            if (!link.children) {
+              return (
+                <Link
+                  key={link.to}
+                  to={link.to}
+                  className={linkClass}
+                  data-testid={`nav-${testId(link.label)}`}
+                >
+                  {link.label}
+                  {underline}
+                </Link>
+              );
+            }
+
+            return (
+              <DropdownMenu key={link.to}>
+                <DropdownMenuTrigger
+                  className={`${linkClass} flex items-center gap-1 outline-hidden`}
+                  data-testid={`nav-${testId(link.label)}`}
+                >
+                  {link.label}
+                  <ChevronDown
+                    className="w-3 h-3 transition-transform duration-300 group-data-[state=open]:rotate-180"
+                    strokeWidth={1.5}
+                  />
+                  {underline}
+                </DropdownMenuTrigger>
+                <DropdownMenuContent
+                  align="start"
+                  sideOffset={12}
+                  className="bg-background/95 backdrop-blur-md border-border/60 min-w-48"
+                >
+                  {link.children.map((child) => (
+                    <DropdownMenuItem key={child.to} asChild>
+                      <Link
+                        to={child.to}
+                        className={`text-xs tracking-[0.15em] uppercase transition-colors ${
+                          location === child.to
+                            ? "text-primary"
+                            : "text-muted-foreground focus:text-foreground"
+                        }`}
+                        data-testid={`nav-${testId(child.label)}`}
+                      >
+                        {child.label}
+                      </Link>
+                    </DropdownMenuItem>
+                  ))}
+                </DropdownMenuContent>
+              </DropdownMenu>
+            );
+          })}
         </div>
 
         {/* Mobile menu */}
@@ -86,21 +159,52 @@ export default function Navbar() {
                 </SheetClose>
               </div>
               <div className="flex flex-col gap-8">
-                {NAV_LINKS.map((link) => (
-                  <Link
-                    key={link.to}
-                    to={link.to}
-                    onClick={() => setOpen(false)}
-                    className={`font-serif text-2xl transition-colors ${
-                      isActive(location, link.to)
-                        ? "text-primary"
-                        : "text-foreground hover:text-primary"
-                    }`}
-                    data-testid={`nav-mobile-${link.label.toLowerCase().replace(/\s+/g, "-")}`}
-                  >
-                    {link.label}
-                  </Link>
-                ))}
+                {NAV_LINKS.map((link) =>
+                  link.children ? (
+                    <div key={link.to} className="flex flex-col gap-4">
+                      <span
+                        className={`font-serif text-2xl ${
+                          isActive(location, link)
+                            ? "text-primary"
+                            : "text-foreground"
+                        }`}
+                      >
+                        {link.label}
+                      </span>
+                      <div className="flex flex-col gap-3 pl-4">
+                        {link.children.map((child) => (
+                          <Link
+                            key={child.to}
+                            to={child.to}
+                            onClick={() => setOpen(false)}
+                            className={`text-sm tracking-[0.15em] uppercase transition-colors ${
+                              location === child.to
+                                ? "text-primary"
+                                : "text-muted-foreground hover:text-primary"
+                            }`}
+                            data-testid={`nav-mobile-${testId(child.label)}`}
+                          >
+                            {child.label}
+                          </Link>
+                        ))}
+                      </div>
+                    </div>
+                  ) : (
+                    <Link
+                      key={link.to}
+                      to={link.to}
+                      onClick={() => setOpen(false)}
+                      className={`font-serif text-2xl transition-colors ${
+                        isActive(location, link)
+                          ? "text-primary"
+                          : "text-foreground hover:text-primary"
+                      }`}
+                      data-testid={`nav-mobile-${testId(link.label)}`}
+                    >
+                      {link.label}
+                    </Link>
+                  ),
+                )}
               </div>
             </SheetContent>
           </Sheet>
