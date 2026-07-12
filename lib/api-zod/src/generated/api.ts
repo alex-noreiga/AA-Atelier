@@ -71,3 +71,23 @@ export const CreateOrderResponse = zod.object({
 })
 
 
+/**
+ * Saves a customer inquiry to the Notion contact-messages database
+ * @summary Submit a contact message
+ */
+
+
+
+
+export const CreateContactMessageBody = zod.object({
+  "name": zod.string().min(1),
+  "email": zod.string().email(),
+  "phone": zod.string().optional(),
+  "message": zod.string().min(1)
+})
+
+export const CreateContactMessageResponse = zod.object({
+  "success": zod.boolean()
+})
+
+
