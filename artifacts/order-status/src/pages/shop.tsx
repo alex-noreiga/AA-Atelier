@@ -1,10 +1,21 @@
 import { useState } from "react";
 import { Link } from "wouter";
-import { ArrowRight, PenLine } from "lucide-react";
+import { ArrowRight, Bell, Loader2, PenLine } from "lucide-react";
+import {
+  useGetProducts,
+  type Product,
+  type ProductVariant,
+} from "@workspace/api-client-react";
 import { PageShell } from "@/components/page-shell";
 import { SizeChartDialog } from "@/components/size-chart-dialog";
-import { InStockSection } from "@/components/in-stock-section";
 import { AspectRatio } from "@/components/ui/aspect-ratio";
+import {
+  Carousel,
+  CarouselContent,
+  CarouselItem,
+  CarouselNext,
+  CarouselPrevious,
+} from "@/components/ui/carousel";
 import {
   Dialog,
   DialogContent,
@@ -15,214 +26,154 @@ import {
 } from "@/components/ui/dialog";
 import { cn } from "@/lib/utils";
 
-// Shared size scales, referenced by products below.
-const READY_TO_WEAR_SIZES = [
-  "Adult XS",
-  "Adult S",
-  "Adult M",
-  "Adult L",
-  "Adult XL",
-  "Child XS",
-  "Child S",
-  "Child M",
-  "Child L",
-  "Child XL",
-] as const; // follows Jalie pattern measurements — see <SizeChartDialog />
-const SOAKER_SIZES = ["Adult", "Youth"] as const;
+const ALL = "All";
 
-type Category = "Dresses" | "Practice Wear" | "Accessories";
-type Status = "available" | "made-to-order" | "limited" | "sold-out";
-
-interface Product {
-  slug: string; // stable id, used in data-testid + ?item=
-  name: string;
-  category: Category;
-  price: string; // display string
-  sizes?: readonly string[]; // omitted for one-size items (cloths, scrunchies)
-  status: Status;
-  description: string;
-  image?: string; // imported asset; undefined → placeholder monogram
+function formatPrice(price?: number): string {
+  return typeof price === "number" ? `$${price}` : "inquire for price";
 }
 
-// The catalogue. Edit this array to change what the boutique offers.
-// Drop real photos in `src/assets/shop/`, import them, and set `image`.
-const PRODUCTS: Product[] = [
-  {
-    slug: "aurora-competition-dress",
-    name: "Aurora Competition Dress",
-    category: "Dresses",
-    price: "From $420",
-    sizes: READY_TO_WEAR_SIZES,
-    status: "made-to-order",
-    description:
-      "A flowing competition dress with an illusion bodice and a soft circular skirt that moves with every element. Hand-set crystals graduate from the shoulder into the skirt. Made to order in your size and colourway.",
-  },
-  {
-    slug: "etoile-ballet-neck-dress",
-    name: "Étoile Ballet-Neck Dress",
-    category: "Dresses",
-    price: "From $460",
-    sizes: READY_TO_WEAR_SIZES,
-    status: "limited",
-    description:
-      "An elegant ballet-neck dress with long mesh sleeves and a fitted velvet bodice. A limited seasonal design — a handful of colourways available before it retires.",
-  },
-  {
-    slug: "everyday-practice-dress",
-    name: "Everyday Practice Dress",
-    category: "Practice Wear",
-    price: "From $180",
-    sizes: READY_TO_WEAR_SIZES,
-    status: "made-to-order",
-    description:
-      "A hard-wearing practice dress in brushed spandex, cut for full range of motion through jumps and spins. Simple, comfortable, and made to your measurements.",
-  },
-  {
-    slug: "wrap-practice-skirt",
-    name: "Wrap Practice Skirt",
-    category: "Practice Wear",
-    price: "From $95",
-    sizes: READY_TO_WEAR_SIZES,
-    status: "made-to-order",
-    description:
-      "A lightweight wrap skirt that ties at the waist and floats on the ice — perfect over leggings for training. Made to order in a range of chiffon shades.",
-  },
-  {
-    slug: "blade-soakers",
-    name: "Blade Soakers",
-    category: "Accessories",
-    price: "$22",
-    sizes: SOAKER_SIZES,
-    status: "available",
-    description:
-      "Absorbent terry-lined soakers that wick moisture from your blades between sessions to prevent rust. Available in Adult and Youth sizes, in a rotating selection of prints.",
-  },
-  {
-    slug: "microfibre-blade-cloth",
-    name: "Microfibre Blade Cloth",
-    category: "Accessories",
-    price: "$14",
-    status: "available",
-    description:
-      "A plush microfibre cloth for drying blades and boots after every skate. One size — keep one in your bag and one in your kit.",
-  },
-  {
-    slug: "silk-hair-scrunchie",
-    name: "Silk Hair Scrunchie",
-    category: "Accessories",
-    price: "$12",
-    status: "available",
-    description:
-      "A gentle satin scrunchie that holds a competition bun without creasing your hair. Available in blush, champagne, black, and deep plum.",
-  },
-  {
-    slug: "crystal-scrunchie-set",
-    name: "Crystal Scrunchie Set",
-    category: "Accessories",
-    price: "$28",
-    status: "sold-out",
-    description:
-      "A set of two hand-embellished scrunchies scattered with crystals to match your competition dress. Currently sold out — check back soon or enquire about a custom set.",
-  },
-];
-
-/** Look up a product's display name by slug — used by the Contact page to
- *  prefill a reservation enquiry from `/contact?item=<slug>`. */
-export function getProductName(slug: string): string | undefined {
-  return PRODUCTS.find((product) => product.slug === slug)?.name;
+function contactHref(variant: ProductVariant): string {
+  const base = `/contact?item=${encodeURIComponent(variant.name)}`;
+  return variant.available ? base : `${base}&notify=1`;
 }
 
-const CATEGORIES = ["All", "Dresses", "Practice Wear", "Accessories"] as const;
-type Filter = (typeof CATEGORIES)[number];
-
-const STATUS_LABEL: Record<Status, string> = {
-  available: "In stock",
-  "made-to-order": "Made to order",
-  limited: "Limited",
-  "sold-out": "Sold out",
-};
-
-function isReadyToWear(product: Product): boolean {
-  return product.category === "Dresses" || product.category === "Practice Wear";
+function testId(value: string): string {
+  return value.toLowerCase().replace(/\s+/g, "-");
 }
 
-/** Compact sizes hint for cards, e.g. "Adult & Child XS–XL" or "Adult / Youth". */
-function sizesHint(product: Product): string | null {
-  if (!product.sizes) return null;
-  if (product.sizes === READY_TO_WEAR_SIZES) return "Adult & Child XS–XL";
-  return product.sizes.join(" / ");
+/**
+ * Filter chips, derived from the categories actually present in the inventory.
+ * The atelier team edits the "Item Type" select in Notion and new values must
+ * appear without a redeploy — so never hardcode this list. Items with no
+ * category are reachable only under "All".
+ */
+function categoriesOf(products: Product[]): string[] {
+  const found = new Set(
+    products.map((product) => product.category).filter(Boolean),
+  );
+  return [ALL, ...[...found].sort((a, b) => a.localeCompare(b))];
 }
 
-function ctaLabel(product: Product): string {
-  if (product.status === "sold-out") return "Sold out";
-  return product.category === "Accessories" ? "Enquire" : "Reserve";
-}
-
-/** Product photo, or a graceful monogram placeholder until real photos exist. */
-function ProductImage({ product }: { product: Product }) {
-  if (product.image) {
-    return (
-      <img
-        src={product.image}
-        alt={product.name}
-        className="h-full w-full object-cover"
-      />
-    );
-  }
-  return (
+/** A single photo, the whole gallery, or a monogram placeholder. */
+function VariantGallery({
+  variant,
+  carousel = false,
+}: {
+  variant: ProductVariant;
+  carousel?: boolean;
+}) {
+  const monogram = (
     <div className="flex h-full w-full items-center justify-center bg-gradient-to-br from-card via-background to-primary/20">
       <span className="font-serif text-4xl text-primary/40 tracking-[0.2em]">
         AA
       </span>
     </div>
   );
-}
 
-function StatusBadge({ status }: { status: Status }) {
+  if (variant.photos.length === 0) {
+    return <AspectRatio ratio={3 / 4}>{monogram}</AspectRatio>;
+  }
+
+  if (!carousel || variant.photos.length === 1) {
+    return (
+      <AspectRatio ratio={3 / 4}>
+        <img
+          src={variant.photos[0]}
+          alt={variant.name}
+          className="h-full w-full object-cover"
+        />
+      </AspectRatio>
+    );
+  }
+
   return (
-    <span
-      className={cn(
-        "absolute top-3 left-3 rounded-full px-3 py-1 text-[0.65rem] tracking-widest uppercase backdrop-blur-sm",
-        status === "sold-out"
-          ? "bg-background/70 text-muted-foreground"
-          : "bg-background/70 text-primary",
-      )}
-    >
-      {STATUS_LABEL[status]}
-    </span>
+    <Carousel className="w-full">
+      <CarouselContent>
+        {variant.photos.map((photo, i) => (
+          <CarouselItem key={`${photo}-${i}`}>
+            <AspectRatio ratio={3 / 4}>
+              <img
+                src={photo}
+                alt={`${variant.name} — photo ${i + 1}`}
+                className="h-full w-full object-cover rounded-xl"
+              />
+            </AspectRatio>
+          </CarouselItem>
+        ))}
+      </CarouselContent>
+      <CarouselPrevious className="left-2" />
+      <CarouselNext className="right-2" />
+    </Carousel>
   );
 }
 
-function ReserveLink({ product }: { product: Product }) {
-  const soldOut = product.status === "sold-out";
-  if (soldOut) {
+function VariantChips({
+  variants,
+  selected,
+  onSelect,
+}: {
+  variants: ProductVariant[];
+  selected: number;
+  onSelect: (index: number) => void;
+}) {
+  if (variants.length <= 1) return null;
+  return (
+    <div className="mt-4 flex flex-wrap gap-2">
+      {variants.map((variant, i) => (
+        <button
+          key={variant.id}
+          type="button"
+          onClick={() => onSelect(i)}
+          aria-pressed={i === selected}
+          className={cn(
+            "rounded-full border px-3 py-1 text-xs transition-colors",
+            i === selected
+              ? "border-primary text-primary"
+              : "border-border/60 text-muted-foreground hover:border-primary/50",
+            !variant.available && "line-through opacity-60",
+          )}
+          data-testid={`variant-${variant.id}`}
+        >
+          {variant.name}
+        </button>
+      ))}
+    </div>
+  );
+}
+
+function CtaLink({ variant }: { variant: ProductVariant }) {
+  if (variant.available) {
     return (
-      <span
-        className="inline-flex cursor-not-allowed items-center gap-2 rounded-full border border-border/60 px-6 py-3 text-xs uppercase tracking-widest text-muted-foreground/60"
-        data-testid={`cta-${product.slug}`}
+      <Link
+        to={contactHref(variant)}
+        className="group inline-flex items-center gap-2 rounded-full border border-border px-6 py-3 text-xs uppercase tracking-widest text-foreground transition-all duration-300 hover:border-primary hover:text-primary"
+        data-testid={`cta-inquire-${variant.id}`}
       >
-        Sold out
-      </span>
+        inquire
+        <ArrowRight className="w-3.5 h-3.5 group-hover:translate-x-1 transition-transform" />
+      </Link>
     );
   }
   return (
     <Link
-      to={`/contact?item=${product.slug}`}
-      className="group inline-flex items-center gap-2 rounded-full border border-border px-6 py-3 text-xs uppercase tracking-widest text-foreground transition-all duration-300 hover:border-primary hover:text-primary"
-      data-testid={`cta-${product.slug}`}
+      to={contactHref(variant)}
+      className="group inline-flex items-center gap-2 rounded-full border border-primary/40 px-6 py-3 text-xs uppercase tracking-widest text-primary transition-all duration-300 hover:border-primary"
+      data-testid={`cta-notify-${variant.id}`}
     >
-      {ctaLabel(product)}
-      <ArrowRight className="w-3.5 h-3.5 group-hover:translate-x-1 transition-transform" />
+      <Bell className="w-3.5 h-3.5" />
+      Notify me when back in stock
     </Link>
   );
 }
 
 function ProductCard({ product }: { product: Product }) {
-  const hint = sizesHint(product);
+  const [selected, setSelected] = useState(0);
+  const variant = product.variants[selected] ?? product.variants[0];
+
   return (
     <div
       className="flex flex-col overflow-hidden rounded-2xl border border-border/60 transition-colors hover:border-primary/50"
-      data-testid={`product-${product.slug}`}
+      data-testid={`product-${product.id}`}
     >
       {/* Image opens the quick-view dialog */}
       <Dialog>
@@ -230,61 +181,59 @@ function ProductCard({ product }: { product: Product }) {
           <button
             type="button"
             className="relative block text-left"
-            data-testid={`product-view-${product.slug}`}
+            data-testid={`product-view-${product.id}`}
           >
-            <AspectRatio ratio={3 / 4}>
-              <ProductImage product={product} />
-            </AspectRatio>
-            <StatusBadge status={product.status} />
+            <VariantGallery variant={variant} />
+            {!variant.available && (
+              <span className="absolute top-3 left-3 rounded-full bg-background/70 px-3 py-1 text-[0.65rem] tracking-widest uppercase text-muted-foreground backdrop-blur-sm">
+                Sold Out
+              </span>
+            )}
           </button>
         </DialogTrigger>
         <DialogContent className="max-w-3xl max-h-[85vh] overflow-y-auto">
           <div className="grid gap-6 sm:grid-cols-2">
             <div className="overflow-hidden rounded-xl border border-border/60">
-              <AspectRatio ratio={3 / 4}>
-                <ProductImage product={product} />
-              </AspectRatio>
+              <VariantGallery variant={variant} carousel />
             </div>
             <div className="flex flex-col">
               <DialogHeader className="text-left">
-                <p className="text-primary text-xs tracking-[0.3em] uppercase mb-1">
-                  {product.category}
-                </p>
+                {product.category && (
+                  <p className="text-primary text-xs tracking-[0.3em] uppercase mb-1">
+                    {product.category}
+                  </p>
+                )}
                 <DialogTitle className="font-serif text-3xl text-foreground">
-                  {product.name}
+                  {product.title}
                 </DialogTitle>
-                <DialogDescription className="text-base text-muted-foreground font-light leading-relaxed mt-2">
-                  {product.description}
-                </DialogDescription>
+                {variant.description && (
+                  // Listing Notes are authored in Notion with line breaks and
+                  // bullet lists — preserve them rather than collapsing to a blob.
+                  <DialogDescription className="text-base text-muted-foreground font-light leading-relaxed mt-2 whitespace-pre-line">
+                    {variant.description}
+                  </DialogDescription>
+                )}
               </DialogHeader>
 
               <p className="mt-5 font-serif text-2xl text-primary">
-                {product.price}
+                {formatPrice(variant.price)}
               </p>
 
-              {product.sizes && (
-                <div className="mt-5">
-                  <p className="text-xs uppercase tracking-widest text-muted-foreground mb-2">
-                    Sizes
-                  </p>
-                  <div className="flex flex-wrap gap-2">
-                    {product.sizes.map((size) => (
-                      <span
-                        key={size}
-                        className="rounded-full border border-border/60 px-3 py-1 text-xs text-muted-foreground"
-                      >
-                        {size}
-                      </span>
-                    ))}
-                  </div>
-                  {isReadyToWear(product) && (
-                    <SizeChartDialog className="mt-3" />
-                  )}
-                </div>
+              <VariantChips
+                variants={product.variants}
+                selected={selected}
+                onSelect={setSelected}
+              />
+
+              {!variant.available && (
+                <p className="mt-4 text-sm text-muted-foreground">
+                  <span className="text-foreground">{variant.name}</span> is
+                  currently sold out.
+                </p>
               )}
 
               <div className="mt-auto pt-6">
-                <ReserveLink product={product} />
+                <CtaLink variant={variant} />
               </div>
             </div>
           </div>
@@ -293,33 +242,46 @@ function ProductCard({ product }: { product: Product }) {
 
       {/* Card body */}
       <div className="flex flex-1 flex-col p-6">
-        <h2 className="font-serif text-2xl text-foreground">{product.name}</h2>
-        <p className="mt-1 text-primary font-light">{product.price}</p>
-        {hint && (
-          <div className="mt-2 flex items-center justify-between gap-3">
-            <span className="text-xs uppercase tracking-widest text-muted-foreground">
-              {hint}
-            </span>
-            {isReadyToWear(product) && <SizeChartDialog />}
-          </div>
-        )}
-        <p className="mt-4 text-sm text-muted-foreground font-light leading-relaxed line-clamp-3">
-          {product.description}
+        <h2 className="font-serif text-2xl text-foreground">{product.title}</h2>
+        <p className="mt-1 text-primary font-light">
+          {formatPrice(variant.price)}
         </p>
+        <VariantChips
+          variants={product.variants}
+          selected={selected}
+          onSelect={setSelected}
+        />
+        {variant.description && (
+          <p className="mt-4 text-sm text-muted-foreground font-light leading-relaxed line-clamp-3">
+            {variant.description}
+          </p>
+        )}
         <div className="mt-6 pt-2">
-          <ReserveLink product={product} />
+          <CtaLink variant={variant} />
         </div>
       </div>
     </div>
   );
 }
 
+/**
+ * The shop. Everything shown here is live inventory from the Notion "inventory"
+ * database — there is no hardcoded catalogue. Loading, error, and empty all
+ * still render the page chrome and the closing commission CTA.
+ */
 export default function Shop() {
-  const [filter, setFilter] = useState<Filter>("All");
-  const products =
-    filter === "All"
-      ? PRODUCTS
-      : PRODUCTS.filter((product) => product.category === filter);
+  const [filter, setFilter] = useState<string>(ALL);
+  const { data, isLoading, isError } = useGetProducts();
+
+  const products = data?.products ?? [];
+  const categories = categoriesOf(products);
+  // A category can vanish between refetches (the team retires an Item Type);
+  // fall back to "All" rather than stranding the user on a dead chip.
+  const active = categories.includes(filter) ? filter : ALL;
+  const visible =
+    active === ALL
+      ? products
+      : products.filter((product) => product.category === active);
 
   return (
     <PageShell align="top">
@@ -333,41 +295,62 @@ export default function Shop() {
             The Shop
           </h1>
           <p className="text-muted-foreground font-light text-lg md:text-xl max-w-xl mx-auto leading-relaxed">
-            Ready-to-wear pieces{" "}
-            <span className="italic text-primary">finished to your measure</span>
-            , alongside the small skate accessories we keep on hand.
+            Finished pieces{" "}
+            <span className="italic text-primary">ready to ship</span>, alongside
+            the small skate accessories we keep on hand.
           </p>
+          <SizeChartDialog className="mt-8" />
         </div>
 
-        {/* Category filter */}
-        <div className="mt-14 flex flex-wrap items-center justify-center gap-3">
-          {CATEGORIES.map((category) => (
-            <button
-              key={category}
-              type="button"
-              onClick={() => setFilter(category)}
-              className={cn(
-                "rounded-full px-5 py-2 text-xs uppercase tracking-widest transition-all duration-300",
-                filter === category
-                  ? "bg-primary text-primary-foreground"
-                  : "border border-border text-muted-foreground hover:border-primary hover:text-primary",
-              )}
-              data-testid={`filter-${category.toLowerCase().replace(/\s+/g, "-")}`}
-            >
-              {category}
-            </button>
-          ))}
-        </div>
+        {/* Category filter — only meaningful once there's more than one category */}
+        {categories.length > 2 && (
+          <div className="mt-14 flex flex-wrap items-center justify-center gap-3">
+            {categories.map((category) => (
+              <button
+                key={category}
+                type="button"
+                onClick={() => setFilter(category)}
+                className={cn(
+                  "rounded-full px-5 py-2 text-xs uppercase tracking-widest transition-all duration-300",
+                  active === category
+                    ? "bg-primary text-primary-foreground"
+                    : "border border-border text-muted-foreground hover:border-primary hover:text-primary",
+                )}
+                data-testid={`filter-${testId(category)}`}
+              >
+                {category}
+              </button>
+            ))}
+          </div>
+        )}
 
         {/* Product grid */}
-        <div className="mt-12 grid gap-8 sm:grid-cols-2 lg:grid-cols-3">
-          {products.map((product) => (
-            <ProductCard key={product.slug} product={product} />
-          ))}
-        </div>
-
-        {/* Live inventory synced from Notion */}
-        <InStockSection />
+        {isLoading ? (
+          <div className="mt-16 text-center" data-testid="shop-loading">
+            <Loader2 className="w-6 h-6 text-primary/60 mx-auto animate-spin" />
+          </div>
+        ) : isError ? (
+          <p
+            className="mt-16 text-center text-muted-foreground font-light"
+            data-testid="shop-error"
+          >
+            We couldn't load current stock just now. Please try again in a
+            moment.
+          </p>
+        ) : visible.length === 0 ? (
+          <p
+            className="mt-16 text-center text-muted-foreground font-light"
+            data-testid="shop-empty"
+          >
+            The shop is restocking. Commission something bespoke in the meantime.
+          </p>
+        ) : (
+          <div className="mt-12 grid gap-8 sm:grid-cols-2 lg:grid-cols-3">
+            {visible.map((product) => (
+              <ProductCard key={product.id} product={product} />
+            ))}
+          </div>
+        )}
 
         {/* Closing CTA */}
         <div className="mt-24 text-center">

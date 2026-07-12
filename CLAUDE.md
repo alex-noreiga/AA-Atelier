@@ -279,8 +279,7 @@ and in the maintainer's env without edits.
 | Change the status-lookup UI             | `artifacts/order-status/src/pages/status.tsx`             |
 | Change the order intake form            | `artifacts/order-status/src/pages/order-form.tsx`         |
 | Change the landing page                 | `artifacts/order-status/src/pages/home.tsx`               |
-| Change the shop (curated catalogue)     | `artifacts/order-status/src/pages/shop.tsx`               |
-| Change the live inventory shop section  | `artifacts/order-status/src/components/in-stock-section.tsx` + `services/products.service.ts` + `lib/notion/products.*` |
+| Change the shop (live Notion inventory) | `artifacts/order-status/src/pages/shop.tsx` + `services/products.service.ts` + `lib/notion/products.*` |
 | Add a page / route                      | new `src/pages/*.tsx` + `<Route>` in `src/App.tsx`        |
 | Add or rename a nav link                | `NAV_LINKS` in `artifacts/order-status/src/components/navbar.tsx` |
 | Add a shared UI component               | `artifacts/order-status/src/components/ui/`               |
