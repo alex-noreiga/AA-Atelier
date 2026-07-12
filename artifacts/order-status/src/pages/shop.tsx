@@ -5,8 +5,8 @@ import {
   useGetProducts,
   type Product,
   type ProductVariant,
-  type SizeOption,
 } from "@workspace/api-client-react";
+import { NotifyDialog } from "@/components/notify-dialog";
 import { PageShell } from "@/components/page-shell";
 import { SizeChartDialog } from "@/components/size-chart-dialog";
 import { AspectRatio } from "@/components/ui/aspect-ratio";
@@ -52,20 +52,14 @@ function formatPrice(price?: number): string {
   });
 }
 
+/** An in-stock item invites an enquiry; a sold-out one opens the notify dialog. */
 function contactHref(variant: ProductVariant): string {
-  const base = `/contact?item=${encodeURIComponent(variant.name)}`;
-  return variant.available ? base : `${base}&notify=1`;
-}
-
-/** A sold-out size gets its own back-in-stock request, naming that exact size. */
-function sizeNotifyHref(variant: ProductVariant, size: SizeOption): string {
-  const item = `${variant.name} — ${size.name}`;
-  return `/contact?item=${encodeURIComponent(item)}&notify=1`;
+  return `/contact?item=${encodeURIComponent(variant.name)}`;
 }
 
 /**
  * The size bands an item is offered in. In-stock sizes are inert labels; a
- * sold-out size is a link that prefills a back-in-stock request for that size.
+ * sold-out size opens a back-in-stock request naming that exact size.
  */
 function SizeChips({ variant }: { variant: ProductVariant }) {
   if (variant.sizes.length === 0) return null;
@@ -85,16 +79,23 @@ function SizeChips({ variant }: { variant: ProductVariant }) {
               {size.name}
             </span>
           ) : (
-            <Link
+            <NotifyDialog
               key={size.name}
-              to={sizeNotifyHref(variant, size)}
-              title={`${size.name} is sold out — get notified when it's back`}
-              className="group inline-flex items-center gap-1.5 rounded-full border border-border/40 px-3 py-1 text-xs text-muted-foreground/60 transition-colors hover:border-primary hover:text-primary"
-              data-testid={`size-notify-${variant.id}-${size.name.toLowerCase().replace(/\s+/g, "-")}`}
-            >
-              <span className="line-through">{size.name}</span>
-              <Bell className="w-3 h-3 shrink-0" />
-            </Link>
+              item={variant.name}
+              size={size.name}
+              trigger={(open) => (
+                <button
+                  type="button"
+                  onClick={open}
+                  title={`${size.name} is sold out — get notified when it's back`}
+                  className="group inline-flex items-center gap-1.5 rounded-full border border-border/40 px-3 py-1 text-xs text-muted-foreground/60 transition-colors hover:border-primary hover:text-primary"
+                  data-testid={`size-notify-${variant.id}-${size.name.toLowerCase().replace(/\s+/g, "-")}`}
+                >
+                  <span className="line-through">{size.name}</span>
+                  <Bell className="w-3 h-3 shrink-0" />
+                </button>
+              )}
+            />
           ),
         )}
       </div>
@@ -207,14 +208,20 @@ function CtaLink({ variant }: { variant: ProductVariant }) {
     );
   }
   return (
-    <Link
-      to={contactHref(variant)}
-      className="group inline-flex items-center gap-2 rounded-full border border-primary/40 px-6 py-3 text-xs uppercase tracking-widest text-primary transition-all duration-300 hover:border-primary"
-      data-testid={`cta-notify-${variant.id}`}
-    >
-      <Bell className="w-3.5 h-3.5" />
-      Notify me when back in stock
-    </Link>
+    <NotifyDialog
+      item={variant.name}
+      trigger={(open) => (
+        <button
+          type="button"
+          onClick={open}
+          className="group inline-flex items-center gap-2 rounded-full border border-primary/40 px-6 py-3 text-xs uppercase tracking-widest text-primary transition-all duration-300 hover:border-primary"
+          data-testid={`cta-notify-${variant.id}`}
+        >
+          <Bell className="w-3.5 h-3.5" />
+          Notify me when back in stock
+        </button>
+      )}
+    />
   );
 }
 
@@ -358,8 +365,8 @@ export default function Shop() {
           </h1>
           <p className="text-muted-foreground font-light text-lg md:text-xl max-w-xl mx-auto leading-relaxed">
             Finished pieces{" "}
-            <span className="italic text-primary">ready to ship</span>, alongside
-            the small skate accessories we keep on hand.
+            <span className="italic text-primary">ready to ship</span>,
+            alongside the small skate accessories we keep on hand.
           </p>
         </div>
 
@@ -403,7 +410,8 @@ export default function Shop() {
             className="mt-16 text-center text-muted-foreground font-light"
             data-testid="shop-empty"
           >
-            The shop is restocking. Commission something bespoke in the meantime.
+            The shop is restocking. Commission something bespoke in the
+            meantime.
           </p>
         ) : (
           <div className="mt-12 grid gap-8 sm:grid-cols-2 lg:grid-cols-3">

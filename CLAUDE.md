@@ -73,8 +73,12 @@ Express app (artifacts/api-server)  ──►  Notion REST API (orders database)
   ├─ POST /api/orders              → creates a Notion page, returns order number
   ├─ POST /api/contact             → saves a contact message to the Notion
   │                                  "Website Contact Messages" database
-  └─ GET  /api/products            → shop inventory + the live category list,
-                                     from the Notion "inventory" database
+  ├─ GET  /api/products            → shop inventory + the live category list,
+  │                                  from the Notion "inventory" database
+  └─ POST /api/notify              → files a back-in-stock request (email + item
+                                     + optional size) in that SAME contact
+                                     database, tagged Request type = "Back in
+                                     stock"
 ```
 
 - **Locally:** the Vite dev server proxies `/api` to the Express server on
@@ -144,6 +148,15 @@ captured in `.agents/memory/`:
    and `SIZED_CATEGORIES` in `pages/shop.tsx` (only Dress / Ready to Wear show
    the size chart). These name values, not the list; rename those options in
    Notion and you must update them here too.
+
+3. **The contact database has two writers.** "Website Contact Messages" holds
+   both contact-form messages (`contact.blocks.ts`) and the shop's back-in-stock
+   requests (`notify.blocks.ts`), separated by the **Request type** select
+   (`Inquiry` / `Back in stock`). A restock request carries **Item** and **Size**
+   as real properties, so the atelier can filter the inbox to everyone waiting on
+   a piece rather than reading it out of free text. The property names the two
+   writers share are exported from `contact.blocks.ts` and imported by
+   `notify.blocks.ts` — keep it that way so they can't drift.
 
 Auth: the server reads `NOTION_API_KEY` and `NOTION_ORDERS_DATABASE_ID` from
 environment variables (via `createNotionClient` in `notion/client.ts`, read at
@@ -336,9 +349,10 @@ and in the maintainer's env without edits.
   output `artifacts/order-status/dist/public`.
 - **Required Vercel env vars:** `NOTION_API_KEY`, `NOTION_ORDERS_DATABASE_ID`,
   `NOTION_CONTACT_DATABASE_ID` (the "Website Contact Messages" database that the
-  `/contact` form writes to), and `NOTION_INVENTORY_DATABASE_ID` (the finished-
-  goods "inventory" database the shop's `/products` endpoint reads). The Notion
-  integration must be shared with each database or queries 404.
+  `/contact` form **and** the shop's `/notify` dialog both write to), and
+  `NOTION_INVENTORY_DATABASE_ID` (the finished-goods "inventory" database the
+  shop's `/products` endpoint reads). The Notion integration must be shared with
+  each database or queries 404.
 
 ## Quick reference — where things live
 
@@ -353,6 +367,7 @@ and in the maintainer's env without edits.
 | Change the order intake form            | `artifacts/order-status/src/pages/order-form.tsx`                                                      |
 | Change the landing page                 | `artifacts/order-status/src/pages/home.tsx`                                                            |
 | Change the shop (live Notion inventory) | `artifacts/order-status/src/pages/shop.tsx` + `services/products.service.ts` + `lib/notion/products.*` |
+| Change the back-in-stock notify dialog  | `artifacts/order-status/src/components/notify-dialog.tsx` + `services/notify.service.ts` + `lib/notion/notify.*` (writes to the **contact** database — see below) |
 | Add a page / route                      | new `src/pages/*.tsx` + `<Route>` in `src/App.tsx`                                                     |
 | Add or rename a nav link                | `NAV_LINKS` in `artifacts/order-status/src/components/navbar.tsx`                                      |
 | Add a shared UI component               | `artifacts/order-status/src/components/ui/`                                                            |

@@ -10,7 +10,14 @@ import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { PageShell } from "@/components/page-shell";
 import { useToast } from "@/hooks/use-toast";
-import { ArrowRight, AtSign, CheckCircle, Loader2, Mail, MapPin } from "lucide-react";
+import {
+  ArrowRight,
+  AtSign,
+  CheckCircle,
+  Loader2,
+  Mail,
+  MapPin,
+} from "lucide-react";
 
 // TODO: replace these placeholders with the atelier's real details before shipping.
 const CONTACT_EMAIL = "alexandra@a3iceanddance.com";
@@ -36,18 +43,15 @@ export default function Contact() {
   const { toast } = useToast();
 
   // When arriving from the Shop via `/contact?item=<name>`, prefill the message.
-  // `item` is the live inventory item's name, straight from Notion — and for a
-  // sold-out size, the name with that size appended ("Keyhole Dress — Adult S").
-  // `notify=1` switches to a back-in-stock request.
+  // `item` is the live inventory item's name, straight from Notion. (Sold-out
+  // items don't come here — the shop asks for an email in its own notify dialog
+  // and files a structured back-in-stock request instead.)
   const search = useSearch();
   const params = new URLSearchParams(search);
   const itemName = params.get("item") ?? undefined;
-  const isNotify = params.get("notify") === "1";
-  const defaultMessage = !itemName
-    ? ""
-    : isNotify
-      ? `Please let me know when "${itemName}" is back in stock. You can reach me at this email.`
-      : `I'd like to inquire about: ${itemName}.`;
+  const defaultMessage = itemName
+    ? `I'd like to inquire about: ${itemName}.`
+    : "";
 
   const createMessage = useCreateContactMessage({
     mutation: {
@@ -91,7 +95,10 @@ export default function Contact() {
     return (
       <PageShell noise={false}>
         <div className="w-full max-w-lg text-center animate-in fade-in zoom-in-95 duration-700">
-          <CheckCircle className="w-16 h-16 text-primary mx-auto mb-6" strokeWidth={1} />
+          <CheckCircle
+            className="w-16 h-16 text-primary mx-auto mb-6"
+            strokeWidth={1}
+          />
           <h1 className="text-3xl font-serif mb-3">Message Sent</h1>
           <p className="text-muted-foreground font-light mb-8">
             Thank you for reaching out — we'll be in touch soon.
@@ -114,7 +121,9 @@ export default function Contact() {
           <p className="text-primary text-xs tracking-[0.35em] uppercase mb-6">
             A.A Atelier
           </p>
-          <h1 className="text-4xl md:text-5xl font-serif text-foreground mb-3">Contact Us</h1>
+          <h1 className="text-4xl md:text-5xl font-serif text-foreground mb-3">
+            Contact Us
+          </h1>
           <p className="text-muted-foreground font-light text-lg">
             Get in touch to begin your commission or ask us anything.
           </p>
@@ -132,13 +141,18 @@ export default function Contact() {
               className="mt-1.5 bg-transparent border-0 border-b border-border rounded-none px-0 py-3 focus-visible:ring-0 focus-visible:border-primary transition-colors shadow-none"
             />
             {errors.name && (
-              <p className="text-destructive text-xs mt-1">{errors.name.message}</p>
+              <p className="text-destructive text-xs mt-1">
+                {errors.name.message}
+              </p>
             )}
           </div>
 
           <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
             <div>
-              <Label htmlFor="email" className="text-sm font-light tracking-wide">
+              <Label
+                htmlFor="email"
+                className="text-sm font-light tracking-wide"
+              >
                 Email <span className="text-primary">*</span>
               </Label>
               <Input
@@ -149,13 +163,20 @@ export default function Contact() {
                 className="mt-1.5 bg-transparent border-0 border-b border-border rounded-none px-0 py-3 focus-visible:ring-0 focus-visible:border-primary transition-colors shadow-none"
               />
               {errors.email && (
-                <p className="text-destructive text-xs mt-1">{errors.email.message}</p>
+                <p className="text-destructive text-xs mt-1">
+                  {errors.email.message}
+                </p>
               )}
             </div>
             <div>
-              <Label htmlFor="phone" className="text-sm font-light tracking-wide">
+              <Label
+                htmlFor="phone"
+                className="text-sm font-light tracking-wide"
+              >
                 Phone
-                <span className="text-muted-foreground/60 ml-1 text-xs">(optional)</span>
+                <span className="text-muted-foreground/60 ml-1 text-xs">
+                  (optional)
+                </span>
               </Label>
               <Input
                 id="phone"
@@ -168,7 +189,10 @@ export default function Contact() {
           </div>
 
           <div>
-            <Label htmlFor="message" className="text-sm font-light tracking-wide">
+            <Label
+              htmlFor="message"
+              className="text-sm font-light tracking-wide"
+            >
               Message <span className="text-primary">*</span>
             </Label>
             <Textarea
@@ -179,7 +203,9 @@ export default function Contact() {
               className="mt-1.5 bg-transparent border border-border rounded-lg px-3 py-2 text-sm focus-visible:ring-0 focus-visible:border-primary transition-colors resize-none shadow-none"
             />
             {errors.message && (
-              <p className="text-destructive text-xs mt-1">{errors.message.message}</p>
+              <p className="text-destructive text-xs mt-1">
+                {errors.message.message}
+              </p>
             )}
           </div>
 
@@ -240,8 +266,8 @@ export default function Contact() {
               Custom Orders
             </h2>
             <p className="text-sm font-light text-muted-foreground mb-4 leading-relaxed">
-              Ready to commission a custom costume? Start with our order form and
-              we'll bring your vision to life.
+              Ready to commission a custom costume? Start with our order form
+              and we'll bring your vision to life.
             </p>
             <Link
               to="/order"

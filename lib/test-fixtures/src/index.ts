@@ -21,6 +21,7 @@
 
 import type {
   NewContactRequest,
+  NewNotifyRequest,
   NewOrderRequest,
   OrderStatus,
 } from "@workspace/api-zod";
@@ -69,6 +70,17 @@ export function contactInput(
     name: "Grace Hopper",
     email: "grace@example.com",
     message: "Do you ship internationally?",
+    ...overrides,
+  };
+}
+
+/** A valid back-in-stock request. Whole-variant by default; pass `size` for one band. */
+export function notifyInput(
+  overrides: Partial<NewNotifyRequest> = {},
+): NewNotifyRequest {
+  return {
+    email: "grace@example.com",
+    item: "Bow Fleece Soaker — Black",
     ...overrides,
   };
 }
