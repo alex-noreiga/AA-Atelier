@@ -91,3 +91,25 @@ export const CreateContactMessageResponse = zod.object({
 })
 
 
+/**
+ * Returns published, in-stock shop items from the Notion inventory database, grouped into cards with selectable variants.
+ * @summary List shop products
+ */
+export const GetProductsResponse = zod.object({
+  "products": zod.array(zod.object({
+  "id": zod.string(),
+  "title": zod.string(),
+  "category": zod.string(),
+  "variants": zod.array(zod.object({
+  "id": zod.string(),
+  "name": zod.string(),
+  "available": zod.boolean(),
+  "price": zod.number().optional(),
+  "description": zod.string().optional(),
+  "photos": zod.array(zod.string()),
+  "quantityAvailable": zod.number().optional()
+}))
+}))
+})
+
+

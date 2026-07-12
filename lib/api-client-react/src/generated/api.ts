@@ -27,7 +27,8 @@ import type {
   NewOrderRequest,
   NewOrderResponse,
   OrderNotFound,
-  OrderStatus
+  OrderStatus,
+  ProductList
 } from './api.schemas';
 
 import { customFetch } from '../custom-fetch';
@@ -354,4 +355,82 @@ export const useCreateContactMessage = <TError = ErrorType<ErrorEnvelope>,
       > => {
       return useMutation(getCreateContactMessageMutationOptions(options));
     }
+
+export const getGetProductsUrl = () => {
+
+
+
+
+  return `/api/products`
+}
+
+/**
+ * Returns published, in-stock shop items from the Notion inventory database, grouped into cards with selectable variants.
+ * @summary List shop products
+ */
+export const getProducts = async ( options?: RequestInit): Promise<ProductList> => {
+
+  return customFetch<ProductList>(getGetProductsUrl(),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
+
+
+
+
+export const getGetProductsQueryKey = () => {
+    return [
+    `/api/products`
+    ] as const;
+    }
+
+
+export const getGetProductsQueryOptions = <TData = Awaited<ReturnType<typeof getProducts>>, TError = ErrorType<ErrorEnvelope>>( options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getProducts>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getGetProductsQueryKey();
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof getProducts>>> = ({ signal }) => getProducts({ signal, ...requestOptions });
+
+
+
+
+
+   return  { queryKey, queryFn, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof getProducts>>, TError, TData> & { queryKey: QueryKey }
+}
+
+export type GetProductsQueryResult = NonNullable<Awaited<ReturnType<typeof getProducts>>>
+export type GetProductsQueryError = ErrorType<ErrorEnvelope>
+
+
+/**
+ * @summary List shop products
+ */
+
+export function useGetProducts<TData = Awaited<ReturnType<typeof getProducts>>, TError = ErrorType<ErrorEnvelope>>(
+  options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getProducts>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+
+ ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+
+  const queryOptions = getGetProductsQueryOptions(options)
+
+  const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
+
+  return withQueryKey(query, queryOptions.queryKey);
+}
+
+
+
+
+
+
 

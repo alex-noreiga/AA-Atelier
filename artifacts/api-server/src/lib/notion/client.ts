@@ -42,6 +42,7 @@ export function createNotionClient(config: NotionClientConfig): NotionClient {
 
 let defaultClient: NotionClient | null = null;
 let contactClient: NotionClient | null = null;
+let inventoryClient: NotionClient | null = null;
 
 /**
  * Lazily-constructed client reading credentials from the environment. Deferring
@@ -70,4 +71,19 @@ export function getContactNotionClient(): NotionClient {
     });
   }
   return contactClient;
+}
+
+/**
+ * Client for the finished-goods "inventory" database that feeds the shop's
+ * ready-to-ship section. Same lazy construction, reads
+ * `NOTION_INVENTORY_DATABASE_ID`.
+ */
+export function getInventoryNotionClient(): NotionClient {
+  if (!inventoryClient) {
+    inventoryClient = createNotionClient({
+      apiKey: process.env.NOTION_API_KEY ?? "",
+      databaseId: process.env.NOTION_INVENTORY_DATABASE_ID ?? "",
+    });
+  }
+  return inventoryClient;
 }

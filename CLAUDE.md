@@ -66,8 +66,10 @@ Express app (artifacts/api-server)  ──►  Notion REST API (orders database)
   ├─ GET  /api/healthz             → { status: "ok" }
   ├─ GET  /api/orders/:orderNumber → order status + stage list
   ├─ POST /api/orders              → creates a Notion page, returns order number
-  └─ POST /api/contact             → saves a contact message to the Notion
-                                     "Website Contact Messages" database
+  ├─ POST /api/contact             → saves a contact message to the Notion
+  │                                  "Website Contact Messages" database
+  └─ GET  /api/products            → shop inventory (published in-stock items)
+                                     from the Notion "inventory" database
 ```
 
 - **Locally:** the Vite dev server proxies `/api` to the Express server on
@@ -181,13 +183,40 @@ typecheck. Config highlights: `strict` null checks on, `module: esnext`,
 ### Tests
 
 ```bash
-pnpm test:e2e       # Playwright e2e (tests/e2e/*.spec.ts)
+pnpm test          # all unit + integration tests (Vitest, no network)
+pnpm test:e2e      # Playwright e2e (tests/e2e/*.spec.ts)
 ```
 
-Playwright targets `PLAYWRIGHT_BASE_URL` (default `http://localhost:3001`) — so
-the app must be running/served before the e2e run. `order-form.spec.ts` submits
-a real order and asserts the returned order number matches `ORD-...`, so it
-exercises the live Notion write path.
+**Backend unit / integration (Vitest).** The `@workspace/api-server` suite in
+`artifacts/api-server/test/` — pure-function tests for the Notion schema mapping
+and block builders, repository tests driving the **injected** `NotionClient` with
+a fake (`test/support/fake-notion.ts`), service-logic tests, and supertest route
+tests over the real Express stack with the Notion repository mocked. No server,
+no network, no Notion. A vitest-config plugin maps the source's `.js` import
+specifiers to the on-disk `.ts` files so tests run with no build step.
+
+**Frontend component (Vitest + Testing Library).** The `@workspace/order-status`
+suite in `artifacts/order-status/test/` (jsdom) — the status-timeline
+completed/active/future logic and render states (the generated react-query hook
+is mocked to drive each state), and the order-form validation + submit-payload
+mapping (asserting empty optional fields are omitted). `pnpm test` runs both
+Vitest suites; each package also has its own `test` / `test:watch`.
+
+**End-to-end (Playwright).** By default the e2e run is self-contained: Playwright
+starts the frontend dev server itself (`webServer` in `playwright.config.ts`) and
+every spec intercepts `/api/*` in the browser (`tests/e2e/support/mock-api.ts`),
+so no api-server or Notion is required and the runs are deterministic. Set
+`PLAYWRIGHT_BASE_URL` to point at an already-running app instead (Playwright then
+won't spawn its own server). `order-form.spec.ts` also carries an **opt-in**
+live-Notion smoke test guarded by `E2E_LIVE_NOTION=1` — that's the only path that
+writes to the real Notion database.
+
+**CI.** `.github/workflows/ci.yml` runs on every pull request and push to `main`:
+install → `pnpm typecheck` → `pnpm test` (both Vitest suites) → `pnpm test:e2e`
+(Playwright installs its own Chromium; the mocked specs need no backend). The
+Playwright config prefers `PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH`, then a NixOS
+system Chromium, then Playwright's managed browser — so it runs in CI, locally,
+and in the maintainer's env without edits.
 
 ## Conventions & gotchas
 
@@ -234,7 +263,9 @@ exercises the live Notion write path.
   output `artifacts/order-status/dist/public`.
 - **Required Vercel env vars:** `NOTION_API_KEY`, `NOTION_ORDERS_DATABASE_ID`,
   `NOTION_CONTACT_DATABASE_ID` (the "Website Contact Messages" database that the
-  `/contact` form writes to).
+  `/contact` form writes to), and `NOTION_INVENTORY_DATABASE_ID` (the finished-
+  goods "inventory" database the shop's `/products` endpoint reads). The Notion
+  integration must be shared with each database or queries 404.
 
 ## Quick reference — where things live
 
@@ -248,6 +279,8 @@ exercises the live Notion write path.
 | Change the status-lookup UI             | `artifacts/order-status/src/pages/status.tsx`             |
 | Change the order intake form            | `artifacts/order-status/src/pages/order-form.tsx`         |
 | Change the landing page                 | `artifacts/order-status/src/pages/home.tsx`               |
+| Change the shop (curated catalogue)     | `artifacts/order-status/src/pages/shop.tsx`               |
+| Change the live inventory shop section  | `artifacts/order-status/src/components/in-stock-section.tsx` + `services/products.service.ts` + `lib/notion/products.*` |
 | Add a page / route                      | new `src/pages/*.tsx` + `<Route>` in `src/App.tsx`        |
 | Add or rename a nav link                | `NAV_LINKS` in `artifacts/order-status/src/components/navbar.tsx` |
 | Add a shared UI component               | `artifacts/order-status/src/components/ui/`               |

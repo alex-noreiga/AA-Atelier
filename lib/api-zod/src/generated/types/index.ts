@@ -16,3 +16,6 @@ export * from './newOrderRequestPreferredContact';
 export * from './newOrderResponse';
 export * from './orderNotFound';
 export * from './orderStatus';
+export * from './product';
+export * from './productList';
+export * from './productVariant';
