@@ -65,7 +65,9 @@ Express app (artifacts/api-server)  ──►  Notion REST API (orders database)
   │
   ├─ GET  /api/healthz             → { status: "ok" }
   ├─ GET  /api/orders/:orderNumber → order status + stage list
-  └─ POST /api/orders              → creates a Notion page, returns order number
+  ├─ POST /api/orders              → creates a Notion page, returns order number
+  └─ POST /api/contact             → saves a contact message to the Notion
+                                     "Website Contact Messages" database
 ```
 
 - **Locally:** the Vite dev server proxies `/api` to the Express server on
@@ -230,7 +232,9 @@ exercises the live Notion write path.
 - Vercel deploys from the repo using `vercel.json`:
   `installCommand: pnpm install`, `buildCommand: pnpm run build:vercel`,
   output `artifacts/order-status/dist/public`.
-- **Required Vercel env vars:** `NOTION_API_KEY`, `NOTION_ORDERS_DATABASE_ID`.
+- **Required Vercel env vars:** `NOTION_API_KEY`, `NOTION_ORDERS_DATABASE_ID`,
+  `NOTION_CONTACT_DATABASE_ID` (the "Website Contact Messages" database that the
+  `/contact` form writes to).
 
 ## Quick reference — where things live
 

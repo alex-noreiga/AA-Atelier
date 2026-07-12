@@ -8,6 +8,8 @@
 
 export * from './errorEnvelope';
 export * from './healthStatus';
+export * from './newContactRequest';
+export * from './newContactResponse';
 export * from './newOrderRequest';
 export * from './newOrderRequestMeasurementUnit';
 export * from './newOrderRequestPreferredContact';

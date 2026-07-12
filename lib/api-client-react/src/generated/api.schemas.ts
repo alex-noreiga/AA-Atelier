@@ -63,6 +63,19 @@ export interface NewOrderResponse {
   orderNumber: string;
 }
 
+export interface NewContactRequest {
+  /** @minLength 1 */
+  name: string;
+  email: string;
+  phone?: string;
+  /** @minLength 1 */
+  message: string;
+}
+
+export interface NewContactResponse {
+  success: boolean;
+}
+
 export interface ErrorEnvelope {
   error: string;
 }

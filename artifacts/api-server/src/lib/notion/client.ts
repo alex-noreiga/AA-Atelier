@@ -41,6 +41,7 @@ export function createNotionClient(config: NotionClientConfig): NotionClient {
 }
 
 let defaultClient: NotionClient | null = null;
+let contactClient: NotionClient | null = null;
 
 /**
  * Lazily-constructed client reading credentials from the environment. Deferring
@@ -55,4 +56,18 @@ export function getNotionClient(): NotionClient {
     });
   }
   return defaultClient;
+}
+
+/**
+ * Client for the separate "Website Contact Messages" database. Same lazy
+ * construction as `getNotionClient`, but reads `NOTION_CONTACT_DATABASE_ID`.
+ */
+export function getContactNotionClient(): NotionClient {
+  if (!contactClient) {
+    contactClient = createNotionClient({
+      apiKey: process.env.NOTION_API_KEY ?? "",
+      databaseId: process.env.NOTION_CONTACT_DATABASE_ID ?? "",
+    });
+  }
+  return contactClient;
 }
