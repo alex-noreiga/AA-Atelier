@@ -260,6 +260,7 @@ components:
         - name
         - available
         - photos
+        - sizes
       properties:
         id:
           type: string
@@ -275,8 +276,30 @@ components:
           type: array
           items:
             type: string
+        sizes:
+          type: array
+          description: >-
+            Every size band this item is offered in ("Sizes Offered" in Notion),
+            each flagged with whether it is currently in stock ("Sizes
+            Available"). A size that is offered but not available is sold out,
+            and the shop offers a per-size back-in-stock request. Empty for
+            one-size items (soakers, cloths).
+          items:
+            $ref: "#/components/schemas/SizeOption"
         quantityAvailable:
           type: number
+    SizeOption:
+      type: object
+      required:
+        - name
+        - available
+      properties:
+        name:
+          type: string
+          description: A size band, e.g. "Adult M".
+        available:
+          type: boolean
+          description: False when the size is offered but currently sold out.
     Product:
       type: object
       required:
@@ -299,11 +322,21 @@ components:
       type: object
       required:
         - products
+        - categories
       properties:
         products:
           type: array
           items:
             $ref: "#/components/schemas/Product"
+        categories:
+          type: array
+          description: >-
+            The shop's category filters, read live from the "Item Type" select
+            options on the Notion inventory database and returned in the order
+            the atelier arranged them. Editing the options in Notion changes
+            this list without a redeploy, so clients must not hardcode it.
+          items:
+            type: string
     ErrorEnvelope:
       type: object
       required: [error]

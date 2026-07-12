@@ -2,7 +2,10 @@
 // variants into cards: rows sharing a `Website Group` become one card with
 // selectable variants; ungrouped rows become standalone single-variant cards.
 
-import { listVariants } from "../lib/notion/products.repository.js";
+import {
+  listCategories,
+  listVariants,
+} from "../lib/notion/products.repository.js";
 import type {
   ProductRecord,
   ProductVariantRecord,
@@ -60,6 +63,29 @@ export function groupVariants(variants: VariantRecord[]): ProductRecord[] {
   return cards;
 }
 
-export async function getProducts(): Promise<ProductRecord[]> {
-  return groupVariants(await listVariants());
+/**
+ * Narrow the live Item Type options to those that actually have a card on the
+ * shop, preserving Notion's ordering. Pure, so it can be unit-tested directly.
+ * An option the team has defined but not yet stocked would otherwise render a
+ * filter chip that leads to an empty grid.
+ */
+export function visibleCategories(
+  categories: string[],
+  products: ProductRecord[],
+): string[] {
+  const stocked = new Set(products.map((product) => product.category));
+  return categories.filter((category) => stocked.has(category));
+}
+
+export async function getProducts(): Promise<{
+  products: ProductRecord[];
+  categories: string[];
+}> {
+  const [variants, categories] = await Promise.all([
+    listVariants(),
+    listCategories(),
+  ]);
+  const products = groupVariants(variants);
+
+  return { products, categories: visibleCategories(categories, products) };
 }
