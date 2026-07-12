@@ -12,6 +12,8 @@ tags:
     description: Health operations
   - name: orders
     description: Customer order status lookup
+  - name: contact
+    description: Customer contact messages
 paths:
   /health:
     get:
@@ -70,6 +72,37 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/NewOrderResponse"
+        "400":
+          description: Validation error
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorEnvelope"
+        "500":
+          description: Server error
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorEnvelope"
+  /contact:
+    post:
+      operationId: createContactMessage
+      tags: [contact]
+      summary: Submit a contact message
+      description: Saves a customer inquiry to the Notion contact-messages database
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/NewContactRequest"
+      responses:
+        "201":
+          description: Message received
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/NewContactResponse"
         "400":
           description: Validation error
           content:
@@ -172,6 +205,31 @@ components:
       properties:
         orderNumber:
           type: string
+    NewContactRequest:
+      type: object
+      required:
+        - name
+        - email
+        - message
+      properties:
+        name:
+          type: string
+          minLength: 1
+        email:
+          type: string
+          format: email
+        phone:
+          type: string
+        message:
+          type: string
+          minLength: 1
+    NewContactResponse:
+      type: object
+      required:
+        - success
+      properties:
+        success:
+          type: boolean
     ErrorEnvelope:
       type: object
       required: [error]

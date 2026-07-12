@@ -22,6 +22,8 @@ import type {
 import type {
   ErrorEnvelope,
   HealthStatus,
+  NewContactRequest,
+  NewContactResponse,
   NewOrderRequest,
   NewOrderResponse,
   OrderNotFound,
@@ -280,5 +282,76 @@ export const useCreateOrder = <TError = ErrorType<ErrorEnvelope>,
         TContext
       > => {
       return useMutation(getCreateOrderMutationOptions(options));
+    }
+
+export const getCreateContactMessageUrl = () => {
+
+
+
+
+  return `/api/contact`
+}
+
+/**
+ * Saves a customer inquiry to the Notion contact-messages database
+ * @summary Submit a contact message
+ */
+export const createContactMessage = async (newContactRequest: NewContactRequest, options?: RequestInit): Promise<NewContactResponse> => {
+
+  return customFetch<NewContactResponse>(getCreateContactMessageUrl(),
+  {
+    ...options,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    body: JSON.stringify(newContactRequest)
+  }
+);}
+
+
+
+
+export const getCreateContactMessageMutationOptions = <TError = ErrorType<ErrorEnvelope>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof createContactMessage>>, TError,{data: BodyType<NewContactRequest>}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof createContactMessage>>, TError,{data: BodyType<NewContactRequest>}, TContext> => {
+
+const mutationKey = ['createContactMessage'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof createContactMessage>>, {data: BodyType<NewContactRequest>}> = (props) => {
+          const {data} = props ?? {};
+
+          return  createContactMessage(data,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type CreateContactMessageMutationResult = NonNullable<Awaited<ReturnType<typeof createContactMessage>>>
+    export type CreateContactMessageMutationBody = BodyType<NewContactRequest>
+    export type CreateContactMessageMutationError = ErrorType<ErrorEnvelope>
+
+    /**
+ * @summary Submit a contact message
+ */
+export const useCreateContactMessage = <TError = ErrorType<ErrorEnvelope>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof createContactMessage>>, TError,{data: BodyType<NewContactRequest>}, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof createContactMessage>>,
+        TError,
+        {data: BodyType<NewContactRequest>},
+        TContext
+      > => {
+      return useMutation(getCreateContactMessageMutationOptions(options));
     }
 
