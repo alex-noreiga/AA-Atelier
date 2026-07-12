@@ -181,13 +181,27 @@ typecheck. Config highlights: `strict` null checks on, `module: esnext`,
 ### Tests
 
 ```bash
-pnpm test:e2e       # Playwright e2e (tests/e2e/*.spec.ts)
+pnpm test          # api-server unit + integration tests (Vitest, no network)
+pnpm test:e2e      # Playwright e2e (tests/e2e/*.spec.ts)
 ```
 
-Playwright targets `PLAYWRIGHT_BASE_URL` (default `http://localhost:3001`) — so
-the app must be running/served before the e2e run. `order-form.spec.ts` submits
-a real order and asserts the returned order number matches `ORD-...`, so it
-exercises the live Notion write path.
+**Unit / integration (Vitest).** `pnpm test` runs the `@workspace/api-server`
+suite in `artifacts/api-server/test/` — pure-function tests for the Notion
+schema mapping and block builders, repository tests driving the **injected**
+`NotionClient` with a fake (`test/support/fake-notion.ts`), service-logic tests,
+and supertest route tests over the real Express stack with the Notion repository
+mocked. No server, no network, no Notion. A vitest-config plugin maps the
+source's `.js` import specifiers to the on-disk `.ts` files so tests run with no
+build step.
+
+**End-to-end (Playwright).** By default the e2e run is self-contained: Playwright
+starts the frontend dev server itself (`webServer` in `playwright.config.ts`) and
+every spec intercepts `/api/*` in the browser (`tests/e2e/support/mock-api.ts`),
+so no api-server or Notion is required and the runs are deterministic. Set
+`PLAYWRIGHT_BASE_URL` to point at an already-running app instead (Playwright then
+won't spawn its own server). `order-form.spec.ts` also carries an **opt-in**
+live-Notion smoke test guarded by `E2E_LIVE_NOTION=1` — that's the only path that
+writes to the real Notion database.
 
 ## Conventions & gotchas
 
