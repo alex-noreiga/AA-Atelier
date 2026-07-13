@@ -14,6 +14,10 @@ export interface OrderStatus {
   orderName: string;
   currentStage: string;
   stages: string[];
+  /** The deposit the atelier set for this custom order, in dollars. Absent until they've quoted the piece and set it in Notion. */
+  depositAmount?: number;
+  /** Whether the customer has already paid the deposit. */
+  depositPaid?: boolean;
 }
 
 export interface OrderNotFound {
@@ -139,6 +143,11 @@ export interface CreateCheckoutSessionRequest {
 
 export interface CheckoutSessionResponse {
   /** The Stripe-hosted checkout URL to redirect the browser to. */
+  url: string;
+}
+
+export interface DepositSessionResponse {
+  /** The Stripe-hosted checkout URL for the deposit payment. */
   url: string;
 }
 

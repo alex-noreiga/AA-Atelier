@@ -91,6 +91,20 @@ export async function mockCreateCheckout(
   return { requests };
 }
 
+/** Mock `POST /api/orders/:orderNumber/deposit` — the status page's deposit button. */
+export async function mockCreateDeposit(
+  page: Page,
+  opts: { status?: number; body: unknown },
+): Promise<{ requestedPaths: string[] }> {
+  const requestedPaths: string[] = [];
+  await page.route("**/api/orders/*/deposit", async (route) => {
+    if (route.request().method() !== "POST") return route.fallback();
+    requestedPaths.push(new URL(route.request().url()).pathname);
+    await json(route, opts.status ?? 201, opts.body);
+  });
+  return { requestedPaths };
+}
+
 /** Mock `GET /api/checkout/session/:id` — the success page's status lookup. */
 export async function mockGetCheckoutSession(
   page: Page,

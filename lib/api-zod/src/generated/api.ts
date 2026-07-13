@@ -29,7 +29,9 @@ export const GetOrderStatusResponse = zod.object({
   "orderNumber": zod.string(),
   "orderName": zod.string(),
   "currentStage": zod.string(),
-  "stages": zod.array(zod.string())
+  "stages": zod.array(zod.string()),
+  "depositAmount": zod.number().optional().describe('The deposit the atelier set for this custom order, in dollars. Absent until they\'ve quoted the piece and set it in Notion.'),
+  "depositPaid": zod.boolean().optional().describe('Whether the customer has already paid the deposit.')
 })
 
 
@@ -68,6 +70,19 @@ export const CreateOrderBody = zod.object({
 
 export const CreateOrderResponse = zod.object({
   "orderNumber": zod.string()
+})
+
+
+/**
+ * Creates a Stripe Checkout session for the deposit the atelier set on this custom order (priced server-side from Notion), and returns the hosted-checkout URL for the browser to redirect to. Fails if the order has no deposit set or the deposit is already paid.
+ * @summary Start a deposit payment for a custom order
+ */
+export const CreateOrderDepositParams = zod.object({
+  "orderNumber": zod.coerce.string()
+})
+
+export const CreateOrderDepositResponse = zod.object({
+  "url": zod.string().describe('The Stripe-hosted checkout URL for the deposit payment.')
 })
 
 

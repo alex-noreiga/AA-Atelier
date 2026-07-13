@@ -10,6 +10,7 @@ export * from './checkoutItem';
 export * from './checkoutSessionResponse';
 export * from './checkoutSessionStatus';
 export * from './createCheckoutSessionRequest';
+export * from './depositSessionResponse';
 export * from './errorEnvelope';
 export * from './healthStatus';
 export * from './newContactRequest';

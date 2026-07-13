@@ -11,4 +11,8 @@ export interface OrderStatus {
   orderName: string;
   currentStage: string;
   stages: string[];
+  /** The deposit the atelier set for this custom order, in dollars. Absent until they've quoted the piece and set it in Notion. */
+  depositAmount?: number;
+  /** Whether the customer has already paid the deposit. */
+  depositPaid?: boolean;
 }

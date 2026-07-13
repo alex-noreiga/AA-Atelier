@@ -15,20 +15,13 @@ import {
   findOrderBySessionId,
 } from "../lib/notion/shop-orders.repository.js";
 import { getStripeClient } from "../lib/stripe/client.js";
+import { siteBaseUrl } from "../lib/site.js";
 import { BadRequestError } from "../lib/errors.js";
 
 const CURRENCY = "usd";
 // v1 default — the atelier can widen this to the markets it ships to.
 const SHIPPING_COUNTRIES: Stripe.Checkout.SessionCreateParams.ShippingAddressCollection.AllowedCountry[] =
   ["US", "CA"];
-
-function siteBaseUrl(): string {
-  const base = process.env.PUBLIC_BASE_URL;
-  if (!base) {
-    throw new Error("PUBLIC_BASE_URL environment variable is not set");
-  }
-  return base.replace(/\/+$/, "");
-}
 
 /**
  * Resolve one requested cart item against live inventory and turn it into a
@@ -95,6 +88,9 @@ export async function createCheckoutSession(
     shipping_address_collection: { allowed_countries: SHIPPING_COUNTRIES },
     success_url: `${base}/shop/success?session_id={CHECKOUT_SESSION_ID}`,
     cancel_url: `${base}/shop`,
+    // Lets the webhook route this session to shop-order recording rather than
+    // to a deposit payment (see routes/stripe-webhook.ts).
+    metadata: { kind: "shop" },
   });
 
   if (!session.url) {

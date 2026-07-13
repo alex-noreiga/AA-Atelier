@@ -8,6 +8,10 @@ import type { Request, Response } from "express";
 import type Stripe from "stripe";
 import { getStripeClient } from "../lib/stripe/client.js";
 import { recordPaidOrder } from "../services/checkout.service.js";
+import {
+  DEPOSIT_SESSION_KIND,
+  recordDepositPayment,
+} from "../services/deposit.service.js";
 import { logger } from "../lib/logger.js";
 
 export async function stripeWebhookHandler(
@@ -36,12 +40,18 @@ export async function stripeWebhookHandler(
   }
 
   if (event.type === "checkout.session.completed") {
+    const session = event.data.object as Stripe.Checkout.Session;
     try {
-      await recordPaidOrder(event.data.object as Stripe.Checkout.Session);
+      // A deposit session (metadata.kind) marks a custom order's deposit paid;
+      // any other completed session is a shop-cart order. Both recorders are
+      // idempotent, so Stripe's retries on a 500 are safe.
+      if (session.metadata?.kind === DEPOSIT_SESSION_KIND) {
+        await recordDepositPayment(session);
+      } else {
+        await recordPaidOrder(session);
+      }
     } catch (err) {
-      // Return 500 so Stripe retries the delivery — recordPaidOrder dedupes on
-      // the session id, so replaying a succeeded delivery is safe.
-      logger.error({ err }, "Failed to record paid shop order");
+      logger.error({ err }, "Failed to record completed checkout session");
       res.status(500).json({ received: false });
       return;
     }

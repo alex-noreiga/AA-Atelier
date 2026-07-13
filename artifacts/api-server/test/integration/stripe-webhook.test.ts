@@ -8,15 +8,21 @@ vi.mock("../../src/services/checkout.service.js", () => ({
   getCheckoutSession: vi.fn(),
   recordPaidOrder: vi.fn(),
 }));
+vi.mock("../../src/services/deposit.service.js", () => ({
+  recordDepositPayment: vi.fn(),
+  DEPOSIT_SESSION_KIND: "deposit",
+}));
 
 import request from "supertest";
 import type Stripe from "stripe";
 import app from "../../src/app.js";
 import { getStripeClient } from "../../src/lib/stripe/client.js";
 import { recordPaidOrder } from "../../src/services/checkout.service.js";
+import { recordDepositPayment } from "../../src/services/deposit.service.js";
 
 const mockGetStripe = vi.mocked(getStripeClient);
 const mockRecord = vi.mocked(recordPaidOrder);
+const mockRecordDeposit = vi.mocked(recordDepositPayment);
 
 function stubConstructEvent(impl: () => Stripe.Event) {
   const constructEvent = vi.fn().mockImplementation(impl);
@@ -51,6 +57,29 @@ describe("POST /api/webhooks/stripe", () => {
     expect(res.status).toBe(200);
     expect(res.body).toEqual({ received: true });
     expect(mockRecord).toHaveBeenCalledWith(sessionObject);
+    expect(mockRecordDeposit).not.toHaveBeenCalled();
+  });
+
+  it("routes a deposit session to the deposit recorder, not the shop recorder", async () => {
+    const sessionObject = { id: "cs_dep", metadata: { kind: "deposit" } };
+    stubConstructEvent(
+      () =>
+        ({
+          type: "checkout.session.completed",
+          data: { object: sessionObject },
+        }) as unknown as Stripe.Event,
+    );
+    mockRecordDeposit.mockResolvedValue();
+
+    const res = await request(app)
+      .post("/api/webhooks/stripe")
+      .set("Content-Type", "application/json")
+      .set("stripe-signature", "t=1,v1=abc")
+      .send(JSON.stringify({ id: "evt_dep" }));
+
+    expect(res.status).toBe(200);
+    expect(mockRecordDeposit).toHaveBeenCalledWith(sessionObject);
+    expect(mockRecord).not.toHaveBeenCalled();
   });
 
   it("returns 400 when signature verification fails and records nothing", async () => {

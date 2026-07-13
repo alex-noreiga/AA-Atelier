@@ -71,6 +71,9 @@ Express app (artifacts/api-server)  ──►  Notion REST API (orders database)
   ├─ GET  /api/healthz             → { status: "ok" }
   ├─ GET  /api/orders/:orderNumber → order status + stage list
   ├─ POST /api/orders              → creates a Notion page, returns order number
+  ├─ POST /api/orders/:n/deposit   → creates a Stripe Checkout session for the
+  │                                  deposit the atelier set on custom order :n
+  │                                  in Notion; the webhook marks it paid
   ├─ POST /api/contact             → saves a contact message to the Notion
   │                                  "Website Contact Messages" database
   ├─ GET  /api/products            → shop inventory + the live category list,
@@ -208,6 +211,22 @@ and `src/lib/notion/shop-orders.*`. Four things are load-bearing:
 The atelier must create the "Shop Orders" Notion database (properties in
 `shop-orders.blocks.ts`) and share the integration with it. Local testing uses
 Stripe test-mode keys + `stripe listen --forward-to localhost:3000/api/webhooks/stripe`.
+
+### Custom-order deposits
+
+Custom (bespoke) orders are quoted offline, so a deposit rides on the **orders**
+database, not a purchasable cart. After quoting, the atelier sets a `Deposit
+Amount` (number) on the order in Notion; the customer pays it from the
+order-status page (`pages/status.tsx` → `POST /orders/:n/deposit`), which prices
+the deposit server-side from that property (never trusting the client) and
+creates a Checkout session tagged `metadata.kind = "deposit"`. The **one** webhook
+handler routes on that tag: a deposit session calls `recordDepositPayment`
+(which sets `Deposit Paid` + `Deposit Session Id` on the order page —
+idempotently), everything else is a shop-cart order. The atelier must add
+`Deposit Amount` (number), `Deposit Paid` (checkbox), and `Deposit Session Id`
+(rich_text) to the orders database — property names live in `schema.ts`. Code:
+`services/deposit.service.ts`, `lib/notion/orders.repository.ts`
+(`findDepositTarget`/`markDepositPaid`), and the status page's `DepositSection`.
 
 ## Development workflow
 
@@ -419,6 +438,7 @@ and in the maintainer's env without edits.
 | Change the shop (live Notion inventory) | `artifacts/order-status/src/pages/shop.tsx` + `services/products.service.ts` + `lib/notion/products.*`                                                                                                                                                                        |
 | Change the back-in-stock notify dialog  | `artifacts/order-status/src/components/notify-dialog.tsx` + `services/notify.service.ts` + `lib/notion/notify.*` (writes to the **contact** database — see below)                                                                                                             |
 | Change shop checkout / payments         | `artifacts/order-status/src/lib/cart.tsx` + `components/cart-drawer.tsx` + `components/add-to-cart.tsx` (frontend); `api-server/src/services/checkout.service.ts` + `routes/checkout.ts` + `routes/stripe-webhook.ts` + `lib/stripe/*` + `lib/notion/shop-orders.*` (backend) |
+| Change custom-order deposits            | `artifacts/order-status/src/pages/status.tsx` (`DepositSection`); `api-server/src/services/deposit.service.ts` + `routes/orders.ts` + `lib/notion/orders.repository.ts` (`findDepositTarget`/`markDepositPaid`) + `routes/stripe-webhook.ts`                                  |
 | Add a page / route                      | new `src/pages/*.tsx` + `<Route>` in `src/App.tsx`                                                                                                                                                                                                                            |
 | Add or rename a nav link                | `NAV_LINKS` in `artifacts/order-status/src/components/navbar.tsx`                                                                                                                                                                                                             |
 | Add a shared UI component               | `artifacts/order-status/src/components/ui/`                                                                                                                                                                                                                                   |

@@ -90,6 +90,47 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/ErrorEnvelope"
+  /orders/{orderNumber}/deposit:
+    post:
+      operationId: createOrderDeposit
+      tags: [orders]
+      summary: Start a deposit payment for a custom order
+      description: >-
+        Creates a Stripe Checkout session for the deposit the atelier set on
+        this custom order (priced server-side from Notion), and returns the
+        hosted-checkout URL for the browser to redirect to. Fails if the order
+        has no deposit set or the deposit is already paid.
+      parameters:
+        - name: orderNumber
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "201":
+          description: Deposit checkout session created
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/DepositSessionResponse"
+        "400":
+          description: No deposit is due on this order
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorEnvelope"
+        "404":
+          description: Order not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/OrderNotFound"
+        "500":
+          description: Server error
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorEnvelope"
   /contact:
     post:
       operationId: createContactMessage
@@ -259,6 +300,14 @@ components:
           type: array
           items:
             type: string
+        depositAmount:
+          type: number
+          description: >-
+            The deposit the atelier set for this custom order, in dollars.
+            Absent until they've quoted the piece and set it in Notion.
+        depositPaid:
+          type: boolean
+          description: Whether the customer has already paid the deposit.
       required:
         - orderNumber
         - orderName
@@ -498,6 +547,14 @@ components:
         url:
           type: string
           description: The Stripe-hosted checkout URL to redirect the browser to.
+    DepositSessionResponse:
+      type: object
+      required:
+        - url
+      properties:
+        url:
+          type: string
+          description: The Stripe-hosted checkout URL for the deposit payment.
     CheckoutSessionStatus:
       type: object
       required:

@@ -100,6 +100,7 @@ describe("findOrderByNumber", () => {
       orderName: "Ada – Custom Dress",
       currentStage: "Sewing",
       stages: ["Consultation", "Sewing", "Delivery"],
+      depositPaid: false,
     });
 
     const queryCall = client.calls.find((c) => isQuery(c.path))!;
@@ -126,6 +127,89 @@ describe("findOrderByNumber", () => {
     await expect(repo.findOrderByNumber("ORD-1", client)).rejects.toThrow(
       /Notion query failed with status 500/,
     );
+  });
+});
+
+describe("deposit lookups & updates", () => {
+  it("maps the deposit amount and paid flag onto the found order", async () => {
+    const client = makeFakeClient((path) => {
+      if (isSchema(path)) return jsonResponse(databaseSchemaWithStages(["A"]));
+      if (isQuery(path)) {
+        return jsonResponse({
+          results: [
+            orderPage({
+              orderName: "Ada",
+              currentStage: "A",
+              depositAmount: 150,
+              depositPaid: true,
+            }),
+          ],
+        });
+      }
+      throw new Error(`unexpected ${path}`);
+    });
+
+    const record = await repo.findOrderByNumber("ORD-1", client);
+    expect(record?.depositAmount).toBe(150);
+    expect(record?.depositPaid).toBe(true);
+  });
+
+  it("findDepositTarget returns the page id and deposit state, no schema fetch", async () => {
+    const client = makeFakeClient((path) => {
+      if (isQuery(path)) {
+        return jsonResponse({
+          results: [
+            orderPage({
+              id: "page-42",
+              orderName: "Ada",
+              depositAmount: 200,
+              depositPaid: false,
+            }),
+          ],
+        });
+      }
+      throw new Error(`unexpected ${path}`);
+    });
+
+    const target = await repo.findDepositTarget("ORD-1", client);
+    expect(target).toEqual({
+      pageId: "page-42",
+      orderName: "Ada",
+      depositAmount: 200,
+      depositPaid: false,
+    });
+    // The deposit lookup doesn't need the live stage list.
+    expect(client.calls.every((c) => isQuery(c.path))).toBe(true);
+  });
+
+  it("findDepositTarget returns null when no order matches", async () => {
+    const client = makeFakeClient(() => jsonResponse({ results: [] }));
+    expect(await repo.findDepositTarget("ORD-NOPE", client)).toBeNull();
+  });
+
+  it("markDepositPaid PATCHes the page with the checkbox and session id", async () => {
+    const client = makeFakeClient((path) => {
+      if (path === "/v1/pages/page-42") return jsonResponse({ id: "page-42" });
+      throw new Error(`unexpected ${path}`);
+    });
+
+    await repo.markDepositPaid("page-42", "cs_test_1", client);
+
+    const call = client.calls[0];
+    expect(call.path).toBe("/v1/pages/page-42");
+    expect(call.init?.method).toBe("PATCH");
+    const body = JSON.parse(call.init!.body as string);
+    expect(body.properties["Deposit Paid"]).toEqual({ checkbox: true });
+    expect(
+      body.properties["Deposit Session Id"].rich_text[0].text.content,
+    ).toBe("cs_test_1");
+  });
+
+  it("markDepositPaid throws on a non-ok response", async () => {
+    const client = makeFakeClient(() => errorResponse(400, "bad"));
+    await expect(
+      repo.markDepositPaid("page-42", "cs_1", client),
+    ).rejects.toThrow(/status 400: bad/);
   });
 });
 

@@ -23,6 +23,7 @@ import type {
   CheckoutSessionResponse,
   CheckoutSessionStatus,
   CreateCheckoutSessionRequest,
+  DepositSessionResponse,
   ErrorEnvelope,
   HealthStatus,
   NewContactRequest,
@@ -288,6 +289,77 @@ export const useCreateOrder = <TError = ErrorType<ErrorEnvelope>,
         TContext
       > => {
       return useMutation(getCreateOrderMutationOptions(options));
+    }
+
+export const getCreateOrderDepositUrl = (orderNumber: string,) => {
+
+
+
+
+  return `/api/orders/${orderNumber}/deposit`
+}
+
+/**
+ * Creates a Stripe Checkout session for the deposit the atelier set on this custom order (priced server-side from Notion), and returns the hosted-checkout URL for the browser to redirect to. Fails if the order has no deposit set or the deposit is already paid.
+ * @summary Start a deposit payment for a custom order
+ */
+export const createOrderDeposit = async (orderNumber: string, options?: RequestInit): Promise<DepositSessionResponse> => {
+
+  return customFetch<DepositSessionResponse>(getCreateOrderDepositUrl(orderNumber),
+  {
+    ...options,
+    method: 'POST'
+
+
+  }
+);}
+
+
+
+
+export const getCreateOrderDepositMutationOptions = <TError = ErrorType<ErrorEnvelope | OrderNotFound>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof createOrderDeposit>>, TError,{orderNumber: string}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof createOrderDeposit>>, TError,{orderNumber: string}, TContext> => {
+
+const mutationKey = ['createOrderDeposit'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof createOrderDeposit>>, {orderNumber: string}> = (props) => {
+          const {orderNumber} = props ?? {};
+
+          return  createOrderDeposit(orderNumber,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type CreateOrderDepositMutationResult = NonNullable<Awaited<ReturnType<typeof createOrderDeposit>>>
+
+    export type CreateOrderDepositMutationError = ErrorType<ErrorEnvelope | OrderNotFound>
+
+    /**
+ * @summary Start a deposit payment for a custom order
+ */
+export const useCreateOrderDeposit = <TError = ErrorType<ErrorEnvelope | OrderNotFound>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof createOrderDeposit>>, TError,{orderNumber: string}, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof createOrderDeposit>>,
+        TError,
+        {orderNumber: string},
+        TContext
+      > => {
+      return useMutation(getCreateOrderDepositMutationOptions(options));
     }
 
 export const getCreateContactMessageUrl = () => {
