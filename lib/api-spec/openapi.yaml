@@ -555,6 +555,20 @@ components:
         url:
           type: string
           description: The Stripe-hosted checkout URL for the deposit payment.
+    ReceiptLineItem:
+      type: object
+      required:
+        - description
+        - quantity
+        - amount
+      properties:
+        description:
+          type: string
+        quantity:
+          type: number
+        amount:
+          type: number
+          description: The line total in dollars (unit price × quantity).
     CheckoutSessionStatus:
       type: object
       required:
@@ -568,6 +582,26 @@ components:
         email:
           type: string
           description: The customer's email, present once the session is complete.
+        currency:
+          type: string
+          description: ISO currency code of the totals, e.g. "usd".
+        lineItems:
+          type: array
+          description: The purchased items, for an on-site receipt.
+          items:
+            $ref: "#/components/schemas/ReceiptLineItem"
+        amountSubtotal:
+          type: number
+          description: Items subtotal in dollars (before shipping and tax).
+        amountShipping:
+          type: number
+          description: Shipping charged in dollars.
+        amountTax:
+          type: number
+          description: Tax charged in dollars (Stripe Tax).
+        amountTotal:
+          type: number
+          description: Grand total in dollars (items + shipping + tax).
     ErrorEnvelope:
       type: object
       required: [error]

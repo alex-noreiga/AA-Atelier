@@ -121,15 +121,52 @@ export async function createCheckoutSession(
   return { url: session.url };
 }
 
+interface ReceiptLine {
+  description: string;
+  quantity: number;
+  amount: number;
+}
+
+export interface CheckoutSessionView {
+  status: string;
+  email?: string;
+  currency?: string;
+  lineItems?: ReceiptLine[];
+  amountSubtotal?: number;
+  amountShipping?: number;
+  amountTax?: number;
+  amountTotal?: number;
+}
+
+/** Stripe amounts are integer minor units (cents); the receipt shows dollars. */
+function toDollars(amountInCents: number | null | undefined): number {
+  return typeof amountInCents === "number" ? amountInCents / 100 : 0;
+}
+
 export async function getCheckoutSession(
   sessionId: string,
   stripe: Stripe = getStripeClient(),
-): Promise<{ status: string; email?: string }> {
-  const session = await stripe.checkout.sessions.retrieve(sessionId);
+): Promise<CheckoutSessionView> {
+  // Expand line items so the success page can render an itemized receipt.
+  const session = await stripe.checkout.sessions.retrieve(sessionId, {
+    expand: ["line_items"],
+  });
   const email = session.customer_details?.email ?? undefined;
+  const lineItems = (session.line_items?.data ?? []).map((item) => ({
+    description: item.description ?? "Item",
+    quantity: item.quantity ?? 1,
+    amount: toDollars(item.amount_total),
+  }));
+
   return {
     status: session.payment_status,
     ...(email ? { email } : {}),
+    ...(session.currency ? { currency: session.currency } : {}),
+    ...(lineItems.length > 0 ? { lineItems } : {}),
+    amountSubtotal: toDollars(session.amount_subtotal),
+    amountShipping: toDollars(session.total_details?.amount_shipping),
+    amountTax: toDollars(session.total_details?.amount_tax),
+    amountTotal: toDollars(session.amount_total),
   };
 }
 

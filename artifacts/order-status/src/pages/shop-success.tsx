@@ -6,13 +6,23 @@ import {
   useGetCheckoutSession,
 } from "@workspace/api-client-react";
 import { PageShell } from "@/components/page-shell";
+import { formatPrice } from "@/lib/format";
 import { useCart } from "@/lib/cart";
+
+function ReceiptRow({ label, amount }: { label: string; amount: number }) {
+  return (
+    <div className="flex justify-between text-sm text-muted-foreground">
+      <span>{label}</span>
+      <span>{formatPrice(amount)}</span>
+    </div>
+  );
+}
 
 /**
  * Post-checkout landing page. Stripe redirects here (with `?session_id=…`) only
  * after a completed payment, so we clear the cart on arrival and confirm the
- * order. The session lookup is best-effort — a confirmation still shows if it
- * fails, since the payment already went through.
+ * order with an itemized receipt. The session lookup is best-effort — a
+ * confirmation still shows if it fails, since the payment already went through.
  */
 export default function ShopSuccess() {
   const search = useSearch();
@@ -31,6 +41,8 @@ export default function ShopSuccess() {
     },
   });
 
+  const lineItems = data?.lineItems ?? [];
+
   return (
     <PageShell align="center">
       <div className="w-full max-w-lg z-10 mx-auto px-6 text-center animate-in fade-in zoom-in-95 duration-1000">
@@ -48,15 +60,58 @@ export default function ShopSuccess() {
           className="text-muted-foreground font-light text-lg leading-relaxed"
           data-testid="shop-success"
         >
-          Your order is on its way to us. We&apos;ll send a confirmation
+          Your payment went through
           {data?.email ? (
             <>
               {" "}
-              to <span className="text-foreground">{data.email}</span>
+              — a receipt is on its way to{" "}
+              <span className="text-foreground">{data.email}</span>
             </>
-          ) : null}{" "}
-          and be in touch about shipping.
+          ) : null}
+          . We&apos;ll be in touch soon.
         </p>
+
+        {lineItems.length > 0 && (
+          <div
+            className="mt-10 rounded-2xl border border-border/60 p-6 text-left"
+            data-testid="receipt"
+          >
+            <p className="text-xs uppercase tracking-widest text-muted-foreground mb-4">
+              Receipt
+            </p>
+            <ul className="space-y-2">
+              {lineItems.map((item, i) => (
+                <li
+                  key={i}
+                  className="flex justify-between gap-4 text-sm"
+                  data-testid="receipt-item"
+                >
+                  <span className="text-foreground">
+                    {item.quantity} × {item.description}
+                  </span>
+                  <span className="text-muted-foreground shrink-0">
+                    {formatPrice(item.amount)}
+                  </span>
+                </li>
+              ))}
+            </ul>
+            <div className="mt-4 space-y-1 border-t border-border/60 pt-4">
+              <ReceiptRow label="Subtotal" amount={data?.amountSubtotal ?? 0} />
+              {data?.amountShipping ? (
+                <ReceiptRow label="Shipping" amount={data.amountShipping} />
+              ) : null}
+              {data?.amountTax ? (
+                <ReceiptRow label="Tax" amount={data.amountTax} />
+              ) : null}
+              <div className="flex justify-between pt-2 font-serif text-lg text-foreground">
+                <span>Total</span>
+                <span data-testid="receipt-total">
+                  {formatPrice(data?.amountTotal ?? 0)}
+                </span>
+              </div>
+            </div>
+          </div>
+        )}
 
         <div className="mt-12">
           <Link

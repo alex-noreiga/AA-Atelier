@@ -108,17 +108,40 @@ describe("POST /api/checkout", () => {
 });
 
 describe("GET /api/checkout/session/:sessionId", () => {
-  it("returns the payment status and email", async () => {
-    stubStripe({
-      retrieve: vi.fn().mockResolvedValue({
-        payment_status: "paid",
-        customer_details: { email: "ada@example.com" },
-      }),
+  it("returns the status, email, and an itemized receipt (cents -> dollars)", async () => {
+    const retrieve = vi.fn().mockResolvedValue({
+      payment_status: "paid",
+      customer_details: { email: "ada@example.com" },
+      currency: "usd",
+      amount_subtotal: 4400,
+      amount_total: 5308,
+      total_details: { amount_shipping: 800, amount_tax: 108 },
+      line_items: {
+        data: [
+          { description: "Bow Fleece Soaker", quantity: 2, amount_total: 4400 },
+        ],
+      },
     });
+    stubStripe({ retrieve });
 
     const res = await request(app).get("/api/checkout/session/cs_test_1");
 
     expect(res.status).toBe(200);
-    expect(res.body).toEqual({ status: "paid", email: "ada@example.com" });
+    expect(res.body).toEqual({
+      status: "paid",
+      email: "ada@example.com",
+      currency: "usd",
+      lineItems: [
+        { description: "Bow Fleece Soaker", quantity: 2, amount: 44 },
+      ],
+      amountSubtotal: 44,
+      amountShipping: 8,
+      amountTax: 1.08,
+      amountTotal: 53.08,
+    });
+    // Line items are expanded so the receipt can be rendered.
+    expect(retrieve).toHaveBeenCalledWith("cs_test_1", {
+      expand: ["line_items"],
+    });
   });
 });

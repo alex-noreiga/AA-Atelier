@@ -151,11 +151,30 @@ export interface DepositSessionResponse {
   url: string;
 }
 
+export interface ReceiptLineItem {
+  description: string;
+  quantity: number;
+  /** The line total in dollars (unit price × quantity). */
+  amount: number;
+}
+
 export interface CheckoutSessionStatus {
   /** The Stripe payment status of the session, e.g. "paid", "unpaid", or "no_payment_required". */
   status: string;
   /** The customer's email, present once the session is complete. */
   email?: string;
+  /** ISO currency code of the totals, e.g. "usd". */
+  currency?: string;
+  /** The purchased items, for an on-site receipt. */
+  lineItems?: ReceiptLineItem[];
+  /** Items subtotal in dollars (before shipping and tax). */
+  amountSubtotal?: number;
+  /** Shipping charged in dollars. */
+  amountShipping?: number;
+  /** Tax charged in dollars (Stripe Tax). */
+  amountTax?: number;
+  /** Grand total in dollars (items + shipping + tax). */
+  amountTotal?: number;
 }
 
 export interface ErrorEnvelope {

@@ -73,7 +73,18 @@ test.describe("Shop checkout", () => {
     page,
   }) => {
     await mockGetCheckoutSession(page, {
-      body: { status: "paid", email: "grace@example.com" },
+      body: {
+        status: "paid",
+        email: "grace@example.com",
+        currency: "usd",
+        lineItems: [
+          { description: "Bow Fleece Soaker", quantity: 1, amount: 22 },
+        ],
+        amountSubtotal: 22,
+        amountShipping: 8,
+        amountTax: 0,
+        amountTotal: 30,
+      },
     });
     // Seed a cart the way a mid-purchase buyer would have one, so we can prove
     // the success page clears it. Seeding via storage keeps this to a single
@@ -104,6 +115,12 @@ test.describe("Shop checkout", () => {
     await expect(page.getByTestId("shop-success")).toContainText(
       "grace@example.com",
     );
+    // The itemized receipt renders, with shipping and the grand total.
+    await expect(page.getByTestId("receipt")).toContainText(
+      "Bow Fleece Soaker",
+    );
+    await expect(page.getByTestId("receipt")).toContainText("Shipping");
+    await expect(page.getByTestId("receipt-total")).toHaveText("$30");
     // The cart is cleared on arrival, so the count badge is gone.
     await expect(page.getByTestId("cart-count")).toHaveCount(0);
   });

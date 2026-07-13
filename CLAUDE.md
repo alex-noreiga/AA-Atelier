@@ -86,7 +86,9 @@ Express app (artifacts/api-server)  ──►  Notion REST API (orders database)
   │                                  live Notion inventory and creates a Stripe
   │                                  Checkout session; returns the hosted-
   │                                  checkout URL for the browser to redirect to
-  ├─ GET  /api/checkout/session/:id→ a session's payment status (success page)
+  ├─ GET  /api/checkout/session/:id→ a session's status + itemized receipt
+  │                                  (items, shipping, tax, total) for the
+  │                                  success page
   └─ POST /api/webhooks/stripe     → Stripe → server webhook (raw body, signed).
                                      On checkout.session.completed, records the
                                      paid order in the Notion "Shop Orders"
@@ -215,6 +217,13 @@ and `src/lib/notion/shop-orders.*`. Four things are load-bearing:
    (Stripe `amount_total`) includes shipping, and `buildShopOrderPageBlocks` adds
    a "Shipping" line to the Notion page body so the itemized bullets reconcile
    with it.
+
+6. **Receipts are Stripe's job; the success page mirrors them.** The emailed
+   receipt is a Stripe Dashboard setting (Settings → Emails → "Successful
+   payments"), not code. `getCheckoutSession` retrieves the session with
+   `expand: ["line_items"]` and returns an itemized view (line items + subtotal /
+   shipping / tax / total, dollars); `pages/shop-success.tsx` renders it as an
+   on-site receipt. Works for both shop-cart orders and deposits.
 
 The atelier must create the "Shop Orders" Notion database (properties in
 `shop-orders.blocks.ts`) and share the integration with it. Local testing uses

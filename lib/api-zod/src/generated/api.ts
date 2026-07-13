@@ -182,7 +182,17 @@ export const GetCheckoutSessionParams = zod.object({
 
 export const GetCheckoutSessionResponse = zod.object({
   "status": zod.string().describe('The Stripe payment status of the session, e.g. \"paid\", \"unpaid\", or \"no_payment_required\".'),
-  "email": zod.string().optional().describe('The customer\'s email, present once the session is complete.')
+  "email": zod.string().optional().describe('The customer\'s email, present once the session is complete.'),
+  "currency": zod.string().optional().describe('ISO currency code of the totals, e.g. \"usd\".'),
+  "lineItems": zod.array(zod.object({
+  "description": zod.string(),
+  "quantity": zod.number(),
+  "amount": zod.number().describe('The line total in dollars (unit price × quantity).')
+})).optional().describe('The purchased items, for an on-site receipt.'),
+  "amountSubtotal": zod.number().optional().describe('Items subtotal in dollars (before shipping and tax).'),
+  "amountShipping": zod.number().optional().describe('Shipping charged in dollars.'),
+  "amountTax": zod.number().optional().describe('Tax charged in dollars (Stripe Tax).'),
+  "amountTotal": zod.number().optional().describe('Grand total in dollars (items + shipping + tax).')
 })
 
 
