@@ -3,6 +3,8 @@ import {
   extractStageOptions,
   extractOrderName,
   extractCurrentStage,
+  extractDepositAmount,
+  extractDepositPaid,
   type NotionDatabaseSchema,
   type NotionOrderPage,
 } from "../../src/lib/notion/schema.js";
@@ -91,5 +93,41 @@ describe("extractCurrentStage", () => {
     expect(
       extractCurrentStage({ id: "p", properties: {} } as NotionOrderPage),
     ).toBe("");
+  });
+});
+
+describe("extractDepositAmount", () => {
+  it("returns the number when set", () => {
+    const page: NotionOrderPage = {
+      id: "p",
+      properties: { "Deposit Amount": { type: "number", number: 150 } },
+    };
+    expect(extractDepositAmount(page)).toBe(150);
+  });
+
+  it("returns undefined when unset (null) or the property is missing", () => {
+    expect(
+      extractDepositAmount({
+        id: "p",
+        properties: { "Deposit Amount": { type: "number", number: null } },
+      }),
+    ).toBeUndefined();
+    expect(
+      extractDepositAmount({ id: "p", properties: {} } as NotionOrderPage),
+    ).toBeUndefined();
+  });
+});
+
+describe("extractDepositPaid", () => {
+  it("reflects the checkbox, defaulting to false when the property is missing", () => {
+    expect(
+      extractDepositPaid({
+        id: "p",
+        properties: { "Deposit Paid": { type: "checkbox", checkbox: true } },
+      }),
+    ).toBe(true);
+    expect(
+      extractDepositPaid({ id: "p", properties: {} } as NotionOrderPage),
+    ).toBe(false);
   });
 });
