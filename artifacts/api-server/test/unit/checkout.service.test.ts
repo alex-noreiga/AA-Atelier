@@ -53,6 +53,7 @@ function fakeStripe(url = "https://checkout.stripe.test/pay") {
 
 beforeEach(() => {
   process.env.PUBLIC_BASE_URL = "https://shop.test";
+  delete process.env.STRIPE_SHIPPING_RATE_IDS;
 });
 
 describe("createCheckoutSession", () => {
@@ -159,6 +160,32 @@ describe("createCheckoutSession", () => {
     expect(
       create.mock.calls[0][0].line_items[0].price_data.product_data,
     ).toEqual({ name: "Keyhole Dress — Adult S" });
+  });
+
+  it("offers the configured Stripe shipping rates, trimmed, in order", async () => {
+    process.env.STRIPE_SHIPPING_RATE_IDS = "shr_standard, shr_express";
+    mockListVariants.mockResolvedValue([variant()]);
+    const { stripe, create } = fakeStripe();
+
+    await createCheckoutSession([{ variantId: "v1", quantity: 1 }], stripe);
+
+    expect(create.mock.calls[0][0].shipping_options).toEqual([
+      { shipping_rate: "shr_standard" },
+      { shipping_rate: "shr_express" },
+    ]);
+    // Address collection stays on so Stripe can ship / apply the rate.
+    expect(create.mock.calls[0][0].shipping_address_collection).toEqual({
+      allowed_countries: ["US", "CA"],
+    });
+  });
+
+  it("omits shipping_options entirely when no rates are configured", async () => {
+    mockListVariants.mockResolvedValue([variant()]);
+    const { stripe, create } = fakeStripe();
+
+    await createCheckoutSession([{ variantId: "v1", quantity: 1 }], stripe);
+
+    expect(create.mock.calls[0][0].shipping_options).toBeUndefined();
   });
 
   it("throws when PUBLIC_BASE_URL is not configured", async () => {

@@ -24,6 +24,19 @@ const SHIPPING_COUNTRIES: Stripe.Checkout.SessionCreateParams.ShippingAddressCol
   ["US", "CA"];
 
 /**
+ * The Stripe Shipping Rate ids to offer at checkout, from a comma-separated
+ * `STRIPE_SHIPPING_RATE_IDS` (e.g. "shr_standard,shr_express"). The atelier
+ * creates and prices these in the Stripe Dashboard, so amounts change with no
+ * redeploy. When unset, checkout charges no shipping.
+ */
+function shippingRateIds(): string[] {
+  return (process.env.STRIPE_SHIPPING_RATE_IDS ?? "")
+    .split(",")
+    .map((id) => id.trim())
+    .filter((id) => id.length > 0);
+}
+
+/**
  * Resolve one requested cart item against live inventory and turn it into a
  * Stripe line item, or throw a BadRequestError explaining why it can't be sold.
  */
@@ -82,10 +95,19 @@ export async function createCheckoutSession(
   const lineItems = items.map((item) => toLineItem(item, variantsById));
 
   const base = siteBaseUrl();
+  const shippingRates = shippingRateIds();
   const session = await stripe.checkout.sessions.create({
     mode: "payment",
     line_items: lineItems,
     shipping_address_collection: { allowed_countries: SHIPPING_COUNTRIES },
+    // Attach the atelier's Stripe-managed shipping rate(s) for the customer to
+    // pick from; omit the field entirely when none are configured (Stripe
+    // rejects an empty array), which charges no shipping.
+    ...(shippingRates.length > 0
+      ? {
+          shipping_options: shippingRates.map((id) => ({ shipping_rate: id })),
+        }
+      : {}),
     success_url: `${base}/shop/success?session_id={CHECKOUT_SESSION_ID}`,
     cancel_url: `${base}/shop`,
     // Lets the webhook route this session to shop-order recording rather than

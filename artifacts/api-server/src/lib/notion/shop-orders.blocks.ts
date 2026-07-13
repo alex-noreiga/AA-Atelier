@@ -135,19 +135,25 @@ export function buildShopOrderPageBlocks(
     const quantity = item.quantity ?? 1;
     const description = item.description ?? "Item";
     const amount = formatMoney(item.amount_total);
-    return {
-      object: "block",
-      type: "bulleted_list_item",
-      bulleted_list_item: {
-        rich_text: [
-          {
-            type: "text",
-            text: { content: `${quantity} × ${description} — ${amount}` },
-          },
-        ],
-      },
-    };
+    return bulletBlock(`${quantity} × ${description} — ${amount}`);
   });
 
+  // Shipping is separate from line items in Stripe, but it's part of the Total —
+  // surface it so the bullets and the Total property reconcile.
+  const shipping = session.total_details?.amount_shipping ?? 0;
+  if (shipping > 0) {
+    bullets.push(bulletBlock(`Shipping — ${formatMoney(shipping)}`));
+  }
+
   return [heading, ...bullets];
+}
+
+function bulletBlock(content: string) {
+  return {
+    object: "block",
+    type: "bulleted_list_item",
+    bulleted_list_item: {
+      rich_text: [{ type: "text", text: { content } }],
+    },
+  };
 }

@@ -48,6 +48,7 @@ function stubStripe(overrides: {
 
 beforeEach(() => {
   process.env.PUBLIC_BASE_URL = "https://shop.test";
+  delete process.env.STRIPE_SHIPPING_RATE_IDS;
 });
 
 describe("POST /api/checkout", () => {
@@ -65,6 +66,23 @@ describe("POST /api/checkout", () => {
 
     expect(res.status).toBe(201);
     expect(res.body).toEqual({ url: "https://checkout.stripe.test/x" });
+  });
+
+  it("passes the configured shipping rates through to Stripe", async () => {
+    process.env.STRIPE_SHIPPING_RATE_IDS = "shr_standard";
+    mockListVariants.mockResolvedValue([variant()]);
+    const create = vi
+      .fn()
+      .mockResolvedValue({ url: "https://checkout.stripe.test/x" });
+    stubStripe({ create });
+
+    await request(app)
+      .post("/api/checkout")
+      .send({ items: [{ variantId: "v1", quantity: 1 }] });
+
+    expect(create.mock.calls[0][0].shipping_options).toEqual([
+      { shipping_rate: "shr_standard" },
+    ]);
   });
 
   it("returns 400 with a customer-safe message for a sold-out item", async () => {

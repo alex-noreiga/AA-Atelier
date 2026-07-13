@@ -96,6 +96,24 @@ describe("buildShopOrderPageBlocks", () => {
       "2 × Bow Fleece Soaker — $44.00",
     );
   });
+
+  it("appends a shipping line when shipping was charged", () => {
+    const blocks = buildShopOrderPageBlocks(
+      session({ total_details: { amount_shipping: 800 } }),
+    ) as any[];
+    const texts = blocks.map(
+      (b) => b.bulleted_list_item?.rich_text[0].text.content,
+    );
+    expect(texts).toContain("Shipping — $8.00");
+  });
+
+  it("omits the shipping line when there was no shipping cost", () => {
+    const blocks = buildShopOrderPageBlocks(session()) as any[];
+    const texts = blocks.map(
+      (b) => b.bulleted_list_item?.rich_text[0].text.content ?? "",
+    );
+    expect(texts.some((t: string) => t.startsWith("Shipping"))).toBe(false);
+  });
 });
 
 describe("formatShippingAddress", () => {

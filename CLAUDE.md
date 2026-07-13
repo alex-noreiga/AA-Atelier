@@ -208,6 +208,14 @@ and `src/lib/notion/shop-orders.*`. Four things are load-bearing:
    can't be written; auto-decrement would need a new writable count property plus
    reservation logic. Don't wire it up without that.
 
+5. **Shipping rates live in Stripe, not code.** `checkout.service` reads
+   `STRIPE_SHIPPING_RATE_IDS` (comma-separated `shr_…` ids the atelier creates and
+   prices in the Stripe Dashboard) and attaches them as the session's
+   `shipping_options`; unset means no shipping is charged. The order's `Total`
+   (Stripe `amount_total`) includes shipping, and `buildShopOrderPageBlocks` adds
+   a "Shipping" line to the Notion page body so the itemized bullets reconcile
+   with it.
+
 The atelier must create the "Shop Orders" Notion database (properties in
 `shop-orders.blocks.ts`) and share the integration with it. Local testing uses
 Stripe test-mode keys + `stripe listen --forward-to localhost:3000/api/webhooks/stripe`.
@@ -421,7 +429,9 @@ and in the maintainer's env without edits.
   integration must be shared with each database or queries 404. Checkout also
   needs `STRIPE_SECRET_KEY`, `STRIPE_WEBHOOK_SECRET` (the signing secret of the
   Stripe webhook endpoint), and `PUBLIC_BASE_URL` (the site origin Stripe
-  redirects back to after payment).
+  redirects back to after payment). Optionally, `STRIPE_SHIPPING_RATE_IDS` — a
+  comma-separated list of Stripe Shipping Rate ids to offer at shop checkout
+  (unset ⇒ no shipping charged).
 
 ## Quick reference — where things live
 
