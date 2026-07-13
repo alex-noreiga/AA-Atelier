@@ -7,14 +7,19 @@
 import type { z } from "zod";
 import type { CreateContactMessageBody } from "@workspace/api-zod";
 
-// Live-schema property names (a Notion rename is a one-line change here).
-const CONTACT_SUBJECT_PROPERTY = "Message (subject)"; // title
+// Live-schema property names (a Notion rename is a one-line change here). The
+// exported ones are shared with `notify.blocks.ts`: the shop's back-in-stock
+// requests land in this same database, so the two writers must agree on the
+// property names. "Request type" is what separates them in the inbox.
+export const CONTACT_SUBJECT_PROPERTY = "Message (subject)"; // title
 const CONTACT_NAME_PROPERTY = "Customer name"; // rich_text
-const CONTACT_EMAIL_PROPERTY = "Email"; // email
+export const CONTACT_EMAIL_PROPERTY = "Email"; // email
 const CONTACT_PHONE_PROPERTY = "Phone"; // phone_number
 const CONTACT_MESSAGE_PROPERTY = "Message"; // rich_text
-const CONTACT_STAGE_PROPERTY = "Stage"; // select
-const CONTACT_DEFAULT_STAGE = "New";
+export const CONTACT_STAGE_PROPERTY = "Stage"; // select
+export const CONTACT_DEFAULT_STAGE = "New";
+const CONTACT_TYPE_PROPERTY = "Request type"; // select
+const CONTACT_REQUEST_TYPE = "Inquiry";
 
 /** Validated contact-message payload, derived from the OpenAPI contract. */
 export type CreateContactInput = z.infer<typeof CreateContactMessageBody>;
@@ -38,6 +43,9 @@ export function buildContactProperties(
     },
     [CONTACT_STAGE_PROPERTY]: {
       select: { name: CONTACT_DEFAULT_STAGE },
+    },
+    [CONTACT_TYPE_PROPERTY]: {
+      select: { name: CONTACT_REQUEST_TYPE },
     },
   };
 

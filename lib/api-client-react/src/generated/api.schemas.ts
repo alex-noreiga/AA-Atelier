@@ -76,6 +76,21 @@ export interface NewContactResponse {
   success: boolean;
 }
 
+export interface NewNotifyRequest {
+  email: string;
+  /**
+     * The sold-out variant's name, e.g. "Bow Fleece Soaker — Black".
+     * @minLength 1
+     */
+  item: string;
+  /** Set only when the customer asked about one specific sold-out size band; absent when the whole variant is sold out. */
+  size?: string;
+}
+
+export interface NewNotifyResponse {
+  success: boolean;
+}
+
 export interface SizeOption {
   /** A size band, e.g. "Adult M". */
   name: string;

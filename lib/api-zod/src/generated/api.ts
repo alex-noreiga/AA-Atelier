@@ -92,6 +92,24 @@ export const CreateContactMessageResponse = zod.object({
 
 
 /**
+ * Saves a customer's request to be told when a sold-out shop item is back in stock, to the Notion back-in-stock database.
+ * @summary Request a back-in-stock notification
+ */
+
+
+
+export const CreateBackInStockRequestBody = zod.object({
+  "email": zod.string().email(),
+  "item": zod.string().min(1).describe('The sold-out variant\'s name, e.g. \"Bow Fleece Soaker — Black\".'),
+  "size": zod.string().optional().describe('Set only when the customer asked about one specific sold-out size band; absent when the whole variant is sold out.')
+})
+
+export const CreateBackInStockRequestResponse = zod.object({
+  "success": zod.boolean()
+})
+
+
+/**
  * Returns published, in-stock shop items from the Notion inventory database, grouped into cards with selectable variants.
  * @summary List shop products
  */
