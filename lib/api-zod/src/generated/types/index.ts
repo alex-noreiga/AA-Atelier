@@ -6,6 +6,10 @@
  * OpenAPI spec version: 0.1.0
  */
 
+export * from './checkoutItem';
+export * from './checkoutSessionResponse';
+export * from './checkoutSessionStatus';
+export * from './createCheckoutSessionRequest';
 export * from './errorEnvelope';
 export * from './healthStatus';
 export * from './newContactRequest';

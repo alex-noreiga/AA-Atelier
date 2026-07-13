@@ -136,3 +136,38 @@ export const GetProductsResponse = zod.object({
 })
 
 
+/**
+ * Validates the requested in-stock shop items against live Notion inventory, prices them server-side (the client never sends prices), and creates a Stripe Checkout session. Returns the hosted-checkout URL for the browser to redirect to.
+ * @summary Create a Stripe Checkout session for shop items
+ */
+
+
+
+
+export const CreateCheckoutSessionBody = zod.object({
+  "items": zod.array(zod.object({
+  "variantId": zod.string().describe('The Notion inventory page id of the variant being purchased (the `id` on a ProductVariant).'),
+  "size": zod.string().optional().describe('The selected size band, required when the variant is offered in sizes and omitted for one-size items.'),
+  "quantity": zod.number().min(1)
+})).min(1)
+})
+
+export const CreateCheckoutSessionResponse = zod.object({
+  "url": zod.string().describe('The Stripe-hosted checkout URL to redirect the browser to.')
+})
+
+
+/**
+ * Returns the payment status of a Stripe Checkout session, used by the post-purchase success page to confirm the order.
+ * @summary Get a checkout session's status
+ */
+export const GetCheckoutSessionParams = zod.object({
+  "sessionId": zod.coerce.string()
+})
+
+export const GetCheckoutSessionResponse = zod.object({
+  "status": zod.string().describe('The Stripe payment status of the session, e.g. \"paid\", \"unpaid\", or \"no_payment_required\".'),
+  "email": zod.string().optional().describe('The customer\'s email, present once the session is complete.')
+})
+
+

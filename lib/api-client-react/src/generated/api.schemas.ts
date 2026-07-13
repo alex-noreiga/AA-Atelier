@@ -123,6 +123,32 @@ export interface ProductList {
   categories: string[];
 }
 
+export interface CheckoutItem {
+  /** The Notion inventory page id of the variant being purchased (the `id` on a ProductVariant). */
+  variantId: string;
+  /** The selected size band, required when the variant is offered in sizes and omitted for one-size items. */
+  size?: string;
+  /** @minimum 1 */
+  quantity: number;
+}
+
+export interface CreateCheckoutSessionRequest {
+  /** @minItems 1 */
+  items: CheckoutItem[];
+}
+
+export interface CheckoutSessionResponse {
+  /** The Stripe-hosted checkout URL to redirect the browser to. */
+  url: string;
+}
+
+export interface CheckoutSessionStatus {
+  /** The Stripe payment status of the session, e.g. "paid", "unpaid", or "no_payment_required". */
+  status: string;
+  /** The customer's email, present once the session is complete. */
+  email?: string;
+}
+
 export interface ErrorEnvelope {
   error: string;
 }
