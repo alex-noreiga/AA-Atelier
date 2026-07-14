@@ -9,6 +9,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { PageShell } from "@/components/page-shell";
+import { Seo } from "@/components/seo";
 import { useToast } from "@/hooks/use-toast";
 import {
   ArrowRight,
@@ -116,6 +117,11 @@ export default function Contact() {
 
   return (
     <PageShell align="top" noise={false}>
+      <Seo
+        title="Contact A.A Atelier | A3 Ice and Dance"
+        description="Get in touch with A.A Atelier about a custom figure skating or dance costume, a fitting, or a question. Reach us by email or on Instagram at @a3iceanddance."
+        path="/contact"
+      />
       <div className="max-w-2xl mx-auto px-6 pt-24 pb-16">
         <div className="mb-10 text-center">
           <p className="text-primary text-xs tracking-[0.35em] uppercase mb-6">

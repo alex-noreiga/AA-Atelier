@@ -29,7 +29,9 @@ export const GetOrderStatusResponse = zod.object({
   "orderNumber": zod.string(),
   "orderName": zod.string(),
   "currentStage": zod.string(),
-  "stages": zod.array(zod.string())
+  "stages": zod.array(zod.string()),
+  "depositAmount": zod.number().optional().describe('The deposit the atelier set for this custom order, in dollars. Absent until they\'ve quoted the piece and set it in Notion.'),
+  "depositPaid": zod.boolean().optional().describe('Whether the customer has already paid the deposit.')
 })
 
 
@@ -68,6 +70,19 @@ export const CreateOrderBody = zod.object({
 
 export const CreateOrderResponse = zod.object({
   "orderNumber": zod.string()
+})
+
+
+/**
+ * Creates a Stripe Checkout session for the deposit the atelier set on this custom order (priced server-side from Notion), and returns the hosted-checkout URL for the browser to redirect to. Fails if the order has no deposit set or the deposit is already paid.
+ * @summary Start a deposit payment for a custom order
+ */
+export const CreateOrderDepositParams = zod.object({
+  "orderNumber": zod.coerce.string()
+})
+
+export const CreateOrderDepositResponse = zod.object({
+  "url": zod.string().describe('The Stripe-hosted checkout URL for the deposit payment.')
 })
 
 
@@ -133,6 +148,51 @@ export const GetProductsResponse = zod.object({
 }))
 })),
   "categories": zod.array(zod.string()).describe('The shop\'s category filters, read live from the \"Item Type\" select options on the Notion inventory database and returned in the order the atelier arranged them. Editing the options in Notion changes this list without a redeploy, so clients must not hardcode it.')
+})
+
+
+/**
+ * Validates the requested in-stock shop items against live Notion inventory, prices them server-side (the client never sends prices), and creates a Stripe Checkout session. Returns the hosted-checkout URL for the browser to redirect to.
+ * @summary Create a Stripe Checkout session for shop items
+ */
+
+
+
+
+export const CreateCheckoutSessionBody = zod.object({
+  "items": zod.array(zod.object({
+  "variantId": zod.string().describe('The Notion inventory page id of the variant being purchased (the `id` on a ProductVariant).'),
+  "size": zod.string().optional().describe('The selected size band, required when the variant is offered in sizes and omitted for one-size items.'),
+  "quantity": zod.number().min(1)
+})).min(1)
+})
+
+export const CreateCheckoutSessionResponse = zod.object({
+  "url": zod.string().describe('The Stripe-hosted checkout URL to redirect the browser to.')
+})
+
+
+/**
+ * Returns the payment status of a Stripe Checkout session, used by the post-purchase success page to confirm the order.
+ * @summary Get a checkout session's status
+ */
+export const GetCheckoutSessionParams = zod.object({
+  "sessionId": zod.coerce.string()
+})
+
+export const GetCheckoutSessionResponse = zod.object({
+  "status": zod.string().describe('The Stripe payment status of the session, e.g. \"paid\", \"unpaid\", or \"no_payment_required\".'),
+  "email": zod.string().optional().describe('The customer\'s email, present once the session is complete.'),
+  "currency": zod.string().optional().describe('ISO currency code of the totals, e.g. \"usd\".'),
+  "lineItems": zod.array(zod.object({
+  "description": zod.string(),
+  "quantity": zod.number(),
+  "amount": zod.number().describe('The line total in dollars (unit price × quantity).')
+})).optional().describe('The purchased items, for an on-site receipt.'),
+  "amountSubtotal": zod.number().optional().describe('Items subtotal in dollars (before shipping and tax).'),
+  "amountShipping": zod.number().optional().describe('Shipping charged in dollars.'),
+  "amountTax": zod.number().optional().describe('Tax charged in dollars (Stripe Tax).'),
+  "amountTotal": zod.number().optional().describe('Grand total in dollars (items + shipping + tax).')
 })
 
 

@@ -3,16 +3,25 @@ import { render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { Router } from "wouter";
 import { memoryLocation } from "wouter/memory-location";
+import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import Navbar from "@/components/navbar";
+import { CartProvider } from "@/lib/cart";
 
-// Navbar is static — it fetches nothing, so there is no hook to mock here. It
-// does need a wouter location, which memoryLocation supplies without a browser.
+// Navbar fetches nothing itself, but it renders the cart button, which reads the
+// cart context and instantiates a react-query mutation — so it needs a
+// CartProvider and a QueryClientProvider. memoryLocation supplies the wouter
+// location without a browser.
 function renderAt(path: string) {
   const { hook } = memoryLocation({ path });
+  const queryClient = new QueryClient();
   return render(
-    <Router hook={hook}>
-      <Navbar />
-    </Router>,
+    <QueryClientProvider client={queryClient}>
+      <CartProvider>
+        <Router hook={hook}>
+          <Navbar />
+        </Router>
+      </CartProvider>
+    </QueryClientProvider>,
   );
 }
 
