@@ -4,10 +4,14 @@
 
 import { createBackInStockRequest } from "../lib/notion/notify.repository.js";
 import type { CreateNotifyInput } from "../lib/notion/notify.blocks.js";
+import { backInStockConfirmationEmail } from "../lib/resend/emails.js";
+import { sendEmailBestEffort } from "../lib/resend/send.js";
 
 export async function submitBackInStockRequest(
   input: CreateNotifyInput,
 ): Promise<{ success: true }> {
   await createBackInStockRequest(input);
+  // Best-effort confirmation email; a mail failure must not fail the request.
+  await sendEmailBestEffort(backInStockConfirmationEmail(input));
   return { success: true };
 }

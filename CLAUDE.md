@@ -67,21 +67,24 @@ Browser (order-status SPA)
   │  fetch /api/*
   ▼
 Express app (artifacts/api-server)  ──►  Notion REST API (orders database)
+                                    └──►  Resend REST API (customer emails)
   │
   ├─ GET  /api/healthz             → { status: "ok" }
   ├─ GET  /api/orders/:orderNumber → order status + stage list
   ├─ POST /api/orders              → creates a Notion page, returns order number
+  │                                  + sends an order-confirmation email
   ├─ POST /api/orders/:n/deposit   → creates a Stripe Checkout session for the
   │                                  deposit the atelier set on custom order :n
   │                                  in Notion; the webhook marks it paid
   ├─ POST /api/contact             → saves a contact message to the Notion
   │                                  "Website Contact Messages" database
+  │                                  + sends an acknowledgement email
   ├─ GET  /api/products            → shop inventory + the live category list,
   │                                  from the Notion "inventory" database
   ├─ POST /api/notify              → files a back-in-stock request (email + item
   │                                  + optional size) in that SAME contact
   │                                  database, tagged Request type = "Back in
-  │                                  stock"
+  │                                  stock" + sends a request-confirmation email
   ├─ POST /api/checkout            → prices the requested in-stock items from
   │                                  live Notion inventory and creates a Stripe
   │                                  Checkout session; returns the hosted-
@@ -94,6 +97,16 @@ Express app (artifacts/api-server)  ──►  Notion REST API (orders database)
                                      paid order in the Notion "Shop Orders"
                                      database. NOT part of the OpenAPI contract.
 ```
+
+The customer-notification POST endpoints (`/api/orders`, `/api/contact`,
+`/api/notify`) each send a customer email via **Resend** as a
+**best-effort** side effect after the Notion write: the send is logged-and-swallowed
+on failure and never changes the response status (see the Resend adapter in
+`artifacts/api-server/src/lib/resend/` and the notification-email note in
+`.agents/memory/vercel-migration.md`). This replaced the old Notion automations
+that used to send these emails. Order **status-change** emails are intentionally
+_not_ handled here — stage changes happen inside Notion and there is no Notion→app
+trigger.
 
 - **Locally:** the Vite dev server proxies `/api` to the Express server on
   `localhost:3000` (see `artifacts/order-status/vite.config.ts`).
@@ -440,7 +453,11 @@ and in the maintainer's env without edits.
   Stripe webhook endpoint), and `PUBLIC_BASE_URL` (the site origin Stripe
   redirects back to after payment). Optionally, `STRIPE_SHIPPING_RATE_IDS` — a
   comma-separated list of Stripe Shipping Rate ids to offer at shop checkout
-  (unset ⇒ no shipping charged).
+  (unset ⇒ no shipping charged). Customer notification emails also require
+  `RESEND_API_KEY` and `RESEND_FROM_EMAIL` (the verified sender, e.g.
+  `AA-Atelier <orders@yourdomain>`). The sending domain must be verified in
+  Resend (SPF/DKIM) or mail won't deliver. A missing/failed mailer is
+  non-fatal: the send is best-effort and the endpoints still succeed.
 
 ## Quick reference — where things live
 
@@ -449,6 +466,7 @@ and in the maintainer's env without edits.
 | Change an API request/response shape    | `lib/api-spec/openapi.yaml` → run codegen                                                                                                                                                                                                                                     |
 | Change order use-case logic             | `artifacts/api-server/src/services/orders.service.ts`                                                                                                                                                                                                                         |
 | Change Notion I/O                       | `artifacts/api-server/src/lib/notion/*`                                                                                                                                                                                                                                       |
+| Change a customer email / template      | `artifacts/api-server/src/lib/resend/*` (`emails.ts` copy, `send.ts` transport, `client.ts` config)                                                                                                                                                                         |
 | Add/modify an API route                 | `artifacts/api-server/src/routes/*`                                                                                                                                                                                                                                           |
 | Add request validation / error mapping  | `artifacts/api-server/src/middlewares/*`                                                                                                                                                                                                                                      |
 | Change the status-lookup UI             | `artifacts/order-status/src/pages/status.tsx`                                                                                                                                                                                                                                 |
