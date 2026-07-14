@@ -12,7 +12,7 @@ import type { CreateContactInput } from "../notion/contact.blocks.js";
 import type { CreateNotifyInput } from "../notion/notify.blocks.js";
 import type { EmailMessage } from "./client.js";
 
-const ATELIER_NAME = "AA-Atelier";
+const ATELIER_NAME = "A.A Atelier";
 
 /** Wrap body copy in a minimal, serif-leaning HTML shell shared by all emails. */
 function layout(heading: string, bodyHtml: string): string {
@@ -23,7 +23,7 @@ function layout(heading: string, bodyHtml: string): string {
       <p style="font-size:13px;letter-spacing:0.18em;text-transform:uppercase;color:#8a7f74;margin:0 0 28px;">${ATELIER_NAME}</p>
       <h1 style="font-size:22px;font-weight:normal;margin:0 0 20px;">${heading}</h1>
       ${bodyHtml}
-      <p style="font-size:13px;color:#8a7f74;margin:36px 0 0;border-top:1px solid #e7e0d8;padding-top:16px;">With care,<br/>The ${ATELIER_NAME} team</p>
+      <p style="font-size:13px;color:#8a7f74;margin:36px 0 0;border-top:1px solid #e7e0d8;padding-top:16px;">Thank you,<br/>The ${ATELIER_NAME} team</p>
     </div>
   </body>
 </html>`;
@@ -38,7 +38,7 @@ export function orderConfirmationEmail(
 
   const html = layout(
     "Your order is in our hands",
-    `<p>Dear ${firstName},</p>
+    `<p>Hi ${firstName},</p>
      <p>Thank you for trusting us with your custom piece. We've received your order and
         our atelier will begin the journey from measurements to finished garment.</p>
      <p>Your order number is <strong>${orderNumber}</strong>. Keep it handy — you can
@@ -47,7 +47,7 @@ export function orderConfirmationEmail(
   );
 
   const text = [
-    `Dear ${firstName},`,
+    `Hi ${firstName},`,
     ``,
     `Thank you for trusting us with your custom piece. We've received your order and`,
     `our atelier will begin the journey from measurements to finished garment.`,
@@ -57,7 +57,7 @@ export function orderConfirmationEmail(
     ``,
     `We'll be in touch as your piece takes shape.`,
     ``,
-    `With care,`,
+    `Thank you,`,
     `The ${ATELIER_NAME} team`,
   ].join("\n");
 
@@ -75,18 +75,18 @@ export function contactAckEmail(input: CreateContactInput): EmailMessage {
 
   const html = layout(
     "Thank you for reaching out",
-    `<p>Dear ${firstName},</p>
+    `<p>Hi ${firstName},</p>
      <p>We've received your message and one of us will read it personally and reply
         soon. We appreciate you taking the time to write.</p>`,
   );
 
   const text = [
-    `Dear ${firstName},`,
+    `Hi ${firstName},`,
     ``,
     `We've received your message and one of us will read it personally and reply`,
     `soon. We appreciate you taking the time to write.`,
     ``,
-    `With care,`,
+    `Thank you,`,
     `The ${ATELIER_NAME} team`,
   ].join("\n");
 
@@ -107,18 +107,18 @@ export function backInStockConfirmationEmail(
 
   const html = layout(
     "We'll let you know",
-    `<p>Hello,</p>
+    `<p>Hi there,</p>
      <p>Thank you for your interest in <strong>${piece}</strong>. We've noted your
         request, and we'll email you as soon as it's back in stock.</p>`,
   );
 
   const text = [
-    `Hello,`,
+    `Hi there,`,
     ``,
     `Thank you for your interest in ${piece}. We've noted your request, and we'll`,
     `email you as soon as it's back in stock.`,
     ``,
-    `With care,`,
+    `Thank you,`,
     `The ${ATELIER_NAME} team`,
   ].join("\n");
 

@@ -462,7 +462,7 @@ and in the maintainer's env without edits.
   comma-separated list of Stripe Shipping Rate ids to offer at shop checkout
   (unset ⇒ no shipping charged). Customer notification emails also require
   `RESEND_API_KEY` and `RESEND_FROM_EMAIL` (the verified sender, e.g.
-  `AA-Atelier <orders@yourdomain>`). The sending domain must be verified in
+  `A.A Atelier <orders@yourdomain>`). The sending domain must be verified in
   Resend (SPF/DKIM) or mail won't deliver. A missing/failed mailer is
   non-fatal: the send is best-effort and the endpoints still succeed.
   Optionally `ATELIER_INBOX_EMAIL` (e.g. `orders@yourdomain`) to also receive an

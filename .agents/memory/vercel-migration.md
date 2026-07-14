@@ -27,7 +27,7 @@ Object storage (GCS) also used the Replit sidecar for credentials and signed URL
 - `NOTION_CONTACT_DATABASE_ID` — the "Website Contact Messages" DB the `/contact` form writes to
 - `NOTION_INVENTORY_DATABASE_ID` — the finished-goods "inventory" DB the shop's `/products` endpoint reads
 - `RESEND_API_KEY` — from https://resend.com/api-keys (customer notification emails)
-- `RESEND_FROM_EMAIL` — the verified sender, e.g. `AA-Atelier <orders@yourdomain>`
+- `RESEND_FROM_EMAIL` — the verified sender, e.g. `A.A Atelier <orders@yourdomain>`
 - `ATELIER_INBOX_EMAIL` — _optional_; the atelier's own inbox for internal
   new-submission notifications. Unset = skip them.
 

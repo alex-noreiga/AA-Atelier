@@ -24,8 +24,10 @@ describe("orderConfirmationEmail", () => {
 
     expect(email.to).toBe("ada@example.com");
     expect(email.subject).toContain("000002");
-    expect(email.html).toContain("Ada");
+    expect(email.html).toContain("Hi Ada");
     expect(email.html).toContain("000002");
+    expect(email.html).toContain("Thank you,");
+    expect(email.html).toContain("A.A Atelier");
     expect(email.text).toContain("000002");
   });
 });
@@ -37,8 +39,8 @@ describe("contactAckEmail", () => {
     );
 
     expect(email.to).toBe("grace@example.com");
-    expect(email.html).toContain("Grace");
-    expect(email.text).toContain("Grace");
+    expect(email.html).toContain("Hi Grace");
+    expect(email.text).toContain("Hi Grace");
   });
 });
 

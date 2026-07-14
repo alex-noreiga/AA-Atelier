@@ -20,7 +20,7 @@ describe("createResendClient.send", () => {
     const fetchMock = stubFetchOk();
     const client = createResendClient({
       apiKey: "re_test",
-      from: "AA-Atelier <orders@a3iceanddance.com>",
+      from: "A.A Atelier <orders@a3iceanddance.com>",
     });
 
     await client.send({
@@ -38,7 +38,7 @@ describe("createResendClient.send", () => {
 
     const body = JSON.parse(init.body);
     expect(body).toMatchObject({
-      from: "AA-Atelier <orders@a3iceanddance.com>",
+      from: "A.A Atelier <orders@a3iceanddance.com>",
       to: "customer@example.com",
       subject: "Hi",
       html: "<p>h</p>",
