@@ -28,6 +28,8 @@ import type {
   HealthStatus,
   NewContactRequest,
   NewContactResponse,
+  NewMeasurementChangeRequest,
+  NewMeasurementChangeResponse,
   NewNotifyRequest,
   NewNotifyResponse,
   NewOrderRequest,
@@ -360,6 +362,78 @@ export const useCreateOrderDeposit = <TError = ErrorType<ErrorEnvelope | OrderNo
         TContext
       > => {
       return useMutation(getCreateOrderDepositMutationOptions(options));
+    }
+
+export const getCreateMeasurementChangeRequestUrl = (orderNumber: string,) => {
+
+
+
+
+  return `/api/orders/${orderNumber}/measurement-change-requests`
+}
+
+/**
+ * Files a customer's request to change the measurements on an existing order. The customer is verified against the email on the order, and the request is rejected once the garment has entered production. Accepted requests land as a tagged row in the Notion contact-messages inbox for the atelier to apply — this endpoint does not itself edit the order.
+ * @summary Request a change to an order's measurements
+ */
+export const createMeasurementChangeRequest = async (orderNumber: string,
+    newMeasurementChangeRequest: NewMeasurementChangeRequest, options?: RequestInit): Promise<NewMeasurementChangeResponse> => {
+
+  return customFetch<NewMeasurementChangeResponse>(getCreateMeasurementChangeRequestUrl(orderNumber),
+  {
+    ...options,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    body: JSON.stringify(newMeasurementChangeRequest)
+  }
+);}
+
+
+
+
+export const getCreateMeasurementChangeRequestMutationOptions = <TError = ErrorType<ErrorEnvelope | OrderNotFound>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof createMeasurementChangeRequest>>, TError,{orderNumber: string;data: BodyType<NewMeasurementChangeRequest>}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof createMeasurementChangeRequest>>, TError,{orderNumber: string;data: BodyType<NewMeasurementChangeRequest>}, TContext> => {
+
+const mutationKey = ['createMeasurementChangeRequest'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof createMeasurementChangeRequest>>, {orderNumber: string;data: BodyType<NewMeasurementChangeRequest>}> = (props) => {
+          const {orderNumber,data} = props ?? {};
+
+          return  createMeasurementChangeRequest(orderNumber,data,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type CreateMeasurementChangeRequestMutationResult = NonNullable<Awaited<ReturnType<typeof createMeasurementChangeRequest>>>
+    export type CreateMeasurementChangeRequestMutationBody = BodyType<NewMeasurementChangeRequest>
+    export type CreateMeasurementChangeRequestMutationError = ErrorType<ErrorEnvelope | OrderNotFound>
+
+    /**
+ * @summary Request a change to an order's measurements
+ */
+export const useCreateMeasurementChangeRequest = <TError = ErrorType<ErrorEnvelope | OrderNotFound>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof createMeasurementChangeRequest>>, TError,{orderNumber: string;data: BodyType<NewMeasurementChangeRequest>}, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof createMeasurementChangeRequest>>,
+        TError,
+        {orderNumber: string;data: BodyType<NewMeasurementChangeRequest>},
+        TContext
+      > => {
+      return useMutation(getCreateMeasurementChangeRequestMutationOptions(options));
     }
 
 export const getCreateContactMessageUrl = () => {

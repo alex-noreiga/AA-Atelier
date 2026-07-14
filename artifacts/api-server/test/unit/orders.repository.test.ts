@@ -213,6 +213,76 @@ describe("deposit lookups & updates", () => {
   });
 });
 
+describe("findOrderForMeasurementChange", () => {
+  it("returns null for an empty/whitespace number without calling Notion", async () => {
+    const client = makeFakeClient(() => {
+      throw new Error("should not fetch");
+    });
+    expect(
+      await repo.findOrderForMeasurementChange("   ", client),
+    ).toBeNull();
+    expect(client.calls).toHaveLength(0);
+  });
+
+  it("reads the email, current stage, and live stage list off the found page", async () => {
+    const client = makeFakeClient((path) => {
+      if (isSchema(path)) {
+        return jsonResponse(
+          databaseSchemaWithStages(["Consultation", "Sewing", "Delivery"]),
+        );
+      }
+      if (isQuery(path)) {
+        return jsonResponse({
+          results: [
+            orderPage({
+              orderName: "Ada – Custom Dress",
+              currentStage: "Consultation",
+              email: "ada@example.com",
+            }),
+          ],
+        });
+      }
+      throw new Error(`unexpected path ${path}`);
+    });
+
+    const verification = await repo.findOrderForMeasurementChange(
+      "  000002  ",
+      client,
+    );
+
+    expect(verification).toEqual({
+      email: "ada@example.com",
+      currentStage: "Consultation",
+      stages: ["Consultation", "Sewing", "Delivery"],
+    });
+  });
+
+  it("returns an empty email for a legacy order with no Email property value", async () => {
+    const client = makeFakeClient((path) => {
+      if (isSchema(path)) return jsonResponse(databaseSchemaWithStages(["A"]));
+      return jsonResponse({
+        results: [orderPage({ currentStage: "A", email: null })],
+      });
+    });
+
+    const verification = await repo.findOrderForMeasurementChange(
+      "000002",
+      client,
+    );
+    expect(verification?.email).toBe("");
+  });
+
+  it("returns null when the query yields no results", async () => {
+    const client = makeFakeClient((path) => {
+      if (isSchema(path)) return jsonResponse(databaseSchemaWithStages([]));
+      return jsonResponse({ results: [] });
+    });
+    expect(
+      await repo.findOrderForMeasurementChange("ORD-NOPE", client),
+    ).toBeNull();
+  });
+});
+
 describe("fetchLiveOrderStages caching (through findOrderByNumber)", () => {
   beforeEach(() => {
     vi.useFakeTimers();

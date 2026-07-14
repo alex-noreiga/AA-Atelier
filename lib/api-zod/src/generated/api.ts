@@ -88,6 +88,43 @@ export const CreateOrderDepositResponse = zod.object({
 
 
 /**
+ * Files a customer's request to change the measurements on an existing order. The customer is verified against the email on the order, and the request is rejected once the garment has entered production. Accepted requests land as a tagged row in the Notion contact-messages inbox for the atelier to apply — this endpoint does not itself edit the order.
+ * @summary Request a change to an order's measurements
+ */
+export const CreateMeasurementChangeRequestParams = zod.object({
+  "orderNumber": zod.coerce.string()
+})
+
+export const createMeasurementChangeRequestBodyWaistMin = 0;
+
+export const createMeasurementChangeRequestBodyBustMin = 0;
+
+export const createMeasurementChangeRequestBodyHipsMin = 0;
+
+export const createMeasurementChangeRequestBodyHeightMin = 0;
+
+export const createMeasurementChangeRequestBodyBodyGirthMin = 0;
+
+
+
+export const CreateMeasurementChangeRequestBody = zod.object({
+  "email": zod.string().email().describe('The email to verify against the one on the order. A request whose email doesn\'t match the order is rejected.'),
+  "waist": zod.number().min(createMeasurementChangeRequestBodyWaistMin).optional(),
+  "bust": zod.number().min(createMeasurementChangeRequestBodyBustMin).optional(),
+  "hips": zod.number().min(createMeasurementChangeRequestBodyHipsMin).optional(),
+  "height": zod.number().min(createMeasurementChangeRequestBodyHeightMin).optional(),
+  "bodyGirth": zod.number().min(createMeasurementChangeRequestBodyBodyGirthMin).optional(),
+  "measurementUnit": zod.enum(['inches', 'cm']).optional(),
+  "measurementAppointment": zod.boolean().optional().describe('True when the customer would rather be re-measured at a fitting or consultation than enter values now. When true the measurement fields are omitted.'),
+  "note": zod.string().optional().describe('Optional free-text note explaining the requested change.')
+}).describe('A request to change an order\'s measurements. Like a new order, measurements are optional: the customer either supplies all five now (with a measurementUnit), or sets measurementAppointment=true to be re-measured at a fitting\/consultation. The server rejects a request with neither.')
+
+export const CreateMeasurementChangeRequestResponse = zod.object({
+  "received": zod.boolean()
+})
+
+
+/**
  * Saves a customer inquiry to the Notion contact-messages database
  * @summary Submit a contact message
  */

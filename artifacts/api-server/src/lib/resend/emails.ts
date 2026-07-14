@@ -10,6 +10,7 @@
 import type { CreateOrderInput } from "../notion/schema.js";
 import type { CreateContactInput } from "../notion/contact.blocks.js";
 import type { CreateNotifyInput } from "../notion/notify.blocks.js";
+import type { CreateMeasurementChangeInput } from "../notion/measurement-change.blocks.js";
 import type { EmailMessage } from "./client.js";
 
 const ATELIER_NAME = "A.A Atelier";
@@ -248,6 +249,76 @@ export function backInStockNotificationEmail(
     replyTo: input.email,
     subject: `Back-in-stock request — ${input.item}`,
     html: internalLayout("New back-in-stock request", renderRowsHtml(fields)),
+    text: renderRowsText(fields),
+  };
+}
+
+/** Confirmation that a measurement-change request has been filed for the customer. */
+export function measurementChangeConfirmationEmail(
+  input: CreateMeasurementChangeInput,
+  orderNumber: string,
+): EmailMessage {
+  const detailHtml = input.measurementAppointment
+    ? `<p>We'll be in touch to schedule a fitting or consultation to take your new measurements.</p>`
+    : `<p>We've noted your updated measurements, and the atelier will review and apply them to your order.</p>`;
+
+  const detailText = input.measurementAppointment
+    ? `We'll be in touch to schedule a fitting or consultation to take your new measurements.`
+    : `We've noted your updated measurements, and the atelier will review and apply them to your order.`;
+
+  const html = layout(
+    "We've received your measurement change",
+    `<p>Hi there,</p>
+     <p>Thank you — we've received your request to update the measurements on order
+        <strong>${orderNumber}</strong>.</p>
+     ${detailHtml}`,
+  );
+
+  const text = [
+    `Hi there,`,
+    ``,
+    `Thank you — we've received your request to update the measurements on order ${orderNumber}.`,
+    ``,
+    detailText,
+    ``,
+    `Thank you,`,
+    `The ${ATELIER_NAME} team`,
+  ].join("\n");
+
+  return {
+    to: input.email,
+    subject: `We've received your measurement change (${orderNumber})`,
+    html,
+    text,
+  };
+}
+
+/** Notify the atelier of a new measurement-change request. */
+export function measurementChangeNotificationEmail(
+  input: CreateMeasurementChangeInput,
+  orderNumber: string,
+  to: string,
+): EmailMessage {
+  const measurementField: Field = input.measurementAppointment
+    ? ["Requested", "Re-measurement at a fitting/consultation"]
+    : [
+        "Measurements",
+        `waist ${input.waist}, bust ${input.bust}, hips ${input.hips}, ` +
+          `height ${input.height}, girth ${input.bodyGirth} (${input.measurementUnit})`,
+      ];
+
+  const fields: Field[] = [
+    ["Order number", orderNumber],
+    ["Email", input.email],
+    measurementField,
+    ...(input.note ? [["Note", input.note] as Field] : []),
+  ];
+
+  return {
+    to,
+    replyTo: input.email,
+    subject: `Measurement change request — order ${orderNumber}`,
+    html: internalLayout("Measurement change request", renderRowsHtml(fields)),
     text: renderRowsText(fields),
   };
 }

@@ -4,12 +4,20 @@
 //   - ValidationError                 -> 400 ErrorEnvelope  { error }
 //   - BadRequestError                  -> 400 ErrorEnvelope  { error }
 //   - NotFoundError                    -> 404 OrderNotFound  { message }
+//   - ForbiddenError                   -> 403 ErrorEnvelope  { error }
+//   - MeasurementsLockedError          -> 409 ErrorEnvelope  { error }
 //   - anything else                    -> 500 ErrorEnvelope  { error }
 
 import type { ErrorRequestHandler } from "express";
 import { ZodError } from "zod";
 import type { ErrorEnvelope, OrderNotFound } from "@workspace/api-zod";
-import { BadRequestError, NotFoundError, ValidationError } from "../lib/errors.js";
+import {
+  BadRequestError,
+  NotFoundError,
+  ValidationError,
+  ForbiddenError,
+  MeasurementsLockedError,
+} from "../lib/errors.js";
 import { logger } from "../lib/logger.js";
 
 export const errorHandler: ErrorRequestHandler = (err, _req, res, next) => {
@@ -41,6 +49,18 @@ export const errorHandler: ErrorRequestHandler = (err, _req, res, next) => {
   if (err instanceof NotFoundError) {
     const body: OrderNotFound = { message: err.message };
     res.status(404).json(body);
+    return;
+  }
+
+  if (err instanceof ForbiddenError) {
+    const body: ErrorEnvelope = { error: err.message };
+    res.status(403).json(body);
+    return;
+  }
+
+  if (err instanceof MeasurementsLockedError) {
+    const body: ErrorEnvelope = { error: err.message };
+    res.status(409).json(body);
     return;
   }
 

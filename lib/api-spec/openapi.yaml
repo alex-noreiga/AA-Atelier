@@ -131,6 +131,66 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/ErrorEnvelope"
+  /orders/{orderNumber}/measurement-change-requests:
+    post:
+      operationId: createMeasurementChangeRequest
+      tags: [orders]
+      summary: Request a change to an order's measurements
+      description: >-
+        Files a customer's request to change the measurements on an existing
+        order. The customer is verified against the email on the order, and the
+        request is rejected once the garment has entered production. Accepted
+        requests land as a tagged row in the Notion contact-messages inbox for
+        the atelier to apply — this endpoint does not itself edit the order.
+      parameters:
+        - name: orderNumber
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/NewMeasurementChangeRequest"
+      responses:
+        "201":
+          description: Change request received
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/NewMeasurementChangeResponse"
+        "400":
+          description: Validation error
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorEnvelope"
+        "403":
+          description: The email does not match the one on the order
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorEnvelope"
+        "404":
+          description: Order not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/OrderNotFound"
+        "409":
+          description: Measurements are locked because the order is in production
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorEnvelope"
+        "500":
+          description: Server error
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorEnvelope"
   /contact:
     post:
       operationId: createContactMessage
@@ -381,6 +441,57 @@ components:
       properties:
         orderNumber:
           type: string
+    NewMeasurementChangeRequest:
+      type: object
+      required:
+        - email
+      description: >-
+        A request to change an order's measurements. Like a new order,
+        measurements are optional: the customer either supplies all five now
+        (with a measurementUnit), or sets measurementAppointment=true to be
+        re-measured at a fitting/consultation. The server rejects a request with
+        neither.
+      properties:
+        email:
+          type: string
+          format: email
+          description: >-
+            The email to verify against the one on the order. A request whose
+            email doesn't match the order is rejected.
+        waist:
+          type: number
+          minimum: 0
+        bust:
+          type: number
+          minimum: 0
+        hips:
+          type: number
+          minimum: 0
+        height:
+          type: number
+          minimum: 0
+        bodyGirth:
+          type: number
+          minimum: 0
+        measurementUnit:
+          type: string
+          enum: [inches, cm]
+        measurementAppointment:
+          type: boolean
+          description: >-
+            True when the customer would rather be re-measured at a fitting or
+            consultation than enter values now. When true the measurement fields
+            are omitted.
+        note:
+          type: string
+          description: Optional free-text note explaining the requested change.
+    NewMeasurementChangeResponse:
+      type: object
+      required:
+        - received
+      properties:
+        received:
+          type: boolean
     NewContactRequest:
       type: object
       required:
