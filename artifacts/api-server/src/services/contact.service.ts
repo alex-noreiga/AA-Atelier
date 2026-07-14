@@ -9,17 +9,22 @@ import {
   contactNotificationEmail,
 } from "../lib/resend/emails.js";
 import { sendEmailBestEffort } from "../lib/resend/send.js";
-import { getAtelierInbox } from "../lib/resend/client.js";
+import { fromAddress, atelierInbox } from "../lib/resend/config.js";
 
 export async function submitContactMessage(
   input: CreateContactInput,
 ): Promise<{ success: true }> {
   await createContactMessage(input);
-  // Best-effort emails; a mail failure must not fail the submit.
-  await sendEmailBestEffort(contactAckEmail(input));
-  const inbox = getAtelierInbox();
+  // Best-effort emails; a mail failure must not fail the submit. Contact mail
+  // uses the "contact" category (hello@).
+  const from = fromAddress("contact");
+  await sendEmailBestEffort({ ...contactAckEmail(input), from });
+  const inbox = atelierInbox("contact");
   if (inbox) {
-    await sendEmailBestEffort(contactNotificationEmail(input, inbox));
+    await sendEmailBestEffort({
+      ...contactNotificationEmail(input, inbox),
+      from,
+    });
   }
   return { success: true };
 }

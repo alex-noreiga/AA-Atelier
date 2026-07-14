@@ -33,6 +33,7 @@ const mockSend = vi.mocked(sendEmailBestEffort);
 
 afterEach(() => {
   delete process.env.ATELIER_INBOX_EMAIL;
+  delete process.env.RESEND_FROM_EMAIL;
 });
 
 describe("getOrderStatus", () => {
@@ -119,5 +120,18 @@ describe("submitOrder", () => {
 
     // Only the customer confirmation goes out.
     expect(mockSend).toHaveBeenCalledOnce();
+  });
+
+  it("sends both customer and atelier mail from the orders sender", async () => {
+    process.env.RESEND_FROM_EMAIL = "A.A Atelier <orders@a3iceanddance.com>";
+    process.env.ATELIER_INBOX_EMAIL = "orders@a3iceanddance.com";
+    mockCreate.mockResolvedValue("ORD-XYZ-987");
+
+    await submitOrder(createOrderInput({ email: "ada@example.com" }));
+
+    expect(mockSend).toHaveBeenCalledTimes(2);
+    for (const [message] of mockSend.mock.calls) {
+      expect(message.from).toBe("A.A Atelier <orders@a3iceanddance.com>");
+    }
   });
 });

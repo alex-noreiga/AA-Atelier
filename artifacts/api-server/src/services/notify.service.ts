@@ -9,17 +9,22 @@ import {
   backInStockNotificationEmail,
 } from "../lib/resend/emails.js";
 import { sendEmailBestEffort } from "../lib/resend/send.js";
-import { getAtelierInbox } from "../lib/resend/client.js";
+import { fromAddress, atelierInbox } from "../lib/resend/config.js";
 
 export async function submitBackInStockRequest(
   input: CreateNotifyInput,
 ): Promise<{ success: true }> {
   await createBackInStockRequest(input);
-  // Best-effort emails; a mail failure must not fail the request.
-  await sendEmailBestEffort(backInStockConfirmationEmail(input));
-  const inbox = getAtelierInbox();
+  // Best-effort emails; a mail failure must not fail the request. Back-in-stock
+  // is grouped with the "orders" category (orders@).
+  const from = fromAddress("orders");
+  await sendEmailBestEffort({ ...backInStockConfirmationEmail(input), from });
+  const inbox = atelierInbox("orders");
   if (inbox) {
-    await sendEmailBestEffort(backInStockNotificationEmail(input, inbox));
+    await sendEmailBestEffort({
+      ...backInStockNotificationEmail(input, inbox),
+      from,
+    });
   }
   return { success: true };
 }

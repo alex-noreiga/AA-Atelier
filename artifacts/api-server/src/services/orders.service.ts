@@ -12,7 +12,7 @@ import {
   orderNotificationEmail,
 } from "../lib/resend/emails.js";
 import { sendEmailBestEffort } from "../lib/resend/send.js";
-import { getAtelierInbox } from "../lib/resend/client.js";
+import { fromAddress, atelierInbox } from "../lib/resend/config.js";
 
 export async function getOrderStatus(
   orderNumber: string,
@@ -36,12 +36,17 @@ export async function submitOrder(
 ): Promise<{ orderNumber: string }> {
   const orderNumber = await createOrder(input);
   // Best-effort emails; a mail failure must not fail the order.
-  await sendEmailBestEffort(orderConfirmationEmail(input, orderNumber));
-  const inbox = getAtelierInbox();
+  const from = fromAddress("orders");
+  await sendEmailBestEffort({
+    ...orderConfirmationEmail(input, orderNumber),
+    from,
+  });
+  const inbox = atelierInbox("orders");
   if (inbox) {
-    await sendEmailBestEffort(
-      orderNotificationEmail(input, orderNumber, inbox),
-    );
+    await sendEmailBestEffort({
+      ...orderNotificationEmail(input, orderNumber, inbox),
+      from,
+    });
   }
   return { orderNumber };
 }

@@ -30,6 +30,9 @@ Object storage (GCS) also used the Replit sidecar for credentials and signed URL
 - `RESEND_FROM_EMAIL` — the verified sender, e.g. `A.A Atelier <orders@yourdomain>`
 - `ATELIER_INBOX_EMAIL` — _optional_; the atelier's own inbox for internal
   new-submission notifications. Unset = skip them.
+- `RESEND_CONTACT_FROM_EMAIL` / `ATELIER_CONTACT_INBOX_EMAIL` — _optional_;
+  per-function overrides for **contact-form** mail (sender + notification inbox).
+  Each falls back to the base `RESEND_FROM_EMAIL` / `ATELIER_INBOX_EMAIL`.
 
 The Notion integration must be shared with each of these databases (Notion → database → ••• → Connections) or queries return 404.
 
@@ -60,6 +63,16 @@ someone reports "contact messages aren't emailing me," the answer is either read
 them in Notion or set `ATELIER_INBOX_EMAIL`. The atelier-facing builders live
 alongside the customer ones in `lib/resend/emails.ts` and HTML-escape free-text
 customer fields.
+
+**Per-function sender addresses.** Emails are grouped into two categories in
+`lib/resend/config.ts` — **orders** (order + back-in-stock) and **contact** — each
+resolving a sender (`fromAddress`) and notification inbox (`atelierInbox`) from env.
+The contact overrides (`RESEND_CONTACT_FROM_EMAIL` / `ATELIER_CONTACT_INBOX_EMAIL`)
+fall back to the base `RESEND_FROM_EMAIL` / `ATELIER_INBOX_EMAIL`, so unset ⇒ the
+old single-address behavior. Builders stay content-only; the service spreads the
+category `from` onto the message and the client honors a per-message `from` over its
+base. Adding a second sender needs no new Resend/DNS setup (same verified domain) —
+only a mailbox/alias to _receive_ at the new address.
 
 **Deliberately not migrated:** order status/stage-change emails and the actual
 restock alert — both need a Notion→app trigger (webhook or cron) that doesn't
