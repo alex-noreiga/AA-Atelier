@@ -7,10 +7,16 @@ import { stubHook } from "./support/mock-hook.js";
 // Control the data-fetching hook so we can drive each render state directly.
 // The deposit mutation hook is mocked too — the status page's DepositSection
 // calls it on every render of a found order.
+// The success view also renders the measurement-change dialog, which calls the
+// create mutation hook — stub it so the page renders without the network.
 vi.mock("@workspace/api-client-react", () => ({
   useGetOrderStatus: vi.fn(),
   useCreateOrderDeposit: vi.fn(),
   getGetOrderStatusQueryKey: (n: string) => [n],
+  useCreateMeasurementChangeRequest: () => ({
+    mutate: vi.fn(),
+    isPending: false,
+  }),
 }));
 
 import {

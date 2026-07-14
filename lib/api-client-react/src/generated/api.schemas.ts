@@ -72,6 +72,41 @@ export interface NewOrderResponse {
   orderNumber: string;
 }
 
+export type NewMeasurementChangeRequestMeasurementUnit = typeof NewMeasurementChangeRequestMeasurementUnit[keyof typeof NewMeasurementChangeRequestMeasurementUnit];
+
+
+export const NewMeasurementChangeRequestMeasurementUnit = {
+  inches: 'inches',
+  cm: 'cm',
+} as const;
+
+/**
+ * A request to change an order's measurements. Like a new order, measurements are optional: the customer either supplies all five now (with a measurementUnit), or sets measurementAppointment=true to be re-measured at a fitting/consultation. The server rejects a request with neither.
+ */
+export interface NewMeasurementChangeRequest {
+  /** The email to verify against the one on the order. A request whose email doesn't match the order is rejected. */
+  email: string;
+  /** @minimum 0 */
+  waist?: number;
+  /** @minimum 0 */
+  bust?: number;
+  /** @minimum 0 */
+  hips?: number;
+  /** @minimum 0 */
+  height?: number;
+  /** @minimum 0 */
+  bodyGirth?: number;
+  measurementUnit?: NewMeasurementChangeRequestMeasurementUnit;
+  /** True when the customer would rather be re-measured at a fitting or consultation than enter values now. When true the measurement fields are omitted. */
+  measurementAppointment?: boolean;
+  /** Optional free-text note explaining the requested change. */
+  note?: string;
+}
+
+export interface NewMeasurementChangeResponse {
+  received: boolean;
+}
+
 export interface NewContactRequest {
   /** @minLength 1 */
   name: string;

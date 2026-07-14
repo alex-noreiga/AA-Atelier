@@ -16,6 +16,7 @@ import {
   extractCurrentStage,
   extractDepositAmount,
   extractDepositPaid,
+  extractOrderEmail,
   type CreateOrderInput,
   type NotionDatabaseSchema,
   type NotionQueryResponse,
@@ -226,4 +227,58 @@ export async function markDepositPaid(
       `Notion deposit update failed with status ${response.status}: ${errorText}`,
     );
   }
+}
+
+/** What the measurement-change gates need about an order: the email to verify
+ * against, plus the current stage and the live ordered stage list to decide
+ * whether measurements are still editable. Kept separate from `OrderRecord`
+ * (the public status view) so the email is never returned by order lookup. */
+export interface OrderVerification {
+  email: string;
+  currentStage: string;
+  stages: string[];
+}
+
+export async function findOrderForMeasurementChange(
+  orderNumber: string,
+  client: NotionClient = getNotionClient(),
+): Promise<OrderVerification | null> {
+  assertConfigured(client);
+
+  const trimmedOrderNumber = orderNumber.trim();
+  if (!trimmedOrderNumber) {
+    return null;
+  }
+
+  const [response, stages] = await Promise.all([
+    client.fetch(`/v1/databases/${client.databaseId}/query`, {
+      method: "POST",
+      body: JSON.stringify({
+        filter: {
+          property: ORDER_NUMBER_PROPERTY,
+          rich_text: { equals: trimmedOrderNumber },
+        },
+        page_size: 1,
+      }),
+    }),
+    fetchLiveOrderStages(client),
+  ]);
+
+  if (!response.ok) {
+    throw new Error(`Notion query failed with status ${response.status}`);
+  }
+
+  const data = (await response.json()) as NotionQueryResponse;
+  const page = data.results[0];
+  if (!page) {
+    return null;
+  }
+
+  // TODO(measurements-b): also return page.id here — the direct in-place PATCH
+  // path (Approach B) will target `PATCH /v1/pages/{id}` with this id.
+  return {
+    email: extractOrderEmail(page),
+    currentStage: extractCurrentStage(page),
+    stages,
+  };
 }

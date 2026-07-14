@@ -15,10 +15,10 @@ export const CONTACT_SUBJECT_PROPERTY = "Message (subject)"; // title
 const CONTACT_NAME_PROPERTY = "Customer name"; // rich_text
 export const CONTACT_EMAIL_PROPERTY = "Email"; // email
 const CONTACT_PHONE_PROPERTY = "Phone"; // phone_number
-const CONTACT_MESSAGE_PROPERTY = "Message"; // rich_text
+export const CONTACT_MESSAGE_PROPERTY = "Message"; // rich_text
 export const CONTACT_STAGE_PROPERTY = "Stage"; // select
 export const CONTACT_DEFAULT_STAGE = "New";
-const CONTACT_TYPE_PROPERTY = "Request type"; // select
+export const CONTACT_TYPE_PROPERTY = "Request type"; // select
 const CONTACT_REQUEST_TYPE = "Inquiry";
 
 /** Validated contact-message payload, derived from the OpenAPI contract. */

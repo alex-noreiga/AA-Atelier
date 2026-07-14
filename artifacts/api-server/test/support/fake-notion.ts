@@ -74,6 +74,7 @@ export function orderPage(opts: {
   currentStage?: string | null;
   depositAmount?: number;
   depositPaid?: boolean;
+  email?: string | null;
 }) {
   return {
     id: opts.id ?? "page-id",
@@ -85,6 +86,10 @@ export function orderPage(opts: {
       "Order Name": {
         type: "title",
         title: opts.orderName ? [{ plain_text: opts.orderName }] : [],
+      },
+      Email: {
+        type: "email",
+        email: opts.email ?? null,
       },
       Stage: {
         type: "status",

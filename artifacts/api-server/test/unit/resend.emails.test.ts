@@ -3,6 +3,7 @@ import {
   createOrderInput,
   contactInput,
   notifyInput,
+  measurementChangeInput,
 } from "@workspace/test-fixtures";
 import {
   orderConfirmationEmail,
@@ -11,6 +12,8 @@ import {
   contactNotificationEmail,
   orderNotificationEmail,
   backInStockNotificationEmail,
+  measurementChangeConfirmationEmail,
+  measurementChangeNotificationEmail,
 } from "../../src/lib/resend/emails.js";
 
 const INBOX = "orders@a3iceanddance.com";
@@ -126,5 +129,57 @@ describe("backInStockNotificationEmail", () => {
     expect(email.replyTo).toBe("grace@example.com");
     expect(email.subject).toContain("Bow Fleece Soaker — Black");
     expect(email.text).toContain("Adult S");
+  });
+});
+
+describe("measurementChangeConfirmationEmail", () => {
+  it("addresses the customer and carries the order number", () => {
+    const email = measurementChangeConfirmationEmail(
+      measurementChangeInput({ email: "ada@example.com" }),
+      "000002",
+    );
+
+    expect(email.to).toBe("ada@example.com");
+    expect(email.subject).toContain("000002");
+    expect(email.html).toContain("000002");
+    expect(email.html).toContain("A.A Atelier");
+    expect(email.text).toContain("apply them");
+  });
+
+  it("mentions scheduling when the customer asked for an appointment", () => {
+    const email = measurementChangeConfirmationEmail(
+      measurementChangeInput({ measurementAppointment: true }),
+      "000002",
+    );
+
+    expect(email.html).toContain("schedule");
+    expect(email.text).toContain("schedule");
+  });
+});
+
+describe("measurementChangeNotificationEmail", () => {
+  it("goes to the inbox with the measurements, and replies to the customer", () => {
+    const email = measurementChangeNotificationEmail(
+      measurementChangeInput({ email: "ada@example.com", waist: 29 }),
+      "000002",
+      INBOX,
+    );
+
+    expect(email.to).toBe(INBOX);
+    expect(email.replyTo).toBe("ada@example.com");
+    expect(email.subject).toContain("000002");
+    expect(email.text).toContain("Order number: 000002");
+    expect(email.text).toContain("waist 29");
+  });
+
+  it("names the re-measure appointment instead of values when requested", () => {
+    const email = measurementChangeNotificationEmail(
+      measurementChangeInput({ measurementAppointment: true }),
+      "000002",
+      INBOX,
+    );
+
+    expect(email.text).toContain("Re-measurement at a fitting/consultation");
+    expect(email.text).not.toContain("waist");
   });
 });

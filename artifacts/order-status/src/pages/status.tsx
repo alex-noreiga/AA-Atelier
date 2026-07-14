@@ -9,6 +9,7 @@ import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { PageShell } from "@/components/page-shell";
 import { Seo } from "@/components/seo";
+import { MeasurementChangeDialog } from "@/components/measurement-change-dialog";
 import { getStageDescription } from "@/lib/stage-descriptions";
 import { formatPrice } from "@/lib/format";
 import { useToast } from "@/hooks/use-toast";
@@ -313,7 +314,8 @@ export default function Status() {
               })}
             </div>
 
-            <div className="mt-16 flex justify-center">
+            <div className="mt-16 flex flex-col items-center gap-6">
+              <MeasurementChangeDialog orderNumber={orderStatus.orderNumber} />
               <button
                 onClick={handleReset}
                 className="text-muted-foreground hover:text-primary transition-colors flex items-center gap-2 text-sm tracking-widest uppercase group"

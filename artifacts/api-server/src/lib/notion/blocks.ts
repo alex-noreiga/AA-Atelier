@@ -6,6 +6,7 @@
 import {
   ORDER_NAME_PROPERTY,
   ORDER_NUMBER_PROPERTY,
+  ORDER_EMAIL_PROPERTY,
   type CreateOrderInput,
 } from "./schema.js";
 
@@ -52,6 +53,11 @@ export function buildOrderProperties(
     [ORDER_NUMBER_PROPERTY]: {
       rich_text: [{ text: { content: orderNumber } }],
     },
+    // Also written as a property (not only in the Contact body block) so a
+    // later measurement-change request can be verified against it server-side.
+    [ORDER_EMAIL_PROPERTY]: {
+      email: data.email,
+    },
   };
 }
 
@@ -69,6 +75,10 @@ export function buildOrderPageBlocks(data: CreateOrderInput): unknown[] {
   // Measurements are optional: the customer either provided them, or asked to
   // have them taken at a fitting/consultation. Render whichever applies so the
   // atelier can tell the two apart at a glance.
+  // TODO(measurements-b): to support self-service in-place editing, measurements
+  // need to move from these body blocks to typed Notion page properties (number
+  // + a unit select) so they can be read back and PATCHed. Approach A (the
+  // change-request flow) leaves them here and lets the atelier apply changes.
   const providedMeasurements = data.waist !== undefined;
   const measurementSection = providedMeasurements
     ? [
