@@ -7,6 +7,12 @@ import {
 } from "../lib/notion/orders.repository.js";
 import type { CreateOrderInput, OrderRecord } from "../lib/notion/schema.js";
 import { NotFoundError, ValidationError } from "../lib/errors.js";
+import {
+  orderConfirmationEmail,
+  orderNotificationEmail,
+} from "../lib/resend/emails.js";
+import { sendEmailBestEffort } from "../lib/resend/send.js";
+import { getAtelierInbox } from "../lib/resend/client.js";
 
 const MEASUREMENT_FIELDS = [
   "waist",
@@ -21,7 +27,9 @@ function hasAllMeasurements(input: CreateOrderInput): boolean {
   return MEASUREMENT_FIELDS.every((field) => typeof input[field] === "number");
 }
 
-export async function getOrderStatus(orderNumber: string): Promise<OrderRecord> {
+export async function getOrderStatus(
+  orderNumber: string,
+): Promise<OrderRecord> {
   const order = await findOrderByNumber(orderNumber);
   if (!order) {
     throw new NotFoundError("We couldn't find an order with that number.");
@@ -49,5 +57,13 @@ export async function submitOrder(
   }
 
   const orderNumber = await createOrder(input);
+  // Best-effort emails; a mail failure must not fail the order.
+  await sendEmailBestEffort(orderConfirmationEmail(input, orderNumber));
+  const inbox = getAtelierInbox();
+  if (inbox) {
+    await sendEmailBestEffort(
+      orderNotificationEmail(input, orderNumber, inbox),
+    );
+  }
   return { orderNumber };
 }

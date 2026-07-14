@@ -20,3 +20,15 @@ export class ValidationError extends Error {
     this.name = "ValidationError";
   }
 }
+
+/**
+ * The request was well-formed but cannot be fulfilled — e.g. a checkout item
+ * that is sold out or has no listed price. Maps to a 400 response, carrying a
+ * customer-safe message (unlike an unhandled 500, whose message is generic).
+ */
+export class BadRequestError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = "BadRequestError";
+  }
+}

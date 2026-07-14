@@ -29,7 +29,7 @@ The app is deployed on **Vercel** (migrated off Replit — see
 This is a **pnpm workspace monorepo**. Package globs are defined in
 `pnpm-workspace.yaml`: `artifacts/*`, `lib/*`, `tests`. Every
 workspace package is named `@workspace/<name>`. (`scripts/` is plain bash
-tooling, deliberately *not* a workspace package.)
+tooling, deliberately _not_ a workspace package.)
 
 ```
 artifacts/
@@ -67,19 +67,53 @@ Browser (order-status SPA)
   │  fetch /api/*
   ▼
 Express app (artifacts/api-server)  ──►  Notion REST API (orders database)
+                                    └──►  Resend REST API (customer emails)
   │
   ├─ GET  /api/healthz             → { status: "ok" }
   ├─ GET  /api/orders/:orderNumber → order status + stage list
   ├─ POST /api/orders              → creates a Notion page, returns order number
+  │                                  + sends an order-confirmation email
+  ├─ POST /api/orders/:n/deposit   → creates a Stripe Checkout session for the
+  │                                  deposit the atelier set on custom order :n
+  │                                  in Notion; the webhook marks it paid
   ├─ POST /api/contact             → saves a contact message to the Notion
   │                                  "Website Contact Messages" database
+  │                                  + sends an acknowledgement email
   ├─ GET  /api/products            → shop inventory + the live category list,
   │                                  from the Notion "inventory" database
-  └─ POST /api/notify              → files a back-in-stock request (email + item
-                                     + optional size) in that SAME contact
-                                     database, tagged Request type = "Back in
-                                     stock"
+  ├─ POST /api/notify              → files a back-in-stock request (email + item
+  │                                  + optional size) in that SAME contact
+  │                                  database, tagged Request type = "Back in
+  │                                  stock" + sends a request-confirmation email
+  ├─ POST /api/checkout            → prices the requested in-stock items from
+  │                                  live Notion inventory and creates a Stripe
+  │                                  Checkout session; returns the hosted-
+  │                                  checkout URL for the browser to redirect to
+  ├─ GET  /api/checkout/session/:id→ a session's status + itemized receipt
+  │                                  (items, shipping, tax, total) for the
+  │                                  success page
+  └─ POST /api/webhooks/stripe     → Stripe → server webhook (raw body, signed).
+                                     On checkout.session.completed, records the
+                                     paid order in the Notion "Shop Orders"
+                                     database. NOT part of the OpenAPI contract.
 ```
+
+The customer-notification POST endpoints (`/api/orders`, `/api/contact`,
+`/api/notify`) each send a customer email via **Resend** as a
+**best-effort** side effect after the Notion write: the send is logged-and-swallowed
+on failure and never changes the response status (see the Resend adapter in
+`artifacts/api-server/src/lib/resend/` and the notification-email note in
+`.agents/memory/vercel-migration.md`). This replaced the old Notion automations
+that used to send these emails. Order **status-change** emails are intentionally
+_not_ handled here — stage changes happen inside Notion and there is no Notion→app
+trigger.
+
+Each of those three also sends an **internal atelier notification** to
+`ATELIER_INBOX_EMAIL` (with **Reply-To** set to the customer) — but only when that
+env var is set; unset means the notification is skipped and only the customer email
+goes out. So the atelier gets an email nudge on top of the Notion row. The
+customer-facing and atelier-facing builders live side by side in
+`lib/resend/emails.ts`.
 
 - **Locally:** the Vite dev server proxies `/api` to the Express server on
   `localhost:3000` (see `artifacts/order-status/vite.config.ts`).
@@ -162,6 +196,74 @@ Auth: the server reads `NOTION_API_KEY` and `NOTION_ORDERS_DATABASE_ID` from
 environment variables (via `createNotionClient` in `notion/client.ts`, read at
 first use rather than module load). On Replit these came from a sidecar; that
 path is gone.
+
+## Working with Stripe (shop checkout)
+
+The shop sells ready-to-ship items through **Stripe Checkout (hosted)**. The
+flow: the client-side cart (`order-status/src/lib/cart.tsx`, persisted to
+localStorage) POSTs `{ variantId, size?, quantity }[]` to `/api/checkout`; the
+server prices them from live Notion inventory, creates a Stripe Checkout
+session, and returns its URL; the browser redirects; Stripe calls
+`/api/webhooks/stripe` on completion, which records the paid order in Notion.
+Code lives in `api-server/src/services/checkout.service.ts`,
+`src/lib/stripe/client.ts`, `src/routes/checkout.ts`, `src/routes/stripe-webhook.ts`,
+and `src/lib/notion/shop-orders.*`. Four things are load-bearing:
+
+1. **Never trust client-sent money.** The cart sends only ids/sizes/quantities.
+   `checkout.service` recomputes every price and availability from `listVariants()`
+   (live Notion), converts dollars → integer cents (`Math.round(price * 100)`),
+   and rejects sold-out / unpriced / unknown items with a `BadRequestError` (→ 400).
+   An "inquire for price" item (no `Listed Price`) is not purchasable.
+
+2. **The webhook needs the RAW body.** Stripe verifies the signature against the
+   exact bytes, so `/api/webhooks/stripe` is mounted in `app.ts` with
+   `express.raw()` **before** the global `express.json()`, and directly on the app
+   (not the `/api` router). It is deliberately **not** in `openapi.yaml` — it's a
+   Stripe→server contract, not part of the browser API or the generated client.
+
+3. **Recording is idempotent.** Stripe delivers at-least-once and retries on any
+   non-2xx. `recordPaidOrder` dedupes on the Stripe session id (stored as a
+   property and looked up before insert), so replays don't create duplicate orders.
+
+4. **Inventory is manual for v1.** A sale does not decrement Notion stock — the
+   atelier adjusts it by hand. `Quantity Available` is a Notion **formula** and
+   can't be written; auto-decrement would need a new writable count property plus
+   reservation logic. Don't wire it up without that.
+
+5. **Shipping rates live in Stripe, not code.** `checkout.service` reads
+   `STRIPE_SHIPPING_RATE_IDS` (comma-separated `shr_…` ids the atelier creates and
+   prices in the Stripe Dashboard) and attaches them as the session's
+   `shipping_options`; unset means no shipping is charged. The order's `Total`
+   (Stripe `amount_total`) includes shipping, and `buildShopOrderPageBlocks` adds
+   a "Shipping" line to the Notion page body so the itemized bullets reconcile
+   with it.
+
+6. **Receipts are Stripe's job; the success page mirrors them.** The emailed
+   receipt is a Stripe Dashboard setting (Settings → Emails → "Successful
+   payments"), not code. `getCheckoutSession` retrieves the session with
+   `expand: ["line_items"]` and returns an itemized view (line items + subtotal /
+   shipping / tax / total, dollars); `pages/shop-success.tsx` renders it as an
+   on-site receipt. Works for both shop-cart orders and deposits.
+
+The atelier must create the "Shop Orders" Notion database (properties in
+`shop-orders.blocks.ts`) and share the integration with it. Local testing uses
+Stripe test-mode keys + `stripe listen --forward-to localhost:3000/api/webhooks/stripe`.
+
+### Custom-order deposits
+
+Custom (bespoke) orders are quoted offline, so a deposit rides on the **orders**
+database, not a purchasable cart. After quoting, the atelier sets a `Deposit
+Amount` (number) on the order in Notion; the customer pays it from the
+order-status page (`pages/status.tsx` → `POST /orders/:n/deposit`), which prices
+the deposit server-side from that property (never trusting the client) and
+creates a Checkout session tagged `metadata.kind = "deposit"`. The **one** webhook
+handler routes on that tag: a deposit session calls `recordDepositPayment`
+(which sets `Deposit Paid` + `Deposit Session Id` on the order page —
+idempotently), everything else is a shop-cart order. The atelier must add
+`Deposit Amount` (number), `Deposit Paid` (checkbox), and `Deposit Session Id`
+(rich_text) to the orders database — property names live in `schema.ts`. Code:
+`services/deposit.service.ts`, `lib/notion/orders.repository.ts`
+(`findDepositTarget`/`markDepositPaid`), and the status page's `DepositSection`.
 
 ## Development workflow
 
@@ -330,7 +432,7 @@ and in the maintainer's env without edits.
   shadcn/Replit scaffold: 43 of 55 `ui/` components and 32 frontend deps were dead
   weight (`react-icons` alone was 85M). They were deleted. When you add a shadcn
   component, add only the one you use; don't bulk-import the set. A few deps look
-  unused but are **load-bearing** — don't "clean" them up: `pino-pretty` (a *string*
+  unused but are **load-bearing** — don't "clean" them up: `pino-pretty` (a _string_
   transport target in `logger.ts`), `thread-stream` (version pin for
   `esbuild-plugin-pino`), `@testing-library/dom` (required peer;
   `autoInstallPeers: false`), `tw-animate-css` / `@tailwindcss/typography` (pulled in
@@ -349,31 +451,47 @@ and in the maintainer's env without edits.
   output `artifacts/order-status/dist/public`.
 - **Required Vercel env vars:** `NOTION_API_KEY`, `NOTION_ORDERS_DATABASE_ID`,
   `NOTION_CONTACT_DATABASE_ID` (the "Website Contact Messages" database that the
-  `/contact` form **and** the shop's `/notify` dialog both write to), and
+  `/contact` form **and** the shop's `/notify` dialog both write to),
   `NOTION_INVENTORY_DATABASE_ID` (the finished-goods "inventory" database the
-  shop's `/products` endpoint reads). The Notion integration must be shared with
-  each database or queries 404.
+  shop's `/products` endpoint reads), and `NOTION_SHOP_ORDERS_DATABASE_ID` (the
+  "Shop Orders" database the checkout webhook writes paid orders to). The Notion
+  integration must be shared with each database or queries 404. Checkout also
+  needs `STRIPE_SECRET_KEY`, `STRIPE_WEBHOOK_SECRET` (the signing secret of the
+  Stripe webhook endpoint), and `PUBLIC_BASE_URL` (the site origin Stripe
+  redirects back to after payment). Optionally, `STRIPE_SHIPPING_RATE_IDS` — a
+  comma-separated list of Stripe Shipping Rate ids to offer at shop checkout
+  (unset ⇒ no shipping charged). Customer notification emails also require
+  `RESEND_API_KEY` and `RESEND_FROM_EMAIL` (the verified sender, e.g.
+  `A.A Atelier <orders@yourdomain>`). The sending domain must be verified in
+  Resend (SPF/DKIM) or mail won't deliver. A missing/failed mailer is
+  non-fatal: the send is best-effort and the endpoints still succeed.
+  Optionally `ATELIER_INBOX_EMAIL` (e.g. `orders@yourdomain`) to also receive an
+  internal notification for each new order / contact message / back-in-stock
+  request; leave it unset to skip those.
 
 ## Quick reference — where things live
 
-| I want to…                              | Go to                                                                                                  |
-| --------------------------------------- | ------------------------------------------------------------------------------------------------------ |
-| Change an API request/response shape    | `lib/api-spec/openapi.yaml` → run codegen                                                              |
-| Change order use-case logic             | `artifacts/api-server/src/services/orders.service.ts`                                                  |
-| Change Notion I/O                       | `artifacts/api-server/src/lib/notion/*`                                                                |
-| Add/modify an API route                 | `artifacts/api-server/src/routes/*`                                                                    |
-| Add request validation / error mapping  | `artifacts/api-server/src/middlewares/*`                                                               |
-| Change the status-lookup UI             | `artifacts/order-status/src/pages/status.tsx`                                                          |
-| Change the order intake form            | `artifacts/order-status/src/pages/order-form.tsx`                                                      |
-| Change the landing page                 | `artifacts/order-status/src/pages/home.tsx`                                                            |
-| Change the shop (live Notion inventory) | `artifacts/order-status/src/pages/shop.tsx` + `services/products.service.ts` + `lib/notion/products.*` |
-| Change the back-in-stock notify dialog  | `artifacts/order-status/src/components/notify-dialog.tsx` + `services/notify.service.ts` + `lib/notion/notify.*` (writes to the **contact** database — see below) |
-| Add a page / route                      | new `src/pages/*.tsx` + `<Route>` in `src/App.tsx`                                                     |
-| Add or rename a nav link                | `NAV_LINKS` in `artifacts/order-status/src/components/navbar.tsx`                                      |
-| Add a shared UI component               | `artifacts/order-status/src/components/ui/`                                                            |
-| Add/change a shared test fixture        | `lib/test-fixtures/src/index.ts` (read its guardrail first)                                            |
-| Understand a past decision / gotcha     | `.agents/memory/`                                                                                      |
-| Adjust the Vercel serverless entrypoint | `api/index.ts` + `vercel.json`                                                                         |
+| I want to…                              | Go to                                                                                                                                                                                                                                                                         |
+| --------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Change an API request/response shape    | `lib/api-spec/openapi.yaml` → run codegen                                                                                                                                                                                                                                     |
+| Change order use-case logic             | `artifacts/api-server/src/services/orders.service.ts`                                                                                                                                                                                                                         |
+| Change Notion I/O                       | `artifacts/api-server/src/lib/notion/*`                                                                                                                                                                                                                                       |
+| Change a customer email / template      | `artifacts/api-server/src/lib/resend/*` (`emails.ts` copy, `send.ts` transport, `client.ts` config)                                                                                                                                                                         |
+| Add/modify an API route                 | `artifacts/api-server/src/routes/*`                                                                                                                                                                                                                                           |
+| Add request validation / error mapping  | `artifacts/api-server/src/middlewares/*`                                                                                                                                                                                                                                      |
+| Change the status-lookup UI             | `artifacts/order-status/src/pages/status.tsx`                                                                                                                                                                                                                                 |
+| Change the order intake form            | `artifacts/order-status/src/pages/order-form.tsx`                                                                                                                                                                                                                             |
+| Change the landing page                 | `artifacts/order-status/src/pages/home.tsx`                                                                                                                                                                                                                                   |
+| Change the shop (live Notion inventory) | `artifacts/order-status/src/pages/shop.tsx` + `services/products.service.ts` + `lib/notion/products.*`                                                                                                                                                                        |
+| Change the back-in-stock notify dialog  | `artifacts/order-status/src/components/notify-dialog.tsx` + `services/notify.service.ts` + `lib/notion/notify.*` (writes to the **contact** database — see below)                                                                                                             |
+| Change shop checkout / payments         | `artifacts/order-status/src/lib/cart.tsx` + `components/cart-drawer.tsx` + `components/add-to-cart.tsx` (frontend); `api-server/src/services/checkout.service.ts` + `routes/checkout.ts` + `routes/stripe-webhook.ts` + `lib/stripe/*` + `lib/notion/shop-orders.*` (backend) |
+| Change custom-order deposits            | `artifacts/order-status/src/pages/status.tsx` (`DepositSection`); `api-server/src/services/deposit.service.ts` + `routes/orders.ts` + `lib/notion/orders.repository.ts` (`findDepositTarget`/`markDepositPaid`) + `routes/stripe-webhook.ts`                                  |
+| Add a page / route                      | new `src/pages/*.tsx` + `<Route>` in `src/App.tsx`                                                                                                                                                                                                                            |
+| Add or rename a nav link                | `NAV_LINKS` in `artifacts/order-status/src/components/navbar.tsx`                                                                                                                                                                                                             |
+| Add a shared UI component               | `artifacts/order-status/src/components/ui/`                                                                                                                                                                                                                                   |
+| Add/change a shared test fixture        | `lib/test-fixtures/src/index.ts` (read its guardrail first)                                                                                                                                                                                                                   |
+| Understand a past decision / gotcha     | `.agents/memory/`                                                                                                                                                                                                                                                             |
+| Adjust the Vercel serverless entrypoint | `api/index.ts` + `vercel.json`                                                                                                                                                                                                                                                |
 
 ```
 

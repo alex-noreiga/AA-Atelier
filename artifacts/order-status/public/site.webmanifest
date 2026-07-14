@@ -1,0 +1,17 @@
+{
+  "name": "A3 Ice and Dance — A.A Atelier",
+  "short_name": "A.A Atelier",
+  "description": "Custom, made-to-measure figure skating and dance costumes, handcrafted by A.A Atelier.",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#0a0a0a",
+  "theme_color": "#0a0a0a",
+  "icons": [
+    {
+      "src": "/favicon.svg",
+      "type": "image/svg+xml",
+      "sizes": "any",
+      "purpose": "any"
+    }
+  ]
+}

@@ -43,6 +43,7 @@ function createNotionClient(config: NotionClientConfig): NotionClient {
 let defaultClient: NotionClient | null = null;
 let contactClient: NotionClient | null = null;
 let inventoryClient: NotionClient | null = null;
+let shopOrdersClient: NotionClient | null = null;
 
 /**
  * Lazily-constructed client reading credentials from the environment. Deferring
@@ -86,4 +87,18 @@ export function getInventoryNotionClient(): NotionClient {
     });
   }
   return inventoryClient;
+}
+
+/**
+ * Client for the "Shop Orders" database that records paid shop checkouts. Same
+ * lazy construction, reads `NOTION_SHOP_ORDERS_DATABASE_ID`.
+ */
+export function getShopOrdersNotionClient(): NotionClient {
+  if (!shopOrdersClient) {
+    shopOrdersClient = createNotionClient({
+      apiKey: process.env.NOTION_API_KEY ?? "",
+      databaseId: process.env.NOTION_SHOP_ORDERS_DATABASE_ID ?? "",
+    });
+  }
+  return shopOrdersClient;
 }

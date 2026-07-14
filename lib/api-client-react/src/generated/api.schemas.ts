@@ -14,6 +14,10 @@ export interface OrderStatus {
   orderName: string;
   currentStage: string;
   stages: string[];
+  /** The deposit the atelier set for this custom order, in dollars. Absent until they've quoted the piece and set it in Notion. */
+  depositAmount?: number;
+  /** Whether the customer has already paid the deposit. */
+  depositPaid?: boolean;
 }
 
 export interface OrderNotFound {
@@ -126,6 +130,56 @@ export interface ProductList {
   products: Product[];
   /** The shop's category filters, read live from the "Item Type" select options on the Notion inventory database and returned in the order the atelier arranged them. Editing the options in Notion changes this list without a redeploy, so clients must not hardcode it. */
   categories: string[];
+}
+
+export interface CheckoutItem {
+  /** The Notion inventory page id of the variant being purchased (the `id` on a ProductVariant). */
+  variantId: string;
+  /** The selected size band, required when the variant is offered in sizes and omitted for one-size items. */
+  size?: string;
+  /** @minimum 1 */
+  quantity: number;
+}
+
+export interface CreateCheckoutSessionRequest {
+  /** @minItems 1 */
+  items: CheckoutItem[];
+}
+
+export interface CheckoutSessionResponse {
+  /** The Stripe-hosted checkout URL to redirect the browser to. */
+  url: string;
+}
+
+export interface DepositSessionResponse {
+  /** The Stripe-hosted checkout URL for the deposit payment. */
+  url: string;
+}
+
+export interface ReceiptLineItem {
+  description: string;
+  quantity: number;
+  /** The line total in dollars (unit price × quantity). */
+  amount: number;
+}
+
+export interface CheckoutSessionStatus {
+  /** The Stripe payment status of the session, e.g. "paid", "unpaid", or "no_payment_required". */
+  status: string;
+  /** The customer's email, present once the session is complete. */
+  email?: string;
+  /** ISO currency code of the totals, e.g. "usd". */
+  currency?: string;
+  /** The purchased items, for an on-site receipt. */
+  lineItems?: ReceiptLineItem[];
+  /** Items subtotal in dollars (before shipping and tax). */
+  amountSubtotal?: number;
+  /** Shipping charged in dollars. */
+  amountShipping?: number;
+  /** Tax charged in dollars (Stripe Tax). */
+  amountTax?: number;
+  /** Grand total in dollars (items + shipping + tax). */
+  amountTotal?: number;
 }
 
 export interface ErrorEnvelope {

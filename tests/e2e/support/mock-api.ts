@@ -74,6 +74,49 @@ export async function mockProducts(
 }
 
 /**
+ * Mock `POST /api/checkout`. Records each request body so a test can assert the
+ * line items the cart submitted, and returns a checkout URL to redirect to (use
+ * a relative in-app URL like `/shop/success?...` to keep the flow deterministic).
+ */
+export async function mockCreateCheckout(
+  page: Page,
+  opts: { status?: number; body: unknown },
+): Promise<{ requests: unknown[] }> {
+  const requests: unknown[] = [];
+  await page.route("**/api/checkout", async (route) => {
+    if (route.request().method() !== "POST") return route.fallback();
+    requests.push(route.request().postDataJSON());
+    await json(route, opts.status ?? 201, opts.body);
+  });
+  return { requests };
+}
+
+/** Mock `POST /api/orders/:orderNumber/deposit` — the status page's deposit button. */
+export async function mockCreateDeposit(
+  page: Page,
+  opts: { status?: number; body: unknown },
+): Promise<{ requestedPaths: string[] }> {
+  const requestedPaths: string[] = [];
+  await page.route("**/api/orders/*/deposit", async (route) => {
+    if (route.request().method() !== "POST") return route.fallback();
+    requestedPaths.push(new URL(route.request().url()).pathname);
+    await json(route, opts.status ?? 201, opts.body);
+  });
+  return { requestedPaths };
+}
+
+/** Mock `GET /api/checkout/session/:id` — the success page's status lookup. */
+export async function mockGetCheckoutSession(
+  page: Page,
+  opts: { status?: number; body: unknown },
+): Promise<void> {
+  await page.route("**/api/checkout/session/*", async (route) => {
+    if (route.request().method() !== "GET") return route.fallback();
+    await json(route, opts.status ?? 200, opts.body);
+  });
+}
+
+/**
  * Mock `POST /api/notify` (the notify dialog's submit). Records each request
  * body so a test can assert the item/size the shop attached to the email.
  */

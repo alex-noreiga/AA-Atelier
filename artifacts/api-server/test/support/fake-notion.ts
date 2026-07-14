@@ -68,12 +68,15 @@ export function databaseSchemaWithStages(stageNames: string[]) {
 
 /** Minimal Notion order page as returned by a database query. */
 export function orderPage(opts: {
+  id?: string;
   orderNumber?: string;
   orderName?: string;
   currentStage?: string | null;
+  depositAmount?: number;
+  depositPaid?: boolean;
 }) {
   return {
-    id: "page-id",
+    id: opts.id ?? "page-id",
     properties: {
       "Order Number": {
         type: "rich_text",
@@ -89,6 +92,14 @@ export function orderPage(opts: {
           opts.currentStage === null || opts.currentStage === undefined
             ? null
             : { name: opts.currentStage },
+      },
+      "Deposit Amount": {
+        type: "number",
+        number: opts.depositAmount ?? null,
+      },
+      "Deposit Paid": {
+        type: "checkbox",
+        checkbox: opts.depositPaid ?? false,
       },
     },
   };

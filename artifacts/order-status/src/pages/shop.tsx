@@ -7,7 +7,10 @@ import {
   type ProductVariant,
 } from "@workspace/api-client-react";
 import { NotifyDialog } from "@/components/notify-dialog";
+import { AddToCartButton } from "@/components/add-to-cart";
 import { PageShell } from "@/components/page-shell";
+import { Seo } from "@/components/seo";
+import { formatPrice } from "@/lib/format";
 import { SizeChartDialog } from "@/components/size-chart-dialog";
 import { AspectRatio } from "@/components/ui/aspect-ratio";
 import {
@@ -39,17 +42,6 @@ const SIZED_CATEGORIES = ["Dress", "Ready to Wear"];
 
 function hasSizeChart(product: Product): boolean {
   return SIZED_CATEGORIES.includes(product.category);
-}
-
-/** Notion's "Listed Price" is optional — an unpriced item invites an enquiry. */
-function formatPrice(price?: number): string {
-  if (typeof price !== "number") return "inquire for price";
-  // Whole dollars stay clean ("$22"); anything with cents shows both ("$22.50").
-  return price.toLocaleString("en-US", {
-    style: "currency",
-    currency: "USD",
-    minimumFractionDigits: Number.isInteger(price) ? 0 : 2,
-  });
 }
 
 /** An in-stock item invites an enquiry; a sold-out one opens the notify dialog. */
@@ -196,6 +188,11 @@ function VariantChips({
 
 function CtaLink({ variant }: { variant: ProductVariant }) {
   if (variant.available) {
+    // A priced, in-stock item can be bought; an unpriced one ("inquire for
+    // price") still routes to an enquiry, since we can't charge for it.
+    if (typeof variant.price === "number") {
+      return <AddToCartButton variant={variant} />;
+    }
     return (
       <Link
         to={contactHref(variant)}
@@ -354,6 +351,11 @@ export default function Shop() {
 
   return (
     <PageShell align="top">
+      <Seo
+        title="Shop — Ready-to-Wear Skating & Dance | A.A Atelier"
+        description="Browse ready-to-wear figure skating and dance pieces from A.A Atelier. In-stock dresses and accessories, with restock notifications on sold-out sizes."
+        path="/shop"
+      />
       <div className="w-full max-w-6xl z-10 mx-auto px-6 pt-24 pb-20 animate-in fade-in zoom-in-95 duration-1000">
         {/* Header */}
         <div className="text-center">

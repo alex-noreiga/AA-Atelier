@@ -10,7 +10,9 @@ import OrderForm from "@/pages/order-form";
 import Services from "@/pages/services";
 import About from "@/pages/about";
 import Shop from "@/pages/shop";
+import ShopSuccess from "@/pages/shop-success";
 import Contact from "@/pages/contact";
+import { CartProvider } from "@/lib/cart";
 
 const queryClient = new QueryClient();
 
@@ -21,6 +23,7 @@ function Router() {
       <Route path="/services" component={Services} />
       <Route path="/about" component={About} />
       <Route path="/shop" component={Shop} />
+      <Route path="/shop/success" component={ShopSuccess} />
       <Route path="/shop/status" component={Status} />
       <Route path="/order" component={OrderForm} />
       <Route path="/contact" component={Contact} />
@@ -33,10 +36,12 @@ function App() {
   return (
     <QueryClientProvider client={queryClient}>
       <TooltipProvider>
-        <WouterRouter base={import.meta.env.BASE_URL.replace(/\/$/, "")}>
-          <Navbar />
-          <Router />
-        </WouterRouter>
+        <CartProvider>
+          <WouterRouter base={import.meta.env.BASE_URL.replace(/\/$/, "")}>
+            <Navbar />
+            <Router />
+          </WouterRouter>
+        </CartProvider>
         <Toaster />
       </TooltipProvider>
     </QueryClientProvider>
