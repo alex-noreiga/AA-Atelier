@@ -16,6 +16,12 @@ import type { CreateOrderBody } from "@workspace/api-zod";
 export const ORDER_NAME_PROPERTY = "Order Name";
 export const ORDER_NUMBER_PROPERTY = "Order Number";
 const STAGE_PROPERTY_NAME = "Stage";
+// Deposit properties the atelier sets on a custom order after quoting it. The
+// customer pays the deposit from the status page; the Stripe webhook marks it
+// paid. Property *types* must match the live Notion schema (see lessons above).
+export const ORDER_DEPOSIT_AMOUNT_PROPERTY = "Deposit Amount"; // number (dollars)
+export const ORDER_DEPOSIT_PAID_PROPERTY = "Deposit Paid"; // checkbox
+export const ORDER_DEPOSIT_SESSION_PROPERTY = "Deposit Session Id"; // rich_text
 
 /** Validated new-order payload, derived from the OpenAPI contract. */
 export type CreateOrderInput = z.infer<typeof CreateOrderBody>;
@@ -26,6 +32,10 @@ export interface OrderRecord {
   orderName: string;
   currentStage: string;
   stages: string[];
+  /** Present once the atelier has set a deposit on the order. */
+  depositAmount?: number;
+  /** Whether the deposit has been paid. */
+  depositPaid?: boolean;
 }
 
 interface NotionStatusOption {
@@ -52,6 +62,8 @@ export interface NotionOrderPage {
     };
     "Order Name"?: { type: "title"; title: Array<{ plain_text: string }> };
     Stage?: { type: "status"; status: { name: string } | null };
+    "Deposit Amount"?: { type: "number"; number: number | null };
+    "Deposit Paid"?: { type: "checkbox"; checkbox: boolean };
   };
 }
 
@@ -78,4 +90,21 @@ export function extractOrderName(page: NotionOrderPage): string {
 
 export function extractCurrentStage(page: NotionOrderPage): string {
   return page.properties[STAGE_PROPERTY_NAME]?.status?.name ?? "";
+}
+
+/** The deposit amount (dollars), or undefined when the atelier hasn't set one. */
+export function extractDepositAmount(
+  page: NotionOrderPage,
+): number | undefined {
+  const property = page.properties[ORDER_DEPOSIT_AMOUNT_PROPERTY];
+  if (property?.type !== "number" || typeof property.number !== "number") {
+    return undefined;
+  }
+  return property.number;
+}
+
+/** Whether the deposit checkbox is ticked. */
+export function extractDepositPaid(page: NotionOrderPage): boolean {
+  const property = page.properties[ORDER_DEPOSIT_PAID_PROPERTY];
+  return property?.type === "checkbox" ? property.checkbox : false;
 }

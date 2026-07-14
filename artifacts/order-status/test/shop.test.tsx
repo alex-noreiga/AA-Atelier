@@ -1,7 +1,14 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
-import { render, screen } from "@testing-library/react";
+import { render, screen, type RenderResult } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
+import type { ReactElement } from "react";
+import { CartProvider } from "@/lib/cart";
 import { stubHook } from "./support/mock-hook.js";
+
+// In-stock priced items now render the Add-to-cart control, which reads the
+// cart context — so every Shop render needs a CartProvider around it.
+const renderShop = (ui: ReactElement): RenderResult =>
+  render(<CartProvider>{ui}</CartProvider>);
 
 // Control the data-fetching hook so we can drive each render state directly.
 // The notify dialog's mutation hook is mocked here too — the shop imports it
@@ -70,13 +77,13 @@ function setHook(state: {
 describe("Shop render states", () => {
   it("shows a spinner while inventory loads", () => {
     setHook({ isLoading: true });
-    render(<Shop />);
+    renderShop(<Shop />);
     expect(screen.getByTestId("shop-loading")).toBeInTheDocument();
   });
 
   it("keeps the page usable when inventory fails to load", () => {
     setHook({ isError: true });
-    render(<Shop />);
+    renderShop(<Shop />);
     expect(screen.getByTestId("shop-error")).toBeInTheDocument();
     // The commission CTA must survive an error — it's the fallback path.
     expect(screen.getByTestId("cta-commission")).toBeInTheDocument();
@@ -84,7 +91,7 @@ describe("Shop render states", () => {
 
   it("invites a commission when nothing is in stock", () => {
     setHook({ products: [] });
-    render(<Shop />);
+    renderShop(<Shop />);
     expect(screen.getByTestId("shop-empty")).toBeInTheDocument();
     expect(screen.getByTestId("cta-commission")).toBeInTheDocument();
   });
@@ -93,7 +100,7 @@ describe("Shop render states", () => {
     setHook({
       products: [product(), product({ id: "p2", title: "Scrunchie" })],
     });
-    render(<Shop />);
+    renderShop(<Shop />);
     expect(screen.getByTestId("product-p1")).toBeInTheDocument();
     expect(screen.getByTestId("product-p2")).toBeInTheDocument();
   });
@@ -108,7 +115,7 @@ describe("Shop render states", () => {
         }),
       ],
     });
-    render(<Shop />);
+    renderShop(<Shop />);
     expect(screen.getByText("Terry-lined, hand sewn.")).toBeInTheDocument();
     expect(screen.getByText("$22")).toBeInTheDocument();
   });
@@ -120,14 +127,14 @@ describe("Shop render states", () => {
         product({ id: "p2", variants: [variant({ id: "v2", price: 22.5 })] }),
       ],
     });
-    render(<Shop />);
+    renderShop(<Shop />);
     expect(screen.getByText("$22")).toBeInTheDocument();
     expect(screen.getByText("$22.50")).toBeInTheDocument();
   });
 
   it("falls back to an inquire-for-price line when Listed Price is empty in Notion", () => {
     setHook({ products: [product()] });
-    render(<Shop />);
+    renderShop(<Shop />);
     expect(screen.getByText("inquire for price")).toBeInTheDocument();
   });
 });
@@ -142,7 +149,7 @@ describe("Shop category filter", () => {
       // Notion's ordering — deliberately NOT alphabetical.
       categories: ["Soaker", "Dress"],
     });
-    render(<Shop />);
+    renderShop(<Shop />);
     const chips = screen
       .getAllByTestId(/^filter-/)
       .map((chip) => chip.textContent);
@@ -154,7 +161,7 @@ describe("Shop category filter", () => {
       products: [product({ id: "p1" }), product({ id: "p2" })],
       categories: ["Soaker"],
     });
-    render(<Shop />);
+    renderShop(<Shop />);
     expect(screen.queryByTestId("filter-all")).not.toBeInTheDocument();
   });
 
@@ -166,7 +173,7 @@ describe("Shop category filter", () => {
       ],
       categories: ["Dress", "Soaker"],
     });
-    render(<Shop />);
+    renderShop(<Shop />);
     await userEvent.click(screen.getByTestId("filter-dress"));
     expect(screen.getByTestId("product-p2")).toBeInTheDocument();
     expect(screen.queryByTestId("product-p1")).not.toBeInTheDocument();
@@ -180,7 +187,7 @@ describe("Shop category filter", () => {
       ],
       categories: ["Dress", "Soaker"],
     });
-    const { rerender } = render(<Shop />);
+    const { rerender } = renderShop(<Shop />);
     await userEvent.click(screen.getByTestId("filter-dress"));
 
     // The team retires the "Dress" option in Notion.
@@ -188,7 +195,11 @@ describe("Shop category filter", () => {
       products: [product({ id: "p1", category: "Soaker" })],
       categories: ["Soaker"],
     });
-    rerender(<Shop />);
+    rerender(
+      <CartProvider>
+        <Shop />
+      </CartProvider>,
+    );
 
     // Not stranded on a dead chip showing an empty grid.
     expect(screen.getByTestId("product-p1")).toBeInTheDocument();
@@ -214,7 +225,7 @@ describe("Shop sizes", () => {
         ]),
       ],
     });
-    render(<Shop />);
+    renderShop(<Shop />);
     expect(screen.getAllByTestId("size-v1-adult-xs").length).toBeGreaterThan(0);
     expect(screen.getAllByTestId("size-v1-adult-s").length).toBeGreaterThan(0);
   });
@@ -228,7 +239,7 @@ describe("Shop sizes", () => {
         ]),
       ],
     });
-    render(<Shop />);
+    renderShop(<Shop />);
     // The in-stock size is an inert label, not a notify trigger.
     expect(
       screen.queryByTestId("size-notify-v1-adult-xs"),
@@ -253,13 +264,13 @@ describe("Shop sizes", () => {
 
   it("shows the size chart on garments but not on accessories", () => {
     setHook({ products: [dress([{ name: "Adult S", available: true }])] });
-    const { unmount } = render(<Shop />);
+    const { unmount } = renderShop(<Shop />);
     expect(screen.getAllByTestId("link-size-chart").length).toBeGreaterThan(0);
     unmount();
 
     // A soaker has no size bands and no size guide — it doesn't apply.
     setHook({ products: [product()] });
-    render(<Shop />);
+    renderShop(<Shop />);
     expect(screen.queryByTestId("link-size-chart")).not.toBeInTheDocument();
   });
 });
@@ -267,7 +278,7 @@ describe("Shop sizes", () => {
 describe("Shop contact CTAs", () => {
   it("links an in-stock item to an inquiry prefilled with its name", () => {
     setHook({ products: [product()] });
-    render(<Shop />);
+    renderShop(<Shop />);
     expect(screen.getByTestId("cta-inquire-v1")).toHaveAttribute(
       "href",
       "/contact?item=Bow%20Fleece%20Soaker",
@@ -278,7 +289,7 @@ describe("Shop contact CTAs", () => {
     setHook({
       products: [product({ variants: [variant({ available: false })] })],
     });
-    render(<Shop />);
+    renderShop(<Shop />);
     expect(screen.getByText("Sold Out")).toBeInTheDocument();
 
     // The dialog only appears once the notify CTA is clicked.
@@ -302,7 +313,7 @@ describe("Shop contact CTAs", () => {
     setHook({
       products: [product({ variants: [variant({ available: false })] })],
     });
-    render(<Shop />);
+    renderShop(<Shop />);
     await userEvent.click(screen.getByTestId("cta-notify-v1"));
     await userEvent.type(screen.getByTestId("notify-email"), "not-an-email");
     await userEvent.click(screen.getByTestId("notify-submit"));
@@ -330,7 +341,7 @@ describe("Shop contact CTAs", () => {
     setHook({
       products: [product({ variants: [variant({ available: false })] })],
     });
-    render(<Shop />);
+    renderShop(<Shop />);
     await userEvent.click(screen.getByTestId("cta-notify-v1"));
     await userEvent.type(
       screen.getByTestId("notify-email"),

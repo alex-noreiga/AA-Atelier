@@ -18,6 +18,8 @@ tags:
     description: Shop inventory (ready-to-ship items)
   - name: notify
     description: Back-in-stock notification requests
+  - name: checkout
+    description: Stripe checkout for ready-to-ship shop items
 paths:
   /health:
     get:
@@ -82,6 +84,47 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/ErrorEnvelope"
+        "500":
+          description: Server error
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorEnvelope"
+  /orders/{orderNumber}/deposit:
+    post:
+      operationId: createOrderDeposit
+      tags: [orders]
+      summary: Start a deposit payment for a custom order
+      description: >-
+        Creates a Stripe Checkout session for the deposit the atelier set on
+        this custom order (priced server-side from Notion), and returns the
+        hosted-checkout URL for the browser to redirect to. Fails if the order
+        has no deposit set or the deposit is already paid.
+      parameters:
+        - name: orderNumber
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "201":
+          description: Deposit checkout session created
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/DepositSessionResponse"
+        "400":
+          description: No deposit is due on this order
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorEnvelope"
+        "404":
+          description: Order not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/OrderNotFound"
         "500":
           description: Server error
           content:
@@ -173,6 +216,68 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/ErrorEnvelope"
+  /checkout:
+    post:
+      operationId: createCheckoutSession
+      tags: [checkout]
+      summary: Create a Stripe Checkout session for shop items
+      description: >-
+        Validates the requested in-stock shop items against live Notion
+        inventory, prices them server-side (the client never sends prices), and
+        creates a Stripe Checkout session. Returns the hosted-checkout URL for
+        the browser to redirect to.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateCheckoutSessionRequest"
+      responses:
+        "201":
+          description: Checkout session created
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CheckoutSessionResponse"
+        "400":
+          description: One or more items are not purchasable
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorEnvelope"
+        "500":
+          description: Server error
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorEnvelope"
+  /checkout/session/{sessionId}:
+    get:
+      operationId: getCheckoutSession
+      tags: [checkout]
+      summary: Get a checkout session's status
+      description: >-
+        Returns the payment status of a Stripe Checkout session, used by the
+        post-purchase success page to confirm the order.
+      parameters:
+        - name: sessionId
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Session status
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CheckoutSessionStatus"
+        "500":
+          description: Server error
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorEnvelope"
 components:
   schemas:
     HealthStatus:
@@ -195,6 +300,14 @@ components:
           type: array
           items:
             type: string
+        depositAmount:
+          type: number
+          description: >-
+            The deposit the atelier set for this custom order, in dollars.
+            Absent until they've quoted the piece and set it in Notion.
+        depositPaid:
+          type: boolean
+          description: Whether the customer has already paid the deposit.
       required:
         - orderNumber
         - orderName
@@ -397,6 +510,98 @@ components:
             this list without a redeploy, so clients must not hardcode it.
           items:
             type: string
+    CheckoutItem:
+      type: object
+      required:
+        - variantId
+        - quantity
+      properties:
+        variantId:
+          type: string
+          description: >-
+            The Notion inventory page id of the variant being purchased (the
+            `id` on a ProductVariant).
+        size:
+          type: string
+          description: >-
+            The selected size band, required when the variant is offered in
+            sizes and omitted for one-size items.
+        quantity:
+          type: integer
+          minimum: 1
+    CreateCheckoutSessionRequest:
+      type: object
+      required:
+        - items
+      properties:
+        items:
+          type: array
+          minItems: 1
+          items:
+            $ref: "#/components/schemas/CheckoutItem"
+    CheckoutSessionResponse:
+      type: object
+      required:
+        - url
+      properties:
+        url:
+          type: string
+          description: The Stripe-hosted checkout URL to redirect the browser to.
+    DepositSessionResponse:
+      type: object
+      required:
+        - url
+      properties:
+        url:
+          type: string
+          description: The Stripe-hosted checkout URL for the deposit payment.
+    ReceiptLineItem:
+      type: object
+      required:
+        - description
+        - quantity
+        - amount
+      properties:
+        description:
+          type: string
+        quantity:
+          type: number
+        amount:
+          type: number
+          description: The line total in dollars (unit price × quantity).
+    CheckoutSessionStatus:
+      type: object
+      required:
+        - status
+      properties:
+        status:
+          type: string
+          description: >-
+            The Stripe payment status of the session, e.g. "paid", "unpaid", or
+            "no_payment_required".
+        email:
+          type: string
+          description: The customer's email, present once the session is complete.
+        currency:
+          type: string
+          description: ISO currency code of the totals, e.g. "usd".
+        lineItems:
+          type: array
+          description: The purchased items, for an on-site receipt.
+          items:
+            $ref: "#/components/schemas/ReceiptLineItem"
+        amountSubtotal:
+          type: number
+          description: Items subtotal in dollars (before shipping and tax).
+        amountShipping:
+          type: number
+          description: Shipping charged in dollars.
+        amountTax:
+          type: number
+          description: Tax charged in dollars (Stripe Tax).
+        amountTotal:
+          type: number
+          description: Grand total in dollars (items + shipping + tax).
     ErrorEnvelope:
       type: object
       required: [error]
