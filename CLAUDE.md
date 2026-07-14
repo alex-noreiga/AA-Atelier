@@ -29,7 +29,7 @@ The app is deployed on **Vercel** (migrated off Replit — see
 This is a **pnpm workspace monorepo**. Package globs are defined in
 `pnpm-workspace.yaml`: `artifacts/*`, `lib/*`, `tests`. Every
 workspace package is named `@workspace/<name>`. (`scripts/` is plain bash
-tooling, deliberately *not* a workspace package.)
+tooling, deliberately _not_ a workspace package.)
 
 ```
 artifacts/
@@ -67,19 +67,31 @@ Browser (order-status SPA)
   │  fetch /api/*
   ▼
 Express app (artifacts/api-server)  ──►  Notion REST API (orders database)
+                                    └──►  Resend REST API (customer emails)
   │
   ├─ GET  /api/healthz             → { status: "ok" }
   ├─ GET  /api/orders/:orderNumber → order status + stage list
   ├─ POST /api/orders              → creates a Notion page, returns order number
+  │                                  + sends an order-confirmation email
   ├─ POST /api/contact             → saves a contact message to the Notion
   │                                  "Website Contact Messages" database
+  │                                  + sends an acknowledgement email
   ├─ GET  /api/products            → shop inventory + the live category list,
   │                                  from the Notion "inventory" database
   └─ POST /api/notify              → files a back-in-stock request (email + item
                                      + optional size) in that SAME contact
                                      database, tagged Request type = "Back in
-                                     stock"
+                                     stock" + sends a request-confirmation email
 ```
+
+The three POST endpoints each send a customer email via **Resend** as a
+**best-effort** side effect after the Notion write: the send is logged-and-swallowed
+on failure and never changes the response status (see the Resend adapter in
+`artifacts/api-server/src/lib/resend/` and the notification-email note in
+`.agents/memory/vercel-migration.md`). This replaced the old Notion automations
+that used to send these emails. Order **status-change** emails are intentionally
+_not_ handled here — stage changes happen inside Notion and there is no Notion→app
+trigger.
 
 - **Locally:** the Vite dev server proxies `/api` to the Express server on
   `localhost:3000` (see `artifacts/order-status/vite.config.ts`).
@@ -330,7 +342,7 @@ and in the maintainer's env without edits.
   shadcn/Replit scaffold: 43 of 55 `ui/` components and 32 frontend deps were dead
   weight (`react-icons` alone was 85M). They were deleted. When you add a shadcn
   component, add only the one you use; don't bulk-import the set. A few deps look
-  unused but are **load-bearing** — don't "clean" them up: `pino-pretty` (a *string*
+  unused but are **load-bearing** — don't "clean" them up: `pino-pretty` (a _string_
   transport target in `logger.ts`), `thread-stream` (version pin for
   `esbuild-plugin-pino`), `@testing-library/dom` (required peer;
   `autoInstallPeers: false`), `tw-animate-css` / `@tailwindcss/typography` (pulled in
@@ -352,28 +364,33 @@ and in the maintainer's env without edits.
   `/contact` form **and** the shop's `/notify` dialog both write to), and
   `NOTION_INVENTORY_DATABASE_ID` (the finished-goods "inventory" database the
   shop's `/products` endpoint reads). The Notion integration must be shared with
-  each database or queries 404.
+  each database or queries 404. Also `RESEND_API_KEY` and `RESEND_FROM_EMAIL`
+  (the verified sender, e.g. `AA-Atelier <orders@yourdomain>`) for the customer
+  notification emails — the sending domain must be verified in Resend (SPF/DKIM)
+  or mail won't deliver. A missing/failed mailer is non-fatal: the send is
+  best-effort and the endpoints still succeed.
 
 ## Quick reference — where things live
 
-| I want to…                              | Go to                                                                                                  |
-| --------------------------------------- | ------------------------------------------------------------------------------------------------------ |
-| Change an API request/response shape    | `lib/api-spec/openapi.yaml` → run codegen                                                              |
-| Change order use-case logic             | `artifacts/api-server/src/services/orders.service.ts`                                                  |
-| Change Notion I/O                       | `artifacts/api-server/src/lib/notion/*`                                                                |
-| Add/modify an API route                 | `artifacts/api-server/src/routes/*`                                                                    |
-| Add request validation / error mapping  | `artifacts/api-server/src/middlewares/*`                                                               |
-| Change the status-lookup UI             | `artifacts/order-status/src/pages/status.tsx`                                                          |
-| Change the order intake form            | `artifacts/order-status/src/pages/order-form.tsx`                                                      |
-| Change the landing page                 | `artifacts/order-status/src/pages/home.tsx`                                                            |
-| Change the shop (live Notion inventory) | `artifacts/order-status/src/pages/shop.tsx` + `services/products.service.ts` + `lib/notion/products.*` |
+| I want to…                              | Go to                                                                                                                                                             |
+| --------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Change an API request/response shape    | `lib/api-spec/openapi.yaml` → run codegen                                                                                                                         |
+| Change order use-case logic             | `artifacts/api-server/src/services/orders.service.ts`                                                                                                             |
+| Change Notion I/O                       | `artifacts/api-server/src/lib/notion/*`                                                                                                                           |
+| Change a customer email / template      | `artifacts/api-server/src/lib/resend/*` (`emails.ts` copy, `send.ts` transport, `client.ts` config)                                                               |
+| Add/modify an API route                 | `artifacts/api-server/src/routes/*`                                                                                                                               |
+| Add request validation / error mapping  | `artifacts/api-server/src/middlewares/*`                                                                                                                          |
+| Change the status-lookup UI             | `artifacts/order-status/src/pages/status.tsx`                                                                                                                     |
+| Change the order intake form            | `artifacts/order-status/src/pages/order-form.tsx`                                                                                                                 |
+| Change the landing page                 | `artifacts/order-status/src/pages/home.tsx`                                                                                                                       |
+| Change the shop (live Notion inventory) | `artifacts/order-status/src/pages/shop.tsx` + `services/products.service.ts` + `lib/notion/products.*`                                                            |
 | Change the back-in-stock notify dialog  | `artifacts/order-status/src/components/notify-dialog.tsx` + `services/notify.service.ts` + `lib/notion/notify.*` (writes to the **contact** database — see below) |
-| Add a page / route                      | new `src/pages/*.tsx` + `<Route>` in `src/App.tsx`                                                     |
-| Add or rename a nav link                | `NAV_LINKS` in `artifacts/order-status/src/components/navbar.tsx`                                      |
-| Add a shared UI component               | `artifacts/order-status/src/components/ui/`                                                            |
-| Add/change a shared test fixture        | `lib/test-fixtures/src/index.ts` (read its guardrail first)                                            |
-| Understand a past decision / gotcha     | `.agents/memory/`                                                                                      |
-| Adjust the Vercel serverless entrypoint | `api/index.ts` + `vercel.json`                                                                         |
+| Add a page / route                      | new `src/pages/*.tsx` + `<Route>` in `src/App.tsx`                                                                                                                |
+| Add or rename a nav link                | `NAV_LINKS` in `artifacts/order-status/src/components/navbar.tsx`                                                                                                 |
+| Add a shared UI component               | `artifacts/order-status/src/components/ui/`                                                                                                                       |
+| Add/change a shared test fixture        | `lib/test-fixtures/src/index.ts` (read its guardrail first)                                                                                                       |
+| Understand a past decision / gotcha     | `.agents/memory/`                                                                                                                                                 |
+| Adjust the Vercel serverless entrypoint | `api/index.ts` + `vercel.json`                                                                                                                                    |
 
 ```
 

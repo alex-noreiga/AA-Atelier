@@ -7,8 +7,12 @@ import {
 } from "../lib/notion/orders.repository.js";
 import type { CreateOrderInput, OrderRecord } from "../lib/notion/schema.js";
 import { NotFoundError } from "../lib/errors.js";
+import { orderConfirmationEmail } from "../lib/resend/emails.js";
+import { sendEmailBestEffort } from "../lib/resend/send.js";
 
-export async function getOrderStatus(orderNumber: string): Promise<OrderRecord> {
+export async function getOrderStatus(
+  orderNumber: string,
+): Promise<OrderRecord> {
   const order = await findOrderByNumber(orderNumber);
   if (!order) {
     throw new NotFoundError("We couldn't find an order with that number.");
@@ -27,5 +31,7 @@ export async function submitOrder(
   input: CreateOrderInput,
 ): Promise<{ orderNumber: string }> {
   const orderNumber = await createOrder(input);
+  // Best-effort confirmation email; a mail failure must not fail the order.
+  await sendEmailBestEffort(orderConfirmationEmail(input, orderNumber));
   return { orderNumber };
 }

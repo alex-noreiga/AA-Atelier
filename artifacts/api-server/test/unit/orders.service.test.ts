@@ -1,5 +1,5 @@
 import { describe, it, expect, vi } from "vitest";
-import { orderRecord } from "@workspace/test-fixtures";
+import { createOrderInput, orderRecord } from "@workspace/test-fixtures";
 import type { OrderRecord } from "../../src/lib/notion/schema.js";
 
 // The service talks to the repository by direct import, so mock that module to
@@ -10,6 +10,12 @@ vi.mock("../../src/lib/notion/orders.repository.js", () => ({
   createOrder: vi.fn(),
 }));
 
+// The confirmation email is a best-effort side effect; mock it so the service
+// test asserts it is dispatched without touching the Resend transport.
+vi.mock("../../src/lib/resend/send.js", () => ({
+  sendEmailBestEffort: vi.fn(),
+}));
+
 import {
   getOrderStatus,
   submitOrder,
@@ -18,10 +24,12 @@ import {
   findOrderByNumber,
   createOrder,
 } from "../../src/lib/notion/orders.repository.js";
+import { sendEmailBestEffort } from "../../src/lib/resend/send.js";
 import { NotFoundError } from "../../src/lib/errors.js";
 
 const mockFind = vi.mocked(findOrderByNumber);
 const mockCreate = vi.mocked(createOrder);
+const mockSend = vi.mocked(sendEmailBestEffort);
 
 describe("getOrderStatus", () => {
   it("throws NotFoundError when the order does not exist", async () => {
@@ -67,8 +75,21 @@ describe("getOrderStatus", () => {
 describe("submitOrder", () => {
   it("delegates to the repository and returns the new order number", async () => {
     mockCreate.mockResolvedValue("ORD-XYZ-987");
-    const result = await submitOrder({} as any);
+    const result = await submitOrder(
+      createOrderInput({ email: "ada@example.com" }),
+    );
     expect(result).toEqual({ orderNumber: "ORD-XYZ-987" });
     expect(mockCreate).toHaveBeenCalledOnce();
+  });
+
+  it("dispatches a confirmation email to the customer after creating the order", async () => {
+    mockCreate.mockResolvedValue("ORD-XYZ-987");
+
+    await submitOrder(createOrderInput({ email: "ada@example.com" }));
+
+    expect(mockSend).toHaveBeenCalledOnce();
+    const message = mockSend.mock.calls[0][0];
+    expect(message.to).toBe("ada@example.com");
+    expect(message.subject).toContain("ORD-XYZ-987");
   });
 });
