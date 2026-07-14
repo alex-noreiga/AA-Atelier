@@ -7,6 +7,7 @@ import {
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { PageShell } from "@/components/page-shell";
+import { Seo } from "@/components/seo";
 import { getStageDescription } from "@/lib/stage-descriptions";
 import { Loader2, ArrowRight, PenLine } from "lucide-react";
 
@@ -49,6 +50,12 @@ export default function Status() {
 
   return (
     <PageShell>
+      <Seo
+        title="Track Your Order | A.A Atelier"
+        description="Look up your A.A Atelier commission by order number and follow its progress through each stage of the atelier."
+        path="/shop/status"
+        noindex
+      />
       <div className="w-full max-w-lg z-10 mx-auto animate-in fade-in zoom-in-95 duration-1000">
         {/* Header Section */}
         <div className="text-center mb-12">
