@@ -108,6 +108,13 @@ that used to send these emails. Order **status-change** emails are intentionally
 _not_ handled here — stage changes happen inside Notion and there is no Notion→app
 trigger.
 
+Each of those three also sends an **internal atelier notification** to
+`ATELIER_INBOX_EMAIL` (with **Reply-To** set to the customer) — but only when that
+env var is set; unset means the notification is skipped and only the customer email
+goes out. So the atelier gets an email nudge on top of the Notion row. The
+customer-facing and atelier-facing builders live side by side in
+`lib/resend/emails.ts`.
+
 - **Locally:** the Vite dev server proxies `/api` to the Express server on
   `localhost:3000` (see `artifacts/order-status/vite.config.ts`).
 - **On Vercel:** `vercel.json` rewrites `/api/:path*` → `/api/index`, which is
@@ -455,9 +462,12 @@ and in the maintainer's env without edits.
   comma-separated list of Stripe Shipping Rate ids to offer at shop checkout
   (unset ⇒ no shipping charged). Customer notification emails also require
   `RESEND_API_KEY` and `RESEND_FROM_EMAIL` (the verified sender, e.g.
-  `AA-Atelier <orders@yourdomain>`). The sending domain must be verified in
+  `A.A Atelier <orders@yourdomain>`). The sending domain must be verified in
   Resend (SPF/DKIM) or mail won't deliver. A missing/failed mailer is
   non-fatal: the send is best-effort and the endpoints still succeed.
+  Optionally `ATELIER_INBOX_EMAIL` (e.g. `orders@yourdomain`) to also receive an
+  internal notification for each new order / contact message / back-in-stock
+  request; leave it unset to skip those.
 
 ## Quick reference — where things live
 

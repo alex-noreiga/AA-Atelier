@@ -1,4 +1,4 @@
-import { describe, it, expect, vi } from "vitest";
+import { describe, it, expect, vi, afterEach } from "vitest";
 import { createOrderInput, orderRecord } from "@workspace/test-fixtures";
 import type { OrderRecord } from "../../src/lib/notion/schema.js";
 
@@ -30,6 +30,10 @@ import { NotFoundError } from "../../src/lib/errors.js";
 const mockFind = vi.mocked(findOrderByNumber);
 const mockCreate = vi.mocked(createOrder);
 const mockSend = vi.mocked(sendEmailBestEffort);
+
+afterEach(() => {
+  delete process.env.ATELIER_INBOX_EMAIL;
+});
 
 describe("getOrderStatus", () => {
   it("throws NotFoundError when the order does not exist", async () => {
@@ -91,5 +95,29 @@ describe("submitOrder", () => {
     const message = mockSend.mock.calls[0][0];
     expect(message.to).toBe("ada@example.com");
     expect(message.subject).toContain("ORD-XYZ-987");
+  });
+
+  it("also notifies the atelier inbox (reply-to the customer) when ATELIER_INBOX_EMAIL is set", async () => {
+    process.env.ATELIER_INBOX_EMAIL = "orders@a3iceanddance.com";
+    mockCreate.mockResolvedValue("ORD-XYZ-987");
+
+    await submitOrder(createOrderInput({ email: "ada@example.com" }));
+
+    expect(mockSend).toHaveBeenCalledTimes(2);
+    const notification = mockSend.mock.calls
+      .map((c) => c[0])
+      .find((m) => m.to === "orders@a3iceanddance.com");
+    expect(notification).toBeDefined();
+    expect(notification?.replyTo).toBe("ada@example.com");
+    expect(notification?.subject).toContain("ORD-XYZ-987");
+  });
+
+  it("does not notify the atelier when ATELIER_INBOX_EMAIL is unset", async () => {
+    mockCreate.mockResolvedValue("ORD-XYZ-987");
+
+    await submitOrder(createOrderInput({ email: "ada@example.com" }));
+
+    // Only the customer confirmation goes out.
+    expect(mockSend).toHaveBeenCalledOnce();
   });
 });

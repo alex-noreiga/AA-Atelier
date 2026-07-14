@@ -20,6 +20,11 @@ export interface EmailMessage {
   subject: string;
   html: string;
   text: string;
+  /**
+   * Optional Reply-To. Set on atelier-facing notifications so a reply goes
+   * straight to the customer rather than back to the `from` address.
+   */
+  replyTo?: string;
 }
 
 export interface ResendClient {
@@ -49,6 +54,7 @@ export function createResendClient(config: ResendClientConfig): ResendClient {
           subject: message.subject,
           html: message.html,
           text: message.text,
+          ...(message.replyTo ? { reply_to: message.replyTo } : {}),
         }),
       });
     },
@@ -70,4 +76,14 @@ export function getResendClient(): ResendClient {
     });
   }
   return defaultClient;
+}
+
+/**
+ * The atelier's own inbox for internal new-submission notifications
+ * (`ATELIER_INBOX_EMAIL`, e.g. `orders@a3iceanddance.com`). Empty string when
+ * unset — callers skip the notification rather than send to nobody. Read fresh
+ * each call (no memoization) so it can't be affected by first-use ordering.
+ */
+export function getAtelierInbox(): string {
+  return process.env.ATELIER_INBOX_EMAIL ?? "";
 }

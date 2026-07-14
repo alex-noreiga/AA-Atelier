@@ -7,8 +7,12 @@ import {
 } from "../lib/notion/orders.repository.js";
 import type { CreateOrderInput, OrderRecord } from "../lib/notion/schema.js";
 import { NotFoundError } from "../lib/errors.js";
-import { orderConfirmationEmail } from "../lib/resend/emails.js";
+import {
+  orderConfirmationEmail,
+  orderNotificationEmail,
+} from "../lib/resend/emails.js";
 import { sendEmailBestEffort } from "../lib/resend/send.js";
+import { getAtelierInbox } from "../lib/resend/client.js";
 
 export async function getOrderStatus(
   orderNumber: string,
@@ -31,7 +35,13 @@ export async function submitOrder(
   input: CreateOrderInput,
 ): Promise<{ orderNumber: string }> {
   const orderNumber = await createOrder(input);
-  // Best-effort confirmation email; a mail failure must not fail the order.
+  // Best-effort emails; a mail failure must not fail the order.
   await sendEmailBestEffort(orderConfirmationEmail(input, orderNumber));
+  const inbox = getAtelierInbox();
+  if (inbox) {
+    await sendEmailBestEffort(
+      orderNotificationEmail(input, orderNumber, inbox),
+    );
+  }
   return { orderNumber };
 }
