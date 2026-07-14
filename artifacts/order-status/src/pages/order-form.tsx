@@ -9,6 +9,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { PageShell } from "@/components/page-shell";
+import { Seo } from "@/components/seo";
 import { useToast } from "@/hooks/use-toast";
 import { ArrowLeft, CheckCircle, Loader2 } from "lucide-react";
 
@@ -116,6 +117,11 @@ export default function OrderForm() {
 
   return (
     <PageShell align="top" noise={false}>
+      <Seo
+        title="Place a Custom Costume Order | A.A Atelier"
+        description="Start your custom figure skating or dance costume. Share your contact details, measurements, and design notes and A.A Atelier will craft a one-of-a-kind piece for you."
+        path="/order"
+      />
       <div className="max-w-2xl mx-auto px-6 pt-24 pb-12">
         <div className="mb-10">
           <Link

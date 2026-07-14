@@ -13,6 +13,7 @@ import {
   SheetTrigger,
   SheetClose,
 } from "@/components/ui/sheet";
+import { CartButton } from "@/components/cart-drawer";
 
 type NavLink = {
   to: string;
@@ -63,151 +64,156 @@ export default function Navbar() {
           A.A Atelier
         </Link>
 
-        {/* Desktop links */}
-        <div className="hidden md:flex items-center gap-6">
-          {NAV_LINKS.map((link) => {
-            const active = isActive(location, link);
-            const linkClass = `text-xs tracking-[0.15em] uppercase transition-colors relative group ${
-              active
-                ? "text-primary"
-                : "text-muted-foreground hover:text-foreground"
-            }`;
-            const underline = (
-              <span
-                className={`absolute -bottom-1 left-0 h-[1px] bg-primary transition-all duration-300 ${
-                  active ? "w-full" : "w-0 group-hover:w-full"
-                }`}
-              />
-            );
-
-            if (!link.children) {
-              return (
-                <Link
-                  key={link.to}
-                  to={link.to}
-                  className={linkClass}
-                  data-testid={`nav-${testId(link.label)}`}
-                >
-                  {link.label}
-                  {underline}
-                </Link>
+        <div className="flex items-center gap-1 md:gap-5">
+          {/* Desktop links */}
+          <div className="hidden md:flex items-center gap-6">
+            {NAV_LINKS.map((link) => {
+              const active = isActive(location, link);
+              const linkClass = `text-xs tracking-[0.15em] uppercase transition-colors relative group ${
+                active
+                  ? "text-primary"
+                  : "text-muted-foreground hover:text-foreground"
+              }`;
+              const underline = (
+                <span
+                  className={`absolute -bottom-1 left-0 h-[1px] bg-primary transition-all duration-300 ${
+                    active ? "w-full" : "w-0 group-hover:w-full"
+                  }`}
+                />
               );
-            }
 
-            return (
-              <DropdownMenu key={link.to}>
-                <DropdownMenuTrigger
-                  className={`${linkClass} flex items-center gap-1 outline-hidden`}
-                  data-testid={`nav-${testId(link.label)}`}
-                >
-                  {link.label}
-                  <ChevronDown
-                    className="w-3 h-3 transition-transform duration-300 group-data-[state=open]:rotate-180"
-                    strokeWidth={1.5}
-                  />
-                  {underline}
-                </DropdownMenuTrigger>
-                <DropdownMenuContent
-                  align="start"
-                  sideOffset={12}
-                  className="bg-background/95 backdrop-blur-md border-border/60 min-w-48"
-                >
-                  {link.children.map((child) => (
-                    <DropdownMenuItem key={child.to} asChild>
+              if (!link.children) {
+                return (
+                  <Link
+                    key={link.to}
+                    to={link.to}
+                    className={linkClass}
+                    data-testid={`nav-${testId(link.label)}`}
+                  >
+                    {link.label}
+                    {underline}
+                  </Link>
+                );
+              }
+
+              return (
+                <DropdownMenu key={link.to}>
+                  <DropdownMenuTrigger
+                    className={`${linkClass} flex items-center gap-1 outline-hidden`}
+                    data-testid={`nav-${testId(link.label)}`}
+                  >
+                    {link.label}
+                    <ChevronDown
+                      className="w-3 h-3 transition-transform duration-300 group-data-[state=open]:rotate-180"
+                      strokeWidth={1.5}
+                    />
+                    {underline}
+                  </DropdownMenuTrigger>
+                  <DropdownMenuContent
+                    align="start"
+                    sideOffset={12}
+                    className="bg-background/95 backdrop-blur-md border-border/60 min-w-48"
+                  >
+                    {link.children.map((child) => (
+                      <DropdownMenuItem key={child.to} asChild>
+                        <Link
+                          to={child.to}
+                          className={`text-xs tracking-[0.15em] uppercase transition-colors ${
+                            location === child.to
+                              ? "text-primary"
+                              : "text-muted-foreground focus:text-foreground"
+                          }`}
+                          data-testid={`nav-${testId(child.label)}`}
+                        >
+                          {child.label}
+                        </Link>
+                      </DropdownMenuItem>
+                    ))}
+                  </DropdownMenuContent>
+                </DropdownMenu>
+              );
+            })}
+          </div>
+
+          {/* Cart — visible on every breakpoint */}
+          <CartButton />
+
+          {/* Mobile menu */}
+          <div className="md:hidden">
+            <Sheet open={open} onOpenChange={setOpen}>
+              <SheetTrigger
+                className="text-foreground hover:text-primary transition-colors p-2 -mr-2"
+                aria-label="Open menu"
+                data-testid="button-menu"
+              >
+                <Menu className="w-5 h-5" strokeWidth={1.5} />
+              </SheetTrigger>
+              <SheetContent
+                side="right"
+                className="bg-background border-l border-border w-72 [&>button]:hidden"
+              >
+                <div className="flex items-center justify-between mb-12">
+                  <span className="font-serif text-lg tracking-[0.2em] uppercase">
+                    A.A Atelier
+                  </span>
+                  <SheetClose
+                    className="text-muted-foreground hover:text-primary transition-colors"
+                    aria-label="Close menu"
+                  >
+                    <X className="w-5 h-5" strokeWidth={1.5} />
+                  </SheetClose>
+                </div>
+                <div className="flex flex-col gap-8">
+                  {NAV_LINKS.map((link) =>
+                    link.children ? (
+                      <div key={link.to} className="flex flex-col gap-4">
+                        <span
+                          className={`font-serif text-2xl ${
+                            isActive(location, link)
+                              ? "text-primary"
+                              : "text-foreground"
+                          }`}
+                        >
+                          {link.label}
+                        </span>
+                        <div className="flex flex-col gap-3 pl-4">
+                          {link.children.map((child) => (
+                            <Link
+                              key={child.to}
+                              to={child.to}
+                              onClick={() => setOpen(false)}
+                              className={`text-sm tracking-[0.15em] uppercase transition-colors ${
+                                location === child.to
+                                  ? "text-primary"
+                                  : "text-muted-foreground hover:text-primary"
+                              }`}
+                              data-testid={`nav-mobile-${testId(child.label)}`}
+                            >
+                              {child.label}
+                            </Link>
+                          ))}
+                        </div>
+                      </div>
+                    ) : (
                       <Link
-                        to={child.to}
-                        className={`text-xs tracking-[0.15em] uppercase transition-colors ${
-                          location === child.to
-                            ? "text-primary"
-                            : "text-muted-foreground focus:text-foreground"
-                        }`}
-                        data-testid={`nav-${testId(child.label)}`}
-                      >
-                        {child.label}
-                      </Link>
-                    </DropdownMenuItem>
-                  ))}
-                </DropdownMenuContent>
-              </DropdownMenu>
-            );
-          })}
-        </div>
-
-        {/* Mobile menu */}
-        <div className="md:hidden">
-          <Sheet open={open} onOpenChange={setOpen}>
-            <SheetTrigger
-              className="text-foreground hover:text-primary transition-colors p-2 -mr-2"
-              aria-label="Open menu"
-              data-testid="button-menu"
-            >
-              <Menu className="w-5 h-5" strokeWidth={1.5} />
-            </SheetTrigger>
-            <SheetContent
-              side="right"
-              className="bg-background border-l border-border w-72 [&>button]:hidden"
-            >
-              <div className="flex items-center justify-between mb-12">
-                <span className="font-serif text-lg tracking-[0.2em] uppercase">
-                  A.A Atelier
-                </span>
-                <SheetClose
-                  className="text-muted-foreground hover:text-primary transition-colors"
-                  aria-label="Close menu"
-                >
-                  <X className="w-5 h-5" strokeWidth={1.5} />
-                </SheetClose>
-              </div>
-              <div className="flex flex-col gap-8">
-                {NAV_LINKS.map((link) =>
-                  link.children ? (
-                    <div key={link.to} className="flex flex-col gap-4">
-                      <span
-                        className={`font-serif text-2xl ${
+                        key={link.to}
+                        to={link.to}
+                        onClick={() => setOpen(false)}
+                        className={`font-serif text-2xl transition-colors ${
                           isActive(location, link)
                             ? "text-primary"
-                            : "text-foreground"
+                            : "text-foreground hover:text-primary"
                         }`}
+                        data-testid={`nav-mobile-${testId(link.label)}`}
                       >
                         {link.label}
-                      </span>
-                      <div className="flex flex-col gap-3 pl-4">
-                        {link.children.map((child) => (
-                          <Link
-                            key={child.to}
-                            to={child.to}
-                            onClick={() => setOpen(false)}
-                            className={`text-sm tracking-[0.15em] uppercase transition-colors ${
-                              location === child.to
-                                ? "text-primary"
-                                : "text-muted-foreground hover:text-primary"
-                            }`}
-                            data-testid={`nav-mobile-${testId(child.label)}`}
-                          >
-                            {child.label}
-                          </Link>
-                        ))}
-                      </div>
-                    </div>
-                  ) : (
-                    <Link
-                      key={link.to}
-                      to={link.to}
-                      onClick={() => setOpen(false)}
-                      className={`font-serif text-2xl transition-colors ${
-                        isActive(location, link)
-                          ? "text-primary"
-                          : "text-foreground hover:text-primary"
-                      }`}
-                      data-testid={`nav-mobile-${testId(link.label)}`}
-                    >
-                      {link.label}
-                    </Link>
-                  ),
-                )}
-              </div>
-            </SheetContent>
-          </Sheet>
+                      </Link>
+                    ),
+                  )}
+                </div>
+              </SheetContent>
+            </Sheet>
+          </div>
         </div>
       </nav>
     </header>

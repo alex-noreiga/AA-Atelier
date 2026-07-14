@@ -1,9 +1,15 @@
 import { Link } from "wouter";
 import { ArrowLeft } from "lucide-react";
+import { Seo } from "@/components/seo";
 
 export default function NotFound() {
   return (
     <div className="min-h-[100dvh] w-full flex flex-col items-center justify-center p-6 pt-24 bg-background text-center">
+      <Seo
+        title="Page Not Found | A.A Atelier"
+        description="The page you're looking for doesn't exist or may have moved."
+        noindex
+      />
       <p className="text-primary text-xs tracking-[0.35em] uppercase mb-6">
         404
       </p>

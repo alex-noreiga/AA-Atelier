@@ -4,9 +4,12 @@ import {
   GetOrderStatusResponse,
   CreateOrderBody,
   CreateOrderResponse,
+  CreateOrderDepositParams,
+  CreateOrderDepositResponse,
 } from "@workspace/api-zod";
 import { validate } from "../middlewares/validate.js";
 import { getOrderStatus, submitOrder } from "../services/orders.service.js";
+import { createDepositCheckout } from "../services/deposit.service.js";
 import type { CreateOrderInput } from "../lib/notion/schema.js";
 
 const router = Router();
@@ -28,6 +31,16 @@ router.post(
     const body = res.locals.body as CreateOrderInput;
     const result = await submitOrder(body);
     res.status(201).json(CreateOrderResponse.parse(result));
+  },
+);
+
+router.post(
+  "/orders/:orderNumber/deposit",
+  validate({ params: CreateOrderDepositParams }),
+  async (_req, res) => {
+    const { orderNumber } = res.locals.params as { orderNumber: string };
+    const result = await createDepositCheckout(orderNumber);
+    res.status(201).json(CreateOrderDepositResponse.parse(result));
   },
 );
 
