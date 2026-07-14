@@ -47,6 +47,37 @@ describe("createResendClient.send", () => {
     expect(body).not.toHaveProperty("reply_to");
   });
 
+  it("uses the per-message from when set, else the client's base from", async () => {
+    const client = createResendClient({
+      apiKey: "re_test",
+      from: "A.A Atelier <orders@a3iceanddance.com>",
+    });
+
+    const withOverride = stubFetchOk();
+    await client.send({
+      to: "c@example.com",
+      subject: "s",
+      html: "h",
+      text: "t",
+      from: "A.A Atelier <hello@a3iceanddance.com>",
+    });
+    expect(JSON.parse(withOverride.mock.calls[0][1].body).from).toBe(
+      "A.A Atelier <hello@a3iceanddance.com>",
+    );
+
+    vi.unstubAllGlobals();
+    const withoutOverride = stubFetchOk();
+    await client.send({
+      to: "c@example.com",
+      subject: "s",
+      html: "h",
+      text: "t",
+    });
+    expect(JSON.parse(withoutOverride.mock.calls[0][1].body).from).toBe(
+      "A.A Atelier <orders@a3iceanddance.com>",
+    );
+  });
+
   it("includes reply_to only when replyTo is set", async () => {
     const fetchMock = stubFetchOk();
     const client = createResendClient({

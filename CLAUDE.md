@@ -115,6 +115,16 @@ goes out. So the atelier gets an email nudge on top of the Notion row. The
 customer-facing and atelier-facing builders live side by side in
 `lib/resend/emails.ts`.
 
+Emails are grouped into two **categories** (`lib/resend/config.ts`): **orders**
+(order + back-in-stock mail) and **contact** (contact-form mail). Each category
+resolves a **sender** and a **notification inbox** from env, with the contact
+overrides falling back to the base vars when unset (so unset ⇒ identical to a
+single-address setup): sender `RESEND_CONTACT_FROM_EMAIL` → `RESEND_FROM_EMAIL`,
+inbox `ATELIER_CONTACT_INBOX_EMAIL` → `ATELIER_INBOX_EMAIL`. The service resolves
+the pair via `fromAddress(category)`/`atelierInbox(category)` and spreads the `from`
+onto the message; the client uses a per-message `from` over its base. This lets,
+e.g., order mail send from `orders@` and contact mail from `hello@`.
+
 - **Locally:** the Vite dev server proxies `/api` to the Express server on
   `localhost:3000` (see `artifacts/order-status/vite.config.ts`).
 - **On Vercel:** `vercel.json` rewrites `/api/:path*` → `/api/index`, which is
@@ -467,7 +477,11 @@ and in the maintainer's env without edits.
   non-fatal: the send is best-effort and the endpoints still succeed.
   Optionally `ATELIER_INBOX_EMAIL` (e.g. `orders@yourdomain`) to also receive an
   internal notification for each new order / contact message / back-in-stock
-  request; leave it unset to skip those.
+  request; leave it unset to skip those. Optionally `RESEND_CONTACT_FROM_EMAIL` and
+  `ATELIER_CONTACT_INBOX_EMAIL` (e.g. `hello@yourdomain`) to send/receive
+  contact-form mail from a separate address; each falls back to the base
+  `RESEND_FROM_EMAIL` / `ATELIER_INBOX_EMAIL` when unset (same verified domain, no
+  extra Resend setup).
 
 ## Quick reference — where things live
 
@@ -476,7 +490,7 @@ and in the maintainer's env without edits.
 | Change an API request/response shape    | `lib/api-spec/openapi.yaml` → run codegen                                                                                                                                                                                                                                     |
 | Change order use-case logic             | `artifacts/api-server/src/services/orders.service.ts`                                                                                                                                                                                                                         |
 | Change Notion I/O                       | `artifacts/api-server/src/lib/notion/*`                                                                                                                                                                                                                                       |
-| Change a customer email / template      | `artifacts/api-server/src/lib/resend/*` (`emails.ts` copy, `send.ts` transport, `client.ts` config)                                                                                                                                                                         |
+| Change a customer email / template      | `artifacts/api-server/src/lib/resend/*` (`emails.ts` copy, `send.ts` transport, `client.ts` config)                                                                                                                                                                           |
 | Add/modify an API route                 | `artifacts/api-server/src/routes/*`                                                                                                                                                                                                                                           |
 | Add request validation / error mapping  | `artifacts/api-server/src/middlewares/*`                                                                                                                                                                                                                                      |
 | Change the status-lookup UI             | `artifacts/order-status/src/pages/status.tsx`                                                                                                                                                                                                                                 |

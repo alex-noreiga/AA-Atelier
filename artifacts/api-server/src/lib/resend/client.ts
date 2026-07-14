@@ -14,12 +14,18 @@ interface ResendClientConfig {
   from: string;
 }
 
-/** The message an email builder hands to the client; `from` is supplied here. */
+/** The message an email builder hands to the client. */
 export interface EmailMessage {
   to: string;
   subject: string;
   html: string;
   text: string;
+  /**
+   * Optional per-message sender. Overrides the client's base `from` so different
+   * functions can send from different addresses (e.g. orders@ vs hello@). Falls
+   * back to the base `from` when unset. See `config.ts` `fromAddress()`.
+   */
+  from?: string;
   /**
    * Optional Reply-To. Set on atelier-facing notifications so a reply goes
    * straight to the customer rather than back to the `from` address.
@@ -49,7 +55,7 @@ export function createResendClient(config: ResendClientConfig): ResendClient {
           "Content-Type": "application/json",
         },
         body: JSON.stringify({
-          from,
+          from: message.from || from,
           to: message.to,
           subject: message.subject,
           html: message.html,
@@ -76,14 +82,4 @@ export function getResendClient(): ResendClient {
     });
   }
   return defaultClient;
-}
-
-/**
- * The atelier's own inbox for internal new-submission notifications
- * (`ATELIER_INBOX_EMAIL`, e.g. `orders@a3iceanddance.com`). Empty string when
- * unset — callers skip the notification rather than send to nobody. Read fresh
- * each call (no memoization) so it can't be affected by first-use ordering.
- */
-export function getAtelierInbox(): string {
-  return process.env.ATELIER_INBOX_EMAIL ?? "";
 }

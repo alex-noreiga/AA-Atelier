@@ -17,6 +17,7 @@ const mockSend = vi.mocked(sendEmailBestEffort);
 
 afterEach(() => {
   delete process.env.ATELIER_INBOX_EMAIL;
+  delete process.env.RESEND_FROM_EMAIL;
 });
 
 describe("submitBackInStockRequest", () => {
@@ -45,5 +46,16 @@ describe("submitBackInStockRequest", () => {
       .find((m) => m.to === "orders@a3iceanddance.com");
     expect(notification).toBeDefined();
     expect(notification?.replyTo).toBe("grace@example.com");
+  });
+
+  it("sends from the orders sender (back-in-stock is grouped with orders)", async () => {
+    process.env.RESEND_FROM_EMAIL = "A.A Atelier <orders@a3iceanddance.com>";
+    mockCreate.mockResolvedValue(undefined);
+
+    await submitBackInStockRequest(notifyInput({ email: "grace@example.com" }));
+
+    expect(mockSend.mock.calls[0][0].from).toBe(
+      "A.A Atelier <orders@a3iceanddance.com>",
+    );
   });
 });
