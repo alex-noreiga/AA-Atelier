@@ -270,6 +270,12 @@ both Vitest suites; each package also has its own `test` / `test:watch`.
 Both Vitest configs set `clearMocks: true`, so tests don't hand-roll a
 `beforeEach(() => vi.clearAllMocks())`.
 
+**Coverage.** `pnpm test:coverage` runs both Vitest suites with v8 coverage
+(`@vitest/coverage-v8`), printing a table and writing a browsable HTML report to
+each package's `coverage/` dir. It's **report-only** — no thresholds, so it never
+fails CI; the goal is visibility, not a gate. CI runs it in place of `pnpm test`
+and uploads the reports as an artifact.
+
 Note `pnpm test` filters on `./artifacts/**` rather than using `-r`: the
 `@workspace/tests` package's `test` script is `playwright test`, and `-r` would
 drag Playwright into the unit-test run (which CI executes _before_ it installs a
