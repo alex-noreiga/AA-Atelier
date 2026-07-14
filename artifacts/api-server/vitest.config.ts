@@ -32,5 +32,15 @@ export default defineConfig({
     // Clears calls/results but keeps implementations and return values, which
     // is what the suites relied on when they each did this by hand.
     clearMocks: true,
+    // Report-only coverage (no thresholds): `pnpm test:coverage` prints a table
+    // and writes a browsable HTML report under coverage/. `include` is scoped to
+    // src so test/support helpers don't count; index.ts is the bootstrap that
+    // only calls listen(), with nothing to unit-test.
+    coverage: {
+      provider: "v8",
+      reporter: ["text", "html"],
+      include: ["src/**"],
+      exclude: ["src/index.ts"],
+    },
   },
 });

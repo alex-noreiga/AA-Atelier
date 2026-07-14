@@ -32,7 +32,17 @@ jobs:
         run: pnpm typecheck
 
       - name: Unit & integration tests
-        run: pnpm test
+        run: pnpm test:coverage
+
+      - name: Upload coverage reports
+        if: ${{ !cancelled() }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: coverage
+          path: |
+            artifacts/api-server/coverage/
+            artifacts/order-status/coverage/
+          retention-days: 7
 
       - name: Install Playwright browser
         run: pnpm --filter @workspace/tests exec playwright install --with-deps chromium

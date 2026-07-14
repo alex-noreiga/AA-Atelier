@@ -11,6 +11,7 @@
     "typecheck:libs": "tsc --build",
     "typecheck": "pnpm run typecheck:libs && pnpm -r --filter \"./artifacts/**\" --filter \"./tests\" --if-present run typecheck",
     "test": "pnpm --filter \"./artifacts/**\" --if-present run test",
+    "test:coverage": "pnpm --filter \"./artifacts/**\" --if-present run test:coverage",
     "test:e2e": "pnpm --filter @workspace/tests run test",
     "clean": "bash scripts/cleanup.sh",
     "clean:deep": "bash scripts/cleanup.sh --deep",
