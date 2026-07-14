@@ -97,14 +97,15 @@ describe("buildShopOrderPageBlocks", () => {
     );
   });
 
-  it("appends a shipping line when shipping was charged", () => {
+  it("appends shipping and tax lines when they were charged", () => {
     const blocks = buildShopOrderPageBlocks(
-      session({ total_details: { amount_shipping: 800 } }),
+      session({ total_details: { amount_shipping: 800, amount_tax: 340 } }),
     ) as any[];
     const texts = blocks.map(
       (b) => b.bulleted_list_item?.rich_text[0].text.content,
     );
     expect(texts).toContain("Shipping — $8.00");
+    expect(texts).toContain("Tax — $3.40");
   });
 
   it("omits the shipping line when there was no shipping cost", () => {

@@ -75,10 +75,13 @@ describe("createCheckoutSession", () => {
         price_data: {
           currency: "usd",
           unit_amount: 2200,
+          tax_behavior: "exclusive",
           product_data: { name: "Bow Fleece Soaker" },
         },
       },
     ]);
+    // Stripe Tax is computed on the shop cart (deposits stay untaxed).
+    expect(params.automatic_tax).toEqual({ enabled: true });
     expect(params.success_url).toContain(
       "https://shop.test/shop/success?session_id={CHECKOUT_SESSION_ID}",
     );

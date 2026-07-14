@@ -138,11 +138,15 @@ export function buildShopOrderPageBlocks(
     return bulletBlock(`${quantity} × ${description} — ${amount}`);
   });
 
-  // Shipping is separate from line items in Stripe, but it's part of the Total —
-  // surface it so the bullets and the Total property reconcile.
+  // Shipping and tax are separate from line items in Stripe, but they're part of
+  // the Total — surface them so the bullets and the Total property reconcile.
   const shipping = session.total_details?.amount_shipping ?? 0;
   if (shipping > 0) {
     bullets.push(bulletBlock(`Shipping — ${formatMoney(shipping)}`));
+  }
+  const tax = session.total_details?.amount_tax ?? 0;
+  if (tax > 0) {
+    bullets.push(bulletBlock(`Tax — ${formatMoney(tax)}`));
   }
 
   return [heading, ...bullets];

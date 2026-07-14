@@ -214,11 +214,19 @@ and `src/lib/notion/shop-orders.*`. Four things are load-bearing:
    `STRIPE_SHIPPING_RATE_IDS` (comma-separated `shr_…` ids the atelier creates and
    prices in the Stripe Dashboard) and attaches them as the session's
    `shipping_options`; unset means no shipping is charged. The order's `Total`
-   (Stripe `amount_total`) includes shipping, and `buildShopOrderPageBlocks` adds
-   a "Shipping" line to the Notion page body so the itemized bullets reconcile
-   with it.
+   (Stripe `amount_total`) includes shipping + tax, and `buildShopOrderPageBlocks`
+   adds "Shipping" and "Tax" lines to the Notion page body so the itemized bullets
+   reconcile with it.
 
-6. **Receipts are Stripe's job; the success page mirrors them.** The emailed
+6. **Tax is Stripe Tax, enabled on the shop cart only.** `checkout.service` sets
+   `automatic_tax: { enabled: true }` and `tax_behavior: "exclusive"` (listed
+   prices are pre-tax; tax is added on top), so tax is computed from the collected
+   address — configure the origin + a default tax category in the Stripe Dashboard,
+   or it computes $0. **Deposits are intentionally untaxed** (tax is assessed on
+   the final balance, not the deposit), so `deposit.service` sets no
+   `automatic_tax`.
+
+7. **Receipts are Stripe's job; the success page mirrors them.** The emailed
    receipt is a Stripe Dashboard setting (Settings → Emails → "Successful
    payments"), not code. `getCheckoutSession` retrieves the session with
    `expand: ["line_items"]` and returns an itemized view (line items + subtotal /
