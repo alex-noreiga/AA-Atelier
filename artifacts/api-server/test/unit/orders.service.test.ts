@@ -25,7 +25,7 @@ import {
   createOrder,
 } from "../../src/lib/notion/orders.repository.js";
 import { sendEmailBestEffort } from "../../src/lib/resend/send.js";
-import { NotFoundError } from "../../src/lib/errors.js";
+import { NotFoundError, ValidationError } from "../../src/lib/errors.js";
 
 const mockFind = vi.mocked(findOrderByNumber);
 const mockCreate = vi.mocked(createOrder);
@@ -85,6 +85,42 @@ describe("submitOrder", () => {
     );
     expect(result).toEqual({ orderNumber: "ORD-XYZ-987" });
     expect(mockCreate).toHaveBeenCalledOnce();
+  });
+
+  it("accepts an order with no measurements when an appointment is requested", async () => {
+    mockCreate.mockResolvedValue("ORD-APPT-001");
+    const {
+      waist,
+      bust,
+      hips,
+      height,
+      bodyGirth,
+      measurementUnit,
+      ...contact
+    } = createOrderInput();
+
+    const result = await submitOrder({
+      ...contact,
+      measurementAppointment: true,
+    });
+
+    expect(result).toEqual({ orderNumber: "ORD-APPT-001" });
+    expect(mockCreate).toHaveBeenCalledOnce();
+  });
+
+  it("rejects an order with neither measurements nor an appointment", async () => {
+    const {
+      waist,
+      bust,
+      hips,
+      height,
+      bodyGirth,
+      measurementUnit,
+      ...contact
+    } = createOrderInput();
+
+    await expect(submitOrder(contact)).rejects.toBeInstanceOf(ValidationError);
+    expect(mockCreate).not.toHaveBeenCalled();
   });
 
   it("dispatches a confirmation email to the customer after creating the order", async () => {

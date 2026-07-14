@@ -6,13 +6,26 @@ import {
   findOrderByNumber,
 } from "../lib/notion/orders.repository.js";
 import type { CreateOrderInput, OrderRecord } from "../lib/notion/schema.js";
-import { NotFoundError } from "../lib/errors.js";
+import { NotFoundError, ValidationError } from "../lib/errors.js";
 import {
   orderConfirmationEmail,
   orderNotificationEmail,
 } from "../lib/resend/emails.js";
 import { sendEmailBestEffort } from "../lib/resend/send.js";
 import { fromAddress, atelierInbox } from "../lib/resend/config.js";
+
+const MEASUREMENT_FIELDS = [
+  "waist",
+  "bust",
+  "hips",
+  "height",
+  "bodyGirth",
+] as const;
+
+/** True when every body measurement is present as a number. */
+function hasAllMeasurements(input: CreateOrderInput): boolean {
+  return MEASUREMENT_FIELDS.every((field) => typeof input[field] === "number");
+}
 
 export async function getOrderStatus(
   orderNumber: string,
@@ -34,6 +47,15 @@ export async function getOrderStatus(
 export async function submitOrder(
   input: CreateOrderInput,
 ): Promise<{ orderNumber: string }> {
+  // The generated (flat) schema can't express this: measurements are optional,
+  // but only because the customer may instead ask to have them taken at a
+  // fitting/consultation. Reject a body that offers neither.
+  if (!input.measurementAppointment && !hasAllMeasurements(input)) {
+    throw new ValidationError(
+      "Please enter your measurements or request a measurement appointment.",
+    );
+  }
+
   const orderNumber = await createOrder(input);
   // Best-effort emails; a mail failure must not fail the order.
   const from = fromAddress("orders");

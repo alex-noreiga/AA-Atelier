@@ -327,12 +327,11 @@ components:
         - email
         - phone
         - preferredContact
-        - waist
-        - bust
-        - hips
-        - height
-        - bodyGirth
-        - measurementUnit
+      description: >-
+        A new custom-dress order. Measurements are optional: the customer either
+        supplies all five now (with a measurementUnit), or sets
+        measurementAppointment=true to have them taken at a scheduled fitting or
+        consultation. The server rejects a body with neither.
       properties:
         fullName:
           type: string
@@ -364,6 +363,12 @@ components:
         measurementUnit:
           type: string
           enum: [inches, cm]
+        measurementAppointment:
+          type: boolean
+          description: >-
+            True when the customer opted to have their measurements taken at a
+            scheduled fitting or consultation instead of entering them now. When
+            true the measurement fields are omitted.
         description:
           type: string
         neededBy:

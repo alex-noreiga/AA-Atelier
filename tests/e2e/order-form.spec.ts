@@ -48,6 +48,34 @@ test.describe("Order form", () => {
     ).toBeVisible();
   });
 
+  test("submits without measurements when an appointment is requested (API mocked)", async ({
+    page,
+  }) => {
+    await mockCreateOrder(page, { body: { orderNumber: "ORD-APPT-0001" } });
+
+    await page.goto("/order");
+    await page.locator("#fullName").fill(E2E_ORDER.fullName);
+    await page.locator("#email").fill(E2E_ORDER.email);
+    await page.locator("#phone").fill(E2E_ORDER.phone);
+    await page.getByRole("button", { name: "Email" }).click();
+    await page
+      .getByRole("button", { name: "Take them at an appointment" })
+      .click();
+
+    // The measurement inputs are hidden in appointment mode.
+    await expect(page.locator("#waist")).toHaveCount(0);
+
+    await page.getByRole("button", { name: "Submit Order" }).click();
+
+    await expect(
+      page.getByRole("heading", { name: "Order Received" }),
+    ).toBeVisible();
+    await expect(
+      page.getByText(/schedule your measurement appointment/i),
+    ).toBeVisible();
+    await expect(page.locator("p.font-mono")).toHaveText("ORD-APPT-0001");
+  });
+
   test("shows a destructive toast when the API rejects the submission", async ({
     page,
   }) => {

@@ -81,6 +81,33 @@ describe("buildOrderPageBlocks", () => {
     expect(pairs.Description).toBe("Ivory chiffon");
   });
 
+  it("renders an appointment note instead of values when measurements are omitted", () => {
+    const {
+      waist,
+      bust,
+      hips,
+      height,
+      bodyGirth,
+      measurementUnit,
+      ...contact
+    } = baseOrder;
+    const blocks = buildOrderPageBlocks({
+      ...contact,
+      measurementAppointment: true,
+    });
+
+    // The heading carries no unit, and none of the numeric fields appear.
+    expect(headings(blocks)).toEqual([
+      "Contact Information",
+      "Measurements",
+      "Dress Details",
+    ]);
+    const pairs = textPairs(blocks);
+    expect(pairs).not.toHaveProperty("Waist");
+    expect(pairs).not.toHaveProperty("Body Girth");
+    expect(pairs.Status).toMatch(/fitting or consultation/i);
+  });
+
   it("formats a Date neededBy as an ISO date (YYYY-MM-DD)", () => {
     const pairs = textPairs(
       buildOrderPageBlocks({

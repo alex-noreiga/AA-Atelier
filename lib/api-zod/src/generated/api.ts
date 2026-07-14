@@ -58,15 +58,16 @@ export const CreateOrderBody = zod.object({
   "email": zod.string().email(),
   "phone": zod.string().min(1),
   "preferredContact": zod.enum(['email', 'phone', 'text']),
-  "waist": zod.number().min(createOrderBodyWaistMin),
-  "bust": zod.number().min(createOrderBodyBustMin),
-  "hips": zod.number().min(createOrderBodyHipsMin),
-  "height": zod.number().min(createOrderBodyHeightMin),
-  "bodyGirth": zod.number().min(createOrderBodyBodyGirthMin),
-  "measurementUnit": zod.enum(['inches', 'cm']),
+  "waist": zod.number().min(createOrderBodyWaistMin).optional(),
+  "bust": zod.number().min(createOrderBodyBustMin).optional(),
+  "hips": zod.number().min(createOrderBodyHipsMin).optional(),
+  "height": zod.number().min(createOrderBodyHeightMin).optional(),
+  "bodyGirth": zod.number().min(createOrderBodyBodyGirthMin).optional(),
+  "measurementUnit": zod.enum(['inches', 'cm']).optional(),
+  "measurementAppointment": zod.boolean().optional().describe('True when the customer opted to have their measurements taken at a scheduled fitting or consultation instead of entering them now. When true the measurement fields are omitted.'),
   "description": zod.string().optional(),
   "neededBy": zod.coerce.date().optional()
-})
+}).describe('A new custom-dress order. Measurements are optional: the customer either supplies all five now (with a measurementUnit), or sets measurementAppointment=true to have them taken at a scheduled fitting or consultation. The server rejects a body with neither.')
 
 export const CreateOrderResponse = zod.object({
   "orderNumber": zod.string()

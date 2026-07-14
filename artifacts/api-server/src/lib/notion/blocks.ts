@@ -57,8 +57,6 @@ export function buildOrderProperties(
 
 /** Notion page body (`children`) blocks for a new order. */
 export function buildOrderPageBlocks(data: CreateOrderInput): unknown[] {
-  const unit = data.measurementUnit;
-
   const contactSection = [
     headingBlock("Contact Information"),
     textBlock("Full Name", data.fullName),
@@ -68,15 +66,28 @@ export function buildOrderPageBlocks(data: CreateOrderInput): unknown[] {
     dividerBlock(),
   ];
 
-  const measurementSection = [
-    headingBlock(`Measurements (${unit})`),
-    textBlock("Waist", String(data.waist)),
-    textBlock("Bust", String(data.bust)),
-    textBlock("Hips", String(data.hips)),
-    textBlock("Height", String(data.height)),
-    textBlock("Body Girth", String(data.bodyGirth)),
-    dividerBlock(),
-  ];
+  // Measurements are optional: the customer either provided them, or asked to
+  // have them taken at a fitting/consultation. Render whichever applies so the
+  // atelier can tell the two apart at a glance.
+  const providedMeasurements = data.waist !== undefined;
+  const measurementSection = providedMeasurements
+    ? [
+        headingBlock(`Measurements (${data.measurementUnit})`),
+        textBlock("Waist", String(data.waist)),
+        textBlock("Bust", String(data.bust)),
+        textBlock("Hips", String(data.hips)),
+        textBlock("Height", String(data.height)),
+        textBlock("Body Girth", String(data.bodyGirth)),
+        dividerBlock(),
+      ]
+    : [
+        headingBlock("Measurements"),
+        textBlock(
+          "Status",
+          "To be taken at a scheduled fitting or consultation appointment.",
+        ),
+        dividerBlock(),
+      ];
 
   const dressSection: unknown[] = [headingBlock("Dress Details")];
   if (data.description) {
