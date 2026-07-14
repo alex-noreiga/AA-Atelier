@@ -37,6 +37,9 @@ export const NewOrderRequestMeasurementUnit = {
   cm: 'cm',
 } as const;
 
+/**
+ * A new custom-dress order. Measurements are optional: the customer either supplies all five now (with a measurementUnit), or sets measurementAppointment=true to have them taken at a scheduled fitting or consultation. The server rejects a body with neither.
+ */
 export interface NewOrderRequest {
   /** @minLength 1 */
   fullName: string;
@@ -45,16 +48,18 @@ export interface NewOrderRequest {
   phone: string;
   preferredContact: NewOrderRequestPreferredContact;
   /** @minimum 0 */
-  waist: number;
+  waist?: number;
   /** @minimum 0 */
-  bust: number;
+  bust?: number;
   /** @minimum 0 */
-  hips: number;
+  hips?: number;
   /** @minimum 0 */
-  height: number;
+  height?: number;
   /** @minimum 0 */
-  bodyGirth: number;
-  measurementUnit: NewOrderRequestMeasurementUnit;
+  bodyGirth?: number;
+  measurementUnit?: NewOrderRequestMeasurementUnit;
+  /** True when the customer opted to have their measurements taken at a scheduled fitting or consultation instead of entering them now. When true the measurement fields are omitted. */
+  measurementAppointment?: boolean;
   description?: string;
   neededBy?: string;
 }

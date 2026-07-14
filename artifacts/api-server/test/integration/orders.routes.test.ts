@@ -74,4 +74,43 @@ describe("POST /api/orders", () => {
     expect(res.body).toHaveProperty("error");
     expect(mockCreate).not.toHaveBeenCalled();
   });
+
+  it("returns 201 for a measurement-appointment order with no measurements", async () => {
+    mockCreate.mockResolvedValue("ORD-APPT-001");
+    const {
+      waist,
+      bust,
+      hips,
+      height,
+      bodyGirth,
+      measurementUnit,
+      ...contact
+    } = validBody;
+
+    const res = await request(app)
+      .post("/api/orders")
+      .send({ ...contact, measurementAppointment: true });
+
+    expect(res.status).toBe(201);
+    expect(res.body).toEqual({ orderNumber: "ORD-APPT-001" });
+    expect(mockCreate).toHaveBeenCalledOnce();
+  });
+
+  it("returns 400 when neither measurements nor an appointment are provided", async () => {
+    const {
+      waist,
+      bust,
+      hips,
+      height,
+      bodyGirth,
+      measurementUnit,
+      ...contact
+    } = validBody;
+
+    const res = await request(app).post("/api/orders").send(contact);
+
+    expect(res.status).toBe(400);
+    expect(res.body).toHaveProperty("error");
+    expect(mockCreate).not.toHaveBeenCalled();
+  });
 });

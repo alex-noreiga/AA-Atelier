@@ -8,3 +8,15 @@ export class NotFoundError extends Error {
     this.name = "NotFoundError";
   }
 }
+
+/**
+ * A request that passed schema validation but violates a cross-field business
+ * rule (which the flat, generated zod schemas can't express). Maps to a 400
+ * response with the same `{ error }` envelope a zod failure produces.
+ */
+export class ValidationError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = "ValidationError";
+  }
+}

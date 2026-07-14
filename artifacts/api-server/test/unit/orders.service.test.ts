@@ -1,5 +1,5 @@
 import { describe, it, expect, vi } from "vitest";
-import { orderRecord } from "@workspace/test-fixtures";
+import { createOrderInput, orderRecord } from "@workspace/test-fixtures";
 import type { OrderRecord } from "../../src/lib/notion/schema.js";
 
 // The service talks to the repository by direct import, so mock that module to
@@ -18,7 +18,7 @@ import {
   findOrderByNumber,
   createOrder,
 } from "../../src/lib/notion/orders.repository.js";
-import { NotFoundError } from "../../src/lib/errors.js";
+import { NotFoundError, ValidationError } from "../../src/lib/errors.js";
 
 const mockFind = vi.mocked(findOrderByNumber);
 const mockCreate = vi.mocked(createOrder);
@@ -67,8 +67,44 @@ describe("getOrderStatus", () => {
 describe("submitOrder", () => {
   it("delegates to the repository and returns the new order number", async () => {
     mockCreate.mockResolvedValue("ORD-XYZ-987");
-    const result = await submitOrder({} as any);
+    const result = await submitOrder(createOrderInput());
     expect(result).toEqual({ orderNumber: "ORD-XYZ-987" });
     expect(mockCreate).toHaveBeenCalledOnce();
+  });
+
+  it("accepts an order with no measurements when an appointment is requested", async () => {
+    mockCreate.mockResolvedValue("ORD-APPT-001");
+    const {
+      waist,
+      bust,
+      hips,
+      height,
+      bodyGirth,
+      measurementUnit,
+      ...contact
+    } = createOrderInput();
+
+    const result = await submitOrder({
+      ...contact,
+      measurementAppointment: true,
+    });
+
+    expect(result).toEqual({ orderNumber: "ORD-APPT-001" });
+    expect(mockCreate).toHaveBeenCalledOnce();
+  });
+
+  it("rejects an order with neither measurements nor an appointment", async () => {
+    const {
+      waist,
+      bust,
+      hips,
+      height,
+      bodyGirth,
+      measurementUnit,
+      ...contact
+    } = createOrderInput();
+
+    await expect(submitOrder(contact)).rejects.toBeInstanceOf(ValidationError);
+    expect(mockCreate).not.toHaveBeenCalled();
   });
 });

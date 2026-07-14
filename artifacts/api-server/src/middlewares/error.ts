@@ -7,7 +7,7 @@
 import type { ErrorRequestHandler } from "express";
 import { ZodError } from "zod";
 import type { ErrorEnvelope, OrderNotFound } from "@workspace/api-zod";
-import { NotFoundError } from "../lib/errors.js";
+import { NotFoundError, ValidationError } from "../lib/errors.js";
 import { logger } from "../lib/logger.js";
 
 export const errorHandler: ErrorRequestHandler = (err, _req, res, next) => {
@@ -17,6 +17,13 @@ export const errorHandler: ErrorRequestHandler = (err, _req, res, next) => {
   }
 
   if (err instanceof ZodError) {
+    logger.warn({ err }, "Request validation failed");
+    const body: ErrorEnvelope = { error: err.message };
+    res.status(400).json(body);
+    return;
+  }
+
+  if (err instanceof ValidationError) {
     logger.warn({ err }, "Request validation failed");
     const body: ErrorEnvelope = { error: err.message };
     res.status(400).json(body);
