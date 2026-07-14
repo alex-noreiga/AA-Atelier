@@ -1,19 +1,41 @@
-import { describe, it, expect, vi } from "vitest";
+import { describe, it, expect, vi, beforeEach } from "vitest";
 import { render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { orderRecord } from "@workspace/test-fixtures";
 import { stubHook } from "./support/mock-hook.js";
 
 // Control the data-fetching hook so we can drive each render state directly.
+// The deposit mutation hook is mocked too — the status page's DepositSection
+// calls it on every render of a found order.
+// The success view also renders the measurement-change dialog, which calls the
+// create mutation hook — stub it so the page renders without the network.
 vi.mock("@workspace/api-client-react", () => ({
   useGetOrderStatus: vi.fn(),
+  useCreateOrderDeposit: vi.fn(),
   getGetOrderStatusQueryKey: (n: string) => [n],
+  useCreateMeasurementChangeRequest: () => ({
+    mutate: vi.fn(),
+    isPending: false,
+  }),
 }));
 
-import { useGetOrderStatus } from "@workspace/api-client-react";
+import {
+  useGetOrderStatus,
+  useCreateOrderDeposit,
+} from "@workspace/api-client-react";
 import Status from "@/pages/status";
 
 const mockHook = vi.mocked(useGetOrderStatus);
+const mockDeposit = vi.mocked(useCreateOrderDeposit);
+const depositMutate = vi.fn();
+
+beforeEach(() => {
+  depositMutate.mockReset();
+  mockDeposit.mockReturnValue({
+    mutate: depositMutate,
+    isPending: false,
+  } as never);
+});
 
 function setHook(state: {
   data?: unknown;
@@ -91,6 +113,35 @@ describe("Status timeline completed/active/future computation", () => {
     expect(screen.getByTestId("row-stage-0")).toHaveTextContent("Completed");
     expect(screen.getByTestId("row-stage-1")).toHaveTextContent("Completed");
     expect(screen.getByTestId("row-stage-2")).toHaveTextContent(/delivered/i);
+  });
+});
+
+describe("Status deposit", () => {
+  it("shows nothing about a deposit until the atelier sets one", async () => {
+    setHook({ data: orderRecord({ currentStage: "Consultation" }) });
+    await submitLookup();
+    expect(screen.queryByTestId("deposit-due")).not.toBeInTheDocument();
+    expect(screen.queryByTestId("deposit-paid")).not.toBeInTheDocument();
+  });
+
+  it("invites payment when a deposit is due, and pays it for that order", async () => {
+    setHook({
+      data: orderRecord({ depositAmount: 150, depositPaid: false }),
+    });
+    await submitLookup("ORD-1");
+
+    const card = screen.getByTestId("deposit-due");
+    expect(within(card).getByText("$150")).toBeInTheDocument();
+
+    await userEvent.click(screen.getByTestId("button-pay-deposit"));
+    expect(depositMutate).toHaveBeenCalledWith({ orderNumber: "ORD-1" });
+  });
+
+  it("confirms once the deposit is paid and offers no button", async () => {
+    setHook({ data: orderRecord({ depositAmount: 150, depositPaid: true }) });
+    await submitLookup();
+    expect(screen.getByTestId("deposit-paid")).toBeInTheDocument();
+    expect(screen.queryByTestId("button-pay-deposit")).not.toBeInTheDocument();
   });
 });
 

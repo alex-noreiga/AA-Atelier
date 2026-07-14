@@ -21,6 +21,7 @@
 
 import type {
   NewContactRequest,
+  NewMeasurementChangeRequest,
   NewNotifyRequest,
   NewOrderRequest,
   OrderStatus,
@@ -70,6 +71,23 @@ export function contactInput(
     name: "Grace Hopper",
     email: "grace@example.com",
     message: "Do you ship internationally?",
+    ...overrides,
+  };
+}
+
+/** A valid measurement-change request. Email matches `createOrderInput` by
+ * default so the identity gate passes; override it to exercise a mismatch. */
+export function measurementChangeInput(
+  overrides: Partial<NewMeasurementChangeRequest> = {},
+): NewMeasurementChangeRequest {
+  return {
+    email: "ada@example.com",
+    measurementUnit: "inches",
+    waist: 29,
+    bust: 37,
+    hips: 39,
+    height: 66,
+    bodyGirth: 33,
     ...overrides,
   };
 }

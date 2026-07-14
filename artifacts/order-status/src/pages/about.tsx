@@ -1,6 +1,7 @@
 import { Link } from "wouter";
 import { ArrowRight, PenLine } from "lucide-react";
 import { PageShell } from "@/components/page-shell";
+import { Seo } from "@/components/seo";
 import {
   Accordion,
   AccordionContent,
@@ -55,6 +56,11 @@ const faqTestId = (question: string) =>
 export default function About() {
   return (
     <PageShell align="top">
+      <Seo
+        title="About A.A Atelier — Custom Skating Costume Studio"
+        description="Meet A.A Atelier, the custom figure skating and dance costume studio behind A3 Ice and Dance. Answers on timelines, measuring, pricing, rush orders, and shipping."
+        path="/about"
+      />
       <div className="w-full max-w-3xl z-10 mx-auto px-6 pt-24 pb-20 animate-in fade-in zoom-in-95 duration-1000">
         {/* Header */}
         <div className="text-center">
@@ -66,8 +72,41 @@ export default function About() {
           </h1>
           <p className="text-muted-foreground font-light text-lg md:text-xl max-w-xl mx-auto leading-relaxed">
             A small atelier devoted to figure skating and dance costumes made
-            just for you.{" "}
-            <span className="italic text-primary">Our story, coming soon.</span>
+            just for you.
+          </p>
+        </div>
+
+        {/* Story */}
+        <div className="mt-24" data-testid="story-section">
+          <div className="text-center mb-12">
+            <p className="text-primary text-xs tracking-[0.35em] uppercase mb-4">
+              Our Story
+            </p>
+            <h2 className="font-serif text-3xl md:text-4xl text-foreground">
+              Founded by skaters
+            </h2>
+          </div>
+          <div className="max-w-2xl mx-auto space-y-6 text-muted-foreground font-light text-lg leading-relaxed">
+            <p>
+              A.A. Atelier is a local, women owned business founded by figure
+              skaters. We understand performative ice and dance attire can be
+              expensive or not quite what you envisioned. That's why our mission
+              is to bring your ideas to life by creating custom dresses and
+              accessories that are as unique as you are.
+            </p>
+            <p>
+              Whether you're dancing on stage or competing on ice, we want you
+              to feel empowered when you step into the spotlight. Everything we
+              make is handmade to your liking with care, creativity, and
+              attention to detail.
+            </p>
+            <p>
+              We are proud to create a product that fits your style and leaves
+              you feeling ready to perform.
+            </p>
+          </div>
+          <p className="mt-12 text-center font-serif italic text-2xl md:text-3xl text-primary">
+            Come with a vision and leave with confidence.
           </p>
         </div>
 

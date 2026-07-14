@@ -138,12 +138,16 @@ export function inventoryPage(opts: {
 
 /** Minimal Notion order page as returned by a database query. */
 export function orderPage(opts: {
+  id?: string;
   orderNumber?: string;
   orderName?: string;
   currentStage?: string | null;
+  depositAmount?: number;
+  depositPaid?: boolean;
+  email?: string | null;
 }) {
   return {
-    id: "page-id",
+    id: opts.id ?? "page-id",
     properties: {
       "Order Number": {
         type: "rich_text",
@@ -153,12 +157,24 @@ export function orderPage(opts: {
         type: "title",
         title: opts.orderName ? [{ plain_text: opts.orderName }] : [],
       },
+      Email: {
+        type: "email",
+        email: opts.email ?? null,
+      },
       Stage: {
         type: "status",
         status:
           opts.currentStage === null || opts.currentStage === undefined
             ? null
             : { name: opts.currentStage },
+      },
+      "Deposit Amount": {
+        type: "number",
+        number: opts.depositAmount ?? null,
+      },
+      "Deposit Paid": {
+        type: "checkbox",
+        checkbox: opts.depositPaid ?? false,
       },
     },
   };
