@@ -9,6 +9,7 @@ import {
 import { NotifyDialog } from "@/components/notify-dialog";
 import { AddToCartButton } from "@/components/add-to-cart";
 import { PageShell } from "@/components/page-shell";
+import { Seo } from "@/components/seo";
 import { formatPrice } from "@/lib/format";
 import { SizeChartDialog } from "@/components/size-chart-dialog";
 import { AspectRatio } from "@/components/ui/aspect-ratio";
@@ -350,6 +351,11 @@ export default function Shop() {
 
   return (
     <PageShell align="top">
+      <Seo
+        title="Shop — Ready-to-Wear Skating & Dance | A.A Atelier"
+        description="Browse ready-to-wear figure skating and dance pieces from A.A Atelier. In-stock dresses and accessories, with restock notifications on sold-out sizes."
+        path="/shop"
+      />
       <div className="w-full max-w-6xl z-10 mx-auto px-6 pt-24 pb-20 animate-in fade-in zoom-in-95 duration-1000">
         {/* Header */}
         <div className="text-center">

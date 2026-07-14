@@ -1,6 +1,7 @@
 import { Link } from "wouter";
 import { ArrowRight, PenLine } from "lucide-react";
 import { PageShell } from "@/components/page-shell";
+import { Seo } from "@/components/seo";
 import {
   Accordion,
   AccordionContent,
@@ -55,6 +56,11 @@ const faqTestId = (question: string) =>
 export default function About() {
   return (
     <PageShell align="top">
+      <Seo
+        title="About A.A Atelier — Custom Skating Costume Studio"
+        description="Meet A.A Atelier, the custom figure skating and dance costume studio behind A3 Ice and Dance. Answers on timelines, measuring, pricing, rush orders, and shipping."
+        path="/about"
+      />
       <div className="w-full max-w-3xl z-10 mx-auto px-6 pt-24 pb-20 animate-in fade-in zoom-in-95 duration-1000">
         {/* Header */}
         <div className="text-center">
