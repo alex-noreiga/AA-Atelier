@@ -4,14 +4,22 @@
 
 import { createContactMessage } from "../lib/notion/contact.repository.js";
 import type { CreateContactInput } from "../lib/notion/contact.blocks.js";
-import { contactAckEmail } from "../lib/resend/emails.js";
+import {
+  contactAckEmail,
+  contactNotificationEmail,
+} from "../lib/resend/emails.js";
 import { sendEmailBestEffort } from "../lib/resend/send.js";
+import { getAtelierInbox } from "../lib/resend/client.js";
 
 export async function submitContactMessage(
   input: CreateContactInput,
 ): Promise<{ success: true }> {
   await createContactMessage(input);
-  // Best-effort acknowledgement email; a mail failure must not fail the submit.
+  // Best-effort emails; a mail failure must not fail the submit.
   await sendEmailBestEffort(contactAckEmail(input));
+  const inbox = getAtelierInbox();
+  if (inbox) {
+    await sendEmailBestEffort(contactNotificationEmail(input, inbox));
+  }
   return { success: true };
 }

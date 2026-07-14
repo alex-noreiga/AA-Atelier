@@ -129,3 +129,125 @@ export function backInStockConfirmationEmail(
     text,
   };
 }
+
+// ---------------------------------------------------------------------------
+// Atelier-facing notifications
+//
+// These go to the atelier's own inbox (`ATELIER_INBOX_EMAIL`) when a customer
+// submits something, so the team gets a nudge instead of only finding it in
+// Notion. `to` is the atelier inbox (passed in — it's config, not input) and
+// `replyTo` is the customer, so hitting reply answers them directly. Free-text
+// customer values are HTML-escaped since they land in an HTML body.
+// ---------------------------------------------------------------------------
+
+/** Escape customer-provided text before interpolating it into an HTML body. */
+function escapeHtml(value: string): string {
+  return value
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;");
+}
+
+/** A plain internal shell — no customer-facing sign-off. */
+function internalLayout(heading: string, bodyHtml: string): string {
+  return `<!doctype html>
+<html>
+  <body style="margin:0;padding:0;background:#faf8f5;">
+    <div style="max-width:560px;margin:0 auto;padding:32px 28px;font-family:Georgia,'Times New Roman',serif;color:#2b2622;line-height:1.6;">
+      <p style="font-size:13px;letter-spacing:0.18em;text-transform:uppercase;color:#8a7f74;margin:0 0 20px;">${ATELIER_NAME} · new submission</p>
+      <h1 style="font-size:20px;font-weight:normal;margin:0 0 16px;">${heading}</h1>
+      ${bodyHtml}
+    </div>
+  </body>
+</html>`;
+}
+
+/** A label/value line; entries with an empty value are dropped by the callers. */
+type Field = [label: string, value: string];
+
+function renderRowsHtml(fields: Field[]): string {
+  return fields
+    .map(
+      ([label, value]) =>
+        `<p style="margin:0 0 10px;"><strong>${label}:</strong> ${escapeHtml(value)}</p>`,
+    )
+    .join("\n      ");
+}
+
+function renderRowsText(fields: Field[]): string {
+  return fields.map(([label, value]) => `${label}: ${value}`).join("\n");
+}
+
+/** Notify the atelier of a new contact-form message. */
+export function contactNotificationEmail(
+  input: CreateContactInput,
+  to: string,
+): EmailMessage {
+  const fields: Field[] = [
+    ["Name", input.name],
+    ["Email", input.email],
+    ...(input.phone ? [["Phone", input.phone] as Field] : []),
+    ["Message", input.message],
+  ];
+
+  return {
+    to,
+    replyTo: input.email,
+    subject: `New contact message from ${input.name}`,
+    html: internalLayout("New contact message", renderRowsHtml(fields)),
+    text: renderRowsText(fields),
+  };
+}
+
+/** Notify the atelier of a new custom order. */
+export function orderNotificationEmail(
+  input: CreateOrderInput,
+  orderNumber: string,
+  to: string,
+): EmailMessage {
+  const measurements =
+    `waist ${input.waist}, bust ${input.bust}, hips ${input.hips}, ` +
+    `height ${input.height}, girth ${input.bodyGirth} (${input.measurementUnit})`;
+
+  const fields: Field[] = [
+    ["Order number", orderNumber],
+    ["Name", input.fullName],
+    ["Email", input.email],
+    ["Phone", input.phone],
+    ["Preferred contact", input.preferredContact],
+    ["Measurements", measurements],
+    ...(input.neededBy
+      ? [["Needed by", input.neededBy.toISOString().slice(0, 10)] as Field]
+      : []),
+    ...(input.description ? [["Notes", input.description] as Field] : []),
+  ];
+
+  return {
+    to,
+    replyTo: input.email,
+    subject: `New order ${orderNumber} — ${input.fullName}`,
+    html: internalLayout(`New order ${orderNumber}`, renderRowsHtml(fields)),
+    text: renderRowsText(fields),
+  };
+}
+
+/** Notify the atelier of a new back-in-stock request. */
+export function backInStockNotificationEmail(
+  input: CreateNotifyInput,
+  to: string,
+): EmailMessage {
+  const fields: Field[] = [
+    ["Item", input.item],
+    ...(input.size ? [["Size", input.size] as Field] : []),
+    ["Email", input.email],
+  ];
+
+  return {
+    to,
+    replyTo: input.email,
+    subject: `Back-in-stock request — ${input.item}`,
+    html: internalLayout("New back-in-stock request", renderRowsHtml(fields)),
+    text: renderRowsText(fields),
+  };
+}
