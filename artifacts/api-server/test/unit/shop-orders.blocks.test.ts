@@ -64,7 +64,7 @@ describe("buildShopOrderProperties", () => {
     );
     expect(props[SHOP_ORDER_TOTAL_PROPERTY]).toEqual({ number: 44 });
     expect(props[SHOP_ORDER_STATUS_PROPERTY]).toEqual({
-      select: { name: "Paid" },
+      status: { name: "Payment Confirmed" },
     });
     expect(props[SHOP_ORDER_SHIPPING_PROPERTY].rich_text[0].text.content).toBe(
       "1 Analytical Ave, London EC1, GB",
