@@ -26,6 +26,10 @@ const STAGE_PROPERTY_NAME = "Stage";
 export const ORDER_DEPOSIT_AMOUNT_PROPERTY = "Deposit Amount"; // number (dollars)
 export const ORDER_DEPOSIT_PAID_PROPERTY = "Deposit Paid"; // checkbox
 export const ORDER_DEPOSIT_SESSION_PROPERTY = "Deposit Session Id"; // rich_text
+// Relation to the Client CRM database (the synced end of the CRM's "Orders"
+// dual relation). Set on order create when a client record was upserted, so the
+// order lands against a durable customer record. See `clients.repository.ts`.
+export const ORDER_CLIENT_PROPERTY = "Client"; // relation → Client CRM
 
 /** Validated new-order payload, derived from the OpenAPI contract. */
 export type CreateOrderInput = z.infer<typeof CreateOrderBody>;

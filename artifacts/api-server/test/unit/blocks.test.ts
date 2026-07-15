@@ -38,6 +38,20 @@ describe("buildOrderProperties", () => {
     expect(props["Order Number"].rich_text[0].text.content).toBe("ORD-ABC-123");
     expect(props["Order Number"]).not.toHaveProperty("number");
   });
+
+  it("omits the Client relation when no client page id is given", () => {
+    const props = buildOrderProperties(baseOrder, "ORD-ABC-123") as any;
+    expect(props).not.toHaveProperty("Client");
+  });
+
+  it("links the order to the Client CRM record when a client page id is given", () => {
+    const props = buildOrderProperties(
+      baseOrder,
+      "ORD-ABC-123",
+      "client-9",
+    ) as any;
+    expect(props["Client"].relation).toEqual([{ id: "client-9" }]);
+  });
 });
 
 describe("buildOrderPageBlocks", () => {

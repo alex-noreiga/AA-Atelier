@@ -10,6 +10,12 @@ vi.mock("../../src/lib/notion/orders.repository.js", () => ({
   createOrder: vi.fn(),
 }));
 
+// The CRM upsert is a best-effort side effect; mock it so the service test can
+// drive the link/skip/failure branches without touching Notion.
+vi.mock("../../src/lib/notion/clients.repository.js", () => ({
+  upsertClientByEmail: vi.fn(),
+}));
+
 // The confirmation email is a best-effort side effect; mock it so the service
 // test asserts it is dispatched without touching the Resend transport.
 vi.mock("../../src/lib/resend/send.js", () => ({
@@ -24,11 +30,13 @@ import {
   findOrderByNumber,
   createOrder,
 } from "../../src/lib/notion/orders.repository.js";
+import { upsertClientByEmail } from "../../src/lib/notion/clients.repository.js";
 import { sendEmailBestEffort } from "../../src/lib/resend/send.js";
 import { NotFoundError, ValidationError } from "../../src/lib/errors.js";
 
 const mockFind = vi.mocked(findOrderByNumber);
 const mockCreate = vi.mocked(createOrder);
+const mockUpsertClient = vi.mocked(upsertClientByEmail);
 const mockSend = vi.mocked(sendEmailBestEffort);
 
 afterEach(() => {
@@ -85,6 +93,38 @@ describe("submitOrder", () => {
     );
     expect(result).toEqual({ orderNumber: "ORD-XYZ-987" });
     expect(mockCreate).toHaveBeenCalledOnce();
+  });
+
+  it("upserts a Client CRM record by email and links the order to it", async () => {
+    mockUpsertClient.mockResolvedValue("client-123");
+    mockCreate.mockResolvedValue("ORD-XYZ-987");
+    const input = createOrderInput({ email: "ada@example.com" });
+
+    await submitOrder(input);
+
+    expect(mockUpsertClient).toHaveBeenCalledWith({
+      fullName: input.fullName,
+      email: "ada@example.com",
+      phone: input.phone,
+    });
+    // The resolved client page id is threaded into createOrder as the link.
+    expect(mockCreate).toHaveBeenCalledWith(input, undefined, "client-123");
+  });
+
+  it("still creates the order (unlinked) when the CRM upsert fails", async () => {
+    mockUpsertClient.mockRejectedValue(new Error("Notion CRM down"));
+    mockCreate.mockResolvedValue("ORD-XYZ-987");
+
+    const result = await submitOrder(
+      createOrderInput({ email: "ada@example.com" }),
+    );
+
+    expect(result).toEqual({ orderNumber: "ORD-XYZ-987" });
+    expect(mockCreate).toHaveBeenCalledWith(
+      expect.anything(),
+      undefined,
+      undefined,
+    );
   });
 
   it("accepts an order with no measurements when an appointment is requested", async () => {
