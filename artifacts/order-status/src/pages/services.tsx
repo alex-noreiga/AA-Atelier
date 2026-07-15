@@ -11,6 +11,7 @@ import { PageShell } from "@/components/page-shell";
 import { CtaLink } from "@/components/cta";
 import { SectionHeader } from "@/components/section-header";
 import { Seo } from "@/components/seo";
+import { ROUTE_SEO } from "@/lib/seo-routes";
 
 interface Service {
   icon: LucideIcon;
@@ -75,11 +76,7 @@ const PROCESS: { step: string; title: string; description: string }[] = [
 export default function Services() {
   return (
     <PageShell align="top">
-      <Seo
-        title="Services — Bespoke Costumes, Fittings & Rhinestoning | A.A Atelier"
-        description="Bespoke commissions, in-person fittings and alterations, hand-applied rhinestoning, and repairs for figure skating and dance costumes by A.A Atelier."
-        path="/services"
-      />
+      <Seo {...ROUTE_SEO["/services"]} />
       <div className="w-full max-w-3xl z-10 mx-auto px-6 pt-24 pb-20 animate-in fade-in zoom-in-95 duration-1000">
         {/* Header */}
         <div className="text-center">
@@ -105,12 +102,12 @@ export default function Services() {
             <div
               key={title}
               className="border border-border/60 rounded-2xl p-8 hover:border-primary/50 transition-colors"
-              data-testid={`service-${title.toLowerCase().replace(/[^a-z]+/g, "-").replace(/^-|-$/g, "")}`}
+              data-testid={`service-${title
+                .toLowerCase()
+                .replace(/[^a-z]+/g, "-")
+                .replace(/^-|-$/g, "")}`}
             >
-              <Icon
-                className="w-6 h-6 text-primary mb-5"
-                strokeWidth={1.5}
-              />
+              <Icon className="w-6 h-6 text-primary mb-5" strokeWidth={1.5} />
               <h2 className="font-serif text-2xl md:text-3xl text-foreground mb-3">
                 {title}
               </h2>
@@ -151,7 +148,11 @@ export default function Services() {
             Begin a Commission
             <ArrowRight className="w-4 h-4 group-hover:translate-x-1 transition-transform" />
           </CtaLink>
-          <CtaLink to="/contact" variant="outline" data-testid="cta-ask-question">
+          <CtaLink
+            to="/contact"
+            variant="outline"
+            data-testid="cta-ask-question"
+          >
             Ask a Question
           </CtaLink>
         </div>

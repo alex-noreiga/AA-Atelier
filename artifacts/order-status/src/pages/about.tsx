@@ -2,7 +2,8 @@ import { ArrowRight, PenLine } from "lucide-react";
 import { PageShell } from "@/components/page-shell";
 import { CtaLink } from "@/components/cta";
 import { SectionHeader } from "@/components/section-header";
-import { Seo } from "@/components/seo";
+import { Seo, StructuredData } from "@/components/seo";
+import { ROUTE_SEO } from "@/lib/seo-routes";
 import {
   Accordion,
   AccordionContent,
@@ -48,6 +49,21 @@ const FAQS: { question: string; answer: string }[] = [
   },
 ];
 
+/**
+ * FAQPage structured data, built from the same `FAQS` array the accordion
+ * renders — so the rich-result markup can never drift from the visible copy.
+ * Eligible for Google's FAQ rich result.
+ */
+const FAQ_JSON_LD = {
+  "@context": "https://schema.org",
+  "@type": "FAQPage",
+  mainEntity: FAQS.map(({ question, answer }) => ({
+    "@type": "Question",
+    name: question,
+    acceptedAnswer: { "@type": "Answer", text: answer },
+  })),
+};
+
 const faqTestId = (question: string) =>
   question
     .toLowerCase()
@@ -57,11 +73,8 @@ const faqTestId = (question: string) =>
 export default function About() {
   return (
     <PageShell align="top">
-      <Seo
-        title="About A.A Atelier — Custom Skating Costume Studio"
-        description="Meet A.A Atelier, the custom figure skating and dance costume studio behind A3 Ice and Dance. Answers on timelines, measuring, pricing, rush orders, and shipping."
-        path="/about"
-      />
+      <Seo {...ROUTE_SEO["/about"]} />
+      <StructuredData data={FAQ_JSON_LD} />
       <div className="w-full max-w-3xl z-10 mx-auto px-6 pt-24 pb-20 animate-in fade-in zoom-in-95 duration-1000">
         {/* Header */}
         <div className="text-center">
@@ -133,7 +146,11 @@ export default function About() {
             Begin a Commission
             <ArrowRight className="w-4 h-4 group-hover:translate-x-1 transition-transform" />
           </CtaLink>
-          <CtaLink to="/contact" variant="outline" data-testid="cta-ask-question-about">
+          <CtaLink
+            to="/contact"
+            variant="outline"
+            data-testid="cta-ask-question-about"
+          >
             Ask a Question
           </CtaLink>
         </div>

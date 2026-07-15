@@ -36,16 +36,17 @@ export function PageShell({
   className,
 }: PageShellProps) {
   return (
-    <div
+    <main
       className={cn(
         "min-h-[100dvh] w-full bg-background",
-        align === "center" && "flex flex-col items-center justify-center p-6 pt-24",
+        align === "center" &&
+          "flex flex-col items-center justify-center p-6 pt-24",
         noise && "relative overflow-hidden",
         className,
       )}
     >
       {noise && <NoiseTexture />}
       {children}
-    </div>
+    </main>
   );
 }
