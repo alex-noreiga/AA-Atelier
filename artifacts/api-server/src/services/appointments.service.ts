@@ -32,12 +32,12 @@ import {
   minLeadMinutes,
   slotStepMinutes,
 } from "../lib/appointments/settings.js";
-import { getAvailabilityConfig } from "../lib/notion/availability.repository.js";
 import {
-  createAppointment,
-  listBookingsInRange,
-} from "../lib/notion/appointments.repository.js";
-import type { BookedAppointment } from "../lib/notion/appointments.blocks.js";
+  getScheduleConfig,
+  listBusyInRange,
+  createCalendarEvent,
+  type BookedAppointment,
+} from "../lib/google/calendar.repository.js";
 import {
   appointmentConfirmationEmail,
   appointmentNotificationEmail,
@@ -116,8 +116,11 @@ export async function getAppointmentAvailability(
     timeZone,
   );
 
-  const { weeklyHours, timeOff } = await getAvailabilityConfig();
-  const bookings = await listBookingsInRange(rangeStart, rangeEnd);
+  const eligibleStaff = type.staff.filter(
+    (member) => !params.staff || member === params.staff,
+  );
+  const { weeklyHours, timeOff } = getScheduleConfig();
+  const bookings = await listBusyInRange(rangeStart, rangeEnd, eligibleStaff);
 
   const slots = computeSlots({
     type,
@@ -157,6 +160,8 @@ interface BookResult {
   location: string;
   start: Date;
   end: Date;
+  meetingUrl?: string;
+  calendarLink?: string;
 }
 
 /** Book a slot: re-validate, re-check availability, persist, and email. */
@@ -196,8 +201,11 @@ export async function bookAppointment(input: BookInput): Promise<BookResult> {
     timeZone,
   );
 
-  const { weeklyHours, timeOff } = await getAvailabilityConfig();
-  const bookings = await listBookingsInRange(rangeStart, rangeEnd);
+  const eligibleStaff = type.staff.filter(
+    (member) => !input.staff || member === input.staff,
+  );
+  const { weeklyHours, timeOff } = getScheduleConfig();
+  const bookings = await listBusyInRange(rangeStart, rangeEnd, eligibleStaff);
 
   const slots = computeSlots({
     type,
@@ -234,14 +242,19 @@ export async function bookAppointment(input: BookInput): Promise<BookResult> {
     phone: input.phone,
     typeName: type.name,
     staff,
+    location,
     locationLabel,
     start,
     end,
+    timeZone,
     confirmationCode,
     notes: input.notes,
     preferredContact: input.preferredContact,
   };
-  await createAppointment(appointment, title);
+  const { meetingUrl, calendarLink } = await createCalendarEvent(
+    appointment,
+    title,
+  );
 
   // Best-effort emails; a mail failure must not fail the booking.
   const details: AppointmentEmailDetails = {
@@ -254,6 +267,7 @@ export async function bookAppointment(input: BookInput): Promise<BookResult> {
     when,
     confirmationCode,
     notes: input.notes,
+    meetingUrl,
   };
   const from = fromAddress("appointments");
   await sendEmailBestEffort({ ...appointmentConfirmationEmail(details), from });
@@ -272,5 +286,7 @@ export async function bookAppointment(input: BookInput): Promise<BookResult> {
     location: locationLabel,
     start,
     end,
+    ...(meetingUrl ? { meetingUrl } : {}),
+    ...(calendarLink ? { calendarLink } : {}),
   };
 }

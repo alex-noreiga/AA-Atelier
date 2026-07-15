@@ -1,11 +1,9 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 
-vi.mock("../../src/lib/notion/availability.repository.js", () => ({
-  getAvailabilityConfig: vi.fn(),
-}));
-vi.mock("../../src/lib/notion/appointments.repository.js", () => ({
-  listBookingsInRange: vi.fn(),
-  createAppointment: vi.fn(),
+vi.mock("../../src/lib/google/calendar.repository.js", () => ({
+  getScheduleConfig: vi.fn(),
+  listBusyInRange: vi.fn(),
+  createCalendarEvent: vi.fn(),
 }));
 
 import {
@@ -14,16 +12,16 @@ import {
   getAppointmentOptions,
 } from "../../src/services/appointments.service.js";
 import { BadRequestError } from "../../src/lib/errors.js";
-import { getAvailabilityConfig } from "../../src/lib/notion/availability.repository.js";
 import {
-  listBookingsInRange,
-  createAppointment,
-} from "../../src/lib/notion/appointments.repository.js";
+  getScheduleConfig,
+  listBusyInRange,
+  createCalendarEvent,
+} from "../../src/lib/google/calendar.repository.js";
 import type { WeeklyHours } from "../../src/lib/appointments/availability.js";
 
-const mockConfig = vi.mocked(getAvailabilityConfig);
-const mockList = vi.mocked(listBookingsInRange);
-const mockCreate = vi.mocked(createAppointment);
+const mockSchedule = vi.mocked(getScheduleConfig);
+const mockBusy = vi.mocked(listBusyInRange);
+const mockCreate = vi.mocked(createCalendarEvent);
 
 // A Monday 09:00–11:00 in-person + virtual block for Alexandra, in UTC.
 const weeklyHours: WeeklyHours[] = [
@@ -45,9 +43,9 @@ beforeEach(() => {
   delete process.env.ATELIER_INBOX_EMAIL;
   vi.useFakeTimers();
   vi.setSystemTime(new Date("2026-07-20T00:00:00.000Z"));
-  mockConfig.mockResolvedValue({ weeklyHours, timeOff: [] });
-  mockList.mockResolvedValue([]);
-  mockCreate.mockResolvedValue(undefined);
+  mockSchedule.mockReturnValue({ weeklyHours, timeOff: [] });
+  mockBusy.mockResolvedValue([]);
+  mockCreate.mockResolvedValue({ calendarLink: "https://cal.test/event" });
 });
 
 afterEach(() => {
@@ -80,6 +78,11 @@ describe("getAppointmentAvailability", () => {
       "2026-07-20T10:00:00.000Z",
       "2026-07-20T10:30:00.000Z",
     ]);
+    // Only the eligible staff's calendars are queried for busy time.
+    expect(mockBusy).toHaveBeenCalledWith(expect.any(Date), expect.any(Date), [
+      "Alexandra",
+      "Alayna",
+    ]);
   });
 
   it("rejects an unknown type", async () => {
@@ -110,7 +113,7 @@ describe("bookAppointment", () => {
     email: "ada@example.com",
   };
 
-  it("books an open slot and persists it", async () => {
+  it("books an open slot and writes a calendar event", async () => {
     const result = await bookAppointment(validBody as never);
 
     expect(result.type).toBe("Consultation");
@@ -118,13 +121,27 @@ describe("bookAppointment", () => {
     expect(result.location).toBe("In person");
     expect(result.confirmationCode).toMatch(/^APT-/);
     expect(result.start.toISOString()).toBe("2026-07-20T09:00:00.000Z");
-    expect(result.end.toISOString()).toBe("2026-07-20T09:30:00.000Z");
+    expect(result.calendarLink).toBe("https://cal.test/event");
 
     expect(mockCreate).toHaveBeenCalledOnce();
     const [appointment, title] = mockCreate.mock.calls[0];
     expect(appointment.staff).toBe("Alexandra");
+    expect(appointment.location).toBe("in-person");
+    expect(appointment.timeZone).toBe("UTC");
     expect(appointment.start.toISOString()).toBe("2026-07-20T09:00:00.000Z");
     expect(title).toContain("Ada Lovelace");
+  });
+
+  it("surfaces the Google Meet link for a virtual booking", async () => {
+    mockCreate.mockResolvedValue({
+      meetingUrl: "https://meet.google.com/abc-defg-hij",
+      calendarLink: "https://cal.test/event",
+    });
+    const result = await bookAppointment({
+      ...validBody,
+      location: "virtual",
+    } as never);
+    expect(result.meetingUrl).toBe("https://meet.google.com/abc-defg-hij");
   });
 
   it("rejects a start time that isn't an open slot", async () => {
@@ -137,8 +154,8 @@ describe("bookAppointment", () => {
     expect(mockCreate).not.toHaveBeenCalled();
   });
 
-  it("rejects a slot already taken by a booking", async () => {
-    mockList.mockResolvedValue([
+  it("rejects a slot already busy on the calendar", async () => {
+    mockBusy.mockResolvedValue([
       {
         staff: "Alexandra",
         start: new Date("2026-07-20T09:00:00.000Z"),

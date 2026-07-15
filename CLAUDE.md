@@ -97,12 +97,12 @@ Express app (artifacts/api-server)  ──►  Notion REST API (orders database)
   │                                  timezone, for the booking form's pickers
   ├─ GET  /api/appointments/availability
   │                                → open slots for a type/location/(staff) over
-  │                                  a date window, computed from Notion-managed
-  │                                  weekly hours minus booked appointments
-  ├─ POST /api/appointments        → books an open slot (re-priced/re-checked
-  │                                  server-side), writes it to the Notion
-  │                                  "Appointments" database + emails a
-  │                                  confirmation
+  │                                  a date window, computed from config working
+  │                                  hours minus Google Calendar free/busy
+  ├─ POST /api/appointments        → books an open slot (re-checked server-side),
+  │                                  writes it as a Google Calendar event that
+  │                                  invites the customer (+ Meet for virtual) +
+  │                                  emails a confirmation
   └─ POST /api/webhooks/stripe     → Stripe → server webhook (raw body, signed).
                                      On checkout.session.completed, records the
                                      paid order in the Notion "Shop Orders"
@@ -302,52 +302,63 @@ Customers book appointments (consultations, fittings, design reviews, general)
 with a staff member from `pages/appointments.tsx` — a four-step flow (purpose →
 format → time → details) that goes through the generated client
 (`useGetAppointmentOptions`, `useGetAppointmentAvailability`,
-`useCreateAppointment`). There is **no external calendar** (Google/Cal.com);
-availability is computed in-app. Code lives in
-`api-server/src/lib/appointments/*` (pure logic), `lib/notion/availability.*` +
-`lib/notion/appointments.*` (Notion I/O), `services/appointments.service.ts`, and
+`useCreateAppointment`). Scheduling runs on **Google Calendar** (not Notion):
+free/busy is the conflict source and each booking is a calendar event. Code lives
+in `api-server/src/lib/appointments/*` (pure logic + config),
+`lib/google/*` (Calendar I/O), `services/appointments.service.ts`, and
 `routes/appointments.ts`. Load-bearing decisions:
 
-1. **The type catalog is a targeted business rule in code, not a Notion list.**
+1. **The type catalog is a targeted business rule in code.**
    `lib/appointments/catalog.ts` names the four types, their durations, and their
    routing rules (Alayna takes consultations + design reviews; Alexandra takes
    everything; fittings are in-person only). Like `STATUS_IN_STOCK` /
    `SIZED_CATEGORIES`, these are values coupled to code (duration drives slot
-   math; staff/locations drive UI + validation) — **not** a free-floating option
-   list. Retune a duration or rename a staff member here; the atelier's actual
-   *schedule* is what's live-editable (see below). The staff names here must
-   match the "Staff" select option values in the two Notion databases.
+   math; staff/locations drive UI + validation). Retune a duration or rename a
+   staff member here; the staff names must match the `name`s in `APPOINTMENT_STAFF`.
 
-2. **Availability is Notion-managed weekly hours, computed server-side.** The
-   atelier maintains a **"Staff Availability"** Notion database: rows are either
-   `Kind = "Weekly hours"` (Staff, Day, Start time, End time, Locations) or
-   `Kind = "Time off"` (Staff, Date range), and only `Active` rows are read
-   (`availability.repository.ts`, 60s TTL cache + fallback, like products).
-   `computeSlots` (`lib/appointments/availability.ts`, pure + heavily unit-tested)
-   subtracts booked appointments and time-off from each staff member's weekly
-   grid to produce open start times. All wall-clock hours/slots are interpreted
-   in `APPOINTMENT_TIMEZONE` (DST-correct via `lib/appointments/time.ts`, built on
-   `Intl` — no date library); bookings are stored/compared as UTC instants.
+2. **Working hours are config; conflicts are Google free/busy.** `computeSlots`
+   (`lib/appointments/availability.ts`, pure + heavily unit-tested) needs a
+   *positive* grid of open hours, which Google free/busy can't give (it only says
+   when someone is *busy*). That grid is `APPOINTMENT_STAFF` — a JSON env value
+   (staff `name` + calendar `email` + weekly `hours`), parsed in
+   `lib/appointments/staff.ts`. The *subtractive* side — every busy interval,
+   including existing bookings **and** any event the staff added (a day off is
+   just a calendar event) — comes from the **FreeBusy API** in
+   `lib/google/calendar.repository.ts` (`listBusyInRange`), fed into `computeSlots`
+   as `bookings`; `timeOff` is always empty. All wall-clock hours/slots are
+   interpreted in `APPOINTMENT_TIMEZONE` (DST-correct via
+   `lib/appointments/time.ts`, built on `Intl` — no date library); busy/bookings
+   are UTC instants.
 
 3. **Never trust a client-sent slot.** `POST /appointments` re-derives the type
    from the catalog and re-runs the *same* `computeSlots` for the requested day
-   before writing; a `start` that isn't currently an open slot (stale, taken, off
-   the grid, or inside the lead-time window) is a `BadRequestError` (→ 400). The
-   availability endpoint and the booking re-check share one function, so they
-   can't disagree. Bookings are read **fresh** (no cache) for this reason.
+   (with fresh free/busy) before writing; a `start` that isn't currently an open
+   slot (stale, taken, off the grid, or inside the lead-time window) is a
+   `BadRequestError` (→ 400). The availability endpoint and the booking re-check
+   share one function, so they can't disagree. Free/busy is read **fresh** (no
+   cache) for this reason.
 
-4. **Booking is free (no payment) and slots aren't held.** v1 has no Stripe step
+4. **Booking writes a calendar event, as the staff member.** Auth is a Google
+   **Workspace service account with domain-wide delegation** (`lib/google/client.ts`):
+   it impersonates each staff member (the `subject`) to read their free/busy and
+   `events.insert` on their calendar with `sendUpdates=all` (a real Google invite
+   to the customer) and, for virtual, a Google Meet link (`conferenceData`). The
+   Meet link + calendar link flow back into the response, the confirmation email,
+   and the success screen. Google Calendar is the sole record — there is **no**
+   Notion appointments database.
+
+5. **Booking is free (no payment) and slots aren't held.** v1 has no Stripe step
    and no pending-hold: two simultaneous bookings for the same slot is a small,
    accepted race for a low-volume atelier. Booking policy is env-tuned:
    `APPOINTMENT_TIMEZONE`, `APPOINTMENT_MIN_LEAD_HOURS` (default 24),
    `APPOINTMENT_MAX_ADVANCE_DAYS` (45), `APPOINTMENT_SLOT_STEP_MINUTES` (15) —
    all read at call time in `lib/appointments/settings.ts`.
 
-5. **Two new Notion databases, shared with the integration.** "Staff
-   Availability" (properties in `availability.schema.ts`) and "Appointments" (the
-   booked rows the server writes; properties in `appointments.blocks.ts`, default
-   `Status = "Booked"`). Property names live in those files — a Notion rename is a
-   one-line change there.
+6. **Google setup.** Enable the Calendar API + create a service account (JSON key
+   → `GOOGLE_SERVICE_ACCOUNT_KEY`); authorize its client id for
+   `https://www.googleapis.com/auth/calendar` under Workspace Admin → Security →
+   API controls → Domain-wide delegation. `google-auth-library` mints the
+   impersonated token; the rest is raw `fetch`, mirroring the Notion adapter.
 
 ## Development workflow
 
@@ -543,13 +554,13 @@ and in the maintainer's env without edits.
   `NOTION_CONTACT_DATABASE_ID` (the "Website Contact Messages" database that the
   `/contact` form **and** the shop's `/notify` dialog both write to),
   `NOTION_INVENTORY_DATABASE_ID` (the finished-goods "inventory" database the
-  shop's `/products` endpoint reads), `NOTION_SHOP_ORDERS_DATABASE_ID` (the
-  "Shop Orders" database the checkout webhook writes paid orders to), and — for
-  appointment scheduling — `NOTION_AVAILABILITY_DATABASE_ID` (the "Staff
-  Availability" database of weekly hours + time off) and
-  `NOTION_APPOINTMENTS_DATABASE_ID` (the "Appointments" database the booking
-  endpoint writes to). The Notion integration must be shared with each database
-  or queries 404. Checkout also
+  shop's `/products` endpoint reads), and `NOTION_SHOP_ORDERS_DATABASE_ID` (the
+  "Shop Orders" database the checkout webhook writes paid orders to). The Notion
+  integration must be shared with each database or queries 404. **Appointment
+  scheduling** instead uses Google Calendar: `GOOGLE_SERVICE_ACCOUNT_KEY` (the
+  full service-account JSON key, with domain-wide delegation authorized for the
+  Calendar scope) and `APPOINTMENT_STAFF` (JSON: each staff member's `name`,
+  calendar `email`, and weekly `hours`). Checkout also
   needs `STRIPE_SECRET_KEY`, `STRIPE_WEBHOOK_SECRET` (the signing secret of the
   Stripe webhook endpoint), and `PUBLIC_BASE_URL` (the site origin Stripe
   redirects back to after payment). Optionally, `STRIPE_SHIPPING_RATE_IDS` — a
@@ -591,7 +602,8 @@ and in the maintainer's env without edits.
 | Change custom-order deposits            | `artifacts/order-status/src/pages/status.tsx` (`DepositSection`); `api-server/src/services/deposit.service.ts` + `routes/orders.ts` + `lib/notion/orders.repository.ts` (`findDepositTarget`/`markDepositPaid`) + `routes/stripe-webhook.ts`                                  |
 | Change appointment booking (UI)         | `artifacts/order-status/src/pages/appointments.tsx`                                                                                                                                                                                                                           |
 | Change appointment types / routing rules| `api-server/src/lib/appointments/catalog.ts` (targeted business rule — durations, which staff, which locations)                                                                                                                                                               |
-| Change appointment slot logic / policy  | `api-server/src/lib/appointments/availability.ts` (`computeSlots`) + `time.ts` + `settings.ts`; `services/appointments.service.ts` + `routes/appointments.ts` + `lib/notion/availability.*` + `lib/notion/appointments.*`                                                     |
+| Change staff working hours / calendars  | `APPOINTMENT_STAFF` env (parsed in `api-server/src/lib/appointments/staff.ts`)                                                                                                                                                                                                |
+| Change appointment slot logic / policy  | `api-server/src/lib/appointments/availability.ts` (`computeSlots`) + `time.ts` + `settings.ts`; `services/appointments.service.ts` + `routes/appointments.ts` + `lib/google/*` (Calendar free/busy + event insert)                                                            |
 | Add a page / route                      | new `src/pages/*.tsx` + `<Route>` in `src/App.tsx`                                                                                                                                                                                                                            |
 | Add or rename a nav link                | `NAV_LINKS` in `artifacts/order-status/src/components/navbar.tsx`                                                                                                                                                                                                             |
 | Add a shared UI component               | `artifacts/order-status/src/components/ui/`                                                                                                                                                                                                                                   |

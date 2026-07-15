@@ -252,7 +252,7 @@ export const GetAppointmentOptionsResponse = zod.object({
 
 
 /**
- * Returns the open start times for the given appointment type, location, and (optionally) staff member over a date window, computed from each staff member's Notion-managed weekly hours minus already-booked appointments. Slot times are UTC instants to be rendered in the returned timezone.
+ * Returns the open start times for the given appointment type, location, and (optionally) staff member over a date window, computed from each staff member's configured working hours minus their Google Calendar free/busy. Slot times are UTC instants to be rendered in the returned timezone.
  * @summary List open appointment slots
  */
 export const getAppointmentAvailabilityQueryFromRegExp = new RegExp('^\\d{4}-\\d{2}-\\d{2}$');
@@ -279,7 +279,7 @@ export const GetAppointmentAvailabilityResponse = zod.object({
 
 
 /**
- * Books an open slot for a customer. The server re-validates the type, location, and staff, re-checks that the slot is still free (all derived server-side, never trusting the client), writes the appointment to the Notion appointments database, and emails a confirmation. Fails if the slot is no longer available.
+ * Books an open slot for a customer. The server re-validates the type, location, and staff, re-checks that the slot is still free (all derived server-side, never trusting the client), writes the appointment as a Google Calendar event (inviting the customer, with a Meet link for virtual), and emails a confirmation. Fails if the slot is no longer available.
  * @summary Book an appointment
  */
 
@@ -303,7 +303,9 @@ export const CreateAppointmentResponse = zod.object({
   "staff": zod.string(),
   "location": zod.string(),
   "start": zod.coerce.date(),
-  "end": zod.coerce.date()
+  "end": zod.coerce.date(),
+  "meetingUrl": zod.string().optional().describe('The Google Meet link for a virtual appointment, when one was created.'),
+  "calendarLink": zod.string().optional().describe('A link to the booking\'s Google Calendar event.')
 })
 
 

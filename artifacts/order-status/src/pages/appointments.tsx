@@ -266,6 +266,19 @@ export default function Appointments() {
               <span className="text-muted-foreground">Where:</span>{" "}
               {success.location}
             </p>
+            {success.meetingUrl && (
+              <p className="text-sm">
+                <span className="text-muted-foreground">Join link:</span>{" "}
+                <a
+                  href={success.meetingUrl}
+                  className="text-primary underline underline-offset-2 break-all"
+                  target="_blank"
+                  rel="noreferrer"
+                >
+                  {success.meetingUrl}
+                </a>
+              </p>
+            )}
             <p className="text-sm">
               <span className="text-muted-foreground">Confirmation:</span>{" "}
               <span className="font-mono tracking-wider text-primary">
@@ -274,7 +287,8 @@ export default function Appointments() {
             </p>
           </div>
           <p className="text-sm text-muted-foreground">
-            Need to change or cancel? Just reply to your confirmation email.
+            We've sent a calendar invitation to your email. Need to change or
+            cancel? Just reply to it.
           </p>
         </div>
       </PageShell>

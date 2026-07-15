@@ -1,20 +1,18 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 
-vi.mock("../../src/lib/notion/availability.repository.js", () => ({
-  getAvailabilityConfig: vi.fn(),
-}));
-vi.mock("../../src/lib/notion/appointments.repository.js", () => ({
-  listBookingsInRange: vi.fn(),
-  createAppointment: vi.fn(),
+vi.mock("../../src/lib/google/calendar.repository.js", () => ({
+  getScheduleConfig: vi.fn(),
+  listBusyInRange: vi.fn(),
+  createCalendarEvent: vi.fn(),
 }));
 
 import request from "supertest";
 import app from "../../src/app.js";
-import { getAvailabilityConfig } from "../../src/lib/notion/availability.repository.js";
 import {
-  listBookingsInRange,
-  createAppointment,
-} from "../../src/lib/notion/appointments.repository.js";
+  getScheduleConfig,
+  listBusyInRange,
+  createCalendarEvent,
+} from "../../src/lib/google/calendar.repository.js";
 import {
   addCalendarDays,
   dateInZone,
@@ -22,9 +20,9 @@ import {
 } from "../../src/lib/appointments/time.js";
 import type { WeeklyHours } from "../../src/lib/appointments/availability.js";
 
-const mockConfig = vi.mocked(getAvailabilityConfig);
-const mockList = vi.mocked(listBookingsInRange);
-const mockCreate = vi.mocked(createAppointment);
+const mockSchedule = vi.mocked(getScheduleConfig);
+const mockBusy = vi.mocked(listBusyInRange);
+const mockCreate = vi.mocked(createCalendarEvent);
 
 // A date comfortably in the future so the 0-hour lead time is always satisfied
 // regardless of the machine clock. Times are UTC so wall-clock == instant.
@@ -45,9 +43,9 @@ beforeEach(() => {
   process.env.APPOINTMENT_TIMEZONE = "UTC";
   process.env.APPOINTMENT_MIN_LEAD_HOURS = "0";
   process.env.APPOINTMENT_SLOT_STEP_MINUTES = "30";
-  mockConfig.mockResolvedValue({ weeklyHours, timeOff: [] });
-  mockList.mockResolvedValue([]);
-  mockCreate.mockResolvedValue(undefined);
+  mockSchedule.mockReturnValue({ weeklyHours, timeOff: [] });
+  mockBusy.mockResolvedValue([]);
+  mockCreate.mockResolvedValue({ calendarLink: "https://cal.test/event" });
 });
 
 describe("GET /api/appointments/options", () => {
@@ -113,11 +111,12 @@ describe("POST /api/appointments", () => {
     expect(res.body.staff).toBe("Alexandra");
     expect(res.body.location).toBe("In person");
     expect(res.body.confirmationCode).toMatch(/^APT-/);
+    expect(res.body.calendarLink).toBe("https://cal.test/event");
     expect(mockCreate).toHaveBeenCalledOnce();
   });
 
   it("400s when the slot is no longer available", async () => {
-    mockList.mockResolvedValue([
+    mockBusy.mockResolvedValue([
       {
         staff: "Alexandra",
         start: new Date(FIRST_SLOT_ISO),

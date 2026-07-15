@@ -904,7 +904,7 @@ export const getGetAppointmentAvailabilityUrl = (params: GetAppointmentAvailabil
 }
 
 /**
- * Returns the open start times for the given appointment type, location, and (optionally) staff member over a date window, computed from each staff member's Notion-managed weekly hours minus already-booked appointments. Slot times are UTC instants to be rendered in the returned timezone.
+ * Returns the open start times for the given appointment type, location, and (optionally) staff member over a date window, computed from each staff member's configured working hours minus their Google Calendar free/busy. Slot times are UTC instants to be rendered in the returned timezone.
  * @summary List open appointment slots
  */
 export const getAppointmentAvailability = async (params: GetAppointmentAvailabilityParams, options?: RequestInit): Promise<AppointmentAvailability> => {
@@ -982,7 +982,7 @@ export const getCreateAppointmentUrl = () => {
 }
 
 /**
- * Books an open slot for a customer. The server re-validates the type, location, and staff, re-checks that the slot is still free (all derived server-side, never trusting the client), writes the appointment to the Notion appointments database, and emails a confirmation. Fails if the slot is no longer available.
+ * Books an open slot for a customer. The server re-validates the type, location, and staff, re-checks that the slot is still free (all derived server-side, never trusting the client), writes the appointment as a Google Calendar event (inviting the customer, with a Meet link for virtual), and emails a confirmation. Fails if the slot is no longer available.
  * @summary Book an appointment
  */
 export const createAppointment = async (newAppointmentRequest: NewAppointmentRequest, options?: RequestInit): Promise<NewAppointmentResponse> => {

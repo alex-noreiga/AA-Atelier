@@ -309,6 +309,8 @@ export interface AppointmentEmailDetails {
   when: string;
   confirmationCode: string;
   notes?: string;
+  /** The Google Meet link for a virtual appointment, when one was created. */
+  meetingUrl?: string;
 }
 
 /** Confirmation sent to the customer when they book an appointment. */
@@ -317,6 +319,10 @@ export function appointmentConfirmationEmail(
 ): EmailMessage {
   const firstName = details.customerName.trim().split(/\s+/)[0] || "there";
 
+  const meetHtml = details.meetingUrl
+    ? `<p><strong>Join link:</strong> <a href="${details.meetingUrl}">${details.meetingUrl}</a></p>`
+    : "";
+
   const html = layout(
     "Your appointment is booked",
     `<p>Hi ${firstName},</p>
@@ -324,9 +330,10 @@ export function appointmentConfirmationEmail(
         <strong>${details.staff}</strong>.</p>
      <p><strong>When:</strong> ${details.when}<br/>
         <strong>Where:</strong> ${details.locationLabel}</p>
-     <p>Your confirmation code is <strong>${details.confirmationCode}</strong>.
-        If you need to change or cancel, just reply to this email and we'll take
-        care of it.</p>
+     ${meetHtml}
+     <p>A calendar invitation is on its way to your inbox. Your confirmation code
+        is <strong>${details.confirmationCode}</strong>. If you need to change or
+        cancel, just reply to this email and we'll take care of it.</p>
      <p>We look forward to seeing you.</p>`,
   );
 
@@ -337,9 +344,11 @@ export function appointmentConfirmationEmail(
     ``,
     `When: ${details.when}`,
     `Where: ${details.locationLabel}`,
+    ...(details.meetingUrl ? [`Join link: ${details.meetingUrl}`] : []),
     ``,
-    `Your confirmation code is ${details.confirmationCode}. If you need to change`,
-    `or cancel, just reply to this email and we'll take care of it.`,
+    `A calendar invitation is on its way to your inbox. Your confirmation code is`,
+    `${details.confirmationCode}. If you need to change or cancel, just reply to`,
+    `this email and we'll take care of it.`,
     ``,
     `We look forward to seeing you.`,
     ``,

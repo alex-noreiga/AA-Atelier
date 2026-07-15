@@ -14,4 +14,8 @@ export interface NewAppointmentResponse {
   location: string;
   start: Date;
   end: Date;
+  /** The Google Meet link for a virtual appointment, when one was created. */
+  meetingUrl?: string;
+  /** A link to the booking's Google Calendar event. */
+  calendarLink?: string;
 }

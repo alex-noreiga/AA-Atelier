@@ -55,6 +55,7 @@ test.describe("Appointment booking", () => {
         location: "In person",
         start: SLOT_ISO,
         end: "2026-12-21T15:30:00.000Z",
+        meetingUrl: "https://meet.google.com/abc-defg-hij",
       },
     });
 
@@ -79,6 +80,9 @@ test.describe("Appointment booking", () => {
       page.getByRole("heading", { name: "You're booked" }),
     ).toBeVisible();
     await expect(page.getByText("APT-TEST01")).toBeVisible();
+    await expect(
+      page.getByRole("link", { name: "https://meet.google.com/abc-defg-hij" }),
+    ).toBeVisible();
 
     // "No preference" means the request omits `staff`.
     expect(created.requests).toHaveLength(1);
