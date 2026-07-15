@@ -101,6 +101,45 @@ describe("linkOrderFormSubmission", () => {
     expect(body.properties["Target Date"].date.start).toBe("2026-09-01");
   });
 
+  it("attaches uploaded reference images as external files, named from their URLs", async () => {
+    const client = makeFakeClient(() => jsonResponse({ id: "sub-4" }));
+
+    await linkOrderFormSubmission(
+      createOrderInput({
+        imageUrls: [
+          "https://x.blob.vercel-storage.com/order-references/sketch-a1b2.png",
+          "https://x.blob.vercel-storage.com/order-references/clip.mp4",
+        ],
+      }),
+      "order-1",
+      client,
+    );
+
+    const body = JSON.parse(client.calls[0].init!.body as string);
+    const files =
+      body.properties[
+        "Please attach any images/video references you have for your dress"
+      ].files;
+    expect(files).toHaveLength(2);
+    expect(files[0]).toEqual({
+      type: "external",
+      name: "sketch-a1b2.png",
+      external: {
+        url: "https://x.blob.vercel-storage.com/order-references/sketch-a1b2.png",
+      },
+    });
+    expect(files[1].name).toBe("clip.mp4");
+  });
+
+  it("omits the files property when no images were uploaded", async () => {
+    const client = makeFakeClient(() => jsonResponse({ id: "sub-5" }));
+    await linkOrderFormSubmission(createOrderInput(), "order-1", client);
+    const body = JSON.parse(client.calls[0].init!.body as string);
+    expect(body.properties).not.toHaveProperty(
+      "Please attach any images/video references you have for your dress",
+    );
+  });
+
   it("throws on a non-ok Notion response", async () => {
     const client = makeFakeClient(() => errorResponse(400, "bad property"));
     await expect(

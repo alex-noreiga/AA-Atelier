@@ -25,9 +25,23 @@ export const SUBMISSION_MEASUREMENTS_PROPERTY = "Measurements"; // rich_text
 export const SUBMISSION_DESCRIPTION_PROPERTY =
   "Please describe what you want your custom dress to look like"; // rich_text
 export const SUBMISSION_TARGET_DATE_PROPERTY = "Target Date"; // date
+// The customer's uploaded reference images/videos (Vercel Blob URLs), stored as
+// external files on the hub row's file property.
+export const SUBMISSION_ATTACHMENTS_PROPERTY =
+  "Please attach any images/video references you have for your dress"; // files
 // The relation back to the order in the Order Tracking Pipeline — the link that
 // anchors this hub row to the created order.
 export const SUBMISSION_ORDER_RELATION_PROPERTY = "Order Tracking Pipeline"; // relation → orders
+
+/** A human-readable name for a Blob-hosted reference file, from its URL. */
+export function referenceFileName(url: string, index: number): string {
+  try {
+    const last = new URL(url).pathname.split("/").pop();
+    return last ? decodeURIComponent(last) : `Reference ${index + 1}`;
+  } catch {
+    return `Reference ${index + 1}`;
+  }
+}
 
 /**
  * A one-line measurements summary for the hub row: the five body measurements
@@ -95,6 +109,15 @@ export async function linkOrderFormSubmission(
   if (data.neededBy) {
     properties[SUBMISSION_TARGET_DATE_PROPERTY] = {
       date: { start: toDateStart(data.neededBy) },
+    };
+  }
+  if (data.imageUrls && data.imageUrls.length > 0) {
+    properties[SUBMISSION_ATTACHMENTS_PROPERTY] = {
+      files: data.imageUrls.map((url, i) => ({
+        type: "external",
+        name: referenceFileName(url, i),
+        external: { url },
+      })),
     };
   }
 

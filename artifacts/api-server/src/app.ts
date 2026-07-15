@@ -4,6 +4,7 @@ import pinoHttp from "pino-http";
 import router from "./routes/index.js";
 import { stripeWebhookHandler } from "./routes/stripe-webhook.js";
 import { generateMilestonesHandler } from "./routes/cron.js";
+import { uploadOrderRefsHandler } from "./routes/uploads.js";
 import { errorHandler } from "./middlewares/error.js";
 import { logger } from "./lib/logger.js";
 
@@ -49,6 +50,11 @@ app.use("/api", router);
 // outside the OpenAPI contract / generated client, so it's mounted here rather
 // than on the /api router. Auth is a CRON_SECRET bearer token (see routes/cron.ts).
 app.get("/api/cron/generate-milestones", generateMilestonesHandler);
+
+// Vercel Blob client-upload token endpoint for the order form's reference
+// images/videos. Also outside the OpenAPI contract — it speaks Vercel Blob's
+// client-upload protocol, not the browser API (see routes/uploads.ts).
+app.post("/api/uploads/order-refs", uploadOrderRefsHandler);
 
 // Central error handler — must be registered after the routes.
 app.use(errorHandler);

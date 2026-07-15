@@ -33,4 +33,6 @@ export interface NewOrderRequest {
   measurementAppointment?: boolean;
   description?: string;
   neededBy?: Date;
+  /** URLs of reference images/videos the customer uploaded for the dress (stored in Vercel Blob; the browser uploads directly and sends the resulting URLs here). Attached to the order in Notion. */
+  imageUrls?: string[];
 }

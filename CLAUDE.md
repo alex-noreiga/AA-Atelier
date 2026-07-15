@@ -636,11 +636,22 @@ and in the maintainer's env without edits.
   navbar clearance, and optional centering — follow `pages/home.tsx` as the
   scaffold.
 - **Prettier** is the formatter (root devDependency).
-- **Image upload is not supported.** The GCS/Replit-sidecar upload path was
-  deleted during the Vercel migration, and the `/storage/*` endpoints,
-  `imageUrls` field, and the `lib/object-storage-web` widget have since been
-  removed from the spec and workspace. If upload is ever reintroduced, add it
-  to `openapi.yaml` first and regenerate.
+- **Reference image/video upload runs on Vercel Blob** (the old GCS/Replit-sidecar
+  path was deleted in the migration; this is its replacement). The order form's
+  optional "Reference Images / Video" field uploads files **directly from the
+  browser to Vercel Blob** — bypassing Vercel's ~4.5 MB serverless request-body
+  limit — via `web-app/src/components/reference-upload.tsx` (`upload` from
+  `@vercel/blob/client`). The server route `POST /api/uploads/order-refs`
+  (`api-server/src/routes/uploads.ts`, mounted in `app.ts`, **outside** the OpenAPI
+  contract like the Stripe webhook / cron) only issues the client-upload token via
+  `handleUpload`, gated on `BLOB_READ_WRITE_TOKEN` (unset ⇒ 503, form still works
+  without attachments). The resulting URLs ride along in the create-order payload as
+  `imageUrls` (in the contract) and are attached to the Notion order: as external
+  files on the Order Form Submission's file property (`order-form-submissions.repository.ts`)
+  and as a "Reference Images" links section on the order page body (`orders.blocks.ts`).
+  **Dependency note:** `@vercel/blob` transitively pulls zod v4 (via `@vercel/oidc`);
+  a root `pnpm.overrides` pins `zod` to the v3 the app uses so `@hookform/resolvers`
+  (no zod peer) can't latch onto v4 — don't remove that override.
 - **No relational database.** Orders live in Notion; there is no Postgres/Drizzle
   package. (An empty `lib/db` scaffold used to exist but was removed, along with
   its stale `drizzle-orm` catalog entry.)

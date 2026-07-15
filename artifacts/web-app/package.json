@@ -51,5 +51,8 @@
     "vitest": "^3.2.4",
     "wouter": "catalog:",
     "zod": "catalog:"
+  },
+  "dependencies": {
+    "@vercel/blob": "^2.6.1"
   }
 }

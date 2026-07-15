@@ -108,6 +108,28 @@ describe("buildOrderPageBlocks", () => {
     expect(pairs.Description).toBe("Ivory chiffon");
   });
 
+  it("renders a Reference Images section with clickable links when images were uploaded", () => {
+    const url = "https://x.blob.vercel-storage.com/order-references/ref.png";
+    const blocks = buildOrderPageBlocks({
+      ...baseOrder,
+      imageUrls: [url],
+    }) as any[];
+
+    expect(headings(blocks)).toContain("Reference Images");
+    const linkItem = blocks.find(
+      (b) => b.type === "bulleted_list_item" && b.bulleted_list_item.rich_text[0].text.link,
+    );
+    expect(linkItem.bulleted_list_item.rich_text[0].text).toEqual({
+      content: url,
+      link: { url },
+    });
+  });
+
+  it("omits the Reference Images section when no images were uploaded", () => {
+    const blocks = buildOrderPageBlocks(baseOrder);
+    expect(headings(blocks)).not.toContain("Reference Images");
+  });
+
   it("renders an appointment note instead of values when measurements are omitted", () => {
     const {
       waist,
