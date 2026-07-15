@@ -18,6 +18,8 @@ export const SHOP_ORDER_NAME_PROPERTY = "Customer Name"; // rich_text
 export const SHOP_ORDER_TOTAL_PROPERTY = "Total"; // number
 export const SHOP_ORDER_STATUS_PROPERTY = "Status"; // status (workflow)
 export const SHOP_ORDER_SHIPPING_PROPERTY = "Shipping Address"; // rich_text
+export const SHOP_ORDER_NUMBER_PROPERTY = "Order Number"; // rich_text
+export const SHOP_ORDER_CHANNEL_PROPERTY = "Sales Channel"; // select
 
 /**
  * The "Status" option a freshly-paid order lands in. Must be one of the live
@@ -26,6 +28,29 @@ export const SHOP_ORDER_SHIPPING_PROPERTY = "Shipping Address"; // rich_text
  * Stripe payment lands the order; the atelier advances it from there.
  */
 export const SHOP_ORDER_PAID_STATUS = "Payment Confirmed";
+
+/**
+ * The "Sales Channel" option a website order is tagged with, so the atelier can
+ * tell app orders apart from Etsy orders in the "Shop Orders" database. Notion
+ * auto-creates the select option on first write, but the atelier already has
+ * "Online Store" configured. Like SHOP_ORDER_PAID_STATUS, this names a specific
+ * option value (a targeted business rule) — rename it in Notion and update here.
+ */
+export const SHOP_ORDER_ONLINE_CHANNEL = "Online Store";
+
+/**
+ * A human-friendly order number for a website order, derived deterministically
+ * from the Stripe session id (recording is deduped by session id, so one order
+ * ⇒ one stable number). Etsy orders carry their own receipt id in the same
+ * "Order Number" column; the `WEB-` prefix keeps the two channels distinct.
+ */
+export function shopOrderNumber(session: Stripe.Checkout.Session): string {
+  const tail = session.id
+    .replace(/[^a-zA-Z0-9]/g, "")
+    .slice(-8)
+    .toUpperCase();
+  return `WEB-${tail}`;
+}
 
 /** Stripe amounts are integer minor units (cents); Notion "Total" is dollars. */
 function toDollars(amountInCents: number | null | undefined): number {
@@ -102,6 +127,12 @@ export function buildShopOrderProperties(
     },
     [SHOP_ORDER_STATUS_PROPERTY]: {
       status: { name: SHOP_ORDER_PAID_STATUS },
+    },
+    [SHOP_ORDER_NUMBER_PROPERTY]: {
+      rich_text: [{ text: { content: shopOrderNumber(session) } }],
+    },
+    [SHOP_ORDER_CHANNEL_PROPERTY]: {
+      select: { name: SHOP_ORDER_ONLINE_CHANNEL },
     },
   };
 

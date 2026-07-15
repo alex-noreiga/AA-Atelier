@@ -11,6 +11,8 @@ import {
   SHOP_ORDER_TOTAL_PROPERTY,
   SHOP_ORDER_STATUS_PROPERTY,
   SHOP_ORDER_SHIPPING_PROPERTY,
+  SHOP_ORDER_NUMBER_PROPERTY,
+  SHOP_ORDER_CHANNEL_PROPERTY,
 } from "../../src/lib/notion/shop-orders.blocks.js";
 
 function session(
@@ -68,6 +70,15 @@ describe("buildShopOrderProperties", () => {
     });
     expect(props[SHOP_ORDER_SHIPPING_PROPERTY].rich_text[0].text.content).toBe(
       "1 Analytical Ave, London EC1, GB",
+    );
+    // Website orders are tagged so the atelier can tell them from Etsy orders,
+    // and carry a deterministic order number derived from the session id.
+    expect(props[SHOP_ORDER_CHANNEL_PROPERTY]).toEqual({
+      select: { name: "Online Store" },
+    });
+    // "cs_test_123" → strip non-alnum "cstest123" → last 8 "stest123" → upper.
+    expect(props[SHOP_ORDER_NUMBER_PROPERTY].rich_text[0].text.content).toBe(
+      "WEB-STEST123",
     );
   });
 
