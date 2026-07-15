@@ -78,6 +78,51 @@ describe("cart context", () => {
     expect(result.current.subtotal).toBe(44);
   });
 
+  it("clamps a merged quantity to the variant's stock ceiling", () => {
+    const { result } = renderHook(() => useCart(), { wrapper });
+
+    act(() => {
+      // Three adds of a two-in-stock item can't exceed the ceiling.
+      for (let i = 0; i < 3; i++) {
+        result.current.addItem({
+          variantId: "v1",
+          name: "Soaker",
+          price: 22,
+          quantityAvailable: 2,
+        });
+      }
+    });
+
+    expect(result.current.count).toBe(2);
+  });
+
+  it("clamps updateQuantity to the stored stock ceiling", () => {
+    const { result } = renderHook(() => useCart(), { wrapper });
+
+    act(() => {
+      result.current.addItem({
+        variantId: "v1",
+        name: "Soaker",
+        price: 22,
+        quantityAvailable: 3,
+      });
+      result.current.updateQuantity("v1", undefined, 10);
+    });
+
+    expect(result.current.count).toBe(3);
+  });
+
+  it("leaves quantity uncapped when no stock ceiling is known", () => {
+    const { result } = renderHook(() => useCart(), { wrapper });
+
+    act(() => {
+      result.current.addItem({ variantId: "v1", name: "Soaker", price: 22 });
+      result.current.updateQuantity("v1", undefined, 99);
+    });
+
+    expect(result.current.count).toBe(99);
+  });
+
   it("keeps different sizes of the same variant as separate lines", () => {
     const { result } = renderHook(() => useCart(), { wrapper });
 
@@ -213,6 +258,19 @@ describe("Cart drawer interactions", () => {
     await userEvent.click(screen.getByTestId(`cart-remove-${key}`));
 
     expect(screen.getByTestId("cart-empty")).toBeInTheDocument();
+  });
+
+  it("disables the increase button once the line hits its stock ceiling", async () => {
+    render(
+      <CartProvider>
+        <AddToCartButton variant={variant({ quantityAvailable: 1 })} />
+        <CartButton />
+      </CartProvider>,
+    );
+    await userEvent.click(screen.getByTestId("add-to-cart-v1"));
+    await userEvent.click(screen.getByTestId("cart-button"));
+
+    expect(screen.getByTestId(`cart-increase-${key}`)).toBeDisabled();
   });
 });
 

@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { Link } from "wouter";
+import { Link, useParams, useLocation } from "wouter";
 import { ArrowRight, Bell, Loader2, PenLine } from "lucide-react";
 import {
   useGetProducts,
@@ -11,7 +11,7 @@ import { AddToCartButton } from "@/components/add-to-cart";
 import { SizeSelector } from "@/components/size-selector";
 import { PageShell } from "@/components/page-shell";
 import { CtaLink } from "@/components/cta";
-import { Seo } from "@/components/seo";
+import { Seo, StructuredData, SITE_ORIGIN } from "@/components/seo";
 import { ROUTE_SEO } from "@/lib/seo-routes";
 import { formatPrice } from "@/lib/format";
 import { SizeChartDialog } from "@/components/size-chart-dialog";
@@ -42,6 +42,10 @@ const ALL = "All";
 // full list is still read live from Notion. Rename these options in Notion and
 // the size chart stops appearing, so keep them in sync.
 const SIZED_CATEGORIES = ["Dress", "Ready to Wear"];
+
+// At or below this countable stock level a card shows an "Only N left" nudge.
+// A null/undefined count (one-off items) never triggers it.
+const LOW_STOCK_THRESHOLD = 5;
 
 function hasSizeChart(product: Product): boolean {
   return SIZED_CATEGORIES.includes(product.category);
@@ -143,6 +147,27 @@ function VariantChips({
   );
 }
 
+/** A subtle "Only N left" nudge for a low, countable stock level. */
+function LowStockNote({ variant }: { variant: ProductVariant }) {
+  const n = variant.quantityAvailable;
+  if (
+    !variant.available ||
+    typeof n !== "number" ||
+    n <= 0 ||
+    n > LOW_STOCK_THRESHOLD
+  ) {
+    return null;
+  }
+  return (
+    <p
+      className="mb-3 text-xs uppercase tracking-widest text-primary/80"
+      data-testid={`low-stock-${variant.id}`}
+    >
+      Only {n} left
+    </p>
+  );
+}
+
 function VariantCta({
   variant,
   size,
@@ -185,7 +210,16 @@ function VariantCta({
   );
 }
 
-function ProductCard({ product }: { product: Product }) {
+function ProductCard({
+  product,
+  open,
+  onOpenChange,
+}: {
+  product: Product;
+  /** Quick-view open state — driven by the `/shop/:productId` route. */
+  open: boolean;
+  onOpenChange: (open: boolean) => void;
+}) {
   const [selected, setSelected] = useState(0);
   // A size chosen on the card is shared with the quick-view dialog (both render
   // the body sub-tree), and drives Add-to-cart. Only an available, priced
@@ -206,8 +240,9 @@ function ProductCard({ product }: { product: Product }) {
       className="group flex flex-col overflow-hidden rounded-2xl border border-border/60 transition-all duration-300 hover:border-primary/50 hover:shadow-[0_0_30px_hsl(var(--primary)/0.10)]"
       data-testid={`product-${product.id}`}
     >
-      {/* Image opens the quick-view dialog */}
-      <Dialog>
+      {/* Image opens the quick-view dialog; open state is URL-driven so a
+          product can be deep-linked and shared (see the Shop component). */}
+      <Dialog open={open} onOpenChange={onOpenChange}>
         <DialogTrigger asChild>
           <button
             type="button"
@@ -280,6 +315,7 @@ function ProductCard({ product }: { product: Product }) {
               )}
 
               <div className="mt-auto pt-6">
+                <LowStockNote variant={variant} />
                 <VariantCta variant={variant} size={size} />
               </div>
             </div>
@@ -320,6 +356,7 @@ function ProductCard({ product }: { product: Product }) {
         {hasSizeChart(product) && <SizeChartDialog className="mt-3" />}
 
         <div className="mt-auto pt-6">
+          <LowStockNote variant={variant} />
           <VariantCta variant={variant} size={size} />
         </div>
       </div>
@@ -327,16 +364,81 @@ function ProductCard({ product }: { product: Product }) {
   );
 }
 
+/** Collapse Notion listing notes into a single-line, length-capped meta description. */
+function metaDescription(product: Product): string {
+  const raw = product.variants[0]?.description?.replace(/\s+/g, " ").trim();
+  const base =
+    raw && raw.length > 0
+      ? raw
+      : `${product.title} — ${product.category} from A.A Atelier.`;
+  return base.length > 160 ? `${base.slice(0, 157)}…` : base;
+}
+
+/** schema.org Product + Offer(s) for a shop card, for search-result rich data. */
+function productJsonLd(product: Product): Record<string, unknown> {
+  const variant = product.variants[0];
+  const url = `${SITE_ORIGIN}/shop/${product.id}`;
+  const offers = product.variants
+    .filter((v) => typeof v.price === "number")
+    .map((v) => ({
+      "@type": "Offer",
+      price: v.price,
+      priceCurrency: "USD",
+      availability: v.available
+        ? "https://schema.org/InStock"
+        : "https://schema.org/OutOfStock",
+      url,
+    }));
+
+  return {
+    "@context": "https://schema.org",
+    "@type": "Product",
+    name: product.title,
+    category: product.category,
+    ...(variant?.description ? { description: variant.description } : {}),
+    ...(variant && variant.photos.length > 0 ? { image: variant.photos } : {}),
+    ...(offers.length > 0
+      ? { offers: offers.length === 1 ? offers[0] : offers }
+      : {}),
+  };
+}
+
+/** Per-product page metadata + JSON-LD, shown while a product deep link is open. */
+function ProductSeo({ product }: { product: Product }) {
+  const image = product.variants[0]?.photos[0];
+  return (
+    <>
+      <Seo
+        title={`${product.title} | The Shop | A.A Atelier`}
+        description={metaDescription(product)}
+        path={`/shop/${product.id}`}
+        {...(image ? { image } : {})}
+      />
+      <StructuredData data={productJsonLd(product)} />
+    </>
+  );
+}
+
 /**
  * The shop. Everything shown here is live inventory from the Notion "inventory"
  * database — there is no hardcoded catalogue. Loading, error, and empty all
  * still render the page chrome and the closing commission CTA.
+ *
+ * A `/shop/:productId` deep link opens that product's quick-view: the dialog's
+ * open state is derived from the route param, and opening/closing a card
+ * navigates so the URL is always shareable.
  */
 export default function Shop() {
   const [filter, setFilter] = useState<string>(ALL);
+  const params = useParams();
+  const [, navigate] = useLocation();
   const { data, isLoading, isError } = useGetProducts();
 
   const products = data?.products ?? [];
+  const activeProductId = params.productId;
+  const activeProduct = activeProductId
+    ? products.find((product) => product.id === activeProductId)
+    : undefined;
   // The server reads these live from the "Item Type" options in Notion and drops
   // any with no stock — so editing the options there changes the chips here with
   // no redeploy. Never hardcode them.
@@ -351,7 +453,11 @@ export default function Shop() {
 
   return (
     <PageShell align="top">
-      <Seo {...ROUTE_SEO["/shop"]} />
+      {activeProduct ? (
+        <ProductSeo product={activeProduct} />
+      ) : (
+        <Seo {...ROUTE_SEO["/shop"]} />
+      )}
       <div className="w-full max-w-6xl z-10 mx-auto px-6 pt-24 pb-20 animate-in fade-in zoom-in-95 duration-1000">
         {/* Header */}
         <div className="text-center">
@@ -414,7 +520,14 @@ export default function Shop() {
         ) : (
           <div className="mt-12 grid gap-8 sm:grid-cols-2 lg:grid-cols-3">
             {visible.map((product) => (
-              <ProductCard key={product.id} product={product} />
+              <ProductCard
+                key={product.id}
+                product={product}
+                open={product.id === activeProductId}
+                onOpenChange={(next) =>
+                  navigate(next ? `/shop/${product.id}` : "/shop")
+                }
+              />
             ))}
           </div>
         )}
