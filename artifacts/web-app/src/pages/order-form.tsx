@@ -5,10 +5,12 @@ import { z } from "zod";
 import { Link } from "wouter";
 import { useCreateOrder } from "@workspace/api-client-react";
 import { Button } from "@/components/ui/button";
+import { ctaVariants } from "@/components/cta";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { PageShell } from "@/components/page-shell";
+import { SuccessScreen } from "@/components/success-screen";
 import { Seo } from "@/components/seo";
 import { useToast } from "@/hooks/use-toast";
 import { ArrowLeft, CheckCircle, Loader2 } from "lucide-react";
@@ -67,8 +69,6 @@ const formSchema = z
   });
 
 type FormValues = z.infer<typeof formSchema>;
-
-const BASE_URL = import.meta.env.BASE_URL.replace(/\/$/, "");
 
 export default function OrderForm() {
   const [success, setSuccess] = useState<{
@@ -161,39 +161,38 @@ export default function OrderForm() {
 
   if (success) {
     return (
-      <PageShell noise={false}>
-        <div className="w-full max-w-lg text-center animate-in fade-in zoom-in-95 duration-700">
-          <CheckCircle
-            className="w-16 h-16 text-primary mx-auto mb-6"
-            strokeWidth={1}
-          />
-          <h1 className="text-3xl font-serif mb-3">Order Received</h1>
-          <p className="text-muted-foreground font-light mb-8">
-            {success.appointment
-              ? "Thank you! We'll be in touch soon to schedule your measurement appointment and confirm your details."
-              : "Thank you! We'll be in touch soon to confirm your details."}
-          </p>
-          <div className="border border-border rounded-lg p-6 mb-8 inline-block">
-            <p className="text-xs tracking-[0.15em] uppercase text-muted-foreground mb-1">
-              Your order number
-            </p>
-            <p className="text-2xl font-mono font-medium text-primary tracking-widest">
-              {success.orderNumber}
-            </p>
-          </div>
-          <p className="text-sm text-muted-foreground mb-8">
-            Save this number — you can use it to track your order status at any
-            time.
-          </p>
-          <a
-            href={BASE_URL + "/shop/status"}
+      <SuccessScreen
+        icon={CheckCircle}
+        title="Order Received"
+        description={
+          success.appointment
+            ? "Thank you! We'll be in touch soon to schedule your measurement appointment and confirm your details."
+            : "Thank you! We'll be in touch soon to confirm your details."
+        }
+        footer={
+          <Link
+            to="/shop/status"
             className="inline-flex items-center gap-2 text-sm tracking-widest uppercase text-muted-foreground hover:text-primary transition-colors"
+            data-testid="link-track-order"
           >
             <ArrowLeft className="w-4 h-4" />
             Track order status
-          </a>
+          </Link>
+        }
+      >
+        <div className="border border-border rounded-lg p-6 mb-8 inline-block">
+          <p className="text-xs tracking-[0.15em] uppercase text-muted-foreground mb-1">
+            Your order number
+          </p>
+          <p className="text-2xl font-mono font-medium text-primary tracking-widest">
+            {success.orderNumber}
+          </p>
         </div>
-      </PageShell>
+        <p className="text-sm text-muted-foreground mb-8">
+          Save this number — you can use it to track your order status at any
+          time.
+        </p>
+      </SuccessScreen>
     );
   }
 
@@ -204,11 +203,12 @@ export default function OrderForm() {
         description="Start your custom figure skating or dance costume. Share your contact details, measurements, and design notes and A.A Atelier will craft a one-of-a-kind piece for you."
         path="/order"
       />
-      <div className="max-w-2xl mx-auto px-6 pt-24 pb-12">
+      <div className="max-w-2xl mx-auto px-6 pt-24 pb-20">
         <div className="mb-10">
           <Link
             to="/shop/status"
             className="inline-flex items-center gap-2 text-sm text-muted-foreground hover:text-primary transition-colors tracking-widest uppercase mb-8 group"
+            data-testid="link-track-my-order"
           >
             <ArrowLeft className="w-4 h-4 group-hover:-translate-x-1 transition-transform" />
             Track my order
@@ -465,7 +465,8 @@ export default function OrderForm() {
             <Button
               type="submit"
               disabled={submitting}
-              className="bg-primary text-primary-foreground hover:bg-primary/90 px-10 py-6 rounded-full tracking-widest uppercase text-xs transition-all duration-300 hover:shadow-[0_0_20px_rgba(209,156,151,0.2)] disabled:opacity-50"
+              className={ctaVariants({ variant: "primary", size: "lg" })}
+              data-testid="submit-order"
             >
               {submitting ? (
                 <>

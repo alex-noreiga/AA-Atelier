@@ -12,10 +12,12 @@ import {
   type NewAppointmentResponse,
 } from "@workspace/api-client-react";
 import { Button } from "@/components/ui/button";
+import { ctaVariants } from "@/components/cta";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { PageShell } from "@/components/page-shell";
+import { SuccessScreen } from "@/components/success-screen";
 import { Seo } from "@/components/seo";
 import { useToast } from "@/hooks/use-toast";
 import { ArrowLeft, CalendarCheck, Check, Clock, Loader2 } from "lucide-react";
@@ -236,24 +238,18 @@ export default function Appointments() {
   // --- Success -------------------------------------------------------------
   if (success) {
     return (
-      <PageShell noise={false}>
+      <SuccessScreen
+        icon={CalendarCheck}
+        title="You're booked"
+        description="We've sent a confirmation to your email. We look forward to seeing you."
+      >
         <Seo
           title="Appointment Booked | A.A Atelier"
           description="Your appointment with A.A Atelier is confirmed."
           path="/appointments"
           noindex
         />
-        <div className="w-full max-w-lg text-center animate-in fade-in zoom-in-95 duration-700">
-          <CalendarCheck
-            className="w-16 h-16 text-primary mx-auto mb-6"
-            strokeWidth={1}
-          />
-          <h1 className="text-3xl font-serif mb-3">You're booked</h1>
-          <p className="text-muted-foreground font-light mb-8">
-            We've sent a confirmation to your email. We look forward to seeing
-            you.
-          </p>
-          <div className="border border-border rounded-lg p-6 mb-8 text-left space-y-2">
+        <div className="border border-border rounded-lg p-6 mb-8 text-left space-y-2">
             <p className="text-sm">
               <span className="text-muted-foreground">Appointment:</span>{" "}
               {success.type} with {success.staff}
@@ -285,13 +281,12 @@ export default function Appointments() {
                 {success.confirmationCode}
               </span>
             </p>
-          </div>
-          <p className="text-sm text-muted-foreground">
-            We've sent a calendar invitation to your email. Need to change or
-            cancel? Just reply to it.
-          </p>
         </div>
-      </PageShell>
+        <p className="text-sm text-muted-foreground">
+          We've sent a calendar invitation to your email. Need to change or
+          cancel? Just reply to it.
+        </p>
+      </SuccessScreen>
     );
   }
 
@@ -303,7 +298,7 @@ export default function Appointments() {
         description="Schedule a consultation, fitting, or design review with A.A Atelier. Pick a time that works for you and book online in a few steps."
         path="/appointments"
       />
-      <div className="max-w-2xl w-full mx-auto px-6 pt-24 pb-16">
+      <div className="max-w-2xl w-full mx-auto px-6 pt-24 pb-20">
         <div className="mb-10">
           <h1 className="text-4xl md:text-5xl font-serif text-foreground mb-3">
             Book an Appointment
@@ -352,6 +347,7 @@ export default function Appointments() {
             type="button"
             onClick={() => setStep((s) => Math.max(0, s - 1))}
             className="inline-flex items-center gap-2 text-xs text-muted-foreground hover:text-primary transition-colors tracking-widest uppercase mb-8 group"
+            data-testid="button-back"
           >
             <ArrowLeft className="w-4 h-4 group-hover:-translate-x-1 transition-transform" />
             Back
@@ -378,9 +374,9 @@ export default function Appointments() {
                 className="w-full text-left border border-border rounded-lg p-5 hover:border-primary/60 hover:bg-primary/[0.03] transition-all group"
               >
                 <div className="flex items-center justify-between">
-                  <h3 className="font-serif text-xl text-foreground group-hover:text-primary transition-colors">
+                  <span className="font-serif text-xl text-foreground group-hover:text-primary transition-colors">
                     {type.name}
-                  </h3>
+                  </span>
                   <span className="text-xs text-muted-foreground flex items-center gap-1.5">
                     <Clock className="w-3.5 h-3.5" />
                     {type.durationMinutes} min
@@ -401,7 +397,7 @@ export default function Appointments() {
           <section className="space-y-10" data-testid="step-format">
             {selectedType.locations.length > 1 && (
               <div>
-                <h2 className="text-xs tracking-[0.2em] uppercase text-muted-foreground mb-4 pb-2 border-b border-border">
+                <h2 className="text-xs tracking-[0.2em] uppercase text-muted-foreground mb-6 pb-2 border-b border-border">
                   Where
                 </h2>
                 <div className="flex flex-wrap gap-3">
@@ -420,7 +416,7 @@ export default function Appointments() {
 
             {selectedType.staff.length > 1 && (
               <div>
-                <h2 className="text-xs tracking-[0.2em] uppercase text-muted-foreground mb-4 pb-2 border-b border-border">
+                <h2 className="text-xs tracking-[0.2em] uppercase text-muted-foreground mb-6 pb-2 border-b border-border">
                   With whom
                 </h2>
                 <div className="flex flex-wrap gap-3">
@@ -448,6 +444,7 @@ export default function Appointments() {
               disabled={!location || !staff}
               onClick={() => setStep(2)}
               className="bg-primary text-primary-foreground hover:bg-primary/90 px-8 py-5 rounded-full tracking-widest uppercase text-xs disabled:opacity-50"
+              data-testid="button-continue"
             >
               Continue
             </Button>
@@ -658,7 +655,8 @@ export default function Appointments() {
                 <Button
                   type="submit"
                   disabled={createAppointment.isPending}
-                  className="bg-primary text-primary-foreground hover:bg-primary/90 px-10 py-6 rounded-full tracking-widest uppercase text-xs transition-all duration-300 hover:shadow-[0_0_20px_rgba(209,156,151,0.2)] disabled:opacity-50"
+                  className={ctaVariants({ variant: "primary", size: "lg" })}
+                  data-testid="submit-appointment"
                 >
                   {createAppointment.isPending ? (
                     <>

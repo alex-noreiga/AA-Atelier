@@ -10,6 +10,7 @@ import { NotifyDialog } from "@/components/notify-dialog";
 import { AddToCartButton } from "@/components/add-to-cart";
 import { SizeSelector } from "@/components/size-selector";
 import { PageShell } from "@/components/page-shell";
+import { CtaLink } from "@/components/cta";
 import { Seo } from "@/components/seo";
 import { formatPrice } from "@/lib/format";
 import { SizeChartDialog } from "@/components/size-chart-dialog";
@@ -141,7 +142,7 @@ function VariantChips({
   );
 }
 
-function CtaLink({
+function VariantCta({
   variant,
   size,
 }: {
@@ -201,7 +202,7 @@ function ProductCard({ product }: { product: Product }) {
 
   return (
     <div
-      className="group flex flex-col overflow-hidden rounded-2xl border border-border/60 transition-all duration-300 hover:border-primary/50 hover:shadow-[0_0_30px_rgba(209,156,151,0.10)]"
+      className="group flex flex-col overflow-hidden rounded-2xl border border-border/60 transition-all duration-300 hover:border-primary/50 hover:shadow-[0_0_30px_hsl(var(--primary)/0.10)]"
       data-testid={`product-${product.id}`}
     >
       {/* Image opens the quick-view dialog */}
@@ -236,7 +237,7 @@ function ProductCard({ product }: { product: Product }) {
             <div className="flex flex-col">
               <DialogHeader className="text-left">
                 {product.category && (
-                  <p className="text-primary text-xs tracking-[0.3em] uppercase mb-1">
+                  <p className="text-primary text-xs tracking-[0.35em] uppercase mb-1">
                     {product.category}
                   </p>
                 )}
@@ -278,7 +279,7 @@ function ProductCard({ product }: { product: Product }) {
               )}
 
               <div className="mt-auto pt-6">
-                <CtaLink variant={variant} size={size} />
+                <VariantCta variant={variant} size={size} />
               </div>
             </div>
           </div>
@@ -318,7 +319,7 @@ function ProductCard({ product }: { product: Product }) {
         {hasSizeChart(product) && <SizeChartDialog className="mt-3" />}
 
         <div className="mt-auto pt-6">
-          <CtaLink variant={variant} size={size} />
+          <VariantCta variant={variant} size={size} />
         </div>
       </div>
     </div>
@@ -427,23 +428,15 @@ export default function Shop() {
             Don't see quite what you're looking for?
           </p>
           <div className="flex flex-col sm:flex-row items-center justify-center gap-4">
-            <Link
-              to="/order"
-              className="group inline-flex items-center gap-2 bg-primary text-primary-foreground hover:bg-primary/90 px-8 py-4 rounded-full tracking-widest uppercase text-xs transition-all duration-300 hover:shadow-[0_0_24px_rgba(209,156,151,0.25)]"
-              data-testid="cta-commission"
-            >
+            <CtaLink to="/order" data-testid="cta-commission">
               <PenLine className="w-4 h-4" />
               Commission Something Bespoke
               <ArrowRight className="w-4 h-4 group-hover:translate-x-1 transition-transform" />
-            </Link>
-            <Link
-              to="/shop/status"
-              className="group inline-flex items-center gap-2 border border-border text-foreground hover:border-primary hover:text-primary px-8 py-4 rounded-full tracking-widest uppercase text-xs transition-all duration-300"
-              data-testid="link-order-status"
-            >
+            </CtaLink>
+            <CtaLink to="/shop/status" variant="outline" data-testid="link-order-status">
               Track Your Order
               <ArrowRight className="w-4 h-4 group-hover:translate-x-1 transition-transform" />
-            </Link>
+            </CtaLink>
           </div>
         </div>
       </div>

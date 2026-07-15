@@ -1,4 +1,3 @@
-import { Link } from "wouter";
 import {
   ArrowRight,
   Heart,
@@ -9,6 +8,8 @@ import {
   type LucideIcon,
 } from "lucide-react";
 import { PageShell } from "@/components/page-shell";
+import { CtaLink } from "@/components/cta";
+import { SectionHeader } from "@/components/section-header";
 import { Seo } from "@/components/seo";
 
 interface Service {
@@ -99,7 +100,7 @@ export default function Services() {
         </div>
 
         {/* Service cards */}
-        <div className="mt-20 grid sm:grid-cols-2 gap-6 md:gap-8">
+        <div className="mt-24 grid sm:grid-cols-2 gap-6 md:gap-8">
           {SERVICES.map(({ icon: Icon, title, description }) => (
             <div
               key={title}
@@ -122,14 +123,10 @@ export default function Services() {
 
         {/* How it works */}
         <div className="mt-24">
-          <div className="text-center mb-12">
-            <p className="text-primary text-xs tracking-[0.35em] uppercase mb-4">
-              The Process
-            </p>
-            <h2 className="font-serif text-3xl md:text-4xl text-foreground">
-              From first sketch to final stitch
-            </h2>
-          </div>
+          <SectionHeader
+            eyebrow="The Process"
+            title="From first sketch to final stitch"
+          />
           <ol className="grid gap-8 md:grid-cols-4">
             {PROCESS.map(({ step, title, description }) => (
               <li key={step}>
@@ -149,22 +146,14 @@ export default function Services() {
 
         {/* CTA */}
         <div className="mt-24 flex flex-col sm:flex-row items-center justify-center gap-4">
-          <Link
-            to="/order"
-            className="group inline-flex items-center gap-2 bg-primary text-primary-foreground hover:bg-primary/90 px-8 py-4 rounded-full tracking-widest uppercase text-xs transition-all duration-300 hover:shadow-[0_0_24px_rgba(209,156,151,0.25)]"
-            data-testid="cta-begin-commission"
-          >
+          <CtaLink to="/order" data-testid="cta-begin-commission">
             <PenLine className="w-4 h-4" />
             Begin a Commission
             <ArrowRight className="w-4 h-4 group-hover:translate-x-1 transition-transform" />
-          </Link>
-          <Link
-            to="/contact"
-            className="group inline-flex items-center gap-2 border border-border text-foreground hover:border-primary hover:text-primary px-8 py-4 rounded-full tracking-widest uppercase text-xs transition-all duration-300"
-            data-testid="cta-ask-question"
-          >
+          </CtaLink>
+          <CtaLink to="/contact" variant="outline" data-testid="cta-ask-question">
             Ask a Question
-          </Link>
+          </CtaLink>
         </div>
       </div>
     </PageShell>
