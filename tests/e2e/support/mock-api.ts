@@ -20,6 +20,7 @@ export interface OrderStatusPayload {
   stages: string[];
   measurementsLocked: boolean;
   estimatedCompletion?: string;
+  milestones?: { stage: string; targetDate: string }[];
 }
 
 /**

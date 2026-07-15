@@ -9,6 +9,12 @@ export interface HealthStatus {
   status: string;
 }
 
+export type OrderStatusMilestonesItem = {
+  stage: string;
+  /** ISO date (yyyy-mm-dd). A pass-through string (no format: date), same as estimatedCompletion. */
+  targetDate: string;
+};
+
 export interface OrderStatus {
   orderNumber: string;
   orderName: string;
@@ -22,6 +28,8 @@ export interface OrderStatus {
   measurementsLocked: boolean;
   /** The atelier's target completion date for this custom order (the order's Due Date), as an ISO date (yyyy-mm-dd). A response pass-through, kept as a string (no format: date) so it isn't coerced to a Date and reserialized to a UTC timestamp. Absent until the atelier sets one in Notion. */
   estimatedCompletion?: string;
+  /** Per-stage target completion dates from the Production Schedule, present once the order's milestones have been generated. One entry per remaining (current + upcoming) stage; completed stages have none. Order is not significant — match by stage name. */
+  milestones?: OrderStatusMilestonesItem[];
 }
 
 export interface OrderNotFound {

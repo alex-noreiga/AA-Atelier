@@ -27,6 +27,15 @@ export const PS_ORDER_RELATION_PROPERTY = "Order"; // relation -> orders (new)
  */
 export const PRODUCTION_SCHEDULE_INITIAL_STATUS = "Not Started";
 
+/** One stage's target completion date — the unit both the schedule writer
+ * (`computeMilestoneSchedule`) and the status-lookup reader
+ * (`listOrderMilestones`) exchange, so a read round-trips with the write. */
+export interface StageMilestone {
+  stage: string;
+  /** ISO `yyyy-mm-dd`. */
+  targetDate: string;
+}
+
 /** Everything needed to write one milestone row. */
 export interface MilestoneInput {
   /** Notion page id of the order in the Order Tracking Pipeline (the relation). */

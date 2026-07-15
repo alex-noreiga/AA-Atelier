@@ -12,6 +12,7 @@
 
 import type { z } from "zod";
 import type { CreateOrderBody } from "@workspace/api-zod";
+import type { StageMilestone } from "./production-schedule.blocks.js";
 
 export const ORDER_NAME_PROPERTY = "Order Name";
 export const ORDER_NUMBER_PROPERTY = "Order Number";
@@ -53,12 +54,18 @@ export interface OrderRecord {
   /** The order's Due Date (ISO yyyy-mm-dd), the atelier's target completion
    * date. Present once the atelier has set one in Notion. */
   estimatedCompletion?: string;
+  /** The order's Notion page id — an internal join key (used to look up related
+   * Production Schedule milestones). Not part of the API contract, so
+   * `GetOrderStatusResponse.parse` strips it from the response. */
+  pageId?: string;
 }
 
 /** The status-lookup response: the raw record plus the derived production-lock
- * flag the UI uses to hide the measurement-change affordance. */
+ * flag and the per-stage milestone dates the timeline renders. */
 export interface OrderStatusResult extends OrderRecord {
   measurementsLocked: boolean;
+  /** Per-stage target dates, once the atelier's milestones have been generated. */
+  milestones?: StageMilestone[];
 }
 
 interface NotionStatusOption {

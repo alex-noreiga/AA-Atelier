@@ -5,6 +5,7 @@ import {
   createOrder,
   findOrderByNumber,
 } from "../lib/notion/orders.repository.js";
+import { listOrderMilestones } from "../lib/notion/production-schedule.repository.js";
 import { upsertClientByEmail } from "../lib/notion/clients.repository.js";
 import type {
   CreateOrderInput,
@@ -52,7 +53,19 @@ export async function getOrderStatus(
     ? order.stages
     : [...order.stages, order.currentStage];
 
-  return { ...order, stages, measurementsLocked: locked };
+  // Best-effort per-stage target dates from the Production Schedule (keyed by the
+  // order's Notion page id). Returns [] when that DB is unconfigured or the query
+  // fails, so this never breaks the core lookup. pageId is dropped from the
+  // response — it's an internal join key, not part of the contract.
+  const { pageId, ...rest } = order;
+  const milestones = pageId ? await listOrderMilestones(pageId) : [];
+
+  return {
+    ...rest,
+    stages,
+    measurementsLocked: locked,
+    ...(milestones.length ? { milestones } : {}),
+  };
 }
 
 export async function submitOrder(

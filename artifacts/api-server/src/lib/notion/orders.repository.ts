@@ -141,6 +141,7 @@ export async function findOrderByNumber(
     orderName: extractOrderName(page),
     currentStage: extractCurrentStage(page),
     stages,
+    pageId: page.id,
     ...(depositAmount !== undefined ? { depositAmount } : {}),
     depositPaid: extractDepositPaid(page),
     ...(estimatedCompletion !== undefined ? { estimatedCompletion } : {}),

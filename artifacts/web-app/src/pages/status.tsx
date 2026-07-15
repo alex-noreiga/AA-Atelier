@@ -270,6 +270,11 @@ export default function Status() {
                 const isCompleted = index < currentIndex;
                 const isActive = index === currentIndex;
                 const isFuture = index > currentIndex;
+                // Per-stage target date from the Production Schedule, when the
+                // atelier has generated milestones (matched by stage name).
+                const targetDate = orderStatus.milestones?.find(
+                  (m) => m.stage === stage,
+                )?.targetDate;
 
                 return (
                   <div
@@ -306,6 +311,14 @@ export default function Status() {
                       >
                         {stage}
                       </h3>
+                      {targetDate && (
+                        <p
+                          className="text-muted-foreground/70 font-light text-xs uppercase tracking-widest mb-1"
+                          data-testid={`stage-target-${index}`}
+                        >
+                          Target · {formatDate(targetDate)}
+                        </p>
+                      )}
                       {isActive && (
                         <p className="text-muted-foreground font-light text-sm animate-in fade-in slide-in-from-left-2 duration-700 delay-300 fill-mode-both">
                           {getStageDescription(stage)}

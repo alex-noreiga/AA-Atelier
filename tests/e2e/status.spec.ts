@@ -10,6 +10,7 @@ test.describe("Order status lookup", () => {
       body: orderRecord({
         orderNumber: "ORD-ABC-1",
         estimatedCompletion: "2026-08-01",
+        milestones: [{ stage: "Delivery", targetDate: "2026-08-01" }],
       }),
     });
 
@@ -23,6 +24,10 @@ test.describe("Order status lookup", () => {
 
     // The atelier's target completion date is surfaced on the timeline.
     await expect(page.getByTestId("estimated-completion")).toContainText(
+      "August 1, 2026",
+    );
+    // A per-stage milestone date renders on its stage row.
+    await expect(page.getByTestId("stage-target-2")).toContainText(
       "August 1, 2026",
     );
     await expect(

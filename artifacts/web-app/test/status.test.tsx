@@ -185,6 +185,36 @@ describe("Status estimated completion", () => {
   });
 });
 
+describe("Status per-stage milestone dates", () => {
+  it("renders a target date under each stage that has one", async () => {
+    setHook({
+      data: orderRecord({
+        milestones: [
+          { stage: "Sewing/Construction", targetDate: "2026-08-01" },
+          { stage: "Delivery", targetDate: "2026-08-10" },
+        ],
+      }),
+    });
+    await submitLookup();
+
+    expect(
+      within(screen.getByTestId("row-stage-1")).getByTestId("stage-target-1"),
+    ).toHaveTextContent("August 1, 2026");
+    expect(
+      within(screen.getByTestId("row-stage-2")).getByTestId("stage-target-2"),
+    ).toHaveTextContent("August 10, 2026");
+    // A stage without a milestone shows no target line.
+    expect(screen.queryByTestId("stage-target-0")).not.toBeInTheDocument();
+  });
+
+  it("shows no target lines when milestones haven't been generated", async () => {
+    setHook({ data: orderRecord() });
+    await submitLookup();
+    expect(screen.queryByTestId("stage-target-0")).not.toBeInTheDocument();
+    expect(screen.queryByTestId("stage-target-1")).not.toBeInTheDocument();
+  });
+});
+
 describe("Status reset", () => {
   it("returns to the lookup form after 'Check another order'", async () => {
     setHook({
