@@ -293,6 +293,94 @@ export function measurementChangeConfirmationEmail(
   };
 }
 
+// ---------------------------------------------------------------------------
+// Appointments
+// ---------------------------------------------------------------------------
+
+/** The already-formatted details of a booked appointment, for email copy. */
+export interface AppointmentEmailDetails {
+  customerName: string;
+  email: string;
+  phone?: string;
+  typeName: string;
+  staff: string;
+  locationLabel: string;
+  /** Human, timezone-labelled start time, e.g. "Monday, July 20 at 10:00 AM EDT". */
+  when: string;
+  confirmationCode: string;
+  notes?: string;
+}
+
+/** Confirmation sent to the customer when they book an appointment. */
+export function appointmentConfirmationEmail(
+  details: AppointmentEmailDetails,
+): EmailMessage {
+  const firstName = details.customerName.trim().split(/\s+/)[0] || "there";
+
+  const html = layout(
+    "Your appointment is booked",
+    `<p>Hi ${firstName},</p>
+     <p>You're booked for a <strong>${details.typeName}</strong> with
+        <strong>${details.staff}</strong>.</p>
+     <p><strong>When:</strong> ${details.when}<br/>
+        <strong>Where:</strong> ${details.locationLabel}</p>
+     <p>Your confirmation code is <strong>${details.confirmationCode}</strong>.
+        If you need to change or cancel, just reply to this email and we'll take
+        care of it.</p>
+     <p>We look forward to seeing you.</p>`,
+  );
+
+  const text = [
+    `Hi ${firstName},`,
+    ``,
+    `You're booked for a ${details.typeName} with ${details.staff}.`,
+    ``,
+    `When: ${details.when}`,
+    `Where: ${details.locationLabel}`,
+    ``,
+    `Your confirmation code is ${details.confirmationCode}. If you need to change`,
+    `or cancel, just reply to this email and we'll take care of it.`,
+    ``,
+    `We look forward to seeing you.`,
+    ``,
+    `Thank you,`,
+    `The ${ATELIER_NAME} team`,
+  ].join("\n");
+
+  return {
+    to: details.email,
+    subject: `Your ${details.typeName} is booked (${details.confirmationCode})`,
+    html,
+    text,
+  };
+}
+
+/** Notify the atelier of a newly booked appointment. */
+export function appointmentNotificationEmail(
+  details: AppointmentEmailDetails,
+  to: string,
+): EmailMessage {
+  const fields: Field[] = [
+    ["Type", details.typeName],
+    ["Staff", details.staff],
+    ["When", details.when],
+    ["Location", details.locationLabel],
+    ["Name", details.customerName],
+    ["Email", details.email],
+    ...(details.phone ? [["Phone", details.phone] as Field] : []),
+    ["Confirmation", details.confirmationCode],
+    ...(details.notes ? [["Notes", details.notes] as Field] : []),
+  ];
+
+  return {
+    to,
+    replyTo: details.email,
+    subject: `New ${details.typeName} — ${details.customerName} (${details.when})`,
+    html: internalLayout("New appointment booked", renderRowsHtml(fields)),
+    text: renderRowsText(fields),
+  };
+}
+
 /** Notify the atelier of a new measurement-change request. */
 export function measurementChangeNotificationEmail(
   input: CreateMeasurementChangeInput,

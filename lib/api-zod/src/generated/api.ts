@@ -234,3 +234,76 @@ export const GetCheckoutSessionResponse = zod.object({
 })
 
 
+/**
+ * Returns the appointment types a customer can book — each with its duration, the staff who offer it, and the locations it's available in — plus the atelier's booking timezone. Drives the booking form's pickers.
+ * @summary List bookable appointment types
+ */
+export const GetAppointmentOptionsResponse = zod.object({
+  "timezone": zod.string().describe('IANA timezone the atelier\'s hours and slot times are expressed in, for the client to render slots and label the times.'),
+  "types": zod.array(zod.object({
+  "id": zod.string(),
+  "name": zod.string(),
+  "durationMinutes": zod.number().describe('How long the appointment runs, in minutes.'),
+  "description": zod.string().optional(),
+  "staff": zod.array(zod.string()).describe('The staff members who offer this appointment type.'),
+  "locations": zod.array(zod.enum(['in-person', 'virtual'])).describe('The locations this type is offered in.')
+}))
+})
+
+
+/**
+ * Returns the open start times for the given appointment type, location, and (optionally) staff member over a date window, computed from each staff member's Notion-managed weekly hours minus already-booked appointments. Slot times are UTC instants to be rendered in the returned timezone.
+ * @summary List open appointment slots
+ */
+export const getAppointmentAvailabilityQueryFromRegExp = new RegExp('^\\d{4}-\\d{2}-\\d{2}$');
+export const getAppointmentAvailabilityQueryDaysMax = 60;
+
+
+
+export const GetAppointmentAvailabilityQueryParams = zod.object({
+  "typeId": zod.coerce.string(),
+  "location": zod.enum(['in-person', 'virtual']),
+  "staff": zod.coerce.string().optional().describe('A specific staff member\'s name; omit for no preference.'),
+  "from": zod.coerce.string().regex(getAppointmentAvailabilityQueryFromRegExp).optional().describe('First day of the window as YYYY-MM-DD in the atelier timezone. Defaults to today.'),
+  "days": zod.coerce.number().min(1).max(getAppointmentAvailabilityQueryDaysMax).optional().describe('Number of days in the window. Defaults to 14.')
+})
+
+export const GetAppointmentAvailabilityResponse = zod.object({
+  "timezone": zod.string(),
+  "slots": zod.array(zod.object({
+  "start": zod.coerce.date(),
+  "end": zod.coerce.date(),
+  "staff": zod.string().describe('The staff member who would take this slot.')
+}))
+})
+
+
+/**
+ * Books an open slot for a customer. The server re-validates the type, location, and staff, re-checks that the slot is still free (all derived server-side, never trusting the client), writes the appointment to the Notion appointments database, and emails a confirmation. Fails if the slot is no longer available.
+ * @summary Book an appointment
+ */
+
+
+
+export const CreateAppointmentBody = zod.object({
+  "typeId": zod.string(),
+  "staff": zod.string().optional().describe('A specific staff member, or omitted for no preference.'),
+  "location": zod.enum(['in-person', 'virtual']),
+  "start": zod.coerce.date().describe('The chosen slot\'s start instant, as returned by the availability endpoint.'),
+  "fullName": zod.string().min(1),
+  "email": zod.string().email(),
+  "phone": zod.string().optional(),
+  "preferredContact": zod.enum(['email', 'phone', 'text']).optional(),
+  "notes": zod.string().optional()
+})
+
+export const CreateAppointmentResponse = zod.object({
+  "confirmationCode": zod.string(),
+  "type": zod.string().describe('The booked appointment type\'s display name.'),
+  "staff": zod.string(),
+  "location": zod.string(),
+  "start": zod.coerce.date(),
+  "end": zod.coerce.date()
+})
+
+

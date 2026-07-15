@@ -217,7 +217,115 @@ export interface CheckoutSessionStatus {
   amountTotal?: number;
 }
 
+export type AppointmentTypeLocationsItem = typeof AppointmentTypeLocationsItem[keyof typeof AppointmentTypeLocationsItem];
+
+
+export const AppointmentTypeLocationsItem = {
+  'in-person': 'in-person',
+  virtual: 'virtual',
+} as const;
+
+export interface AppointmentType {
+  id: string;
+  name: string;
+  /** How long the appointment runs, in minutes. */
+  durationMinutes: number;
+  description?: string;
+  /** The staff members who offer this appointment type. */
+  staff: string[];
+  /** The locations this type is offered in. */
+  locations: AppointmentTypeLocationsItem[];
+}
+
+export interface AppointmentOptions {
+  /** IANA timezone the atelier's hours and slot times are expressed in, for the client to render slots and label the times. */
+  timezone: string;
+  types: AppointmentType[];
+}
+
+export interface AvailabilitySlot {
+  start: string;
+  end: string;
+  /** The staff member who would take this slot. */
+  staff: string;
+}
+
+export interface AppointmentAvailability {
+  timezone: string;
+  slots: AvailabilitySlot[];
+}
+
+export type NewAppointmentRequestLocation = typeof NewAppointmentRequestLocation[keyof typeof NewAppointmentRequestLocation];
+
+
+export const NewAppointmentRequestLocation = {
+  'in-person': 'in-person',
+  virtual: 'virtual',
+} as const;
+
+export type NewAppointmentRequestPreferredContact = typeof NewAppointmentRequestPreferredContact[keyof typeof NewAppointmentRequestPreferredContact];
+
+
+export const NewAppointmentRequestPreferredContact = {
+  email: 'email',
+  phone: 'phone',
+  text: 'text',
+} as const;
+
+export interface NewAppointmentRequest {
+  typeId: string;
+  /** A specific staff member, or omitted for no preference. */
+  staff?: string;
+  location: NewAppointmentRequestLocation;
+  /** The chosen slot's start instant, as returned by the availability endpoint. */
+  start: string;
+  /** @minLength 1 */
+  fullName: string;
+  email: string;
+  phone?: string;
+  preferredContact?: NewAppointmentRequestPreferredContact;
+  notes?: string;
+}
+
+export interface NewAppointmentResponse {
+  confirmationCode: string;
+  /** The booked appointment type's display name. */
+  type: string;
+  staff: string;
+  location: string;
+  start: string;
+  end: string;
+}
+
 export interface ErrorEnvelope {
   error: string;
 }
+
+export type GetAppointmentAvailabilityParams = {
+typeId: string;
+location: GetAppointmentAvailabilityLocation;
+/**
+ * A specific staff member's name; omit for no preference.
+ */
+staff?: string;
+/**
+ * First day of the window as YYYY-MM-DD in the atelier timezone. Defaults to today.
+ * @pattern ^\d{4}-\d{2}-\d{2}$
+ */
+from?: string;
+/**
+ * Number of days in the window. Defaults to 14.
+ * @minimum 1
+ * @maximum 60
+ */
+days?: number;
+};
+
+export type GetAppointmentAvailabilityLocation = typeof GetAppointmentAvailabilityLocation[keyof typeof GetAppointmentAvailabilityLocation];
+
+
+export const GetAppointmentAvailabilityLocation = {
+  'in-person': 'in-person',
+  virtual: 'virtual',
+} as const;
 

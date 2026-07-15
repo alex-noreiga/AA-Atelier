@@ -6,13 +6,24 @@
  * OpenAPI spec version: 0.1.0
  */
 
+export * from './appointmentAvailability';
+export * from './appointmentOptions';
+export * from './appointmentType';
+export * from './appointmentTypeLocationsItem';
+export * from './availabilitySlot';
 export * from './checkoutItem';
 export * from './checkoutSessionResponse';
 export * from './checkoutSessionStatus';
 export * from './createCheckoutSessionRequest';
 export * from './depositSessionResponse';
 export * from './errorEnvelope';
+export * from './getAppointmentAvailabilityLocation';
+export * from './getAppointmentAvailabilityParams';
 export * from './healthStatus';
+export * from './newAppointmentRequest';
+export * from './newAppointmentRequestLocation';
+export * from './newAppointmentRequestPreferredContact';
+export * from './newAppointmentResponse';
 export * from './newContactRequest';
 export * from './newContactResponse';
 export * from './newMeasurementChangeRequest';

@@ -20,6 +20,8 @@ tags:
     description: Back-in-stock notification requests
   - name: checkout
     description: Stripe checkout for ready-to-ship shop items
+  - name: appointments
+    description: Customer appointment scheduling with atelier staff
 paths:
   /health:
     get:
@@ -332,6 +334,129 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/CheckoutSessionStatus"
+        "500":
+          description: Server error
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorEnvelope"
+  /appointments/options:
+    get:
+      operationId: getAppointmentOptions
+      tags: [appointments]
+      summary: List bookable appointment types
+      description: >-
+        Returns the appointment types a customer can book — each with its
+        duration, the staff who offer it, and the locations it's available in —
+        plus the atelier's booking timezone. Drives the booking form's pickers.
+      responses:
+        "200":
+          description: Booking options
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AppointmentOptions"
+        "500":
+          description: Server error
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorEnvelope"
+  /appointments/availability:
+    get:
+      operationId: getAppointmentAvailability
+      tags: [appointments]
+      summary: List open appointment slots
+      description: >-
+        Returns the open start times for the given appointment type, location,
+        and (optionally) staff member over a date window, computed from each
+        staff member's Notion-managed weekly hours minus already-booked
+        appointments. Slot times are UTC instants to be rendered in the returned
+        timezone.
+      parameters:
+        - name: typeId
+          in: query
+          required: true
+          schema:
+            type: string
+        - name: location
+          in: query
+          required: true
+          schema:
+            type: string
+            enum: [in-person, virtual]
+        - name: staff
+          in: query
+          required: false
+          description: A specific staff member's name; omit for no preference.
+          schema:
+            type: string
+        - name: from
+          in: query
+          required: false
+          description: >-
+            First day of the window as YYYY-MM-DD in the atelier timezone.
+            Defaults to today.
+          schema:
+            type: string
+            pattern: '^\d{4}-\d{2}-\d{2}$'
+        - name: days
+          in: query
+          required: false
+          description: Number of days in the window. Defaults to 14.
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 60
+      responses:
+        "200":
+          description: Available slots
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AppointmentAvailability"
+        "400":
+          description: Unknown or unavailable type/location/staff combination
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorEnvelope"
+        "500":
+          description: Server error
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorEnvelope"
+  /appointments:
+    post:
+      operationId: createAppointment
+      tags: [appointments]
+      summary: Book an appointment
+      description: >-
+        Books an open slot for a customer. The server re-validates the type,
+        location, and staff, re-checks that the slot is still free (all derived
+        server-side, never trusting the client), writes the appointment to the
+        Notion appointments database, and emails a confirmation. Fails if the
+        slot is no longer available.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/NewAppointmentRequest"
+      responses:
+        "201":
+          description: Appointment booked
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/NewAppointmentResponse"
+        "400":
+          description: Validation error or the slot is no longer available
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorEnvelope"
         "500":
           description: Server error
           content:
@@ -718,6 +843,139 @@ components:
         amountTotal:
           type: number
           description: Grand total in dollars (items + shipping + tax).
+    AppointmentType:
+      type: object
+      required:
+        - id
+        - name
+        - durationMinutes
+        - staff
+        - locations
+      properties:
+        id:
+          type: string
+        name:
+          type: string
+        durationMinutes:
+          type: integer
+          description: How long the appointment runs, in minutes.
+        description:
+          type: string
+        staff:
+          type: array
+          description: The staff members who offer this appointment type.
+          items:
+            type: string
+        locations:
+          type: array
+          description: The locations this type is offered in.
+          items:
+            type: string
+            enum: [in-person, virtual]
+    AppointmentOptions:
+      type: object
+      required:
+        - timezone
+        - types
+      properties:
+        timezone:
+          type: string
+          description: >-
+            IANA timezone the atelier's hours and slot times are expressed in,
+            for the client to render slots and label the times.
+        types:
+          type: array
+          items:
+            $ref: "#/components/schemas/AppointmentType"
+    AvailabilitySlot:
+      type: object
+      required:
+        - start
+        - end
+        - staff
+      properties:
+        start:
+          type: string
+          format: date-time
+        end:
+          type: string
+          format: date-time
+        staff:
+          type: string
+          description: The staff member who would take this slot.
+    AppointmentAvailability:
+      type: object
+      required:
+        - timezone
+        - slots
+      properties:
+        timezone:
+          type: string
+        slots:
+          type: array
+          items:
+            $ref: "#/components/schemas/AvailabilitySlot"
+    NewAppointmentRequest:
+      type: object
+      required:
+        - typeId
+        - location
+        - start
+        - fullName
+        - email
+      properties:
+        typeId:
+          type: string
+        staff:
+          type: string
+          description: A specific staff member, or omitted for no preference.
+        location:
+          type: string
+          enum: [in-person, virtual]
+        start:
+          type: string
+          format: date-time
+          description: >-
+            The chosen slot's start instant, as returned by the availability
+            endpoint.
+        fullName:
+          type: string
+          minLength: 1
+        email:
+          type: string
+          format: email
+        phone:
+          type: string
+        preferredContact:
+          type: string
+          enum: [email, phone, text]
+        notes:
+          type: string
+    NewAppointmentResponse:
+      type: object
+      required:
+        - confirmationCode
+        - type
+        - staff
+        - location
+        - start
+        - end
+      properties:
+        confirmationCode:
+          type: string
+        type:
+          type: string
+          description: The booked appointment type's display name.
+        staff:
+          type: string
+        location:
+          type: string
+        start:
+          type: string
+          format: date-time
+        end:
+          type: string
+          format: date-time
     ErrorEnvelope:
       type: object
       required: [error]

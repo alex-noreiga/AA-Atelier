@@ -92,6 +92,17 @@ Express app (artifacts/api-server)  ──►  Notion REST API (orders database)
   ├─ GET  /api/checkout/session/:id→ a session's status + itemized receipt
   │                                  (items, shipping, tax, total) for the
   │                                  success page
+  ├─ GET  /api/appointments/options→ the bookable appointment types (duration,
+  │                                  allowed staff + locations) + booking
+  │                                  timezone, for the booking form's pickers
+  ├─ GET  /api/appointments/availability
+  │                                → open slots for a type/location/(staff) over
+  │                                  a date window, computed from Notion-managed
+  │                                  weekly hours minus booked appointments
+  ├─ POST /api/appointments        → books an open slot (re-priced/re-checked
+  │                                  server-side), writes it to the Notion
+  │                                  "Appointments" database + emails a
+  │                                  confirmation
   └─ POST /api/webhooks/stripe     → Stripe → server webhook (raw body, signed).
                                      On checkout.session.completed, records the
                                      paid order in the Notion "Shop Orders"
@@ -99,8 +110,8 @@ Express app (artifacts/api-server)  ──►  Notion REST API (orders database)
 ```
 
 The customer-notification POST endpoints (`/api/orders`, `/api/contact`,
-`/api/notify`) each send a customer email via **Resend** as a
-**best-effort** side effect after the Notion write: the send is logged-and-swallowed
+`/api/notify`, `/api/appointments`) each send a customer email via **Resend** as
+a **best-effort** side effect after the Notion write: the send is logged-and-swallowed
 on failure and never changes the response status (see the Resend adapter in
 `artifacts/api-server/src/lib/resend/` and the notification-email note in
 `.agents/memory/vercel-migration.md`). This replaced the old Notion automations
@@ -108,22 +119,24 @@ that used to send these emails. Order **status-change** emails are intentionally
 _not_ handled here — stage changes happen inside Notion and there is no Notion→app
 trigger.
 
-Each of those three also sends an **internal atelier notification** to
+Each of those also sends an **internal atelier notification** to
 `ATELIER_INBOX_EMAIL` (with **Reply-To** set to the customer) — but only when that
 env var is set; unset means the notification is skipped and only the customer email
 goes out. So the atelier gets an email nudge on top of the Notion row. The
 customer-facing and atelier-facing builders live side by side in
 `lib/resend/emails.ts`.
 
-Emails are grouped into two **categories** (`lib/resend/config.ts`): **orders**
-(order + back-in-stock mail) and **contact** (contact-form mail). Each category
-resolves a **sender** and a **notification inbox** from env, with the contact
-overrides falling back to the base vars when unset (so unset ⇒ identical to a
-single-address setup): sender `RESEND_CONTACT_FROM_EMAIL` → `RESEND_FROM_EMAIL`,
-inbox `ATELIER_CONTACT_INBOX_EMAIL` → `ATELIER_INBOX_EMAIL`. The service resolves
-the pair via `fromAddress(category)`/`atelierInbox(category)` and spreads the `from`
-onto the message; the client uses a per-message `from` over its base. This lets,
-e.g., order mail send from `orders@` and contact mail from `hello@`.
+Emails are grouped into three **categories** (`lib/resend/config.ts`): **orders**
+(order + back-in-stock mail), **contact** (contact-form mail), and
+**appointments** (booking mail). Each category resolves a **sender** and a
+**notification inbox** from env, with the per-category overrides falling back to
+the base vars when unset (so unset ⇒ identical to a single-address setup): sender
+`RESEND_CONTACT_FROM_EMAIL` / `RESEND_APPOINTMENTS_FROM_EMAIL` → `RESEND_FROM_EMAIL`,
+inbox `ATELIER_CONTACT_INBOX_EMAIL` / `ATELIER_APPOINTMENTS_INBOX_EMAIL` →
+`ATELIER_INBOX_EMAIL`. The service resolves the pair via
+`fromAddress(category)`/`atelierInbox(category)` and spreads the `from` onto the
+message; the client uses a per-message `from` over its base. This lets, e.g.,
+order mail send from `orders@` and contact mail from `hello@`.
 
 - **Locally:** the Vite dev server proxies `/api` to the Express server on
   `localhost:3000` (see `artifacts/order-status/vite.config.ts`).
@@ -282,6 +295,59 @@ idempotently), everything else is a shop-cart order. The atelier must add
 (rich_text) to the orders database — property names live in `schema.ts`. Code:
 `services/deposit.service.ts`, `lib/notion/orders.repository.ts`
 (`findDepositTarget`/`markDepositPaid`), and the status page's `DepositSection`.
+
+## Appointment scheduling (real-time slot booking)
+
+Customers book appointments (consultations, fittings, design reviews, general)
+with a staff member from `pages/appointments.tsx` — a four-step flow (purpose →
+format → time → details) that goes through the generated client
+(`useGetAppointmentOptions`, `useGetAppointmentAvailability`,
+`useCreateAppointment`). There is **no external calendar** (Google/Cal.com);
+availability is computed in-app. Code lives in
+`api-server/src/lib/appointments/*` (pure logic), `lib/notion/availability.*` +
+`lib/notion/appointments.*` (Notion I/O), `services/appointments.service.ts`, and
+`routes/appointments.ts`. Load-bearing decisions:
+
+1. **The type catalog is a targeted business rule in code, not a Notion list.**
+   `lib/appointments/catalog.ts` names the four types, their durations, and their
+   routing rules (Alayna takes consultations + design reviews; Alexandra takes
+   everything; fittings are in-person only). Like `STATUS_IN_STOCK` /
+   `SIZED_CATEGORIES`, these are values coupled to code (duration drives slot
+   math; staff/locations drive UI + validation) — **not** a free-floating option
+   list. Retune a duration or rename a staff member here; the atelier's actual
+   *schedule* is what's live-editable (see below). The staff names here must
+   match the "Staff" select option values in the two Notion databases.
+
+2. **Availability is Notion-managed weekly hours, computed server-side.** The
+   atelier maintains a **"Staff Availability"** Notion database: rows are either
+   `Kind = "Weekly hours"` (Staff, Day, Start time, End time, Locations) or
+   `Kind = "Time off"` (Staff, Date range), and only `Active` rows are read
+   (`availability.repository.ts`, 60s TTL cache + fallback, like products).
+   `computeSlots` (`lib/appointments/availability.ts`, pure + heavily unit-tested)
+   subtracts booked appointments and time-off from each staff member's weekly
+   grid to produce open start times. All wall-clock hours/slots are interpreted
+   in `APPOINTMENT_TIMEZONE` (DST-correct via `lib/appointments/time.ts`, built on
+   `Intl` — no date library); bookings are stored/compared as UTC instants.
+
+3. **Never trust a client-sent slot.** `POST /appointments` re-derives the type
+   from the catalog and re-runs the *same* `computeSlots` for the requested day
+   before writing; a `start` that isn't currently an open slot (stale, taken, off
+   the grid, or inside the lead-time window) is a `BadRequestError` (→ 400). The
+   availability endpoint and the booking re-check share one function, so they
+   can't disagree. Bookings are read **fresh** (no cache) for this reason.
+
+4. **Booking is free (no payment) and slots aren't held.** v1 has no Stripe step
+   and no pending-hold: two simultaneous bookings for the same slot is a small,
+   accepted race for a low-volume atelier. Booking policy is env-tuned:
+   `APPOINTMENT_TIMEZONE`, `APPOINTMENT_MIN_LEAD_HOURS` (default 24),
+   `APPOINTMENT_MAX_ADVANCE_DAYS` (45), `APPOINTMENT_SLOT_STEP_MINUTES` (15) —
+   all read at call time in `lib/appointments/settings.ts`.
+
+5. **Two new Notion databases, shared with the integration.** "Staff
+   Availability" (properties in `availability.schema.ts`) and "Appointments" (the
+   booked rows the server writes; properties in `appointments.blocks.ts`, default
+   `Status = "Booked"`). Property names live in those files — a Notion rename is a
+   one-line change there.
 
 ## Development workflow
 
@@ -477,9 +543,13 @@ and in the maintainer's env without edits.
   `NOTION_CONTACT_DATABASE_ID` (the "Website Contact Messages" database that the
   `/contact` form **and** the shop's `/notify` dialog both write to),
   `NOTION_INVENTORY_DATABASE_ID` (the finished-goods "inventory" database the
-  shop's `/products` endpoint reads), and `NOTION_SHOP_ORDERS_DATABASE_ID` (the
-  "Shop Orders" database the checkout webhook writes paid orders to). The Notion
-  integration must be shared with each database or queries 404. Checkout also
+  shop's `/products` endpoint reads), `NOTION_SHOP_ORDERS_DATABASE_ID` (the
+  "Shop Orders" database the checkout webhook writes paid orders to), and — for
+  appointment scheduling — `NOTION_AVAILABILITY_DATABASE_ID` (the "Staff
+  Availability" database of weekly hours + time off) and
+  `NOTION_APPOINTMENTS_DATABASE_ID` (the "Appointments" database the booking
+  endpoint writes to). The Notion integration must be shared with each database
+  or queries 404. Checkout also
   needs `STRIPE_SECRET_KEY`, `STRIPE_WEBHOOK_SECRET` (the signing secret of the
   Stripe webhook endpoint), and `PUBLIC_BASE_URL` (the site origin Stripe
   redirects back to after payment). Optionally, `STRIPE_SHIPPING_RATE_IDS` — a
@@ -495,7 +565,12 @@ and in the maintainer's env without edits.
   `ATELIER_CONTACT_INBOX_EMAIL` (e.g. `hello@yourdomain`) to send/receive
   contact-form mail from a separate address; each falls back to the base
   `RESEND_FROM_EMAIL` / `ATELIER_INBOX_EMAIL` when unset (same verified domain, no
-  extra Resend setup).
+  extra Resend setup). Appointment mail has the same optional overrides
+  (`RESEND_APPOINTMENTS_FROM_EMAIL` / `ATELIER_APPOINTMENTS_INBOX_EMAIL`).
+- **Optional appointment-booking policy env vars:** `APPOINTMENT_TIMEZONE`
+  (IANA zone for working hours/slots, default `America/New_York`),
+  `APPOINTMENT_MIN_LEAD_HOURS` (24), `APPOINTMENT_MAX_ADVANCE_DAYS` (45), and
+  `APPOINTMENT_SLOT_STEP_MINUTES` (15). All have defaults.
 
 ## Quick reference — where things live
 
@@ -514,6 +589,9 @@ and in the maintainer's env without edits.
 | Change the back-in-stock notify dialog  | `artifacts/order-status/src/components/notify-dialog.tsx` + `services/notify.service.ts` + `lib/notion/notify.*` (writes to the **contact** database — see below)                                                                                                             |
 | Change shop checkout / payments         | `artifacts/order-status/src/lib/cart.tsx` + `components/cart-drawer.tsx` + `components/add-to-cart.tsx` (frontend); `api-server/src/services/checkout.service.ts` + `routes/checkout.ts` + `routes/stripe-webhook.ts` + `lib/stripe/*` + `lib/notion/shop-orders.*` (backend) |
 | Change custom-order deposits            | `artifacts/order-status/src/pages/status.tsx` (`DepositSection`); `api-server/src/services/deposit.service.ts` + `routes/orders.ts` + `lib/notion/orders.repository.ts` (`findDepositTarget`/`markDepositPaid`) + `routes/stripe-webhook.ts`                                  |
+| Change appointment booking (UI)         | `artifacts/order-status/src/pages/appointments.tsx`                                                                                                                                                                                                                           |
+| Change appointment types / routing rules| `api-server/src/lib/appointments/catalog.ts` (targeted business rule — durations, which staff, which locations)                                                                                                                                                               |
+| Change appointment slot logic / policy  | `api-server/src/lib/appointments/availability.ts` (`computeSlots`) + `time.ts` + `settings.ts`; `services/appointments.service.ts` + `routes/appointments.ts` + `lib/notion/availability.*` + `lib/notion/appointments.*`                                                     |
 | Add a page / route                      | new `src/pages/*.tsx` + `<Route>` in `src/App.tsx`                                                                                                                                                                                                                            |
 | Add or rename a nav link                | `NAV_LINKS` in `artifacts/order-status/src/components/navbar.tsx`                                                                                                                                                                                                             |
 | Add a shared UI component               | `artifacts/order-status/src/components/ui/`                                                                                                                                                                                                                                   |

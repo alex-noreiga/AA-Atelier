@@ -44,6 +44,8 @@ let defaultClient: NotionClient | null = null;
 let contactClient: NotionClient | null = null;
 let inventoryClient: NotionClient | null = null;
 let shopOrdersClient: NotionClient | null = null;
+let availabilityClient: NotionClient | null = null;
+let appointmentsClient: NotionClient | null = null;
 
 /**
  * Lazily-constructed client reading credentials from the environment. Deferring
@@ -101,4 +103,33 @@ export function getShopOrdersNotionClient(): NotionClient {
     });
   }
   return shopOrdersClient;
+}
+
+/**
+ * Client for the "Staff Availability" database (each staff member's weekly
+ * working hours and time-off). Same lazy construction, reads
+ * `NOTION_AVAILABILITY_DATABASE_ID`.
+ */
+export function getAvailabilityNotionClient(): NotionClient {
+  if (!availabilityClient) {
+    availabilityClient = createNotionClient({
+      apiKey: process.env.NOTION_API_KEY ?? "",
+      databaseId: process.env.NOTION_AVAILABILITY_DATABASE_ID ?? "",
+    });
+  }
+  return availabilityClient;
+}
+
+/**
+ * Client for the "Appointments" database that records booked appointments. Same
+ * lazy construction, reads `NOTION_APPOINTMENTS_DATABASE_ID`.
+ */
+export function getAppointmentsNotionClient(): NotionClient {
+  if (!appointmentsClient) {
+    appointmentsClient = createNotionClient({
+      apiKey: process.env.NOTION_API_KEY ?? "",
+      databaseId: process.env.NOTION_APPOINTMENTS_DATABASE_ID ?? "",
+    });
+  }
+  return appointmentsClient;
 }
