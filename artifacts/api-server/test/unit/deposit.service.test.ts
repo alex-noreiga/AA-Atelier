@@ -55,6 +55,8 @@ describe("createDepositCheckout", () => {
       orderNumber: "ORD-1",
       orderPageId: "page-42",
     });
+    // Deposits are intentionally untaxed — tax is assessed on the final balance.
+    expect(params.automatic_tax).toBeUndefined();
   });
 
   it("404s when the order doesn't exist", async () => {

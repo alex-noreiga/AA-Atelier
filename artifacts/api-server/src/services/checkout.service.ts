@@ -77,6 +77,8 @@ function toLineItem(
     price_data: {
       currency: CURRENCY,
       unit_amount: Math.round(variant.price * 100),
+      // Listed prices are pre-tax; Stripe Tax adds tax on top ("exclusive").
+      tax_behavior: "exclusive",
       product_data: { name },
     },
   };
@@ -99,6 +101,11 @@ export async function createCheckoutSession(
   const session = await stripe.checkout.sessions.create({
     mode: "payment",
     line_items: lineItems,
+    // Stripe Tax computes sales tax from the collected address (configure the
+    // origin + default tax category in the Stripe Dashboard). Deposits stay
+    // untaxed — tax is assessed on the final balance, not the deposit — so this
+    // is deliberately only on the shop cart, not deposit.service.
+    automatic_tax: { enabled: true },
     shipping_address_collection: { allowed_countries: SHIPPING_COUNTRIES },
     // Attach the atelier's Stripe-managed shipping rate(s) for the customer to
     // pick from; omit the field entirely when none are configured (Stripe

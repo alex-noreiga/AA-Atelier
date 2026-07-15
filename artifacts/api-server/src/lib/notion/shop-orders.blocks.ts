@@ -11,16 +11,21 @@
 import type Stripe from "stripe";
 
 // Live-schema property names (a Notion rename is a one-line change here).
-export const SHOP_ORDER_TITLE_PROPERTY = "Order"; // title
+export const SHOP_ORDER_TITLE_PROPERTY = "Order Name"; // title
 export const SHOP_ORDER_SESSION_PROPERTY = "Stripe Session Id"; // rich_text
 export const SHOP_ORDER_EMAIL_PROPERTY = "Customer Email"; // email
 export const SHOP_ORDER_NAME_PROPERTY = "Customer Name"; // rich_text
 export const SHOP_ORDER_TOTAL_PROPERTY = "Total"; // number
-export const SHOP_ORDER_STATUS_PROPERTY = "Status"; // select
+export const SHOP_ORDER_STATUS_PROPERTY = "Status"; // status (workflow)
 export const SHOP_ORDER_SHIPPING_PROPERTY = "Shipping Address"; // rich_text
 
-/** The "Status" value a freshly-paid order lands in. */
-export const SHOP_ORDER_PAID_STATUS = "Paid";
+/**
+ * The "Status" option a freshly-paid order lands in. Must be one of the live
+ * options on the Shop Orders "Status" property (a status-type workflow:
+ * New / Payment Confirmed / Processing / …). "Payment Confirmed" is where the
+ * Stripe payment lands the order; the atelier advances it from there.
+ */
+export const SHOP_ORDER_PAID_STATUS = "Payment Confirmed";
 
 /** Stripe amounts are integer minor units (cents); Notion "Total" is dollars. */
 function toDollars(amountInCents: number | null | undefined): number {
@@ -96,7 +101,7 @@ export function buildShopOrderProperties(
       number: toDollars(session.amount_total),
     },
     [SHOP_ORDER_STATUS_PROPERTY]: {
-      select: { name: SHOP_ORDER_PAID_STATUS },
+      status: { name: SHOP_ORDER_PAID_STATUS },
     },
   };
 
@@ -138,11 +143,15 @@ export function buildShopOrderPageBlocks(
     return bulletBlock(`${quantity} × ${description} — ${amount}`);
   });
 
-  // Shipping is separate from line items in Stripe, but it's part of the Total —
-  // surface it so the bullets and the Total property reconcile.
+  // Shipping and tax are separate from line items in Stripe, but they're part of
+  // the Total — surface them so the bullets and the Total property reconcile.
   const shipping = session.total_details?.amount_shipping ?? 0;
   if (shipping > 0) {
     bullets.push(bulletBlock(`Shipping — ${formatMoney(shipping)}`));
+  }
+  const tax = session.total_details?.amount_tax ?? 0;
+  if (tax > 0) {
+    bullets.push(bulletBlock(`Tax — ${formatMoney(tax)}`));
   }
 
   return [heading, ...bullets];
