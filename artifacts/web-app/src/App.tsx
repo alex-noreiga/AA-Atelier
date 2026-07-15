@@ -27,6 +27,9 @@ function Router() {
       <Route path="/shop" component={Shop} />
       <Route path="/shop/success" component={ShopSuccess} />
       <Route path="/shop/status" component={Status} />
+      {/* Must follow the literal /shop/* routes: Switch takes the first match,
+          so a param route above them would shadow /shop/success and /shop/status. */}
+      <Route path="/shop/:productId" component={Shop} />
       <Route path="/invoice/:orderNumber" component={InvoicePage} />
       <Route path="/order" component={OrderForm} />
       <Route path="/appointments" component={Appointments} />

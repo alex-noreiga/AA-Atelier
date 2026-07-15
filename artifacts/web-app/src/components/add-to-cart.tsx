@@ -48,6 +48,9 @@ export function AddToCartButton({
       ...(size ? { size } : {}),
       price: variant.price,
       ...(variant.photos[0] ? { photo: variant.photos[0] } : {}),
+      ...(typeof variant.quantityAvailable === "number"
+        ? { quantityAvailable: variant.quantityAvailable }
+        : {}),
     });
     toast({
       title: "Added to cart",

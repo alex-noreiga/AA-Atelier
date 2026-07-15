@@ -14,6 +14,14 @@ import {
   createShopOrder,
   findOrderBySessionId,
 } from "../lib/notion/shop-orders.repository.js";
+import { formatShippingAddress } from "../lib/notion/shop-orders.blocks.js";
+import {
+  shopOrderConfirmationEmail,
+  shopOrderNotificationEmail,
+  type ShopOrderEmailDetails,
+} from "../lib/resend/emails.js";
+import { sendEmailBestEffort } from "../lib/resend/send.js";
+import { fromAddress, atelierInbox } from "../lib/resend/config.js";
 import { getStripeClient } from "../lib/stripe/client.js";
 import { siteBaseUrl } from "../lib/site.js";
 import { BadRequestError } from "../lib/errors.js";
@@ -132,6 +140,23 @@ function toLineItem(
     }
   }
 
+  // Cap the requested quantity at the live stock count. Inventory is manual and
+  // never decrements (see CLAUDE.md), so this is the only guard against a stale
+  // or tampered cart over-ordering a limited item. A null/undefined count is an
+  // uncapped one-off — mirrors computeVariantAvailability treating null as
+  // available. A zero count is already rejected above by the `available` check.
+  if (
+    typeof variant.quantityAvailable === "number" &&
+    item.quantity > variant.quantityAvailable
+  ) {
+    const n = variant.quantityAvailable;
+    throw new BadRequestError(
+      n > 0
+        ? `Only ${n} of "${variant.name}" ${n === 1 ? "is" : "are"} left.`
+        : `"${variant.name}" is sold out.`,
+    );
+  }
+
   const name = item.size ? `${variant.name} — ${item.size}` : variant.name;
 
   return {
@@ -168,6 +193,10 @@ export async function createCheckoutSession(
     // untaxed — tax is assessed on the final balance, not the deposit — so this
     // is deliberately only on the shop cart, not deposit.service.
     automatic_tax: { enabled: true },
+    // Let the atelier run sales/comps: Stripe renders a promo-code box on the
+    // hosted page and applies codes created in the Stripe Dashboard. No code or
+    // contract change is needed to add or retire a code.
+    allow_promotion_codes: true,
     shipping_address_collection: { allowed_countries: SHIPPING_COUNTRIES },
     // Attach the atelier's Stripe-managed shipping rate(s) for the customer to
     // pick from; omit the field entirely when none resolve (Stripe rejects an
@@ -239,6 +268,49 @@ export async function getCheckoutSession(
 }
 
 /**
+ * Send the customer (and, when configured, the atelier) a branded confirmation
+ * email for a paid shop order. Best-effort: every send swallows its own errors
+ * (`sendEmailBestEffort`) so a mail failure never bubbles into the webhook — a
+ * throw there would 500 the webhook and make Stripe retry, risking a duplicate.
+ * Skipped when Stripe collected no customer email.
+ */
+async function sendShopOrderConfirmation(
+  session: Stripe.Checkout.Session,
+): Promise<void> {
+  const email = session.customer_details?.email;
+  if (!email) return;
+
+  const shippingAddress = formatShippingAddress(session);
+  const details: ShopOrderEmailDetails = {
+    email,
+    ...(session.customer_details?.name
+      ? { customerName: session.customer_details.name }
+      : {}),
+    lineItems: (session.line_items?.data ?? []).map((item) => ({
+      description: item.description ?? "Item",
+      quantity: item.quantity ?? 1,
+      amount: toDollars(item.amount_total),
+    })),
+    subtotal: toDollars(session.amount_subtotal),
+    shipping: toDollars(session.total_details?.amount_shipping),
+    tax: toDollars(session.total_details?.amount_tax),
+    total: toDollars(session.amount_total),
+    ...(shippingAddress ? { shippingAddress } : {}),
+  };
+
+  const from = fromAddress("orders");
+  await sendEmailBestEffort({ ...shopOrderConfirmationEmail(details), from });
+
+  const inbox = atelierInbox("orders");
+  if (inbox) {
+    await sendEmailBestEffort({
+      ...shopOrderNotificationEmail(details, inbox),
+      from,
+    });
+  }
+}
+
+/**
  * Record a completed checkout as a Notion "Shop Orders" page. Called from the
  * Stripe webhook. Idempotent (dedupes on the session id) so Stripe's at-least-
  * once delivery / retries can't create duplicate orders. Only paid sessions are
@@ -262,4 +334,9 @@ export async function recordPaidOrder(
   }
 
   await createShopOrder(full);
+
+  // Confirmation email after the source-of-truth Notion write, and below the
+  // idempotency dedupe above so a retried-but-already-recorded event won't
+  // re-send. Best-effort — see sendShopOrderConfirmation.
+  await sendShopOrderConfirmation(full);
 }

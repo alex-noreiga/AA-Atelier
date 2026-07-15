@@ -14,9 +14,32 @@ import {
   backInStockNotificationEmail,
   measurementChangeConfirmationEmail,
   measurementChangeNotificationEmail,
+  shopOrderConfirmationEmail,
+  shopOrderNotificationEmail,
+  type ShopOrderEmailDetails,
 } from "../../src/lib/resend/emails.js";
 
 const INBOX = "orders@a3iceanddance.com";
+
+// Shop orders have no CreateXInput domain type; the caller pre-formats the paid
+// Stripe session into this struct (dollars), so the fixture is built inline.
+function shopOrderDetails(
+  overrides: Partial<ShopOrderEmailDetails> = {},
+): ShopOrderEmailDetails {
+  return {
+    email: "buyer@example.com",
+    customerName: "Ada Lovelace",
+    lineItems: [
+      { description: "Bow Fleece Soaker — Black", quantity: 2, amount: 44 },
+    ],
+    subtotal: 44,
+    shipping: 8,
+    tax: 1.08,
+    total: 53.08,
+    shippingAddress: "123 Rink Rd, Austin TX 78701, US",
+    ...overrides,
+  };
+}
 
 describe("orderConfirmationEmail", () => {
   it("addresses the customer and carries the order number", () => {
@@ -181,5 +204,73 @@ describe("measurementChangeNotificationEmail", () => {
 
     expect(email.text).toContain("Re-measurement at a fitting/consultation");
     expect(email.text).not.toContain("waist");
+  });
+});
+
+describe("shopOrderConfirmationEmail", () => {
+  it("addresses the customer by first name and itemizes the receipt", () => {
+    const email = shopOrderConfirmationEmail(shopOrderDetails());
+
+    expect(email.to).toBe("buyer@example.com");
+    expect(email.subject).toMatch(/order is confirmed/i);
+    expect(email.html).toContain("Hi Ada");
+    expect(email.html).toContain("2 × Bow Fleece Soaker — Black");
+    // Totals reconcile: line total, shipping, tax, and grand total all appear.
+    expect(email.html).toContain("$44.00");
+    expect(email.html).toContain("$8.00");
+    expect(email.html).toContain("$1.08");
+    expect(email.html).toContain("$53.08");
+    expect(email.html).toContain("123 Rink Rd");
+    expect(email.text).toContain("2 × Bow Fleece Soaker — Black — $44.00");
+    expect(email.text).toContain("Total: $53.08");
+  });
+
+  it("omits shipping and tax lines when they are zero", () => {
+    const { shippingAddress: _addr, ...rest } = shopOrderDetails();
+    const email = shopOrderConfirmationEmail({
+      ...rest,
+      shipping: 0,
+      tax: 0,
+      total: 44,
+    });
+
+    expect(email.html).not.toContain("Shipping");
+    expect(email.html).not.toContain("Tax");
+    expect(email.text).not.toContain("Shipping:");
+    expect(email.text).not.toContain("Tax:");
+    expect(email.html).toContain("$44.00");
+  });
+
+  it("falls back to a neutral greeting when no name is provided", () => {
+    const { customerName: _name, ...rest } = shopOrderDetails();
+    const email = shopOrderConfirmationEmail(rest);
+
+    expect(email.html).toContain("Hi there");
+  });
+
+  it("escapes HTML in a line-item description", () => {
+    const email = shopOrderConfirmationEmail(
+      shopOrderDetails({
+        lineItems: [
+          { description: "<script>alert(1)</script>", quantity: 1, amount: 10 },
+        ],
+      }),
+    );
+
+    expect(email.html).not.toContain("<script>");
+    expect(email.html).toContain("&lt;script&gt;");
+  });
+});
+
+describe("shopOrderNotificationEmail", () => {
+  it("goes to the atelier inbox, replies to the customer, and lists items + total", () => {
+    const email = shopOrderNotificationEmail(shopOrderDetails(), INBOX);
+
+    expect(email.to).toBe(INBOX);
+    expect(email.replyTo).toBe("buyer@example.com");
+    expect(email.subject).toContain("Ada Lovelace");
+    expect(email.subject).toContain("$53.08");
+    expect(email.text).toContain("Bow Fleece Soaker — Black");
+    expect(email.text).toContain("Total: $53.08");
   });
 });
