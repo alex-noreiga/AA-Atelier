@@ -8,7 +8,7 @@ import {
   orderPage,
   type FakeNotionClient,
 } from "../support/fake-notion.js";
-import type { CreateOrderInput } from "../../src/lib/notion/schema.js";
+import type { CreateOrderInput } from "../../src/lib/notion/orders.schema.js";
 
 // The repository keeps a module-level TTL cache for the live stage list, so each
 // test imports a fresh copy of the module to start from a clean cache.

@@ -5,7 +5,7 @@ description: Key decisions made when migrating this project from Replit deployme
 
 ## Architecture
 
-- Frontend (`artifacts/order-status`): Vite static build → `artifacts/order-status/dist/public`
+- Frontend (`artifacts/web-app`): Vite static build → `artifacts/web-app/dist/public`
 - API (`artifacts/api-server`): Express app wrapped in `api/index.ts` at the repo root, deployed as a Vercel serverless function
 - Routing: `vercel.json` rewrites `/api/:path*` → `/api/index`
 - Build command: `pnpm run build:vercel` (builds only the frontend; Vercel bundles the serverless function itself)
@@ -14,7 +14,7 @@ description: Key decisions made when migrating this project from Replit deployme
 
 **Why:** Replit provided Notion credentials through `@replit/connectors-sdk` (a sidecar proxy at `http://127.0.0.1:1106`). This sidecar doesn't exist outside Replit.
 
-**How to apply:** On Vercel (and any non-Replit environment), set `NOTION_API_KEY` as an environment variable. The `notionFetch()` helper in `artifacts/api-server/src/lib/notion.ts` reads it directly.
+**How to apply:** On Vercel (and any non-Replit environment), set `NOTION_API_KEY` as an environment variable. `createNotionClient` in `artifacts/api-server/src/lib/notion/client.ts` reads it directly (at first use, not module load).
 
 ## Image upload removed
 
@@ -47,6 +47,9 @@ owns them so the atelier can use its own domain, branding, and the site's voice.
 - **Contact acknowledgement** — on `POST /contact`
 - **Back-in-stock request confirmation** — on `POST /notify` (the "we'll tell you
   when it's back" receipt, **not** the restock alert)
+- **Measurement-change confirmation** — on `POST /orders/:n/measurement-change-requests`
+- **Appointment confirmation** — on `POST /appointments` (see the appointment-
+  scheduling section in `CLAUDE.md`; scheduling runs on Google Calendar, not Notion)
 
 Each is a **best-effort** side effect fired after the Notion write via
 `sendEmailBestEffort`: a Resend failure is logged and swallowed and never changes
@@ -64,12 +67,14 @@ them in Notion or set `ATELIER_INBOX_EMAIL`. The atelier-facing builders live
 alongside the customer ones in `lib/resend/emails.ts` and HTML-escape free-text
 customer fields.
 
-**Per-function sender addresses.** Emails are grouped into two categories in
-`lib/resend/config.ts` — **orders** (order + back-in-stock) and **contact** — each
-resolving a sender (`fromAddress`) and notification inbox (`atelierInbox`) from env.
-The contact overrides (`RESEND_CONTACT_FROM_EMAIL` / `ATELIER_CONTACT_INBOX_EMAIL`)
-fall back to the base `RESEND_FROM_EMAIL` / `ATELIER_INBOX_EMAIL`, so unset ⇒ the
-old single-address behavior. Builders stay content-only; the service spreads the
+**Per-function sender addresses.** Emails are grouped into three categories in
+`lib/resend/config.ts` — **orders** (order + back-in-stock), **contact**, and
+**appointments** — each resolving a sender (`fromAddress`) and notification inbox
+(`atelierInbox`) from env. The per-category overrides
+(`RESEND_CONTACT_FROM_EMAIL` / `ATELIER_CONTACT_INBOX_EMAIL`,
+`RESEND_APPOINTMENTS_FROM_EMAIL` / `ATELIER_APPOINTMENTS_INBOX_EMAIL`) fall back to
+the base `RESEND_FROM_EMAIL` / `ATELIER_INBOX_EMAIL`, so unset ⇒ the old
+single-address behavior. Builders stay content-only; the service spreads the
 category `from` onto the message and the client honors a per-message `from` over its
 base. Adding a second sender needs no new Resend/DNS setup (same verified domain) —
 only a mailbox/alias to _receive_ at the new address.

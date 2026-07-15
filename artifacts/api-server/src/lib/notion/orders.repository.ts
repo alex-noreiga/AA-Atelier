@@ -6,7 +6,7 @@
 // rather than failing the request.
 
 import { getNotionClient, type NotionClient } from "./client.js";
-import { buildOrderProperties, buildOrderPageBlocks } from "./blocks.js";
+import { buildOrderProperties, buildOrderPageBlocks } from "./orders.blocks.js";
 import {
   ORDER_NUMBER_PROPERTY,
   ORDER_DEPOSIT_PAID_PROPERTY,
@@ -25,7 +25,7 @@ import {
   type NotionDatabaseSchema,
   type NotionQueryResponse,
   type OrderRecord,
-} from "./schema.js";
+} from "./orders.schema.js";
 
 const STAGE_CACHE_TTL_MS = 60_000;
 let cachedStages: { stages: string[]; fetchedAt: number } | null = null;
