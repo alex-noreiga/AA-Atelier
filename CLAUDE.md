@@ -572,14 +572,6 @@ and in the maintainer's env without edits.
   `NOTION_INVENTORY_DATABASE_ID` (the finished-goods "inventory" database the
   shop's `/products` endpoint reads), and `NOTION_SHOP_ORDERS_DATABASE_ID` (the
   "Shop Orders" database the checkout webhook writes paid orders to). The Notion
-<<<<<<< HEAD
-  integration must be shared with each database or queries 404. **Appointment
-  scheduling** instead uses Google: `GOOGLE_SERVICE_ACCOUNT_KEY` (the full
-  service-account JSON key, with domain-wide delegation authorized for the
-  Calendar scope) and `APPOINTMENT_SHEET_ID` (the working-hours Google Sheet,
-  shared with the service-account email; optional `APPOINTMENT_SHEET_RANGE`,
-  default `A2:F`). Enable both the Calendar and Sheets APIs. Checkout also
-=======
   integration must be shared with each database or queries 404. Optionally
   `NOTION_CLIENT_CRM_DATABASE_ID` (the "Client CRM" database): when set, a new
   custom order **best-effort** upserts a client record there (deduped by email)
@@ -587,8 +579,11 @@ and in the maintainer's env without edits.
   skipped and orders are unchanged. Code:
   `artifacts/api-server/src/lib/notion/clients.repository.ts` (`upsertClientByEmail`),
   wired from `orders.service.ts`; the order's `Client` relation is written by
-  `blocks.ts`. Checkout also
->>>>>>> origin/dev
+  `blocks.ts`. **Appointment scheduling** instead uses Google: `GOOGLE_SERVICE_ACCOUNT_KEY` (the full
+  service-account JSON key, with domain-wide delegation authorized for the
+  Calendar scope) and `APPOINTMENT_SHEET_ID` (the working-hours Google Sheet,
+  shared with the service-account email; optional `APPOINTMENT_SHEET_RANGE`,
+  default `A2:F`). Enable both the Calendar and Sheets APIs. Checkout also
   needs `STRIPE_SECRET_KEY`, `STRIPE_WEBHOOK_SECRET` (the signing secret of the
   Stripe webhook endpoint), and `PUBLIC_BASE_URL` (the site origin Stripe
   redirects back to after payment). Optionally, `STRIPE_SHIPPING_RATE_IDS` — a
