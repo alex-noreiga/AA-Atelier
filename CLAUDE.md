@@ -483,8 +483,16 @@ and in the maintainer's env without edits.
   needs `STRIPE_SECRET_KEY`, `STRIPE_WEBHOOK_SECRET` (the signing secret of the
   Stripe webhook endpoint), and `PUBLIC_BASE_URL` (the site origin Stripe
   redirects back to after payment). Optionally, `STRIPE_SHIPPING_RATE_IDS` — a
-  comma-separated list of Stripe Shipping Rate ids to offer at shop checkout
-  (unset ⇒ no shipping charged). Customer notification emails also require
+  comma-separated list of Stripe Shipping Rate ids (`shr_…`) to offer at shop
+  checkout (unset ⇒ no shipping charged, i.e. no shipping options appear at
+  checkout at all). **Mode-scoped:** the ids must be created in the same Stripe
+  mode as `STRIPE_SECRET_KEY`, so map Vercel environments to modes — **Production**
+  gets your **live** `shr_…` ids, **Preview/Development** get your **test** ids
+  (a test-mode rate won't work with a live key, and vice-versa). The rate's
+  currency must be USD to match the checkout session, or Stripe silently drops
+  it. The atelier reprices by editing the rate's amount in the Dashboard (no
+  redeploy); a redeploy is only needed when the ids themselves change. Customer
+  notification emails also require
   `RESEND_API_KEY` and `RESEND_FROM_EMAIL` (the verified sender, e.g.
   `A.A Atelier <orders@yourdomain>`). The sending domain must be verified in
   Resend (SPF/DKIM) or mail won't deliver. A missing/failed mailer is
