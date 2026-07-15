@@ -52,6 +52,21 @@ const formSchema = z
     neededBy: z.string().optional(),
   })
   .superRefine((values, ctx) => {
+    // "Needed by", when supplied, must be in the future — it feeds the atelier's
+    // real scheduling (the order's Due Date), so a past date is a mistake.
+    if (values.neededBy) {
+      const today = new Date();
+      today.setHours(0, 0, 0, 0);
+      const chosen = new Date(`${values.neededBy}T00:00:00`);
+      if (!Number.isNaN(chosen.getTime()) && chosen < today) {
+        ctx.addIssue({
+          path: ["neededBy"],
+          code: z.ZodIssueCode.custom,
+          message: "Please choose a date in the future",
+        });
+      }
+    }
+
     if (values.measurementMode !== "self") return;
     for (const { key } of MEASUREMENT_FIELDS) {
       const raw = values[key];
@@ -118,6 +133,8 @@ export default function OrderForm() {
   const measurementMode = watch("measurementMode");
   const measurementUnit = watch("measurementUnit");
   const preferredContact = watch("preferredContact");
+  // Floor the "needed by" picker at today, so a past date can't be picked.
+  const todayIso = new Date().toISOString().split("T")[0];
 
   const onSubmit = (values: FormValues) => {
     const {
@@ -230,7 +247,14 @@ export default function OrderForm() {
           </p>
         </div>
 
-        <form onSubmit={handleSubmit(onSubmit)} className="space-y-12">
+        {/* noValidate: zod owns validation (incl. the needed-by floor), so the
+            browser's native constraint bubble can't pre-empt our inline
+            messages — the `min` on the date input stays a picker-UI hint. */}
+        <form
+          noValidate
+          onSubmit={handleSubmit(onSubmit)}
+          className="space-y-12"
+        >
           <section>
             <h2 className="text-xs tracking-[0.2em] uppercase text-muted-foreground mb-6 pb-2 border-b border-border">
               Contact Information
@@ -472,12 +496,32 @@ export default function OrderForm() {
                 <Input
                   id="neededBy"
                   type="date"
+                  min={todayIso}
                   {...register("neededBy")}
                   className="mt-1.5 bg-transparent border-0 border-b border-border rounded-none px-0 py-3 focus-visible:ring-0 focus-visible:border-primary transition-colors shadow-none w-48"
                 />
+                {errors.neededBy ? (
+                  <p className="text-destructive text-xs mt-1">
+                    {errors.neededBy.message}
+                  </p>
+                ) : (
+                  <p className="text-muted-foreground/60 text-xs mt-1.5">
+                    Custom pieces typically take 8–12 weeks. If you have an event
+                    date, let us know and we'll advise on timing.
+                  </p>
+                )}
               </div>
             </div>
           </section>
+
+          <p
+            className="text-center text-xs font-light text-muted-foreground/70 max-w-md mx-auto"
+            data-testid="deposit-note"
+          >
+            This starts your order — it isn't a payment. Once we've reviewed your
+            details and quoted your piece, we'll send a deposit to reserve your
+            place in the atelier's schedule.
+          </p>
 
           <div className="flex justify-center pt-4 pb-8">
             <Button
