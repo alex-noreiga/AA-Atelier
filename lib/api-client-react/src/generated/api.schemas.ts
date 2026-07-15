@@ -217,6 +217,54 @@ export interface CheckoutSessionStatus {
   amountTotal?: number;
 }
 
+export interface Review {
+  id: string;
+  /** The reviewer's display name. */
+  name: string;
+  /**
+     * @minimum 1
+     * @maximum 5
+     */
+  rating: number;
+  /** Optional short headline for the review. */
+  title?: string;
+  body: string;
+  /** ISO-8601 timestamp the review was submitted (Notion created time). */
+  date: string;
+}
+
+export interface ReviewList {
+  reviews: Review[];
+}
+
+export interface NewReviewRequest {
+  /**
+     * The order number to verify against. A review whose order number isn't found is rejected (404), and one whose email doesn't match the order is rejected (403).
+     * @minLength 1
+     */
+  orderNumber: string;
+  /** Verified against the email on the order. Kept private — never shown with the published review. */
+  email: string;
+  /**
+     * The reviewer's display name, shown with the review.
+     * @minLength 1
+     */
+  name: string;
+  /**
+     * @minimum 1
+     * @maximum 5
+     */
+  rating: number;
+  /** Optional short headline. */
+  title?: string;
+  /** @minLength 1 */
+  body: string;
+}
+
+export interface NewReviewResponse {
+  success: boolean;
+}
+
 export interface ErrorEnvelope {
   error: string;
 }

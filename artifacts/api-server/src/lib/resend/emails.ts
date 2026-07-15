@@ -11,6 +11,7 @@ import type { CreateOrderInput } from "../notion/schema.js";
 import type { CreateContactInput } from "../notion/contact.blocks.js";
 import type { CreateNotifyInput } from "../notion/notify.blocks.js";
 import type { CreateMeasurementChangeInput } from "../notion/measurement-change.blocks.js";
+import type { CreateReviewInput } from "../notion/reviews.blocks.js";
 import type { EmailMessage } from "./client.js";
 
 const ATELIER_NAME = "A.A Atelier";
@@ -94,6 +95,36 @@ export function contactAckEmail(input: CreateContactInput): EmailMessage {
   return {
     to: input.email,
     subject: `We received your message`,
+    html,
+    text,
+  };
+}
+
+/** Thank-you sent to the customer after they submit a review. */
+export function reviewAckEmail(input: CreateReviewInput): EmailMessage {
+  const firstName = input.name.trim().split(/\s+/)[0] || "there";
+
+  const html = layout(
+    "Thank you for your review",
+    `<p>Hi ${firstName},</p>
+     <p>Thank you for taking the time to share your experience with us. We read every
+        review, and yours will appear on our website once we've had a chance to
+        publish it.</p>`,
+  );
+
+  const text = [
+    `Hi ${firstName},`,
+    ``,
+    `Thank you for taking the time to share your experience with us. We read every`,
+    `review, and yours will appear on our website once we've had a chance to publish it.`,
+    ``,
+    `Thank you,`,
+    `The ${ATELIER_NAME} team`,
+  ].join("\n");
+
+  return {
+    to: input.email,
+    subject: `Thank you for your review`,
     html,
     text,
   };
@@ -229,6 +260,34 @@ export function orderNotificationEmail(
     replyTo: input.email,
     subject: `New order ${orderNumber} — ${input.fullName}`,
     html: internalLayout(`New order ${orderNumber}`, renderRowsHtml(fields)),
+    text: renderRowsText(fields),
+  };
+}
+
+/** Notify the atelier of a new review awaiting moderation. */
+export function reviewNotificationEmail(
+  input: CreateReviewInput,
+  to: string,
+): EmailMessage {
+  const stars = "★".repeat(input.rating) + "☆".repeat(5 - input.rating);
+
+  const fields: Field[] = [
+    ["Order number", input.orderNumber],
+    ["Name", input.name],
+    ["Email", input.email],
+    ["Rating", `${stars} (${input.rating}/5)`],
+    ...(input.title ? [["Title", input.title] as Field] : []),
+    ["Review", input.body],
+  ];
+
+  return {
+    to,
+    replyTo: input.email,
+    subject: `New review from ${input.name} (${input.rating}/5) — publish to show it`,
+    html: internalLayout(
+      "New review — awaiting moderation",
+      renderRowsHtml(fields),
+    ),
     text: renderRowsText(fields),
   };
 }

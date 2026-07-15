@@ -34,9 +34,12 @@ import type {
   NewNotifyResponse,
   NewOrderRequest,
   NewOrderResponse,
+  NewReviewRequest,
+  NewReviewResponse,
   OrderNotFound,
   OrderStatus,
-  ProductList
+  ProductList,
+  ReviewList
 } from './api.schemas';
 
 import { customFetch } from '../custom-fetch';
@@ -804,4 +807,153 @@ export function useGetCheckoutSession<TData = Awaited<ReturnType<typeof getCheck
 
 
 
+
+export const getListReviewsUrl = () => {
+
+
+
+
+  return `/api/reviews`
+}
+
+/**
+ * Returns published customer reviews from the Notion reviews database, newest first. Only rows the atelier has marked published are returned; the list is empty until there are any.
+ * @summary List published customer reviews
+ */
+export const listReviews = async ( options?: RequestInit): Promise<ReviewList> => {
+
+  return customFetch<ReviewList>(getListReviewsUrl(),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
+
+
+
+
+export const getListReviewsQueryKey = () => {
+    return [
+    `/api/reviews`
+    ] as const;
+    }
+
+
+export const getListReviewsQueryOptions = <TData = Awaited<ReturnType<typeof listReviews>>, TError = ErrorType<ErrorEnvelope>>( options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof listReviews>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getListReviewsQueryKey();
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof listReviews>>> = ({ signal }) => listReviews({ signal, ...requestOptions });
+
+
+
+
+
+   return  { queryKey, queryFn, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof listReviews>>, TError, TData> & { queryKey: QueryKey }
+}
+
+export type ListReviewsQueryResult = NonNullable<Awaited<ReturnType<typeof listReviews>>>
+export type ListReviewsQueryError = ErrorType<ErrorEnvelope>
+
+
+/**
+ * @summary List published customer reviews
+ */
+
+export function useListReviews<TData = Awaited<ReturnType<typeof listReviews>>, TError = ErrorType<ErrorEnvelope>>(
+  options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof listReviews>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+
+ ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+
+  const queryOptions = getListReviewsQueryOptions(options)
+
+  const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
+
+  return withQueryKey(query, queryOptions.queryKey);
+}
+
+
+
+
+
+
+
+export const getCreateReviewUrl = () => {
+
+
+
+
+  return `/api/reviews`
+}
+
+/**
+ * Files a customer review against a past order. The order number must match an existing order whose email matches the supplied one. The review is saved unpublished and only appears on the site once the atelier publishes it in Notion.
+ * @summary Submit a customer review
+ */
+export const createReview = async (newReviewRequest: NewReviewRequest, options?: RequestInit): Promise<NewReviewResponse> => {
+
+  return customFetch<NewReviewResponse>(getCreateReviewUrl(),
+  {
+    ...options,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    body: JSON.stringify(newReviewRequest)
+  }
+);}
+
+
+
+
+export const getCreateReviewMutationOptions = <TError = ErrorType<ErrorEnvelope>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof createReview>>, TError,{data: BodyType<NewReviewRequest>}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof createReview>>, TError,{data: BodyType<NewReviewRequest>}, TContext> => {
+
+const mutationKey = ['createReview'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof createReview>>, {data: BodyType<NewReviewRequest>}> = (props) => {
+          const {data} = props ?? {};
+
+          return  createReview(data,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type CreateReviewMutationResult = NonNullable<Awaited<ReturnType<typeof createReview>>>
+    export type CreateReviewMutationBody = BodyType<NewReviewRequest>
+    export type CreateReviewMutationError = ErrorType<ErrorEnvelope>
+
+    /**
+ * @summary Submit a customer review
+ */
+export const useCreateReview = <TError = ErrorType<ErrorEnvelope>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof createReview>>, TError,{data: BodyType<NewReviewRequest>}, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof createReview>>,
+        TError,
+        {data: BodyType<NewReviewRequest>},
+        TContext
+      > => {
+      return useMutation(getCreateReviewMutationOptions(options));
+    }
 

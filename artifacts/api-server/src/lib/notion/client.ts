@@ -44,6 +44,7 @@ let defaultClient: NotionClient | null = null;
 let contactClient: NotionClient | null = null;
 let inventoryClient: NotionClient | null = null;
 let shopOrdersClient: NotionClient | null = null;
+let reviewsClient: NotionClient | null = null;
 
 /**
  * Lazily-constructed client reading credentials from the environment. Deferring
@@ -101,4 +102,18 @@ export function getShopOrdersNotionClient(): NotionClient {
     });
   }
   return shopOrdersClient;
+}
+
+/**
+ * Client for the "Website Reviews" database that stores customer reviews. Same
+ * lazy construction, reads `NOTION_REVIEWS_DATABASE_ID`.
+ */
+export function getReviewsNotionClient(): NotionClient {
+  if (!reviewsClient) {
+    reviewsClient = createNotionClient({
+      apiKey: process.env.NOTION_API_KEY ?? "",
+      databaseId: process.env.NOTION_REVIEWS_DATABASE_ID ?? "",
+    });
+  }
+  return reviewsClient;
 }

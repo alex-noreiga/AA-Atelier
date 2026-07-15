@@ -24,7 +24,9 @@ import type {
   NewMeasurementChangeRequest,
   NewNotifyRequest,
   NewOrderRequest,
+  NewReviewRequest,
   OrderStatus,
+  Review,
 } from "@workspace/api-zod";
 
 /** The stage vocabulary used by the status-lookup fixtures. */
@@ -88,6 +90,33 @@ export function measurementChangeInput(
     hips: 39,
     height: 66,
     bodyGirth: 33,
+    ...overrides,
+  };
+}
+
+/** A valid review submission. Email matches `createOrderInput` by default so the
+ * identity gate passes; override it to exercise a mismatch. */
+export function reviewInput(
+  overrides: Partial<NewReviewRequest> = {},
+): NewReviewRequest {
+  return {
+    orderNumber: "ORD-1",
+    email: "ada@example.com",
+    name: "Ada Lovelace",
+    rating: 5,
+    body: "The dress was exquisite and fit perfectly.",
+    ...overrides,
+  };
+}
+
+/** A published review as returned to the display flow. */
+export function reviewRecord(overrides: Partial<Review> = {}): Review {
+  return {
+    id: "review-1",
+    name: "Ada Lovelace",
+    rating: 5,
+    body: "The dress was exquisite and fit perfectly.",
+    date: "2026-01-15T12:00:00.000Z",
     ...overrides,
   };
 }

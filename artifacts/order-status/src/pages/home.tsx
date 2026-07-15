@@ -1,7 +1,56 @@
 import { Link } from "wouter";
 import { ArrowRight, PenLine, Search } from "lucide-react";
+import { useListReviews } from "@workspace/api-client-react";
 import { PageShell } from "@/components/page-shell";
 import { Seo } from "@/components/seo";
+import { StarRatingDisplay } from "@/components/star-rating";
+
+/**
+ * A small strip of recent reviews to build trust on the landing page. Renders
+ * nothing until there are published reviews (or while loading / on error), so
+ * the hero is undisturbed when the site is new.
+ */
+function ReviewsHighlight() {
+  const { data } = useListReviews();
+  const reviews = (data?.reviews ?? []).slice(0, 3);
+  if (reviews.length === 0) return null;
+
+  return (
+    <div
+      className="mt-20 w-full max-w-4xl"
+      data-testid="home-reviews-highlight"
+    >
+      <p className="mb-8 text-center text-xs uppercase tracking-[0.3em] text-muted-foreground">
+        Kind words
+      </p>
+      <div className="grid gap-6 sm:grid-cols-3">
+        {reviews.map((review) => (
+          <figure
+            key={review.id}
+            className="flex flex-col rounded-2xl border border-border/60 p-6 text-left"
+          >
+            <StarRatingDisplay value={review.rating} className="mb-3" />
+            <blockquote className="flex-1 text-sm font-light leading-relaxed text-muted-foreground line-clamp-4">
+              {review.body}
+            </blockquote>
+            <figcaption className="mt-4 text-sm text-foreground">
+              {review.name}
+            </figcaption>
+          </figure>
+        ))}
+      </div>
+      <div className="mt-8 text-center">
+        <Link
+          to="/reviews"
+          className="group inline-flex items-center gap-2 text-xs uppercase tracking-widest text-primary transition-all hover:gap-3"
+        >
+          Read all reviews
+          <ArrowRight className="h-4 w-4 transition-transform group-hover:translate-x-1" />
+        </Link>
+      </div>
+    </div>
+  );
+}
 
 export default function Home() {
   return (
@@ -50,6 +99,8 @@ export default function Home() {
             Track an Order
           </Link>
         </div>
+
+        <ReviewsHighlight />
       </div>
 
       {/* Footer whisper */}

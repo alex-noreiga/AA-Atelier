@@ -234,3 +234,48 @@ export const GetCheckoutSessionResponse = zod.object({
 })
 
 
+/**
+ * Returns published customer reviews from the Notion reviews database, newest first. Only rows the atelier has marked published are returned; the list is empty until there are any.
+ * @summary List published customer reviews
+ */
+export const listReviewsResponseReviewsItemRatingMax = 5;
+
+
+
+export const ListReviewsResponse = zod.object({
+  "reviews": zod.array(zod.object({
+  "id": zod.string(),
+  "name": zod.string().describe('The reviewer\'s display name.'),
+  "rating": zod.number().min(1).max(listReviewsResponseReviewsItemRatingMax),
+  "title": zod.string().optional().describe('Optional short headline for the review.'),
+  "body": zod.string(),
+  "date": zod.string().describe('ISO-8601 timestamp the review was submitted (Notion created time).')
+}))
+})
+
+
+/**
+ * Files a customer review against a past order. The order number must match an existing order whose email matches the supplied one. The review is saved unpublished and only appears on the site once the atelier publishes it in Notion.
+ * @summary Submit a customer review
+ */
+
+
+export const createReviewBodyRatingMax = 5;
+
+
+
+
+export const CreateReviewBody = zod.object({
+  "orderNumber": zod.string().min(1).describe('The order number to verify against. A review whose order number isn\'t found is rejected (404), and one whose email doesn\'t match the order is rejected (403).'),
+  "email": zod.string().email().describe('Verified against the email on the order. Kept private — never shown with the published review.'),
+  "name": zod.string().min(1).describe('The reviewer\'s display name, shown with the review.'),
+  "rating": zod.number().min(1).max(createReviewBodyRatingMax),
+  "title": zod.string().optional().describe('Optional short headline.'),
+  "body": zod.string().min(1)
+})
+
+export const CreateReviewResponse = zod.object({
+  "success": zod.boolean()
+})
+
+

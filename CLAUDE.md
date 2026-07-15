@@ -92,6 +92,12 @@ Express app (artifacts/api-server)  ──►  Notion REST API (orders database)
   ├─ GET  /api/checkout/session/:id→ a session's status + itemized receipt
   │                                  (items, shipping, tax, total) for the
   │                                  success page
+  ├─ GET  /api/reviews             → published customer reviews (newest first)
+  │                                  from the Notion "Website Reviews" database
+  ├─ POST /api/reviews             → files a customer review against a past order
+  │                                  (order number + email must match the order),
+  │                                  saved UNPUBLISHED for atelier moderation
+  │                                  + sends a review-received email
   └─ POST /api/webhooks/stripe     → Stripe → server webhook (raw body, signed).
                                      On checkout.session.completed, records the
                                      paid order in the Notion "Shop Orders"
@@ -201,6 +207,20 @@ captured in `.agents/memory/`:
    a piece rather than reading it out of free text. The property names the two
    writers share are exported from `contact.blocks.ts` and imported by
    `notify.blocks.ts` — keep it that way so they can't drift.
+
+4. **Reviews are moderated by a publish gate.** The "Website Reviews" database
+   (its own `NOTION_REVIEWS_DATABASE_ID` + `getReviewsNotionClient()`) stores
+   customer reviews. `POST /api/reviews` writes a row with **Published**
+   _unchecked_; `GET /api/reviews` returns only rows where Published is checked
+   (`listPublishedReviews()` filters on it). This is the same shape as the shop's
+   `Show on website` checkbox — a new submission never appears on the site until
+   the atelier ticks Published in Notion. Submission is gated on order identity:
+   the flow reuses `findOrderForMeasurementChange()` and applies the **same
+   email-vs-order gate** as the measurement-change flow (no stored email ⇒
+   accept + flag `Verified` false; match ⇒ verified; mismatch ⇒ 403). Property
+   names live in `reviews.schema.ts` (re-exported to `reviews.blocks.ts` so the
+   reader and writer can't drift). Rating is a Notion **number** (1–5); the
+   review date is the page's built-in `created_time`.
 
 Auth: the server reads `NOTION_API_KEY` and `NOTION_ORDERS_DATABASE_ID` from
 environment variables (via `createNotionClient` in `notion/client.ts`, read at
@@ -477,8 +497,10 @@ and in the maintainer's env without edits.
   `NOTION_CONTACT_DATABASE_ID` (the "Website Contact Messages" database that the
   `/contact` form **and** the shop's `/notify` dialog both write to),
   `NOTION_INVENTORY_DATABASE_ID` (the finished-goods "inventory" database the
-  shop's `/products` endpoint reads), and `NOTION_SHOP_ORDERS_DATABASE_ID` (the
-  "Shop Orders" database the checkout webhook writes paid orders to). The Notion
+  shop's `/products` endpoint reads), `NOTION_SHOP_ORDERS_DATABASE_ID` (the
+  "Shop Orders" database the checkout webhook writes paid orders to), and
+  `NOTION_REVIEWS_DATABASE_ID` (the "Website Reviews" database the `/reviews`
+  endpoints read published rows from and file new reviews to). The Notion
   integration must be shared with each database or queries 404. Checkout also
   needs `STRIPE_SECRET_KEY`, `STRIPE_WEBHOOK_SECRET` (the signing secret of the
   Stripe webhook endpoint), and `PUBLIC_BASE_URL` (the site origin Stripe
@@ -514,6 +536,7 @@ and in the maintainer's env without edits.
 | Change the back-in-stock notify dialog  | `artifacts/order-status/src/components/notify-dialog.tsx` + `services/notify.service.ts` + `lib/notion/notify.*` (writes to the **contact** database — see below)                                                                                                             |
 | Change shop checkout / payments         | `artifacts/order-status/src/lib/cart.tsx` + `components/cart-drawer.tsx` + `components/add-to-cart.tsx` (frontend); `api-server/src/services/checkout.service.ts` + `routes/checkout.ts` + `routes/stripe-webhook.ts` + `lib/stripe/*` + `lib/notion/shop-orders.*` (backend) |
 | Change custom-order deposits            | `artifacts/order-status/src/pages/status.tsx` (`DepositSection`); `api-server/src/services/deposit.service.ts` + `routes/orders.ts` + `lib/notion/orders.repository.ts` (`findDepositTarget`/`markDepositPaid`) + `routes/stripe-webhook.ts`                                  |
+| Change customer reviews (submit/display)| `artifacts/order-status/src/pages/reviews.tsx` + `components/star-rating.tsx` + the home strip in `pages/home.tsx` (frontend); `api-server/src/services/reviews.service.ts` + `routes/reviews.ts` + `lib/notion/reviews.*` (backend, writes to the **reviews** database)      |
 | Add a page / route                      | new `src/pages/*.tsx` + `<Route>` in `src/App.tsx`                                                                                                                                                                                                                            |
 | Add or rename a nav link                | `NAV_LINKS` in `artifacts/order-status/src/components/navbar.tsx`                                                                                                                                                                                                             |
 | Add a shared UI component               | `artifacts/order-status/src/components/ui/`                                                                                                                                                                                                                                   |

@@ -136,6 +136,51 @@ export function inventoryPage(opts: {
   return { id: opts.id ?? "inv-page", properties };
 }
 
+/**
+ * Minimal Notion review page as returned by a query on the reviews database.
+ * Only the properties the schema reads are populated; each is optional so a
+ * test names just the fields it cares about.
+ */
+export function reviewPage(opts: {
+  id?: string;
+  createdTime?: string;
+  name?: string;
+  rating?: number | null;
+  body?: string;
+  title?: string;
+  published?: boolean;
+}) {
+  const properties: Record<string, unknown> = {
+    Name: {
+      type: "title",
+      title: opts.name ? [{ plain_text: opts.name }] : [],
+    },
+    Rating: {
+      type: "number",
+      number: opts.rating === undefined ? 5 : opts.rating,
+    },
+    Review: {
+      type: "rich_text",
+      rich_text: opts.body ? [{ plain_text: opts.body }] : [],
+    },
+    Published: {
+      type: "checkbox",
+      checkbox: opts.published ?? true,
+    },
+  };
+  if (opts.title !== undefined) {
+    properties.Title = {
+      type: "rich_text",
+      rich_text: [{ plain_text: opts.title }],
+    };
+  }
+  return {
+    id: opts.id ?? "review-page",
+    created_time: opts.createdTime ?? "2026-01-15T12:00:00.000Z",
+    properties,
+  };
+}
+
 /** Minimal Notion order page as returned by a database query. */
 export function orderPage(opts: {
   id?: string;

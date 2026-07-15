@@ -116,6 +116,34 @@ export async function mockGetCheckoutSession(
   });
 }
 
+/** Mock `GET /api/reviews` — the published reviews list. */
+export async function mockReviews(
+  page: Page,
+  opts: { status?: number; body: unknown },
+): Promise<void> {
+  await page.route("**/api/reviews", async (route) => {
+    if (route.request().method() !== "GET") return route.fallback();
+    await json(route, opts.status ?? 200, opts.body);
+  });
+}
+
+/**
+ * Mock `POST /api/reviews` (the review form's submit). Records each request body
+ * so a test can assert the payload the form sent.
+ */
+export async function mockCreateReview(
+  page: Page,
+  opts: { status?: number; body: unknown },
+): Promise<{ requests: unknown[] }> {
+  const requests: unknown[] = [];
+  await page.route("**/api/reviews", async (route) => {
+    if (route.request().method() !== "POST") return route.fallback();
+    requests.push(route.request().postDataJSON());
+    await json(route, opts.status ?? 201, opts.body);
+  });
+  return { requests };
+}
+
 /**
  * Mock `POST /api/notify` (the notify dialog's submit). Records each request
  * body so a test can assert the item/size the shop attached to the email.

@@ -5,6 +5,7 @@ import contactRouter from "./contact.js";
 import productsRouter from "./products.js";
 import notifyRouter from "./notify.js";
 import checkoutRouter from "./checkout.js";
+import reviewsRouter from "./reviews.js";
 
 const router = Router();
 
@@ -14,5 +15,6 @@ router.use(contactRouter);
 router.use(productsRouter);
 router.use(notifyRouter);
 router.use(checkoutRouter);
+router.use(reviewsRouter);
 
 export default router;
