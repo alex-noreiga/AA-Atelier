@@ -8,8 +8,19 @@ import {
   ORDER_NUMBER_PROPERTY,
   ORDER_EMAIL_PROPERTY,
   ORDER_CLIENT_PROPERTY,
+  ORDER_DUE_DATE_PROPERTY,
   type CreateOrderInput,
 } from "./orders.schema.js";
+
+/**
+ * A `neededBy` value (a `Date` per the contract, but defended against a raw
+ * string) as a Notion date `start` value (`YYYY-MM-DD`).
+ */
+function formatNeededBy(neededBy: NonNullable<CreateOrderInput["neededBy"]>): string {
+  return neededBy instanceof Date
+    ? (neededBy.toISOString().split("T")[0] as string)
+    : String(neededBy);
+}
 
 function textBlock(label: string, value: string) {
   return {
@@ -70,6 +81,15 @@ export function buildOrderProperties(
       relation: [{ id: clientPageId }],
     };
   }
+  // Seed the order's Due Date from the customer's requested date so the
+  // production-schedule milestone cron (which keys on Due Date) fires without a
+  // manual step. The atelier can still adjust it in Notion after quoting; changing
+  // it and unchecking "Milestones Generated" reschedules on the next cron run.
+  if (data.neededBy) {
+    properties[ORDER_DUE_DATE_PROPERTY] = {
+      date: { start: formatNeededBy(data.neededBy) },
+    };
+  }
   return properties;
 }
 
@@ -116,11 +136,7 @@ export function buildOrderPageBlocks(data: CreateOrderInput): unknown[] {
     dressSection.push(textBlock("Description", data.description));
   }
   if (data.neededBy) {
-    const dateStr =
-      data.neededBy instanceof Date
-        ? data.neededBy.toISOString().split("T")[0]
-        : String(data.neededBy);
-    dressSection.push(textBlock("Needed By", dateStr));
+    dressSection.push(textBlock("Needed By", formatNeededBy(data.neededBy)));
   }
   dressSection.push(dividerBlock());
 

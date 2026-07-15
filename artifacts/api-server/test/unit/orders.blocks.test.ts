@@ -52,6 +52,19 @@ describe("buildOrderProperties", () => {
     ) as any;
     expect(props["Client"].relation).toEqual([{ id: "client-9" }]);
   });
+
+  it("omits Due Date when no neededBy is provided", () => {
+    const props = buildOrderProperties(baseOrder, "ORD-ABC-123") as any;
+    expect(props).not.toHaveProperty("Due Date");
+  });
+
+  it("seeds Due Date from neededBy (as an ISO date) so the milestone cron fires", () => {
+    const props = buildOrderProperties(
+      { ...baseOrder, neededBy: new Date("2026-09-01T12:34:56Z") },
+      "ORD-ABC-123",
+    ) as any;
+    expect(props["Due Date"].date.start).toBe("2026-09-01");
+  });
 });
 
 describe("buildOrderPageBlocks", () => {

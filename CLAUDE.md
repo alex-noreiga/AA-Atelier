@@ -343,11 +343,14 @@ order that has a firm due date. See `.agents/memory/production-schedule-mileston
 for the full design; the load-bearing points:
 
 1. **Trigger is a reconciliation cron, not a Notion push.** There is no Notion→app
-   trigger (see the deposits/status notes), so the atelier sets a `Due Date` on the
-   order in the Order Tracking Pipeline and a **Vercel Cron** job
+   trigger (see the deposits/status notes), so an order gets a `Due Date` in the
+   Order Tracking Pipeline — **seeded from the customer's `neededBy` at order
+   creation** (`buildOrderProperties` in `orders.blocks.ts`), and adjustable by the
+   atelier afterward — and a **Vercel Cron** job
    (`GET /api/cron/generate-milestones`, in `vercel.json` `crons`) later scans for
    orders that have a due date but whose `Milestones Generated` checkbox is unset,
-   and generates their milestones. The endpoint is CRON_SECRET-guarded and, like the
+   and generates their milestones. (To reschedule after changing the date, uncheck
+   `Milestones Generated`.) The endpoint is CRON_SECRET-guarded and, like the
    Stripe webhook, is **deliberately outside the OpenAPI contract** (mounted in
    `app.ts`, not the `/api` router). Code: `routes/cron.ts` →
    `services/schedule.service.ts` → `lib/notion/orders.repository.ts`
