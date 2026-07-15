@@ -66,7 +66,7 @@ Setup the atelier must do once:
   powers availability + the booking re-check, so they can't disagree. No caching
   of free/busy.
 - **Timezone.** Working hours + slot times are wall-clock in `APPOINTMENT_TIMEZONE`
-  (default `America/New_York`); busy/bookings are UTC instants. `time.ts` does the
+  (default `America/Chicago`); busy/bookings are UTC instants. `time.ts` does the
   DST-correct conversion via `Intl`. Keep the pure unit tests green when touching
   slot math.
 - **Free to book, no hold.** No payment, no pending reservation; two simultaneous

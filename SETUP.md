@@ -140,7 +140,7 @@ You'll paste it into `APPOINTMENT_SHEET_ID` next.
 
    | Key | Default | Notes |
    |-----|---------|-------|
-   | `APPOINTMENT_TIMEZONE` | `America/New_York` | Set your actual IANA zone (e.g. `America/Toronto`). Working hours + slot times are read in this zone. |
+   | `APPOINTMENT_TIMEZONE` | `America/Chicago` | Set your actual IANA zone (e.g. `America/Toronto`). Working hours + slot times are read in this zone. |
    | `APPOINTMENT_SHEET_RANGE` | `A2:F` | Only if your data isn't on the first tab / standard columns, e.g. `Schedule!A2:F`. |
    | `APPOINTMENT_MIN_LEAD_HOURS` | `24` | How far ahead a slot must be to be bookable. |
    | `APPOINTMENT_MAX_ADVANCE_DAYS` | `45` | How far into the future booking is allowed. |

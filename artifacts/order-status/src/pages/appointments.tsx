@@ -125,7 +125,7 @@ export default function Appointments() {
 
   const optionsQuery = useGetAppointmentOptions();
   const options = optionsQuery.data;
-  const timezone = options?.timezone ?? "America/New_York";
+  const timezone = options?.timezone ?? "America/Chicago";
   const selectedType = options?.types.find((t) => t.id === typeId) ?? null;
 
   const staffParam = staff && staff !== NO_PREFERENCE ? staff : undefined;

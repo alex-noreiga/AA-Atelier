@@ -6,7 +6,7 @@
 // - APPOINTMENT_MAX_ADVANCE_DAYS how far into the future booking is allowed.
 // - APPOINTMENT_SLOT_STEP_MINUTES the grid slots snap to within working hours.
 
-const DEFAULT_TIMEZONE = "America/New_York";
+const DEFAULT_TIMEZONE = "America/Chicago";
 const DEFAULT_MIN_LEAD_HOURS = 24;
 const DEFAULT_MAX_ADVANCE_DAYS = 45;
 const DEFAULT_SLOT_STEP_MINUTES = 15;

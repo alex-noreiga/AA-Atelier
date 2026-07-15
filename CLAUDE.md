@@ -610,7 +610,7 @@ and in the maintainer's env without edits.
   extra Resend setup). Appointment mail has the same optional overrides
   (`RESEND_APPOINTMENTS_FROM_EMAIL` / `ATELIER_APPOINTMENTS_INBOX_EMAIL`).
 - **Optional appointment-booking policy env vars:** `APPOINTMENT_TIMEZONE`
-  (IANA zone for working hours/slots, default `America/New_York`),
+  (IANA zone for working hours/slots, default `America/Chicago`),
   `APPOINTMENT_MIN_LEAD_HOURS` (24), `APPOINTMENT_MAX_ADVANCE_DAYS` (45), and
   `APPOINTMENT_SLOT_STEP_MINUTES` (15). All have defaults.
 
