@@ -36,6 +36,10 @@ export const ORDER_MILESTONES_GENERATED_PROPERTY = "Milestones Generated"; // ch
 // dual relation). Set on order create when a client record was upserted, so the
 // order lands against a durable customer record. See `clients.repository.ts`.
 export const ORDER_CLIENT_PROPERTY = "Client"; // relation → Client CRM
+// Relation to the "invoices & payments" database (limit 1). The atelier attaches
+// an invoice to the order; the balance-payment flow reads the linked invoice's
+// final balance and marks it paid. See `invoices.repository.ts`.
+export const ORDER_INVOICES_RELATION_PROPERTY = "Invoices"; // relation → invoices
 
 /** Validated new-order payload, derived from the OpenAPI contract. */
 export type CreateOrderInput = z.infer<typeof CreateOrderBody>;
@@ -50,6 +54,20 @@ export interface OrderRecord {
   depositAmount?: number;
   /** Whether the deposit has been paid. */
   depositPaid?: boolean;
+  /** Remaining balance due (dollars): the invoice's final balance minus any
+   * deposit already paid. Present once the order has a ready invoice. */
+  balanceAmount?: number;
+  /** Whether the final balance has been paid. */
+  balancePaid?: boolean;
+  /** Whether the balance can be paid now (invoice ready + deposit satisfied). */
+  balanceReady?: boolean;
+}
+
+/** An order lookup plus the internal id of its linked invoice (used to compute
+ * the balance). The invoice id is not part of the API response — the response
+ * schema strips it. */
+export interface OrderLookup extends OrderRecord {
+  invoicePageId?: string;
 }
 
 interface NotionStatusOption {
@@ -87,6 +105,7 @@ export interface NotionOrderPage {
       date: { start: string; end: string | null } | null;
     };
     "Milestones Generated"?: { type: "checkbox"; checkbox: boolean };
+    Invoices?: { type: "relation"; relation: Array<{ id: string }> };
   };
 }
 
@@ -158,4 +177,14 @@ export function extractDueDate(page: NotionOrderPage): string | undefined {
 export function extractMilestonesGenerated(page: NotionOrderPage): boolean {
   const property = page.properties[ORDER_MILESTONES_GENERATED_PROPERTY];
   return property?.type === "checkbox" ? property.checkbox : false;
+}
+
+/** The linked invoice's Notion page id (first of the order's `Invoices`
+ * relation), or undefined when no invoice is attached. */
+export function extractInvoicePageId(
+  page: NotionOrderPage,
+): string | undefined {
+  const property = page.properties[ORDER_INVOICES_RELATION_PROPERTY];
+  if (property?.type !== "relation") return undefined;
+  return property.relation[0]?.id;
 }

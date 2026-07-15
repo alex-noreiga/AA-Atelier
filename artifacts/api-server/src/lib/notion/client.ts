@@ -47,6 +47,7 @@ let shopOrdersClient: NotionClient | null = null;
 let productionScheduleClient: NotionClient | null = null;
 let clientCrmClient: NotionClient | null = null;
 let orderFormSubmissionsClient: NotionClient | null = null;
+let invoicesClient: NotionClient | null = null;
 
 /**
  * Lazily-constructed client reading credentials from the environment. Deferring
@@ -154,4 +155,21 @@ export function getOrderFormSubmissionsNotionClient(): NotionClient {
     });
   }
   return orderFormSubmissionsClient;
+}
+
+/**
+ * Client for the "invoices & payments" database that holds a custom order's
+ * final balance and its balance-payment state. Same lazy construction, reads
+ * `NOTION_INVOICES_DATABASE_ID`. Optional: when the env var is unset the client's
+ * `databaseId` is empty, and the balance flow (see `invoices.repository.ts`)
+ * treats that as "no invoice" so the status page simply shows no balance action.
+ */
+export function getInvoicesNotionClient(): NotionClient {
+  if (!invoicesClient) {
+    invoicesClient = createNotionClient({
+      apiKey: process.env.NOTION_API_KEY ?? "",
+      databaseId: process.env.NOTION_INVOICES_DATABASE_ID ?? "",
+    });
+  }
+  return invoicesClient;
 }

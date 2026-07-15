@@ -92,6 +92,49 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/ErrorEnvelope"
+  /orders/{orderNumber}/balance:
+    post:
+      operationId: createOrderBalance
+      tags: [orders]
+      summary: Start a final-balance payment for a custom order
+      description: >-
+        Creates a Stripe Checkout session for the remaining balance on this
+        custom order (the ready invoice's final balance minus any deposit
+        already paid, priced server-side from Notion, tax added by Stripe Tax),
+        and returns the hosted-checkout URL for the browser to redirect to.
+        Fails if the order has no ready invoice, the deposit is still due, or the
+        balance is already paid.
+      parameters:
+        - name: orderNumber
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "201":
+          description: Balance checkout session created
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/DepositSessionResponse"
+        "400":
+          description: No balance is due on this order
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorEnvelope"
+        "404":
+          description: Order not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/OrderNotFound"
+        "500":
+          description: Server error
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorEnvelope"
   /orders/{orderNumber}/deposit:
     post:
       operationId: createOrderDeposit
@@ -494,6 +537,21 @@ components:
         depositPaid:
           type: boolean
           description: Whether the customer has already paid the deposit.
+        balanceAmount:
+          type: number
+          description: >-
+            The remaining balance due on this custom order, in dollars (the
+            invoice's final balance minus any deposit already paid). Absent until
+            the atelier has a ready invoice for the order.
+        balancePaid:
+          type: boolean
+          description: Whether the customer has already paid the final balance.
+        balanceReady:
+          type: boolean
+          description: >-
+            Whether the balance can be paid now — the invoice is marked ready and
+            any deposit due has been paid. The status page only shows the pay-
+            balance action when this is true.
       required:
         - orderNumber
         - orderName

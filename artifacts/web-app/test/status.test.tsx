@@ -12,6 +12,7 @@ import { stubHook } from "./support/mock-hook.js";
 vi.mock("@workspace/api-client-react", () => ({
   useGetOrderStatus: vi.fn(),
   useCreateOrderDeposit: vi.fn(),
+  useCreateOrderBalance: vi.fn(),
   getGetOrderStatusQueryKey: (n: string) => [n],
   useCreateMeasurementChangeRequest: () => ({
     mutate: vi.fn(),
@@ -22,17 +23,25 @@ vi.mock("@workspace/api-client-react", () => ({
 import {
   useGetOrderStatus,
   useCreateOrderDeposit,
+  useCreateOrderBalance,
 } from "@workspace/api-client-react";
 import Status from "@/pages/status";
 
 const mockHook = vi.mocked(useGetOrderStatus);
 const mockDeposit = vi.mocked(useCreateOrderDeposit);
+const mockBalance = vi.mocked(useCreateOrderBalance);
 const depositMutate = vi.fn();
+const balanceMutate = vi.fn();
 
 beforeEach(() => {
   depositMutate.mockReset();
+  balanceMutate.mockReset();
   mockDeposit.mockReturnValue({
     mutate: depositMutate,
+    isPending: false,
+  } as never);
+  mockBalance.mockReturnValue({
+    mutate: balanceMutate,
     isPending: false,
   } as never);
 });
@@ -142,6 +151,44 @@ describe("Status deposit", () => {
     await submitLookup();
     expect(screen.getByTestId("deposit-paid")).toBeInTheDocument();
     expect(screen.queryByTestId("button-pay-deposit")).not.toBeInTheDocument();
+  });
+});
+
+describe("Status balance", () => {
+  it("shows no balance action until the invoice is ready", async () => {
+    // A balance amount is present but not yet ready — nothing shows.
+    setHook({
+      data: orderRecord({ balanceAmount: 600, balanceReady: false }),
+    });
+    await submitLookup();
+    expect(screen.queryByTestId("balance-due")).not.toBeInTheDocument();
+    expect(screen.queryByTestId("balance-paid")).not.toBeInTheDocument();
+  });
+
+  it("invites payment when the balance is ready, and pays it for that order", async () => {
+    setHook({
+      data: orderRecord({
+        balanceAmount: 600,
+        balanceReady: true,
+        balancePaid: false,
+      }),
+    });
+    await submitLookup("ORD-1");
+
+    const card = screen.getByTestId("balance-due");
+    expect(within(card).getByText("$600")).toBeInTheDocument();
+
+    await userEvent.click(screen.getByTestId("button-pay-balance"));
+    expect(balanceMutate).toHaveBeenCalledWith({ orderNumber: "ORD-1" });
+  });
+
+  it("confirms once the balance is paid and offers no button", async () => {
+    setHook({
+      data: orderRecord({ balanceAmount: 600, balancePaid: true }),
+    });
+    await submitLookup();
+    expect(screen.getByTestId("balance-paid")).toBeInTheDocument();
+    expect(screen.queryByTestId("button-pay-balance")).not.toBeInTheDocument();
   });
 });
 

@@ -12,6 +12,10 @@ import {
   DEPOSIT_SESSION_KIND,
   recordDepositPayment,
 } from "../services/deposit.service.js";
+import {
+  BALANCE_SESSION_KIND,
+  recordBalancePayment,
+} from "../services/balance.service.js";
 import { logger } from "../lib/logger.js";
 
 export async function stripeWebhookHandler(
@@ -42,11 +46,14 @@ export async function stripeWebhookHandler(
   if (event.type === "checkout.session.completed") {
     const session = event.data.object as Stripe.Checkout.Session;
     try {
-      // A deposit session (metadata.kind) marks a custom order's deposit paid;
-      // any other completed session is a shop-cart order. Both recorders are
-      // idempotent, so Stripe's retries on a 500 are safe.
+      // Route on metadata.kind: a deposit marks a custom order's deposit paid, a
+      // balance marks a custom order's invoice balance paid; any other completed
+      // session is a shop-cart order. All recorders are idempotent, so Stripe's
+      // retries on a 500 are safe.
       if (session.metadata?.kind === DEPOSIT_SESSION_KIND) {
         await recordDepositPayment(session);
+      } else if (session.metadata?.kind === BALANCE_SESSION_KIND) {
+        await recordBalancePayment(session);
       } else {
         await recordPaidOrder(session);
       }

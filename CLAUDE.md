@@ -82,6 +82,11 @@ Express app (artifacts/api-server)  ──►  Notion REST API (orders database)
   ├─ POST /api/orders/:n/deposit   → creates a Stripe Checkout session for the
   │                                  deposit the atelier set on custom order :n
   │                                  in Notion; the webhook marks it paid
+  ├─ POST /api/orders/:n/balance   → creates a Stripe Checkout session for the
+  │                                  remaining balance on custom order :n (its
+  │                                  ready invoice's Final Balance minus any
+  │                                  deposit paid, taxed); the webhook marks the
+  │                                  invoice's balance paid
   ├─ POST /api/orders/:n/measurement-change-requests
   │                                → files a customer request to change order :n's
   │                                  measurements in the SAME "Website Contact
@@ -327,11 +332,32 @@ the deposit server-side from that property (never trusting the client) and
 creates a Checkout session tagged `metadata.kind = "deposit"`. The **one** webhook
 handler routes on that tag: a deposit session calls `recordDepositPayment`
 (which sets `Deposit Paid` + `Deposit Session Id` on the order page —
-idempotently), everything else is a shop-cart order. The atelier must add
+idempotently), a `kind = "balance"` session calls `recordBalancePayment` (below),
+everything else is a shop-cart order. The atelier must add
 `Deposit Amount` (number), `Deposit Paid` (checkbox), and `Deposit Session Id`
 (rich_text) to the orders database — property names live in `orders.schema.ts`. Code:
 `services/deposit.service.ts`, `lib/notion/orders.repository.ts`
 (`findDepositTarget`/`markDepositPaid`), and the status page's `DepositSection`.
+
+### Custom-order final balances
+
+After the deposit, the atelier builds a **ready invoice** (line items → a
+`Final Balance`) in the **"invoices & payments"** database
+(`NOTION_INVOICES_DATABASE_ID`, optional) and links it to the order via the order's
+`Invoices` relation. The customer pays the remaining balance from the status page
+(`pages/status.tsx` → `BalanceSection` → `POST /orders/:n/balance`). The balance is
+priced server-side as `Final Balance − deposit paid` (never trusting the client);
+unlike the deposit it **is** taxed (`automatic_tax` on — tax is assessed on the
+balance). The session is tagged `metadata.kind = "balance"` and the webhook's
+`recordBalancePayment` sets `Balance Paid` + `Balance Payment Session Id` on the
+invoice page (idempotently). The pay-balance action only appears when the invoice
+is marked `Invoice Ready`, the balance is unpaid, any deposit is paid, and the
+computed balance is positive — `getOrderStatus` reads the linked invoice
+best-effort and returns `balanceAmount`/`balancePaid`/`balanceReady` for the UI
+(unset db ⇒ no balance action). Code: `services/balance.service.ts`,
+`lib/notion/invoices.repository.ts` (`findInvoiceById`/`markBalancePaid`/
+`computeBalanceDue`), `routes/orders.ts` + `routes/stripe-webhook.ts`, and
+`BalanceSection` in `status.tsx`.
 
 ## Production schedule (auto-generated stage milestones)
 
@@ -665,7 +691,13 @@ and in the maintainer's env without edits.
   ⇒ hub linking is skipped and orders are unchanged. Code:
   `artifacts/api-server/src/lib/notion/order-form-submissions.repository.ts`
   (`linkOrderFormSubmission`), wired from `orders.service.ts` with the created
-  order's page id (now returned by `createOrder`). **Appointment scheduling** instead uses Google: `GOOGLE_SERVICE_ACCOUNT_KEY` (the full
+  order's page id (now returned by `createOrder`). Optionally
+  `NOTION_INVOICES_DATABASE_ID` (the "invoices & payments" database): when set, a
+  custom order's status page shows a "Pay balance" action once the atelier marks
+  the linked invoice ready (`POST /orders/:n/balance`, priced as Final Balance −
+  deposit paid, taxed); unset ⇒ no balance action. Code:
+  `artifacts/api-server/src/lib/notion/invoices.repository.ts` +
+  `services/balance.service.ts`. **Appointment scheduling** instead uses Google: `GOOGLE_SERVICE_ACCOUNT_KEY` (the full
   service-account JSON key, with domain-wide delegation authorized for the
   Calendar scope) and `APPOINTMENT_SHEET_ID` (the working-hours Google Sheet,
   shared with the service-account email; optional `APPOINTMENT_SHEET_RANGE`,
@@ -724,6 +756,7 @@ and in the maintainer's env without edits.
 | Change the back-in-stock notify dialog  | `artifacts/web-app/src/components/notify-dialog.tsx` + `services/notify.service.ts` + `lib/notion/notify.*` (writes to the **contact** database — see below)                                                                                                             |
 | Change shop checkout / payments         | `artifacts/web-app/src/lib/cart.tsx` + `components/cart-drawer.tsx` + `components/add-to-cart.tsx` (frontend); `api-server/src/services/checkout.service.ts` + `routes/checkout.ts` + `routes/stripe-webhook.ts` + `lib/stripe/*` + `lib/notion/shop-orders.*` (backend) |
 | Change custom-order deposits            | `artifacts/web-app/src/pages/status.tsx` (`DepositSection`); `api-server/src/services/deposit.service.ts` + `routes/orders.ts` + `lib/notion/orders.repository.ts` (`findDepositTarget`/`markDepositPaid`) + `routes/stripe-webhook.ts`                                  |
+| Change custom-order balance payments    | `artifacts/web-app/src/pages/status.tsx` (`BalanceSection`); `api-server/src/services/balance.service.ts` + `routes/orders.ts` + `lib/notion/invoices.repository.ts` (`findInvoiceById`/`markBalancePaid`) + `routes/stripe-webhook.ts`                                    |
 | Change production-schedule milestones   | `api-server/src/services/schedule.service.ts` + `routes/cron.ts` + `lib/notion/production-schedule.{blocks,repository}.ts` + `lib/notion/orders.repository.ts` (`findOrdersNeedingMilestones`/`markMilestonesGenerated`); cron in `vercel.json`                               |
 | Change appointment booking (UI)         | `artifacts/web-app/src/pages/appointments.tsx`                                                                                                                                                                                                                           |
 | Change appointment types / routing rules| `api-server/src/lib/appointments/catalog.ts` (targeted business rule — durations, which staff, which locations)                                                                                                                                                               |

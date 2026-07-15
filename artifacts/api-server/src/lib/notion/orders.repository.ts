@@ -21,10 +21,12 @@ import {
   extractDepositPaid,
   extractDueDate,
   extractOrderEmail,
+  extractInvoicePageId,
   type CreateOrderInput,
   type NotionDatabaseSchema,
   type NotionQueryResponse,
   type OrderRecord,
+  type OrderLookup,
 } from "./orders.schema.js";
 
 const STAGE_CACHE_TTL_MS = 60_000;
@@ -110,7 +112,7 @@ export async function createOrder(
 export async function findOrderByNumber(
   orderNumber: string,
   client: NotionClient = getNotionClient(),
-): Promise<OrderRecord | null> {
+): Promise<OrderLookup | null> {
   assertConfigured(client);
 
   const trimmedOrderNumber = orderNumber.trim();
@@ -143,6 +145,7 @@ export async function findOrderByNumber(
   }
 
   const depositAmount = extractDepositAmount(page);
+  const invoicePageId = extractInvoicePageId(page);
   return {
     orderNumber: trimmedOrderNumber,
     orderName: extractOrderName(page),
@@ -150,15 +153,19 @@ export async function findOrderByNumber(
     stages,
     ...(depositAmount !== undefined ? { depositAmount } : {}),
     depositPaid: extractDepositPaid(page),
+    ...(invoicePageId ? { invoicePageId } : {}),
   };
 }
 
-/** A custom order's deposit state plus its Notion page id, for the deposit flow. */
+/** A custom order's deposit state plus its Notion page id, for the deposit and
+ * balance flows. `invoicePageId` is the linked invoice (when the atelier has
+ * attached one), used by the balance flow. */
 export interface DepositTarget {
   pageId: string;
   orderName: string;
   depositAmount?: number;
   depositPaid: boolean;
+  invoicePageId?: string;
 }
 
 /**
@@ -202,11 +209,13 @@ export async function findDepositTarget(
   }
 
   const depositAmount = extractDepositAmount(page);
+  const invoicePageId = extractInvoicePageId(page);
   return {
     pageId: page.id,
     orderName: extractOrderName(page),
     ...(depositAmount !== undefined ? { depositAmount } : {}),
     depositPaid: extractDepositPaid(page),
+    ...(invoicePageId ? { invoicePageId } : {}),
   };
 }
 

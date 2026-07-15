@@ -15,4 +15,10 @@ export interface OrderStatus {
   depositAmount?: number;
   /** Whether the customer has already paid the deposit. */
   depositPaid?: boolean;
+  /** The remaining balance due on this custom order, in dollars (the invoice's final balance minus any deposit already paid). Absent until the atelier has a ready invoice for the order. */
+  balanceAmount?: number;
+  /** Whether the customer has already paid the final balance. */
+  balancePaid?: boolean;
+  /** Whether the balance can be paid now — the invoice is marked ready and any deposit due has been paid. The status page only shows the pay- balance action when this is true. */
+  balanceReady?: boolean;
 }

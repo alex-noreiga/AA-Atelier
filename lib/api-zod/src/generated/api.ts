@@ -31,7 +31,10 @@ export const GetOrderStatusResponse = zod.object({
   "currentStage": zod.string(),
   "stages": zod.array(zod.string()),
   "depositAmount": zod.number().optional().describe('The deposit the atelier set for this custom order, in dollars. Absent until they\'ve quoted the piece and set it in Notion.'),
-  "depositPaid": zod.boolean().optional().describe('Whether the customer has already paid the deposit.')
+  "depositPaid": zod.boolean().optional().describe('Whether the customer has already paid the deposit.'),
+  "balanceAmount": zod.number().optional().describe('The remaining balance due on this custom order, in dollars (the invoice\'s final balance minus any deposit already paid). Absent until the atelier has a ready invoice for the order.'),
+  "balancePaid": zod.boolean().optional().describe('Whether the customer has already paid the final balance.'),
+  "balanceReady": zod.boolean().optional().describe('Whether the balance can be paid now — the invoice is marked ready and any deposit due has been paid. The status page only shows the pay- balance action when this is true.')
 })
 
 
@@ -71,6 +74,19 @@ export const CreateOrderBody = zod.object({
 
 export const CreateOrderResponse = zod.object({
   "orderNumber": zod.string()
+})
+
+
+/**
+ * Creates a Stripe Checkout session for the remaining balance on this custom order (the ready invoice's final balance minus any deposit already paid, priced server-side from Notion, tax added by Stripe Tax), and returns the hosted-checkout URL for the browser to redirect to. Fails if the order has no ready invoice, the deposit is still due, or the balance is already paid.
+ * @summary Start a final-balance payment for a custom order
+ */
+export const CreateOrderBalanceParams = zod.object({
+  "orderNumber": zod.coerce.string()
+})
+
+export const CreateOrderBalanceResponse = zod.object({
+  "url": zod.string().describe('The Stripe-hosted checkout URL for the deposit payment.')
 })
 
 

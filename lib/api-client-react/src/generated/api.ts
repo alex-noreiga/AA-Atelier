@@ -298,6 +298,77 @@ export const useCreateOrder = <TError = ErrorType<ErrorEnvelope>,
       return useMutation(getCreateOrderMutationOptions(options));
     }
 
+export const getCreateOrderBalanceUrl = (orderNumber: string,) => {
+
+
+
+
+  return `/api/orders/${orderNumber}/balance`
+}
+
+/**
+ * Creates a Stripe Checkout session for the remaining balance on this custom order (the ready invoice's final balance minus any deposit already paid, priced server-side from Notion, tax added by Stripe Tax), and returns the hosted-checkout URL for the browser to redirect to. Fails if the order has no ready invoice, the deposit is still due, or the balance is already paid.
+ * @summary Start a final-balance payment for a custom order
+ */
+export const createOrderBalance = async (orderNumber: string, options?: RequestInit): Promise<DepositSessionResponse> => {
+
+  return customFetch<DepositSessionResponse>(getCreateOrderBalanceUrl(orderNumber),
+  {
+    ...options,
+    method: 'POST'
+
+
+  }
+);}
+
+
+
+
+export const getCreateOrderBalanceMutationOptions = <TError = ErrorType<ErrorEnvelope | OrderNotFound>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof createOrderBalance>>, TError,{orderNumber: string}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof createOrderBalance>>, TError,{orderNumber: string}, TContext> => {
+
+const mutationKey = ['createOrderBalance'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof createOrderBalance>>, {orderNumber: string}> = (props) => {
+          const {orderNumber} = props ?? {};
+
+          return  createOrderBalance(orderNumber,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type CreateOrderBalanceMutationResult = NonNullable<Awaited<ReturnType<typeof createOrderBalance>>>
+
+    export type CreateOrderBalanceMutationError = ErrorType<ErrorEnvelope | OrderNotFound>
+
+    /**
+ * @summary Start a final-balance payment for a custom order
+ */
+export const useCreateOrderBalance = <TError = ErrorType<ErrorEnvelope | OrderNotFound>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof createOrderBalance>>, TError,{orderNumber: string}, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof createOrderBalance>>,
+        TError,
+        {orderNumber: string},
+        TContext
+      > => {
+      return useMutation(getCreateOrderBalanceMutationOptions(options));
+    }
+
 export const getCreateOrderDepositUrl = (orderNumber: string,) => {
 
 

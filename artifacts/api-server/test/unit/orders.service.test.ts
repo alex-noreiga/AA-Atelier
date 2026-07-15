@@ -23,6 +23,16 @@ vi.mock("../../src/lib/notion/order-form-submissions.repository.js", () => ({
   linkOrderFormSubmission: vi.fn(),
 }));
 
+// getOrderStatus enriches with the invoice balance; mock the invoice read but
+// keep the real computeBalanceDue so the displayed balance math is exercised.
+vi.mock("../../src/lib/notion/invoices.repository.js", async (importActual) => {
+  const actual =
+    await importActual<
+      typeof import("../../src/lib/notion/invoices.repository.js")
+    >();
+  return { ...actual, findInvoiceById: vi.fn() };
+});
+
 // The confirmation email is a best-effort side effect; mock it so the service
 // test asserts it is dispatched without touching the Resend transport.
 vi.mock("../../src/lib/resend/send.js", () => ({
@@ -39,6 +49,7 @@ import {
 } from "../../src/lib/notion/orders.repository.js";
 import { upsertClientByEmail } from "../../src/lib/notion/clients.repository.js";
 import { linkOrderFormSubmission } from "../../src/lib/notion/order-form-submissions.repository.js";
+import { findInvoiceById } from "../../src/lib/notion/invoices.repository.js";
 import { sendEmailBestEffort } from "../../src/lib/resend/send.js";
 import { NotFoundError, ValidationError } from "../../src/lib/errors.js";
 
@@ -46,6 +57,7 @@ const mockFind = vi.mocked(findOrderByNumber);
 const mockCreate = vi.mocked(createOrder);
 const mockUpsertClient = vi.mocked(upsertClientByEmail);
 const mockLinkSubmission = vi.mocked(linkOrderFormSubmission);
+const mockFindInvoice = vi.mocked(findInvoiceById);
 const mockSend = vi.mocked(sendEmailBestEffort);
 
 // createOrder now resolves { orderNumber, pageId }; a small helper keeps the
@@ -98,6 +110,54 @@ describe("getOrderStatus", () => {
       "Delivery",
       "Archived",
     ]);
+  });
+
+  it("enriches the status with the payable balance from the linked invoice", async () => {
+    mockFind.mockResolvedValue({
+      ...orderRecord({
+        orderNumber: "000002",
+        currentStage: "Sewing",
+        stages: ["Consultation", "Sewing", "Delivery"],
+        depositAmount: 200,
+        depositPaid: true,
+      }),
+      invoicePageId: "inv-1",
+    });
+    mockFindInvoice.mockResolvedValue({
+      finalBalance: 800,
+      balancePaid: false,
+      invoiceReady: true,
+    });
+
+    const result = await getOrderStatus("000002");
+
+    // 800 final − 200 paid deposit = 600, and it's ready to pay.
+    expect(result.balanceAmount).toBe(600);
+    expect(result.balanceReady).toBe(true);
+    expect(result.balancePaid).toBe(false);
+    // The internal invoice id is never exposed on the response.
+    expect(result).not.toHaveProperty("invoicePageId");
+  });
+
+  it("shows no balance action while a set deposit is unpaid", async () => {
+    mockFind.mockResolvedValue({
+      ...orderRecord({
+        orderNumber: "000002",
+        currentStage: "Sewing",
+        stages: ["Consultation", "Sewing", "Delivery"],
+        depositAmount: 200,
+        depositPaid: false,
+      }),
+      invoicePageId: "inv-1",
+    });
+    mockFindInvoice.mockResolvedValue({
+      finalBalance: 800,
+      balancePaid: false,
+      invoiceReady: true,
+    });
+
+    const result = await getOrderStatus("000002");
+    expect(result.balanceReady).toBe(false);
   });
 });
 

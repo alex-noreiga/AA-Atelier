@@ -3,6 +3,7 @@ import { Link } from "wouter";
 import {
   useGetOrderStatus,
   useCreateOrderDeposit,
+  useCreateOrderBalance,
   getGetOrderStatusQueryKey,
 } from "@workspace/api-client-react";
 import { Input } from "@/components/ui/input";
@@ -96,6 +97,95 @@ function DepositSection({
           <>
             <CreditCard className="w-4 h-4 mr-2" />
             Pay deposit
+          </>
+        )}
+      </Button>
+    </div>
+  );
+}
+
+/**
+ * The final-balance call-to-action on a custom order. Shows nothing until the
+ * atelier has a ready invoice and any deposit is paid (`ready`); then it invites
+ * payment, or confirms once paid. Paying redirects to Stripe's hosted checkout.
+ */
+function BalanceSection({
+  orderNumber,
+  amount,
+  paid,
+  ready,
+}: {
+  orderNumber: string;
+  amount?: number;
+  paid?: boolean;
+  ready?: boolean;
+}) {
+  const { toast } = useToast();
+  const balance = useCreateOrderBalance({
+    mutation: {
+      onSuccess: ({ url }) => {
+        window.location.href = url;
+      },
+      onError: (error) => {
+        const data = error.data;
+        const detail =
+          data && "error" in data
+            ? data.error
+            : data && "message" in data
+              ? data.message
+              : undefined;
+        toast({
+          variant: "destructive",
+          title: "Couldn't start the balance payment",
+          description:
+            detail ||
+            error.message ||
+            "Something went wrong. Please try again.",
+        });
+      },
+    },
+  });
+
+  if (paid) {
+    return (
+      <div
+        className="mb-12 flex items-center justify-center gap-2 text-sm tracking-widest uppercase text-primary"
+        data-testid="balance-paid"
+      >
+        <Check className="w-4 h-4" />
+        Balance paid
+      </div>
+    );
+  }
+
+  if (!ready || typeof amount !== "number" || amount <= 0) return null;
+
+  return (
+    <div
+      className="mb-12 rounded-2xl border border-border/60 p-6 text-center"
+      data-testid="balance-due"
+    >
+      <p className="text-xs uppercase tracking-widest text-muted-foreground">
+        Balance due
+      </p>
+      <p className="mt-1 font-serif text-3xl text-primary">
+        {formatPrice(amount)}
+      </p>
+      <Button
+        onClick={() => balance.mutate({ orderNumber })}
+        disabled={balance.isPending}
+        className="mt-5 bg-primary text-primary-foreground hover:bg-primary/90 px-8 py-6 rounded-full tracking-widest uppercase text-xs transition-all duration-300 disabled:opacity-50"
+        data-testid="button-pay-balance"
+      >
+        {balance.isPending ? (
+          <>
+            <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+            Redirecting…
+          </>
+        ) : (
+          <>
+            <CreditCard className="w-4 h-4 mr-2" />
+            Pay balance
           </>
         )}
       </Button>
@@ -245,6 +335,13 @@ export default function Status() {
               orderNumber={orderStatus.orderNumber}
               amount={orderStatus.depositAmount}
               paid={orderStatus.depositPaid}
+            />
+
+            <BalanceSection
+              orderNumber={orderStatus.orderNumber}
+              amount={orderStatus.balanceAmount}
+              paid={orderStatus.balancePaid}
+              ready={orderStatus.balanceReady}
             />
 
             <div className="relative pl-6 md:pl-8 space-y-12">
