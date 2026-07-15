@@ -83,6 +83,37 @@ describe("getOrderStatus", () => {
       "Archived",
     ]);
   });
+
+  it("reports measurementsLocked=false before the production lock stage", async () => {
+    mockFind.mockResolvedValue(
+      orderRecord({
+        currentStage: "Sketching",
+        stages: ["Consultation", "Sketching", "Cutting/Pinning", "Delivery"],
+      }),
+    );
+
+    const result = await getOrderStatus("000002");
+    expect(result.measurementsLocked).toBe(false);
+  });
+
+  it("reports measurementsLocked=true at/after the production lock stage", async () => {
+    mockFind.mockResolvedValue(
+      orderRecord({
+        currentStage: "Cutting/Pinning",
+        stages: ["Consultation", "Sketching", "Cutting/Pinning", "Delivery"],
+      }),
+    );
+
+    const result = await getOrderStatus("000002");
+    expect(result.measurementsLocked).toBe(true);
+  });
+
+  it("passes the estimated completion date through unchanged", async () => {
+    mockFind.mockResolvedValue(orderRecord({ estimatedCompletion: "2026-08-01" }));
+
+    const result = await getOrderStatus("000002");
+    expect(result.estimatedCompletion).toBe("2026-08-01");
+  });
 });
 
 describe("submitOrder", () => {

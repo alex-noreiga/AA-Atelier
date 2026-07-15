@@ -12,7 +12,7 @@ import { Seo } from "@/components/seo";
 import { ROUTE_SEO } from "@/lib/seo-routes";
 import { MeasurementChangeDialog } from "@/components/measurement-change-dialog";
 import { getStageDescription } from "@/lib/stage-descriptions";
-import { formatPrice } from "@/lib/format";
+import { formatPrice, formatDate } from "@/lib/format";
 import { useToast } from "@/hooks/use-toast";
 import { Loader2, ArrowRight, PenLine, Check, CreditCard } from "lucide-react";
 
@@ -239,6 +239,18 @@ export default function Status() {
                 Order {orderStatus.orderNumber}
               </p>
               <h2 className="text-3xl font-serif">{orderStatus.orderName}</h2>
+              {orderStatus.estimatedCompletion && (
+                <p
+                  className="mt-4 text-sm font-light text-muted-foreground"
+                  data-testid="estimated-completion"
+                >
+                  <span className="tracking-[0.15em] uppercase text-xs">
+                    Estimated completion
+                  </span>
+                  <span className="mx-2 text-border">·</span>
+                  {formatDate(orderStatus.estimatedCompletion)}
+                </p>
+              )}
             </div>
 
             <DepositSection
@@ -311,7 +323,17 @@ export default function Status() {
             </div>
 
             <div className="mt-16 flex flex-col items-center gap-6">
-              <MeasurementChangeDialog orderNumber={orderStatus.orderNumber} />
+              {orderStatus.measurementsLocked ? (
+                <p
+                  className="text-sm font-light text-muted-foreground/70 text-center max-w-sm"
+                  data-testid="measurements-locked"
+                >
+                  Measurements are locked now that your garment is in production.
+                  Need a change? Please contact us.
+                </p>
+              ) : (
+                <MeasurementChangeDialog orderNumber={orderStatus.orderNumber} />
+              )}
               <button
                 onClick={handleReset}
                 className="text-muted-foreground hover:text-primary transition-colors flex items-center gap-2 text-sm tracking-widest uppercase group"

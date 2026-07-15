@@ -61,6 +61,30 @@ describe("GET /api/orders/:orderNumber", () => {
       orderName: "Ada – Custom Dress",
       currentStage: "Sewing",
       stages: ["Consultation", "Sewing", "Delivery"],
+      measurementsLocked: false,
+    });
+  });
+
+  it("surfaces the production lock and estimated completion date", async () => {
+    mockFind.mockResolvedValue(
+      orderRecord({
+        orderNumber: "000003",
+        currentStage: "Cutting/Pinning",
+        stages: ["Consultation", "Cutting/Pinning", "Delivery"],
+        estimatedCompletion: "2026-08-01",
+      }),
+    );
+
+    const res = await request(app).get("/api/orders/000003");
+
+    expect(res.status).toBe(200);
+    expect(res.body).toEqual({
+      orderNumber: "000003",
+      orderName: "Ada – Custom Dress",
+      currentStage: "Cutting/Pinning",
+      stages: ["Consultation", "Cutting/Pinning", "Delivery"],
+      measurementsLocked: true,
+      estimatedCompletion: "2026-08-01",
     });
   });
 

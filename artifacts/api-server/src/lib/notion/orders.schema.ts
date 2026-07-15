@@ -50,6 +50,15 @@ export interface OrderRecord {
   depositAmount?: number;
   /** Whether the deposit has been paid. */
   depositPaid?: boolean;
+  /** The order's Due Date (ISO yyyy-mm-dd), the atelier's target completion
+   * date. Present once the atelier has set one in Notion. */
+  estimatedCompletion?: string;
+}
+
+/** The status-lookup response: the raw record plus the derived production-lock
+ * flag the UI uses to hide the measurement-change affordance. */
+export interface OrderStatusResult extends OrderRecord {
+  measurementsLocked: boolean;
 }
 
 interface NotionStatusOption {

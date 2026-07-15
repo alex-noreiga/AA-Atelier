@@ -6,7 +6,11 @@ import {
   findOrderByNumber,
 } from "../lib/notion/orders.repository.js";
 import { upsertClientByEmail } from "../lib/notion/clients.repository.js";
-import type { CreateOrderInput, OrderRecord } from "../lib/notion/orders.schema.js";
+import type {
+  CreateOrderInput,
+  OrderStatusResult,
+} from "../lib/notion/orders.schema.js";
+import { measurementsLocked } from "./measurement-lock.js";
 import { NotFoundError, ValidationError } from "../lib/errors.js";
 import {
   orderConfirmationEmail,
@@ -31,11 +35,16 @@ function hasAllMeasurements(input: CreateOrderInput): boolean {
 
 export async function getOrderStatus(
   orderNumber: string,
-): Promise<OrderRecord> {
+): Promise<OrderStatusResult> {
   const order = await findOrderByNumber(orderNumber);
   if (!order) {
     throw new NotFoundError("We couldn't find an order with that number.");
   }
+
+  // Derive the production lock from the *raw* record (before the timeline fixup
+  // below), so it shares the measurement-change flow's fail-open semantics: a
+  // current stage absent from the live list reports unlocked, not locked.
+  const locked = measurementsLocked(order.currentStage, order.stages);
 
   // The current stage may not be present in the live options list (e.g. a
   // renamed/removed option); ensure the timeline still includes it.
@@ -43,7 +52,7 @@ export async function getOrderStatus(
     ? order.stages
     : [...order.stages, order.currentStage];
 
-  return { ...order, stages };
+  return { ...order, stages, measurementsLocked: locked };
 }
 
 export async function submitOrder(

@@ -1,4 +1,5 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
+import { useSearch } from "wouter";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
@@ -126,6 +127,9 @@ export default function Appointments() {
   const [selectedSlot, setSelectedSlot] = useState<string | null>(null);
   const [success, setSuccess] = useState<NewAppointmentResponse | null>(null);
 
+  const search = useSearch();
+  const preselectedRef = useRef(false);
+
   const optionsQuery = useGetAppointmentOptions();
   const options = optionsQuery.data;
   const timezone = options?.timezone ?? "America/Chicago";
@@ -211,6 +215,23 @@ export default function Appointments() {
     // Skip the Format step entirely when there's nothing to choose there.
     setStep(soleLocation && soleStaff ? 2 : 1);
   }
+
+  // Deep-link: `/appointments?type=<id>` (e.g. the "Book your fitting" links from
+  // the order form and status page) preselects that appointment type once the
+  // live options have loaded, dropping the customer past the Purpose step. Runs
+  // once — the ref guard leaves manual back-navigation untouched.
+  useEffect(() => {
+    if (preselectedRef.current || !options) return;
+    const requested = new URLSearchParams(search).get("type");
+    if (!requested) return;
+    const match = options.types.find((t) => t.id === requested);
+    if (match) {
+      preselectedRef.current = true;
+      chooseType(match);
+    }
+    // chooseType is a stable in-render helper; the ref guard makes this fire once.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [options, search]);
 
   function chooseSlot(iso: string) {
     setSelectedSlot(iso);

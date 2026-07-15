@@ -31,7 +31,9 @@ export const GetOrderStatusResponse = zod.object({
   "currentStage": zod.string(),
   "stages": zod.array(zod.string()),
   "depositAmount": zod.number().optional().describe('The deposit the atelier set for this custom order, in dollars. Absent until they\'ve quoted the piece and set it in Notion.'),
-  "depositPaid": zod.boolean().optional().describe('Whether the customer has already paid the deposit.')
+  "depositPaid": zod.boolean().optional().describe('Whether the customer has already paid the deposit.'),
+  "measurementsLocked": zod.boolean().describe('True once the garment has reached the production stage at\/after which measurements are frozen (MEASUREMENT_LOCK_FROM_STAGE). When true, a measurement-change request would be rejected, so the UI hides the request affordance.'),
+  "estimatedCompletion": zod.string().optional().describe('The atelier\'s target completion date for this custom order (the order\'s Due Date), as an ISO date (yyyy-mm-dd). A response pass-through, kept as a string (no format: date) so it isn\'t coerced to a Date and reserialized to a UTC timestamp. Absent until the atelier sets one in Notion.')
 })
 
 

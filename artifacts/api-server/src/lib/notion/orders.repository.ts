@@ -135,6 +135,7 @@ export async function findOrderByNumber(
   }
 
   const depositAmount = extractDepositAmount(page);
+  const estimatedCompletion = extractDueDate(page);
   return {
     orderNumber: trimmedOrderNumber,
     orderName: extractOrderName(page),
@@ -142,6 +143,7 @@ export async function findOrderByNumber(
     stages,
     ...(depositAmount !== undefined ? { depositAmount } : {}),
     depositPaid: extractDepositPaid(page),
+    ...(estimatedCompletion !== undefined ? { estimatedCompletion } : {}),
   };
 }
 

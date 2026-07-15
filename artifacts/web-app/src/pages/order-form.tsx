@@ -5,7 +5,7 @@ import { z } from "zod";
 import { Link } from "wouter";
 import { useCreateOrder } from "@workspace/api-client-react";
 import { Button } from "@/components/ui/button";
-import { ctaVariants } from "@/components/cta";
+import { ctaVariants, CtaLink } from "@/components/cta";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
@@ -14,7 +14,7 @@ import { SuccessScreen } from "@/components/success-screen";
 import { Seo } from "@/components/seo";
 import { ROUTE_SEO } from "@/lib/seo-routes";
 import { useToast } from "@/hooks/use-toast";
-import { ArrowLeft, CheckCircle, Loader2 } from "lucide-react";
+import { ArrowLeft, CalendarCheck, CheckCircle, Loader2 } from "lucide-react";
 
 const MEASUREMENT_FIELDS = [
   { key: "waist", label: "Waist" },
@@ -171,14 +171,26 @@ export default function OrderForm() {
             : "Thank you! We'll be in touch soon to confirm your details."
         }
         footer={
-          <Link
-            to="/shop/status"
-            className="inline-flex items-center gap-2 text-sm tracking-widest uppercase text-muted-foreground hover:text-primary transition-colors"
-            data-testid="link-track-order"
-          >
-            <ArrowLeft className="w-4 h-4" />
-            Track order status
-          </Link>
+          <div className="flex flex-col items-center gap-6">
+            {success.appointment && (
+              <CtaLink
+                to="/appointments?type=fitting"
+                variant="primary"
+                data-testid="link-book-fitting-success"
+              >
+                <CalendarCheck className="w-4 h-4" />
+                Book your fitting
+              </CtaLink>
+            )}
+            <Link
+              to="/shop/status"
+              className="inline-flex items-center gap-2 text-sm tracking-widest uppercase text-muted-foreground hover:text-primary transition-colors"
+              data-testid="link-track-order"
+            >
+              <ArrowLeft className="w-4 h-4" />
+              Track order status
+            </Link>
+          </div>
         }
       >
         <div className="border border-border rounded-lg p-6 mb-8 inline-block">
@@ -406,10 +418,19 @@ export default function OrderForm() {
             ) : (
               <div className="border border-border rounded-lg p-6 bg-muted/20">
                 <p className="text-sm font-light text-foreground/90 leading-relaxed">
-                  No problem — we'll take your measurements for you. Once you
-                  place your order, we'll reach out to schedule a measurement
-                  appointment, or take them during your consultation.
+                  No problem — we'll take your measurements for you. Book a
+                  fitting now and we'll take them then, or we'll arrange it when
+                  you place your order.
                 </p>
+                <CtaLink
+                  to="/appointments?type=fitting"
+                  variant="outline"
+                  className="mt-5"
+                  data-testid="link-book-fitting"
+                >
+                  <CalendarCheck className="w-4 h-4" />
+                  Book your fitting
+                </CtaLink>
               </div>
             )}
           </section>

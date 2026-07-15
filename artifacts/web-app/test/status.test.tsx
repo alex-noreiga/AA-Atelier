@@ -145,6 +145,46 @@ describe("Status deposit", () => {
   });
 });
 
+describe("Status measurement-change lock", () => {
+  it("offers the measurement-change request while measurements are unlocked", async () => {
+    setHook({ data: orderRecord({ measurementsLocked: false }) });
+    await submitLookup();
+    expect(
+      screen.getByTestId("button-request-measurement-change"),
+    ).toBeInTheDocument();
+    expect(screen.queryByTestId("measurements-locked")).not.toBeInTheDocument();
+  });
+
+  it("replaces the request affordance with a locked notice once in production", async () => {
+    setHook({ data: orderRecord({ measurementsLocked: true }) });
+    await submitLookup();
+    expect(screen.getByTestId("measurements-locked")).toHaveTextContent(
+      /locked now that your garment is in production/i,
+    );
+    expect(
+      screen.queryByTestId("button-request-measurement-change"),
+    ).not.toBeInTheDocument();
+  });
+});
+
+describe("Status estimated completion", () => {
+  it("shows nothing when the atelier hasn't set a due date", async () => {
+    setHook({ data: orderRecord() });
+    await submitLookup();
+    expect(
+      screen.queryByTestId("estimated-completion"),
+    ).not.toBeInTheDocument();
+  });
+
+  it("shows the formatted estimated completion date when set", async () => {
+    setHook({ data: orderRecord({ estimatedCompletion: "2026-08-01" }) });
+    await submitLookup();
+    expect(screen.getByTestId("estimated-completion")).toHaveTextContent(
+      "August 1, 2026",
+    );
+  });
+});
+
 describe("Status reset", () => {
   it("returns to the lookup form after 'Check another order'", async () => {
     setHook({
