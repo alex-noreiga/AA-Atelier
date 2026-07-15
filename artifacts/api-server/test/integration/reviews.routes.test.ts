@@ -6,6 +6,9 @@ import { describe, it, expect, vi } from "vitest";
 vi.mock("../../src/lib/notion/orders.repository.js", () => ({
   findOrderForMeasurementChange: vi.fn(),
 }));
+vi.mock("../../src/lib/notion/shop-orders.repository.js", () => ({
+  findPaidShopOrderByEmail: vi.fn(),
+}));
 vi.mock("../../src/lib/notion/reviews.repository.js", () => ({
   createReview: vi.fn(),
   listPublishedReviews: vi.fn(),
@@ -15,12 +18,14 @@ import request from "supertest";
 import { reviewInput, reviewRecord } from "@workspace/test-fixtures";
 import app from "../../src/app.js";
 import { findOrderForMeasurementChange } from "../../src/lib/notion/orders.repository.js";
+import { findPaidShopOrderByEmail } from "../../src/lib/notion/shop-orders.repository.js";
 import {
   createReview,
   listPublishedReviews,
 } from "../../src/lib/notion/reviews.repository.js";
 
 const mockFind = vi.mocked(findOrderForMeasurementChange);
+const mockShop = vi.mocked(findPaidShopOrderByEmail);
 const mockWrite = vi.mocked(createReview);
 const mockList = vi.mocked(listPublishedReviews);
 
@@ -94,5 +99,35 @@ describe("POST /api/reviews", () => {
     expect(res.status).toBe(400);
     expect(res.body).toHaveProperty("error");
     expect(mockFind).not.toHaveBeenCalled();
+  });
+
+  describe("shop reviews (no order number)", () => {
+    // reviewInput() sets orderNumber; drop it to exercise the shop channel.
+    const shopBody = (() => {
+      const { orderNumber: _drop, ...rest } = reviewInput();
+      return rest;
+    })();
+
+    it("returns 201 when the email matches a paid shop order", async () => {
+      mockShop.mockResolvedValue({ sessionId: "cs_test_abc" });
+      mockWrite.mockResolvedValue();
+
+      const res = await request(app).post("/api/reviews").send(shopBody);
+
+      expect(res.status).toBe(201);
+      expect(res.body).toEqual({ success: true });
+      expect(mockFind).not.toHaveBeenCalled();
+      expect(mockWrite).toHaveBeenCalledOnce();
+    });
+
+    it("returns 403 when no shop order matches the email", async () => {
+      mockShop.mockResolvedValue(null);
+
+      const res = await request(app).post("/api/reviews").send(shopBody);
+
+      expect(res.status).toBe(403);
+      expect(res.body).toHaveProperty("error");
+      expect(mockWrite).not.toHaveBeenCalled();
+    });
   });
 });

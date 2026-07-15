@@ -7,6 +7,9 @@ import {
 import { mockReviews, mockCreateReview } from "./support/mock-api";
 
 const REVIEW = reviewInput();
+// orderNumber is optional in the contract (shop reviews omit it); the fixture
+// always sets it, but narrow to a definite string for the custom-order fills.
+const ORDER_NUMBER = REVIEW.orderNumber ?? "ORD-1";
 
 test.describe("Reviews page", () => {
   test("displays published reviews from the API", async ({ page }) => {
@@ -43,7 +46,7 @@ test.describe("Reviews page", () => {
 
     await page.goto("/reviews");
 
-    await page.locator("#orderNumber").fill(REVIEW.orderNumber);
+    await page.locator("#orderNumber").fill(ORDER_NUMBER);
     await page.locator("#email").fill(REVIEW.email);
     await page.locator("#name").fill(REVIEW.name);
     await page.getByRole("radio", { name: "5 stars" }).click();
@@ -61,6 +64,31 @@ test.describe("Reviews page", () => {
     });
   });
 
+  test("submits a shop review with no order number (verified by email)", async ({
+    page,
+  }) => {
+    await mockReviews(page, { body: { reviews: [] } });
+    const { requests } = await mockCreateReview(page, {
+      body: { success: true },
+    });
+
+    await page.goto("/reviews");
+
+    // Leave the order number blank — the shop path is matched by email.
+    await page.locator("#email").fill(REVIEW.email);
+    await page.locator("#name").fill(REVIEW.name);
+    await page.getByRole("radio", { name: "5 stars" }).click();
+    await page.locator("#body").fill(REVIEW.body);
+    await page.getByRole("button", { name: "Submit Review" }).click();
+
+    await expect(
+      page.getByRole("heading", { name: "Thank You" }),
+    ).toBeVisible();
+    expect(requests).toHaveLength(1);
+    expect(requests[0]).not.toHaveProperty("orderNumber");
+    expect(requests[0]).toMatchObject({ email: REVIEW.email, rating: 5 });
+  });
+
   test("shows a destructive toast when the order can't be verified", async ({
     page,
   }) => {
@@ -72,7 +100,7 @@ test.describe("Reviews page", () => {
 
     await page.goto("/reviews");
 
-    await page.locator("#orderNumber").fill(REVIEW.orderNumber);
+    await page.locator("#orderNumber").fill(ORDER_NUMBER);
     await page.locator("#email").fill(REVIEW.email);
     await page.locator("#name").fill(REVIEW.name);
     await page.getByRole("radio", { name: "5 stars" }).click();

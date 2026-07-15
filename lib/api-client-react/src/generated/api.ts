@@ -895,7 +895,7 @@ export const getCreateReviewUrl = () => {
 }
 
 /**
- * Files a customer review against a past order. The order number must match an existing order whose email matches the supplied one. The review is saved unpublished and only appears on the site once the atelier publishes it in Notion.
+ * Files a customer review against a past order. A custom-order review supplies an order number whose email must match; a shop review omits the order number and is verified by matching the email against a paid shop order. The review is saved unpublished and only appears on the site once the atelier publishes it in Notion.
  * @summary Submit a customer review
  */
 export const createReview = async (newReviewRequest: NewReviewRequest, options?: RequestInit): Promise<NewReviewResponse> => {

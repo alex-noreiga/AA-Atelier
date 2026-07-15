@@ -367,10 +367,11 @@ paths:
       tags: [reviews]
       summary: Submit a customer review
       description: >-
-        Files a customer review against a past order. The order number must
-        match an existing order whose email matches the supplied one. The review
-        is saved unpublished and only appears on the site once the atelier
-        publishes it in Notion.
+        Files a customer review against a past order. A custom-order review
+        supplies an order number whose email must match; a shop review omits the
+        order number and is verified by matching the email against a paid shop
+        order. The review is saved unpublished and only appears on the site once
+        the atelier publishes it in Notion.
       requestBody:
         required: true
         content:
@@ -826,7 +827,6 @@ components:
     NewReviewRequest:
       type: object
       required:
-        - orderNumber
         - email
         - name
         - rating
@@ -836,15 +836,18 @@ components:
           type: string
           minLength: 1
           description: >-
-            The order number to verify against. A review whose order number
-            isn't found is rejected (404), and one whose email doesn't match the
-            order is rejected (403).
+            The custom-order number to verify against. Present for custom-order
+            reviews; a number that isn't found is rejected (404) and one whose
+            email doesn't match the order is rejected (403). OMITTED for shop
+            reviews — those are verified by matching the email against a paid
+            shop order instead (no order number is issued for shop purchases).
         email:
           type: string
           format: email
           description: >-
-            Verified against the email on the order. Kept private — never shown
-            with the published review.
+            Verified against the order's email (a custom order by number, or a
+            paid shop order by this email when no order number is given). Kept
+            private — never shown with the published review.
         name:
           type: string
           minLength: 1

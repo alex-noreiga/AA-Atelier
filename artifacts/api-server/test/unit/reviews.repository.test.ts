@@ -167,7 +167,10 @@ describe("createReview", () => {
       throw new Error(`unexpected path ${path}`);
     });
 
-    await repo.createReview({ verified: true, review: reviewInput() }, client);
+    await repo.createReview(
+      { verified: true, orderReference: "ORD-1", review: reviewInput() },
+      client,
+    );
 
     const call = client.calls.find((c) => isPageCreate(c.path))!;
     expect(call.init!.method).toBe("POST");
@@ -183,7 +186,10 @@ describe("createReview", () => {
       throw new Error(`unexpected path ${path}`);
     });
     await expect(
-      repo.createReview({ verified: true, review: reviewInput() }, client),
+      repo.createReview(
+        { verified: true, orderReference: "ORD-1", review: reviewInput() },
+        client,
+      ),
     ).rejects.toThrow(/Notion review creation failed with status 400/);
   });
 });

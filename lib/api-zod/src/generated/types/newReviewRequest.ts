@@ -8,11 +8,11 @@
 
 export interface NewReviewRequest {
   /**
-     * The order number to verify against. A review whose order number isn't found is rejected (404), and one whose email doesn't match the order is rejected (403).
+     * The custom-order number to verify against. Present for custom-order reviews; a number that isn't found is rejected (404) and one whose email doesn't match the order is rejected (403). OMITTED for shop reviews — those are verified by matching the email against a paid shop order instead (no order number is issued for shop purchases).
      * @minLength 1
      */
-  orderNumber: string;
-  /** Verified against the email on the order. Kept private — never shown with the published review. */
+  orderNumber?: string;
+  /** Verified against the order's email (a custom order by number, or a paid shop order by this email when no order number is given). Kept private — never shown with the published review. */
   email: string;
   /**
      * The reviewer's display name, shown with the review.

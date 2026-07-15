@@ -272,7 +272,11 @@ export function reviewNotificationEmail(
   const stars = "★".repeat(input.rating) + "☆".repeat(5 - input.rating);
 
   const fields: Field[] = [
-    ["Order number", input.orderNumber],
+    // A custom-order review carries an order number; a shop review is matched by
+    // email instead, so label the channel rather than showing a blank number.
+    input.orderNumber
+      ? (["Order number", input.orderNumber] as Field)
+      : (["Purchase", "Shop order (verified by email)"] as Field),
     ["Name", input.name],
     ["Email", input.email],
     ["Rating", `${stars} (${input.rating}/5)`],

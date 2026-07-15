@@ -181,6 +181,23 @@ export function reviewPage(opts: {
   };
 }
 
+/**
+ * Minimal Notion shop-order page as returned by a query on the "Shop Orders"
+ * database. Only the "Stripe Session Id" property the review lookup reads is
+ * populated (the email is used in the filter, not read back).
+ */
+export function shopOrderPage(opts: { id?: string; sessionId?: string }) {
+  return {
+    id: opts.id ?? "shop-order-page",
+    properties: {
+      "Stripe Session Id": {
+        type: "rich_text",
+        rich_text: opts.sessionId ? [{ plain_text: opts.sessionId }] : [],
+      },
+    },
+  };
+}
+
 /** Minimal Notion order page as returned by a database query. */
 export function orderPage(opts: {
   id?: string;

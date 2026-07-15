@@ -18,7 +18,9 @@ import { CheckCircle, Loader2, Quote } from "lucide-react";
 // `useCreateReview` mutation below, whose `data` is typed as the generated
 // `NewReviewRequest`, so the form cannot silently drift from the API contract.
 const formSchema = z.object({
-  orderNumber: z.string().min(1, "Your order number is required"),
+  // Optional: custom-order customers enter their order number; shop customers
+  // leave it blank and are verified by the email they ordered with.
+  orderNumber: z.string().optional(),
   email: z.string().email("Please enter a valid email address"),
   name: z.string().min(1, "Your name is required"),
   rating: z
@@ -145,10 +147,15 @@ export default function Reviews() {
   const submitting = createReview.isPending;
 
   const onSubmit = (values: FormValues) => {
-    const { title, ...rest } = values;
+    const { title, orderNumber, ...rest } = values;
     createReview.mutate({
       data: {
         ...rest,
+        // Omit the order number for shop reviews (blank) so the server routes to
+        // the email-matched shop verification instead of a custom-order lookup.
+        ...(orderNumber && orderNumber.trim()
+          ? { orderNumber: orderNumber.trim() }
+          : {}),
         ...(title && title.trim() ? { title: title.trim() } : {}),
       },
     });
@@ -206,8 +213,9 @@ export default function Reviews() {
                   Leave a Review
                 </h2>
                 <p className="font-light text-muted-foreground">
-                  Reviews are open to past customers — enter the order number
-                  and email from your commission.
+                  Reviews are open to past customers. For a custom commission,
+                  enter your order number; if you bought from the shop, just use
+                  the email you ordered with.
                 </p>
               </div>
 
@@ -218,7 +226,10 @@ export default function Reviews() {
                       htmlFor="orderNumber"
                       className="text-sm font-light tracking-wide"
                     >
-                      Order number <span className="text-primary">*</span>
+                      Order number
+                      <span className="ml-1 text-xs text-muted-foreground/60">
+                        (shop orders: leave blank)
+                      </span>
                     </Label>
                     <Input
                       id="orderNumber"

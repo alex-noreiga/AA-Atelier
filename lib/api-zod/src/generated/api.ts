@@ -255,7 +255,7 @@ export const ListReviewsResponse = zod.object({
 
 
 /**
- * Files a customer review against a past order. The order number must match an existing order whose email matches the supplied one. The review is saved unpublished and only appears on the site once the atelier publishes it in Notion.
+ * Files a customer review against a past order. A custom-order review supplies an order number whose email must match; a shop review omits the order number and is verified by matching the email against a paid shop order. The review is saved unpublished and only appears on the site once the atelier publishes it in Notion.
  * @summary Submit a customer review
  */
 
@@ -266,8 +266,8 @@ export const createReviewBodyRatingMax = 5;
 
 
 export const CreateReviewBody = zod.object({
-  "orderNumber": zod.string().min(1).describe('The order number to verify against. A review whose order number isn\'t found is rejected (404), and one whose email doesn\'t match the order is rejected (403).'),
-  "email": zod.string().email().describe('Verified against the email on the order. Kept private — never shown with the published review.'),
+  "orderNumber": zod.string().min(1).optional().describe('The custom-order number to verify against. Present for custom-order reviews; a number that isn\'t found is rejected (404) and one whose email doesn\'t match the order is rejected (403). OMITTED for shop reviews — those are verified by matching the email against a paid shop order instead (no order number is issued for shop purchases).'),
+  "email": zod.string().email().describe('Verified against the order\'s email (a custom order by number, or a paid shop order by this email when no order number is given). Kept private — never shown with the published review.'),
   "name": zod.string().min(1).describe('The reviewer\'s display name, shown with the review.'),
   "rating": zod.number().min(1).max(createReviewBodyRatingMax),
   "title": zod.string().optional().describe('Optional short headline.'),

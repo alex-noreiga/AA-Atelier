@@ -6,6 +6,7 @@ describe("buildReviewProperties", () => {
   it("maps each field to the correct live Notion property type", () => {
     const props = buildReviewProperties({
       verified: true,
+      orderReference: "000002",
       review: reviewInput({ orderNumber: "000002", title: "Loved it" }),
     }) as any;
 
@@ -20,15 +21,25 @@ describe("buildReviewProperties", () => {
     expect(props.Title.rich_text[0].text.content).toBe("Loved it");
     // email property (not rich_text)
     expect(props.Email).toEqual({ email: "ada@example.com" });
-    // rich_text order number
+    // rich_text order reference (the custom order number here)
     expect(props["Order Number"].rich_text[0].text.content).toBe("000002");
     // verification flag
     expect(props.Verified).toEqual({ checkbox: true });
   });
 
+  it("writes the order reference (a shop session id) even when no order number was sent", () => {
+    const props = buildReviewProperties({
+      verified: true,
+      orderReference: "cs_test_123",
+      review: reviewInput({ orderNumber: undefined }),
+    }) as any;
+    expect(props["Order Number"].rich_text[0].text.content).toBe("cs_test_123");
+  });
+
   it("always writes Published unchecked (moderation gate)", () => {
     const props = buildReviewProperties({
       verified: true,
+      orderReference: "ORD-1",
       review: reviewInput(),
     }) as any;
     expect(props.Published).toEqual({ checkbox: false });
@@ -37,6 +48,7 @@ describe("buildReviewProperties", () => {
   it("records an unverified submission", () => {
     const props = buildReviewProperties({
       verified: false,
+      orderReference: "ORD-1",
       review: reviewInput(),
     }) as any;
     expect(props.Verified).toEqual({ checkbox: false });
@@ -45,6 +57,7 @@ describe("buildReviewProperties", () => {
   it("omits the Title property when no title is provided", () => {
     const props = buildReviewProperties({
       verified: true,
+      orderReference: "ORD-1",
       review: reviewInput(),
     }) as any;
     expect(props).not.toHaveProperty("Title");

@@ -104,6 +104,26 @@ describe("Reviews — submission mapping", () => {
     expect(mutate.mock.calls[0][0].data.title).toBe("Loved it");
   });
 
+  it("omits the order number for a shop review (blank)", async () => {
+    const user = userEvent.setup();
+    render(<Reviews />);
+    // Leave order number blank — the shop path is verified by email server-side.
+    await user.type(byId("email"), "ada@example.com");
+    await user.type(byId("name"), "Ada Lovelace");
+    await user.click(screen.getByRole("radio", { name: "5 stars" }));
+    await user.type(byId("body"), "The dress was exquisite.");
+    await user.click(screen.getByRole("button", { name: "Submit Review" }));
+
+    await waitFor(() => expect(mutate).toHaveBeenCalledTimes(1));
+    const { data } = mutate.mock.calls[0][0];
+    expect(data).not.toHaveProperty("orderNumber");
+    expect(data).toMatchObject({
+      email: "ada@example.com",
+      name: "Ada Lovelace",
+      rating: 5,
+    });
+  });
+
   it("does not submit without a rating", async () => {
     const user = userEvent.setup();
     render(<Reviews />);

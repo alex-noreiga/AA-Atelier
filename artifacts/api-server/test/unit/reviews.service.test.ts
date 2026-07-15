@@ -6,6 +6,9 @@ import { reviewInput } from "@workspace/test-fixtures";
 vi.mock("../../src/lib/notion/orders.repository.js", () => ({
   findOrderForMeasurementChange: vi.fn(),
 }));
+vi.mock("../../src/lib/notion/shop-orders.repository.js", () => ({
+  findPaidShopOrderByEmail: vi.fn(),
+}));
 vi.mock("../../src/lib/notion/reviews.repository.js", () => ({
   createReview: vi.fn(),
   listPublishedReviews: vi.fn(),
@@ -19,6 +22,7 @@ import {
   listReviews,
 } from "../../src/services/reviews.service.js";
 import { findOrderForMeasurementChange } from "../../src/lib/notion/orders.repository.js";
+import { findPaidShopOrderByEmail } from "../../src/lib/notion/shop-orders.repository.js";
 import {
   createReview,
   listPublishedReviews,
@@ -27,6 +31,7 @@ import { sendEmailBestEffort } from "../../src/lib/resend/send.js";
 import { NotFoundError, ForbiddenError } from "../../src/lib/errors.js";
 
 const mockFind = vi.mocked(findOrderForMeasurementChange);
+const mockShop = vi.mocked(findPaidShopOrderByEmail);
 const mockWrite = vi.mocked(createReview);
 const mockList = vi.mocked(listPublishedReviews);
 const mockSend = vi.mocked(sendEmailBestEffort);
@@ -43,7 +48,7 @@ afterEach(() => {
   delete process.env.ATELIER_INBOX_EMAIL;
 });
 
-describe("submitReview — identity gate", () => {
+describe("submitReview — custom-order gate", () => {
   it("throws NotFoundError and never writes when the order does not exist", async () => {
     mockFind.mockResolvedValue(null);
     await expect(submitReview(reviewInput())).rejects.toBeInstanceOf(
@@ -70,6 +75,9 @@ describe("submitReview — identity gate", () => {
     expect(result).toEqual({ success: true });
     expect(mockWrite).toHaveBeenCalledOnce();
     expect(mockWrite.mock.calls[0][0].verified).toBe(true);
+    // The custom order number becomes the review's stored reference.
+    expect(mockWrite.mock.calls[0][0].orderReference).toBe("ORD-1");
+    expect(mockShop).not.toHaveBeenCalled();
   });
 
   it("accepts a legacy order (no stored email) but flags it unverified", async () => {
@@ -79,6 +87,40 @@ describe("submitReview — identity gate", () => {
 
     expect(mockWrite).toHaveBeenCalledOnce();
     expect(mockWrite.mock.calls[0][0].verified).toBe(false);
+  });
+});
+
+describe("submitReview — shop-order gate (no order number)", () => {
+  const shopReview = () => reviewInput({ orderNumber: undefined });
+
+  it("files a verified review referencing the matched shop order's session id", async () => {
+    mockShop.mockResolvedValue({ sessionId: "cs_test_123" });
+
+    const result = await submitReview(shopReview());
+
+    expect(result).toEqual({ success: true });
+    expect(mockFind).not.toHaveBeenCalled(); // never runs the custom-order lookup
+    expect(mockWrite).toHaveBeenCalledOnce();
+    expect(mockWrite.mock.calls[0][0].verified).toBe(true);
+    expect(mockWrite.mock.calls[0][0].orderReference).toBe("cs_test_123");
+  });
+
+  it("throws ForbiddenError and never writes when no shop order matches the email", async () => {
+    mockShop.mockResolvedValue(null);
+
+    await expect(submitReview(shopReview())).rejects.toBeInstanceOf(
+      ForbiddenError,
+    );
+    expect(mockWrite).not.toHaveBeenCalled();
+  });
+
+  it("treats a blank/whitespace order number as a shop review", async () => {
+    mockShop.mockResolvedValue({ sessionId: "cs_test_456" });
+
+    await submitReview(reviewInput({ orderNumber: "   " }));
+
+    expect(mockFind).not.toHaveBeenCalled();
+    expect(mockShop).toHaveBeenCalledOnce();
   });
 });
 

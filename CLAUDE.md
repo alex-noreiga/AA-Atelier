@@ -214,13 +214,23 @@ captured in `.agents/memory/`:
    _unchecked_; `GET /api/reviews` returns only rows where Published is checked
    (`listPublishedReviews()` filters on it). This is the same shape as the shop's
    `Show on website` checkbox — a new submission never appears on the site until
-   the atelier ticks Published in Notion. Submission is gated on order identity:
-   the flow reuses `findOrderForMeasurementChange()` and applies the **same
-   email-vs-order gate** as the measurement-change flow (no stored email ⇒
-   accept + flag `Verified` false; match ⇒ verified; mismatch ⇒ 403). Property
-   names live in `reviews.schema.ts` (re-exported to `reviews.blocks.ts` so the
-   reader and writer can't drift). Rating is a Notion **number** (1–5); the
-   review date is the page's built-in `created_time`.
+   the atelier ticks Published in Notion. Submission is gated on proving a past
+   purchase, and `reviews.service.ts` routes on **whether an order number was
+   supplied** (it's optional in the contract):
+   - **Custom order** (order number present) — reuses `findOrderForMeasurementChange()`
+     and applies the **same email-vs-order gate** as the measurement-change flow
+     (no stored email ⇒ accept + flag `Verified` false; match ⇒ verified;
+     mismatch ⇒ 403). The order number is the review's stored reference.
+   - **Shop purchase** (no order number — shop orders carry none) — verified by
+     matching the email against a paid order via `findPaidShopOrderByEmail()`
+     (`shop-orders.repository.ts`); a match ⇒ verified with the shop order's
+     Stripe **session id** as the reference, no match ⇒ 403.
+
+   Either way the reference lands in the review's **Order Number** property
+   (`ORD-…` for custom, `cs_…` for shop). Property names live in
+   `reviews.schema.ts` (re-exported to `reviews.blocks.ts` so the reader and
+   writer can't drift). Rating is a Notion **number** (1–5); the review date is
+   the page's built-in `created_time`.
 
 Auth: the server reads `NOTION_API_KEY` and `NOTION_ORDERS_DATABASE_ID` from
 environment variables (via `createNotionClient` in `notion/client.ts`, read at

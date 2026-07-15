@@ -28,12 +28,16 @@ export type CreateReviewInput = z.infer<typeof CreateReviewBody>;
 /** A review plus whether we could verify the submitter's email against the order. */
 export interface ReviewRow {
   verified: boolean;
+  /** The order this review is tied to: a custom order number (`ORD-…`) or, for a
+   * shop review (no order number is issued), the matched shop order's Stripe
+   * session id. Empty when neither could be resolved. */
+  orderReference: string;
   review: CreateReviewInput;
 }
 
 /** Notion page `properties` for a new review. */
 export function buildReviewProperties(row: ReviewRow): Record<string, unknown> {
-  const { verified, review } = row;
+  const { verified, orderReference, review } = row;
 
   const properties: Record<string, unknown> = {
     [REVIEW_NAME_PROPERTY]: {
@@ -49,7 +53,7 @@ export function buildReviewProperties(row: ReviewRow): Record<string, unknown> {
       email: review.email,
     },
     [REVIEW_ORDER_PROPERTY]: {
-      rich_text: [{ text: { content: review.orderNumber } }],
+      rich_text: [{ text: { content: orderReference } }],
     },
     [REVIEW_VERIFIED_PROPERTY]: {
       checkbox: verified,
