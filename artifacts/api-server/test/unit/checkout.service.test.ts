@@ -13,6 +13,7 @@ vi.mock("../../src/lib/notion/shop-orders.repository.js", () => ({
 import type Stripe from "stripe";
 import {
   createCheckoutSession,
+  getCheckoutSession,
   recordPaidOrder,
 } from "../../src/services/checkout.service.js";
 import { BadRequestError } from "../../src/lib/errors.js";
@@ -313,6 +314,78 @@ describe("createCheckoutSession", () => {
     await expect(
       createCheckoutSession([{ variantId: "v1", quantity: 1 }], stripe),
     ).rejects.toThrow(/Stripe did not return a checkout URL/);
+  });
+});
+
+describe("getCheckoutSession", () => {
+  it("retrieves the session with line items expanded and maps a full receipt to dollars", async () => {
+    const { stripe, retrieve } = fakeStripe();
+    retrieve.mockResolvedValue({
+      payment_status: "paid",
+      currency: "usd",
+      customer_details: { email: "buyer@example.com" },
+      line_items: {
+        data: [
+          { description: "Keyhole Dress — Adult S", quantity: 1, amount_total: 12500 },
+          { description: "Bow Fleece Soaker", quantity: 2, amount_total: 4400 },
+        ],
+      },
+      amount_subtotal: 16900,
+      total_details: { amount_shipping: 800, amount_tax: 1400 },
+      amount_total: 19100,
+    });
+
+    const view = await getCheckoutSession("cs_123", stripe);
+
+    expect(retrieve).toHaveBeenCalledWith("cs_123", {
+      expand: ["line_items"],
+    });
+    expect(view).toEqual({
+      status: "paid",
+      email: "buyer@example.com",
+      currency: "usd",
+      lineItems: [
+        { description: "Keyhole Dress — Adult S", quantity: 1, amount: 125 },
+        { description: "Bow Fleece Soaker", quantity: 2, amount: 44 },
+      ],
+      amountSubtotal: 169,
+      amountShipping: 8,
+      amountTax: 14,
+      amountTotal: 191,
+    });
+  });
+
+  it("omits optional fields and zeroes amounts for a bare session", async () => {
+    const { stripe, retrieve } = fakeStripe();
+    // No email, no currency, no line items, no totals.
+    retrieve.mockResolvedValue({ payment_status: "unpaid" });
+
+    const view = await getCheckoutSession("cs_bare", stripe);
+
+    expect(view).toEqual({
+      status: "unpaid",
+      amountSubtotal: 0,
+      amountShipping: 0,
+      amountTax: 0,
+      amountTotal: 0,
+    });
+    expect(view.email).toBeUndefined();
+    expect(view.currency).toBeUndefined();
+    expect(view.lineItems).toBeUndefined();
+  });
+
+  it("falls back to defaults for a line item missing a description or quantity", async () => {
+    const { stripe, retrieve } = fakeStripe();
+    retrieve.mockResolvedValue({
+      payment_status: "paid",
+      line_items: { data: [{ amount_total: 5000 }] },
+    });
+
+    const view = await getCheckoutSession("cs_partial", stripe);
+
+    expect(view.lineItems).toEqual([
+      { description: "Item", quantity: 1, amount: 50 },
+    ]);
   });
 });
 

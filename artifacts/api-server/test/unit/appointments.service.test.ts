@@ -179,4 +179,47 @@ describe("bookAppointment", () => {
     ).rejects.toBeInstanceOf(BadRequestError);
     expect(mockCreate).not.toHaveBeenCalled();
   });
+
+  it("rejects an unknown appointment type", async () => {
+    await expect(
+      bookAppointment({ ...validBody, typeId: "mystery" } as never),
+    ).rejects.toBeInstanceOf(BadRequestError);
+    expect(mockCreate).not.toHaveBeenCalled();
+  });
+
+  it("rejects an unrecognized location", async () => {
+    await expect(
+      bookAppointment({ ...validBody, location: "moon" } as never),
+    ).rejects.toBeInstanceOf(BadRequestError);
+    expect(mockCreate).not.toHaveBeenCalled();
+  });
+
+  it("rejects a location the type isn't offered at", async () => {
+    // Fittings are in-person only.
+    await expect(
+      bookAppointment({
+        ...validBody,
+        typeId: "fitting",
+        location: "virtual",
+      } as never),
+    ).rejects.toBeInstanceOf(BadRequestError);
+    expect(mockCreate).not.toHaveBeenCalled();
+  });
+
+  it("rejects an invalid (unparseable) start time", async () => {
+    await expect(
+      bookAppointment({ ...validBody, start: new Date("not-a-date") } as never),
+    ).rejects.toBeInstanceOf(BadRequestError);
+    expect(mockCreate).not.toHaveBeenCalled();
+  });
+
+  it("also emails the atelier inbox when one is configured", async () => {
+    process.env.ATELIER_INBOX_EMAIL = "studio@atelier.test";
+
+    const result = await bookAppointment(validBody as never);
+
+    // Booking still succeeds; the notification is a best-effort side effect.
+    expect(result.confirmationCode).toMatch(/^APT-/);
+    expect(mockCreate).toHaveBeenCalledOnce();
+  });
 });
