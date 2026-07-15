@@ -1,4 +1,4 @@
-import { test, expect } from "@playwright/test";
+import { test, expect } from "./support/test";
 import { createOrderInput, GENERIC_ERROR } from "@workspace/test-fixtures";
 import { mockCreateOrder } from "./support/mock-api";
 
@@ -42,7 +42,7 @@ test.describe("Order form", () => {
       page.getByRole("heading", { name: "Order Received" }),
     ).toBeVisible();
     await expect(page.getByText(/Thank you!/)).toBeVisible();
-    await expect(page.locator("p.font-mono")).toHaveText("ORD-TEST-0001");
+    await expect(page.getByTestId("order-number")).toHaveText("ORD-TEST-0001");
     await expect(
       page.getByRole("link", { name: /Track order status/i }),
     ).toBeVisible();
@@ -73,7 +73,7 @@ test.describe("Order form", () => {
     await expect(
       page.getByText(/schedule your measurement appointment/i),
     ).toBeVisible();
-    await expect(page.locator("p.font-mono")).toHaveText("ORD-APPT-0001");
+    await expect(page.getByTestId("order-number")).toHaveText("ORD-APPT-0001");
   });
 
   test("shows a destructive toast when the API rejects the submission", async ({
@@ -139,7 +139,7 @@ test.describe("Order form — live Notion (opt-in)", () => {
       page.getByRole("heading", { name: "Order Received" }),
     ).toBeVisible({ timeout: 20_000 });
 
-    const orderNumber = await page.locator("p.font-mono").textContent();
+    const orderNumber = await page.getByTestId("order-number").textContent();
     expect(orderNumber).toMatch(/^ORD-[A-Z0-9]+-[A-Z0-9]+$/);
   });
 });

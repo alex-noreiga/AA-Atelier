@@ -22,8 +22,11 @@ const useOwnServer = !process.env.PLAYWRIGHT_BASE_URL;
 
 export default defineConfig({
   testDir: "./e2e",
-  fullyParallel: false,
-  retries: 1,
+  // Each spec mocks its own `/api/*` in its own browser context and shares no
+  // state, so the suite is safe to run fully parallel.
+  fullyParallel: true,
+  // Retry only on CI (network/timing flake); locally a retry would mask flake.
+  retries: process.env.CI ? 1 : 0,
   timeout: 30_000,
   // On CI also emit an HTML report (uploaded as a workflow artifact); `list`
   // keeps the console output readable.
