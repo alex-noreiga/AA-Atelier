@@ -9,6 +9,11 @@
 // write, which stays the source of truth. A Resend outage must not turn a
 // successful order/contact/notify submission into a 500 — so the services only
 // ever go through the best-effort path.
+//
+// A failed send is still swallowed, but it is logged at `error` (not `warn`) so
+// a misconfigured mailer is loud in the logs rather than a silent mystery: the
+// two ways a customer email can go missing (mailer not configured vs. Resend
+// rejected the send) get distinct, actionable messages.
 
 import { logger } from "../logger.js";
 import {
@@ -17,13 +22,34 @@ import {
   type ResendClient,
 } from "./client.js";
 
+/**
+ * Thrown by `sendEmail` when the mailer can't dispatch because credentials or a
+ * sender address are missing — a persistent config problem, not a transient
+ * send failure. `sendEmailBestEffort` uses the type to log an actionable message
+ * naming the missing piece.
+ */
+export class MailerNotConfiguredError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = "MailerNotConfiguredError";
+  }
+}
+
 export async function sendEmail(
   message: EmailMessage,
   client: ResendClient = getResendClient(),
 ): Promise<void> {
-  if (!client.configured) {
-    throw new Error(
-      "Resend is not configured (set RESEND_API_KEY and RESEND_FROM_EMAIL)",
+  // Gate on the *resolved* sender (a per-message `from` overrides the base), so a
+  // per-category sender still works when only its override — not the base
+  // `RESEND_FROM_EMAIL` — is set. Name the missing piece for the log.
+  const resolvedFrom = message.from || client.baseFrom;
+  if (!client.hasApiKey || !resolvedFrom) {
+    const missing = [
+      client.hasApiKey ? null : "RESEND_API_KEY",
+      resolvedFrom ? null : "a sender address (RESEND_FROM_EMAIL)",
+    ].filter(Boolean);
+    throw new MailerNotConfiguredError(
+      `Resend is not configured — missing ${missing.join(" and ")}`,
     );
   }
 
@@ -49,9 +75,18 @@ export async function sendEmailBestEffort(
   try {
     await sendEmail(message, client);
   } catch (err) {
-    logger.warn(
+    if (err instanceof MailerNotConfiguredError) {
+      logger.error(
+        { err, to: message.to, subject: message.subject },
+        "Email NOT sent: mailer is not configured. Set RESEND_API_KEY and " +
+          "RESEND_FROM_EMAIL in the environment and verify the sending domain " +
+          "in Resend, then redeploy. Continuing without the email.",
+      );
+      return;
+    }
+    logger.error(
       { err, to: message.to, subject: message.subject },
-      "Failed to send customer email; continuing without it",
+      "Email send failed (Resend rejected the request); continuing without it",
     );
   }
 }
