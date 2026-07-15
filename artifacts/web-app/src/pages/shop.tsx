@@ -12,6 +12,7 @@ import { SizeSelector } from "@/components/size-selector";
 import { PageShell } from "@/components/page-shell";
 import { CtaLink } from "@/components/cta";
 import { Seo } from "@/components/seo";
+import { ROUTE_SEO } from "@/lib/seo-routes";
 import { formatPrice } from "@/lib/format";
 import { SizeChartDialog } from "@/components/size-chart-dialog";
 import { AspectRatio } from "@/components/ui/aspect-ratio";
@@ -350,11 +351,7 @@ export default function Shop() {
 
   return (
     <PageShell align="top">
-      <Seo
-        title="Shop — Ready-to-Wear Skating & Dance | A.A Atelier"
-        description="Browse ready-to-wear figure skating and dance pieces from A.A Atelier. In-stock dresses and accessories, with restock notifications on sold-out sizes."
-        path="/shop"
-      />
+      <Seo {...ROUTE_SEO["/shop"]} />
       <div className="w-full max-w-6xl z-10 mx-auto px-6 pt-24 pb-20 animate-in fade-in zoom-in-95 duration-1000">
         {/* Header */}
         <div className="text-center">
@@ -433,7 +430,11 @@ export default function Shop() {
               Commission Something Bespoke
               <ArrowRight className="w-4 h-4 group-hover:translate-x-1 transition-transform" />
             </CtaLink>
-            <CtaLink to="/shop/status" variant="outline" data-testid="link-order-status">
+            <CtaLink
+              to="/shop/status"
+              variant="outline"
+              data-testid="link-order-status"
+            >
               Track Your Order
               <ArrowRight className="w-4 h-4 group-hover:translate-x-1 transition-transform" />
             </CtaLink>

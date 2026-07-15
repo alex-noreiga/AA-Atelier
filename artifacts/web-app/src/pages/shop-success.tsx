@@ -7,6 +7,8 @@ import {
 } from "@workspace/api-client-react";
 import { PageShell } from "@/components/page-shell";
 import { CtaLink } from "@/components/cta";
+import { Seo } from "@/components/seo";
+import { ROUTE_SEO } from "@/lib/seo-routes";
 import { formatPrice } from "@/lib/format";
 import { useCart } from "@/lib/cart";
 
@@ -46,6 +48,7 @@ export default function ShopSuccess() {
 
   return (
     <PageShell align="center" noise={false}>
+      <Seo {...ROUTE_SEO["/shop/success"]} />
       <div className="w-full max-w-lg z-10 mx-auto text-center animate-in fade-in zoom-in-95 duration-1000">
         <CheckCircle
           className="w-16 h-16 text-primary mx-auto mb-8"

@@ -12,6 +12,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { PageShell } from "@/components/page-shell";
 import { SuccessScreen } from "@/components/success-screen";
 import { Seo } from "@/components/seo";
+import { ROUTE_SEO } from "@/lib/seo-routes";
 import { useToast } from "@/hooks/use-toast";
 import {
   ArrowRight,
@@ -23,7 +24,7 @@ import {
 } from "lucide-react";
 
 // TODO: replace these placeholders with the atelier's real details before shipping.
-const CONTACT_EMAIL = "alexandra@a3iceanddance.com";
+const CONTACT_EMAIL = "hello@a3iceanddance.com";
 const CONTACT_LOCATION = "Huntsville, Alabama — by appointment";
 const INSTAGRAM_HANDLE = "@a3iceanddance";
 const INSTAGRAM_URL = "https://instagram.com/a3iceanddance";
@@ -115,11 +116,7 @@ export default function Contact() {
 
   return (
     <PageShell align="top" noise={false}>
-      <Seo
-        title="Contact A.A Atelier | A3 Ice and Dance"
-        description="Get in touch with A.A Atelier about a custom figure skating or dance costume, a fitting, or a question. Reach us by email or on Instagram at @a3iceanddance."
-        path="/contact"
-      />
+      <Seo {...ROUTE_SEO["/contact"]} />
       <div className="max-w-2xl mx-auto px-6 pt-24 pb-20">
         <div className="mb-10 text-center">
           <p className="text-primary text-xs tracking-[0.35em] uppercase mb-8">

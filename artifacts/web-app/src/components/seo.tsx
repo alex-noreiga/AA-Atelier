@@ -34,6 +34,11 @@ interface SeoProps {
   path?: string;
   /** When true, emits `<meta name="robots" content="noindex">` (e.g. 404). */
   noindex?: boolean;
+  /**
+   * Optional absolute og:image / twitter:image for this route. When omitted the
+   * static default from `index.html` (`/opengraph.jpg`) is left in place.
+   */
+  image?: string;
 }
 
 /** Find an existing head tag or create and append it. */
@@ -77,6 +82,7 @@ export function Seo({
   description,
   path = "/",
   noindex = false,
+  image,
 }: SeoProps) {
   useEffect(() => {
     const canonical =
@@ -93,8 +99,34 @@ export function Seo({
     setMetaByName("twitter:title", title);
     setMetaByName("twitter:description", description);
 
+    if (image) {
+      setMetaByProperty("og:image", image);
+      setMetaByName("twitter:image", image);
+    }
+
     setMetaByName("robots", noindex ? "noindex, follow" : "index, follow");
-  }, [title, description, path, noindex]);
+  }, [title, description, path, noindex, image]);
+
+  return null;
+}
+
+/**
+ * Injects a JSON-LD `<script>` into the head for the mounted route and removes
+ * it on unmount, so per-page structured data (e.g. an About-page FAQPage) never
+ * leaks onto other routes. The `data` object is serialised as-is; keep it a
+ * plain schema.org shape.
+ */
+export function StructuredData({ data }: { data: Record<string, unknown> }) {
+  useEffect(() => {
+    const script = document.createElement("script");
+    script.type = "application/ld+json";
+    script.dataset.seo = "structured-data";
+    script.textContent = JSON.stringify(data);
+    document.head.appendChild(script);
+    return () => {
+      script.remove();
+    };
+  }, [data]);
 
   return null;
 }
