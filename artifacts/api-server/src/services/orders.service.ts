@@ -6,6 +6,7 @@ import {
   findOrderByNumber,
 } from "../lib/notion/orders.repository.js";
 import { upsertClientByEmail } from "../lib/notion/clients.repository.js";
+import { getInvoiceView } from "./invoice.service.js";
 import type { CreateOrderInput, OrderRecord } from "../lib/notion/orders.schema.js";
 import { NotFoundError, ValidationError } from "../lib/errors.js";
 import {
@@ -43,7 +44,11 @@ export async function getOrderStatus(
     ? order.stages
     : [...order.stages, order.currentStage];
 
-  return { ...order, stages };
+  // Attach the invoice only once it exists and the atelier has flipped
+  // "Invoice Ready" (one extra Notion read, and only then).
+  const invoice = await getInvoiceView(order);
+
+  return { ...order, stages, ...(invoice ? { invoice } : {}) };
 }
 
 export async function submitOrder(

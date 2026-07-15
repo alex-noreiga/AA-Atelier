@@ -9,6 +9,46 @@ export interface HealthStatus {
   status: string;
 }
 
+export interface InvoiceLineItem {
+  /** The line item's short name (e.g. "Main fabric"). */
+  name: string;
+  /** The line type — Garment, Material, Labor, or Adjustment. */
+  type: string;
+  /** The line total in dollars. */
+  amount: number;
+}
+
+export interface InvoiceDeposit {
+  /** A display label, e.g. "Deposit 1". */
+  label: string;
+  /** The deposit amount in dollars. */
+  amount: number;
+  /** Whether this deposit has been paid (only paid ones credit). */
+  paid: boolean;
+}
+
+/**
+ * The customer's invoice for a custom order, present only once the atelier has itemized it and flipped the "Invoice Ready" gate. Line items and deposits are dollars; balanceDue is what's charged online.
+ */
+export interface Invoice {
+  /** The atelier's invoice identifier (its Notion title). */
+  invoiceId: string;
+  /** Whether the final balance has already been paid. */
+  paid: boolean;
+  /** The itemized charges (deposit lines excluded — see deposits). */
+  lineItems: InvoiceLineItem[];
+  /** Deposits credited against the balance, from the order. */
+  deposits: InvoiceDeposit[];
+  /** Sum of the non-deposit line items, in dollars. */
+  subtotal: number;
+  /** Sum of the deposits already paid, in dollars. */
+  depositsCreditedTotal: number;
+  /** subtotal − depositsCreditedTotal, floored at 0, in dollars. */
+  balanceDue: number;
+  /** The invoice's payment-due date (ISO), if the atelier set one. */
+  paymentDeadline?: string;
+}
+
 export interface OrderStatus {
   orderNumber: string;
   orderName: string;
@@ -18,6 +58,7 @@ export interface OrderStatus {
   depositAmount?: number;
   /** Whether the customer has already paid the deposit. */
   depositPaid?: boolean;
+  invoice?: Invoice;
 }
 
 export interface OrderNotFound {

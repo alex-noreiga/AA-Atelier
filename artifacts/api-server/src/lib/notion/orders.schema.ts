@@ -12,6 +12,7 @@
 
 import type { z } from "zod";
 import type { CreateOrderBody } from "@workspace/api-zod";
+import type { InvoiceView } from "./invoice.schema.js";
 
 export const ORDER_NAME_PROPERTY = "Order Name";
 export const ORDER_NUMBER_PROPERTY = "Order Number";
@@ -26,6 +27,18 @@ const STAGE_PROPERTY_NAME = "Stage";
 export const ORDER_DEPOSIT_AMOUNT_PROPERTY = "Deposit Amount"; // number (dollars)
 export const ORDER_DEPOSIT_PAID_PROPERTY = "Deposit Paid"; // checkbox
 export const ORDER_DEPOSIT_SESSION_PROPERTY = "Deposit Session Id"; // rich_text
+// The second (progress) deposit, tracked on the order alongside the first. Both
+// are credited against the invoice balance (see invoice.service.ts). Only the
+// amount + paid flag are read here — the second deposit isn't collected online.
+export const ORDER_DEPOSIT2_AMOUNT_PROPERTY = "Deposit 2 Amount"; // number (dollars)
+export const ORDER_DEPOSIT2_PAID_PROPERTY = "Deposit 2 Paid"; // checkbox
+// Order-side record of a paid invoice balance. The Stripe webhook sets these
+// (mirroring the deposit trio) when the customer pays the final balance.
+export const ORDER_INVOICE_PAID_PROPERTY = "Invoice Paid"; // checkbox
+export const ORDER_INVOICE_SESSION_PROPERTY = "Invoice Session Id"; // rich_text
+// Relation to the order's invoice in the "invoices & payments" database (limit 1
+// in Notion, so at most one). The invoice flow follows this to read/write it.
+export const ORDER_INVOICES_RELATION_PROPERTY = "Invoices"; // relation → invoices
 // The delivery/competition target the atelier sets on a custom order once it's
 // quoted and scheduled. Drives the per-stage production milestones (see
 // schedule.service.ts). `Milestones Generated` is the idempotency marker the
@@ -50,6 +63,18 @@ export interface OrderRecord {
   depositAmount?: number;
   /** Whether the deposit has been paid. */
   depositPaid?: boolean;
+  /** Present once the atelier has set a second (progress) deposit. */
+  deposit2Amount?: number;
+  /** Whether the second deposit has been paid. */
+  deposit2Paid?: boolean;
+  /** The order's Notion page id — needed to query/write its invoice. Stripped
+   * from the HTTP response by the `GetOrderStatusResponse` zod parse. */
+  pageId?: string;
+  /** The linked invoice's Notion page id, or undefined when no invoice exists. */
+  invoicePageId?: string;
+  /** The customer-facing invoice, attached by `getOrderStatus` only once the
+   * invoice exists and the atelier has flipped "Invoice Ready". */
+  invoice?: InvoiceView;
 }
 
 interface NotionStatusOption {
@@ -82,6 +107,9 @@ export interface NotionOrderPage {
     Stage?: { type: "status"; status: { name: string } | null };
     "Deposit Amount"?: { type: "number"; number: number | null };
     "Deposit Paid"?: { type: "checkbox"; checkbox: boolean };
+    "Deposit 2 Amount"?: { type: "number"; number: number | null };
+    "Deposit 2 Paid"?: { type: "checkbox"; checkbox: boolean };
+    Invoices?: { type: "relation"; relation: Array<{ id: string }> };
     "Due Date"?: {
       type: "date";
       date: { start: string; end: string | null } | null;
@@ -138,6 +166,33 @@ export function extractDepositAmount(
 export function extractDepositPaid(page: NotionOrderPage): boolean {
   const property = page.properties[ORDER_DEPOSIT_PAID_PROPERTY];
   return property?.type === "checkbox" ? property.checkbox : false;
+}
+
+/** The second deposit amount (dollars), or undefined when the atelier hasn't set one. */
+export function extractDeposit2Amount(
+  page: NotionOrderPage,
+): number | undefined {
+  const property = page.properties[ORDER_DEPOSIT2_AMOUNT_PROPERTY];
+  if (property?.type !== "number" || typeof property.number !== "number") {
+    return undefined;
+  }
+  return property.number;
+}
+
+/** Whether the second-deposit checkbox is ticked. */
+export function extractDeposit2Paid(page: NotionOrderPage): boolean {
+  const property = page.properties[ORDER_DEPOSIT2_PAID_PROPERTY];
+  return property?.type === "checkbox" ? property.checkbox : false;
+}
+
+/** The linked invoice's page id (the `Invoices` relation is limit-1 in Notion),
+ * or undefined when the order has no invoice yet. */
+export function extractInvoiceRelationId(
+  page: NotionOrderPage,
+): string | undefined {
+  const property = page.properties[ORDER_INVOICES_RELATION_PROPERTY];
+  if (property?.type !== "relation") return undefined;
+  return property.relation[0]?.id;
 }
 
 /** Read the customer email off an order page (empty for pre-Email orders). */
