@@ -1,10 +1,16 @@
 import { Link } from "wouter";
 import { ArrowRight, PenLine, Search } from "lucide-react";
 import { PageShell } from "@/components/page-shell";
+import { Seo } from "@/components/seo";
 
 export default function Home() {
   return (
     <PageShell>
+      <Seo
+        title="Custom Figure Skating & Dance Costumes | A.A Atelier"
+        description="A.A Atelier crafts custom, made-to-measure figure skating and dance costumes by hand — from first sketch to final stitch. Begin a commission or track your order."
+        path="/"
+      />
       <div className="w-full max-w-2xl z-10 mx-auto text-center animate-in fade-in zoom-in-95 duration-1000">
         {/* Eyebrow */}
         <p className="text-primary text-xs tracking-[0.35em] uppercase mb-8">

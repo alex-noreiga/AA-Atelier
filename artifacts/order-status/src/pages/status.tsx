@@ -2,13 +2,105 @@ import { useState } from "react";
 import { Link } from "wouter";
 import {
   useGetOrderStatus,
+  useCreateOrderDeposit,
   getGetOrderStatusQueryKey,
 } from "@workspace/api-client-react";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { PageShell } from "@/components/page-shell";
+import { Seo } from "@/components/seo";
+import { MeasurementChangeDialog } from "@/components/measurement-change-dialog";
 import { getStageDescription } from "@/lib/stage-descriptions";
-import { Loader2, ArrowRight, PenLine } from "lucide-react";
+import { formatPrice } from "@/lib/format";
+import { useToast } from "@/hooks/use-toast";
+import { Loader2, ArrowRight, PenLine, Check, CreditCard } from "lucide-react";
+
+/**
+ * The deposit call-to-action on a custom order. Shows nothing until the atelier
+ * has set a deposit amount; then it invites payment, or confirms once paid.
+ * Paying redirects to Stripe's hosted checkout (like the shop cart).
+ */
+function DepositSection({
+  orderNumber,
+  amount,
+  paid,
+}: {
+  orderNumber: string;
+  amount?: number;
+  paid?: boolean;
+}) {
+  const { toast } = useToast();
+  const deposit = useCreateOrderDeposit({
+    mutation: {
+      onSuccess: ({ url }) => {
+        window.location.href = url;
+      },
+      onError: (error) => {
+        const data = error.data;
+        const detail =
+          data && "error" in data
+            ? data.error
+            : data && "message" in data
+              ? data.message
+              : undefined;
+        toast({
+          variant: "destructive",
+          title: "Couldn't start the deposit payment",
+          description:
+            detail ||
+            error.message ||
+            "Something went wrong. Please try again.",
+        });
+      },
+    },
+  });
+
+  if (paid) {
+    return (
+      <div
+        className="mb-12 flex items-center justify-center gap-2 text-sm tracking-widest uppercase text-primary"
+        data-testid="deposit-paid"
+      >
+        <Check className="w-4 h-4" />
+        Deposit paid
+      </div>
+    );
+  }
+
+  if (typeof amount !== "number" || amount <= 0) return null;
+
+  return (
+    <div
+      className="mb-12 rounded-2xl border border-border/60 p-6 text-center"
+      data-testid="deposit-due"
+    >
+      <p className="text-xs uppercase tracking-widest text-muted-foreground">
+        Deposit due
+      </p>
+      <p className="mt-1 font-serif text-3xl text-primary">
+        {formatPrice(amount)}
+      </p>
+      <Button
+        onClick={() => deposit.mutate({ orderNumber })}
+        disabled={deposit.isPending}
+        className="mt-5 bg-primary text-primary-foreground hover:bg-primary/90 px-8 py-6 rounded-full tracking-widest uppercase text-xs transition-all duration-300 disabled:opacity-50"
+        data-testid="button-pay-deposit"
+      >
+        {deposit.isPending ? (
+          <>
+            <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+            Redirecting…
+          </>
+        ) : (
+          <>
+            <CreditCard className="w-4 h-4 mr-2" />
+            Pay deposit
+          </>
+        )}
+      </Button>
+    </div>
+  );
+}
 
 export default function Status() {
   const [inputValue, setInputValue] = useState("");
@@ -49,6 +141,12 @@ export default function Status() {
 
   return (
     <PageShell>
+      <Seo
+        title="Track Your Order | A.A Atelier"
+        description="Look up your A.A Atelier commission by order number and follow its progress through each stage of the atelier."
+        path="/shop/status"
+        noindex
+      />
       <div className="w-full max-w-lg z-10 mx-auto animate-in fade-in zoom-in-95 duration-1000">
         {/* Header Section */}
         <div className="text-center mb-12">
@@ -147,6 +245,12 @@ export default function Status() {
               <h3 className="text-3xl font-serif">{orderStatus.orderName}</h3>
             </div>
 
+            <DepositSection
+              orderNumber={orderStatus.orderNumber}
+              amount={orderStatus.depositAmount}
+              paid={orderStatus.depositPaid}
+            />
+
             <div className="relative pl-6 md:pl-8 space-y-12">
               {/* Vertical Thread Line */}
               <div className="absolute left-[11px] md:left-[15px] top-2 bottom-2 w-[1px] bg-border z-0"></div>
@@ -210,7 +314,8 @@ export default function Status() {
               })}
             </div>
 
-            <div className="mt-16 flex justify-center">
+            <div className="mt-16 flex flex-col items-center gap-6">
+              <MeasurementChangeDialog orderNumber={orderStatus.orderNumber} />
               <button
                 onClick={handleReset}
                 className="text-muted-foreground hover:text-primary transition-colors flex items-center gap-2 text-sm tracking-widest uppercase group"

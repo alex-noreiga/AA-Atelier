@@ -14,6 +14,10 @@ export interface OrderStatus {
   orderName: string;
   currentStage: string;
   stages: string[];
+  /** The deposit the atelier set for this custom order, in dollars. Absent until they've quoted the piece and set it in Notion. */
+  depositAmount?: number;
+  /** Whether the customer has already paid the deposit. */
+  depositPaid?: boolean;
 }
 
 export interface OrderNotFound {
@@ -37,6 +41,9 @@ export const NewOrderRequestMeasurementUnit = {
   cm: 'cm',
 } as const;
 
+/**
+ * A new custom-dress order. Measurements are optional: the customer either supplies all five now (with a measurementUnit), or sets measurementAppointment=true to have them taken at a scheduled fitting or consultation. The server rejects a body with neither.
+ */
 export interface NewOrderRequest {
   /** @minLength 1 */
   fullName: string;
@@ -45,22 +52,59 @@ export interface NewOrderRequest {
   phone: string;
   preferredContact: NewOrderRequestPreferredContact;
   /** @minimum 0 */
-  waist: number;
+  waist?: number;
   /** @minimum 0 */
-  bust: number;
+  bust?: number;
   /** @minimum 0 */
-  hips: number;
+  hips?: number;
   /** @minimum 0 */
-  height: number;
+  height?: number;
   /** @minimum 0 */
-  bodyGirth: number;
-  measurementUnit: NewOrderRequestMeasurementUnit;
+  bodyGirth?: number;
+  measurementUnit?: NewOrderRequestMeasurementUnit;
+  /** True when the customer opted to have their measurements taken at a scheduled fitting or consultation instead of entering them now. When true the measurement fields are omitted. */
+  measurementAppointment?: boolean;
   description?: string;
   neededBy?: string;
 }
 
 export interface NewOrderResponse {
   orderNumber: string;
+}
+
+export type NewMeasurementChangeRequestMeasurementUnit = typeof NewMeasurementChangeRequestMeasurementUnit[keyof typeof NewMeasurementChangeRequestMeasurementUnit];
+
+
+export const NewMeasurementChangeRequestMeasurementUnit = {
+  inches: 'inches',
+  cm: 'cm',
+} as const;
+
+/**
+ * A request to change an order's measurements. Like a new order, measurements are optional: the customer either supplies all five now (with a measurementUnit), or sets measurementAppointment=true to be re-measured at a fitting/consultation. The server rejects a request with neither.
+ */
+export interface NewMeasurementChangeRequest {
+  /** The email to verify against the one on the order. A request whose email doesn't match the order is rejected. */
+  email: string;
+  /** @minimum 0 */
+  waist?: number;
+  /** @minimum 0 */
+  bust?: number;
+  /** @minimum 0 */
+  hips?: number;
+  /** @minimum 0 */
+  height?: number;
+  /** @minimum 0 */
+  bodyGirth?: number;
+  measurementUnit?: NewMeasurementChangeRequestMeasurementUnit;
+  /** True when the customer would rather be re-measured at a fitting or consultation than enter values now. When true the measurement fields are omitted. */
+  measurementAppointment?: boolean;
+  /** Optional free-text note explaining the requested change. */
+  note?: string;
+}
+
+export interface NewMeasurementChangeResponse {
+  received: boolean;
 }
 
 export interface NewContactRequest {
@@ -121,6 +165,56 @@ export interface ProductList {
   products: Product[];
   /** The shop's category filters, read live from the "Item Type" select options on the Notion inventory database and returned in the order the atelier arranged them. Editing the options in Notion changes this list without a redeploy, so clients must not hardcode it. */
   categories: string[];
+}
+
+export interface CheckoutItem {
+  /** The Notion inventory page id of the variant being purchased (the `id` on a ProductVariant). */
+  variantId: string;
+  /** The selected size band, required when the variant is offered in sizes and omitted for one-size items. */
+  size?: string;
+  /** @minimum 1 */
+  quantity: number;
+}
+
+export interface CreateCheckoutSessionRequest {
+  /** @minItems 1 */
+  items: CheckoutItem[];
+}
+
+export interface CheckoutSessionResponse {
+  /** The Stripe-hosted checkout URL to redirect the browser to. */
+  url: string;
+}
+
+export interface DepositSessionResponse {
+  /** The Stripe-hosted checkout URL for the deposit payment. */
+  url: string;
+}
+
+export interface ReceiptLineItem {
+  description: string;
+  quantity: number;
+  /** The line total in dollars (unit price × quantity). */
+  amount: number;
+}
+
+export interface CheckoutSessionStatus {
+  /** The Stripe payment status of the session, e.g. "paid", "unpaid", or "no_payment_required". */
+  status: string;
+  /** The customer's email, present once the session is complete. */
+  email?: string;
+  /** ISO currency code of the totals, e.g. "usd". */
+  currency?: string;
+  /** The purchased items, for an on-site receipt. */
+  lineItems?: ReceiptLineItem[];
+  /** Items subtotal in dollars (before shipping and tax). */
+  amountSubtotal?: number;
+  /** Shipping charged in dollars. */
+  amountShipping?: number;
+  /** Tax charged in dollars (Stripe Tax). */
+  amountTax?: number;
+  /** Grand total in dollars (items + shipping + tax). */
+  amountTotal?: number;
 }
 
 export interface ErrorEnvelope {

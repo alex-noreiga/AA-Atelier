@@ -1,5 +1,5 @@
-import { describe, it, expect, vi } from "vitest";
-import { orderRecord } from "@workspace/test-fixtures";
+import { describe, it, expect, vi, afterEach } from "vitest";
+import { createOrderInput, orderRecord } from "@workspace/test-fixtures";
 import type { OrderRecord } from "../../src/lib/notion/schema.js";
 
 // The service talks to the repository by direct import, so mock that module to
@@ -10,6 +10,12 @@ vi.mock("../../src/lib/notion/orders.repository.js", () => ({
   createOrder: vi.fn(),
 }));
 
+// The confirmation email is a best-effort side effect; mock it so the service
+// test asserts it is dispatched without touching the Resend transport.
+vi.mock("../../src/lib/resend/send.js", () => ({
+  sendEmailBestEffort: vi.fn(),
+}));
+
 import {
   getOrderStatus,
   submitOrder,
@@ -18,10 +24,17 @@ import {
   findOrderByNumber,
   createOrder,
 } from "../../src/lib/notion/orders.repository.js";
-import { NotFoundError } from "../../src/lib/errors.js";
+import { sendEmailBestEffort } from "../../src/lib/resend/send.js";
+import { NotFoundError, ValidationError } from "../../src/lib/errors.js";
 
 const mockFind = vi.mocked(findOrderByNumber);
 const mockCreate = vi.mocked(createOrder);
+const mockSend = vi.mocked(sendEmailBestEffort);
+
+afterEach(() => {
+  delete process.env.ATELIER_INBOX_EMAIL;
+  delete process.env.RESEND_FROM_EMAIL;
+});
 
 describe("getOrderStatus", () => {
   it("throws NotFoundError when the order does not exist", async () => {
@@ -67,8 +80,94 @@ describe("getOrderStatus", () => {
 describe("submitOrder", () => {
   it("delegates to the repository and returns the new order number", async () => {
     mockCreate.mockResolvedValue("ORD-XYZ-987");
-    const result = await submitOrder({} as any);
+    const result = await submitOrder(
+      createOrderInput({ email: "ada@example.com" }),
+    );
     expect(result).toEqual({ orderNumber: "ORD-XYZ-987" });
     expect(mockCreate).toHaveBeenCalledOnce();
+  });
+
+  it("accepts an order with no measurements when an appointment is requested", async () => {
+    mockCreate.mockResolvedValue("ORD-APPT-001");
+    const {
+      waist,
+      bust,
+      hips,
+      height,
+      bodyGirth,
+      measurementUnit,
+      ...contact
+    } = createOrderInput();
+
+    const result = await submitOrder({
+      ...contact,
+      measurementAppointment: true,
+    });
+
+    expect(result).toEqual({ orderNumber: "ORD-APPT-001" });
+    expect(mockCreate).toHaveBeenCalledOnce();
+  });
+
+  it("rejects an order with neither measurements nor an appointment", async () => {
+    const {
+      waist,
+      bust,
+      hips,
+      height,
+      bodyGirth,
+      measurementUnit,
+      ...contact
+    } = createOrderInput();
+
+    await expect(submitOrder(contact)).rejects.toBeInstanceOf(ValidationError);
+    expect(mockCreate).not.toHaveBeenCalled();
+  });
+
+  it("dispatches a confirmation email to the customer after creating the order", async () => {
+    mockCreate.mockResolvedValue("ORD-XYZ-987");
+
+    await submitOrder(createOrderInput({ email: "ada@example.com" }));
+
+    expect(mockSend).toHaveBeenCalledOnce();
+    const message = mockSend.mock.calls[0][0];
+    expect(message.to).toBe("ada@example.com");
+    expect(message.subject).toContain("ORD-XYZ-987");
+  });
+
+  it("also notifies the atelier inbox (reply-to the customer) when ATELIER_INBOX_EMAIL is set", async () => {
+    process.env.ATELIER_INBOX_EMAIL = "orders@a3iceanddance.com";
+    mockCreate.mockResolvedValue("ORD-XYZ-987");
+
+    await submitOrder(createOrderInput({ email: "ada@example.com" }));
+
+    expect(mockSend).toHaveBeenCalledTimes(2);
+    const notification = mockSend.mock.calls
+      .map((c) => c[0])
+      .find((m) => m.to === "orders@a3iceanddance.com");
+    expect(notification).toBeDefined();
+    expect(notification?.replyTo).toBe("ada@example.com");
+    expect(notification?.subject).toContain("ORD-XYZ-987");
+  });
+
+  it("does not notify the atelier when ATELIER_INBOX_EMAIL is unset", async () => {
+    mockCreate.mockResolvedValue("ORD-XYZ-987");
+
+    await submitOrder(createOrderInput({ email: "ada@example.com" }));
+
+    // Only the customer confirmation goes out.
+    expect(mockSend).toHaveBeenCalledOnce();
+  });
+
+  it("sends both customer and atelier mail from the orders sender", async () => {
+    process.env.RESEND_FROM_EMAIL = "A.A Atelier <orders@a3iceanddance.com>";
+    process.env.ATELIER_INBOX_EMAIL = "orders@a3iceanddance.com";
+    mockCreate.mockResolvedValue("ORD-XYZ-987");
+
+    await submitOrder(createOrderInput({ email: "ada@example.com" }));
+
+    expect(mockSend).toHaveBeenCalledTimes(2);
+    for (const [message] of mockSend.mock.calls) {
+      expect(message.from).toBe("A.A Atelier <orders@a3iceanddance.com>");
+    }
   });
 });

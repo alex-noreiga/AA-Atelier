@@ -59,6 +59,36 @@ describe("OrderForm submission mapping", () => {
     });
   });
 
+  it("omits measurements and flags an appointment when that mode is chosen", async () => {
+    const user = userEvent.setup();
+    render(<OrderForm />);
+
+    const order = createOrderInput();
+    await user.type(byId("fullName"), order.fullName);
+    await user.type(byId("email"), order.email);
+    await user.type(byId("phone"), order.phone);
+    await user.click(screen.getByRole("button", { name: "Email" }));
+    await user.click(
+      screen.getByRole("button", { name: "Take them at an appointment" }),
+    );
+    // The measurement inputs are gone in appointment mode.
+    expect(document.getElementById("waist")).toBeNull();
+
+    await user.click(screen.getByRole("button", { name: "Submit Order" }));
+
+    await waitFor(() => expect(mutate).toHaveBeenCalledTimes(1));
+    const { data } = mutate.mock.calls[0][0];
+    expect(data.measurementAppointment).toBe(true);
+    expect(data).not.toHaveProperty("waist");
+    expect(data).not.toHaveProperty("bodyGirth");
+    expect(data).not.toHaveProperty("measurementUnit");
+    expect(data).toMatchObject({
+      fullName: "Ada Lovelace",
+      email: "ada@example.com",
+      preferredContact: "email",
+    });
+  });
+
   it("includes description and neededBy when they are provided", async () => {
     const user = userEvent.setup();
     render(<OrderForm />);

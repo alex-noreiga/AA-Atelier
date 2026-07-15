@@ -23,5 +23,15 @@ export default defineConfig({
     // Clears calls/results but keeps implementations and return values, which
     // is what the suites relied on when they each did this by hand.
     clearMocks: true,
+    // Report-only coverage (no thresholds): `pnpm test:coverage` prints a table
+    // and writes a browsable HTML report under coverage/. The React bootstrap
+    // (main.tsx) and the vendored shadcn primitives (components/ui) are excluded
+    // — they're not what these suites are meant to cover.
+    coverage: {
+      provider: "v8",
+      reporter: ["text", "html"],
+      include: ["src/**"],
+      exclude: ["src/main.tsx", "src/components/ui/**"],
+    },
   },
 });

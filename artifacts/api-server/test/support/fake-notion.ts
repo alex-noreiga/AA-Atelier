@@ -66,14 +66,88 @@ export function databaseSchemaWithStages(stageNames: string[]) {
   };
 }
 
+/** Minimal inventory database schema carrying the "Item Type" select options. */
+export function inventoryDatabaseSchemaWithCategories(names: string[]) {
+  return {
+    properties: {
+      "Item Type": {
+        type: "select",
+        select: { options: names.map((name) => ({ name })) },
+      },
+    },
+  };
+}
+
+/**
+ * Minimal Notion inventory page as returned by a query on the inventory
+ * database. Only the properties the repository/schema read are populated; each
+ * is optional so a test names just the fields it cares about.
+ */
+export function inventoryPage(opts: {
+  id?: string;
+  name?: string;
+  category?: string;
+  published?: boolean;
+  status?: string | null;
+  quantityAvailable?: number | null;
+  sizesOffered?: string[];
+  sizesAvailable?: string[];
+}) {
+  const properties: Record<string, unknown> = {
+    "Item Name": {
+      type: "title",
+      title: opts.name ? [{ plain_text: opts.name }] : [],
+    },
+    "Show on website": {
+      type: "checkbox",
+      checkbox: opts.published ?? true,
+    },
+  };
+  if (opts.category !== undefined) {
+    properties["Item Type"] = {
+      type: "select",
+      select: { name: opts.category },
+    };
+  }
+  if (opts.status !== undefined) {
+    properties["Status"] = {
+      type: "status",
+      status: opts.status === null ? null : { name: opts.status },
+    };
+  }
+  if (opts.quantityAvailable !== undefined) {
+    properties["Quantity Available"] = {
+      type: "formula",
+      formula: { type: "number", number: opts.quantityAvailable },
+    };
+  }
+  if (opts.sizesOffered !== undefined) {
+    properties["Sizes Offered"] = {
+      type: "multi_select",
+      multi_select: opts.sizesOffered.map((name) => ({ name })),
+    };
+  }
+  if (opts.sizesAvailable !== undefined) {
+    properties["Sizes Available"] = {
+      type: "multi_select",
+      multi_select: opts.sizesAvailable.map((name) => ({ name })),
+    };
+  }
+  return { id: opts.id ?? "inv-page", properties };
+}
+
 /** Minimal Notion order page as returned by a database query. */
 export function orderPage(opts: {
+  id?: string;
   orderNumber?: string;
   orderName?: string;
   currentStage?: string | null;
+  depositAmount?: number;
+  depositPaid?: boolean;
+  email?: string | null;
 }) {
   return {
-    id: "page-id",
+    id: opts.id ?? "page-id",
     properties: {
       "Order Number": {
         type: "rich_text",
@@ -83,12 +157,24 @@ export function orderPage(opts: {
         type: "title",
         title: opts.orderName ? [{ plain_text: opts.orderName }] : [],
       },
+      Email: {
+        type: "email",
+        email: opts.email ?? null,
+      },
       Stage: {
         type: "status",
         status:
           opts.currentStage === null || opts.currentStage === undefined
             ? null
             : { name: opts.currentStage },
+      },
+      "Deposit Amount": {
+        type: "number",
+        number: opts.depositAmount ?? null,
+      },
+      "Deposit Paid": {
+        type: "checkbox",
+        checkbox: opts.depositPaid ?? false,
       },
     },
   };

@@ -8,3 +8,47 @@ export class NotFoundError extends Error {
     this.name = "NotFoundError";
   }
 }
+
+/**
+ * A request that passed schema validation but violates a cross-field business
+ * rule (which the flat, generated zod schemas can't express). Maps to a 400
+ * response with the same `{ error }` envelope a zod failure produces.
+ */
+export class ValidationError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = "ValidationError";
+  }
+}
+
+/**
+ * The request was well-formed but cannot be fulfilled — e.g. a checkout item
+ * that is sold out or has no listed price. Maps to a 400 response, carrying a
+ * customer-safe message (unlike an unhandled 500, whose message is generic).
+ */
+export class BadRequestError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = "BadRequestError";
+  }
+}
+
+/** The caller isn't allowed to perform the action (e.g. the email supplied for
+ * a measurement-change request doesn't match the one on the order). Maps to a
+ * 403 response. */
+export class ForbiddenError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = "ForbiddenError";
+  }
+}
+
+/** The request conflicts with the resource's current state — measurements can
+ * no longer be changed because the garment has entered production. Maps to a
+ * 409 response. */
+export class MeasurementsLockedError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = "MeasurementsLockedError";
+  }
+}

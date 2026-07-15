@@ -9,6 +9,7 @@ import {
   type LucideIcon,
 } from "lucide-react";
 import { PageShell } from "@/components/page-shell";
+import { Seo } from "@/components/seo";
 
 interface Service {
   icon: LucideIcon;
@@ -73,6 +74,11 @@ const PROCESS: { step: string; title: string; description: string }[] = [
 export default function Services() {
   return (
     <PageShell align="top">
+      <Seo
+        title="Services — Bespoke Costumes, Fittings & Rhinestoning | A.A Atelier"
+        description="Bespoke commissions, in-person fittings and alterations, hand-applied rhinestoning, and repairs for figure skating and dance costumes by A.A Atelier."
+        path="/services"
+      />
       <div className="w-full max-w-3xl z-10 mx-auto px-6 pt-24 pb-20 animate-in fade-in zoom-in-95 duration-1000">
         {/* Header */}
         <div className="text-center">
