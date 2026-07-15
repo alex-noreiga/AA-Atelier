@@ -1,4 +1,3 @@
-import { useState } from "react";
 import { Link } from "wouter";
 import { ArrowRight, ShoppingBag } from "lucide-react";
 import type { ProductVariant } from "@workspace/api-client-react";
@@ -7,17 +6,23 @@ import { useToast } from "@/hooks/use-toast";
 import { cn } from "@/lib/utils";
 
 /**
- * Adds an in-stock, priced variant to the cart. A sized item (a dress) shows a
- * size picker limited to in-stock bands and stays disabled until one is chosen;
- * a one-size item (a soaker) adds directly. Unpriced items never reach here —
- * the shop routes those to an enquiry instead (see `CtaLink`).
+ * Adds an in-stock, priced variant to the cart. For a sized item (a dress) the
+ * size is chosen upstream in `SizeSelector` and passed in as `size`; the button
+ * stays disabled until one is picked. A one-size item (a soaker) adds directly.
+ * Unpriced items never reach here — the shop routes those to an enquiry instead
+ * (see `CtaLink`).
  */
-export function AddToCartButton({ variant }: { variant: ProductVariant }) {
+export function AddToCartButton({
+  variant,
+  size = "",
+}: {
+  variant: ProductVariant;
+  size?: string;
+}) {
   const { addItem } = useCart();
   const { toast } = useToast();
   const availableSizes = variant.sizes.filter((s) => s.available);
   const isSized = variant.sizes.length > 0;
-  const [size, setSize] = useState<string>("");
 
   // A sized item with nothing in stock can't be bought — fall back to enquiry.
   if (isSized && availableSizes.length === 0) {
@@ -51,23 +56,7 @@ export function AddToCartButton({ variant }: { variant: ProductVariant }) {
   };
 
   return (
-    <div className="flex flex-wrap items-center gap-3">
-      {isSized && (
-        <select
-          value={size}
-          onChange={(e) => setSize(e.target.value)}
-          data-testid={`size-select-${variant.id}`}
-          aria-label="Select size"
-          className="rounded-full border border-border bg-transparent px-4 py-3 text-xs uppercase tracking-widest text-foreground focus-visible:border-primary focus-visible:outline-none"
-        >
-          <option value="">Select size</option>
-          {availableSizes.map((s) => (
-            <option key={s.name} value={s.name}>
-              {s.name}
-            </option>
-          ))}
-        </select>
-      )}
+    <div className="flex flex-wrap items-center gap-x-3 gap-y-2">
       <button
         type="button"
         onClick={onAdd}
@@ -81,6 +70,11 @@ export function AddToCartButton({ variant }: { variant: ProductVariant }) {
         <ShoppingBag className="w-3.5 h-3.5" />
         Add to cart
       </button>
+      {disabled && (
+        <span className="text-xs uppercase tracking-widest text-muted-foreground/70">
+          Select a size
+        </span>
+      )}
     </div>
   );
 }

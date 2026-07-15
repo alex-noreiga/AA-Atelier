@@ -16,6 +16,7 @@ import {
   recordPaidOrder,
 } from "../../src/services/checkout.service.js";
 import { BadRequestError } from "../../src/lib/errors.js";
+import { logger } from "../../src/lib/logger.js";
 import { listVariants } from "../../src/lib/notion/products.repository.js";
 import {
   createShopOrder,
@@ -45,15 +46,25 @@ function variant(overrides: Partial<VariantRecord> = {}): VariantRecord {
 function fakeStripe(url = "https://checkout.stripe.test/pay") {
   const create = vi.fn().mockResolvedValue({ url });
   const retrieve = vi.fn();
+  // By default every configured shipping rate resolves as a valid, active USD
+  // rate; individual tests override this to exercise the skip-and-warn paths.
+  const retrieveShippingRate = vi
+    .fn()
+    .mockImplementation((id: string) =>
+      Promise.resolve({ id, active: true, fixed_amount: { currency: "usd" } }),
+    );
   const stripe = {
     checkout: { sessions: { create, retrieve } },
+    shippingRates: { retrieve: retrieveShippingRate },
   } as unknown as Stripe;
-  return { stripe, create, retrieve };
+  return { stripe, create, retrieve, retrieveShippingRate };
 }
 
 beforeEach(() => {
   process.env.PUBLIC_BASE_URL = "https://shop.test";
   delete process.env.STRIPE_SHIPPING_RATE_IDS;
+  // Silence (and let tests assert) the actionable shipping-config error logs.
+  vi.spyOn(logger, "error").mockImplementation(() => logger);
 });
 
 describe("createCheckoutSession", () => {
@@ -184,11 +195,94 @@ describe("createCheckoutSession", () => {
 
   it("omits shipping_options entirely when no rates are configured", async () => {
     mockListVariants.mockResolvedValue([variant()]);
-    const { stripe, create } = fakeStripe();
+    const { stripe, create, retrieveShippingRate } = fakeStripe();
 
     await createCheckoutSession([{ variantId: "v1", quantity: 1 }], stripe);
 
     expect(create.mock.calls[0][0].shipping_options).toBeUndefined();
+    // No configured ids -> never round-trips to Stripe to validate them.
+    expect(retrieveShippingRate).not.toHaveBeenCalled();
+  });
+
+  it("drops a shipping rate Stripe can't resolve and keeps the valid ones", async () => {
+    process.env.STRIPE_SHIPPING_RATE_IDS = "shr_missing, shr_ok";
+    mockListVariants.mockResolvedValue([variant()]);
+    const { stripe, create, retrieveShippingRate } = fakeStripe();
+    // The first id is gone (deleted / wrong Stripe mode); the second is valid.
+    retrieveShippingRate.mockImplementation((id: string) =>
+      id === "shr_missing"
+        ? Promise.reject(new Error("No such shipping rate: 'shr_missing'"))
+        : Promise.resolve({
+            id,
+            active: true,
+            fixed_amount: { currency: "usd" },
+          }),
+    );
+
+    await createCheckoutSession([{ variantId: "v1", quantity: 1 }], stripe);
+
+    // Checkout still succeeds, offering only the resolvable rate.
+    expect(create.mock.calls[0][0].shipping_options).toEqual([
+      { shipping_rate: "shr_ok" },
+    ]);
+    expect(logger.error).toHaveBeenCalled();
+  });
+
+  it("drops an archived (inactive) shipping rate", async () => {
+    process.env.STRIPE_SHIPPING_RATE_IDS = "shr_archived, shr_ok";
+    mockListVariants.mockResolvedValue([variant()]);
+    const { stripe, create, retrieveShippingRate } = fakeStripe();
+    retrieveShippingRate.mockImplementation((id: string) =>
+      Promise.resolve({
+        id,
+        active: id !== "shr_archived",
+        fixed_amount: { currency: "usd" },
+      }),
+    );
+
+    await createCheckoutSession([{ variantId: "v1", quantity: 1 }], stripe);
+
+    expect(create.mock.calls[0][0].shipping_options).toEqual([
+      { shipping_rate: "shr_ok" },
+    ]);
+    expect(logger.error).toHaveBeenCalled();
+  });
+
+  it("drops a shipping rate priced in a non-USD currency", async () => {
+    process.env.STRIPE_SHIPPING_RATE_IDS = "shr_cad, shr_ok";
+    mockListVariants.mockResolvedValue([variant()]);
+    const { stripe, create, retrieveShippingRate } = fakeStripe();
+    retrieveShippingRate.mockImplementation((id: string) =>
+      Promise.resolve({
+        id,
+        active: true,
+        fixed_amount: { currency: id === "shr_cad" ? "cad" : "usd" },
+      }),
+    );
+
+    await createCheckoutSession([{ variantId: "v1", quantity: 1 }], stripe);
+
+    expect(create.mock.calls[0][0].shipping_options).toEqual([
+      { shipping_rate: "shr_ok" },
+    ]);
+    expect(logger.error).toHaveBeenCalled();
+  });
+
+  it("omits shipping_options when every configured rate is invalid (still checks out)", async () => {
+    process.env.STRIPE_SHIPPING_RATE_IDS = "shr_missing";
+    mockListVariants.mockResolvedValue([variant()]);
+    const { stripe, create, retrieveShippingRate } = fakeStripe();
+    retrieveShippingRate.mockRejectedValue(
+      new Error("No such shipping rate: 'shr_missing'"),
+    );
+
+    await createCheckoutSession([{ variantId: "v1", quantity: 1 }], stripe);
+
+    // A single stale id no longer 500s the whole checkout: the session is
+    // created with no shipping options (charging $0 shipping) and it's logged.
+    expect(create).toHaveBeenCalled();
+    expect(create.mock.calls[0][0].shipping_options).toBeUndefined();
+    expect(logger.error).toHaveBeenCalled();
   });
 
   it("throws when PUBLIC_BASE_URL is not configured", async () => {
@@ -199,6 +293,26 @@ describe("createCheckoutSession", () => {
     await expect(
       createCheckoutSession([{ variantId: "v1", quantity: 1 }], stripe),
     ).rejects.toThrow(/PUBLIC_BASE_URL/);
+  });
+
+  it("rejects an empty cart before touching inventory or Stripe", async () => {
+    const { stripe, create } = fakeStripe();
+
+    await expect(createCheckoutSession([], stripe)).rejects.toBeInstanceOf(
+      BadRequestError,
+    );
+    expect(mockListVariants).not.toHaveBeenCalled();
+    expect(create).not.toHaveBeenCalled();
+  });
+
+  it("throws when Stripe returns a session without a URL", async () => {
+    mockListVariants.mockResolvedValue([variant()]);
+    const { stripe, create } = fakeStripe();
+    create.mockResolvedValue({ url: null });
+
+    await expect(
+      createCheckoutSession([{ variantId: "v1", quantity: 1 }], stripe),
+    ).rejects.toThrow(/Stripe did not return a checkout URL/);
   });
 });
 

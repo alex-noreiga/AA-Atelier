@@ -73,6 +73,8 @@ Express app (artifacts/api-server)  ──►  Notion REST API (orders database)
   ├─ GET  /api/orders/:orderNumber → order status + stage list
   ├─ POST /api/orders              → creates a Notion page, returns order number
   │                                  + sends an order-confirmation email
+  │                                  + (best-effort) upserts a Client CRM record
+  │                                  by email and links the order to it
   ├─ POST /api/orders/:n/deposit   → creates a Stripe Checkout session for the
   │                                  deposit the atelier set on custom order :n
   │                                  in Notion; the webhook marks it paid
@@ -259,7 +261,14 @@ and `src/lib/notion/shop-orders.*`. Four things are load-bearing:
    `shipping_options`; unset means no shipping is charged. The order's `Total`
    (Stripe `amount_total`) includes shipping + tax, and `buildShopOrderPageBlocks`
    adds "Shipping" and "Tax" lines to the Notion page body so the itemized bullets
-   reconcile with it.
+   reconcile with it. Each configured id is **validated at session-create time**
+   (`resolveShippingOptions`): it's retrieved from Stripe and kept only if it
+   exists, is active, and is priced in USD. An id that fails — deleted/archived, or
+   from the wrong Stripe mode (a test `shr_…` under a live key) — is **dropped and
+   logged at `error`** rather than 500-ing the whole checkout; if every id is
+   invalid, checkout proceeds with no shipping charged. So a stale id degrades the
+   shop, it doesn't take it down — but watch the runtime logs for the actionable
+   "Skipping shipping rate" message.
 
 6. **Tax is Stripe Tax, enabled on the shop cart only.** `checkout.service` sets
    `automatic_tax: { enabled: true }` and `tax_behavior: "exclusive"` (listed
@@ -563,17 +572,36 @@ and in the maintainer's env without edits.
   `NOTION_INVENTORY_DATABASE_ID` (the finished-goods "inventory" database the
   shop's `/products` endpoint reads), and `NOTION_SHOP_ORDERS_DATABASE_ID` (the
   "Shop Orders" database the checkout webhook writes paid orders to). The Notion
+<<<<<<< HEAD
   integration must be shared with each database or queries 404. **Appointment
   scheduling** instead uses Google: `GOOGLE_SERVICE_ACCOUNT_KEY` (the full
   service-account JSON key, with domain-wide delegation authorized for the
   Calendar scope) and `APPOINTMENT_SHEET_ID` (the working-hours Google Sheet,
   shared with the service-account email; optional `APPOINTMENT_SHEET_RANGE`,
   default `A2:F`). Enable both the Calendar and Sheets APIs. Checkout also
+=======
+  integration must be shared with each database or queries 404. Optionally
+  `NOTION_CLIENT_CRM_DATABASE_ID` (the "Client CRM" database): when set, a new
+  custom order **best-effort** upserts a client record there (deduped by email)
+  and links the order via the `Client ⇄ Orders` relation; unset ⇒ CRM linking is
+  skipped and orders are unchanged. Code:
+  `artifacts/api-server/src/lib/notion/clients.repository.ts` (`upsertClientByEmail`),
+  wired from `orders.service.ts`; the order's `Client` relation is written by
+  `blocks.ts`. Checkout also
+>>>>>>> origin/dev
   needs `STRIPE_SECRET_KEY`, `STRIPE_WEBHOOK_SECRET` (the signing secret of the
   Stripe webhook endpoint), and `PUBLIC_BASE_URL` (the site origin Stripe
   redirects back to after payment). Optionally, `STRIPE_SHIPPING_RATE_IDS` — a
-  comma-separated list of Stripe Shipping Rate ids to offer at shop checkout
-  (unset ⇒ no shipping charged). Customer notification emails also require
+  comma-separated list of Stripe Shipping Rate ids (`shr_…`) to offer at shop
+  checkout (unset ⇒ no shipping charged, i.e. no shipping options appear at
+  checkout at all). **Mode-scoped:** the ids must be created in the same Stripe
+  mode as `STRIPE_SECRET_KEY`, so map Vercel environments to modes — **Production**
+  gets your **live** `shr_…` ids, **Preview/Development** get your **test** ids
+  (a test-mode rate won't work with a live key, and vice-versa). The rate's
+  currency must be USD to match the checkout session, or Stripe silently drops
+  it. The atelier reprices by editing the rate's amount in the Dashboard (no
+  redeploy); a redeploy is only needed when the ids themselves change. Customer
+  notification emails also require
   `RESEND_API_KEY` and `RESEND_FROM_EMAIL` (the verified sender, e.g.
   `A.A Atelier <orders@a3iceanddance.com>`). The sending domain must be verified in
   Resend (SPF/DKIM) or mail won't deliver. A missing/failed mailer is

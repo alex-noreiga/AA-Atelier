@@ -34,8 +34,16 @@ export interface EmailMessage {
 }
 
 export interface ResendClient {
-  /** True when both an API key and a "from" address are configured. */
+  /** True when both an API key and a base "from" address are configured. */
   readonly configured: boolean;
+  /** True when an API key is present (independent of the "from" address). */
+  readonly hasApiKey: boolean;
+  /**
+   * The client's base sender, from `RESEND_FROM_EMAIL`. May be empty when only a
+   * per-category override is set; a per-message `from` can then still supply the
+   * sender (see `sendEmail`, which gates on the *resolved* sender, not this).
+   */
+  readonly baseFrom: string;
   send(message: EmailMessage): Promise<Response>;
 }
 
@@ -44,6 +52,8 @@ export function createResendClient(config: ResendClientConfig): ResendClient {
 
   return {
     configured: Boolean(apiKey) && Boolean(from),
+    hasApiKey: Boolean(apiKey),
+    baseFrom: from,
     async send(message: EmailMessage): Promise<Response> {
       if (!apiKey) {
         throw new Error("RESEND_API_KEY environment variable is not set");

@@ -17,6 +17,7 @@ import {
 import { getStripeClient } from "../lib/stripe/client.js";
 import { siteBaseUrl } from "../lib/site.js";
 import { BadRequestError } from "../lib/errors.js";
+import { logger } from "../lib/logger.js";
 
 const CURRENCY = "usd";
 // v1 default — the atelier can widen this to the markets it ships to.
@@ -34,6 +35,67 @@ function shippingRateIds(): string[] {
     .split(",")
     .map((id) => id.trim())
     .filter((id) => id.length > 0);
+}
+
+/**
+ * Turn the configured shipping-rate ids into Stripe `shipping_options`, dropping
+ * any id Stripe won't accept instead of letting one bad id 500 the whole
+ * checkout. Each id is retrieved and kept only if it exists, is active, and is
+ * priced in USD (a foreign-currency rate is silently dropped by Stripe at
+ * session create anyway). A dropped id — deleted/archived in the Dashboard, or a
+ * mode mismatch (a test `shr_…` under a live key, or vice-versa) — is logged at
+ * `error` so a misconfiguration is loud and actionable rather than a hard outage.
+ *
+ * If every configured id is invalid the customer sees no shipping option (i.e.
+ * $0 shipping) — degraded, but the shop still takes orders — and the logs say why.
+ */
+async function resolveShippingOptions(
+  stripe: Stripe,
+): Promise<Stripe.Checkout.SessionCreateParams.ShippingOption[]> {
+  const ids = shippingRateIds();
+  if (ids.length === 0) return [];
+
+  const options: Stripe.Checkout.SessionCreateParams.ShippingOption[] = [];
+  for (const id of ids) {
+    try {
+      const rate = await stripe.shippingRates.retrieve(id);
+      if (!rate.active) {
+        logger.error(
+          { shippingRateId: id },
+          "Skipping shipping rate: it is archived (inactive) in Stripe. " +
+            "Re-activate it or update STRIPE_SHIPPING_RATE_IDS, then redeploy.",
+        );
+        continue;
+      }
+      const currency = rate.fixed_amount?.currency;
+      if (currency !== CURRENCY) {
+        logger.error(
+          { shippingRateId: id, currency, expected: CURRENCY },
+          "Skipping shipping rate: its currency does not match the checkout " +
+            "currency (USD), so Stripe would drop it. Recreate the rate in USD.",
+        );
+        continue;
+      }
+      options.push({ shipping_rate: id });
+    } catch (err) {
+      logger.error(
+        { err, shippingRateId: id },
+        "Skipping shipping rate: Stripe could not resolve it. It was likely " +
+          "deleted, or belongs to a different Stripe mode than STRIPE_SECRET_KEY " +
+          "(a test rate under a live key, or vice-versa). Fix " +
+          "STRIPE_SHIPPING_RATE_IDS in the environment and redeploy.",
+      );
+    }
+  }
+
+  if (options.length === 0) {
+    logger.error(
+      { configured: ids },
+      "No configured shipping rate is usable — checkout will charge $0 shipping. " +
+        "Every id in STRIPE_SHIPPING_RATE_IDS is missing, inactive, or non-USD.",
+    );
+  }
+  return options;
 }
 
 /**
@@ -97,7 +159,7 @@ export async function createCheckoutSession(
   const lineItems = items.map((item) => toLineItem(item, variantsById));
 
   const base = siteBaseUrl();
-  const shippingRates = shippingRateIds();
+  const shippingOptions = await resolveShippingOptions(stripe);
   const session = await stripe.checkout.sessions.create({
     mode: "payment",
     line_items: lineItems,
@@ -108,12 +170,11 @@ export async function createCheckoutSession(
     automatic_tax: { enabled: true },
     shipping_address_collection: { allowed_countries: SHIPPING_COUNTRIES },
     // Attach the atelier's Stripe-managed shipping rate(s) for the customer to
-    // pick from; omit the field entirely when none are configured (Stripe
-    // rejects an empty array), which charges no shipping.
-    ...(shippingRates.length > 0
-      ? {
-          shipping_options: shippingRates.map((id) => ({ shipping_rate: id })),
-        }
+    // pick from; omit the field entirely when none resolve (Stripe rejects an
+    // empty array), which charges no shipping. Invalid ids are dropped and
+    // logged in resolveShippingOptions rather than failing the whole checkout.
+    ...(shippingOptions.length > 0
+      ? { shipping_options: shippingOptions }
       : {}),
     success_url: `${base}/shop/success?session_id={CHECKOUT_SESSION_ID}`,
     cancel_url: `${base}/shop`,

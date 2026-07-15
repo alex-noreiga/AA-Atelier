@@ -5,6 +5,7 @@ import {
   createOrder,
   findOrderByNumber,
 } from "../lib/notion/orders.repository.js";
+import { upsertClientByEmail } from "../lib/notion/clients.repository.js";
 import type { CreateOrderInput, OrderRecord } from "../lib/notion/schema.js";
 import { NotFoundError, ValidationError } from "../lib/errors.js";
 import {
@@ -13,6 +14,7 @@ import {
 } from "../lib/resend/emails.js";
 import { sendEmailBestEffort } from "../lib/resend/send.js";
 import { fromAddress, atelierInbox } from "../lib/resend/config.js";
+import { logger } from "../lib/logger.js";
 
 const MEASUREMENT_FIELDS = [
   "waist",
@@ -56,7 +58,26 @@ export async function submitOrder(
     );
   }
 
-  const orderNumber = await createOrder(input);
+  // Best-effort: mirror the customer into the Client CRM (dedupe by email) so we
+  // can link the order to a durable client record. A CRM failure must never fail
+  // the order — swallow and log, like the mailers below — and when the CRM db
+  // isn't configured `upsertClientByEmail` simply returns null (no link).
+  let clientPageId: string | undefined;
+  try {
+    clientPageId =
+      (await upsertClientByEmail({
+        fullName: input.fullName,
+        email: input.email,
+        phone: input.phone,
+      })) ?? undefined;
+  } catch (err) {
+    logger.warn(
+      { err },
+      "Failed to upsert Client CRM record; creating the order without a client link",
+    );
+  }
+
+  const orderNumber = await createOrder(input, undefined, clientPageId);
   // Best-effort emails; a mail failure must not fail the order.
   const from = fromAddress("orders");
   await sendEmailBestEffort({

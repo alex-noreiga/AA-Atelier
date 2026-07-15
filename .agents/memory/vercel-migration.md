@@ -81,3 +81,27 @@ exist yet.
 **Ops prerequisites:** verify the sending domain in Resend (SPF/DKIM DNS) before
 `RESEND_FROM_EMAIL` will deliver, and once the website sends reliably, **turn off
 the corresponding Notion automations** so customers don't get duplicate emails.
+
+**Troubleshooting — "order/contact emails aren't arriving" (customer receipt or
+atelier notification):** the send is best-effort and swallowed, so the Notion
+write still succeeds while no mail goes out. It's almost always config, not code.
+Check, in order:
+
+1. **Vercel env (Production):** `RESEND_API_KEY` and `RESEND_FROM_EMAIL` must be
+   set. `RESEND_FROM_EMAIL` must be a verified-domain sender, e.g.
+   `A.A Atelier <orders@a3iceanddance.com>`. For the internal atelier
+   notification, `ATELIER_INBOX_EMAIL` must also be set (unset ⇒ only the
+   customer email goes out, by design). **Redeploy after changing env vars.**
+2. **Resend domain:** the sending domain must be **verified** (SPF/DKIM) or every
+   send is rejected (403/422).
+3. **Vercel runtime logs:** `sendEmailBestEffort` now logs failures at `error`
+   with a distinct, actionable message — "mailer is not configured …" (missing
+   env var) vs. "Resend rejected the request" (includes the HTTP status + Resend
+   response body). Grep the function logs for `Email NOT sent` / `Email send
+   failed`.
+
+Gate detail: `sendEmail` requires an API key **and** a resolved sender
+(`message.from || client.baseFrom`), so a per-category override
+(`RESEND_CONTACT_FROM_EMAIL`) can send even when the base `RESEND_FROM_EMAIL` is
+unset — but the **orders** category always uses the base var, so orders mail
+needs `RESEND_FROM_EMAIL` set.
