@@ -5,6 +5,7 @@
  * API specification
  * OpenAPI spec version: 0.1.0
  */
+import type { Invoice } from './invoice';
 
 export interface OrderStatus {
   orderNumber: string;
@@ -15,4 +16,5 @@ export interface OrderStatus {
   depositAmount?: number;
   /** Whether the customer has already paid the deposit. */
   depositPaid?: boolean;
+  invoice?: Invoice;
 }

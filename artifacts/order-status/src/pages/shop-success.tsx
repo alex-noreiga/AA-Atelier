@@ -6,17 +6,9 @@ import {
   useGetCheckoutSession,
 } from "@workspace/api-client-react";
 import { PageShell } from "@/components/page-shell";
+import { ReceiptRow } from "@/components/receipt-row";
 import { formatPrice } from "@/lib/format";
 import { useCart } from "@/lib/cart";
-
-function ReceiptRow({ label, amount }: { label: string; amount: number }) {
-  return (
-    <div className="flex justify-between text-sm text-muted-foreground">
-      <span>{label}</span>
-      <span>{formatPrice(amount)}</span>
-    </div>
-  );
-}
 
 /**
  * Post-checkout landing page. Stripe redirects here (with `?session_id=…`) only

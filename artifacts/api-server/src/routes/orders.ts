@@ -6,6 +6,8 @@ import {
   CreateOrderResponse,
   CreateOrderDepositParams,
   CreateOrderDepositResponse,
+  CreateInvoicePaymentParams,
+  CreateInvoicePaymentResponse,
   CreateMeasurementChangeRequestParams,
   CreateMeasurementChangeRequestBody,
   CreateMeasurementChangeRequestResponse,
@@ -13,6 +15,7 @@ import {
 import { validate } from "../middlewares/validate.js";
 import { getOrderStatus, submitOrder } from "../services/orders.service.js";
 import { createDepositCheckout } from "../services/deposit.service.js";
+import { createInvoiceCheckout } from "../services/invoice.service.js";
 import { submitMeasurementChangeRequest } from "../services/measurement-change.service.js";
 import type { CreateOrderInput } from "../lib/notion/schema.js";
 import type { CreateMeasurementChangeInput } from "../lib/notion/measurement-change.blocks.js";
@@ -46,6 +49,16 @@ router.post(
     const { orderNumber } = res.locals.params as { orderNumber: string };
     const result = await createDepositCheckout(orderNumber);
     res.status(201).json(CreateOrderDepositResponse.parse(result));
+  },
+);
+
+router.post(
+  "/orders/:orderNumber/invoice",
+  validate({ params: CreateInvoicePaymentParams }),
+  async (_req, res) => {
+    const { orderNumber } = res.locals.params as { orderNumber: string };
+    const result = await createInvoiceCheckout(orderNumber);
+    res.status(201).json(CreateInvoicePaymentResponse.parse(result));
   },
 );
 
