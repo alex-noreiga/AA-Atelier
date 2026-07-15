@@ -200,6 +200,26 @@ describe("createCheckoutSession", () => {
       createCheckoutSession([{ variantId: "v1", quantity: 1 }], stripe),
     ).rejects.toThrow(/PUBLIC_BASE_URL/);
   });
+
+  it("rejects an empty cart before touching inventory or Stripe", async () => {
+    const { stripe, create } = fakeStripe();
+
+    await expect(createCheckoutSession([], stripe)).rejects.toBeInstanceOf(
+      BadRequestError,
+    );
+    expect(mockListVariants).not.toHaveBeenCalled();
+    expect(create).not.toHaveBeenCalled();
+  });
+
+  it("throws when Stripe returns a session without a URL", async () => {
+    mockListVariants.mockResolvedValue([variant()]);
+    const { stripe, create } = fakeStripe();
+    create.mockResolvedValue({ url: null });
+
+    await expect(
+      createCheckoutSession([{ variantId: "v1", quantity: 1 }], stripe),
+    ).rejects.toThrow(/Stripe did not return a checkout URL/);
+  });
 });
 
 describe("recordPaidOrder", () => {
