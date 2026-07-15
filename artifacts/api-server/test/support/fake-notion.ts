@@ -145,6 +145,8 @@ export function orderPage(opts: {
   depositAmount?: number;
   depositPaid?: boolean;
   email?: string | null;
+  dueDate?: string | null;
+  milestonesGenerated?: boolean;
 }) {
   return {
     id: opts.id ?? "page-id",
@@ -175,6 +177,17 @@ export function orderPage(opts: {
       "Deposit Paid": {
         type: "checkbox",
         checkbox: opts.depositPaid ?? false,
+      },
+      "Due Date": {
+        type: "date",
+        date:
+          opts.dueDate === null || opts.dueDate === undefined
+            ? null
+            : { start: opts.dueDate, end: null },
+      },
+      "Milestones Generated": {
+        type: "checkbox",
+        checkbox: opts.milestonesGenerated ?? false,
       },
     },
   };

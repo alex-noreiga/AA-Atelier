@@ -11,11 +11,15 @@ import {
   ORDER_NUMBER_PROPERTY,
   ORDER_DEPOSIT_PAID_PROPERTY,
   ORDER_DEPOSIT_SESSION_PROPERTY,
+  ORDER_DUE_DATE_PROPERTY,
+  ORDER_MILESTONES_GENERATED_PROPERTY,
   extractStageOptions,
+  extractOrderNumber,
   extractOrderName,
   extractCurrentStage,
   extractDepositAmount,
   extractDepositPaid,
+  extractDueDate,
   extractOrderEmail,
   type CreateOrderInput,
   type NotionDatabaseSchema,
@@ -225,6 +229,100 @@ export async function markDepositPaid(
     const errorText = await response.text();
     throw new Error(
       `Notion deposit update failed with status ${response.status}: ${errorText}`,
+    );
+  }
+}
+
+/** An order that has a due date set but whose per-stage milestones haven't been
+ * generated yet — the unit of work for the reconciliation cron. `stages` is the
+ * live ordered "Stage" option list the schedule is derived from. */
+export interface PendingMilestoneOrder {
+  pageId: string;
+  orderNumber: string;
+  orderName: string;
+  currentStage: string;
+  dueDate: string;
+  stages: string[];
+}
+
+/**
+ * Find custom orders that need milestones: `Due Date` is set and
+ * `Milestones Generated` is not yet checked. Returns the live ordered stage list
+ * alongside each order (fetched once, shared) so the scheduler doesn't hardcode
+ * stages. Orders with an empty due date are skipped defensively even though the
+ * filter already excludes them.
+ */
+export async function findOrdersNeedingMilestones(
+  client: NotionClient = getNotionClient(),
+): Promise<PendingMilestoneOrder[]> {
+  assertConfigured(client);
+
+  const [response, stages] = await Promise.all([
+    client.fetch(`/v1/databases/${client.databaseId}/query`, {
+      method: "POST",
+      body: JSON.stringify({
+        filter: {
+          and: [
+            {
+              property: ORDER_DUE_DATE_PROPERTY,
+              date: { is_not_empty: true },
+            },
+            {
+              property: ORDER_MILESTONES_GENERATED_PROPERTY,
+              checkbox: { equals: false },
+            },
+          ],
+        },
+      }),
+    }),
+    fetchLiveOrderStages(client),
+  ]);
+
+  if (!response.ok) {
+    throw new Error(`Notion query failed with status ${response.status}`);
+  }
+
+  const data = (await response.json()) as NotionQueryResponse;
+  const orders: PendingMilestoneOrder[] = [];
+  for (const page of data.results) {
+    const dueDate = extractDueDate(page);
+    if (!dueDate) continue;
+    orders.push({
+      pageId: page.id,
+      orderNumber: extractOrderNumber(page),
+      orderName: extractOrderName(page),
+      currentStage: extractCurrentStage(page),
+      dueDate,
+      stages,
+    });
+  }
+  return orders;
+}
+
+/**
+ * Mark an order's milestones as generated so the reconciliation cron won't
+ * regenerate them. Setting the same value again is harmless, so this is
+ * idempotent. To force a reschedule the atelier unchecks this in Notion.
+ */
+export async function markMilestonesGenerated(
+  pageId: string,
+  client: NotionClient = getNotionClient(),
+): Promise<void> {
+  assertConfigured(client);
+
+  const response = await client.fetch(`/v1/pages/${pageId}`, {
+    method: "PATCH",
+    body: JSON.stringify({
+      properties: {
+        [ORDER_MILESTONES_GENERATED_PROPERTY]: { checkbox: true },
+      },
+    }),
+  });
+
+  if (!response.ok) {
+    const errorText = await response.text();
+    throw new Error(
+      `Notion milestones-generated update failed with status ${response.status}: ${errorText}`,
     );
   }
 }

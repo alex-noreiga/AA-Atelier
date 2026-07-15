@@ -44,6 +44,7 @@ let defaultClient: NotionClient | null = null;
 let contactClient: NotionClient | null = null;
 let inventoryClient: NotionClient | null = null;
 let shopOrdersClient: NotionClient | null = null;
+let productionScheduleClient: NotionClient | null = null;
 
 /**
  * Lazily-constructed client reading credentials from the environment. Deferring
@@ -101,4 +102,19 @@ export function getShopOrdersNotionClient(): NotionClient {
     });
   }
   return shopOrdersClient;
+}
+
+/**
+ * Client for the "📅 Production Schedule" database that holds the per-stage
+ * milestone rows generated from an order's due date. Same lazy construction,
+ * reads `NOTION_PRODUCTION_SCHEDULE_DATABASE_ID`.
+ */
+export function getProductionScheduleNotionClient(): NotionClient {
+  if (!productionScheduleClient) {
+    productionScheduleClient = createNotionClient({
+      apiKey: process.env.NOTION_API_KEY ?? "",
+      databaseId: process.env.NOTION_PRODUCTION_SCHEDULE_DATABASE_ID ?? "",
+    });
+  }
+  return productionScheduleClient;
 }

@@ -1,10 +1,13 @@
 import { describe, it, expect } from "vitest";
 import {
   extractStageOptions,
+  extractOrderNumber,
   extractOrderName,
   extractCurrentStage,
   extractDepositAmount,
   extractDepositPaid,
+  extractDueDate,
+  extractMilestonesGenerated,
   type NotionDatabaseSchema,
   type NotionOrderPage,
 } from "../../src/lib/notion/schema.js";
@@ -93,6 +96,79 @@ describe("extractCurrentStage", () => {
     expect(
       extractCurrentStage({ id: "p", properties: {} } as NotionOrderPage),
     ).toBe("");
+  });
+});
+
+describe("extractOrderNumber", () => {
+  it("joins the rich_text chunks of the Order Number", () => {
+    const page: NotionOrderPage = {
+      id: "p",
+      properties: {
+        "Order Number": {
+          type: "rich_text",
+          rich_text: [{ plain_text: "ORD-" }, { plain_text: "ABC" }],
+        },
+      },
+    };
+    expect(extractOrderNumber(page)).toBe("ORD-ABC");
+  });
+
+  it("returns '' when the property is empty or missing", () => {
+    expect(
+      extractOrderNumber({
+        id: "p",
+        properties: { "Order Number": { type: "rich_text", rich_text: [] } },
+      }),
+    ).toBe("");
+    expect(
+      extractOrderNumber({ id: "p", properties: {} } as NotionOrderPage),
+    ).toBe("");
+  });
+});
+
+describe("extractDueDate", () => {
+  it("returns the date start when set", () => {
+    const page: NotionOrderPage = {
+      id: "p",
+      properties: {
+        "Due Date": {
+          type: "date",
+          date: { start: "2026-09-01", end: null },
+        },
+      },
+    };
+    expect(extractDueDate(page)).toBe("2026-09-01");
+  });
+
+  it("returns undefined when the date is null or the property is missing", () => {
+    expect(
+      extractDueDate({
+        id: "p",
+        properties: { "Due Date": { type: "date", date: null } },
+      }),
+    ).toBeUndefined();
+    expect(
+      extractDueDate({ id: "p", properties: {} } as NotionOrderPage),
+    ).toBeUndefined();
+  });
+});
+
+describe("extractMilestonesGenerated", () => {
+  it("reflects the checkbox, defaulting to false when the property is missing", () => {
+    expect(
+      extractMilestonesGenerated({
+        id: "p",
+        properties: {
+          "Milestones Generated": { type: "checkbox", checkbox: true },
+        },
+      }),
+    ).toBe(true);
+    expect(
+      extractMilestonesGenerated({
+        id: "p",
+        properties: {},
+      } as NotionOrderPage),
+    ).toBe(false);
   });
 });
 

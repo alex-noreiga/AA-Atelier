@@ -218,9 +218,7 @@ describe("findOrderForMeasurementChange", () => {
     const client = makeFakeClient(() => {
       throw new Error("should not fetch");
     });
-    expect(
-      await repo.findOrderForMeasurementChange("   ", client),
-    ).toBeNull();
+    expect(await repo.findOrderForMeasurementChange("   ", client)).toBeNull();
     expect(client.calls).toHaveLength(0);
   });
 
@@ -280,6 +278,98 @@ describe("findOrderForMeasurementChange", () => {
     expect(
       await repo.findOrderForMeasurementChange("ORD-NOPE", client),
     ).toBeNull();
+  });
+});
+
+describe("findOrdersNeedingMilestones", () => {
+  it("filters on due-date-set AND milestones-not-generated, and attaches the live stage list", async () => {
+    const client = makeFakeClient((path) => {
+      if (isSchema(path)) {
+        return jsonResponse(
+          databaseSchemaWithStages(["Consultation", "Fitting", "Delivery"]),
+        );
+      }
+      if (isQuery(path)) {
+        return jsonResponse({
+          results: [
+            orderPage({
+              id: "page-1",
+              orderNumber: "000002",
+              orderName: "Ada – Custom Dress",
+              currentStage: "Fitting",
+              dueDate: "2026-09-01",
+            }),
+          ],
+        });
+      }
+      throw new Error(`unexpected path ${path}`);
+    });
+
+    const orders = await repo.findOrdersNeedingMilestones(client);
+
+    expect(orders).toEqual([
+      {
+        pageId: "page-1",
+        orderNumber: "000002",
+        orderName: "Ada – Custom Dress",
+        currentStage: "Fitting",
+        dueDate: "2026-09-01",
+        stages: ["Consultation", "Fitting", "Delivery"],
+      },
+    ]);
+
+    const queryCall = client.calls.find((c) => isQuery(c.path))!;
+    const filter = JSON.parse(queryCall.init!.body as string).filter;
+    expect(filter).toEqual({
+      and: [
+        { property: "Due Date", date: { is_not_empty: true } },
+        { property: "Milestones Generated", checkbox: { equals: false } },
+      ],
+    });
+  });
+
+  it("skips a page whose due date is somehow empty", async () => {
+    const client = makeFakeClient((path) => {
+      if (isSchema(path)) return jsonResponse(databaseSchemaWithStages(["A"]));
+      return jsonResponse({
+        results: [orderPage({ currentStage: "A", dueDate: null })],
+      });
+    });
+    expect(await repo.findOrdersNeedingMilestones(client)).toEqual([]);
+  });
+
+  it("throws when the query response is not ok", async () => {
+    const client = makeFakeClient((path) => {
+      if (isSchema(path)) return jsonResponse(databaseSchemaWithStages([]));
+      return errorResponse(500);
+    });
+    await expect(repo.findOrdersNeedingMilestones(client)).rejects.toThrow(
+      /Notion query failed with status 500/,
+    );
+  });
+});
+
+describe("markMilestonesGenerated", () => {
+  it("PATCHes the order page with the checkbox set", async () => {
+    const client = makeFakeClient((path) => {
+      if (path === "/v1/pages/page-1") return jsonResponse({ id: "page-1" });
+      throw new Error(`unexpected ${path}`);
+    });
+
+    await repo.markMilestonesGenerated("page-1", client);
+
+    const call = client.calls[0];
+    expect(call.path).toBe("/v1/pages/page-1");
+    expect(call.init?.method).toBe("PATCH");
+    const body = JSON.parse(call.init!.body as string);
+    expect(body.properties["Milestones Generated"]).toEqual({ checkbox: true });
+  });
+
+  it("throws on a non-ok response", async () => {
+    const client = makeFakeClient(() => errorResponse(400, "bad"));
+    await expect(
+      repo.markMilestonesGenerated("page-1", client),
+    ).rejects.toThrow(/status 400: bad/);
   });
 });
 
