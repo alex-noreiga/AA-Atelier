@@ -246,7 +246,14 @@ and `src/lib/notion/shop-orders.*`. Four things are load-bearing:
    `shipping_options`; unset means no shipping is charged. The order's `Total`
    (Stripe `amount_total`) includes shipping + tax, and `buildShopOrderPageBlocks`
    adds "Shipping" and "Tax" lines to the Notion page body so the itemized bullets
-   reconcile with it.
+   reconcile with it. Each configured id is **validated at session-create time**
+   (`resolveShippingOptions`): it's retrieved from Stripe and kept only if it
+   exists, is active, and is priced in USD. An id that fails — deleted/archived, or
+   from the wrong Stripe mode (a test `shr_…` under a live key) — is **dropped and
+   logged at `error`** rather than 500-ing the whole checkout; if every id is
+   invalid, checkout proceeds with no shipping charged. So a stale id degrades the
+   shop, it doesn't take it down — but watch the runtime logs for the actionable
+   "Skipping shipping rate" message.
 
 6. **Tax is Stripe Tax, enabled on the shop cart only.** `checkout.service` sets
    `automatic_tax: { enabled: true }` and `tax_behavior: "exclusive"` (listed
