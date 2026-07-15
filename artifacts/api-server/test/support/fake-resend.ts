@@ -18,14 +18,25 @@ type SendImpl = (message: EmailMessage) => Response | Promise<Response>;
 /**
  * Build a fake client whose `send` delegates to `impl`. Records every message so
  * tests can assert on the request shape (recipient, subject, body).
+ *
+ * `hasApiKey`/`baseFrom` default off `configured` (the common case), but can be
+ * overridden to exercise the split gate — e.g. an API key present with an empty
+ * base `from`, where only a per-message `from` supplies the sender.
  */
 export function makeFakeResendClient(
   impl: SendImpl = () => jsonResponse({ id: "email-id" }),
   configured = true,
+  overrides: { hasApiKey?: boolean; baseFrom?: string } = {},
 ): FakeResendClient {
   const calls: EmailMessage[] = [];
+  const hasApiKey = overrides.hasApiKey ?? configured;
+  const baseFrom =
+    overrides.baseFrom ??
+    (configured ? "A.A Atelier <orders@a3iceanddance.com>" : "");
   return {
     configured,
+    hasApiKey,
+    baseFrom,
     calls,
     async send(message: EmailMessage): Promise<Response> {
       calls.push(message);

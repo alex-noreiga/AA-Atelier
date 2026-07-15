@@ -118,4 +118,18 @@ describe("createResendClient.send", () => {
       false,
     );
   });
+
+  it("exposes hasApiKey and baseFrom for the split send-time gate", () => {
+    // A key present with no base from is not `configured`, but `hasApiKey` is
+    // true and `baseFrom` empty — so a per-message from can still supply the
+    // sender at send time (see sendEmail).
+    const client = createResendClient({ apiKey: "k", from: "" });
+    expect(client.configured).toBe(false);
+    expect(client.hasApiKey).toBe(true);
+    expect(client.baseFrom).toBe("");
+
+    const configured = createResendClient({ apiKey: "k", from: "f@x.com" });
+    expect(configured.hasApiKey).toBe(true);
+    expect(configured.baseFrom).toBe("f@x.com");
+  });
 });

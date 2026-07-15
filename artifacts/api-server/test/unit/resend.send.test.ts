@@ -27,6 +27,33 @@ describe("sendEmail", () => {
     expect(client.calls).toHaveLength(0);
   });
 
+  it("names the missing API key in the not-configured error", async () => {
+    // hasApiKey false, but a base from is present — the message should call out
+    // the key so the log points at the right env var.
+    const client = makeFakeResendClient(undefined, false, {
+      hasApiKey: false,
+      baseFrom: "A.A Atelier <orders@a3iceanddance.com>",
+    });
+
+    await expect(sendEmail(message, client)).rejects.toThrow(/RESEND_API_KEY/);
+  });
+
+  it("sends when a per-message from covers an unset base from (has API key)", async () => {
+    // The trap fix: an API key is present but the base RESEND_FROM_EMAIL is
+    // unset; a per-message `from` (e.g. a per-category override) must still send.
+    const client = makeFakeResendClient(undefined, false, {
+      hasApiKey: true,
+      baseFrom: "",
+    });
+
+    await sendEmail(
+      { ...message, from: "A.A Atelier <hello@a3iceanddance.com>" },
+      client,
+    );
+
+    expect(client.calls).toHaveLength(1);
+  });
+
   it("throws when the Resend response is not ok", async () => {
     const client = makeFakeResendClient(() => errorResponse(422, "bad from"));
 
@@ -35,31 +62,44 @@ describe("sendEmail", () => {
 });
 
 describe("sendEmailBestEffort", () => {
-  it("swallows a non-ok response and logs a warning", async () => {
-    const warn = vi.spyOn(logger, "warn").mockImplementation(() => logger);
+  it("swallows a non-ok response and logs an error", async () => {
+    const error = vi.spyOn(logger, "error").mockImplementation(() => logger);
     const client = makeFakeResendClient(() => errorResponse(500));
 
     await expect(sendEmailBestEffort(message, client)).resolves.toBeUndefined();
-    expect(warn).toHaveBeenCalledOnce();
+    expect(error).toHaveBeenCalledOnce();
+    expect(error.mock.calls[0][1]).toMatch(/send failed/i);
   });
 
-  it("swallows a thrown transport error and logs a warning", async () => {
-    const warn = vi.spyOn(logger, "warn").mockImplementation(() => logger);
+  it("swallows a thrown transport error and logs an error", async () => {
+    const error = vi.spyOn(logger, "error").mockImplementation(() => logger);
     const client = makeFakeResendClient(() => {
       throw new Error("network down");
     });
 
     await expect(sendEmailBestEffort(message, client)).resolves.toBeUndefined();
-    expect(warn).toHaveBeenCalledOnce();
+    expect(error).toHaveBeenCalledOnce();
+  });
+
+  it("logs an actionable, distinct message when the mailer is not configured", async () => {
+    const error = vi.spyOn(logger, "error").mockImplementation(() => logger);
+    const client = makeFakeResendClient(undefined, false);
+
+    await expect(sendEmailBestEffort(message, client)).resolves.toBeUndefined();
+    expect(error).toHaveBeenCalledOnce();
+    // Distinguished from a send failure: names the fix, not just "failed".
+    expect(error.mock.calls[0][1]).toMatch(/not configured/i);
+    expect(error.mock.calls[0][1]).toMatch(/RESEND_API_KEY/);
+    expect(client.calls).toHaveLength(0);
   });
 
   it("does not log when the send succeeds", async () => {
-    const warn = vi.spyOn(logger, "warn").mockImplementation(() => logger);
+    const error = vi.spyOn(logger, "error").mockImplementation(() => logger);
     const client = makeFakeResendClient();
 
     await sendEmailBestEffort(message, client);
 
-    expect(warn).not.toHaveBeenCalled();
+    expect(error).not.toHaveBeenCalled();
     expect(client.calls).toHaveLength(1);
   });
 });
