@@ -26,6 +26,12 @@ const STAGE_PROPERTY_NAME = "Stage";
 export const ORDER_DEPOSIT_AMOUNT_PROPERTY = "Deposit Amount"; // number (dollars)
 export const ORDER_DEPOSIT_PAID_PROPERTY = "Deposit Paid"; // checkbox
 export const ORDER_DEPOSIT_SESSION_PROPERTY = "Deposit Session Id"; // rich_text
+// The delivery/competition target the atelier sets on a custom order once it's
+// quoted and scheduled. Drives the per-stage production milestones (see
+// schedule.service.ts). `Milestones Generated` is the idempotency marker the
+// reconciliation cron flips once an order's milestones exist.
+export const ORDER_DUE_DATE_PROPERTY = "Due Date"; // date
+export const ORDER_MILESTONES_GENERATED_PROPERTY = "Milestones Generated"; // checkbox
 // Relation to the Client CRM database (the synced end of the CRM's "Orders"
 // dual relation). Set on order create when a client record was upserted, so the
 // order lands against a durable customer record. See `clients.repository.ts`.
@@ -76,6 +82,11 @@ export interface NotionOrderPage {
     Stage?: { type: "status"; status: { name: string } | null };
     "Deposit Amount"?: { type: "number"; number: number | null };
     "Deposit Paid"?: { type: "checkbox"; checkbox: boolean };
+    "Due Date"?: {
+      type: "date";
+      date: { start: string; end: string | null } | null;
+    };
+    "Milestones Generated"?: { type: "checkbox"; checkbox: boolean };
   };
 }
 
@@ -89,6 +100,14 @@ export function extractStageOptions(schema: NotionDatabaseSchema): string[] {
     schema.properties[STAGE_PROPERTY_NAME]?.status?.options.map(
       (option) => option.name,
     ) ?? []
+  );
+}
+
+export function extractOrderNumber(page: NotionOrderPage): string {
+  return (
+    page.properties[ORDER_NUMBER_PROPERTY]?.rich_text
+      ?.map((t) => t.plain_text)
+      .join("") ?? ""
   );
 }
 
@@ -124,4 +143,19 @@ export function extractDepositPaid(page: NotionOrderPage): boolean {
 /** Read the customer email off an order page (empty for pre-Email orders). */
 export function extractOrderEmail(page: NotionOrderPage): string {
   return page.properties[ORDER_EMAIL_PROPERTY]?.email ?? "";
+}
+
+/** The order's due date (ISO `start`), or undefined when the atelier hasn't set one. */
+export function extractDueDate(page: NotionOrderPage): string | undefined {
+  const property = page.properties[ORDER_DUE_DATE_PROPERTY];
+  if (property?.type !== "date" || !property.date?.start) {
+    return undefined;
+  }
+  return property.date.start;
+}
+
+/** Whether an order's milestones have already been generated. */
+export function extractMilestonesGenerated(page: NotionOrderPage): boolean {
+  const property = page.properties[ORDER_MILESTONES_GENERATED_PROPERTY];
+  return property?.type === "checkbox" ? property.checkbox : false;
 }

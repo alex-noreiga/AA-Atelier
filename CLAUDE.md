@@ -96,7 +96,7 @@ Express app (artifacts/api-server)  ──►  Notion REST API (orders database)
   │                                  success page
   ├─ GET  /api/appointments/options→ the bookable appointment types (duration,
   │                                  allowed staff + locations) + booking
-  │                                  timezone, for the booking form's pickers
+  │                                  timezone, for the booking form’s pickers
   ├─ GET  /api/appointments/availability
   │                                → open slots for a type/location/(staff) over
   │                                  a date window, computed from config working
@@ -105,10 +105,17 @@ Express app (artifacts/api-server)  ──►  Notion REST API (orders database)
   │                                  writes it as a Google Calendar event that
   │                                  invites the customer (+ Meet for virtual) +
   │                                  emails a confirmation
-  └─ POST /api/webhooks/stripe     → Stripe → server webhook (raw body, signed).
-                                     On checkout.session.completed, records the
-                                     paid order in the Notion "Shop Orders"
-                                     database. NOT part of the OpenAPI contract.
+  ├─ POST /api/webhooks/stripe     → Stripe → server webhook (raw body, signed).
+  │                                  On checkout.session.completed, records the
+  │                                  paid order in the Notion "Shop Orders"
+  │                                  database. NOT part of the OpenAPI contract.
+  └─ GET  /api/cron/generate-milestones
+                                   → Vercel Cron reconciliation (CRON_SECRET-
+                                     guarded). Finds orders with a "Due Date" but
+                                     no milestones and writes one per-stage
+                                     milestone row to the Notion "Production
+                                     Schedule" database. NOT part of the OpenAPI
+                                     contract.
 ```
 
 The customer-notification POST endpoints (`/api/orders`, `/api/contact`,
@@ -305,7 +312,48 @@ idempotently), everything else is a shop-cart order. The atelier must add
 `services/deposit.service.ts`, `lib/notion/orders.repository.ts`
 (`findDepositTarget`/`markDepositPaid`), and the status page's `DepositSection`.
 
-## Appointment scheduling (real-time slot booking)
+## Production schedule (auto-generated stage milestones)
+
+The atelier plans work in the **"📅 Production Schedule"** Notion database
+(`NOTION_PRODUCTION_SCHEDULE_DATABASE_ID`), which has ready-made Timeline and
+Calendar views keyed on `Target Completion Date`. To fill it, the app
+**auto-generates one dated milestone row per remaining stage** for any custom
+order that has a firm due date. See `.agents/memory/production-schedule-milestones.md`
+for the full design; the load-bearing points:
+
+1. **Trigger is a reconciliation cron, not a Notion push.** There is no Notion→app
+   trigger (see the deposits/status notes), so the atelier sets a `Due Date` on the
+   order in the Order Tracking Pipeline and a **Vercel Cron** job
+   (`GET /api/cron/generate-milestones`, in `vercel.json` `crons`) later scans for
+   orders that have a due date but whose `Milestones Generated` checkbox is unset,
+   and generates their milestones. The endpoint is CRON_SECRET-guarded and, like the
+   Stripe webhook, is **deliberately outside the OpenAPI contract** (mounted in
+   `app.ts`, not the `/api` router). Code: `routes/cron.ts` →
+   `services/schedule.service.ts` → `lib/notion/orders.repository.ts`
+   (`findOrdersNeedingMilestones`/`markMilestonesGenerated`) +
+   `lib/notion/production-schedule.{blocks,repository}.ts`.
+
+2. **Scheduling is even-split over the live stage list — don't hardcode stages.**
+   `computeMilestoneSchedule` spreads the stages from the order's current stage
+   forward evenly across `[today, dueDate]` (the final stage lands on the due date;
+   a past-due date clamps all to the due date). The stage list comes live from
+   Notion via `fetchLiveOrderStages`, so the schedule adapts when the atelier edits
+   stages. The milestone's `Stage` is written to a **select** property, which Notion
+   auto-creates options for, so no stage constant is baked in either.
+
+3. **Idempotent.** The `Milestones Generated` checkbox plus an
+   existing-milestones lookup (`orderHasMilestones`, by the `Order` relation) stop a
+   re-run from duplicating rows; the checkbox is only flipped after every row for an
+   order is written, and one order's failure is logged-and-skipped (retried next run)
+   rather than aborting the batch. To **reschedule** after changing a due date, uncheck
+   `Milestones Generated` (and delete the stale rows); the next run regenerates.
+
+The atelier must, one time: add `Due Date` (date) + `Milestones Generated`
+(checkbox) to the Order Tracking Pipeline; add `Stage` (select) + `Order`
+(relation → Order Tracking Pipeline) to the Production Schedule; share the Notion
+integration with the Production Schedule database; and set
+`NOTION_PRODUCTION_SCHEDULE_DATABASE_ID` + `CRON_SECRET`. Property names live in
+`schema.ts` (orders) and `production-schedule.blocks.ts` (schedule).## Appointment scheduling (real-time slot booking)
 
 Customers book appointments (consultations, fittings, design reviews, general)
 with a staff member from `pages/appointments.tsx` — a four-step flow (purpose →
@@ -375,7 +423,6 @@ in `api-server/src/lib/appointments/*` (pure logic + config),
    email** (Viewer) — no delegation needed for Sheets, since the SA reads it as
    itself. `google-auth-library` mints the tokens (impersonated for Calendar,
    plain for Sheets); the rest is raw `fetch`, mirroring the Notion adapter.
-
 ## Development workflow
 
 ### Prerequisites
@@ -570,16 +617,20 @@ and in the maintainer's env without edits.
   `NOTION_CONTACT_DATABASE_ID` (the "Website Contact Messages" database that the
   `/contact` form **and** the shop's `/notify` dialog both write to),
   `NOTION_INVENTORY_DATABASE_ID` (the finished-goods "inventory" database the
-  shop's `/products` endpoint reads), and `NOTION_SHOP_ORDERS_DATABASE_ID` (the
-  "Shop Orders" database the checkout webhook writes paid orders to). The Notion
-  integration must be shared with each database or queries 404. Optionally
-  `NOTION_CLIENT_CRM_DATABASE_ID` (the "Client CRM" database): when set, a new
-  custom order **best-effort** upserts a client record there (deduped by email)
-  and links the order via the `Client ⇄ Orders` relation; unset ⇒ CRM linking is
-  skipped and orders are unchanged. Code:
-  `artifacts/api-server/src/lib/notion/clients.repository.ts` (`upsertClientByEmail`),
-  wired from `orders.service.ts`; the order's `Client` relation is written by
-  `blocks.ts`. **Appointment scheduling** instead uses Google: `GOOGLE_SERVICE_ACCOUNT_KEY` (the full
+  shop's `/products` endpoint reads), `NOTION_SHOP_ORDERS_DATABASE_ID` (the
+  "Shop Orders" database the checkout webhook writes paid orders to), and
+  `NOTION_PRODUCTION_SCHEDULE_DATABASE_ID` (the "Production Schedule" database the
+  milestone-reconciliation cron writes per-stage milestones to). The Notion
+  integration must be shared with each database or queries 404. The
+  production-schedule cron also needs `CRON_SECRET` (the bearer token Vercel Cron
+  sends to `GET /api/cron/generate-milestones`; unset ⇒ that endpoint 401s).
+  Optionally `NOTION_CLIENT_CRM_DATABASE_ID` (the "Client CRM" database): when set,
+  a new custom order **best-effort** upserts a client record there (deduped by
+  email) and links the order via the `Client ⇄ Orders` relation; unset ⇒ CRM
+  linking is skipped and orders are unchanged. Code:
+  `artifacts/api-server/src/lib/notion/clients.repository.ts`
+  (`upsertClientByEmail`), wired from `orders.service.ts`; the order's `Client`
+  relation is written by `blocks.ts`. **Appointment scheduling** instead uses Google: `GOOGLE_SERVICE_ACCOUNT_KEY` (the full
   service-account JSON key, with domain-wide delegation authorized for the
   Calendar scope) and `APPOINTMENT_SHEET_ID` (the working-hours Google Sheet,
   shared with the service-account email; optional `APPOINTMENT_SHEET_RANGE`,
@@ -631,6 +682,7 @@ and in the maintainer's env without edits.
 | Change the back-in-stock notify dialog  | `artifacts/order-status/src/components/notify-dialog.tsx` + `services/notify.service.ts` + `lib/notion/notify.*` (writes to the **contact** database — see below)                                                                                                             |
 | Change shop checkout / payments         | `artifacts/order-status/src/lib/cart.tsx` + `components/cart-drawer.tsx` + `components/add-to-cart.tsx` (frontend); `api-server/src/services/checkout.service.ts` + `routes/checkout.ts` + `routes/stripe-webhook.ts` + `lib/stripe/*` + `lib/notion/shop-orders.*` (backend) |
 | Change custom-order deposits            | `artifacts/order-status/src/pages/status.tsx` (`DepositSection`); `api-server/src/services/deposit.service.ts` + `routes/orders.ts` + `lib/notion/orders.repository.ts` (`findDepositTarget`/`markDepositPaid`) + `routes/stripe-webhook.ts`                                  |
+| Change production-schedule milestones   | `api-server/src/services/schedule.service.ts` + `routes/cron.ts` + `lib/notion/production-schedule.{blocks,repository}.ts` + `lib/notion/orders.repository.ts` (`findOrdersNeedingMilestones`/`markMilestonesGenerated`); cron in `vercel.json`                               |
 | Change appointment booking (UI)         | `artifacts/order-status/src/pages/appointments.tsx`                                                                                                                                                                                                                           |
 | Change appointment types / routing rules| `api-server/src/lib/appointments/catalog.ts` (targeted business rule — durations, which staff, which locations)                                                                                                                                                               |
 | Change staff working hours / calendars  | The working-hours **Google Sheet** (`APPOINTMENT_SHEET_ID`); read in `api-server/src/lib/google/sheets.repository.ts`, parsed by `lib/appointments/staff.ts`                                                                                                                   |

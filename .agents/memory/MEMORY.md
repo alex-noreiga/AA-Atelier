@@ -1,3 +1,4 @@
 - [Notion status-property filter gotcha](notion-status-filters.md) — Notion filter type must match the DB property's actual type; a "number"-looking field can be rich_text, causing 400s.
 - [Vercel migration decisions](vercel-migration.md) — project moved off Replit deploy; key decisions around Notion auth and serverless function wiring.
+- [Production Schedule milestones](production-schedule-milestones.md) — cron-driven, idempotent generation of per-stage milestone rows from an order's due date; even-split scheduling over the live stage list; one-time Notion setup.
 - [Appointment scheduling](appointment-scheduling.md) — real-time booking on Google Calendar (free/busy for conflicts + a config working-hours grid), service-account domain-wide delegation, the code-side type/routing catalog, and the trust/timezone rules.
