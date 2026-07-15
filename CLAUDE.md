@@ -73,6 +73,8 @@ Express app (artifacts/api-server)  ──►  Notion REST API (orders database)
   ├─ GET  /api/orders/:orderNumber → order status + stage list
   ├─ POST /api/orders              → creates a Notion page, returns order number
   │                                  + sends an order-confirmation email
+  │                                  + (best-effort) upserts a Client CRM record
+  │                                  by email and links the order to it
   ├─ POST /api/orders/:n/deposit   → creates a Stripe Checkout session for the
   │                                  deposit the atelier set on custom order :n
   │                                  in Notion; the webhook marks it paid
@@ -486,7 +488,14 @@ and in the maintainer's env without edits.
   `NOTION_INVENTORY_DATABASE_ID` (the finished-goods "inventory" database the
   shop's `/products` endpoint reads), and `NOTION_SHOP_ORDERS_DATABASE_ID` (the
   "Shop Orders" database the checkout webhook writes paid orders to). The Notion
-  integration must be shared with each database or queries 404. Checkout also
+  integration must be shared with each database or queries 404. Optionally
+  `NOTION_CLIENT_CRM_DATABASE_ID` (the "Client CRM" database): when set, a new
+  custom order **best-effort** upserts a client record there (deduped by email)
+  and links the order via the `Client ⇄ Orders` relation; unset ⇒ CRM linking is
+  skipped and orders are unchanged. Code:
+  `artifacts/api-server/src/lib/notion/clients.repository.ts` (`upsertClientByEmail`),
+  wired from `orders.service.ts`; the order's `Client` relation is written by
+  `blocks.ts`. Checkout also
   needs `STRIPE_SECRET_KEY`, `STRIPE_WEBHOOK_SECRET` (the signing secret of the
   Stripe webhook endpoint), and `PUBLIC_BASE_URL` (the site origin Stripe
   redirects back to after payment). Optionally, `STRIPE_SHIPPING_RATE_IDS` — a

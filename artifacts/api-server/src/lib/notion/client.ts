@@ -44,6 +44,7 @@ let defaultClient: NotionClient | null = null;
 let contactClient: NotionClient | null = null;
 let inventoryClient: NotionClient | null = null;
 let shopOrdersClient: NotionClient | null = null;
+let clientCrmClient: NotionClient | null = null;
 
 /**
  * Lazily-constructed client reading credentials from the environment. Deferring
@@ -101,4 +102,20 @@ export function getShopOrdersNotionClient(): NotionClient {
     });
   }
   return shopOrdersClient;
+}
+
+/**
+ * Client for the "Client CRM" database. Same lazy construction, reads
+ * `NOTION_CLIENT_CRM_DATABASE_ID`. This one is optional: when the env var is
+ * unset the client's `databaseId` is empty, and the CRM upsert (see
+ * `clients.repository.ts`) treats that as "skip" so orders behave as before.
+ */
+export function getClientCrmNotionClient(): NotionClient {
+  if (!clientCrmClient) {
+    clientCrmClient = createNotionClient({
+      apiKey: process.env.NOTION_API_KEY ?? "",
+      databaseId: process.env.NOTION_CLIENT_CRM_DATABASE_ID ?? "",
+    });
+  }
+  return clientCrmClient;
 }
