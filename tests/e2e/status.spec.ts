@@ -1,4 +1,4 @@
-import { test, expect } from "@playwright/test";
+import { test, expect } from "./support/test";
 import { orderRecord } from "@workspace/test-fixtures";
 import { mockOrderStatus } from "./support/mock-api";
 

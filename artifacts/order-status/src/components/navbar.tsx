@@ -89,6 +89,7 @@ export default function Navbar() {
                     key={link.to}
                     to={link.to}
                     className={linkClass}
+                    data-active={active}
                     data-testid={`nav-${testId(link.label)}`}
                   >
                     {link.label}
@@ -101,6 +102,7 @@ export default function Navbar() {
                 <DropdownMenu key={link.to}>
                   <DropdownMenuTrigger
                     className={`${linkClass} flex items-center gap-1 outline-hidden`}
+                    data-active={active}
                     data-testid={`nav-${testId(link.label)}`}
                   >
                     {link.label}

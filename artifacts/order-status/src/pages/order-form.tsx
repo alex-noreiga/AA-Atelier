@@ -184,7 +184,10 @@ export default function OrderForm() {
           <p className="text-xs tracking-[0.15em] uppercase text-muted-foreground mb-1">
             Your order number
           </p>
-          <p className="text-2xl font-mono font-medium text-primary tracking-widest">
+          <p
+            className="text-2xl font-mono font-medium text-primary tracking-widest"
+            data-testid="order-number"
+          >
             {success.orderNumber}
           </p>
         </div>

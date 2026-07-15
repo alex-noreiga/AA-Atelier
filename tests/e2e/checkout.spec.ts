@@ -1,35 +1,19 @@
-import { test, expect } from "@playwright/test";
+import { test, expect } from "./support/test";
+import {
+  checkoutSession,
+  GENERIC_ERROR,
+  productList,
+} from "@workspace/test-fixtures";
 import {
   mockCreateCheckout,
   mockGetCheckoutSession,
   mockProducts,
 } from "./support/mock-api";
 
-// One in-stock, priced, one-size item — the simplest thing the shop can sell.
-const INVENTORY = {
-  categories: ["Soaker"],
-  products: [
-    {
-      id: "p1",
-      title: "Bow Fleece Soaker",
-      category: "Soaker",
-      variants: [
-        {
-          id: "v1",
-          name: "Bow Fleece Soaker",
-          available: true,
-          price: 22,
-          photos: [],
-          sizes: [],
-        },
-      ],
-    },
-  ],
-};
-
 test.describe("Shop checkout", () => {
+  // One in-stock, priced, one-size item — the simplest thing the shop can sell.
   test.beforeEach(async ({ page }) => {
-    await mockProducts(page, { body: INVENTORY });
+    await mockProducts(page, { body: productList() });
   });
 
   test("adds an item and redirects to the Stripe payment page with the right line items", async ({
@@ -72,20 +56,7 @@ test.describe("Shop checkout", () => {
   test("confirms the order and empties the cart on the success page", async ({
     page,
   }) => {
-    await mockGetCheckoutSession(page, {
-      body: {
-        status: "paid",
-        email: "grace@example.com",
-        currency: "usd",
-        lineItems: [
-          { description: "Bow Fleece Soaker", quantity: 1, amount: 22 },
-        ],
-        amountSubtotal: 22,
-        amountShipping: 8,
-        amountTax: 0,
-        amountTotal: 30,
-      },
-    });
+    await mockGetCheckoutSession(page, { body: checkoutSession() });
     // Seed a cart the way a mid-purchase buyer would have one, so we can prove
     // the success page clears it. Seeding via storage keeps this to a single
     // navigation (Stripe → the app), matching how the customer actually arrives.
@@ -123,5 +94,28 @@ test.describe("Shop checkout", () => {
     await expect(page.getByTestId("receipt-total")).toHaveText("$30");
     // The cart is cleared on arrival, so the count badge is gone.
     await expect(page.getByTestId("cart-count")).toHaveCount(0);
+  });
+
+  test("shows a destructive toast and keeps the cart when checkout fails", async ({
+    page,
+  }) => {
+    await mockCreateCheckout(page, {
+      status: 500,
+      body: { error: GENERIC_ERROR },
+    });
+
+    await page.goto("/shop");
+    await page.getByTestId("add-to-cart-v1").first().click();
+    await page.getByTestId("cart-button").first().click();
+    await page.getByTestId("cart-checkout").click();
+
+    // `exact` avoids matching sonner's aria-live span, which concatenates the
+    // toast title and description into one text node.
+    await expect(
+      page.getByText("Couldn't start checkout", { exact: true }),
+    ).toBeVisible();
+    // No redirect happened, and the cart still holds the item.
+    await expect(page).toHaveURL(/\/shop$/);
+    await expect(page.getByTestId("cart-count")).toHaveText("1");
   });
 });

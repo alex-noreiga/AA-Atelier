@@ -1,4 +1,5 @@
-import { test, expect } from "@playwright/test";
+import { test, expect } from "./support/test";
+import { GENERIC_ERROR } from "@workspace/test-fixtures";
 import {
   mockAppointmentOptions,
   mockAppointmentAvailability,
@@ -106,5 +107,57 @@ test.describe("Appointment booking", () => {
     await expect(
       page.getByRole("heading", { name: "Book an Appointment" }),
     ).toBeVisible();
+  });
+
+  test("surfaces an empty-state when there are no open slots", async ({
+    page,
+  }) => {
+    await mockAppointmentOptions(page, { body: OPTIONS });
+    await mockAppointmentAvailability(page, {
+      body: { timezone: "UTC", slots: [] },
+    });
+
+    await page.goto("/appointments");
+    await page.getByTestId("type-consultation").click();
+    await page.getByRole("button", { name: "In person" }).click();
+    await page.getByRole("button", { name: "No preference" }).click();
+    await page.getByRole("button", { name: "Continue" }).click();
+
+    // The time step shows the empty-state copy, and no slot buttons render.
+    await expect(
+      page.getByText(/No open times in the next \d+ days\./),
+    ).toBeVisible();
+    await expect(page.getByTestId(`slot-${SLOT_ISO}`)).toHaveCount(0);
+  });
+
+  test("shows a destructive toast when the booking is rejected", async ({
+    page,
+  }) => {
+    await mockAppointmentOptions(page, { body: OPTIONS });
+    await mockAppointmentAvailability(page, { body: AVAILABILITY });
+    await mockCreateAppointment(page, {
+      status: 500,
+      body: { error: GENERIC_ERROR },
+    });
+
+    await page.goto("/appointments");
+    await page.getByTestId("type-consultation").click();
+    await page.getByRole("button", { name: "In person" }).click();
+    await page.getByRole("button", { name: "No preference" }).click();
+    await page.getByRole("button", { name: "Continue" }).click();
+    await page.getByTestId(`slot-${SLOT_ISO}`).click();
+    await page.locator("#fullName").fill("Ada Lovelace");
+    await page.locator("#email").fill("ada@example.com");
+    await page.getByRole("button", { name: "Confirm Booking" }).click();
+
+    // `exact` avoids matching sonner's aria-live span, which concatenates the
+    // toast title and description into one text node.
+    await expect(
+      page.getByText("Couldn't book that time", { exact: true }),
+    ).toBeVisible();
+    // Stays on the booking flow; no success screen.
+    await expect(
+      page.getByRole("heading", { name: "You're booked" }),
+    ).toHaveCount(0);
   });
 });

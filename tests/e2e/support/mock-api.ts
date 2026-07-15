@@ -5,6 +5,7 @@
 // generated react-query client, and the rendered result).
 
 import type { Page, Route } from "@playwright/test";
+import type { OrderStatus } from "@workspace/test-fixtures";
 
 const json = (route: Route, status: number, body: unknown) =>
   route.fulfill({
@@ -13,20 +14,15 @@ const json = (route: Route, status: number, body: unknown) =>
     body: JSON.stringify(body),
   });
 
-export interface OrderStatusPayload {
-  orderNumber: string;
-  orderName: string;
-  currentStage: string;
-  stages: string[];
-}
-
 /**
  * Mock `GET /api/orders/:orderNumber`. Records the order numbers actually
  * requested so a test can assert client-side normalization (trim/uppercase).
+ * The success body is the generated `OrderStatus` contract type; `unknown`
+ * still admits the error-envelope shapes used for the 404/500 cases.
  */
 export async function mockOrderStatus(
   page: Page,
-  opts: { status?: number; body: OrderStatusPayload | unknown },
+  opts: { status?: number; body: OrderStatus | unknown },
 ): Promise<{ requestedOrderNumbers: string[] }> {
   const requestedOrderNumbers: string[] = [];
   await page.route("**/api/orders/*", async (route) => {

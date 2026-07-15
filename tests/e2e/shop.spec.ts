@@ -1,10 +1,11 @@
-import { test, expect } from "@playwright/test";
-import { GENERIC_ERROR } from "@workspace/test-fixtures";
+import { test, expect } from "./support/test";
+import { GENERIC_ERROR, productList } from "@workspace/test-fixtures";
 import { mockCreateNotify, mockProducts } from "./support/mock-api";
 
 // One sold-out variant (whole item) and one dress sold out in a single size —
-// the two ways the shop offers a back-in-stock request.
-const INVENTORY = {
+// the two ways the shop offers a back-in-stock request. Typed via the shared
+// `productList` fixture so the inventory shape can't drift from the contract.
+const INVENTORY = productList({
   categories: ["Soaker", "Dress"],
   products: [
     {
@@ -41,7 +42,7 @@ const INVENTORY = {
       ],
     },
   ],
-};
+});
 
 test.describe("Shop back-in-stock dialog", () => {
   test.beforeEach(async ({ page }) => {
