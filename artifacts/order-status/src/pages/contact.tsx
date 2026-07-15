@@ -5,10 +5,12 @@ import { z } from "zod";
 import { Link, useSearch } from "wouter";
 import { useCreateContactMessage } from "@workspace/api-client-react";
 import { Button } from "@/components/ui/button";
+import { ctaVariants } from "@/components/cta";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { PageShell } from "@/components/page-shell";
+import { SuccessScreen } from "@/components/success-screen";
 import { Seo } from "@/components/seo";
 import { useToast } from "@/hooks/use-toast";
 import {
@@ -94,24 +96,20 @@ export default function Contact() {
 
   if (submitted) {
     return (
-      <PageShell noise={false}>
-        <div className="w-full max-w-lg text-center animate-in fade-in zoom-in-95 duration-700">
-          <CheckCircle
-            className="w-16 h-16 text-primary mx-auto mb-6"
-            strokeWidth={1}
-          />
-          <h1 className="text-3xl font-serif mb-3">Message Sent</h1>
-          <p className="text-muted-foreground font-light mb-8">
-            Thank you for reaching out — we'll be in touch soon.
-          </p>
+      <SuccessScreen
+        icon={CheckCircle}
+        title="Message Sent"
+        description="Thank you for reaching out — we'll be in touch soon."
+        footer={
           <Link
             to="/"
             className="inline-flex items-center gap-2 text-sm tracking-widest uppercase text-muted-foreground hover:text-primary transition-colors"
+            data-testid="link-home"
           >
             Back to home
           </Link>
-        </div>
-      </PageShell>
+        }
+      />
     );
   }
 
@@ -122,9 +120,9 @@ export default function Contact() {
         description="Get in touch with A.A Atelier about a custom figure skating or dance costume, a fitting, or a question. Reach us by email or on Instagram at @a3iceanddance."
         path="/contact"
       />
-      <div className="max-w-2xl mx-auto px-6 pt-24 pb-16">
+      <div className="max-w-2xl mx-auto px-6 pt-24 pb-20">
         <div className="mb-10 text-center">
-          <p className="text-primary text-xs tracking-[0.35em] uppercase mb-6">
+          <p className="text-primary text-xs tracking-[0.35em] uppercase mb-8">
             A.A Atelier
           </p>
           <h1 className="text-4xl md:text-5xl font-serif text-foreground mb-3">
@@ -219,7 +217,8 @@ export default function Contact() {
             <Button
               type="submit"
               disabled={submitting}
-              className="bg-primary text-primary-foreground hover:bg-primary/90 px-10 py-6 rounded-full tracking-widest uppercase text-xs transition-all duration-300 hover:shadow-[0_0_20px_rgba(209,156,151,0.2)] disabled:opacity-50"
+              className={ctaVariants({ variant: "primary", size: "lg" })}
+              data-testid="submit-contact"
             >
               {submitting ? (
                 <>
@@ -236,7 +235,7 @@ export default function Contact() {
         {/* Supporting contact details */}
         <div className="mt-16 pt-10 border-t border-border grid grid-cols-1 sm:grid-cols-2 gap-8">
           <div>
-            <h2 className="text-xs tracking-[0.2em] uppercase text-muted-foreground mb-4">
+            <h2 className="text-xs tracking-[0.2em] uppercase text-muted-foreground mb-6 pb-2 border-b border-border">
               Reach Us
             </h2>
             <ul className="space-y-3 text-sm font-light">
@@ -268,7 +267,7 @@ export default function Contact() {
           </div>
 
           <div>
-            <h2 className="text-xs tracking-[0.2em] uppercase text-muted-foreground mb-4">
+            <h2 className="text-xs tracking-[0.2em] uppercase text-muted-foreground mb-6 pb-2 border-b border-border">
               Custom Orders
             </h2>
             <p className="text-sm font-light text-muted-foreground mb-4 leading-relaxed">
@@ -278,6 +277,7 @@ export default function Contact() {
             <Link
               to="/order"
               className="inline-flex items-center gap-2 text-xs tracking-widest uppercase text-primary hover:gap-3 transition-all group"
+              data-testid="link-place-order"
             >
               Place an order
               <ArrowRight className="w-4 h-4 group-hover:translate-x-1 transition-transform" />

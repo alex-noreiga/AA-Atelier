@@ -62,7 +62,7 @@ export function AddToCartButton({
         onClick={onAdd}
         disabled={disabled}
         className={cn(
-          "group inline-flex items-center gap-2 rounded-full bg-primary px-6 py-3 text-xs uppercase tracking-widest text-primary-foreground transition-all duration-300 hover:bg-primary/90 hover:shadow-[0_0_24px_rgba(209,156,151,0.25)]",
+          "group inline-flex items-center gap-2 rounded-full bg-primary px-6 py-3 text-xs uppercase tracking-widest text-primary-foreground transition-all duration-300 hover:bg-primary/90 hover:shadow-[0_0_24px_var(--glow-primary)]",
           disabled && "opacity-50 cursor-not-allowed hover:shadow-none",
         )}
         data-testid={`add-to-cart-${variant.id}`}

@@ -14,8 +14,9 @@ two core customer-facing flows are:
 
 These sit inside a small marketing site: a landing page (`pages/home.tsx`) and
 informational pages — **Services, About, Shop, Contact** — reachable from a
-global navbar. The informational pages are currently styled placeholders
-("coming soon") awaiting real content.
+global navbar. These are fully built out: Services lists offerings + the
+process, About carries the studio story + an FAQ accordion, Shop is a live
+Notion-backed product grid, and Contact is a working enquiry form.
 
 There is **no traditional database for orders**. Orders live in a **Notion
 database**, which the team manages directly through the Notion UI. The

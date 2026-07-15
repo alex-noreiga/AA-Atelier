@@ -1,6 +1,7 @@
-import { Link } from "wouter";
 import { ArrowRight, PenLine } from "lucide-react";
 import { PageShell } from "@/components/page-shell";
+import { CtaLink } from "@/components/cta";
+import { SectionHeader } from "@/components/section-header";
 import { Seo } from "@/components/seo";
 import {
   Accordion,
@@ -78,14 +79,7 @@ export default function About() {
 
         {/* Story */}
         <div className="mt-24" data-testid="story-section">
-          <div className="text-center mb-12">
-            <p className="text-primary text-xs tracking-[0.35em] uppercase mb-4">
-              Our Story
-            </p>
-            <h2 className="font-serif text-3xl md:text-4xl text-foreground">
-              Founded by skaters
-            </h2>
-          </div>
+          <SectionHeader eyebrow="Our Story" title="Founded by skaters" />
           <div className="max-w-2xl mx-auto space-y-6 text-muted-foreground font-light text-lg leading-relaxed">
             <p>
               A.A. Atelier is a local, women owned business founded by figure
@@ -112,14 +106,7 @@ export default function About() {
 
         {/* FAQ */}
         <div className="mt-24" data-testid="faq-section">
-          <div className="text-center mb-12">
-            <p className="text-primary text-xs tracking-[0.35em] uppercase mb-4">
-              Questions
-            </p>
-            <h2 className="font-serif text-3xl md:text-4xl text-foreground">
-              Frequently asked
-            </h2>
-          </div>
+          <SectionHeader eyebrow="Questions" title="Frequently asked" />
           <Accordion type="single" collapsible className="w-full">
             {FAQS.map(({ question, answer }) => (
               <AccordionItem
@@ -141,22 +128,14 @@ export default function About() {
 
         {/* CTA */}
         <div className="mt-24 flex flex-col sm:flex-row items-center justify-center gap-4">
-          <Link
-            to="/order"
-            className="group inline-flex items-center gap-2 bg-primary text-primary-foreground hover:bg-primary/90 px-8 py-4 rounded-full tracking-widest uppercase text-xs transition-all duration-300 hover:shadow-[0_0_24px_rgba(209,156,151,0.25)]"
-            data-testid="cta-commission-about"
-          >
+          <CtaLink to="/order" data-testid="cta-commission-about">
             <PenLine className="w-4 h-4" />
             Begin a Commission
             <ArrowRight className="w-4 h-4 group-hover:translate-x-1 transition-transform" />
-          </Link>
-          <Link
-            to="/contact"
-            className="group inline-flex items-center gap-2 border border-border text-foreground hover:border-primary hover:text-primary px-8 py-4 rounded-full tracking-widest uppercase text-xs transition-all duration-300"
-            data-testid="cta-ask-question-about"
-          >
+          </CtaLink>
+          <CtaLink to="/contact" variant="outline" data-testid="cta-ask-question-about">
             Ask a Question
-          </Link>
+          </CtaLink>
         </div>
       </div>
     </PageShell>
