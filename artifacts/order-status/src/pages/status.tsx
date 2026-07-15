@@ -176,7 +176,7 @@ export default function Status() {
               <Button
                 type="submit"
                 disabled={!inputValue.trim()}
-                className="bg-primary text-primary-foreground hover:bg-primary/90 px-8 py-6 rounded-full tracking-widest uppercase text-xs transition-all duration-300 hover:shadow-[0_0_20px_rgba(209,156,151,0.2)] disabled:opacity-50 disabled:hover:shadow-none"
+                className="bg-primary text-primary-foreground hover:bg-primary/90 px-8 py-6 rounded-full tracking-widest uppercase text-xs transition-all duration-300 hover:shadow-[0_0_24px_var(--glow-primary)] disabled:opacity-50 disabled:hover:shadow-none"
                 data-testid="button-lookup"
               >
                 Find Order
@@ -242,7 +242,7 @@ export default function Status() {
               <p className="text-primary text-sm tracking-[0.15em] uppercase mb-2">
                 Order {orderStatus.orderNumber}
               </p>
-              <h3 className="text-3xl font-serif">{orderStatus.orderName}</h3>
+              <h2 className="text-3xl font-serif">{orderStatus.orderName}</h2>
             </div>
 
             <DepositSection
@@ -290,14 +290,14 @@ export default function Status() {
                       ${isFuture ? "opacity-30" : ""}
                     `}
                     >
-                      <h4
+                      <h3
                         className={`
                         font-serif text-2xl mb-1
                         ${isActive ? "text-primary" : "text-foreground"}
                       `}
                       >
                         {stage}
-                      </h4>
+                      </h3>
                       {isActive && (
                         <p className="text-muted-foreground font-light text-sm animate-in fade-in slide-in-from-left-2 duration-700 delay-300 fill-mode-both">
                           {getStageDescription(stage)}

@@ -1,11 +1,12 @@
 import { useEffect } from "react";
-import { Link, useSearch } from "wouter";
+import { useSearch } from "wouter";
 import { ArrowRight, CheckCircle } from "lucide-react";
 import {
   getGetCheckoutSessionQueryKey,
   useGetCheckoutSession,
 } from "@workspace/api-client-react";
 import { PageShell } from "@/components/page-shell";
+import { CtaLink } from "@/components/cta";
 import { formatPrice } from "@/lib/format";
 import { useCart } from "@/lib/cart";
 
@@ -44,16 +45,16 @@ export default function ShopSuccess() {
   const lineItems = data?.lineItems ?? [];
 
   return (
-    <PageShell align="center">
-      <div className="w-full max-w-lg z-10 mx-auto px-6 text-center animate-in fade-in zoom-in-95 duration-1000">
+    <PageShell align="center" noise={false}>
+      <div className="w-full max-w-lg z-10 mx-auto text-center animate-in fade-in zoom-in-95 duration-1000">
         <CheckCircle
-          className="w-14 h-14 text-primary mx-auto mb-8"
+          className="w-16 h-16 text-primary mx-auto mb-8"
           strokeWidth={1}
         />
-        <p className="text-primary text-xs tracking-[0.35em] uppercase mb-6">
+        <p className="text-primary text-xs tracking-[0.35em] uppercase mb-8">
           Order confirmed
         </p>
-        <h1 className="text-4xl md:text-6xl font-serif text-foreground leading-[1.05] mb-8">
+        <h1 className="text-4xl md:text-5xl font-serif text-foreground leading-[1.05] mb-8">
           Thank you
         </h1>
         <p
@@ -114,14 +115,10 @@ export default function ShopSuccess() {
         )}
 
         <div className="mt-12">
-          <Link
-            to="/shop"
-            className="group inline-flex items-center gap-2 border border-border text-foreground hover:border-primary hover:text-primary px-8 py-4 rounded-full tracking-widest uppercase text-xs transition-all duration-300"
-            data-testid="back-to-shop"
-          >
+          <CtaLink to="/shop" variant="outline" data-testid="back-to-shop">
             Back to the shop
             <ArrowRight className="w-4 h-4 group-hover:translate-x-1 transition-transform" />
-          </Link>
+          </CtaLink>
         </div>
       </div>
     </PageShell>

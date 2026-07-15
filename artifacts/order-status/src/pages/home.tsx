@@ -1,6 +1,6 @@
-import { Link } from "wouter";
 import { ArrowRight, PenLine, Search } from "lucide-react";
 import { PageShell } from "@/components/page-shell";
+import { CtaLink } from "@/components/cta";
 import { Seo } from "@/components/seo";
 
 export default function Home() {
@@ -32,23 +32,15 @@ export default function Home() {
 
         {/* Primary actions */}
         <div className="flex flex-col sm:flex-row items-center justify-center gap-4">
-          <Link
-            to="/order"
-            className="group inline-flex items-center gap-2 bg-primary text-primary-foreground hover:bg-primary/90 px-8 py-4 rounded-full tracking-widest uppercase text-xs transition-all duration-300 hover:shadow-[0_0_24px_rgba(209,156,151,0.25)]"
-            data-testid="cta-place-order"
-          >
+          <CtaLink to="/order" data-testid="cta-place-order">
             <PenLine className="w-4 h-4" />
             Place an Order
             <ArrowRight className="w-4 h-4 group-hover:translate-x-1 transition-transform" />
-          </Link>
-          <Link
-            to="/shop/status"
-            className="group inline-flex items-center gap-2 border border-border text-foreground hover:border-primary hover:text-primary px-8 py-4 rounded-full tracking-widest uppercase text-xs transition-all duration-300"
-            data-testid="cta-order-status"
-          >
+          </CtaLink>
+          <CtaLink to="/shop/status" variant="outline" data-testid="cta-order-status">
             <Search className="w-4 h-4" />
             Track an Order
-          </Link>
+          </CtaLink>
         </div>
       </div>
 

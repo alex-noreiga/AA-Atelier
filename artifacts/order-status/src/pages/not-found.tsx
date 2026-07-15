@@ -1,16 +1,17 @@
 import { Link } from "wouter";
 import { ArrowLeft } from "lucide-react";
+import { PageShell } from "@/components/page-shell";
 import { Seo } from "@/components/seo";
 
 export default function NotFound() {
   return (
-    <div className="min-h-[100dvh] w-full flex flex-col items-center justify-center p-6 pt-24 bg-background text-center">
+    <PageShell noise={false} className="text-center">
       <Seo
         title="Page Not Found | A.A Atelier"
         description="The page you're looking for doesn't exist or may have moved."
         noindex
       />
-      <p className="text-primary text-xs tracking-[0.35em] uppercase mb-6">
+      <p className="text-primary text-xs tracking-[0.35em] uppercase mb-8">
         404
       </p>
       <h1 className="text-4xl md:text-5xl font-serif text-foreground mb-4">
@@ -27,6 +28,6 @@ export default function NotFound() {
         <ArrowLeft className="w-4 h-4 group-hover:-translate-x-1 transition-transform" />
         Back to home
       </Link>
-    </div>
+    </PageShell>
   );
 }
