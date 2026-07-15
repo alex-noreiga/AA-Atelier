@@ -575,13 +575,13 @@ and in the maintainer's env without edits.
   comma-separated list of Stripe Shipping Rate ids to offer at shop checkout
   (unset ⇒ no shipping charged). Customer notification emails also require
   `RESEND_API_KEY` and `RESEND_FROM_EMAIL` (the verified sender, e.g.
-  `A.A Atelier <orders@yourdomain>`). The sending domain must be verified in
+  `A.A Atelier <orders@a3iceanddance.com>`). The sending domain must be verified in
   Resend (SPF/DKIM) or mail won't deliver. A missing/failed mailer is
   non-fatal: the send is best-effort and the endpoints still succeed.
-  Optionally `ATELIER_INBOX_EMAIL` (e.g. `orders@yourdomain`) to also receive an
+  Optionally `ATELIER_INBOX_EMAIL` (e.g. `orders@a3iceanddance.com`) to also receive an
   internal notification for each new order / contact message / back-in-stock
   request; leave it unset to skip those. Optionally `RESEND_CONTACT_FROM_EMAIL` and
-  `ATELIER_CONTACT_INBOX_EMAIL` (e.g. `hello@yourdomain`) to send/receive
+  `ATELIER_CONTACT_INBOX_EMAIL` (e.g. `hello@a3iceanddance.com`) to send/receive
   contact-form mail from a separate address; each falls back to the base
   `RESEND_FROM_EMAIL` / `ATELIER_INBOX_EMAIL` when unset (same verified domain, no
   extra Resend setup). Appointment mail has the same optional overrides
