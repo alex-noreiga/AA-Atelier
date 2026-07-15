@@ -17,7 +17,7 @@ import { getOrderStatus, submitOrder } from "../services/orders.service.js";
 import { createDepositCheckout } from "../services/deposit.service.js";
 import { createInvoiceCheckout } from "../services/invoice.service.js";
 import { submitMeasurementChangeRequest } from "../services/measurement-change.service.js";
-import type { CreateOrderInput } from "../lib/notion/schema.js";
+import type { CreateOrderInput } from "../lib/notion/orders.schema.js";
 import type { CreateMeasurementChangeInput } from "../lib/notion/measurement-change.blocks.js";
 
 const router = Router();

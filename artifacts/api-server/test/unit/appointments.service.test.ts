@@ -23,10 +23,17 @@ const mockSchedule = vi.mocked(getScheduleConfig);
 const mockBusy = vi.mocked(listBusyInRange);
 const mockCreate = vi.mocked(createCalendarEvent);
 
-// A Monday 09:00–11:00 in-person + virtual block for Alexandra, in UTC.
+// A Monday 09:00–11:00 in-person + virtual block for Alexandra and Alayna, in UTC.
 const weeklyHours: WeeklyHours[] = [
   {
     staff: "Alexandra",
+    weekday: "Monday",
+    startMinutes: 540,
+    endMinutes: 660,
+    locations: ["in-person", "virtual"],
+  },
+  {
+    staff: "Alayna",
     weekday: "Monday",
     startMinutes: 540,
     endMinutes: 660,
@@ -59,7 +66,7 @@ describe("getAppointmentOptions", () => {
     expect(options.types.map((t) => t.id)).toContain("consultation");
     const fitting = options.types.find((t) => t.id === "fitting")!;
     expect(fitting.locations).toEqual(["in-person"]);
-    expect(fitting.staff).toEqual(["Alexandra"]);
+    expect(fitting.staff).toEqual(["Alexandra", "Alayna"]);
   });
 });
 
@@ -78,9 +85,9 @@ describe("getAppointmentAvailability", () => {
       "2026-07-20T10:00:00.000Z",
       "2026-07-20T10:30:00.000Z",
     ]);
-    // Only the eligible staff's calendars are queried for busy time.
+    // Only the eligible staff's calendars are queried for busy time —
+    // consultations are Alayna only.
     expect(mockBusy).toHaveBeenCalledWith(expect.any(Date), expect.any(Date), [
-      "Alexandra",
       "Alayna",
     ]);
   });
@@ -117,7 +124,7 @@ describe("bookAppointment", () => {
     const result = await bookAppointment(validBody as never);
 
     expect(result.type).toBe("Consultation");
-    expect(result.staff).toBe("Alexandra");
+    expect(result.staff).toBe("Alayna");
     expect(result.location).toBe("In person");
     expect(result.confirmationCode).toMatch(/^APT-/);
     expect(result.start.toISOString()).toBe("2026-07-20T09:00:00.000Z");
@@ -125,7 +132,7 @@ describe("bookAppointment", () => {
 
     expect(mockCreate).toHaveBeenCalledOnce();
     const [appointment, title] = mockCreate.mock.calls[0];
-    expect(appointment.staff).toBe("Alexandra");
+    expect(appointment.staff).toBe("Alayna");
     expect(appointment.location).toBe("in-person");
     expect(appointment.timeZone).toBe("UTC");
     expect(appointment.start.toISOString()).toBe("2026-07-20T09:00:00.000Z");
@@ -157,7 +164,7 @@ describe("bookAppointment", () => {
   it("rejects a slot already busy on the calendar", async () => {
     mockBusy.mockResolvedValue([
       {
-        staff: "Alexandra",
+        staff: "Alayna",
         start: new Date("2026-07-20T09:00:00.000Z"),
         end: new Date("2026-07-20T09:30:00.000Z"),
       },
@@ -169,14 +176,57 @@ describe("bookAppointment", () => {
   });
 
   it("rejects a staff member who doesn't offer the type", async () => {
-    // Alayna doesn't do fittings — only Alexandra does.
+    // Alexandra doesn't do consultations — only Alayna does.
+    await expect(
+      bookAppointment({
+        ...validBody,
+        typeId: "consultation",
+        staff: "Alexandra",
+      } as never),
+    ).rejects.toBeInstanceOf(BadRequestError);
+    expect(mockCreate).not.toHaveBeenCalled();
+  });
+
+  it("rejects an unknown appointment type", async () => {
+    await expect(
+      bookAppointment({ ...validBody, typeId: "mystery" } as never),
+    ).rejects.toBeInstanceOf(BadRequestError);
+    expect(mockCreate).not.toHaveBeenCalled();
+  });
+
+  it("rejects an unrecognized location", async () => {
+    await expect(
+      bookAppointment({ ...validBody, location: "moon" } as never),
+    ).rejects.toBeInstanceOf(BadRequestError);
+    expect(mockCreate).not.toHaveBeenCalled();
+  });
+
+  it("rejects a location the type isn't offered at", async () => {
+    // Fittings are in-person only.
     await expect(
       bookAppointment({
         ...validBody,
         typeId: "fitting",
-        staff: "Alayna",
+        location: "virtual",
       } as never),
     ).rejects.toBeInstanceOf(BadRequestError);
     expect(mockCreate).not.toHaveBeenCalled();
+  });
+
+  it("rejects an invalid (unparseable) start time", async () => {
+    await expect(
+      bookAppointment({ ...validBody, start: new Date("not-a-date") } as never),
+    ).rejects.toBeInstanceOf(BadRequestError);
+    expect(mockCreate).not.toHaveBeenCalled();
+  });
+
+  it("also emails the atelier inbox when one is configured", async () => {
+    process.env.ATELIER_INBOX_EMAIL = "studio@atelier.test";
+
+    const result = await bookAppointment(validBody as never);
+
+    // Booking still succeeds; the notification is a best-effort side effect.
+    expect(result.confirmationCode).toMatch(/^APT-/);
+    expect(mockCreate).toHaveBeenCalledOnce();
   });
 });

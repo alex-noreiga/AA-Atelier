@@ -14,8 +14,9 @@ two core customer-facing flows are:
 
 These sit inside a small marketing site: a landing page (`pages/home.tsx`) and
 informational pages — **Services, About, Shop, Contact** — reachable from a
-global navbar. The informational pages are currently styled placeholders
-("coming soon") awaiting real content.
+global navbar. These are fully built out: Services lists offerings + the
+process, About carries the studio story + an FAQ accordion, Shop is a live
+Notion-backed product grid, and Contact is a working enquiry form.
 
 There is **no traditional database for orders**. Orders live in a **Notion
 database**, which the team manages directly through the Notion UI. The
@@ -33,12 +34,13 @@ tooling, deliberately _not_ a workspace package.)
 
 ```
 artifacts/
-  order-status/      Frontend SPA (Vite + React 19 + Tailwind v4 + shadcn/ui)
+  web-app/           Frontend SPA (Vite + React 19 + Tailwind v4 + shadcn/ui)
     src/App.tsx      wouter routes + a global <Navbar />
     src/pages/       one component per route (home landing, status, order-form,
-                     services, about, shop, contact, not-found)
+                     services, about, shop, shop-success, contact,
+                     appointments, not-found)
     src/components/  navbar.tsx (global nav), page-shell.tsx (page wrapper),
-                     ui/ (shadcn primitives — pruned to only the 12 actually
+                     ui/ (shadcn primitives — pruned to only the ones actually
                      used; re-add others with `npx shadcn add <name>`)
   api-server/        Backend (Express 5) — talks to Notion, bundled by esbuild
     src/routes/      thin HTTP handlers (validate → service → respond)
@@ -63,7 +65,7 @@ vercel.json          Vercel build + routing config
 ## Architecture & data flow
 
 ```
-Browser (order-status SPA)
+Browser (web-app SPA)
   │  fetch /api/*
   ▼
 Express app (artifacts/api-server)  ──►  Notion REST API (orders database)
@@ -78,6 +80,16 @@ Express app (artifacts/api-server)  ──►  Notion REST API (orders database)
   ├─ POST /api/orders/:n/deposit   → creates a Stripe Checkout session for the
   │                                  deposit the atelier set on custom order :n
   │                                  in Notion; the webhook marks it paid
+  ├─ POST /api/orders/:n/measurement-change-requests
+  │                                → files a customer request to change order :n's
+  │                                  measurements in the SAME "Website Contact
+  │                                  Messages" database, tagged Request type =
+  │                                  "Measurement update". Gated: values-or-
+  │                                  appointment, email must match the order, and
+  │                                  rejected once the garment is in production
+  │                                  (MEASUREMENT_LOCK_FROM_STAGE). Never edits the
+  │                                  order — the atelier applies the change by hand
+  │                                  (Approach A) + sends a confirmation email
   ├─ POST /api/orders/:n/invoice   → creates a Stripe Checkout session for the
   │                                  outstanding balance on custom order :n's
   │                                  invoice (itemized materials + labor from the
@@ -124,7 +136,8 @@ Express app (artifacts/api-server)  ──►  Notion REST API (orders database)
 ```
 
 The customer-notification POST endpoints (`/api/orders`, `/api/contact`,
-`/api/notify`, `/api/appointments`) each send a customer email via **Resend** as
+`/api/notify`, `/api/appointments`, `/api/orders/:n/measurement-change-requests`)
+each send a customer email via **Resend** as
 a **best-effort** side effect after the Notion write: the send is logged-and-swallowed
 on failure and never changes the response status (see the Resend adapter in
 `artifacts/api-server/src/lib/resend/` and the notification-email note in
@@ -153,7 +166,7 @@ message; the client uses a per-message `from` over its base. This lets, e.g.,
 order mail send from `orders@` and contact mail from `hello@`.
 
 - **Locally:** the Vite dev server proxies `/api` to the Express server on
-  `localhost:3000` (see `artifacts/order-status/vite.config.ts`).
+  `localhost:3000` (see `artifacts/web-app/vite.config.ts`).
 - **On Vercel:** `vercel.json` rewrites `/api/:path*` → `/api/index`, which is
   the serverless function at `api/index.ts`. That file imports the
   **pre-bundled** Express app from `artifacts/api-server/dist/app.mjs` (built by
@@ -193,10 +206,11 @@ data to the mutation, so it can't silently drift from the contract.
 ## Working with Notion (read `.agents/memory/` first)
 
 The Notion integration lives in `artifacts/api-server/src/lib/notion/`
-(`client.ts` for the REST client, `schema.ts` for property-name constants +
-extraction helpers, `blocks.ts` for the order page-body builder, and
-`orders.repository.ts` for create/lookup). It encodes two hard-won lessons
-captured in `.agents/memory/`:
+(`client.ts` for the REST client, `orders.schema.ts` for property-name constants +
+extraction helpers, `orders.blocks.ts` for the order page-body builder, and
+`orders.repository.ts` for create/lookup — each domain's `*.blocks.ts` /
+`*.schema.ts` / `*.repository.ts` follow the same prefixed convention). It encodes
+two hard-won lessons captured in `.agents/memory/`:
 
 1. **Property types must match the live schema, not the property name.**
    "Order Number" is a Notion `rich_text` property, **not** `number` — values
@@ -214,20 +228,25 @@ captured in `.agents/memory/`:
    either. (The per-stage _description text_ in `lib/stage-descriptions.ts` is
    cosmetic flavor only.)
 
-   The one deliberate exception is a _targeted business rule_ naming specific
-   option values — `STATUS_IN_STOCK` ("In Stock" is the only sellable status)
-   and `SIZED_CATEGORIES` in `pages/shop.tsx` (only Dress / Ready to Wear show
-   the size chart). These name values, not the list; rename those options in
-   Notion and you must update them here too.
+   The deliberate exceptions are _targeted business rules_ naming specific
+   option values — `STATUS_IN_STOCK` ("In Stock" is the only sellable status),
+   `SIZED_CATEGORIES` in `pages/shop.tsx` (only Dress / Ready to Wear show
+   the size chart), and the `MEASUREMENT_LOCK_FROM_STAGE` stage
+   (`services/measurement-change.service.ts`, default `Cutting/Pinning`, env-
+   overridable) at/after which measurements freeze. These name values, not the
+   list; rename those options in Notion and you must update them here too.
 
-3. **The contact database has two writers.** "Website Contact Messages" holds
-   both contact-form messages (`contact.blocks.ts`) and the shop's back-in-stock
-   requests (`notify.blocks.ts`), separated by the **Request type** select
-   (`Inquiry` / `Back in stock`). A restock request carries **Item** and **Size**
-   as real properties, so the atelier can filter the inbox to everyone waiting on
-   a piece rather than reading it out of free text. The property names the two
-   writers share are exported from `contact.blocks.ts` and imported by
-   `notify.blocks.ts` — keep it that way so they can't drift.
+3. **The contact database has three writers.** "Website Contact Messages" holds
+   contact-form messages (`contact.blocks.ts`), the shop's back-in-stock requests
+   (`notify.blocks.ts`), and order measurement-change requests
+   (`measurement-change.blocks.ts`), separated by the **Request type** select
+   (`Inquiry` / `Back in stock` / `Measurement update`). A restock request carries
+   **Item** and **Size** as real properties, and a measurement-change request
+   carries the order number + requested measurements, so the atelier can filter the
+   inbox by request type rather than reading it out of free text. The property names
+   these writers share are exported from `contact.blocks.ts` and imported by
+   `notify.blocks.ts` / `measurement-change.blocks.ts` — keep it that way so they
+   can't drift.
 
 Auth: the server reads `NOTION_API_KEY` and `NOTION_ORDERS_DATABASE_ID` from
 environment variables (via `createNotionClient` in `notion/client.ts`, read at
@@ -237,7 +256,7 @@ path is gone.
 ## Working with Stripe (shop checkout)
 
 The shop sells ready-to-ship items through **Stripe Checkout (hosted)**. The
-flow: the client-side cart (`order-status/src/lib/cart.tsx`, persisted to
+flow: the client-side cart (`web-app/src/lib/cart.tsx`, persisted to
 localStorage) POSTs `{ variantId, size?, quantity }[]` to `/api/checkout`; the
 server prices them from live Notion inventory, creates a Stripe Checkout
 session, and returns its URL; the browser redirects; Stripe calls
@@ -313,7 +332,7 @@ handler routes on that tag: a deposit session calls `recordDepositPayment`
 (which sets `Deposit Paid` + `Deposit Session Id` on the order page —
 idempotently), everything else is a shop-cart order. The atelier must add
 `Deposit Amount` (number), `Deposit Paid` (checkbox), and `Deposit Session Id`
-(rich_text) to the orders database — property names live in `schema.ts`. Code:
+(rich_text) to the orders database — property names live in `orders.schema.ts`. Code:
 `services/deposit.service.ts`, `lib/notion/orders.repository.ts`
 (`findDepositTarget`/`markDepositPaid`), and the status page's `DepositSection`.
 
@@ -414,7 +433,9 @@ The atelier must, one time: add `Due Date` (date) + `Milestones Generated`
 (relation → Order Tracking Pipeline) to the Production Schedule; share the Notion
 integration with the Production Schedule database; and set
 `NOTION_PRODUCTION_SCHEDULE_DATABASE_ID` + `CRON_SECRET`. Property names live in
-`schema.ts` (orders) and `production-schedule.blocks.ts` (schedule).## Appointment scheduling (real-time slot booking)
+`orders.schema.ts` (orders) and `production-schedule.blocks.ts` (schedule).
+
+## Appointment scheduling (real-time slot booking)
 
 Customers book appointments (consultations, fittings, design reviews, general)
 with a staff member from `pages/appointments.tsx` — a four-step flow (purpose →
@@ -502,7 +523,7 @@ pnpm install
 pnpm dev
 ```
 
-`pnpm dev` runs the `@workspace/api-server` and `@workspace/order-status` dev
+`pnpm dev` runs the `@workspace/api-server` and `@workspace/web-app` dev
 scripts in parallel. The frontend proxies `/api` to the backend. The
 api-server `dev` script builds with esbuild and runs the bundled output; it
 reads env from the repo-root `.env` via `DOTENV_CONFIG_PATH`.
@@ -579,8 +600,8 @@ no network, no Notion. `vitest run test/unit` is the fast loop. A vitest-config
 plugin maps the source's `.js` import specifiers to the on-disk `.ts` files so
 tests run with no build step.
 
-**Frontend component (Vitest + Testing Library).** The `@workspace/order-status`
-suite in `artifacts/order-status/test/` (jsdom) — the status-timeline
+**Frontend component (Vitest + Testing Library).** The `@workspace/web-app`
+suite in `artifacts/web-app/test/` (jsdom) — the status-timeline
 completed/active/future logic and render states, the shop's render states and
 category filter, and the order-form validation + submit-payload mapping
 (asserting empty optional fields are omitted). Each file mocks the generated
@@ -624,7 +645,7 @@ and in the maintainer's env without edits.
   (e.g. `import router from "./routes/index.js"`) even though the source is
   `.ts` — this is required so `@vercel/node`/Node ESM can resolve the compiled
   output. Don't drop the extensions. Frontend imports use the `@/` alias
-  (`@/components/...`) resolving to `artifacts/order-status/src`.
+  (`@/components/...`) resolving to `artifacts/web-app/src`.
 - **Shared dependency versions** live in the `catalog:` section of
   `pnpm-workspace.yaml`. Reference them as `"react": "catalog:"` rather than
   pinning per package.
@@ -673,7 +694,7 @@ and in the maintainer's env without edits.
 - Do **not** open a pull request unless explicitly asked.
 - Vercel deploys from the repo using `vercel.json`:
   `installCommand: pnpm install`, `buildCommand: pnpm run build:vercel`,
-  output `artifacts/order-status/dist/public`.
+  output `artifacts/web-app/dist/public`.
 - **Required Vercel env vars:** `NOTION_API_KEY`, `NOTION_ORDERS_DATABASE_ID`,
   `NOTION_CONTACT_DATABASE_ID` (the "Website Contact Messages" database that the
   `/contact` form **and** the shop's `/notify` dialog both write to),
@@ -694,7 +715,7 @@ and in the maintainer's env without edits.
   linking is skipped and orders are unchanged. Code:
   `artifacts/api-server/src/lib/notion/clients.repository.ts`
   (`upsertClientByEmail`), wired from `orders.service.ts`; the order's `Client`
-  relation is written by `blocks.ts`. **Appointment scheduling** instead uses Google: `GOOGLE_SERVICE_ACCOUNT_KEY` (the full
+  relation is written by `orders.blocks.ts`. **Appointment scheduling** instead uses Google: `GOOGLE_SERVICE_ACCOUNT_KEY` (the full
   service-account JSON key, with domain-wide delegation authorized for the
   Calendar scope) and `APPOINTMENT_SHEET_ID` (the working-hours Google Sheet,
   shared with the service-account email; optional `APPOINTMENT_SHEET_RANGE`,
@@ -728,6 +749,12 @@ and in the maintainer's env without edits.
   (IANA zone for working hours/slots, default `America/Chicago`),
   `APPOINTMENT_MIN_LEAD_HOURS` (24), `APPOINTMENT_MAX_ADVANCE_DAYS` (45), and
   `APPOINTMENT_SLOT_STEP_MINUTES` (15). All have defaults.
+- **Optional measurement-change env var:** `MEASUREMENT_LOCK_FROM_STAGE` (default
+  `Cutting/Pinning`) — the live **Stage** option at/after which an order's
+  measurements are frozen and `POST /orders/:n/measurement-change-requests` is
+  rejected. Like `STATUS_IN_STOCK`, this names a specific option value (a targeted
+  business rule), so if the atelier renames that stage in Notion, set this override.
+  See `services/measurement-change.service.ts`.
 
 ## Quick reference — where things live
 
@@ -739,22 +766,23 @@ and in the maintainer's env without edits.
 | Change a customer email / template      | `artifacts/api-server/src/lib/resend/*` (`emails.ts` copy, `send.ts` transport, `client.ts` config)                                                                                                                                                                           |
 | Add/modify an API route                 | `artifacts/api-server/src/routes/*`                                                                                                                                                                                                                                           |
 | Add request validation / error mapping  | `artifacts/api-server/src/middlewares/*`                                                                                                                                                                                                                                      |
-| Change the status-lookup UI             | `artifacts/order-status/src/pages/status.tsx`                                                                                                                                                                                                                                 |
-| Change the order intake form            | `artifacts/order-status/src/pages/order-form.tsx`                                                                                                                                                                                                                             |
-| Change the landing page                 | `artifacts/order-status/src/pages/home.tsx`                                                                                                                                                                                                                                   |
-| Change the shop (live Notion inventory) | `artifacts/order-status/src/pages/shop.tsx` + `services/products.service.ts` + `lib/notion/products.*`                                                                                                                                                                        |
-| Change the back-in-stock notify dialog  | `artifacts/order-status/src/components/notify-dialog.tsx` + `services/notify.service.ts` + `lib/notion/notify.*` (writes to the **contact** database — see below)                                                                                                             |
-| Change shop checkout / payments         | `artifacts/order-status/src/lib/cart.tsx` + `components/cart-drawer.tsx` + `components/add-to-cart.tsx` (frontend); `api-server/src/services/checkout.service.ts` + `routes/checkout.ts` + `routes/stripe-webhook.ts` + `lib/stripe/*` + `lib/notion/shop-orders.*` (backend) |
-| Change custom-order deposits            | `artifacts/order-status/src/pages/status.tsx` (`DepositSection`); `api-server/src/services/deposit.service.ts` + `routes/orders.ts` + `lib/notion/orders.repository.ts` (`findDepositTarget`/`markDepositPaid`) + `routes/stripe-webhook.ts`                                  |
-| Change custom-order invoice / balance   | `artifacts/order-status/src/pages/invoice.tsx` + status page's "View Invoice" card; `api-server/src/services/invoice.service.ts` + `routes/orders.ts` (`POST /orders/:n/invoice`) + `lib/notion/invoice.{schema,repository}.ts` + `routes/stripe-webhook.ts`                    |
+| Change the status-lookup UI             | `artifacts/web-app/src/pages/status.tsx`                                                                                                                                                                                                                                 |
+| Change the order intake form            | `artifacts/web-app/src/pages/order-form.tsx`                                                                                                                                                                                                                             |
+| Change the measurement-change request   | `artifacts/web-app/src/components/measurement-change-dialog.tsx` (opened from `pages/status.tsx`); `api-server/src/services/measurement-change.service.ts` + `routes/orders.ts` + `lib/notion/measurement-change.{blocks,repository}.ts` (writes to the **contact** database) |
+| Change the landing page                 | `artifacts/web-app/src/pages/home.tsx`                                                                                                                                                                                                                                   |
+| Change the shop (live Notion inventory) | `artifacts/web-app/src/pages/shop.tsx` + `services/products.service.ts` + `lib/notion/products.*`                                                                                                                                                                        |
+| Change the back-in-stock notify dialog  | `artifacts/web-app/src/components/notify-dialog.tsx` + `services/notify.service.ts` + `lib/notion/notify.*` (writes to the **contact** database — see below)                                                                                                             |
+| Change shop checkout / payments         | `artifacts/web-app/src/lib/cart.tsx` + `components/cart-drawer.tsx` + `components/add-to-cart.tsx` (frontend); `api-server/src/services/checkout.service.ts` + `routes/checkout.ts` + `routes/stripe-webhook.ts` + `lib/stripe/*` + `lib/notion/shop-orders.*` (backend) |
+| Change custom-order deposits            | `artifacts/web-app/src/pages/status.tsx` (`DepositSection`); `api-server/src/services/deposit.service.ts` + `routes/orders.ts` + `lib/notion/orders.repository.ts` (`findDepositTarget`/`markDepositPaid`) + `routes/stripe-webhook.ts`                                  |
+| Change custom-order invoice / balance   | `artifacts/web-app/src/pages/invoice.tsx` + status page's "View Invoice" card; `api-server/src/services/invoice.service.ts` + `routes/orders.ts` (`POST /orders/:n/invoice`) + `lib/notion/invoice.{schema,repository}.ts` + `routes/stripe-webhook.ts`                    |
 | Change production-schedule milestones   | `api-server/src/services/schedule.service.ts` + `routes/cron.ts` + `lib/notion/production-schedule.{blocks,repository}.ts` + `lib/notion/orders.repository.ts` (`findOrdersNeedingMilestones`/`markMilestonesGenerated`); cron in `vercel.json`                               |
-| Change appointment booking (UI)         | `artifacts/order-status/src/pages/appointments.tsx`                                                                                                                                                                                                                           |
+| Change appointment booking (UI)         | `artifacts/web-app/src/pages/appointments.tsx`                                                                                                                                                                                                                           |
 | Change appointment types / routing rules| `api-server/src/lib/appointments/catalog.ts` (targeted business rule — durations, which staff, which locations)                                                                                                                                                               |
 | Change staff working hours / calendars  | The working-hours **Google Sheet** (`APPOINTMENT_SHEET_ID`); read in `api-server/src/lib/google/sheets.repository.ts`, parsed by `lib/appointments/staff.ts`                                                                                                                   |
 | Change appointment slot logic / policy  | `api-server/src/lib/appointments/availability.ts` (`computeSlots`) + `time.ts` + `settings.ts`; `services/appointments.service.ts` + `routes/appointments.ts` + `lib/google/*` (Calendar free/busy + event insert)                                                            |
 | Add a page / route                      | new `src/pages/*.tsx` + `<Route>` in `src/App.tsx`                                                                                                                                                                                                                            |
-| Add or rename a nav link                | `NAV_LINKS` in `artifacts/order-status/src/components/navbar.tsx`                                                                                                                                                                                                             |
-| Add a shared UI component               | `artifacts/order-status/src/components/ui/`                                                                                                                                                                                                                                   |
+| Add or rename a nav link                | `NAV_LINKS` in `artifacts/web-app/src/components/navbar.tsx`                                                                                                                                                                                                             |
+| Add a shared UI component               | `artifacts/web-app/src/components/ui/`                                                                                                                                                                                                                                   |
 | Add/change a shared test fixture        | `lib/test-fixtures/src/index.ts` (read its guardrail first)                                                                                                                                                                                                                   |
 | Understand a past decision / gotcha     | `.agents/memory/`                                                                                                                                                                                                                                                             |
 | Adjust the Vercel serverless entrypoint | `api/index.ts` + `vercel.json`                                                                                                                                                                                                                                                |

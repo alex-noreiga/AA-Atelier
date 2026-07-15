@@ -136,7 +136,7 @@ importers:
         specifier: ^3.2.4
         version: 3.2.7(@types/node@26.1.1)(jiti@2.7.0)(jsdom@25.0.1)(lightningcss@1.32.0)(yaml@2.9.0)
 
-  artifacts/order-status:
+  artifacts/web-app:
     devDependencies:
       '@hookform/resolvers':
         specifier: ^3.10.0

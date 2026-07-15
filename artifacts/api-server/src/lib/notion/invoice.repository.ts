@@ -13,7 +13,7 @@ import {
 import {
   ORDER_INVOICE_PAID_PROPERTY,
   ORDER_INVOICE_SESSION_PROPERTY,
-} from "./schema.js";
+} from "./orders.schema.js";
 import {
   INVOICE_BALANCE_PAID_PROPERTY,
   INVOICE_BALANCE_SESSION_PROPERTY,

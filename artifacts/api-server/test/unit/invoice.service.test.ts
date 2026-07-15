@@ -22,7 +22,7 @@ import {
   listInvoiceLineItems,
   markBalancePaid,
 } from "../../src/lib/notion/invoice.repository.js";
-import type { OrderRecord } from "../../src/lib/notion/schema.js";
+import type { OrderRecord } from "../../src/lib/notion/orders.schema.js";
 import type {
   InvoiceRecord,
   InvoiceLineItemRecord,

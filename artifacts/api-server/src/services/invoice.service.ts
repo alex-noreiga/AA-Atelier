@@ -22,7 +22,7 @@ import {
   type InvoiceDepositView,
   type InvoiceView,
 } from "../lib/notion/invoice.schema.js";
-import type { OrderRecord } from "../lib/notion/schema.js";
+import type { OrderRecord } from "../lib/notion/orders.schema.js";
 import { getStripeClient } from "../lib/stripe/client.js";
 import { siteBaseUrl } from "../lib/site.js";
 import { BadRequestError, NotFoundError } from "../lib/errors.js";
