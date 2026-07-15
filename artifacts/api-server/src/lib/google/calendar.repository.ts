@@ -17,25 +17,26 @@ import {
   getGoogleCalendarClient,
   type GoogleCalendarClient,
 } from "./client.js";
+import { calendarEmailFor, getStaffSchedule } from "./sheets.repository.js";
 import type { AppointmentLocation } from "../appointments/catalog.js";
 import type {
   Booking,
   TimeOff,
   WeeklyHours,
 } from "../appointments/availability.js";
-import {
-  calendarEmailFor,
-  weeklyHoursFromConfig,
-} from "../appointments/staff.js";
 
 export interface ScheduleConfig {
   weeklyHours: WeeklyHours[];
   timeOff: TimeOff[];
 }
 
-/** The positive availability grid from config. Time-off lives on the calendars. */
-export function getScheduleConfig(): ScheduleConfig {
-  return { weeklyHours: weeklyHoursFromConfig(), timeOff: [] };
+/**
+ * The positive availability grid, read from the working-hours Google Sheet.
+ * Time-off lives on the staff calendars (subtracted as busy), so it's always [].
+ */
+export async function getScheduleConfig(): Promise<ScheduleConfig> {
+  const { weeklyHours } = await getStaffSchedule();
+  return { weeklyHours, timeOff: [] };
 }
 
 interface FreeBusyResponse {
@@ -54,9 +55,11 @@ export async function listBusyInRange(
   staffNames: string[],
   client: GoogleCalendarClient = getGoogleCalendarClient(),
 ): Promise<Booking[]> {
-  const targets = staffNames
-    .map((name) => ({ name, email: calendarEmailFor(name) }))
-    .filter((t): t is { name: string; email: string } => Boolean(t.email));
+  const targets: Array<{ name: string; email: string }> = [];
+  for (const name of staffNames) {
+    const email = await calendarEmailFor(name);
+    if (email) targets.push({ name, email });
+  }
 
   const bookings: Booking[] = [];
   for (const target of targets) {
@@ -123,7 +126,7 @@ export async function createCalendarEvent(
   title: string,
   client: GoogleCalendarClient = getGoogleCalendarClient(),
 ): Promise<{ meetingUrl?: string; calendarLink?: string }> {
-  const calendarEmail = calendarEmailFor(appointment.staff);
+  const calendarEmail = await calendarEmailFor(appointment.staff);
   if (!calendarEmail) {
     throw new Error(
       `No calendar is configured for staff member "${appointment.staff}"`,

@@ -1,133 +1,130 @@
-// Staff working-hours + calendar config, read from the `APPOINTMENT_STAFF`
-// environment variable at call time (not module load), like `settings.ts`.
+// Pure parser for the staff working-hours schedule. The rows come from the
+// Google Sheet the atelier edits (see `lib/google/sheets.repository.ts`); this
+// module turns them into the *positive* availability grid `computeSlots` needs
+// plus a staff→calendar-email map. No I/O and no env reads, so it's fully
+// unit-testable — the sheet fetch/cache lives in the repository.
 //
-// This is the *positive* availability grid — "when is each person open for
-// bookings" — that Google Calendar free/busy can't provide (free/busy only
-// tells us when someone is *busy*). It's a set-once config the atelier edits in
-// the Vercel dashboard; day-to-day blocking (a day off, a personal appointment)
-// happens on the actual Google Calendar and is subtracted as busy time.
-//
-// Shape (JSON):
-//   [
-//     { "name": "Alexandra", "email": "alexandra@atelier.com",
-//       "hours": [ { "days": ["Mon","Tue"], "start": "10:00", "end": "17:00",
-//                    "locations": ["in-person","virtual"] } ] }
-//   ]
-// `name` must match the catalog STAFF names; `email` is the Workspace calendar
-// we read free/busy from and write the booking to.
+// A row is a flat record of strings (one spreadsheet row): staff, email, day,
+// start, end, locations. `day` may be a single day, a comma list ("Mon,Wed"),
+// or a hyphen range ("Mon-Fri"); "Mon" and "Monday" are both accepted.
+// Malformed rows are skipped rather than failing the whole request.
 
-import { z } from "zod";
 import type { AppointmentLocation } from "./catalog.js";
 import type { WeeklyHours } from "./availability.js";
 import { parseTimeToMinutes } from "./time.js";
 
-const WEEKDAY_BY_ABBREVIATION: Record<string, string> = {
-  sun: "Sunday",
-  mon: "Monday",
-  tue: "Tuesday",
-  wed: "Wednesday",
-  thu: "Thursday",
-  fri: "Friday",
-  sat: "Saturday",
-};
-const FULL_WEEKDAYS = new Set(Object.values(WEEKDAY_BY_ABBREVIATION));
+/** One raw spreadsheet row (already split into columns, still strings). */
+export interface ScheduleRow {
+  staff: string;
+  email: string;
+  day: string;
+  start: string;
+  end: string;
+  locations: string;
+}
 
-const hoursBlockSchema = z.object({
-  days: z.array(z.string()).min(1),
-  start: z.string(),
-  end: z.string(),
-  locations: z.array(z.enum(["in-person", "virtual"])).min(1),
-});
+export interface ParsedSchedule {
+  weeklyHours: WeeklyHours[];
+  /** staff name → booking calendar email. */
+  calendars: Map<string, string>;
+}
 
-const staffSchema = z.object({
-  name: z.string().min(1),
-  email: z.string().email(),
-  hours: z.array(hoursBlockSchema),
-});
+// Monday-first order so a range like "Mon-Fri" expands in the natural direction.
+const WEEKDAY_ORDER = [
+  "Monday",
+  "Tuesday",
+  "Wednesday",
+  "Thursday",
+  "Friday",
+  "Saturday",
+  "Sunday",
+] as const;
+const WEEKDAY_INDEX = new Map<string, number>(
+  WEEKDAY_ORDER.map((name, i) => [name, i]),
+);
 
-const staffConfigSchema = z.array(staffSchema);
-type StaffConfig = z.infer<typeof staffConfigSchema>;
-
-/** Map "Mon"/"monday"/"Monday" → canonical long weekday name, or null. */
+/** Map "Mon" / "monday" / "Monday" → canonical long weekday name, or null. */
 function normalizeWeekday(value: string): string | null {
-  const trimmed = value.trim();
-  const lower = trimmed.toLowerCase();
-  if (WEEKDAY_BY_ABBREVIATION[lower.slice(0, 3)]) {
-    // Accept both "Mon" and "Monday" (both start with the 3-letter key).
-    const full = WEEKDAY_BY_ABBREVIATION[lower.slice(0, 3)];
-    if (
-      lower === full.toLowerCase() ||
-      lower === full.slice(0, 3).toLowerCase()
-    ) {
-      return full;
+  const key = value.trim().slice(0, 3).toLowerCase();
+  const match = WEEKDAY_ORDER.find(
+    (name) => name.slice(0, 3).toLowerCase() === key,
+  );
+  return match ?? null;
+}
+
+/** Expand a day cell ("Mon", "Mon,Wed", "Mon-Fri") into long weekday names. */
+function expandDays(cell: string): string[] {
+  const out: string[] = [];
+  for (const token of cell.split(",")) {
+    const trimmed = token.trim();
+    if (!trimmed) continue;
+    const range = trimmed.split("-");
+    if (range.length === 2) {
+      const from = normalizeWeekday(range[0]);
+      const to = normalizeWeekday(range[1]);
+      if (!from || !to) continue;
+      // Walk forward (wrapping) from `from` to `to` inclusive.
+      const start = WEEKDAY_INDEX.get(from)!;
+      const end = WEEKDAY_INDEX.get(to)!;
+      const span = (end - start + 7) % 7;
+      for (let i = 0; i <= span; i++) {
+        out.push(WEEKDAY_ORDER[(start + i) % 7]);
+      }
+    } else {
+      const day = normalizeWeekday(trimmed);
+      if (day) out.push(day);
     }
   }
-  const capitalized =
-    trimmed.charAt(0).toUpperCase() + trimmed.slice(1).toLowerCase();
-  return FULL_WEEKDAYS.has(capitalized) ? capitalized : null;
+  // De-dupe while preserving order.
+  return [...new Set(out)];
 }
 
-function loadStaffConfig(): StaffConfig {
-  const raw = process.env.APPOINTMENT_STAFF;
-  if (!raw) {
-    throw new Error("APPOINTMENT_STAFF environment variable is not set");
+/** Parse a locations cell ("in-person, virtual" / "In person") → ids. */
+function parseLocations(cell: string): AppointmentLocation[] {
+  const seen = new Set<AppointmentLocation>();
+  for (const token of cell.split(",")) {
+    const normalized = token.trim().toLowerCase().replace(/\s+/g, "-");
+    if (normalized === "in-person") seen.add("in-person");
+    else if (normalized === "virtual") seen.add("virtual");
   }
-  let parsed: unknown;
-  try {
-    parsed = JSON.parse(raw);
-  } catch {
-    throw new Error("APPOINTMENT_STAFF is not valid JSON");
-  }
-  const result = staffConfigSchema.safeParse(parsed);
-  if (!result.success) {
-    throw new Error(`APPOINTMENT_STAFF is invalid: ${result.error.message}`);
-  }
-  return result.data;
-}
-
-/** Each configured staff member's booking calendar (Workspace email). */
-export function staffCalendars(): Array<{ name: string; email: string }> {
-  return loadStaffConfig().map((staff) => ({
-    name: staff.name,
-    email: staff.email,
-  }));
-}
-
-/** The calendar email for a staff member, or undefined if not configured. */
-export function calendarEmailFor(staffName: string): string | undefined {
-  return loadStaffConfig().find((staff) => staff.name === staffName)?.email;
+  return [...seen];
 }
 
 /**
- * Expand the config into the flat `WeeklyHours[]` grid `computeSlots` consumes —
- * one entry per (staff, weekday, block). Malformed blocks (bad time, unknown
- * weekday, inverted range) are skipped rather than failing the whole request.
+ * Turn schedule rows into the weekly-hours grid + the staff→email map. Each row
+ * expands into one `WeeklyHours` per weekday. Rows missing a staff/day/valid
+ * time/location are skipped; the first email seen for a staff name wins.
  */
-export function weeklyHoursFromConfig(): WeeklyHours[] {
-  const hours: WeeklyHours[] = [];
-  for (const staff of loadStaffConfig()) {
-    for (const block of staff.hours) {
-      const startMinutes = parseTimeToMinutes(block.start);
-      const endMinutes = parseTimeToMinutes(block.end);
-      if (
-        startMinutes === null ||
-        endMinutes === null ||
-        endMinutes <= startMinutes
-      ) {
-        continue;
-      }
-      for (const day of block.days) {
-        const weekday = normalizeWeekday(day);
-        if (!weekday) continue;
-        hours.push({
-          staff: staff.name,
-          weekday,
-          startMinutes,
-          endMinutes,
-          locations: block.locations as AppointmentLocation[],
-        });
-      }
+export function parseScheduleRows(rows: ScheduleRow[]): ParsedSchedule {
+  const weeklyHours: WeeklyHours[] = [];
+  const calendars = new Map<string, string>();
+
+  for (const row of rows) {
+    const staff = row.staff.trim();
+    if (!staff) continue;
+
+    const email = row.email.trim();
+    if (email && !calendars.has(staff)) {
+      calendars.set(staff, email);
+    }
+
+    const startMinutes = parseTimeToMinutes(row.start);
+    const endMinutes = parseTimeToMinutes(row.end);
+    if (
+      startMinutes === null ||
+      endMinutes === null ||
+      endMinutes <= startMinutes
+    ) {
+      continue;
+    }
+
+    const locations = parseLocations(row.locations);
+    if (locations.length === 0) continue;
+
+    for (const weekday of expandDays(row.day)) {
+      weeklyHours.push({ staff, weekday, startMinutes, endMinutes, locations });
     }
   }
-  return hours;
+
+  return { weeklyHours, calendars };
 }

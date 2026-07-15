@@ -1,63 +1,27 @@
-import { describe, it, expect, beforeEach } from "vitest";
+import { describe, it, expect } from "vitest";
 import {
-  calendarEmailFor,
-  staffCalendars,
-  weeklyHoursFromConfig,
+  parseScheduleRows,
+  type ScheduleRow,
 } from "../../src/lib/appointments/staff.js";
 
-const CONFIG = [
-  {
-    name: "Alexandra",
+function row(overrides: Partial<ScheduleRow> = {}): ScheduleRow {
+  return {
+    staff: "Alexandra",
     email: "alexandra@atelier.test",
-    hours: [
-      {
-        days: ["Mon", "Wed"],
-        start: "10:00",
-        end: "17:00",
-        locations: ["in-person", "virtual"],
-      },
-      // A malformed block (inverted range) — should be skipped, not throw.
-      {
-        days: ["Fri"],
-        start: "17:00",
-        end: "10:00",
-        locations: ["in-person"],
-      },
-    ],
-  },
-  {
-    name: "Alayna",
-    email: "alayna@atelier.test",
-    hours: [
-      {
-        days: ["Saturday"],
-        start: "11:00",
-        end: "16:00",
-        locations: ["virtual"],
-      },
-    ],
-  },
-];
+    day: "Mon",
+    start: "10:00",
+    end: "17:00",
+    locations: "in-person, virtual",
+    ...overrides,
+  };
+}
 
-beforeEach(() => {
-  process.env.APPOINTMENT_STAFF = JSON.stringify(CONFIG);
-});
-
-describe("staffCalendars / calendarEmailFor", () => {
-  it("lists staff and resolves a calendar email by name", () => {
-    expect(staffCalendars()).toEqual([
-      { name: "Alexandra", email: "alexandra@atelier.test" },
-      { name: "Alayna", email: "alayna@atelier.test" },
+describe("parseScheduleRows", () => {
+  it("maps a row to weekly hours + the staff→email map", () => {
+    const { weeklyHours, calendars } = parseScheduleRows([
+      row({ day: "Mon,Wed" }),
     ]);
-    expect(calendarEmailFor("Alayna")).toBe("alayna@atelier.test");
-    expect(calendarEmailFor("Nobody")).toBeUndefined();
-  });
-});
-
-describe("weeklyHoursFromConfig", () => {
-  it("expands each block into one WeeklyHours per weekday (abbrev + full names)", () => {
-    const hours = weeklyHoursFromConfig();
-    expect(hours).toEqual([
+    expect(weeklyHours).toEqual([
       {
         staff: "Alexandra",
         weekday: "Monday",
@@ -72,32 +36,65 @@ describe("weeklyHoursFromConfig", () => {
         endMinutes: 1020,
         locations: ["in-person", "virtual"],
       },
-      {
-        staff: "Alayna",
-        weekday: "Saturday",
-        startMinutes: 660,
-        endMinutes: 960,
-        locations: ["virtual"],
-      },
+    ]);
+    expect(calendars.get("Alexandra")).toBe("alexandra@atelier.test");
+  });
+
+  it("expands a day range (Mon-Fri) in week order", () => {
+    const { weeklyHours } = parseScheduleRows([row({ day: "Mon-Fri" })]);
+    expect(weeklyHours.map((h) => h.weekday)).toEqual([
+      "Monday",
+      "Tuesday",
+      "Wednesday",
+      "Thursday",
+      "Friday",
     ]);
   });
-});
 
-describe("config errors", () => {
-  it("throws when APPOINTMENT_STAFF is unset", () => {
-    delete process.env.APPOINTMENT_STAFF;
-    expect(() => weeklyHoursFromConfig()).toThrow(/APPOINTMENT_STAFF/);
-  });
-
-  it("throws on invalid JSON", () => {
-    process.env.APPOINTMENT_STAFF = "{not json";
-    expect(() => staffCalendars()).toThrow(/valid JSON/);
-  });
-
-  it("throws when the shape is wrong (missing email)", () => {
-    process.env.APPOINTMENT_STAFF = JSON.stringify([
-      { name: "Alexandra", hours: [] },
+  it("accepts full day names and normalizes location labels/case", () => {
+    const { weeklyHours } = parseScheduleRows([
+      row({ day: "Saturday", locations: "In person, VIRTUAL" }),
     ]);
-    expect(() => staffCalendars()).toThrow(/invalid/);
+    expect(weeklyHours[0].weekday).toBe("Saturday");
+    expect(weeklyHours[0].locations).toEqual(["in-person", "virtual"]);
+  });
+
+  it("records the email but no hours when the time range is invalid", () => {
+    const { weeklyHours, calendars } = parseScheduleRows([
+      row({ start: "17:00", end: "10:00" }),
+    ]);
+    expect(weeklyHours).toEqual([]);
+    // Email mapping is still preserved so bookings can resolve the calendar.
+    expect(calendars.get("Alexandra")).toBe("alexandra@atelier.test");
+  });
+
+  it("skips a row with no valid location", () => {
+    const { weeklyHours } = parseScheduleRows([
+      row({ locations: "carrier pigeon" }),
+    ]);
+    expect(weeklyHours).toEqual([]);
+  });
+
+  it("skips a row with no staff entirely", () => {
+    const { weeklyHours, calendars } = parseScheduleRows([
+      row({ staff: "  ", email: "ghost@atelier.test" }),
+    ]);
+    expect(weeklyHours).toEqual([]);
+    expect(calendars.size).toBe(0);
+  });
+
+  it("keeps the first email seen for a staff name", () => {
+    const { calendars } = parseScheduleRows([
+      row({ day: "Mon", email: "first@atelier.test" }),
+      row({ day: "Tue", email: "second@atelier.test" }),
+    ]);
+    expect(calendars.get("Alexandra")).toBe("first@atelier.test");
+  });
+
+  it("returns empty for no rows", () => {
+    expect(parseScheduleRows([])).toEqual({
+      weeklyHours: [],
+      calendars: new Map(),
+    });
   });
 });

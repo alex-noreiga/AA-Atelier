@@ -119,7 +119,7 @@ export async function getAppointmentAvailability(
   const eligibleStaff = type.staff.filter(
     (member) => !params.staff || member === params.staff,
   );
-  const { weeklyHours, timeOff } = getScheduleConfig();
+  const { weeklyHours, timeOff } = await getScheduleConfig();
   const bookings = await listBusyInRange(rangeStart, rangeEnd, eligibleStaff);
 
   const slots = computeSlots({
@@ -204,7 +204,7 @@ export async function bookAppointment(input: BookInput): Promise<BookResult> {
   const eligibleStaff = type.staff.filter(
     (member) => !input.staff || member === input.staff,
   );
-  const { weeklyHours, timeOff } = getScheduleConfig();
+  const { weeklyHours, timeOff } = await getScheduleConfig();
   const bookings = await listBusyInRange(rangeStart, rangeEnd, eligibleStaff);
 
   const slots = computeSlots({

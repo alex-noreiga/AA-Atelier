@@ -43,7 +43,7 @@ beforeEach(() => {
   process.env.APPOINTMENT_TIMEZONE = "UTC";
   process.env.APPOINTMENT_MIN_LEAD_HOURS = "0";
   process.env.APPOINTMENT_SLOT_STEP_MINUTES = "30";
-  mockSchedule.mockReturnValue({ weeklyHours, timeOff: [] });
+  mockSchedule.mockResolvedValue({ weeklyHours, timeOff: [] });
   mockBusy.mockResolvedValue([]);
   mockCreate.mockResolvedValue({ calendarLink: "https://cal.test/event" });
 });

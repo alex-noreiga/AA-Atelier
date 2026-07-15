@@ -43,7 +43,7 @@ beforeEach(() => {
   delete process.env.ATELIER_INBOX_EMAIL;
   vi.useFakeTimers();
   vi.setSystemTime(new Date("2026-07-20T00:00:00.000Z"));
-  mockSchedule.mockReturnValue({ weeklyHours, timeOff: [] });
+  mockSchedule.mockResolvedValue({ weeklyHours, timeOff: [] });
   mockBusy.mockResolvedValue([]);
   mockCreate.mockResolvedValue({ calendarLink: "https://cal.test/event" });
 });

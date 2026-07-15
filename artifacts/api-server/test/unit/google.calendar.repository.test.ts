@@ -1,26 +1,27 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
+
+// The calendar repository resolves staff → calendar email and the working-hours
+// grid through the sheets repository; mock that layer so these tests focus on
+// the FreeBusy / event-insert mapping.
+vi.mock("../../src/lib/google/sheets.repository.js", () => ({
+  getStaffSchedule: vi.fn(),
+  calendarEmailFor: vi.fn(),
+}));
+
 import {
   createCalendarEvent,
   getScheduleConfig,
   listBusyInRange,
   type BookedAppointment,
 } from "../../src/lib/google/calendar.repository.js";
+import {
+  getStaffSchedule,
+  calendarEmailFor,
+} from "../../src/lib/google/sheets.repository.js";
 import type { GoogleCalendarClient } from "../../src/lib/google/client.js";
 
-const CONFIG = [
-  {
-    name: "Alexandra",
-    email: "alexandra@atelier.test",
-    hours: [
-      {
-        days: ["Mon"],
-        start: "10:00",
-        end: "17:00",
-        locations: ["in-person", "virtual"],
-      },
-    ],
-  },
-];
+const mockSchedule = vi.mocked(getStaffSchedule);
+const mockEmail = vi.mocked(calendarEmailFor);
 
 function jsonResponse(body: unknown, status = 200): Response {
   return new Response(JSON.stringify(body), {
@@ -29,7 +30,6 @@ function jsonResponse(body: unknown, status = 200): Response {
   });
 }
 
-/** A fake calendar client that records its calls and returns a canned response. */
 function fakeClient(
   impl: (subject: string, path: string, init?: RequestInit) => Response,
 ): GoogleCalendarClient & {
@@ -47,17 +47,26 @@ function fakeClient(
 }
 
 beforeEach(() => {
-  process.env.APPOINTMENT_STAFF = JSON.stringify(CONFIG);
+  mockEmail.mockResolvedValue("alexandra@atelier.test");
 });
 
 describe("getScheduleConfig", () => {
-  it("returns the config weekly hours with empty time-off", () => {
-    const config = getScheduleConfig();
-    expect(config.timeOff).toEqual([]);
-    expect(config.weeklyHours[0]).toMatchObject({
-      staff: "Alexandra",
-      weekday: "Monday",
+  it("returns the sheet's weekly hours with empty time-off", async () => {
+    mockSchedule.mockResolvedValue({
+      weeklyHours: [
+        {
+          staff: "Alexandra",
+          weekday: "Monday",
+          startMinutes: 600,
+          endMinutes: 1020,
+          locations: ["in-person"],
+        },
+      ],
+      calendars: new Map(),
     });
+    const config = await getScheduleConfig();
+    expect(config.timeOff).toEqual([]);
+    expect(config.weeklyHours[0]).toMatchObject({ staff: "Alexandra" });
   });
 });
 
@@ -86,7 +95,6 @@ describe("listBusyInRange", () => {
         end: new Date("2026-07-20T15:00:00Z"),
       },
     ]);
-    // Impersonated the staff and queried their own calendar.
     expect(client.calls[0].subject).toBe("alexandra@atelier.test");
     expect(client.calls[0].path).toBe("/freeBusy");
     const reqBody = JSON.parse(client.calls[0].init!.body as string);
@@ -94,6 +102,7 @@ describe("listBusyInRange", () => {
   });
 
   it("skips staff with no configured calendar", async () => {
+    mockEmail.mockResolvedValue(undefined);
     const client = fakeClient(() => jsonResponse({ calendars: {} }));
     const bookings = await listBusyInRange(
       new Date(),
@@ -148,7 +157,6 @@ describe("createCalendarEvent", () => {
       dateTime: "2026-07-20T14:00:00.000Z",
       timeZone: "America/New_York",
     });
-    // In-person: no Meet conference requested.
     expect(body.conferenceData).toBeUndefined();
   });
 
@@ -174,6 +182,7 @@ describe("createCalendarEvent", () => {
   });
 
   it("throws when the staff member has no configured calendar", async () => {
+    mockEmail.mockResolvedValue(undefined);
     const client = fakeClient(() => jsonResponse({}));
     await expect(
       createCalendarEvent({ ...base, staff: "Ghost" }, "t", client),

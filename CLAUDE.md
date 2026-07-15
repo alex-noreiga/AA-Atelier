@@ -314,14 +314,18 @@ in `api-server/src/lib/appointments/*` (pure logic + config),
    everything; fittings are in-person only). Like `STATUS_IN_STOCK` /
    `SIZED_CATEGORIES`, these are values coupled to code (duration drives slot
    math; staff/locations drive UI + validation). Retune a duration or rename a
-   staff member here; the staff names must match the `name`s in `APPOINTMENT_STAFF`.
+   staff member here; the staff names must match the `Staff` column in the
+   working-hours sheet (below).
 
-2. **Working hours are config; conflicts are Google free/busy.** `computeSlots`
-   (`lib/appointments/availability.ts`, pure + heavily unit-tested) needs a
-   *positive* grid of open hours, which Google free/busy can't give (it only says
-   when someone is *busy*). That grid is `APPOINTMENT_STAFF` — a JSON env value
-   (staff `name` + calendar `email` + weekly `hours`), parsed in
-   `lib/appointments/staff.ts`. The *subtractive* side — every busy interval,
+2. **Working hours are a Google Sheet; conflicts are Google free/busy.**
+   `computeSlots` (`lib/appointments/availability.ts`, pure + heavily unit-tested)
+   needs a *positive* grid of open hours, which Google free/busy can't give (it
+   only says when someone is *busy*). That grid comes from a **Google Sheet** the
+   atelier edits live (no redeploy) — columns `Staff | Email | Day | Start | End |
+   Locations`. `lib/google/sheets.repository.ts` reads it (`APPOINTMENT_SHEET_ID`,
+   60s cache + fallback, service account reads it as itself via a direct share)
+   and `lib/appointments/staff.ts` is the pure `parseScheduleRows` parser
+   (`Mon-Fri` ranges, comma lists). The *subtractive* side — every busy interval,
    including existing bookings **and** any event the staff added (a day off is
    just a calendar event) — comes from the **FreeBusy API** in
    `lib/google/calendar.repository.ts` (`listBusyInRange`), fed into `computeSlots`
@@ -354,11 +358,14 @@ in `api-server/src/lib/appointments/*` (pure logic + config),
    `APPOINTMENT_MAX_ADVANCE_DAYS` (45), `APPOINTMENT_SLOT_STEP_MINUTES` (15) —
    all read at call time in `lib/appointments/settings.ts`.
 
-6. **Google setup.** Enable the Calendar API + create a service account (JSON key
-   → `GOOGLE_SERVICE_ACCOUNT_KEY`); authorize its client id for
-   `https://www.googleapis.com/auth/calendar` under Workspace Admin → Security →
-   API controls → Domain-wide delegation. `google-auth-library` mints the
-   impersonated token; the rest is raw `fetch`, mirroring the Notion adapter.
+6. **Google setup.** Enable the Calendar API **and the Sheets API** + create a
+   service account (JSON key → `GOOGLE_SERVICE_ACCOUNT_KEY`); authorize its client
+   id for `https://www.googleapis.com/auth/calendar` under Workspace Admin →
+   Security → API controls → Domain-wide delegation (for the calendar
+   impersonation). The working-hours **Sheet is shared with the service-account
+   email** (Viewer) — no delegation needed for Sheets, since the SA reads it as
+   itself. `google-auth-library` mints the tokens (impersonated for Calendar,
+   plain for Sheets); the rest is raw `fetch`, mirroring the Notion adapter.
 
 ## Development workflow
 
@@ -557,10 +564,11 @@ and in the maintainer's env without edits.
   shop's `/products` endpoint reads), and `NOTION_SHOP_ORDERS_DATABASE_ID` (the
   "Shop Orders" database the checkout webhook writes paid orders to). The Notion
   integration must be shared with each database or queries 404. **Appointment
-  scheduling** instead uses Google Calendar: `GOOGLE_SERVICE_ACCOUNT_KEY` (the
-  full service-account JSON key, with domain-wide delegation authorized for the
-  Calendar scope) and `APPOINTMENT_STAFF` (JSON: each staff member's `name`,
-  calendar `email`, and weekly `hours`). Checkout also
+  scheduling** instead uses Google: `GOOGLE_SERVICE_ACCOUNT_KEY` (the full
+  service-account JSON key, with domain-wide delegation authorized for the
+  Calendar scope) and `APPOINTMENT_SHEET_ID` (the working-hours Google Sheet,
+  shared with the service-account email; optional `APPOINTMENT_SHEET_RANGE`,
+  default `A2:F`). Enable both the Calendar and Sheets APIs. Checkout also
   needs `STRIPE_SECRET_KEY`, `STRIPE_WEBHOOK_SECRET` (the signing secret of the
   Stripe webhook endpoint), and `PUBLIC_BASE_URL` (the site origin Stripe
   redirects back to after payment). Optionally, `STRIPE_SHIPPING_RATE_IDS` — a
@@ -602,7 +610,7 @@ and in the maintainer's env without edits.
 | Change custom-order deposits            | `artifacts/order-status/src/pages/status.tsx` (`DepositSection`); `api-server/src/services/deposit.service.ts` + `routes/orders.ts` + `lib/notion/orders.repository.ts` (`findDepositTarget`/`markDepositPaid`) + `routes/stripe-webhook.ts`                                  |
 | Change appointment booking (UI)         | `artifacts/order-status/src/pages/appointments.tsx`                                                                                                                                                                                                                           |
 | Change appointment types / routing rules| `api-server/src/lib/appointments/catalog.ts` (targeted business rule — durations, which staff, which locations)                                                                                                                                                               |
-| Change staff working hours / calendars  | `APPOINTMENT_STAFF` env (parsed in `api-server/src/lib/appointments/staff.ts`)                                                                                                                                                                                                |
+| Change staff working hours / calendars  | The working-hours **Google Sheet** (`APPOINTMENT_SHEET_ID`); read in `api-server/src/lib/google/sheets.repository.ts`, parsed by `lib/appointments/staff.ts`                                                                                                                   |
 | Change appointment slot logic / policy  | `api-server/src/lib/appointments/availability.ts` (`computeSlots`) + `time.ts` + `settings.ts`; `services/appointments.service.ts` + `routes/appointments.ts` + `lib/google/*` (Calendar free/busy + event insert)                                                            |
 | Add a page / route                      | new `src/pages/*.tsx` + `<Route>` in `src/App.tsx`                                                                                                                                                                                                                            |
 | Add or rename a nav link                | `NAV_LINKS` in `artifacts/order-status/src/components/navbar.tsx`                                                                                                                                                                                                             |
