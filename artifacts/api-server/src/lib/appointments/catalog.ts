@@ -38,15 +38,16 @@ export interface AppointmentTypeDef {
   locations: AppointmentLocation[];
 }
 
-// Routing rules, per the atelier: Alayna takes consultations and design
-// reviews; everything else is Alexandra. Fittings are in-person only.
+// Routing rules, per the atelier: consultations are Alayna only; fittings,
+// design reviews, and general appointments can be booked with either Alexandra
+// or Alayna. Fittings are in-person only.
 export const APPOINTMENT_TYPES: readonly AppointmentTypeDef[] = [
   {
     id: "consultation",
     name: "Consultation",
     durationMinutes: 30,
     description: "Talk through ideas for a new custom piece.",
-    staff: [STAFF.alexandra, STAFF.alayna],
+    staff: [STAFF.alayna],
     locations: ["in-person", "virtual"],
   },
   {
@@ -55,7 +56,7 @@ export const APPOINTMENT_TYPES: readonly AppointmentTypeDef[] = [
     durationMinutes: 60,
     description:
       "Have your measurements taken or try your garment on in person.",
-    staff: [STAFF.alexandra],
+    staff: [STAFF.alexandra, STAFF.alayna],
     locations: ["in-person"],
   },
   {
@@ -71,7 +72,7 @@ export const APPOINTMENT_TYPES: readonly AppointmentTypeDef[] = [
     name: "General / Other",
     durationMinutes: 30,
     description: "Anything else — we'll help however we can.",
-    staff: [STAFF.alexandra],
+    staff: [STAFF.alexandra, STAFF.alayna],
     locations: ["in-person", "virtual"],
   },
 ];

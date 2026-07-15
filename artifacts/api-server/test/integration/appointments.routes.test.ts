@@ -31,7 +31,7 @@ const FIRST_SLOT_ISO = `${TARGET_DATE}T09:00:00.000Z`;
 
 const weeklyHours: WeeklyHours[] = [
   {
-    staff: "Alexandra",
+    staff: "Alayna",
     weekday: weekdayName(TARGET_DATE),
     startMinutes: 540, // 09:00
     endMinutes: 660, // 11:00
@@ -75,7 +75,7 @@ describe("GET /api/appointments/availability", () => {
     // 09:00, 09:30, 10:00, 10:30 (60-min consult fits until 11:00).
     expect(res.body.slots).toHaveLength(4);
     expect(res.body.slots[0].start).toBe(FIRST_SLOT_ISO);
-    expect(res.body.slots[0].staff).toBe("Alexandra");
+    expect(res.body.slots[0].staff).toBe("Alayna");
   });
 
   it("400s on an unknown type", async () => {
@@ -108,7 +108,7 @@ describe("POST /api/appointments", () => {
 
     expect(res.status).toBe(201);
     expect(res.body.type).toBe("Consultation");
-    expect(res.body.staff).toBe("Alexandra");
+    expect(res.body.staff).toBe("Alayna");
     expect(res.body.location).toBe("In person");
     expect(res.body.confirmationCode).toMatch(/^APT-/);
     expect(res.body.calendarLink).toBe("https://cal.test/event");
@@ -118,7 +118,7 @@ describe("POST /api/appointments", () => {
   it("400s when the slot is no longer available", async () => {
     mockBusy.mockResolvedValue([
       {
-        staff: "Alexandra",
+        staff: "Alayna",
         start: new Date(FIRST_SLOT_ISO),
         end: new Date(`${TARGET_DATE}T09:30:00.000Z`),
       },
