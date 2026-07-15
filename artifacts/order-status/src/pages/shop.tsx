@@ -8,6 +8,7 @@ import {
 } from "@workspace/api-client-react";
 import { NotifyDialog } from "@/components/notify-dialog";
 import { AddToCartButton } from "@/components/add-to-cart";
+import { SizeSelector } from "@/components/size-selector";
 import { PageShell } from "@/components/page-shell";
 import { Seo } from "@/components/seo";
 import { formatPrice } from "@/lib/format";
@@ -47,52 +48,6 @@ function hasSizeChart(product: Product): boolean {
 /** An in-stock item invites an enquiry; a sold-out one opens the notify dialog. */
 function contactHref(variant: ProductVariant): string {
   return `/contact?item=${encodeURIComponent(variant.name)}`;
-}
-
-/**
- * The size bands an item is offered in. In-stock sizes are inert labels; a
- * sold-out size opens a back-in-stock request naming that exact size.
- */
-function SizeChips({ variant }: { variant: ProductVariant }) {
-  if (variant.sizes.length === 0) return null;
-  return (
-    <div className="mt-4">
-      <p className="text-xs uppercase tracking-widest text-muted-foreground mb-2">
-        Sizes
-      </p>
-      <div className="flex flex-wrap gap-2">
-        {variant.sizes.map((size) =>
-          size.available ? (
-            <span
-              key={size.name}
-              className="rounded-full border border-border/60 px-3 py-1 text-xs text-muted-foreground"
-              data-testid={`size-${variant.id}-${size.name.toLowerCase().replace(/\s+/g, "-")}`}
-            >
-              {size.name}
-            </span>
-          ) : (
-            <NotifyDialog
-              key={size.name}
-              item={variant.name}
-              size={size.name}
-              trigger={(open) => (
-                <button
-                  type="button"
-                  onClick={open}
-                  title={`${size.name} is sold out — get notified when it's back`}
-                  className="group inline-flex items-center gap-1.5 rounded-full border border-border/40 px-3 py-1 text-xs text-muted-foreground/60 transition-colors hover:border-primary hover:text-primary"
-                  data-testid={`size-notify-${variant.id}-${size.name.toLowerCase().replace(/\s+/g, "-")}`}
-                >
-                  <span className="line-through">{size.name}</span>
-                  <Bell className="w-3 h-3 shrink-0" />
-                </button>
-              )}
-            />
-          ),
-        )}
-      </div>
-    </div>
-  );
 }
 
 function testId(value: string): string {
@@ -186,12 +141,18 @@ function VariantChips({
   );
 }
 
-function CtaLink({ variant }: { variant: ProductVariant }) {
+function CtaLink({
+  variant,
+  size,
+}: {
+  variant: ProductVariant;
+  size: string;
+}) {
   if (variant.available) {
     // A priced, in-stock item can be bought; an unpriced one ("inquire for
     // price") still routes to an enquiry, since we can't charge for it.
     if (typeof variant.price === "number") {
-      return <AddToCartButton variant={variant} />;
+      return <AddToCartButton variant={variant} size={size} />;
     }
     return (
       <Link
@@ -224,11 +185,23 @@ function CtaLink({ variant }: { variant: ProductVariant }) {
 
 function ProductCard({ product }: { product: Product }) {
   const [selected, setSelected] = useState(0);
+  // A size chosen on the card is shared with the quick-view dialog (both render
+  // the body sub-tree), and drives Add-to-cart. Only an available, priced
+  // variant is buyable — otherwise the sizes are display-only.
+  const [size, setSize] = useState("");
   const variant = product.variants[selected] ?? product.variants[0];
+  const selectable = variant.available && typeof variant.price === "number";
+
+  // A size stocked in one variant may be absent in another, so clear the
+  // selection when the customer switches variants.
+  const selectVariant = (index: number) => {
+    setSelected(index);
+    setSize("");
+  };
 
   return (
     <div
-      className="flex flex-col overflow-hidden rounded-2xl border border-border/60 transition-colors hover:border-primary/50"
+      className="group flex flex-col overflow-hidden rounded-2xl border border-border/60 transition-all duration-300 hover:border-primary/50 hover:shadow-[0_0_30px_rgba(209,156,151,0.10)]"
       data-testid={`product-${product.id}`}
     >
       {/* Image opens the quick-view dialog */}
@@ -236,14 +209,22 @@ function ProductCard({ product }: { product: Product }) {
         <DialogTrigger asChild>
           <button
             type="button"
-            className="relative block text-left"
+            className="relative block overflow-hidden text-left"
             data-testid={`product-view-${product.id}`}
           >
-            <VariantGallery variant={variant} />
+            <div className="transition-transform duration-700 ease-out group-hover:scale-[1.03]">
+              <VariantGallery variant={variant} />
+            </div>
             {!variant.available && (
-              <span className="absolute top-3 left-3 rounded-full bg-background/70 px-3 py-1 text-[0.65rem] tracking-widest uppercase text-muted-foreground backdrop-blur-sm">
-                Sold Out
-              </span>
+              <>
+                <span
+                  aria-hidden
+                  className="pointer-events-none absolute inset-x-0 top-0 h-20 bg-gradient-to-b from-background/60 to-transparent"
+                />
+                <span className="absolute top-3 left-3 rounded-full bg-background/70 px-3 py-1 text-[0.65rem] tracking-widest uppercase text-muted-foreground backdrop-blur-sm">
+                  Sold Out
+                </span>
+              </>
             )}
           </button>
         </DialogTrigger>
@@ -278,10 +259,15 @@ function ProductCard({ product }: { product: Product }) {
               <VariantChips
                 variants={product.variants}
                 selected={selected}
-                onSelect={setSelected}
+                onSelect={selectVariant}
               />
 
-              <SizeChips variant={variant} />
+              <SizeSelector
+                variant={variant}
+                selectedSize={size}
+                onSelectSize={setSize}
+                selectable={selectable}
+              />
               {hasSizeChart(product) && <SizeChartDialog className="mt-3" />}
 
               {!variant.available && (
@@ -292,7 +278,7 @@ function ProductCard({ product }: { product: Product }) {
               )}
 
               <div className="mt-auto pt-6">
-                <CtaLink variant={variant} />
+                <CtaLink variant={variant} size={size} />
               </div>
             </div>
           </div>
@@ -301,14 +287,21 @@ function ProductCard({ product }: { product: Product }) {
 
       {/* Card body */}
       <div className="flex flex-1 flex-col p-6">
-        <h2 className="font-serif text-2xl text-foreground">{product.title}</h2>
-        <p className="mt-1 text-primary font-light">
+        {product.category && (
+          <p className="text-primary/80 text-[0.65rem] tracking-[0.3em] uppercase mb-2">
+            {product.category}
+          </p>
+        )}
+        <h2 className="font-serif text-2xl leading-tight text-foreground">
+          {product.title}
+        </h2>
+        <p className="mt-1.5 font-serif text-lg text-primary">
           {formatPrice(variant.price)}
         </p>
         <VariantChips
           variants={product.variants}
           selected={selected}
-          onSelect={setSelected}
+          onSelect={selectVariant}
         />
         {variant.description && (
           <p className="mt-4 text-sm text-muted-foreground font-light leading-relaxed line-clamp-3">
@@ -316,11 +309,16 @@ function ProductCard({ product }: { product: Product }) {
           </p>
         )}
 
-        <SizeChips variant={variant} />
+        <SizeSelector
+          variant={variant}
+          selectedSize={size}
+          onSelectSize={setSize}
+          selectable={selectable}
+        />
         {hasSizeChart(product) && <SizeChartDialog className="mt-3" />}
 
-        <div className="mt-6 pt-2">
-          <CtaLink variant={variant} />
+        <div className="mt-auto pt-6">
+          <CtaLink variant={variant} size={size} />
         </div>
       </div>
     </div>
