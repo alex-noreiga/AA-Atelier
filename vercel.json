@@ -9,7 +9,7 @@
   "crons": [
     {
       "path": "/api/cron/generate-milestones",
-      "schedule": "0 * * * *"
+      "schedule": "0 8 * * *"
     }
   ]
 }

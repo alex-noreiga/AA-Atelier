@@ -10,15 +10,17 @@ views show when each stage must finish.
 Notion cannot notify the app when a property changes (the same constraint that
 keeps order status-change emails out of the app). So generation can't be
 event-driven. Instead a **Vercel Cron** job (`crons` in `vercel.json`) calls
-`GET /api/cron/generate-milestones` hourly; it scans the Order Tracking Pipeline
+`GET /api/cron/generate-milestones` daily; it scans the Order Tracking Pipeline
 for orders where `Due Date` is set **and** `Milestones Generated` is unchecked,
 and generates their milestones. The endpoint is guarded by a `CRON_SECRET` bearer
 token (Vercel sends it automatically) and is **deliberately outside the OpenAPI
 contract** — a scheduler→server endpoint like the Stripe webhook — so it's mounted
 directly in `app.ts`, not the `/api` router, and has no generated client.
 
-Cron frequency is plan-gated on Vercel (Hobby ≈ daily; Pro allows finer). The
-default `0 * * * *` (hourly) suits Pro; drop to daily on Hobby.
+Cron frequency is plan-gated on Vercel: **Hobby allows once per day** (and fires
+within the hour of the scheduled time, not to the minute); Pro allows down to
+per-minute. The default is `0 8 * * *` (08:00 UTC daily) so it deploys on Hobby;
+bump it up on Pro if you want milestones to appear sooner after a due date is set.
 
 ## Scheduling algorithm (even split — no hardcoded stages)
 
