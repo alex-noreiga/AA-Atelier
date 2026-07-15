@@ -116,6 +116,42 @@ export async function mockGetCheckoutSession(
   });
 }
 
+/** Mock `GET /api/appointments/options` — the booking form's type catalog. */
+export async function mockAppointmentOptions(
+  page: Page,
+  opts: { status?: number; body: unknown },
+): Promise<void> {
+  await page.route("**/api/appointments/options", async (route) => {
+    if (route.request().method() !== "GET") return route.fallback();
+    await json(route, opts.status ?? 200, opts.body);
+  });
+}
+
+/** Mock `GET /api/appointments/availability` — the open-slots lookup. */
+export async function mockAppointmentAvailability(
+  page: Page,
+  opts: { status?: number; body: unknown },
+): Promise<void> {
+  await page.route("**/api/appointments/availability*", async (route) => {
+    if (route.request().method() !== "GET") return route.fallback();
+    await json(route, opts.status ?? 200, opts.body);
+  });
+}
+
+/** Mock `POST /api/appointments` (the booking submit). Records each request body. */
+export async function mockCreateAppointment(
+  page: Page,
+  opts: { status?: number; body: unknown },
+): Promise<{ requests: unknown[] }> {
+  const requests: unknown[] = [];
+  await page.route("**/api/appointments", async (route) => {
+    if (route.request().method() !== "POST") return route.fallback();
+    requests.push(route.request().postDataJSON());
+    await json(route, opts.status ?? 201, opts.body);
+  });
+  return { requests };
+}
+
 /**
  * Mock `POST /api/notify` (the notify dialog's submit). Records each request
  * body so a test can assert the item/size the shop attached to the email.

@@ -30,6 +30,7 @@ const NAV_LINKS: readonly NavLink[] = [
     children: [
       { to: "/services", label: "Overview" },
       { to: "/order", label: "Place an Order" },
+      { to: "/appointments", label: "Book an Appointment" },
       { to: "/shop/status", label: "Track Your Order" },
     ],
   },

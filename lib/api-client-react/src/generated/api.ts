@@ -20,12 +20,17 @@ import type {
 } from '@tanstack/react-query';
 
 import type {
+  AppointmentAvailability,
+  AppointmentOptions,
   CheckoutSessionResponse,
   CheckoutSessionStatus,
   CreateCheckoutSessionRequest,
   DepositSessionResponse,
   ErrorEnvelope,
+  GetAppointmentAvailabilityParams,
   HealthStatus,
+  NewAppointmentRequest,
+  NewAppointmentResponse,
   NewContactRequest,
   NewContactResponse,
   NewMeasurementChangeRequest,
@@ -804,4 +809,238 @@ export function useGetCheckoutSession<TData = Awaited<ReturnType<typeof getCheck
 
 
 
+
+export const getGetAppointmentOptionsUrl = () => {
+
+
+
+
+  return `/api/appointments/options`
+}
+
+/**
+ * Returns the appointment types a customer can book — each with its duration, the staff who offer it, and the locations it's available in — plus the atelier's booking timezone. Drives the booking form's pickers.
+ * @summary List bookable appointment types
+ */
+export const getAppointmentOptions = async ( options?: RequestInit): Promise<AppointmentOptions> => {
+
+  return customFetch<AppointmentOptions>(getGetAppointmentOptionsUrl(),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
+
+
+
+
+export const getGetAppointmentOptionsQueryKey = () => {
+    return [
+    `/api/appointments/options`
+    ] as const;
+    }
+
+
+export const getGetAppointmentOptionsQueryOptions = <TData = Awaited<ReturnType<typeof getAppointmentOptions>>, TError = ErrorType<ErrorEnvelope>>( options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getAppointmentOptions>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getGetAppointmentOptionsQueryKey();
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof getAppointmentOptions>>> = ({ signal }) => getAppointmentOptions({ signal, ...requestOptions });
+
+
+
+
+
+   return  { queryKey, queryFn, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof getAppointmentOptions>>, TError, TData> & { queryKey: QueryKey }
+}
+
+export type GetAppointmentOptionsQueryResult = NonNullable<Awaited<ReturnType<typeof getAppointmentOptions>>>
+export type GetAppointmentOptionsQueryError = ErrorType<ErrorEnvelope>
+
+
+/**
+ * @summary List bookable appointment types
+ */
+
+export function useGetAppointmentOptions<TData = Awaited<ReturnType<typeof getAppointmentOptions>>, TError = ErrorType<ErrorEnvelope>>(
+  options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getAppointmentOptions>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+
+ ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+
+  const queryOptions = getGetAppointmentOptionsQueryOptions(options)
+
+  const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
+
+  return withQueryKey(query, queryOptions.queryKey);
+}
+
+
+
+
+
+
+
+export const getGetAppointmentAvailabilityUrl = (params: GetAppointmentAvailabilityParams,) => {
+  const normalizedParams = new URLSearchParams();
+
+  Object.entries(params || {}).forEach(([key, value]) => {
+
+    if (value !== undefined) {
+      normalizedParams.append(key, value === null ? 'null' : String(value))
+    }
+  });
+
+  const stringifiedParams = normalizedParams.toString();
+
+  return stringifiedParams.length > 0 ? `/api/appointments/availability?${stringifiedParams}` : `/api/appointments/availability`
+}
+
+/**
+ * Returns the open start times for the given appointment type, location, and (optionally) staff member over a date window, computed from each staff member's configured working hours minus their Google Calendar free/busy. Slot times are UTC instants to be rendered in the returned timezone.
+ * @summary List open appointment slots
+ */
+export const getAppointmentAvailability = async (params: GetAppointmentAvailabilityParams, options?: RequestInit): Promise<AppointmentAvailability> => {
+
+  return customFetch<AppointmentAvailability>(getGetAppointmentAvailabilityUrl(params),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
+
+
+
+
+export const getGetAppointmentAvailabilityQueryKey = (params?: GetAppointmentAvailabilityParams,) => {
+    return [
+    `/api/appointments/availability`, ...(params ? [params] : [])
+    ] as const;
+    }
+
+
+export const getGetAppointmentAvailabilityQueryOptions = <TData = Awaited<ReturnType<typeof getAppointmentAvailability>>, TError = ErrorType<ErrorEnvelope>>(params: GetAppointmentAvailabilityParams, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getAppointmentAvailability>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getGetAppointmentAvailabilityQueryKey(params);
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof getAppointmentAvailability>>> = ({ signal }) => getAppointmentAvailability(params, { signal, ...requestOptions });
+
+
+
+
+
+   return  { queryKey, queryFn, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof getAppointmentAvailability>>, TError, TData> & { queryKey: QueryKey }
+}
+
+export type GetAppointmentAvailabilityQueryResult = NonNullable<Awaited<ReturnType<typeof getAppointmentAvailability>>>
+export type GetAppointmentAvailabilityQueryError = ErrorType<ErrorEnvelope>
+
+
+/**
+ * @summary List open appointment slots
+ */
+
+export function useGetAppointmentAvailability<TData = Awaited<ReturnType<typeof getAppointmentAvailability>>, TError = ErrorType<ErrorEnvelope>>(
+ params: GetAppointmentAvailabilityParams, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getAppointmentAvailability>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+
+ ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+
+  const queryOptions = getGetAppointmentAvailabilityQueryOptions(params,options)
+
+  const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
+
+  return withQueryKey(query, queryOptions.queryKey);
+}
+
+
+
+
+
+
+
+export const getCreateAppointmentUrl = () => {
+
+
+
+
+  return `/api/appointments`
+}
+
+/**
+ * Books an open slot for a customer. The server re-validates the type, location, and staff, re-checks that the slot is still free (all derived server-side, never trusting the client), writes the appointment as a Google Calendar event (inviting the customer, with a Meet link for virtual), and emails a confirmation. Fails if the slot is no longer available.
+ * @summary Book an appointment
+ */
+export const createAppointment = async (newAppointmentRequest: NewAppointmentRequest, options?: RequestInit): Promise<NewAppointmentResponse> => {
+
+  return customFetch<NewAppointmentResponse>(getCreateAppointmentUrl(),
+  {
+    ...options,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    body: JSON.stringify(newAppointmentRequest)
+  }
+);}
+
+
+
+
+export const getCreateAppointmentMutationOptions = <TError = ErrorType<ErrorEnvelope>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof createAppointment>>, TError,{data: BodyType<NewAppointmentRequest>}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof createAppointment>>, TError,{data: BodyType<NewAppointmentRequest>}, TContext> => {
+
+const mutationKey = ['createAppointment'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof createAppointment>>, {data: BodyType<NewAppointmentRequest>}> = (props) => {
+          const {data} = props ?? {};
+
+          return  createAppointment(data,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type CreateAppointmentMutationResult = NonNullable<Awaited<ReturnType<typeof createAppointment>>>
+    export type CreateAppointmentMutationBody = BodyType<NewAppointmentRequest>
+    export type CreateAppointmentMutationError = ErrorType<ErrorEnvelope>
+
+    /**
+ * @summary Book an appointment
+ */
+export const useCreateAppointment = <TError = ErrorType<ErrorEnvelope>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof createAppointment>>, TError,{data: BodyType<NewAppointmentRequest>}, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof createAppointment>>,
+        TError,
+        {data: BodyType<NewAppointmentRequest>},
+        TContext
+      > => {
+      return useMutation(getCreateAppointmentMutationOptions(options));
+    }
 

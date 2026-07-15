@@ -12,6 +12,7 @@ import About from "@/pages/about";
 import Shop from "@/pages/shop";
 import ShopSuccess from "@/pages/shop-success";
 import Contact from "@/pages/contact";
+import Appointments from "@/pages/appointments";
 import { CartProvider } from "@/lib/cart";
 
 const queryClient = new QueryClient();
@@ -26,6 +27,7 @@ function Router() {
       <Route path="/shop/success" component={ShopSuccess} />
       <Route path="/shop/status" component={Status} />
       <Route path="/order" component={OrderForm} />
+      <Route path="/appointments" component={Appointments} />
       <Route path="/contact" component={Contact} />
       <Route component={NotFound} />
     </Switch>
