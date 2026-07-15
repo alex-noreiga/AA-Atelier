@@ -19,6 +19,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { PageShell } from "@/components/page-shell";
 import { SuccessScreen } from "@/components/success-screen";
 import { Seo } from "@/components/seo";
+import { ROUTE_SEO } from "@/lib/seo-routes";
 import { useToast } from "@/hooks/use-toast";
 import { ArrowLeft, CalendarCheck, Check, Clock, Loader2 } from "lucide-react";
 
@@ -250,37 +251,37 @@ export default function Appointments() {
           noindex
         />
         <div className="border border-border rounded-lg p-6 mb-8 text-left space-y-2">
+          <p className="text-sm">
+            <span className="text-muted-foreground">Appointment:</span>{" "}
+            {success.type} with {success.staff}
+          </p>
+          <p className="text-sm">
+            <span className="text-muted-foreground">When:</span>{" "}
+            {fmtWhen(success.start, timezone)}
+          </p>
+          <p className="text-sm">
+            <span className="text-muted-foreground">Where:</span>{" "}
+            {success.location}
+          </p>
+          {success.meetingUrl && (
             <p className="text-sm">
-              <span className="text-muted-foreground">Appointment:</span>{" "}
-              {success.type} with {success.staff}
+              <span className="text-muted-foreground">Join link:</span>{" "}
+              <a
+                href={success.meetingUrl}
+                className="text-primary underline underline-offset-2 break-all"
+                target="_blank"
+                rel="noreferrer"
+              >
+                {success.meetingUrl}
+              </a>
             </p>
-            <p className="text-sm">
-              <span className="text-muted-foreground">When:</span>{" "}
-              {fmtWhen(success.start, timezone)}
-            </p>
-            <p className="text-sm">
-              <span className="text-muted-foreground">Where:</span>{" "}
-              {success.location}
-            </p>
-            {success.meetingUrl && (
-              <p className="text-sm">
-                <span className="text-muted-foreground">Join link:</span>{" "}
-                <a
-                  href={success.meetingUrl}
-                  className="text-primary underline underline-offset-2 break-all"
-                  target="_blank"
-                  rel="noreferrer"
-                >
-                  {success.meetingUrl}
-                </a>
-              </p>
-            )}
-            <p className="text-sm">
-              <span className="text-muted-foreground">Confirmation:</span>{" "}
-              <span className="font-mono tracking-wider text-primary">
-                {success.confirmationCode}
-              </span>
-            </p>
+          )}
+          <p className="text-sm">
+            <span className="text-muted-foreground">Confirmation:</span>{" "}
+            <span className="font-mono tracking-wider text-primary">
+              {success.confirmationCode}
+            </span>
+          </p>
         </div>
         <p className="text-sm text-muted-foreground">
           We've sent a calendar invitation to your email. Need to change or
@@ -293,11 +294,7 @@ export default function Appointments() {
   // --- Booking flow --------------------------------------------------------
   return (
     <PageShell align="top" noise={false}>
-      <Seo
-        title="Book an Appointment | A.A Atelier"
-        description="Schedule a consultation, fitting, or design review with A.A Atelier. Pick a time that works for you and book online in a few steps."
-        path="/appointments"
-      />
+      <Seo {...ROUTE_SEO["/appointments"]} />
       <div className="max-w-2xl w-full mx-auto px-6 pt-24 pb-20">
         <div className="mb-10">
           <h1 className="text-4xl md:text-5xl font-serif text-foreground mb-3">

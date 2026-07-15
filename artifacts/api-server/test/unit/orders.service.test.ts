@@ -1,6 +1,6 @@
 import { describe, it, expect, vi, afterEach } from "vitest";
 import { createOrderInput, orderRecord } from "@workspace/test-fixtures";
-import type { OrderRecord } from "../../src/lib/notion/schema.js";
+import type { OrderRecord } from "../../src/lib/notion/orders.schema.js";
 
 // The service talks to the repository by direct import, so mock that module to
 // exercise the service's own logic (the missing-order and out-of-list-stage

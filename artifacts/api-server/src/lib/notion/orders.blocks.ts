@@ -9,7 +9,7 @@ import {
   ORDER_EMAIL_PROPERTY,
   ORDER_CLIENT_PROPERTY,
   type CreateOrderInput,
-} from "./schema.js";
+} from "./orders.schema.js";
 
 function textBlock(label: string, value: string) {
   return {

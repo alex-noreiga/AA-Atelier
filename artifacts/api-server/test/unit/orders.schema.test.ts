@@ -10,7 +10,7 @@ import {
   extractMilestonesGenerated,
   type NotionDatabaseSchema,
   type NotionOrderPage,
-} from "../../src/lib/notion/schema.js";
+} from "../../src/lib/notion/orders.schema.js";
 
 describe("extractStageOptions", () => {
   it("reads the live 'Stage' status option names in order", () => {

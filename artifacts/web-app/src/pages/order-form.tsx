@@ -12,6 +12,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { PageShell } from "@/components/page-shell";
 import { SuccessScreen } from "@/components/success-screen";
 import { Seo } from "@/components/seo";
+import { ROUTE_SEO } from "@/lib/seo-routes";
 import { useToast } from "@/hooks/use-toast";
 import { ArrowLeft, CheckCircle, Loader2 } from "lucide-react";
 
@@ -201,11 +202,7 @@ export default function OrderForm() {
 
   return (
     <PageShell align="top" noise={false}>
-      <Seo
-        title="Place a Custom Costume Order | A.A Atelier"
-        description="Start your custom figure skating or dance costume. Share your contact details, measurements, and design notes and A.A Atelier will craft a one-of-a-kind piece for you."
-        path="/order"
-      />
+      <Seo {...ROUTE_SEO["/order"]} />
       <div className="max-w-2xl mx-auto px-6 pt-24 pb-20">
         <div className="mb-10">
           <Link

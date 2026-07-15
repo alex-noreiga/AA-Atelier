@@ -7,7 +7,7 @@
 // Voice: the site's minimal, warm, editorial-serif tone. Plain inline HTML (no
 // template engine, no new dependency) plus a plaintext twin for every message.
 
-import type { CreateOrderInput } from "../notion/schema.js";
+import type { CreateOrderInput } from "../notion/orders.schema.js";
 import type { CreateContactInput } from "../notion/contact.blocks.js";
 import type { CreateNotifyInput } from "../notion/notify.blocks.js";
 import type { CreateMeasurementChangeInput } from "../notion/measurement-change.blocks.js";

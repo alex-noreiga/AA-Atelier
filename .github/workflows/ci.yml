@@ -41,7 +41,7 @@ jobs:
           name: coverage
           path: |
             artifacts/api-server/coverage/
-            artifacts/order-status/coverage/
+            artifacts/web-app/coverage/
           retention-days: 7
 
       - name: Install Playwright browser
