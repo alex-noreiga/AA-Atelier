@@ -54,6 +54,18 @@ describe("createOrder", () => {
     expect(Array.isArray(body.children)).toBe(true);
   });
 
+  it("writes the Client relation when a client page id is provided", async () => {
+    const client = makeFakeClient((path) => {
+      if (path === "/v1/pages") return jsonResponse({ id: "new-page" }, 200);
+      throw new Error(`unexpected path ${path}`);
+    });
+
+    await repo.createOrder(validOrder, client, "client-9");
+
+    const body = JSON.parse(client.calls[0].init!.body as string);
+    expect(body.properties["Client"].relation).toEqual([{ id: "client-9" }]);
+  });
+
   it("throws with status and the Notion error text on a non-ok response", async () => {
     const client = makeFakeClient(() =>
       errorResponse(400, "validation_error: bad property"),

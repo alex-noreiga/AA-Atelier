@@ -7,6 +7,7 @@ import {
   ORDER_NAME_PROPERTY,
   ORDER_NUMBER_PROPERTY,
   ORDER_EMAIL_PROPERTY,
+  ORDER_CLIENT_PROPERTY,
   type CreateOrderInput,
 } from "./schema.js";
 
@@ -41,12 +42,17 @@ function dividerBlock() {
   return { object: "block", type: "divider", divider: {} };
 }
 
-/** Notion page `properties` for a new order. */
+/**
+ * Notion page `properties` for a new order. When `clientPageId` is given (the
+ * order flow upserted a Client CRM record for this customer), the order is
+ * linked to it through the `Client` relation.
+ */
 export function buildOrderProperties(
   data: CreateOrderInput,
   orderNumber: string,
+  clientPageId?: string,
 ): Record<string, unknown> {
-  return {
+  const properties: Record<string, unknown> = {
     [ORDER_NAME_PROPERTY]: {
       title: [{ text: { content: `${data.fullName} – Custom Dress` } }],
     },
@@ -59,6 +65,12 @@ export function buildOrderProperties(
       email: data.email,
     },
   };
+  if (clientPageId) {
+    properties[ORDER_CLIENT_PROPERTY] = {
+      relation: [{ id: clientPageId }],
+    };
+  }
+  return properties;
 }
 
 /** Notion page body (`children`) blocks for a new order. */

@@ -32,6 +32,10 @@ export const ORDER_DEPOSIT_SESSION_PROPERTY = "Deposit Session Id"; // rich_text
 // reconciliation cron flips once an order's milestones exist.
 export const ORDER_DUE_DATE_PROPERTY = "Due Date"; // date
 export const ORDER_MILESTONES_GENERATED_PROPERTY = "Milestones Generated"; // checkbox
+// Relation to the Client CRM database (the synced end of the CRM's "Orders"
+// dual relation). Set on order create when a client record was upserted, so the
+// order lands against a durable customer record. See `clients.repository.ts`.
+export const ORDER_CLIENT_PROPERTY = "Client"; // relation → Client CRM
 
 /** Validated new-order payload, derived from the OpenAPI contract. */
 export type CreateOrderInput = z.infer<typeof CreateOrderBody>;

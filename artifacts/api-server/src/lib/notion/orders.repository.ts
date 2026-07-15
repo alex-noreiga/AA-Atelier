@@ -72,6 +72,7 @@ function assertConfigured(client: NotionClient): void {
 export async function createOrder(
   data: CreateOrderInput,
   client: NotionClient = getNotionClient(),
+  clientPageId?: string,
 ): Promise<string> {
   assertConfigured(client);
 
@@ -79,7 +80,7 @@ export async function createOrder(
 
   const body: Record<string, unknown> = {
     parent: { database_id: client.databaseId },
-    properties: buildOrderProperties(data, orderNumber),
+    properties: buildOrderProperties(data, orderNumber, clientPageId),
     children: buildOrderPageBlocks(data),
   };
 

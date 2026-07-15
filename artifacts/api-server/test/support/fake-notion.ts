@@ -136,6 +136,14 @@ export function inventoryPage(opts: {
   return { id: opts.id ?? "inv-page", properties };
 }
 
+/**
+ * Minimal Client CRM page as returned by a query. The upsert only reads the
+ * page `id` back, so that's all this carries.
+ */
+export function crmClientPage(opts: { id?: string } = {}) {
+  return { id: opts.id ?? "client-page" };
+}
+
 /** Minimal Notion order page as returned by a database query. */
 export function orderPage(opts: {
   id?: string;
