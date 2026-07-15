@@ -94,6 +94,17 @@ Express app (artifacts/api-server)  ──►  Notion REST API (orders database)
   ├─ GET  /api/checkout/session/:id→ a session's status + itemized receipt
   │                                  (items, shipping, tax, total) for the
   │                                  success page
+  ├─ GET  /api/appointments/options→ the bookable appointment types (duration,
+  │                                  allowed staff + locations) + booking
+  │                                  timezone, for the booking form’s pickers
+  ├─ GET  /api/appointments/availability
+  │                                → open slots for a type/location/(staff) over
+  │                                  a date window, computed from config working
+  │                                  hours minus Google Calendar free/busy
+  ├─ POST /api/appointments        → books an open slot (re-checked server-side),
+  │                                  writes it as a Google Calendar event that
+  │                                  invites the customer (+ Meet for virtual) +
+  │                                  emails a confirmation
   ├─ POST /api/webhooks/stripe     → Stripe → server webhook (raw body, signed).
   │                                  On checkout.session.completed, records the
   │                                  paid order in the Notion "Shop Orders"
@@ -108,8 +119,8 @@ Express app (artifacts/api-server)  ──►  Notion REST API (orders database)
 ```
 
 The customer-notification POST endpoints (`/api/orders`, `/api/contact`,
-`/api/notify`) each send a customer email via **Resend** as a
-**best-effort** side effect after the Notion write: the send is logged-and-swallowed
+`/api/notify`, `/api/appointments`) each send a customer email via **Resend** as
+a **best-effort** side effect after the Notion write: the send is logged-and-swallowed
 on failure and never changes the response status (see the Resend adapter in
 `artifacts/api-server/src/lib/resend/` and the notification-email note in
 `.agents/memory/vercel-migration.md`). This replaced the old Notion automations
@@ -117,22 +128,24 @@ that used to send these emails. Order **status-change** emails are intentionally
 _not_ handled here — stage changes happen inside Notion and there is no Notion→app
 trigger.
 
-Each of those three also sends an **internal atelier notification** to
+Each of those also sends an **internal atelier notification** to
 `ATELIER_INBOX_EMAIL` (with **Reply-To** set to the customer) — but only when that
 env var is set; unset means the notification is skipped and only the customer email
 goes out. So the atelier gets an email nudge on top of the Notion row. The
 customer-facing and atelier-facing builders live side by side in
 `lib/resend/emails.ts`.
 
-Emails are grouped into two **categories** (`lib/resend/config.ts`): **orders**
-(order + back-in-stock mail) and **contact** (contact-form mail). Each category
-resolves a **sender** and a **notification inbox** from env, with the contact
-overrides falling back to the base vars when unset (so unset ⇒ identical to a
-single-address setup): sender `RESEND_CONTACT_FROM_EMAIL` → `RESEND_FROM_EMAIL`,
-inbox `ATELIER_CONTACT_INBOX_EMAIL` → `ATELIER_INBOX_EMAIL`. The service resolves
-the pair via `fromAddress(category)`/`atelierInbox(category)` and spreads the `from`
-onto the message; the client uses a per-message `from` over its base. This lets,
-e.g., order mail send from `orders@` and contact mail from `hello@`.
+Emails are grouped into three **categories** (`lib/resend/config.ts`): **orders**
+(order + back-in-stock mail), **contact** (contact-form mail), and
+**appointments** (booking mail). Each category resolves a **sender** and a
+**notification inbox** from env, with the per-category overrides falling back to
+the base vars when unset (so unset ⇒ identical to a single-address setup): sender
+`RESEND_CONTACT_FROM_EMAIL` / `RESEND_APPOINTMENTS_FROM_EMAIL` → `RESEND_FROM_EMAIL`,
+inbox `ATELIER_CONTACT_INBOX_EMAIL` / `ATELIER_APPOINTMENTS_INBOX_EMAIL` →
+`ATELIER_INBOX_EMAIL`. The service resolves the pair via
+`fromAddress(category)`/`atelierInbox(category)` and spreads the `from` onto the
+message; the client uses a per-message `from` over its base. This lets, e.g.,
+order mail send from `orders@` and contact mail from `hello@`.
 
 - **Locally:** the Vite dev server proxies `/api` to the Express server on
   `localhost:3000` (see `artifacts/order-status/vite.config.ts`).
@@ -340,8 +353,76 @@ The atelier must, one time: add `Due Date` (date) + `Milestones Generated`
 (relation → Order Tracking Pipeline) to the Production Schedule; share the Notion
 integration with the Production Schedule database; and set
 `NOTION_PRODUCTION_SCHEDULE_DATABASE_ID` + `CRON_SECRET`. Property names live in
-`schema.ts` (orders) and `production-schedule.blocks.ts` (schedule).
+`schema.ts` (orders) and `production-schedule.blocks.ts` (schedule).## Appointment scheduling (real-time slot booking)
 
+Customers book appointments (consultations, fittings, design reviews, general)
+with a staff member from `pages/appointments.tsx` — a four-step flow (purpose →
+format → time → details) that goes through the generated client
+(`useGetAppointmentOptions`, `useGetAppointmentAvailability`,
+`useCreateAppointment`). Scheduling runs on **Google Calendar** (not Notion):
+free/busy is the conflict source and each booking is a calendar event. Code lives
+in `api-server/src/lib/appointments/*` (pure logic + config),
+`lib/google/*` (Calendar I/O), `services/appointments.service.ts`, and
+`routes/appointments.ts`. Load-bearing decisions:
+
+1. **The type catalog is a targeted business rule in code.**
+   `lib/appointments/catalog.ts` names the four types, their durations, and their
+   routing rules (Alayna takes consultations + design reviews; Alexandra takes
+   everything; fittings are in-person only). Like `STATUS_IN_STOCK` /
+   `SIZED_CATEGORIES`, these are values coupled to code (duration drives slot
+   math; staff/locations drive UI + validation). Retune a duration or rename a
+   staff member here; the staff names must match the `Staff` column in the
+   working-hours sheet (below).
+
+2. **Working hours are a Google Sheet; conflicts are Google free/busy.**
+   `computeSlots` (`lib/appointments/availability.ts`, pure + heavily unit-tested)
+   needs a *positive* grid of open hours, which Google free/busy can't give (it
+   only says when someone is *busy*). That grid comes from a **Google Sheet** the
+   atelier edits live (no redeploy) — columns `Staff | Email | Day | Start | End |
+   Locations`. `lib/google/sheets.repository.ts` reads it (`APPOINTMENT_SHEET_ID`,
+   60s cache + fallback, service account reads it as itself via a direct share)
+   and `lib/appointments/staff.ts` is the pure `parseScheduleRows` parser
+   (`Mon-Fri` ranges, comma lists). The *subtractive* side — every busy interval,
+   including existing bookings **and** any event the staff added (a day off is
+   just a calendar event) — comes from the **FreeBusy API** in
+   `lib/google/calendar.repository.ts` (`listBusyInRange`), fed into `computeSlots`
+   as `bookings`; `timeOff` is always empty. All wall-clock hours/slots are
+   interpreted in `APPOINTMENT_TIMEZONE` (DST-correct via
+   `lib/appointments/time.ts`, built on `Intl` — no date library); busy/bookings
+   are UTC instants.
+
+3. **Never trust a client-sent slot.** `POST /appointments` re-derives the type
+   from the catalog and re-runs the *same* `computeSlots` for the requested day
+   (with fresh free/busy) before writing; a `start` that isn't currently an open
+   slot (stale, taken, off the grid, or inside the lead-time window) is a
+   `BadRequestError` (→ 400). The availability endpoint and the booking re-check
+   share one function, so they can't disagree. Free/busy is read **fresh** (no
+   cache) for this reason.
+
+4. **Booking writes a calendar event, as the staff member.** Auth is a Google
+   **Workspace service account with domain-wide delegation** (`lib/google/client.ts`):
+   it impersonates each staff member (the `subject`) to read their free/busy and
+   `events.insert` on their calendar with `sendUpdates=all` (a real Google invite
+   to the customer) and, for virtual, a Google Meet link (`conferenceData`). The
+   Meet link + calendar link flow back into the response, the confirmation email,
+   and the success screen. Google Calendar is the sole record — there is **no**
+   Notion appointments database.
+
+5. **Booking is free (no payment) and slots aren't held.** v1 has no Stripe step
+   and no pending-hold: two simultaneous bookings for the same slot is a small,
+   accepted race for a low-volume atelier. Booking policy is env-tuned:
+   `APPOINTMENT_TIMEZONE`, `APPOINTMENT_MIN_LEAD_HOURS` (default 24),
+   `APPOINTMENT_MAX_ADVANCE_DAYS` (45), `APPOINTMENT_SLOT_STEP_MINUTES` (15) —
+   all read at call time in `lib/appointments/settings.ts`.
+
+6. **Google setup.** Enable the Calendar API **and the Sheets API** + create a
+   service account (JSON key → `GOOGLE_SERVICE_ACCOUNT_KEY`); authorize its client
+   id for `https://www.googleapis.com/auth/calendar` under Workspace Admin →
+   Security → API controls → Domain-wide delegation (for the calendar
+   impersonation). The working-hours **Sheet is shared with the service-account
+   email** (Viewer) — no delegation needed for Sheets, since the SA reads it as
+   itself. `google-auth-library` mints the tokens (impersonated for Calendar,
+   plain for Sheets); the rest is raw `fetch`, mirroring the Notion adapter.
 ## Development workflow
 
 ### Prerequisites
@@ -549,7 +630,11 @@ and in the maintainer's env without edits.
   linking is skipped and orders are unchanged. Code:
   `artifacts/api-server/src/lib/notion/clients.repository.ts`
   (`upsertClientByEmail`), wired from `orders.service.ts`; the order's `Client`
-  relation is written by `blocks.ts`. Checkout also
+  relation is written by `blocks.ts`. **Appointment scheduling** instead uses Google: `GOOGLE_SERVICE_ACCOUNT_KEY` (the full
+  service-account JSON key, with domain-wide delegation authorized for the
+  Calendar scope) and `APPOINTMENT_SHEET_ID` (the working-hours Google Sheet,
+  shared with the service-account email; optional `APPOINTMENT_SHEET_RANGE`,
+  default `A2:F`). Enable both the Calendar and Sheets APIs. Checkout also
   needs `STRIPE_SECRET_KEY`, `STRIPE_WEBHOOK_SECRET` (the signing secret of the
   Stripe webhook endpoint), and `PUBLIC_BASE_URL` (the site origin Stripe
   redirects back to after payment). Optionally, `STRIPE_SHIPPING_RATE_IDS` — a
@@ -564,16 +649,21 @@ and in the maintainer's env without edits.
   redeploy); a redeploy is only needed when the ids themselves change. Customer
   notification emails also require
   `RESEND_API_KEY` and `RESEND_FROM_EMAIL` (the verified sender, e.g.
-  `A.A Atelier <orders@yourdomain>`). The sending domain must be verified in
+  `A.A Atelier <orders@a3iceanddance.com>`). The sending domain must be verified in
   Resend (SPF/DKIM) or mail won't deliver. A missing/failed mailer is
   non-fatal: the send is best-effort and the endpoints still succeed.
-  Optionally `ATELIER_INBOX_EMAIL` (e.g. `orders@yourdomain`) to also receive an
+  Optionally `ATELIER_INBOX_EMAIL` (e.g. `orders@a3iceanddance.com`) to also receive an
   internal notification for each new order / contact message / back-in-stock
   request; leave it unset to skip those. Optionally `RESEND_CONTACT_FROM_EMAIL` and
-  `ATELIER_CONTACT_INBOX_EMAIL` (e.g. `hello@yourdomain`) to send/receive
+  `ATELIER_CONTACT_INBOX_EMAIL` (e.g. `hello@a3iceanddance.com`) to send/receive
   contact-form mail from a separate address; each falls back to the base
   `RESEND_FROM_EMAIL` / `ATELIER_INBOX_EMAIL` when unset (same verified domain, no
-  extra Resend setup).
+  extra Resend setup). Appointment mail has the same optional overrides
+  (`RESEND_APPOINTMENTS_FROM_EMAIL` / `ATELIER_APPOINTMENTS_INBOX_EMAIL`).
+- **Optional appointment-booking policy env vars:** `APPOINTMENT_TIMEZONE`
+  (IANA zone for working hours/slots, default `America/Chicago`),
+  `APPOINTMENT_MIN_LEAD_HOURS` (24), `APPOINTMENT_MAX_ADVANCE_DAYS` (45), and
+  `APPOINTMENT_SLOT_STEP_MINUTES` (15). All have defaults.
 
 ## Quick reference — where things live
 
@@ -593,6 +683,10 @@ and in the maintainer's env without edits.
 | Change shop checkout / payments         | `artifacts/order-status/src/lib/cart.tsx` + `components/cart-drawer.tsx` + `components/add-to-cart.tsx` (frontend); `api-server/src/services/checkout.service.ts` + `routes/checkout.ts` + `routes/stripe-webhook.ts` + `lib/stripe/*` + `lib/notion/shop-orders.*` (backend) |
 | Change custom-order deposits            | `artifacts/order-status/src/pages/status.tsx` (`DepositSection`); `api-server/src/services/deposit.service.ts` + `routes/orders.ts` + `lib/notion/orders.repository.ts` (`findDepositTarget`/`markDepositPaid`) + `routes/stripe-webhook.ts`                                  |
 | Change production-schedule milestones   | `api-server/src/services/schedule.service.ts` + `routes/cron.ts` + `lib/notion/production-schedule.{blocks,repository}.ts` + `lib/notion/orders.repository.ts` (`findOrdersNeedingMilestones`/`markMilestonesGenerated`); cron in `vercel.json`                               |
+| Change appointment booking (UI)         | `artifacts/order-status/src/pages/appointments.tsx`                                                                                                                                                                                                                           |
+| Change appointment types / routing rules| `api-server/src/lib/appointments/catalog.ts` (targeted business rule — durations, which staff, which locations)                                                                                                                                                               |
+| Change staff working hours / calendars  | The working-hours **Google Sheet** (`APPOINTMENT_SHEET_ID`); read in `api-server/src/lib/google/sheets.repository.ts`, parsed by `lib/appointments/staff.ts`                                                                                                                   |
+| Change appointment slot logic / policy  | `api-server/src/lib/appointments/availability.ts` (`computeSlots`) + `time.ts` + `settings.ts`; `services/appointments.service.ts` + `routes/appointments.ts` + `lib/google/*` (Calendar free/busy + event insert)                                                            |
 | Add a page / route                      | new `src/pages/*.tsx` + `<Route>` in `src/App.tsx`                                                                                                                                                                                                                            |
 | Add or rename a nav link                | `NAV_LINKS` in `artifacts/order-status/src/components/navbar.tsx`                                                                                                                                                                                                             |
 | Add a shared UI component               | `artifacts/order-status/src/components/ui/`                                                                                                                                                                                                                                   |
