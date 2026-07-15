@@ -76,7 +76,7 @@ describe("GET /api/orders/:orderNumber", () => {
 
 describe("POST /api/orders", () => {
   it("returns 201 with the new order number for a valid body", async () => {
-    mockCreate.mockResolvedValue("ORD-XYZ-987");
+    mockCreate.mockResolvedValue({ orderNumber: "ORD-XYZ-987", pageId: "p1" });
 
     const res = await request(app).post("/api/orders").send(validBody);
 
@@ -96,7 +96,7 @@ describe("POST /api/orders", () => {
   });
 
   it("returns 201 for a measurement-appointment order with no measurements", async () => {
-    mockCreate.mockResolvedValue("ORD-APPT-001");
+    mockCreate.mockResolvedValue({ orderNumber: "ORD-APPT-001", pageId: "p2" });
     const {
       waist,
       bust,

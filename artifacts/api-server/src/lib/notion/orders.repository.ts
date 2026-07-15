@@ -69,11 +69,18 @@ function assertConfigured(client: NotionClient): void {
   }
 }
 
+/** A newly-created order: its customer-facing number and its Notion page id. */
+export interface CreateOrderResult {
+  orderNumber: string;
+  /** The created order's Notion page id, for linking it to related records. */
+  pageId: string;
+}
+
 export async function createOrder(
   data: CreateOrderInput,
   client: NotionClient = getNotionClient(),
   clientPageId?: string,
-): Promise<string> {
+): Promise<CreateOrderResult> {
   assertConfigured(client);
 
   const orderNumber = generateOrderNumber();
@@ -96,7 +103,8 @@ export async function createOrder(
     );
   }
 
-  return orderNumber;
+  const created = (await response.json()) as { id: string };
+  return { orderNumber, pageId: created.id };
 }
 
 export async function findOrderByNumber(

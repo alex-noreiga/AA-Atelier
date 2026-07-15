@@ -46,6 +46,7 @@ let inventoryClient: NotionClient | null = null;
 let shopOrdersClient: NotionClient | null = null;
 let productionScheduleClient: NotionClient | null = null;
 let clientCrmClient: NotionClient | null = null;
+let orderFormSubmissionsClient: NotionClient | null = null;
 
 /**
  * Lazily-constructed client reading credentials from the environment. Deferring
@@ -134,4 +135,23 @@ export function getClientCrmNotionClient(): NotionClient {
     });
   }
   return clientCrmClient;
+}
+
+/**
+ * Client for the "Order Form Submissions" hub database — the Notion intake row
+ * that links an order to the atelier's back office (costing, invoicing,
+ * production, materials, design). Same lazy construction, reads
+ * `NOTION_ORDER_FORM_SUBMISSIONS_DATABASE_ID`. Optional: when the env var is
+ * unset the client's `databaseId` is empty, and the hub linker (see
+ * `order-form-submissions.repository.ts`) treats that as "skip" so a website
+ * order is created exactly as before until the env var is configured.
+ */
+export function getOrderFormSubmissionsNotionClient(): NotionClient {
+  if (!orderFormSubmissionsClient) {
+    orderFormSubmissionsClient = createNotionClient({
+      apiKey: process.env.NOTION_API_KEY ?? "",
+      databaseId: process.env.NOTION_ORDER_FORM_SUBMISSIONS_DATABASE_ID ?? "",
+    });
+  }
+  return orderFormSubmissionsClient;
 }

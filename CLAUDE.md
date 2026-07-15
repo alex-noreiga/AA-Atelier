@@ -77,6 +77,8 @@ Express app (artifacts/api-server)  ──►  Notion REST API (orders database)
   │                                  + sends an order-confirmation email
   │                                  + (best-effort) upserts a Client CRM record
   │                                  by email and links the order to it
+  │                                  + (best-effort) creates an Order Form
+  │                                  Submissions hub row linked to the order
   ├─ POST /api/orders/:n/deposit   → creates a Stripe Checkout session for the
   │                                  deposit the atelier set on custom order :n
   │                                  in Notion; the webhook marks it paid
@@ -651,7 +653,16 @@ and in the maintainer's env without edits.
   linking is skipped and orders are unchanged. Code:
   `artifacts/api-server/src/lib/notion/clients.repository.ts`
   (`upsertClientByEmail`), wired from `orders.service.ts`; the order's `Client`
-  relation is written by `orders.blocks.ts`. **Appointment scheduling** instead uses Google: `GOOGLE_SERVICE_ACCOUNT_KEY` (the full
+  relation is written by `orders.blocks.ts`. Optionally
+  `NOTION_ORDER_FORM_SUBMISSIONS_DATABASE_ID` (the "Order Form Submissions" hub
+  database): when set, a new custom order **best-effort** also creates a submission
+  row there linked to the order via the hub's `Order Tracking Pipeline` relation,
+  so a website order lands in the same back office (costing / invoicing /
+  production) the atelier builds manual orders in rather than being orphaned; unset
+  ⇒ hub linking is skipped and orders are unchanged. Code:
+  `artifacts/api-server/src/lib/notion/order-form-submissions.repository.ts`
+  (`linkOrderFormSubmission`), wired from `orders.service.ts` with the created
+  order's page id (now returned by `createOrder`). **Appointment scheduling** instead uses Google: `GOOGLE_SERVICE_ACCOUNT_KEY` (the full
   service-account JSON key, with domain-wide delegation authorized for the
   Calendar scope) and `APPOINTMENT_SHEET_ID` (the working-hours Google Sheet,
   shared with the service-account email; optional `APPOINTMENT_SHEET_RANGE`,

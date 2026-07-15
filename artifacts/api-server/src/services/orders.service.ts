@@ -6,6 +6,7 @@ import {
   findOrderByNumber,
 } from "../lib/notion/orders.repository.js";
 import { upsertClientByEmail } from "../lib/notion/clients.repository.js";
+import { linkOrderFormSubmission } from "../lib/notion/order-form-submissions.repository.js";
 import type { CreateOrderInput, OrderRecord } from "../lib/notion/orders.schema.js";
 import { NotFoundError, ValidationError } from "../lib/errors.js";
 import {
@@ -77,7 +78,26 @@ export async function submitOrder(
     );
   }
 
-  const orderNumber = await createOrder(input, undefined, clientPageId);
+  const { orderNumber, pageId } = await createOrder(
+    input,
+    undefined,
+    clientPageId,
+  );
+
+  // Best-effort: anchor the order in the "Order Form Submissions" hub so a
+  // website order lands in the same back office (costing / invoicing / production)
+  // the atelier builds manual orders in, rather than being orphaned. A hub
+  // failure must never fail the order — swallow and log, like the CRM upsert and
+  // the mailers — and when the hub db isn't configured this is a no-op (null).
+  try {
+    await linkOrderFormSubmission(input, pageId);
+  } catch (err) {
+    logger.warn(
+      { err },
+      "Failed to link the order into the Order Form Submissions hub; the order was still created",
+    );
+  }
+
   // Best-effort emails; a mail failure must not fail the order.
   const from = fromAddress("orders");
   await sendEmailBestEffort({

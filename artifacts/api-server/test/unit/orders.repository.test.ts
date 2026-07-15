@@ -38,9 +38,12 @@ describe("createOrder", () => {
       throw new Error(`unexpected path ${path}`);
     });
 
-    const orderNumber = await repo.createOrder(validOrder, client);
+    const { orderNumber, pageId } = await repo.createOrder(validOrder, client);
 
     expect(orderNumber).toMatch(/^ORD-[A-Z0-9]+-[A-Z0-9]+$/);
+    // The created page id is returned so the order can be linked to related
+    // records (Client CRM, the Order Form Submissions hub).
+    expect(pageId).toBe("new-page");
     expect(client.calls).toHaveLength(1);
     const call = client.calls[0];
     expect(call.path).toBe("/v1/pages");
