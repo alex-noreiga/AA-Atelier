@@ -46,6 +46,8 @@ let inventoryClient: NotionClient | null = null;
 let shopOrdersClient: NotionClient | null = null;
 let productionScheduleClient: NotionClient | null = null;
 let clientCrmClient: NotionClient | null = null;
+let invoicesClient: NotionClient | null = null;
+let invoiceLineItemsClient: NotionClient | null = null;
 
 /**
  * Lazily-constructed client reading credentials from the environment. Deferring
@@ -134,4 +136,34 @@ export function getClientCrmNotionClient(): NotionClient {
     });
   }
   return clientCrmClient;
+}
+
+/**
+ * Client for the "invoices & payments" database — one invoice per custom order,
+ * holding its line-item relation, deposit status, and the balance-paid record
+ * the app writes back. Same lazy construction, reads `NOTION_INVOICES_DATABASE_ID`.
+ */
+export function getInvoicesNotionClient(): NotionClient {
+  if (!invoicesClient) {
+    invoicesClient = createNotionClient({
+      apiKey: process.env.NOTION_API_KEY ?? "",
+      databaseId: process.env.NOTION_INVOICES_DATABASE_ID ?? "",
+    });
+  }
+  return invoicesClient;
+}
+
+/**
+ * Client for the "Invoice Line Items" database — the itemized garment/material/
+ * labor lines the app reads to build a customer's invoice. Same lazy
+ * construction, reads `NOTION_INVOICE_LINE_ITEMS_DATABASE_ID`.
+ */
+export function getInvoiceLineItemsNotionClient(): NotionClient {
+  if (!invoiceLineItemsClient) {
+    invoiceLineItemsClient = createNotionClient({
+      apiKey: process.env.NOTION_API_KEY ?? "",
+      databaseId: process.env.NOTION_INVOICE_LINE_ITEMS_DATABASE_ID ?? "",
+    });
+  }
+  return invoiceLineItemsClient;
 }
