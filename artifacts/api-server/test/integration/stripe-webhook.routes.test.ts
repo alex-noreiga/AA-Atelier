@@ -12,6 +12,10 @@ vi.mock("../../src/services/deposit.service.js", () => ({
   recordDepositPayment: vi.fn(),
   DEPOSIT_SESSION_KIND: "deposit",
 }));
+vi.mock("../../src/services/invoice.service.js", () => ({
+  recordInvoicePayment: vi.fn(),
+  INVOICE_SESSION_KIND: "invoice",
+}));
 
 import request from "supertest";
 import type Stripe from "stripe";
@@ -19,10 +23,12 @@ import app from "../../src/app.js";
 import { getStripeClient } from "../../src/lib/stripe/client.js";
 import { recordPaidOrder } from "../../src/services/checkout.service.js";
 import { recordDepositPayment } from "../../src/services/deposit.service.js";
+import { recordInvoicePayment } from "../../src/services/invoice.service.js";
 
 const mockGetStripe = vi.mocked(getStripeClient);
 const mockRecord = vi.mocked(recordPaidOrder);
 const mockRecordDeposit = vi.mocked(recordDepositPayment);
+const mockRecordInvoice = vi.mocked(recordInvoicePayment);
 
 function stubConstructEvent(impl: () => Stripe.Event) {
   const constructEvent = vi.fn().mockImplementation(impl);
@@ -80,6 +86,29 @@ describe("POST /api/webhooks/stripe", () => {
     expect(res.status).toBe(200);
     expect(mockRecordDeposit).toHaveBeenCalledWith(sessionObject);
     expect(mockRecord).not.toHaveBeenCalled();
+  });
+
+  it("routes an invoice session to the invoice recorder", async () => {
+    const sessionObject = { id: "cs_inv", metadata: { kind: "invoice" } };
+    stubConstructEvent(
+      () =>
+        ({
+          type: "checkout.session.completed",
+          data: { object: sessionObject },
+        }) as unknown as Stripe.Event,
+    );
+    mockRecordInvoice.mockResolvedValue();
+
+    const res = await request(app)
+      .post("/api/webhooks/stripe")
+      .set("Content-Type", "application/json")
+      .set("stripe-signature", "t=1,v1=abc")
+      .send(JSON.stringify({ id: "evt_inv" }));
+
+    expect(res.status).toBe(200);
+    expect(mockRecordInvoice).toHaveBeenCalledWith(sessionObject);
+    expect(mockRecord).not.toHaveBeenCalled();
+    expect(mockRecordDeposit).not.toHaveBeenCalled();
   });
 
   it("returns 400 when signature verification fails and records nothing", async () => {

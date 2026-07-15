@@ -145,6 +145,36 @@ describe("Status deposit", () => {
   });
 });
 
+describe("Status invoice callout", () => {
+  const invoice = {
+    invoiceId: "Toothless",
+    paid: false,
+    lineItems: [],
+    deposits: [],
+    subtotal: 150,
+    depositsCreditedTotal: 0,
+    balanceDue: 150,
+  };
+
+  it("shows a View Invoice link with the balance once the invoice is ready", async () => {
+    setHook({ data: orderRecord({ invoice }) });
+    await submitLookup("ORD-1");
+
+    const callout = screen.getByTestId("invoice-callout");
+    expect(within(callout).getByText("$150")).toBeInTheDocument();
+    expect(screen.getByTestId("link-view-invoice")).toHaveAttribute(
+      "href",
+      "/invoice/ORD-1",
+    );
+  });
+
+  it("shows nothing about an invoice until one is ready", async () => {
+    setHook({ data: orderRecord({ currentStage: "Consultation" }) });
+    await submitLookup();
+    expect(screen.queryByTestId("invoice-callout")).not.toBeInTheDocument();
+  });
+});
+
 describe("Status reset", () => {
   it("returns to the lookup form after 'Check another order'", async () => {
     setHook({

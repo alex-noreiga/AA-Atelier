@@ -90,6 +90,11 @@ Express app (artifacts/api-server)  ──►  Notion REST API (orders database)
   │                                  (MEASUREMENT_LOCK_FROM_STAGE). Never edits the
   │                                  order — the atelier applies the change by hand
   │                                  (Approach A) + sends a confirmation email
+  ├─ POST /api/orders/:n/invoice   → creates a Stripe Checkout session for the
+  │                                  outstanding balance on custom order :n's
+  │                                  invoice (itemized materials + labor from the
+  │                                  Notion "invoices & payments" system, minus
+  │                                  deposits paid); the webhook marks it paid
   ├─ POST /api/contact             → saves a contact message to the Notion
   │                                  "Website Contact Messages" database
   │                                  + sends an acknowledgement email
@@ -330,6 +335,62 @@ idempotently), everything else is a shop-cart order. The atelier must add
 (rich_text) to the orders database — property names live in `orders.schema.ts`. Code:
 `services/deposit.service.ts`, `lib/notion/orders.repository.ts`
 (`findDepositTarget`/`markDepositPaid`), and the status page's `DepositSection`.
+
+### Custom-order invoices (reads the atelier's Notion finance system)
+
+The final bill is an **invoice**: itemized materials + labor, minus the deposits
+paid, = the balance the customer pays online. The atelier already models all of
+this in Notion (under the "finances" page) — the app **reads** it, it does not
+recreate or recompute the costing:
+
+- **`invoices & payments`** (`NOTION_INVOICES_DATABASE_ID`): one invoice per order
+  (`Order` relation, limit 1), with `Final Balance` (rollup), `Line Items`
+  relation, and the app-added `Invoice Ready` / `Balance Paid` /
+  `Balance Payment Session Id`.
+- **`Invoice Line Items`** (`NOTION_INVOICE_LINE_ITEMS_DATABASE_ID`): each line has
+  a `Line Type` (Garment / Material / Labor / Deposit / Adjustment) and a
+  `Line Total` (formula). Each material is its own `Material` row (main fabric,
+  crystal/rhinestones, appliqué…), so the invoice breaks materials out per item.
+
+Five things are load-bearing:
+
+1. **Balance is computed from the line items, not `Final Balance`.**
+   `balanceDue = Σ(non-deposit Line Totals) − Σ(deposits paid on the order)`,
+   floored at 0 (`buildInvoiceView` in `services/invoice.service.ts`). `Line Type
+   = Deposit` rows are **excluded** from the subtotal — deposits are credited from
+   the order's paid-deposit amounts instead, so they can't be double-counted. This
+   avoids depending on how the `Final Balance` rollup treats deposit lines.
+
+2. **Only the balance is collected online.** Deposits are collected however the
+   atelier does today and tracked on the **order** (`Deposit Amount`/`Deposit
+   Paid` = deposit 1; `Deposit 2 Amount`/`Deposit 2 Paid` = deposit 2, both in
+   `schema.ts`). The existing deposit-1 flow + `DepositSection` are untouched;
+   only **paid** deposits credit the balance.
+
+3. **Tax on the balance only.** The invoice checkout sets `automatic_tax`,
+   `tax_behavior: "exclusive"`, and `billing_address_collection: "required"` (no
+   shipping step). Deposits stay untaxed.
+
+4. **`Invoice Ready` gates it.** `getOrderStatus` attaches the `invoice` object —
+   and the status page shows a **"View Invoice"** button → `pages/invoice.tsx`
+   (`/invoice/:orderNumber`) — only once the atelier ticks `Invoice Ready`.
+   `createInvoiceCheckout` 400s until then.
+
+5. **Write-back is order + invoice, idempotent.** The one webhook routes
+   `metadata.kind = "invoice"` to `recordInvoicePayment` → `markBalancePaid`,
+   which sets `Invoice Paid` + `Invoice Session Id` on the order and `Balance
+   Paid` + `Balance Payment Session Id` on the invoice. Only those plain
+   checkbox/text fields are written (never the costing formulas); `Balance Paid`
+   is the "already paid" guard.
+
+The atelier must, one time: add `Deposit 2 Amount` (number), `Deposit 2 Paid`
+(checkbox), `Invoice Paid` (checkbox), `Invoice Session Id` (rich_text) to the
+Order Tracking Pipeline; add `Invoice Ready` (checkbox), `Balance Paid`
+(checkbox), `Balance Payment Session Id` (rich_text) to invoices & payments;
+share the Notion integration with **invoices & payments** and **Invoice Line
+Items**; and set the two env vars. Code: `services/invoice.service.ts`,
+`routes/orders.ts` (`POST /orders/:n/invoice`), `routes/stripe-webhook.ts`,
+`lib/notion/invoice.{schema,repository}.ts`, and `pages/invoice.tsx`.
 
 ## Production schedule (auto-generated stage milestones)
 
@@ -641,8 +702,11 @@ and in the maintainer's env without edits.
   shop's `/products` endpoint reads), `NOTION_SHOP_ORDERS_DATABASE_ID` (the
   "Shop Orders" database the checkout webhook writes paid orders to), and
   `NOTION_PRODUCTION_SCHEDULE_DATABASE_ID` (the "Production Schedule" database the
-  milestone-reconciliation cron writes per-stage milestones to). The Notion
-  integration must be shared with each database or queries 404. The
+  milestone-reconciliation cron writes per-stage milestones to),
+  `NOTION_INVOICES_DATABASE_ID` (the "invoices & payments" database) and
+  `NOTION_INVOICE_LINE_ITEMS_DATABASE_ID` (the "Invoice Line Items" database) —
+  the two the custom-order invoice flow reads to show a customer their balance.
+  The Notion integration must be shared with each database or queries 404. The
   production-schedule cron also needs `CRON_SECRET` (the bearer token Vercel Cron
   sends to `GET /api/cron/generate-milestones`; unset ⇒ that endpoint 401s).
   Optionally `NOTION_CLIENT_CRM_DATABASE_ID` (the "Client CRM" database): when set,
@@ -710,6 +774,7 @@ and in the maintainer's env without edits.
 | Change the back-in-stock notify dialog  | `artifacts/web-app/src/components/notify-dialog.tsx` + `services/notify.service.ts` + `lib/notion/notify.*` (writes to the **contact** database — see below)                                                                                                             |
 | Change shop checkout / payments         | `artifacts/web-app/src/lib/cart.tsx` + `components/cart-drawer.tsx` + `components/add-to-cart.tsx` (frontend); `api-server/src/services/checkout.service.ts` + `routes/checkout.ts` + `routes/stripe-webhook.ts` + `lib/stripe/*` + `lib/notion/shop-orders.*` (backend) |
 | Change custom-order deposits            | `artifacts/web-app/src/pages/status.tsx` (`DepositSection`); `api-server/src/services/deposit.service.ts` + `routes/orders.ts` + `lib/notion/orders.repository.ts` (`findDepositTarget`/`markDepositPaid`) + `routes/stripe-webhook.ts`                                  |
+| Change custom-order invoice / balance   | `artifacts/web-app/src/pages/invoice.tsx` + status page's "View Invoice" card; `api-server/src/services/invoice.service.ts` + `routes/orders.ts` (`POST /orders/:n/invoice`) + `lib/notion/invoice.{schema,repository}.ts` + `routes/stripe-webhook.ts`                    |
 | Change production-schedule milestones   | `api-server/src/services/schedule.service.ts` + `routes/cron.ts` + `lib/notion/production-schedule.{blocks,repository}.ts` + `lib/notion/orders.repository.ts` (`findOrdersNeedingMilestones`/`markMilestonesGenerated`); cron in `vercel.json`                               |
 | Change appointment booking (UI)         | `artifacts/web-app/src/pages/appointments.tsx`                                                                                                                                                                                                                           |
 | Change appointment types / routing rules| `api-server/src/lib/appointments/catalog.ts` (targeted business rule — durations, which staff, which locations)                                                                                                                                                               |
