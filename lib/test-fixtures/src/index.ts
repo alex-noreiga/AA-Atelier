@@ -1,4 +1,4 @@
-// Shared domain fixtures for the test suites (api-server Vitest, order-status
+// Shared domain fixtures for the test suites (api-server Vitest, web-app
 // Vitest, and the Playwright e2e specs).
 //
 // GUARDRAIL — read before adding anything here:

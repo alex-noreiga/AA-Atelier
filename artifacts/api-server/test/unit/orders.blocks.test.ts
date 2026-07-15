@@ -3,8 +3,8 @@ import { createOrderInput } from "@workspace/test-fixtures";
 import {
   buildOrderProperties,
   buildOrderPageBlocks,
-} from "../../src/lib/notion/blocks.js";
-import type { CreateOrderInput } from "../../src/lib/notion/schema.js";
+} from "../../src/lib/notion/orders.blocks.js";
+import type { CreateOrderInput } from "../../src/lib/notion/orders.schema.js";
 
 const baseOrder: CreateOrderInput = createOrderInput();
 

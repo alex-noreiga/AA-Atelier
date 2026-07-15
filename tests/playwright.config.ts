@@ -37,7 +37,7 @@ export default defineConfig({
   },
   webServer: useOwnServer
     ? {
-        command: "pnpm --filter @workspace/order-status run dev",
+        command: "pnpm --filter @workspace/web-app run dev",
         url: BASE_URL,
         reuseExistingServer: !process.env.CI,
         timeout: 120_000,
