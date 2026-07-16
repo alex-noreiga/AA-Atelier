@@ -492,6 +492,7 @@ describe("recordPaidOrder", () => {
       id: "cs_email",
       payment_status: "paid",
       customer_details: { email: "buyer@example.com", name: "Ada Lovelace" },
+      metadata: { kind: "shop", orderNumber: "SHP-XYZ-9999" },
       line_items: {
         data: [
           { description: "Bow Fleece Soaker", quantity: 1, amount_total: 2200 },
@@ -516,6 +517,8 @@ describe("recordPaidOrder", () => {
     expect(message.to).toBe("buyer@example.com");
     expect(message.from).toBe("orders@shop.test");
     expect(message.subject).toMatch(/order is confirmed/i);
+    // The order number (from session metadata) rides on the email.
+    expect(message.text).toContain("SHP-XYZ-9999");
   });
 
   it("also notifies the atelier when ATELIER_INBOX_EMAIL is set", async () => {

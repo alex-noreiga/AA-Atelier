@@ -294,11 +294,13 @@ async function sendShopOrderConfirmation(
   if (!email) return;
 
   const shippingAddress = formatShippingAddress(session);
+  const orderNumber = session.metadata?.orderNumber;
   const details: ShopOrderEmailDetails = {
     email,
     ...(session.customer_details?.name
       ? { customerName: session.customer_details.name }
       : {}),
+    ...(orderNumber ? { orderNumber } : {}),
     lineItems: (session.line_items?.data ?? []).map((item) => ({
       description: item.description ?? "Item",
       quantity: item.quantity ?? 1,

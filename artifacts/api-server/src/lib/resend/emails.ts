@@ -441,6 +441,8 @@ export interface ShopOrderEmailLine {
 export interface ShopOrderEmailDetails {
   email: string;
   customerName?: string;
+  /** The human-readable order number (e.g. "SHP-…") the customer tracks by. */
+  orderNumber?: string;
   lineItems: ShopOrderEmailLine[];
   subtotal: number;
   shipping: number;
@@ -504,11 +506,19 @@ export function shopOrderConfirmationEmail(
     ? `<p><strong>Shipping to:</strong> ${escapeHtml(details.shippingAddress)}</p>`
     : "";
 
+  // Order number, shown prominently so the customer can track their order.
+  const orderNumberHtml = details.orderNumber
+    ? `<p style="margin:16px 0;">Your order number is
+         <strong style="letter-spacing:0.04em;">${escapeHtml(details.orderNumber)}</strong>.
+         Keep it handy to track your order's progress.</p>`
+    : "";
+
   const html = layout(
     "Thank you for your order",
     `<p>Hi ${firstName},</p>
      <p>Your payment went through and your order is confirmed. Here's what you bought:</p>
      ${receiptHtml}
+     ${orderNumberHtml}
      ${shippingHtml}
      <p>We'll carefully prepare your pieces and be in touch with shipping details soon.</p>`,
   );
@@ -529,6 +539,12 @@ export function shopOrderConfirmationEmail(
     ...itemsText,
     ``,
     ...totalsText,
+    ...(details.orderNumber
+      ? [
+          ``,
+          `Your order number is ${details.orderNumber}. Keep it handy to track your order's progress.`,
+        ]
+      : []),
     ...(details.shippingAddress
       ? [``, `Shipping to: ${details.shippingAddress}`]
       : []),
@@ -558,6 +574,9 @@ export function shopOrderNotificationEmail(
 
   const who = details.customerName || details.email;
   const fields: Field[] = [
+    ...(details.orderNumber
+      ? [["Order number", details.orderNumber] as Field]
+      : []),
     ...(details.customerName ? [["Name", details.customerName] as Field] : []),
     ["Email", details.email],
     ["Items", items],

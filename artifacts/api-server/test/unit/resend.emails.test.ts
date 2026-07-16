@@ -29,6 +29,7 @@ function shopOrderDetails(
   return {
     email: "buyer@example.com",
     customerName: "Ada Lovelace",
+    orderNumber: "SHP-ABC-1234",
     lineItems: [
       { description: "Bow Fleece Soaker — Black", quantity: 2, amount: 44 },
     ],
@@ -225,6 +226,21 @@ describe("shopOrderConfirmationEmail", () => {
     expect(email.text).toContain("Total: $53.08");
   });
 
+  it("shows the order number the customer can track by", () => {
+    const email = shopOrderConfirmationEmail(shopOrderDetails());
+
+    expect(email.html).toContain("SHP-ABC-1234");
+    expect(email.text).toContain("SHP-ABC-1234");
+  });
+
+  it("omits the order-number line when no number is provided", () => {
+    const { orderNumber: _n, ...rest } = shopOrderDetails();
+    const email = shopOrderConfirmationEmail(rest);
+
+    expect(email.html).not.toContain("Your order number");
+    expect(email.text).not.toContain("Your order number");
+  });
+
   it("omits shipping and tax lines when they are zero", () => {
     const { shippingAddress: _addr, ...rest } = shopOrderDetails();
     const email = shopOrderConfirmationEmail({
@@ -272,5 +288,6 @@ describe("shopOrderNotificationEmail", () => {
     expect(email.subject).toContain("$53.08");
     expect(email.text).toContain("Bow Fleece Soaker — Black");
     expect(email.text).toContain("Total: $53.08");
+    expect(email.text).toContain("Order number: SHP-ABC-1234");
   });
 });

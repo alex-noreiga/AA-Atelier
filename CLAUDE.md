@@ -333,12 +333,12 @@ and `src/lib/notion/shop-orders.*`. Four things are load-bearing:
    → `services/shop-orders.service.ts` → `findShopOrderByNumber` /
    `fetchLiveShopOrderStatuses`), which reports the live Notion `Status` workflow
    as a timeline (the status option list is read live, never hardcoded — same rule
-   as order stages). **Note:** the app does send a shop confirmation email
-   (`sendShopOrderConfirmation` in `checkout.service.ts`), but its
-   `ShopOrderEmailDetails` doesn't include the order number yet, so today the
-   number is surfaced only on the success page + the Notion order — the customer
-   should save it (adding it to that email is a small follow-up). The lookup only
-   serves orders placed after this shipped (older ones have no `Order Number`).
+   as order stages). The number is surfaced to the customer on the success page
+   **and** in the shop confirmation email (`sendShopOrderConfirmation` in
+   `checkout.service.ts` passes `metadata.orderNumber` into `ShopOrderEmailDetails`,
+   which `shopOrderConfirmationEmail` renders), plus the atelier notification. The
+   lookup only serves orders placed after this shipped (older ones have no
+   `Order Number`).
 
 The atelier must create the "Shop Orders" Notion database (properties in
 `shop-orders.blocks.ts`, including the `Order Number` rich_text property) and
