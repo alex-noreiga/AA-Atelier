@@ -52,6 +52,17 @@ async function fetchLiveOrderStages(client: NotionClient): Promise<string[]> {
   return stages;
 }
 
+/**
+ * The live order "Stage" options, in Notion's order. A thin public wrapper over
+ * the cached fetch, so callers outside this module (e.g. the config-drift check)
+ * can read the same list the order flows use.
+ */
+export async function listOrderStages(
+  client: NotionClient = getNotionClient(),
+): Promise<string[]> {
+  return fetchLiveOrderStages(client);
+}
+
 function generateOrderNumber(): string {
   const timestamp = Date.now().toString(36).toUpperCase();
   const random = Math.random().toString(36).substring(2, 6).toUpperCase();

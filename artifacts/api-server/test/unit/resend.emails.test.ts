@@ -16,10 +16,38 @@ import {
   measurementChangeNotificationEmail,
   shopOrderConfirmationEmail,
   shopOrderNotificationEmail,
+  configDriftNotificationEmail,
   type ShopOrderEmailDetails,
 } from "../../src/lib/resend/emails.js";
 
 const INBOX = "orders@a3iceanddance.com";
+
+describe("configDriftNotificationEmail", () => {
+  it("addresses the atelier and lists each drifted feature + missing value", () => {
+    const message = configDriftNotificationEmail(
+      [
+        {
+          label: "Sellable status (STATUS_IN_STOCK)",
+          missing: ["In Stock"],
+        },
+        {
+          label: 'Size-chart categories (shop "Item Type")',
+          missing: ["Dress", "Ready to Wear"],
+        },
+      ],
+      INBOX,
+    );
+
+    expect(message.to).toBe(INBOX);
+    expect(message.subject).toMatch(/Notion option/i);
+    // Every label + missing value appears in both the HTML and the plaintext.
+    for (const body of [message.html, message.text]) {
+      expect(body).toContain("Sellable status (STATUS_IN_STOCK)");
+      expect(body).toContain("In Stock");
+      expect(body).toContain("Dress, Ready to Wear");
+    }
+  });
+});
 
 // Shop orders have no CreateXInput domain type; the caller pre-formats the paid
 // Stripe session into this struct (dollars), so the fixture is built inline.

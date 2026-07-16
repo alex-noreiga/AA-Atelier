@@ -20,6 +20,7 @@
 
 import type { Request, Response } from "express";
 import { generatePendingMilestones } from "../services/schedule.service.js";
+import { runConfigCheck } from "../services/config-check.service.js";
 import { logger } from "../lib/logger.js";
 
 export async function generateMilestonesHandler(
@@ -35,6 +36,27 @@ export async function generateMilestonesHandler(
   const result = await generatePendingMilestones();
   logger.info(result, "Milestone reconciliation complete");
   res.json(result);
+}
+
+/**
+ * Nightly config-drift check (Vercel Cron, Bearer `CRON_SECRET`, JSON). Verifies
+ * the code constants that name live Notion option values still match, and on
+ * drift logs + best-effort emails the atelier (see config-check.service). Like
+ * the milestone cron, it is deliberately outside the OpenAPI contract.
+ */
+export async function configCheckHandler(
+  req: Request,
+  res: Response,
+): Promise<void> {
+  const secret = process.env.CRON_SECRET;
+  if (!secret || req.headers.authorization !== `Bearer ${secret}`) {
+    res.status(401).json({ error: "Unauthorized" });
+    return;
+  }
+
+  const { findings } = await runConfigCheck();
+  logger.info({ driftCount: findings.length }, "Config-drift check complete");
+  res.json({ ok: findings.length === 0, findings });
 }
 
 /** A minimal self-contained HTML confirmation page for the Notion button tab. */

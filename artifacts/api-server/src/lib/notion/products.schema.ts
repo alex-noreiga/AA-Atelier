@@ -24,7 +24,9 @@ const PRODUCT_SIZES_OFFERED_PROPERTY = "Sizes Offered"; // multi_select
 // The single status value that counts as sellable. This is an intentional,
 // targeted business rule (not a hardcoded copy of the full option list, which
 // the atelier edits live) — a row must be "In Stock" to be marked available.
-const STATUS_IN_STOCK = "In Stock";
+// Exported so the config-drift check (config-audit.ts) can verify it still
+// exists among the live Status options.
+export const STATUS_IN_STOCK = "In Stock";
 
 /** One size band the item is offered in, and whether it's currently in stock. */
 interface SizeOptionRecord {
@@ -117,6 +119,7 @@ export interface NotionInventoryDatabaseSchema {
     {
       type: string;
       select?: { options: Array<{ name: string }> };
+      status?: { options: Array<{ name: string }> };
     }
   >;
 }
@@ -132,6 +135,21 @@ export function extractCategoryOptions(
 ): string[] {
   return (
     schema.properties[PRODUCT_TYPE_PROPERTY]?.select?.options.map(
+      (option) => option.name,
+    ) ?? []
+  );
+}
+
+/**
+ * The live "Status" options on the inventory database (e.g. In Stock, Sold, …),
+ * read from the schema like the categories. Used by the config-drift check to
+ * verify STATUS_IN_STOCK still exists after a Notion edit.
+ */
+export function extractStatusOptions(
+  schema: NotionInventoryDatabaseSchema,
+): string[] {
+  return (
+    schema.properties[PRODUCT_STATUS_PROPERTY]?.status?.options.map(
       (option) => option.name,
     ) ?? []
   );

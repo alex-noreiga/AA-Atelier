@@ -6,6 +6,7 @@ import { stripeWebhookHandler } from "./routes/stripe-webhook.js";
 import {
   generateMilestonesHandler,
   generateMilestonesButtonHandler,
+  configCheckHandler,
 } from "./routes/cron.js";
 import { errorHandler } from "./middlewares/error.js";
 import { logger } from "./lib/logger.js";
@@ -55,6 +56,10 @@ app.use("/api", router);
 // See routes/cron.ts.
 app.get("/api/cron/generate-milestones", generateMilestonesHandler);
 app.get("/api/cron/generate-milestones/run", generateMilestonesButtonHandler);
+
+// Nightly config-drift check (Bearer CRON_SECRET, JSON) — warns/emails the
+// atelier when a Notion option a feature names in code has been renamed/removed.
+app.get("/api/cron/config-check", configCheckHandler);
 
 // Central error handler — must be registered after the routes.
 app.use(errorHandler);

@@ -38,3 +38,54 @@ export function missingOptionValues(
   const present = new Set(live);
   return expected.filter((value) => !present.has(value));
 }
+
+/** One code constant (or set of them) whose named Notion values have drifted. */
+export interface ConfigDriftFinding {
+  /** Human-readable label for the feature / constant being checked. */
+  label: string;
+  /** The named values that no longer exist among the live Notion options. */
+  missing: string[];
+}
+
+/** The live Notion option lists + the code constants to check them against. */
+export interface ConfigAuditInput {
+  itemTypeOptions: string[];
+  statusOptions: string[];
+  stageOptions: string[];
+  /** The sellable status value (products.schema `STATUS_IN_STOCK`). */
+  statusInStock: string;
+  /** The measurement production-lock stage (measurement-lock `lockFromStage()`). */
+  measurementLockStage: string;
+}
+
+/**
+ * Check every code constant that NAMES a live Notion option value against the
+ * current options, returning one finding per constant whose value has gone
+ * missing (a Notion rename/removal that will silently break that feature). Pure,
+ * so the nightly config-check cron can log + email from the result.
+ */
+export function auditNotionConfig(input: ConfigAuditInput): ConfigDriftFinding[] {
+  const findings: ConfigDriftFinding[] = [];
+  const check = (label: string, expected: string[], live: string[]): void => {
+    const missing = missingOptionValues(expected, live);
+    if (missing.length > 0) findings.push({ label, missing });
+  };
+
+  check(
+    'Size-chart categories (shop "Item Type")',
+    SIZED_CATEGORY_NAMES,
+    input.itemTypeOptions,
+  );
+  check(
+    'Sellable status (STATUS_IN_STOCK)',
+    [input.statusInStock],
+    input.statusOptions,
+  );
+  check(
+    "Measurement-lock stage (MEASUREMENT_LOCK_FROM_STAGE)",
+    [input.measurementLockStage],
+    input.stageOptions,
+  );
+
+  return findings;
+}
