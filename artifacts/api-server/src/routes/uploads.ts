@@ -46,10 +46,12 @@ export async function uploadOrderRefsHandler(
         maximumSizeInBytes: MAX_SIZE_BYTES,
         addRandomSuffix: true,
       }),
-      // The browser passes the returned URLs to POST /api/orders, which attaches
-      // them — there's nothing to persist here. Vercel invokes this callback from
-      // its own servers (it can't reach localhost in dev, which is harmless).
-      onUploadCompleted: async () => {},
+      // No onUploadCompleted on purpose. The browser returns the Blob URLs in the
+      // create-order payload (POST /api/orders attaches them), so we need no
+      // server-side completion step. Registering one makes handleUpload embed a
+      // callbackUrl in the token, and Vercel Blob then calls it *before* finishing
+      // the browser's upload — which hangs when that URL is unreachable (a
+      // Deployment-Protection–gated preview returns 401, or localhost in dev).
     });
     res.json(result);
   } catch (err) {
