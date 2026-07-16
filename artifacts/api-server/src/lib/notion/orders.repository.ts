@@ -13,7 +13,6 @@ import {
   ORDER_DEPOSIT_SESSION_PROPERTY,
   ORDER_DUE_DATE_PROPERTY,
   ORDER_MILESTONES_GENERATED_PROPERTY,
-  ORDER_REFERENCE_IMAGES_PROPERTY,
   extractStageOptions,
   extractOrderNumber,
   extractOrderName,
@@ -72,18 +71,11 @@ function assertConfigured(client: NotionClient): void {
   }
 }
 
-/** A newly-created order: its customer-facing number and its Notion page id. */
-export interface CreateOrderResult {
-  orderNumber: string;
-  /** The created order's Notion page id, for linking it to related records. */
-  pageId: string;
-}
-
 export async function createOrder(
   data: CreateOrderInput,
   client: NotionClient = getNotionClient(),
   clientPageId?: string,
-): Promise<CreateOrderResult> {
+): Promise<string> {
   assertConfigured(client);
 
   const orderNumber = generateOrderNumber();
@@ -106,56 +98,7 @@ export async function createOrder(
     );
   }
 
-  const created = (await response.json()) as { id: string };
-  return { orderNumber, pageId: created.id };
-}
-
-/** A human-readable name for a Blob-hosted reference file, from its URL. */
-export function referenceFileName(url: string, index: number): string {
-  try {
-    const last = new URL(url).pathname.split("/").pop();
-    return last ? decodeURIComponent(last) : `Reference ${index + 1}`;
-  } catch {
-    return `Reference ${index + 1}`;
-  }
-}
-
-/**
- * Attach the customer's uploaded reference images/videos (Vercel Blob URLs) to an
- * order's `Reference Images` file property, as external files. Called best-effort
- * after order creation with the created page id. A no-op when `imageUrls` is empty;
- * the caller swallows failures (e.g. the atelier hasn't added the property yet), so
- * this never blocks an order.
- */
-export async function markOrderReferenceImages(
-  pageId: string,
-  imageUrls: string[],
-  client: NotionClient = getNotionClient(),
-): Promise<void> {
-  assertConfigured(client);
-  if (imageUrls.length === 0) return;
-
-  const response = await client.fetch(`/v1/pages/${pageId}`, {
-    method: "PATCH",
-    body: JSON.stringify({
-      properties: {
-        [ORDER_REFERENCE_IMAGES_PROPERTY]: {
-          files: imageUrls.map((url, i) => ({
-            type: "external",
-            name: referenceFileName(url, i),
-            external: { url },
-          })),
-        },
-      },
-    }),
-  });
-
-  if (!response.ok) {
-    const errorText = await response.text();
-    throw new Error(
-      `Notion reference-images update failed with status ${response.status}: ${errorText}`,
-    );
-  }
+  return orderNumber;
 }
 
 export async function findOrderByNumber(

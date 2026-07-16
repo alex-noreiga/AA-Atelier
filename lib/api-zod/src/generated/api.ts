@@ -69,8 +69,7 @@ export const CreateOrderBody = zod.object({
   "measurementUnit": zod.enum(['inches', 'cm']).optional(),
   "measurementAppointment": zod.boolean().optional().describe('True when the customer opted to have their measurements taken at a scheduled fitting or consultation instead of entering them now. When true the measurement fields are omitted.'),
   "description": zod.string().optional(),
-  "neededBy": zod.coerce.date().optional(),
-  "imageUrls": zod.array(zod.string().url()).optional().describe('URLs of reference images\/videos the customer uploaded for the dress (stored in Vercel Blob; the browser uploads directly and sends the resulting URLs here). Attached to the order in Notion.')
+  "neededBy": zod.coerce.date().optional()
 }).describe('A new custom-dress order. Measurements are optional: the customer either supplies all five now (with a measurementUnit), or sets measurementAppointment=true to have them taken at a scheduled fitting or consultation. The server rejects a body with neither.')
 
 export const CreateOrderResponse = zod.object({

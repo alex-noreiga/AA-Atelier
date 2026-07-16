@@ -636,26 +636,13 @@ and in the maintainer's env without edits.
   navbar clearance, and optional centering — follow `pages/home.tsx` as the
   scaffold.
 - **Prettier** is the formatter (root devDependency).
-- **Reference image/video upload runs on Vercel Blob** (the old GCS/Replit-sidecar
-  path was deleted in the migration; this is its replacement). The order form's
-  optional "Reference Images / Video" field uploads files **directly from the
-  browser to Vercel Blob** — bypassing Vercel's ~4.5 MB serverless request-body
-  limit — via `web-app/src/components/reference-upload.tsx` (`upload` from
-  `@vercel/blob/client`). The server route `POST /api/uploads/order-refs`
-  (`api-server/src/routes/uploads.ts`, mounted in `app.ts`, **outside** the OpenAPI
-  contract like the Stripe webhook / cron) only issues the client-upload token via
-  `handleUpload`, gated on `BLOB_READ_WRITE_TOKEN` (unset ⇒ 503, form still works
-  without attachments). The resulting URLs ride along in the create-order payload as
-  `imageUrls` (in the contract) and are attached, **best-effort after order creation**,
-  to the order's **`Reference Images`** file property as external files
-  (`markOrderReferenceImages` in `orders.repository.ts`, wired from `orders.service.ts`
-  with the created order's page id). The atelier must add a `Reference Images` (file)
-  property to the orders database or the attach is a logged no-op — it never fails the
-  order. (Attaching post-create, not in the create payload, is deliberate: writing a
-  missing property in the atomic create would 400 the whole order.)
-  **Dependency note:** `@vercel/blob` transitively pulls zod v4 (via `@vercel/oidc`);
-  a root `pnpm.overrides` pins `zod` to the v3 the app uses so `@hookform/resolvers`
-  (no zod peer) can't latch onto v4 — don't remove that override.
+- **Image upload is not supported.** The GCS/Replit-sidecar upload path was
+  deleted during the Vercel migration, and the `/storage/*` endpoints, `imageUrls`
+  field, and the `lib/object-storage-web` widget were removed from the spec and
+  workspace. A Vercel Blob reintroduction was prototyped and then **reverted** (an
+  unresolved client-upload hang on protected previews plus a zod-v4 dependency
+  clash) — the re-add recipe and its landmines are captured in `TODO.md`. If upload
+  is reintroduced, add it to `openapi.yaml` first and regenerate.
 - **No relational database.** Orders live in Notion; there is no Postgres/Drizzle
   package. (An empty `lib/db` scaffold used to exist but was removed, along with
   its stale `drizzle-orm` catalog entry.)
@@ -785,19 +772,17 @@ Open follow-ups from the workspace review. The bulk of that review is already
 done — Production Schedule columns/views fixed; the redundant order-level payment
 fields (`Deposit 2 *`, `Invoice Paid`, `Invoice Session Id`) retired; the duplicate
 Notion "Website Contact Form" closed; and the code changes shipped (shop-order
-tagging, order↔hub linking, `Due Date` from `neededBy`, online balance payment,
-order-form reference uploads). What remains:
+tagging, order↔hub linking, `Due Date` from `neededBy`, online balance payment).
+What remains:
 
 - [x] **CRM "Leads to follow up" view filter** — done (set `Status is Lead` in the
   Notion UI on the **Client CRM** "Leads to follow up" view; the API can't set a
   filter on a `status`-type property).
-- [ ] **Activate order-form reference uploads.** Two one-time steps: (a) add a
-  `Reference Images` (**file**) property to the **Order Tracking Pipeline** database
-  (uploaded images attach there; without it the attach is a logged no-op); (b) connect
-  a **Vercel Blob** store to the project (auto-provisions `BLOB_READ_WRITE_TOKEN`),
-  deploy, and smoke-test an upload on a preview. Until the token is set,
-  `POST /api/uploads/order-refs` returns 503 and the order form works without
-  attachments.
+- [ ] **Re-add order-form reference uploads.** The Vercel Blob prototype was removed
+  (unresolved client-upload hang on protected previews + a zod-v4 dependency clash).
+  The full re-add recipe — approach, the three landmines to clear first, and the
+  one-time atelier setup (a `Reference Images` file property on the Order Tracking
+  Pipeline) — lives in `TODO.md` at the repo root.
 - [x] **Retire the duplicate Notion order form** — moot: the atelier deprecated the
   whole **Order Form Submissions** database (2026-07-16), so the website order form is
   already the single order intake. The app's hub-linking code was removed to match;

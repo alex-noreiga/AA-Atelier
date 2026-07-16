@@ -40,10 +40,6 @@ export const ORDER_CLIENT_PROPERTY = "Client"; // relation → Client CRM
 // an invoice to the order; the balance-payment flow reads the linked invoice's
 // final balance and marks it paid. See `invoices.repository.ts`.
 export const ORDER_INVOICES_RELATION_PROPERTY = "Invoices"; // relation → invoices
-// The customer's uploaded reference images/videos (Vercel Blob URLs), attached as
-// external files to the order after creation (best-effort). The atelier must add
-// this `files` property to the orders database, or the attach is a logged no-op.
-export const ORDER_REFERENCE_IMAGES_PROPERTY = "Reference Images"; // files
 
 /** Validated new-order payload, derived from the OpenAPI contract. */
 export type CreateOrderInput = z.infer<typeof CreateOrderBody>;

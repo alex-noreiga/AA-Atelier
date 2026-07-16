@@ -11,10 +11,6 @@ import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { PageShell } from "@/components/page-shell";
 import { SuccessScreen } from "@/components/success-screen";
-import {
-  ReferenceUpload,
-  type UploadedReference,
-} from "@/components/reference-upload";
 import { Seo } from "@/components/seo";
 import { ROUTE_SEO } from "@/lib/seo-routes";
 import { useToast } from "@/hooks/use-toast";
@@ -80,7 +76,6 @@ export default function OrderForm() {
     orderNumber: string;
     appointment: boolean;
   } | null>(null);
-  const [references, setReferences] = useState<UploadedReference[]>([]);
   const { toast } = useToast();
 
   const createOrder = useCreateOrder({
@@ -161,9 +156,6 @@ export default function OrderForm() {
         ...measurements,
         ...(description ? { description } : {}),
         ...(neededBy ? { neededBy } : {}),
-        ...(references.length > 0
-          ? { imageUrls: references.map((r) => r.url) }
-          : {}),
       },
     });
   };
@@ -443,24 +435,6 @@ export default function OrderForm() {
                   placeholder="Tell us about your vision — style, fabric preferences, special requirements..."
                   rows={4}
                   className="mt-1.5 bg-transparent border border-border rounded-lg px-3 py-2 text-sm focus-visible:ring-0 focus-visible:border-primary transition-colors resize-none shadow-none"
-                />
-              </div>
-
-              <div>
-                <Label className="text-sm font-light tracking-wide">
-                  Reference Images / Video
-                  <span className="text-muted-foreground/60 ml-1 text-xs">
-                    (optional)
-                  </span>
-                </Label>
-                <p className="text-xs text-muted-foreground/80 mt-1 mb-3">
-                  Inspiration photos, sketches, or clips help us capture your
-                  vision.
-                </p>
-                <ReferenceUpload
-                  value={references}
-                  onChange={setReferences}
-                  disabled={submitting}
                 />
               </div>
 

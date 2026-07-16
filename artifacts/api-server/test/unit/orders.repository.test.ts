@@ -38,12 +38,9 @@ describe("createOrder", () => {
       throw new Error(`unexpected path ${path}`);
     });
 
-    const { orderNumber, pageId } = await repo.createOrder(validOrder, client);
+    const orderNumber = await repo.createOrder(validOrder, client);
 
     expect(orderNumber).toMatch(/^ORD-[A-Z0-9]+-[A-Z0-9]+$/);
-    // The created page id is returned so the order can be linked to related
-    // records (Client CRM, the Order Form Submissions hub).
-    expect(pageId).toBe("new-page");
     expect(client.calls).toHaveLength(1);
     const call = client.calls[0];
     expect(call.path).toBe("/v1/pages");
@@ -225,51 +222,6 @@ describe("deposit lookups & updates", () => {
     await expect(
       repo.markDepositPaid("page-42", "cs_1", client),
     ).rejects.toThrow(/status 400: bad/);
-  });
-});
-
-describe("markOrderReferenceImages", () => {
-  it("PATCHes the file property with external files named from their URLs", async () => {
-    const client = makeFakeClient((path) => {
-      if (path === "/v1/pages/page-7") return jsonResponse({ id: "page-7" });
-      throw new Error(`unexpected ${path}`);
-    });
-
-    await repo.markOrderReferenceImages(
-      "page-7",
-      [
-        "https://x.blob.vercel-storage.com/order-references/sketch-a1.png",
-        "https://x.blob.vercel-storage.com/order-references/clip.mp4",
-      ],
-      client,
-    );
-
-    const body = JSON.parse(client.calls[0].init!.body as string);
-    const files = body.properties["Reference Images"].files;
-    expect(files).toHaveLength(2);
-    expect(files[0]).toEqual({
-      type: "external",
-      name: "sketch-a1.png",
-      external: {
-        url: "https://x.blob.vercel-storage.com/order-references/sketch-a1.png",
-      },
-    });
-    expect(files[1].name).toBe("clip.mp4");
-  });
-
-  it("is a no-op (no request) when there are no images", async () => {
-    const client = makeFakeClient(() => {
-      throw new Error("should not fetch");
-    });
-    await repo.markOrderReferenceImages("page-7", [], client);
-    expect(client.calls).toHaveLength(0);
-  });
-
-  it("throws on a non-ok response", async () => {
-    const client = makeFakeClient(() => errorResponse(400, "no such property"));
-    await expect(
-      repo.markOrderReferenceImages("page-7", ["https://x/a.png"], client),
-    ).rejects.toThrow(/status 400: no such property/);
   });
 });
 

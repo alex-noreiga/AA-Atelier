@@ -618,15 +618,6 @@ components:
         neededBy:
           type: string
           format: date
-        imageUrls:
-          type: array
-          items:
-            type: string
-            format: uri
-          description: >-
-            URLs of reference images/videos the customer uploaded for the dress
-            (stored in Vercel Blob; the browser uploads directly and sends the
-            resulting URLs here). Attached to the order in Notion.
     NewOrderResponse:
       type: object
       required:

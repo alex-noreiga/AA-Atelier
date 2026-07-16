@@ -4,7 +4,6 @@
 import {
   createOrder,
   findOrderByNumber,
-  markOrderReferenceImages,
 } from "../lib/notion/orders.repository.js";
 import { upsertClientByEmail } from "../lib/notion/clients.repository.js";
 import {
@@ -135,26 +134,7 @@ export async function submitOrder(
     );
   }
 
-  const { orderNumber, pageId } = await createOrder(
-    input,
-    undefined,
-    clientPageId,
-  );
-
-  // Best-effort: attach the customer's uploaded reference images/videos to the
-  // order's "Reference Images" file property. A failure (e.g. the property isn't
-  // set up yet) must never fail the order — swallow and log, like the CRM upsert
-  // and the mailers — and it's a no-op when no images were uploaded.
-  if (input.imageUrls && input.imageUrls.length > 0) {
-    try {
-      await markOrderReferenceImages(pageId, input.imageUrls);
-    } catch (err) {
-      logger.warn(
-        { err },
-        "Failed to attach reference images to the order; the order was still created",
-      );
-    }
-  }
+  const orderNumber = await createOrder(input, undefined, clientPageId);
 
   // Best-effort emails; a mail failure must not fail the order.
   const from = fromAddress("orders");

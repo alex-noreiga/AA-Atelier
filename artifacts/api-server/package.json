@@ -13,7 +13,6 @@
     "test:watch": "vitest"
   },
   "dependencies": {
-    "@vercel/blob": "^2.6.1",
     "@workspace/api-zod": "workspace:*",
     "cors": "^2.8.6",
     "dotenv": "^17.4.2",

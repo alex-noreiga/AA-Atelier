@@ -18,11 +18,6 @@
     "hooks:install": "bash scripts/install-hooks.sh"
   },
   "private": true,
-  "pnpm": {
-    "overrides": {
-      "zod": "3.25.76"
-    }
-  },
   "devDependencies": {
     "@types/node": "catalog:",
     "prettier": "^3.8.4",
