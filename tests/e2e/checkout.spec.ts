@@ -75,6 +75,7 @@ test.describe("Shop checkout", () => {
     await mockGetCheckoutSession(page, {
       body: {
         status: "paid",
+        kind: "shop",
         email: "grace@example.com",
         currency: "usd",
         lineItems: [

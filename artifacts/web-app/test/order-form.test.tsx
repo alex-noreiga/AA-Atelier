@@ -74,6 +74,12 @@ describe("OrderForm submission mapping", () => {
     // The measurement inputs are gone in appointment mode.
     expect(document.getElementById("waist")).toBeNull();
 
+    // The appointment panel offers a direct link to book the fitting.
+    expect(screen.getByTestId("link-book-fitting")).toHaveAttribute(
+      "href",
+      "/appointments?type=fitting",
+    );
+
     await user.click(screen.getByRole("button", { name: "Submit Order" }));
 
     await waitFor(() => expect(mutate).toHaveBeenCalledTimes(1));
@@ -119,5 +125,28 @@ describe("OrderForm validation", () => {
       screen.getByText("Please enter a valid email address"),
     ).toBeInTheDocument();
     expect(mutate).not.toHaveBeenCalled();
+  });
+
+  it("rejects a needed-by date in the past", async () => {
+    const user = userEvent.setup();
+    render(<OrderForm />);
+    await fillRequired(user);
+    fireEvent.change(byId("neededBy"), { target: { value: "2020-01-01" } });
+
+    await user.click(screen.getByRole("button", { name: "Submit Order" }));
+
+    expect(
+      await screen.findByText("Please choose a date in the future"),
+    ).toBeInTheDocument();
+    expect(mutate).not.toHaveBeenCalled();
+  });
+});
+
+describe("OrderForm deposit expectation", () => {
+  it("sets the expectation that a deposit follows the quote", () => {
+    render(<OrderForm />);
+    expect(screen.getByTestId("deposit-note")).toHaveTextContent(
+      /deposit to reserve your place/i,
+    );
   });
 });

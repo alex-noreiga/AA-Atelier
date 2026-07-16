@@ -226,6 +226,8 @@ interface ReceiptLine {
 
 export interface CheckoutSessionView {
   status: string;
+  /** "shop" or "deposit" (from the session's metadata.kind). */
+  kind?: string;
   email?: string;
   currency?: string;
   lineItems?: ReceiptLine[];
@@ -249,6 +251,7 @@ export async function getCheckoutSession(
     expand: ["line_items"],
   });
   const email = session.customer_details?.email ?? undefined;
+  const kind = session.metadata?.kind ?? undefined;
   const lineItems = (session.line_items?.data ?? []).map((item) => ({
     description: item.description ?? "Item",
     quantity: item.quantity ?? 1,
@@ -257,6 +260,7 @@ export async function getCheckoutSession(
 
   return {
     status: session.payment_status,
+    ...(kind ? { kind } : {}),
     ...(email ? { email } : {}),
     ...(session.currency ? { currency: session.currency } : {}),
     ...(lineItems.length > 0 ? { lineItems } : {}),

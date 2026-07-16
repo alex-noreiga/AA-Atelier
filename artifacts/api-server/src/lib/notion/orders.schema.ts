@@ -12,6 +12,7 @@
 
 import type { z } from "zod";
 import type { CreateOrderBody } from "@workspace/api-zod";
+import type { StageMilestone } from "./production-schedule.blocks.js";
 import type { InvoiceView } from "./invoice.schema.js";
 
 export const ORDER_NAME_PROPERTY = "Order Name";
@@ -63,15 +64,30 @@ export interface OrderRecord {
   depositAmount?: number;
   /** Whether the deposit has been paid. */
   depositPaid?: boolean;
+  /** The Stripe Checkout session id of the paid deposit, for linking to the
+   * on-site receipt. Present once the deposit has been paid. */
+  depositSessionId?: string;
+  /** The order's Due Date (ISO yyyy-mm-dd), the atelier's target completion
+   * date. Present once the atelier has set one in Notion. */
+  estimatedCompletion?: string;
   /** Present once the atelier has set a second (progress) deposit. */
   deposit2Amount?: number;
   /** Whether the second deposit has been paid. */
   deposit2Paid?: boolean;
-  /** The order's Notion page id — needed to query/write its invoice. Stripped
-   * from the HTTP response by the `GetOrderStatusResponse` zod parse. */
+  /** The order's Notion page id — needed to query related milestones + invoice.
+   * Stripped from the HTTP response by the `GetOrderStatusResponse` zod parse. */
   pageId?: string;
   /** The linked invoice's Notion page id, or undefined when no invoice exists. */
   invoicePageId?: string;
+}
+
+/** The status-lookup response: the raw record plus the derived production-lock
+ * flag and the per-stage milestone dates the timeline renders, and (when ready)
+ * the customer-facing invoice. */
+export interface OrderStatusResult extends OrderRecord {
+  measurementsLocked: boolean;
+  /** Per-stage target dates, once the atelier's milestones have been generated. */
+  milestones?: StageMilestone[];
   /** The customer-facing invoice, attached by `getOrderStatus` only once the
    * invoice exists and the atelier has flipped "Invoice Ready". */
   invoice?: InvoiceView;
@@ -107,6 +123,10 @@ export interface NotionOrderPage {
     Stage?: { type: "status"; status: { name: string } | null };
     "Deposit Amount"?: { type: "number"; number: number | null };
     "Deposit Paid"?: { type: "checkbox"; checkbox: boolean };
+    "Deposit Session Id"?: {
+      type: "rich_text";
+      rich_text: Array<{ plain_text: string }>;
+    };
     "Deposit 2 Amount"?: { type: "number"; number: number | null };
     "Deposit 2 Paid"?: { type: "checkbox"; checkbox: boolean };
     Invoices?: { type: "relation"; relation: Array<{ id: string }> };
@@ -166,6 +186,17 @@ export function extractDepositAmount(
 export function extractDepositPaid(page: NotionOrderPage): boolean {
   const property = page.properties[ORDER_DEPOSIT_PAID_PROPERTY];
   return property?.type === "checkbox" ? property.checkbox : false;
+}
+
+/** The Stripe Checkout session id of the paid deposit, or undefined when unpaid
+ * (the atelier's webhook writes it when it marks the deposit paid). */
+export function extractDepositSessionId(
+  page: NotionOrderPage,
+): string | undefined {
+  const property = page.properties[ORDER_DEPOSIT_SESSION_PROPERTY];
+  if (property?.type !== "rich_text") return undefined;
+  const value = property.rich_text.map((t) => t.plain_text).join("");
+  return value || undefined;
 }
 
 /** The second deposit amount (dollars), or undefined when the atelier hasn't set one. */

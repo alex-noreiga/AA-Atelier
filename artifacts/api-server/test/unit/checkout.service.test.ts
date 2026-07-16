@@ -430,6 +430,17 @@ describe("getCheckoutSession", () => {
       { description: "Item", quantity: 1, amount: 50 },
     ]);
   });
+
+  it("surfaces the session kind from metadata (so the success page can skip clearing a deposit's cart)", async () => {
+    const { stripe, retrieve } = fakeStripe();
+    retrieve.mockResolvedValue({
+      payment_status: "paid",
+      metadata: { kind: "deposit" },
+    });
+
+    const view = await getCheckoutSession("cs_deposit", stripe);
+    expect(view.kind).toBe("deposit");
+  });
 });
 
 describe("recordPaidOrder", () => {

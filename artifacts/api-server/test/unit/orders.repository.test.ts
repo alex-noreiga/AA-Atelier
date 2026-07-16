@@ -112,9 +112,9 @@ describe("findOrderByNumber", () => {
       orderName: "Ada – Custom Dress",
       currentStage: "Sewing",
       stages: ["Consultation", "Sewing", "Delivery"],
+      pageId: "page-id",
       depositPaid: false,
       deposit2Paid: false,
-      pageId: "page-id",
     });
 
     const queryCall = client.calls.find((c) => isQuery(c.path))!;

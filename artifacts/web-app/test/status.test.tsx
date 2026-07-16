@@ -143,6 +143,99 @@ describe("Status deposit", () => {
     expect(screen.getByTestId("deposit-paid")).toBeInTheDocument();
     expect(screen.queryByTestId("button-pay-deposit")).not.toBeInTheDocument();
   });
+
+  it("links to the receipt once the deposit session id is available", async () => {
+    setHook({
+      data: orderRecord({
+        depositAmount: 150,
+        depositPaid: true,
+        depositSessionId: "cs_test_123",
+      }),
+    });
+    await submitLookup();
+    expect(screen.getByTestId("link-deposit-receipt")).toHaveAttribute(
+      "href",
+      "/shop/success?session_id=cs_test_123",
+    );
+  });
+
+  it("shows no receipt link when the paid deposit has no session id", async () => {
+    setHook({ data: orderRecord({ depositAmount: 150, depositPaid: true }) });
+    await submitLookup();
+    expect(
+      screen.queryByTestId("link-deposit-receipt"),
+    ).not.toBeInTheDocument();
+  });
+});
+
+describe("Status measurement-change lock", () => {
+  it("offers the measurement-change request while measurements are unlocked", async () => {
+    setHook({ data: orderRecord({ measurementsLocked: false }) });
+    await submitLookup();
+    expect(
+      screen.getByTestId("button-request-measurement-change"),
+    ).toBeInTheDocument();
+    expect(screen.queryByTestId("measurements-locked")).not.toBeInTheDocument();
+  });
+
+  it("replaces the request affordance with a locked notice once in production", async () => {
+    setHook({ data: orderRecord({ measurementsLocked: true }) });
+    await submitLookup();
+    expect(screen.getByTestId("measurements-locked")).toHaveTextContent(
+      /locked now that your garment is in production/i,
+    );
+    expect(
+      screen.queryByTestId("button-request-measurement-change"),
+    ).not.toBeInTheDocument();
+  });
+});
+
+describe("Status estimated completion", () => {
+  it("shows nothing when the atelier hasn't set a due date", async () => {
+    setHook({ data: orderRecord() });
+    await submitLookup();
+    expect(
+      screen.queryByTestId("estimated-completion"),
+    ).not.toBeInTheDocument();
+  });
+
+  it("shows the formatted estimated completion date when set", async () => {
+    setHook({ data: orderRecord({ estimatedCompletion: "2026-08-01" }) });
+    await submitLookup();
+    expect(screen.getByTestId("estimated-completion")).toHaveTextContent(
+      "August 1, 2026",
+    );
+  });
+});
+
+describe("Status per-stage milestone dates", () => {
+  it("renders a target date under each stage that has one", async () => {
+    setHook({
+      data: orderRecord({
+        milestones: [
+          { stage: "Sewing/Construction", targetDate: "2026-08-01" },
+          { stage: "Delivery", targetDate: "2026-08-10" },
+        ],
+      }),
+    });
+    await submitLookup();
+
+    expect(
+      within(screen.getByTestId("row-stage-1")).getByTestId("stage-target-1"),
+    ).toHaveTextContent("August 1, 2026");
+    expect(
+      within(screen.getByTestId("row-stage-2")).getByTestId("stage-target-2"),
+    ).toHaveTextContent("August 10, 2026");
+    // A stage without a milestone shows no target line.
+    expect(screen.queryByTestId("stage-target-0")).not.toBeInTheDocument();
+  });
+
+  it("shows no target lines when milestones haven't been generated", async () => {
+    setHook({ data: orderRecord() });
+    await submitLookup();
+    expect(screen.queryByTestId("stage-target-0")).not.toBeInTheDocument();
+    expect(screen.queryByTestId("stage-target-1")).not.toBeInTheDocument();
+  });
 });
 
 describe("Status invoice callout", () => {

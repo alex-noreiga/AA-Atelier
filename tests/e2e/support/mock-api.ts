@@ -18,6 +18,10 @@ export interface OrderStatusPayload {
   orderName: string;
   currentStage: string;
   stages: string[];
+  measurementsLocked: boolean;
+  estimatedCompletion?: string;
+  milestones?: { stage: string; targetDate: string }[];
+  depositSessionId?: string;
 }
 
 /**

@@ -11,3 +11,21 @@ export function formatPrice(price?: number): string {
     minimumFractionDigits: Number.isInteger(price) ? 0 : 2,
   });
 }
+
+/**
+ * Format an ISO date (yyyy-mm-dd, e.g. an order's estimated-completion date)
+ * for display: "August 1, 2026". Formatted in UTC so a date-only value — which
+ * parses as UTC midnight — never slips to the previous day in a western
+ * timezone. Returns "" for a missing/unparseable value so callers can skip it.
+ */
+export function formatDate(iso?: string): string {
+  if (!iso) return "";
+  const date = new Date(iso);
+  if (Number.isNaN(date.getTime())) return "";
+  return date.toLocaleDateString("en-US", {
+    year: "numeric",
+    month: "long",
+    day: "numeric",
+    timeZone: "UTC",
+  });
+}

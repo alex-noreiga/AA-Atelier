@@ -17,13 +17,12 @@ import {
   createMilestone,
   orderHasMilestones,
 } from "../lib/notion/production-schedule.repository.js";
+import type { StageMilestone } from "../lib/notion/production-schedule.blocks.js";
 
-/** One stage's computed deadline. */
-export interface StageMilestone {
-  stage: string;
-  /** ISO `yyyy-mm-dd`. */
-  targetDate: string;
-}
+// StageMilestone now lives with the other Production Schedule domain types in
+// production-schedule.blocks.ts (so the milestone reader and writer share it);
+// re-export it here to keep this module's existing import path working.
+export type { StageMilestone } from "../lib/notion/production-schedule.blocks.js";
 
 export interface MilestoneGenerationResult {
   ordersProcessed: number;

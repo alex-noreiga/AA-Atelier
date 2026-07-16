@@ -24,17 +24,21 @@ export default function ShopSuccess() {
   const sessionId = new URLSearchParams(search).get("session_id") ?? "";
   const { clear } = useCart();
 
-  // Clear once on arrival: reaching this page means payment completed.
-  useEffect(() => {
-    clear();
-  }, [clear]);
-
   const { data } = useGetCheckoutSession(sessionId, {
     query: {
       enabled: Boolean(sessionId),
       queryKey: getGetCheckoutSessionQueryKey(sessionId),
     },
   });
+
+  // Clear the cart only for a shop-cart order — not a deposit receipt view,
+  // which reaches this same page from the status page and must leave the
+  // shopper's cart untouched. Waits for the session to load so `kind` is known.
+  useEffect(() => {
+    if (data?.kind && data.kind !== "deposit") {
+      clear();
+    }
+  }, [data?.kind, clear]);
 
   const lineItems = data?.lineItems ?? [];
 

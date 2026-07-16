@@ -152,6 +152,7 @@ export function orderPage(opts: {
   currentStage?: string | null;
   depositAmount?: number;
   depositPaid?: boolean;
+  depositSessionId?: string;
   deposit2Amount?: number;
   deposit2Paid?: boolean;
   invoicePageId?: string;
@@ -188,6 +189,12 @@ export function orderPage(opts: {
       "Deposit Paid": {
         type: "checkbox",
         checkbox: opts.depositPaid ?? false,
+      },
+      "Deposit Session Id": {
+        type: "rich_text",
+        rich_text: opts.depositSessionId
+          ? [{ plain_text: opts.depositSessionId }]
+          : [],
       },
       "Deposit 2 Amount": {
         type: "number",

@@ -536,6 +536,46 @@ components:
         depositPaid:
           type: boolean
           description: Whether the customer has already paid the deposit.
+        depositSessionId:
+          type: string
+          description: >-
+            The Stripe Checkout session id of the paid deposit, for linking to the
+            on-site receipt. Present once the deposit has been paid.
+        measurementsLocked:
+          type: boolean
+          description: >-
+            True once the garment has reached the production stage at/after which
+            measurements are frozen (MEASUREMENT_LOCK_FROM_STAGE). When true, a
+            measurement-change request would be rejected, so the UI hides the
+            request affordance.
+        estimatedCompletion:
+          type: string
+          description: >-
+            The atelier's target completion date for this custom order (the
+            order's Due Date), as an ISO date (yyyy-mm-dd). A response
+            pass-through, kept as a string (no format: date) so it isn't coerced
+            to a Date and reserialized to a UTC timestamp. Absent until the
+            atelier sets one in Notion.
+        milestones:
+          type: array
+          description: >-
+            Per-stage target completion dates from the Production Schedule,
+            present once the order's milestones have been generated. One entry
+            per remaining (current + upcoming) stage; completed stages have none.
+            Order is not significant — match by stage name.
+          items:
+            type: object
+            required:
+              - stage
+              - targetDate
+            properties:
+              stage:
+                type: string
+              targetDate:
+                type: string
+                description: >-
+                  ISO date (yyyy-mm-dd). A pass-through string (no format: date),
+                  same as estimatedCompletion.
         invoice:
           $ref: "#/components/schemas/Invoice"
       required:
@@ -543,6 +583,8 @@ components:
         - orderName
         - currentStage
         - stages
+        - measurementsLocked
+        - measurementsLocked
     Invoice:
       type: object
       description: >-
@@ -940,6 +982,12 @@ components:
           description: >-
             The Stripe payment status of the session, e.g. "paid", "unpaid", or
             "no_payment_required".
+        kind:
+          type: string
+          description: >-
+            What the session paid for — "shop" for a shop-cart order, "deposit"
+            for a custom-order deposit (from the session's metadata.kind). Lets
+            the success page skip clearing the cart on a deposit receipt view.
         email:
           type: string
           description: The customer's email, present once the session is complete.
