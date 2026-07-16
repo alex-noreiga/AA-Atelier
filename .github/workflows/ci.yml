@@ -26,7 +26,7 @@ jobs:
 
       # No explicit version: pnpm/action-setup reads the `packageManager`
       # field in package.json, so the pinned pnpm is the single source of truth.
-      - uses: pnpm/action-setup@v4
+      - uses: pnpm/action-setup@v6
 
       - uses: actions/setup-node@v7
         with:
@@ -69,7 +69,7 @@ jobs:
     steps:
       - uses: actions/checkout@v7
 
-      - uses: pnpm/action-setup@v4
+      - uses: pnpm/action-setup@v6
 
       - uses: actions/setup-node@v7
         with:
