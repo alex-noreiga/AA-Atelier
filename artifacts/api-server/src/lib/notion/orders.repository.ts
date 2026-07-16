@@ -19,6 +19,7 @@ import {
   extractCurrentStage,
   extractDepositAmount,
   extractDepositPaid,
+  extractDepositSessionId,
   extractDueDate,
   extractOrderEmail,
   type CreateOrderInput,
@@ -136,6 +137,7 @@ export async function findOrderByNumber(
 
   const depositAmount = extractDepositAmount(page);
   const estimatedCompletion = extractDueDate(page);
+  const depositSessionId = extractDepositSessionId(page);
   return {
     orderNumber: trimmedOrderNumber,
     orderName: extractOrderName(page),
@@ -145,6 +147,7 @@ export async function findOrderByNumber(
     ...(depositAmount !== undefined ? { depositAmount } : {}),
     depositPaid: extractDepositPaid(page),
     ...(estimatedCompletion !== undefined ? { estimatedCompletion } : {}),
+    ...(depositSessionId !== undefined ? { depositSessionId } : {}),
   };
 }
 

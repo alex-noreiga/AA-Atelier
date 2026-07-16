@@ -54,6 +54,9 @@ export interface OrderRecord {
   /** The order's Due Date (ISO yyyy-mm-dd), the atelier's target completion
    * date. Present once the atelier has set one in Notion. */
   estimatedCompletion?: string;
+  /** The Stripe Checkout session id of the paid deposit, for linking to the
+   * on-site receipt. Present once the deposit has been paid. */
+  depositSessionId?: string;
   /** The order's Notion page id — an internal join key (used to look up related
    * Production Schedule milestones). Not part of the API contract, so
    * `GetOrderStatusResponse.parse` strips it from the response. */
@@ -98,6 +101,10 @@ export interface NotionOrderPage {
     Stage?: { type: "status"; status: { name: string } | null };
     "Deposit Amount"?: { type: "number"; number: number | null };
     "Deposit Paid"?: { type: "checkbox"; checkbox: boolean };
+    "Deposit Session Id"?: {
+      type: "rich_text";
+      rich_text: Array<{ plain_text: string }>;
+    };
     "Due Date"?: {
       type: "date";
       date: { start: string; end: string | null } | null;
@@ -154,6 +161,17 @@ export function extractDepositAmount(
 export function extractDepositPaid(page: NotionOrderPage): boolean {
   const property = page.properties[ORDER_DEPOSIT_PAID_PROPERTY];
   return property?.type === "checkbox" ? property.checkbox : false;
+}
+
+/** The Stripe Checkout session id of the paid deposit, or undefined when unpaid
+ * (the atelier's webhook writes it when it marks the deposit paid). */
+export function extractDepositSessionId(
+  page: NotionOrderPage,
+): string | undefined {
+  const property = page.properties[ORDER_DEPOSIT_SESSION_PROPERTY];
+  if (property?.type !== "rich_text") return undefined;
+  const value = property.rich_text.map((t) => t.plain_text).join("");
+  return value || undefined;
 }
 
 /** Read the customer email off an order page (empty for pre-Email orders). */

@@ -24,6 +24,8 @@ export interface OrderStatus {
   depositAmount?: number;
   /** Whether the customer has already paid the deposit. */
   depositPaid?: boolean;
+  /** The Stripe Checkout session id of the paid deposit, for linking to the on-site receipt. Present once the deposit has been paid. */
+  depositSessionId?: string;
   /** True once the garment has reached the production stage at/after which measurements are frozen (MEASUREMENT_LOCK_FROM_STAGE). When true, a measurement-change request would be rejected, so the UI hides the request affordance. */
   measurementsLocked: boolean;
   /** The atelier's target completion date for this custom order (the order's Due Date), as an ISO date (yyyy-mm-dd). A response pass-through, kept as a string (no format: date) so it isn't coerced to a Date and reserialized to a UTC timestamp. Absent until the atelier sets one in Notion. */
@@ -213,6 +215,8 @@ export interface ReceiptLineItem {
 export interface CheckoutSessionStatus {
   /** The Stripe payment status of the session, e.g. "paid", "unpaid", or "no_payment_required". */
   status: string;
+  /** What the session paid for — "shop" for a shop-cart order, "deposit" for a custom-order deposit (from the session's metadata.kind). Lets the success page skip clearing the cart on a deposit receipt view. */
+  kind?: string;
   /** The customer's email, present once the session is complete. */
   email?: string;
   /** ISO currency code of the totals, e.g. "usd". */

@@ -21,6 +21,7 @@ export interface OrderStatusPayload {
   measurementsLocked: boolean;
   estimatedCompletion?: string;
   milestones?: { stage: string; targetDate: string }[];
+  depositSessionId?: string;
 }
 
 /**

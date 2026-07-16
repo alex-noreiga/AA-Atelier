@@ -1,4 +1,4 @@
-import { describe, it, expect, vi } from "vitest";
+import { describe, it, expect, vi, beforeEach } from "vitest";
 import { render, screen, within } from "@testing-library/react";
 import { Router } from "wouter";
 import { memoryLocation } from "wouter/memory-location";
@@ -11,7 +11,7 @@ vi.mock("@workspace/api-client-react", () => ({
 
 import { useGetCheckoutSession } from "@workspace/api-client-react";
 import ShopSuccess from "@/pages/shop-success";
-import { CartProvider } from "@/lib/cart";
+import { CartProvider, useCart } from "@/lib/cart";
 
 const mock = vi.mocked(useGetCheckoutSession);
 
@@ -27,6 +27,22 @@ function renderPage(ui: ReactElement = <ShopSuccess />) {
     </CartProvider>,
   );
 }
+
+/** Surfaces the live cart count so a test can assert clear vs. keep. */
+function CartProbe() {
+  const { count } = useCart();
+  return <span data-testid="cart-count">{count}</span>;
+}
+
+/** Seed a persisted cart (read by CartProvider on mount). */
+function seedCart() {
+  window.localStorage.setItem(
+    "aa-cart",
+    JSON.stringify([{ variantId: "v1", name: "Cloth", price: 8, quantity: 2 }]),
+  );
+}
+
+beforeEach(() => window.localStorage.clear());
 
 describe("Shop success receipt", () => {
   it("renders an itemized receipt with subtotal, shipping, tax and total", () => {
@@ -81,5 +97,32 @@ describe("Shop success receipt", () => {
 
     expect(screen.getByTestId("shop-success")).toBeInTheDocument();
     expect(screen.queryByTestId("receipt")).not.toBeInTheDocument();
+  });
+});
+
+describe("Shop success cart clearing", () => {
+  it("clears the cart for a completed shop-cart order", () => {
+    seedCart();
+    setData({ status: "paid", kind: "shop" });
+    renderPage(
+      <>
+        <ShopSuccess />
+        <CartProbe />
+      </>,
+    );
+    expect(screen.getByTestId("cart-count")).toHaveTextContent("0");
+  });
+
+  it("leaves the cart intact when viewing a deposit receipt", () => {
+    seedCart();
+    setData({ status: "paid", kind: "deposit" });
+    renderPage(
+      <>
+        <ShopSuccess />
+        <CartProbe />
+      </>,
+    );
+    // A custom-order customer viewing their deposit receipt keeps their cart.
+    expect(screen.getByTestId("cart-count")).toHaveTextContent("2");
   });
 });

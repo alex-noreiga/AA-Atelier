@@ -143,6 +143,29 @@ describe("Status deposit", () => {
     expect(screen.getByTestId("deposit-paid")).toBeInTheDocument();
     expect(screen.queryByTestId("button-pay-deposit")).not.toBeInTheDocument();
   });
+
+  it("links to the receipt once the deposit session id is available", async () => {
+    setHook({
+      data: orderRecord({
+        depositAmount: 150,
+        depositPaid: true,
+        depositSessionId: "cs_test_123",
+      }),
+    });
+    await submitLookup();
+    expect(screen.getByTestId("link-deposit-receipt")).toHaveAttribute(
+      "href",
+      "/shop/success?session_id=cs_test_123",
+    );
+  });
+
+  it("shows no receipt link when the paid deposit has no session id", async () => {
+    setHook({ data: orderRecord({ depositAmount: 150, depositPaid: true }) });
+    await submitLookup();
+    expect(
+      screen.queryByTestId("link-deposit-receipt"),
+    ).not.toBeInTheDocument();
+  });
 });
 
 describe("Status measurement-change lock", () => {

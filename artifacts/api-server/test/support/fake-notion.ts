@@ -152,6 +152,7 @@ export function orderPage(opts: {
   currentStage?: string | null;
   depositAmount?: number;
   depositPaid?: boolean;
+  depositSessionId?: string;
   email?: string | null;
   dueDate?: string | null;
   milestonesGenerated?: boolean;
@@ -185,6 +186,12 @@ export function orderPage(opts: {
       "Deposit Paid": {
         type: "checkbox",
         checkbox: opts.depositPaid ?? false,
+      },
+      "Deposit Session Id": {
+        type: "rich_text",
+        rich_text: opts.depositSessionId
+          ? [{ plain_text: opts.depositSessionId }]
+          : [],
       },
       "Due Date": {
         type: "date",

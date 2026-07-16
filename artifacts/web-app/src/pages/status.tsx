@@ -11,10 +11,18 @@ import { PageShell } from "@/components/page-shell";
 import { Seo } from "@/components/seo";
 import { ROUTE_SEO } from "@/lib/seo-routes";
 import { MeasurementChangeDialog } from "@/components/measurement-change-dialog";
+import { CtaLink } from "@/components/cta";
 import { getStageDescription } from "@/lib/stage-descriptions";
 import { formatPrice, formatDate } from "@/lib/format";
 import { useToast } from "@/hooks/use-toast";
-import { Loader2, ArrowRight, PenLine, Check, CreditCard } from "lucide-react";
+import {
+  Loader2,
+  ArrowRight,
+  PenLine,
+  Check,
+  CreditCard,
+  Receipt,
+} from "lucide-react";
 
 /**
  * The deposit call-to-action on a custom order. Shows nothing until the atelier
@@ -25,10 +33,12 @@ function DepositSection({
   orderNumber,
   amount,
   paid,
+  sessionId,
 }: {
   orderNumber: string;
   amount?: number;
   paid?: boolean;
+  sessionId?: string;
 }) {
   const { toast } = useToast();
   const deposit = useCreateOrderDeposit({
@@ -58,12 +68,24 @@ function DepositSection({
 
   if (paid) {
     return (
-      <div
-        className="mb-12 flex items-center justify-center gap-2 text-sm tracking-widest uppercase text-primary"
-        data-testid="deposit-paid"
-      >
-        <Check className="w-4 h-4" />
-        Deposit paid
+      <div className="mb-12 flex flex-col items-center gap-4">
+        <div
+          className="flex items-center justify-center gap-2 text-sm tracking-widest uppercase text-primary"
+          data-testid="deposit-paid"
+        >
+          <Check className="w-4 h-4" />
+          Deposit paid
+        </div>
+        {sessionId && (
+          <CtaLink
+            to={`/shop/success?session_id=${encodeURIComponent(sessionId)}`}
+            variant="outline"
+            data-testid="link-deposit-receipt"
+          >
+            <Receipt className="w-4 h-4" />
+            View receipt
+          </CtaLink>
+        )}
       </div>
     );
   }
@@ -257,6 +279,7 @@ export default function Status() {
               orderNumber={orderStatus.orderNumber}
               amount={orderStatus.depositAmount}
               paid={orderStatus.depositPaid}
+              sessionId={orderStatus.depositSessionId}
             />
 
             <div className="relative pl-6 md:pl-8 space-y-12">

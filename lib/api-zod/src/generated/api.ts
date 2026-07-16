@@ -32,6 +32,7 @@ export const GetOrderStatusResponse = zod.object({
   "stages": zod.array(zod.string()),
   "depositAmount": zod.number().optional().describe('The deposit the atelier set for this custom order, in dollars. Absent until they\'ve quoted the piece and set it in Notion.'),
   "depositPaid": zod.boolean().optional().describe('Whether the customer has already paid the deposit.'),
+  "depositSessionId": zod.string().optional().describe('The Stripe Checkout session id of the paid deposit, for linking to the on-site receipt. Present once the deposit has been paid.'),
   "measurementsLocked": zod.boolean().describe('True once the garment has reached the production stage at\/after which measurements are frozen (MEASUREMENT_LOCK_FROM_STAGE). When true, a measurement-change request would be rejected, so the UI hides the request affordance.'),
   "estimatedCompletion": zod.string().optional().describe('The atelier\'s target completion date for this custom order (the order\'s Due Date), as an ISO date (yyyy-mm-dd). A response pass-through, kept as a string (no format: date) so it isn\'t coerced to a Date and reserialized to a UTC timestamp. Absent until the atelier sets one in Notion.'),
   "milestones": zod.array(zod.object({
@@ -226,6 +227,7 @@ export const GetCheckoutSessionParams = zod.object({
 
 export const GetCheckoutSessionResponse = zod.object({
   "status": zod.string().describe('The Stripe payment status of the session, e.g. \"paid\", \"unpaid\", or \"no_payment_required\".'),
+  "kind": zod.string().optional().describe('What the session paid for — \"shop\" for a shop-cart order, \"deposit\" for a custom-order deposit (from the session\'s metadata.kind). Lets the success page skip clearing the cart on a deposit receipt view.'),
   "email": zod.string().optional().describe('The customer\'s email, present once the session is complete.'),
   "currency": zod.string().optional().describe('ISO currency code of the totals, e.g. \"usd\".'),
   "lineItems": zod.array(zod.object({

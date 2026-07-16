@@ -44,7 +44,11 @@ test.describe("Custom-order deposit", () => {
     page,
   }) => {
     await mockOrderStatus(page, {
-      body: { ...ORDER, depositPaid: true },
+      body: {
+        ...ORDER,
+        depositPaid: true,
+        depositSessionId: "cs_test_paid_1",
+      },
     });
 
     await page.goto("/shop/status");
@@ -53,5 +57,10 @@ test.describe("Custom-order deposit", () => {
 
     await expect(page.getByTestId("deposit-paid")).toBeVisible();
     await expect(page.getByTestId("button-pay-deposit")).toHaveCount(0);
+    // The paid deposit links to its on-site receipt.
+    await expect(page.getByTestId("link-deposit-receipt")).toHaveAttribute(
+      "href",
+      "/shop/success?session_id=cs_test_paid_1",
+    );
   });
 });
