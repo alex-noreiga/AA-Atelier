@@ -22,6 +22,25 @@ within the hour of the scheduled time, not to the minute); Pro allows down to
 per-minute. The default is `0 8 * * *` (08:00 UTC daily) so it deploys on Hobby;
 bump it up on Pro if you want milestones to appear sooner after a due date is set.
 
+## On-demand trigger — a Notion button (same job, no waiting for the cron)
+
+To generate milestones immediately (rather than wait for the nightly cron), the
+atelier presses a Notion **Button** → "Open link" pointed at
+`GET /api/cron/generate-milestones/run?secret=<CRON_SECRET>`. It calls the exact
+same `generatePendingMilestones()` and returns a small HTML confirmation page for
+the tab it opens (the cron path returns JSON; this one returns HTML because a
+browser tab opens it). Both handlers live in `routes/cron.ts`, mounted side by
+side in `app.ts`. The nightly cron stays as a safety net.
+
+Auth is a **query-param token** (not the Bearer header the cron uses) because a
+native Notion button can only open a URL — it can't send headers. It reuses
+`CRON_SECRET` to avoid another env var. Tradeoff: the token sits in the button's
+config and browser history. The request logger strips query strings, so it isn't
+logged, and the action is idempotent + low-stakes (it only writes schedule rows
+for orders the atelier already set a `Due Date` on). Rotate `CRON_SECRET`, or add
+a dedicated token, if that exposure matters. HTML errors are rendered **inline**
+in the handler — the shared `errorHandler` only emits JSON.
+
 ## Scheduling algorithm (even split — no hardcoded stages)
 
 `computeMilestoneSchedule(dueDate, stagesToSchedule, from)` in
@@ -65,11 +84,16 @@ per-stage upsert above.
 
 - **Order Tracking Pipeline** (the orders DB): add `Due Date` (date) +
   `Milestones Generated` (checkbox). Property names in `lib/notion/schema.ts`.
-- **Production Schedule**: add `Stage` (select) + `Order` (relation → Order
-  Tracking Pipeline). Existing `Project / Dress Name`, `Client Name`, `Status`,
-  `Target Completion Date`, `Competition/Test Date` are reused. Property names in
-  `lib/notion/production-schedule.blocks.ts`.
+- **Production Schedule**: add `Production Stage` (select) + `Order` (relation →
+  Order Tracking Pipeline). Existing `Project / Dress Name`, `Status`, and
+  `Target Completion Date` are reused. (`Production Stage` is the stage label —
+  named apart from `Status`, the completion state, on purpose, after an earlier
+  mixup. The redundant `Client Name` and `Competition/Test Date` columns were
+  dropped — both were write-only duplicates of data reachable through the `Order`
+  relation.) Property names in `lib/notion/production-schedule.blocks.ts`.
 - Share the Notion integration with the Production Schedule database (else 404).
+- (Optional) a **Button** → "Open link" → `.../generate-milestones/run?secret=…`
+  on a dashboard page, for on-demand generation (see the on-demand section above).
 - Env: `NOTION_PRODUCTION_SCHEDULE_DATABASE_ID`, `CRON_SECRET`.
 
 ## Code map

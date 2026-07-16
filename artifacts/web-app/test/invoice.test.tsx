@@ -2,7 +2,7 @@ import { describe, it, expect, vi, beforeEach } from "vitest";
 import { render, screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { orderRecord } from "@workspace/test-fixtures";
-import type { Invoice } from "@workspace/api-client-react";
+import type { Invoice, InvoiceDeposit } from "@workspace/api-client-react";
 import { stubHook } from "./support/mock-hook.js";
 
 // The invoice page reads its order number from the wouter route param; pin it.
@@ -13,18 +13,18 @@ vi.mock("wouter", async (importOriginal) => {
 
 vi.mock("@workspace/api-client-react", () => ({
   useGetOrderStatus: vi.fn(),
-  useCreateInvoicePayment: vi.fn(),
+  useCreateOrderPayment: vi.fn(),
   getGetOrderStatusQueryKey: (n: string) => [n],
 }));
 
 import {
   useGetOrderStatus,
-  useCreateInvoicePayment,
+  useCreateOrderPayment,
 } from "@workspace/api-client-react";
 import InvoicePage from "@/pages/invoice";
 
 const mockHook = vi.mocked(useGetOrderStatus);
-const mockPay = vi.mocked(useCreateInvoicePayment);
+const mockPay = vi.mocked(useCreateOrderPayment);
 const payMutate = vi.fn();
 
 const invoice: Invoice = {
@@ -35,14 +35,15 @@ const invoice: Invoice = {
     { name: "Rhinestones", type: "Material", amount: 55 },
     { name: "Construction", type: "Labor", amount: 120 },
   ],
-  deposits: [
-    { label: "Deposit 1", amount: 100, paid: true },
-    { label: "Deposit 2", amount: 50, paid: false },
-  ],
   subtotal: 215,
   depositsCreditedTotal: 100,
   balanceDue: 115,
 };
+
+const deposits: InvoiceDeposit[] = [
+  { stage: "first_deposit", label: "First deposit", amount: 100, paid: true },
+  { stage: "second_deposit", label: "Second deposit", amount: 50, paid: false },
+];
 
 beforeEach(() => {
   payMutate.mockReset();
@@ -71,7 +72,7 @@ describe("Invoice page render states", () => {
 
 describe("Invoice breakdown", () => {
   it("groups line items, credits paid deposits, and shows the balance due", () => {
-    stubHook(mockHook, { data: orderRecord({ invoice }) });
+    stubHook(mockHook, { data: orderRecord({ invoice, deposits }) });
     render(<InvoicePage />);
 
     const card = screen.getByTestId("invoice");
@@ -81,25 +82,31 @@ describe("Invoice breakdown", () => {
     expect(within(card).getByText("Construction")).toBeInTheDocument();
 
     // Only the paid deposit is a credit; the unpaid one shows $0 + "(unpaid)".
-    const deposits = screen.getAllByTestId("invoice-deposit");
-    expect(deposits[0]).toHaveTextContent("Deposit 1");
-    expect(deposits[0]).toHaveTextContent("−$100");
-    expect(deposits[1]).toHaveTextContent("unpaid");
+    const depositRows = screen.getAllByTestId("invoice-deposit");
+    expect(depositRows[0]).toHaveTextContent("First deposit");
+    expect(depositRows[0]).toHaveTextContent("−$100");
+    expect(depositRows[1]).toHaveTextContent("unpaid");
 
     expect(screen.getByTestId("invoice-balance")).toHaveTextContent("$115");
   });
 
-  it("pays the balance for that order", async () => {
-    stubHook(mockHook, { data: orderRecord({ invoice }) });
+  it("pays the balance stage for that order", async () => {
+    stubHook(mockHook, { data: orderRecord({ invoice, deposits }) });
     render(<InvoicePage />);
 
     await userEvent.click(screen.getByTestId("button-pay-balance"));
-    expect(payMutate).toHaveBeenCalledWith({ orderNumber: "ORD-1" });
+    expect(payMutate).toHaveBeenCalledWith({
+      orderNumber: "ORD-1",
+      stage: "balance",
+    });
   });
 
   it("confirms once paid and offers no pay button", () => {
     stubHook(mockHook, {
-      data: orderRecord({ invoice: { ...invoice, paid: true, balanceDue: 0 } }),
+      data: orderRecord({
+        invoice: { ...invoice, paid: true, balanceDue: 0 },
+        deposits,
+      }),
     });
     render(<InvoicePage />);
 

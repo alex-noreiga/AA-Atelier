@@ -92,73 +92,41 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/ErrorEnvelope"
-  /orders/{orderNumber}/deposit:
+  /orders/{orderNumber}/payments/{stage}:
     post:
-      operationId: createOrderDeposit
+      operationId: createOrderPayment
       tags: [orders]
-      summary: Start a deposit payment for a custom order
+      summary: Start a payment for a custom order (deposit or balance)
       description: >-
-        Creates a Stripe Checkout session for the deposit the atelier set on
-        this custom order (priced server-side from Notion), and returns the
-        hosted-checkout URL for the browser to redirect to. Fails if the order
-        has no deposit set or the deposit is already paid.
+        Creates a Stripe Checkout session for one payment stage of a custom
+        order — the first deposit, the second deposit, or the final balance —
+        each priced server-side from the atelier's Notion invoice, and returns
+        the hosted-checkout URL for the browser to redirect to. Deposits are
+        untaxed; the balance (itemized materials + labor minus the deposits
+        already paid) is taxed. Fails if the stage has no amount set, is already
+        paid, or — for the balance — the invoice isn't ready.
       parameters:
         - name: orderNumber
           in: path
           required: true
           schema:
             type: string
-      responses:
-        "201":
-          description: Deposit checkout session created
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/DepositSessionResponse"
-        "400":
-          description: No deposit is due on this order
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/ErrorEnvelope"
-        "404":
-          description: Order not found
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/OrderNotFound"
-        "500":
-          description: Server error
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/ErrorEnvelope"
-  /orders/{orderNumber}/invoice:
-    post:
-      operationId: createInvoicePayment
-      tags: [orders]
-      summary: Pay the outstanding balance on a custom order's invoice
-      description: >-
-        Creates a Stripe Checkout session for the order's invoice balance
-        (subtotal of the itemized materials + labor, minus deposits already
-        paid), priced server-side from the atelier's Notion invoice, and returns
-        the hosted-checkout URL. Fails if the invoice isn't ready, is already
-        paid, or has no outstanding balance.
-      parameters:
-        - name: orderNumber
+        - name: stage
           in: path
           required: true
+          description: Which payment to start.
           schema:
             type: string
+            enum: [first_deposit, second_deposit, balance]
       responses:
         "201":
-          description: Invoice balance checkout session created
+          description: Payment checkout session created
           content:
             application/json:
               schema:
-                $ref: "#/components/schemas/DepositSessionResponse"
+                $ref: "#/components/schemas/PaymentSessionResponse"
         "400":
-          description: No balance is due, or the invoice isn't ready
+          description: Nothing is due for this stage, or the invoice isn't ready
           content:
             application/json:
               schema:
@@ -556,19 +524,15 @@ components:
           type: array
           items:
             type: string
-        depositAmount:
-          type: number
+        deposits:
+          type: array
           description: >-
-            The deposit the atelier set for this custom order, in dollars.
-            Absent until they've quoted the piece and set it in Notion.
-        depositPaid:
-          type: boolean
-          description: Whether the customer has already paid the deposit.
-        depositSessionId:
-          type: string
-          description: >-
-            The Stripe Checkout session id of the paid deposit, for linking to the
-            on-site receipt. Present once the deposit has been paid.
+            The custom order's staged deposits, sourced from the atelier's Notion
+            invoice. One entry per deposit the atelier has set an amount for
+            (first, then second); each is payable online until paid. Absent/empty
+            until the atelier has created the invoice and set a deposit amount.
+          items:
+            $ref: "#/components/schemas/InvoiceDeposit"
         measurementsLocked:
           type: boolean
           description: >-
@@ -623,7 +587,6 @@ components:
         - invoiceId
         - paid
         - lineItems
-        - deposits
         - subtotal
         - depositsCreditedTotal
         - balanceDue
@@ -638,12 +601,9 @@ components:
           type: array
           items:
             $ref: "#/components/schemas/InvoiceLineItem"
-          description: The itemized charges (deposit lines excluded — see deposits).
-        deposits:
-          type: array
-          items:
-            $ref: "#/components/schemas/InvoiceDeposit"
-          description: Deposits credited against the balance, from the order.
+          description: >-
+            The itemized charges (deposit lines excluded — deposits are credited
+            via OrderStatus.deposits, not itemized here).
         subtotal:
           type: number
           description: Sum of the non-deposit line items, in dollars.
@@ -675,19 +635,29 @@ components:
     InvoiceDeposit:
       type: object
       required:
+        - stage
         - label
         - amount
         - paid
       properties:
+        stage:
+          type: string
+          enum: [first_deposit, second_deposit]
+          description: Which deposit this is — the payment stage used to pay it.
         label:
           type: string
-          description: A display label, e.g. "Deposit 1".
+          description: A display label, e.g. "First deposit".
         amount:
           type: number
           description: The deposit amount in dollars.
         paid:
           type: boolean
           description: Whether this deposit has been paid (only paid ones credit).
+        sessionId:
+          type: string
+          description: >-
+            The Stripe Checkout session id of this paid deposit, for linking to
+            the on-site receipt. Present once the deposit has been paid.
     OrderNotFound:
       type: object
       properties:
@@ -1001,14 +971,14 @@ components:
         url:
           type: string
           description: The Stripe-hosted checkout URL to redirect the browser to.
-    DepositSessionResponse:
+    PaymentSessionResponse:
       type: object
       required:
         - url
       properties:
         url:
           type: string
-          description: The Stripe-hosted checkout URL for the deposit payment.
+          description: The Stripe-hosted checkout URL for the payment.
     ReceiptLineItem:
       type: object
       required:
@@ -1038,13 +1008,14 @@ components:
           description: >-
             The human-readable shop order number (e.g. "SHP-…") the customer can
             use to track their order. Present for shop-cart orders; absent for
-            deposit sessions.
+            custom-order payment sessions.
         kind:
           type: string
           description: >-
-            What the session paid for — "shop" for a shop-cart order, "deposit"
-            for a custom-order deposit (from the session's metadata.kind). Lets
-            the success page skip clearing the cart on a deposit receipt view.
+            What the session paid for — "shop" for a shop-cart order,
+            "custom_payment" for a custom-order deposit or balance (from the
+            session's metadata.kind). Lets the success page skip clearing the
+            cart on a custom-order receipt view.
         email:
           type: string
           description: The customer's email, present once the session is complete.

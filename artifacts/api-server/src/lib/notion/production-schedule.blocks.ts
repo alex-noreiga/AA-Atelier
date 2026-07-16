@@ -6,15 +6,17 @@
 // Property *types* here must match the live Production Schedule schema, not the
 // property name (same lesson as `.agents/memory/notion-status-filters.md`). Two
 // properties are new and must be added to that database (the atelier does this
-// once): `Stage` (select) and `Order` (relation -> Order Tracking Pipeline).
+// once): `Production Stage` (select) and `Order` (relation -> Order Tracking
+// Pipeline). `Production Stage` is the milestone's stage label (Cutting, Fitting,
+// …) and is named apart from `Status` (its completion state) on purpose.
 
-// Live-schema property names (a Notion rename is a one-line change here).
+// Live-schema property names (a Notion rename is a one-line change here). The
+// milestone row is deliberately lean: the client name and the order's due date
+// are reachable through the `Order` relation, so they aren't duplicated here.
 export const PS_TITLE_PROPERTY = "Project / Dress Name"; // title
-export const PS_CLIENT_NAME_PROPERTY = "Client Name"; // rich_text ("text")
-export const PS_STATUS_PROPERTY = "Status"; // status
-export const PS_STAGE_PROPERTY = "Stage"; // select (new)
+export const PS_STATUS_PROPERTY = "Status"; // status (completion)
+export const PS_STAGE_PROPERTY = "Production Stage"; // select — the stage label
 export const PS_TARGET_DATE_PROPERTY = "Target Completion Date"; // date
-export const PS_COMPETITION_DATE_PROPERTY = "Competition/Test Date"; // date
 export const PS_ORDER_RELATION_PROPERTY = "Order"; // relation -> orders (new)
 
 /**
@@ -42,21 +44,17 @@ export interface MilestoneInput {
   orderPageId: string;
   /** The row title, e.g. "Ada – Custom Dress — Fitting". */
   projectName: string;
-  /** The client's name, for the "Client Name" column (may be empty). */
-  clientName: string;
   /** The stage this milestone represents (a live "Stage" option name). */
   stage: string;
   /** The stage's target completion date, ISO `yyyy-mm-dd`. */
   targetDate: string;
-  /** The order's overall due date, ISO `yyyy-mm-dd` (Competition/Test Date). */
-  dueDate?: string;
 }
 
 /** Notion page `properties` for one per-stage production milestone. */
 export function buildMilestoneProperties(
   input: MilestoneInput,
 ): Record<string, unknown> {
-  const properties: Record<string, unknown> = {
+  return {
     [PS_TITLE_PROPERTY]: {
       title: [{ text: { content: input.projectName } }],
     },
@@ -76,17 +74,4 @@ export function buildMilestoneProperties(
       relation: [{ id: input.orderPageId }],
     },
   };
-
-  if (input.clientName) {
-    properties[PS_CLIENT_NAME_PROPERTY] = {
-      rich_text: [{ text: { content: input.clientName } }],
-    };
-  }
-  if (input.dueDate) {
-    properties[PS_COMPETITION_DATE_PROPERTY] = {
-      date: { start: input.dueDate },
-    };
-  }
-
-  return properties;
 }

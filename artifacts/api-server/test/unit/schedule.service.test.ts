@@ -122,12 +122,12 @@ describe("generatePendingMilestones", () => {
     expect(mockCreate).toHaveBeenCalledTimes(2);
     const stagesWritten = mockCreate.mock.calls.map((c) => c[0].stage);
     expect(stagesWritten).toEqual(["Fitting", "Delivery"]);
-    // Client name is stripped from the "{name} – Custom Dress" order name.
+    // The milestone row carries only the lean set — the stage is folded into the
+    // title; client name + due date are reachable via the Order relation.
     expect(mockCreate.mock.calls[0][0]).toMatchObject({
       orderPageId: "page-1",
-      clientName: "Ada",
       projectName: "Ada – Custom Dress — Fitting",
-      dueDate: "2026-01-11",
+      stage: "Fitting",
     });
     expect(mockMark).toHaveBeenCalledWith("page-1");
     expect(result).toEqual({ ordersProcessed: 1, milestonesCreated: 2 });

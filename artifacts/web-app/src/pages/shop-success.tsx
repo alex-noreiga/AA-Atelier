@@ -31,11 +31,12 @@ export default function ShopSuccess() {
     },
   });
 
-  // Clear the cart only for a shop-cart order — not a deposit receipt view,
-  // which reaches this same page from the status page and must leave the
-  // shopper's cart untouched. Waits for the session to load so `kind` is known.
+  // Clear the cart only for a shop-cart order — not a custom-order payment
+  // receipt (deposit or balance), which reaches this same page from the status
+  // page and must leave the shopper's cart untouched. Waits for the session to
+  // load so `kind` is known.
   useEffect(() => {
-    if (data?.kind && data.kind !== "deposit") {
+    if (data?.kind && data.kind !== "custom_payment") {
       clear();
     }
   }, [data?.kind, clear]);

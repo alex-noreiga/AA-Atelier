@@ -10,13 +10,68 @@
 // text — it never touches the costing formulas or rollups.
 
 // --- invoices & payments (the invoice) ---
+// The invoice is the source of truth for everything a customer pays online: the
+// two staged deposits AND the final balance. Each stage has an amount + a paid
+// checkbox + a Stripe-session-id text; the balance amount is computed from the
+// line items (below) rather than stored.
 export const INVOICE_ID_PROPERTY = "Invoice ID"; // title
-export const INVOICE_READY_PROPERTY = "Invoice Ready"; // checkbox (the gate)
+export const INVOICE_READY_PROPERTY = "Invoice Ready"; // checkbox (the balance gate)
 export const INVOICE_BALANCE_PAID_PROPERTY = "Balance Paid"; // checkbox
 export const INVOICE_BALANCE_SESSION_PROPERTY = "Balance Payment Session Id"; // rich_text
 export const INVOICE_DEPOSIT_STATUS_PROPERTY = "Deposit Status"; // status
 export const INVOICE_PAYMENT_DEADLINE_PROPERTY = "Payment Deadline"; // date
 export const INVOICE_FINAL_BALANCE_PROPERTY = "Final Balance"; // rollup (number)
+// The two staged deposits, held on the invoice. Amounts are `number` (dollars),
+// paid a `checkbox`, and the session id `rich_text` — property *types* must
+// match the live Notion schema, not the name.
+export const INVOICE_FIRST_DEPOSIT_AMOUNT_PROPERTY = "First Deposit Amount"; // number
+export const INVOICE_FIRST_DEPOSIT_PAID_PROPERTY = "First Deposit Paid"; // checkbox
+export const INVOICE_FIRST_DEPOSIT_SESSION_PROPERTY =
+  "First Deposit Session Id"; // rich_text
+export const INVOICE_SECOND_DEPOSIT_AMOUNT_PROPERTY = "Second Deposit Amount"; // number
+export const INVOICE_SECOND_DEPOSIT_PAID_PROPERTY = "Second Deposit Paid"; // checkbox
+export const INVOICE_SECOND_DEPOSIT_SESSION_PROPERTY =
+  "Second Deposit Session Id"; // rich_text
+
+/** A payment stage the customer can pay online. */
+export type PaymentStage = "first_deposit" | "second_deposit" | "balance";
+/** The two deposit stages (the balance is priced from line items, not a field). */
+export type DepositStage = "first_deposit" | "second_deposit";
+
+/** The invoice property names + display label for each deposit stage, so the
+ * repository/service pick fields by stage rather than branching everywhere. */
+export const DEPOSIT_STAGE_FIELDS: Record<
+  DepositStage,
+  { amountProp: string; paidProp: string; sessionProp: string; label: string }
+> = {
+  first_deposit: {
+    amountProp: INVOICE_FIRST_DEPOSIT_AMOUNT_PROPERTY,
+    paidProp: INVOICE_FIRST_DEPOSIT_PAID_PROPERTY,
+    sessionProp: INVOICE_FIRST_DEPOSIT_SESSION_PROPERTY,
+    label: "First deposit",
+  },
+  second_deposit: {
+    amountProp: INVOICE_SECOND_DEPOSIT_AMOUNT_PROPERTY,
+    paidProp: INVOICE_SECOND_DEPOSIT_PAID_PROPERTY,
+    sessionProp: INVOICE_SECOND_DEPOSIT_SESSION_PROPERTY,
+    label: "Second deposit",
+  },
+};
+
+/** The paid-flag + session-id property names for a stage (incl. the balance). */
+export function stagePaymentFields(stage: PaymentStage): {
+  paidProp: string;
+  sessionProp: string;
+} {
+  if (stage === "balance") {
+    return {
+      paidProp: INVOICE_BALANCE_PAID_PROPERTY,
+      sessionProp: INVOICE_BALANCE_SESSION_PROPERTY,
+    };
+  }
+  const { paidProp, sessionProp } = DEPOSIT_STAGE_FIELDS[stage];
+  return { paidProp, sessionProp };
+}
 
 // --- Invoice Line Items (the itemized lines) ---
 export const LINE_ITEM_TITLE_PROPERTY = "Line Item"; // title
@@ -39,33 +94,39 @@ export interface InvoiceLineItemRecord {
   amount: number;
 }
 
-/** One deposit as credited on the invoice view (sourced from the order). */
+/** One staged deposit as held on the invoice — the source of truth for what the
+ * customer pays. Surfaced once the atelier has set its amount; only paid ones
+ * credit against the balance. Shaped to the OpenAPI `InvoiceDeposit`. */
 export interface InvoiceDepositView {
+  stage: DepositStage;
   label: string;
   amount: number;
   paid: boolean;
+  /** The Stripe session id of this paid deposit, for the on-site receipt link. */
+  sessionId?: string;
 }
 
 /**
- * The customer-facing invoice, shaped to the OpenAPI `Invoice` contract. Built
- * by the service from an order's deposits + the invoice's non-deposit line items.
+ * The customer-facing itemized invoice, shaped to the OpenAPI `Invoice`
+ * contract. Built by the service from the invoice's deposits + non-deposit line
+ * items. Deposits are surfaced separately (OrderStatus.deposits) because they're
+ * payable before the itemized invoice is flipped "ready".
  */
 export interface InvoiceView {
   invoiceId: string;
   paid: boolean;
   lineItems: InvoiceLineItemRecord[];
-  deposits: InvoiceDepositView[];
   subtotal: number;
   depositsCreditedTotal: number;
   balanceDue: number;
   paymentDeadline?: string;
 }
 
-/** The invoice head the app reads for an order. */
+/** The invoice head the app reads for an order, including its staged deposits. */
 export interface InvoiceRecord {
   pageId: string;
   invoiceId: string;
-  /** The "Invoice Ready" gate — the customer only sees/pays once this is set. */
+  /** The "Invoice Ready" gate — the customer only sees/pays the balance once set. */
   ready: boolean;
   /** Whether the final balance has already been paid. */
   balancePaid: boolean;
@@ -74,6 +135,8 @@ export interface InvoiceRecord {
   finalBalance?: number;
   /** The `Payment Deadline` ISO date, if the atelier set one. */
   paymentDeadline?: string;
+  /** The staged deposits that have an amount set, in order (first, then second). */
+  deposits: InvoiceDepositView[];
 }
 
 // --- Raw Notion payload typing (only the property types we read) ---
@@ -164,6 +227,49 @@ function extractDateStart(
   return p.date.start;
 }
 
+/** A plain `number` property value, else undefined. */
+function extractNumber(
+  page: NotionInvoicePage,
+  name: string,
+): number | undefined {
+  const p = page.properties[name];
+  if (p?.type !== "number" || typeof p.number !== "number") return undefined;
+  return p.number;
+}
+
+/** A `rich_text` property joined to a string, else undefined when empty. */
+function extractRichText(
+  page: NotionInvoicePage,
+  name: string,
+): string | undefined {
+  const p = page.properties[name];
+  if (p?.type !== "rich_text") return undefined;
+  const value = p.rich_text.map((t) => t.plain_text).join("");
+  return value || undefined;
+}
+
+/** The staged deposits held on an invoice, in order — only those with an amount
+ * set are surfaced. The source of truth for what the customer pays as deposits. */
+export function extractInvoiceDeposits(
+  page: NotionInvoicePage,
+): InvoiceDepositView[] {
+  const deposits: InvoiceDepositView[] = [];
+  for (const stage of ["first_deposit", "second_deposit"] as DepositStage[]) {
+    const fields = DEPOSIT_STAGE_FIELDS[stage];
+    const amount = extractNumber(page, fields.amountProp);
+    if (typeof amount !== "number" || amount <= 0) continue;
+    const sessionId = extractRichText(page, fields.sessionProp);
+    deposits.push({
+      stage,
+      label: fields.label,
+      amount,
+      paid: extractCheckbox(page, fields.paidProp),
+      ...(sessionId !== undefined ? { sessionId } : {}),
+    });
+  }
+  return deposits;
+}
+
 /** Map an "invoices & payments" page into the invoice head the app reads. */
 export function extractInvoice(page: NotionInvoicePage): InvoiceRecord {
   const finalBalance = extractNumericValue(
@@ -181,6 +287,7 @@ export function extractInvoice(page: NotionInvoicePage): InvoiceRecord {
     balancePaid: extractCheckbox(page, INVOICE_BALANCE_PAID_PROPERTY),
     ...(finalBalance !== undefined ? { finalBalance } : {}),
     ...(paymentDeadline !== undefined ? { paymentDeadline } : {}),
+    deposits: extractInvoiceDeposits(page),
   };
 }
 

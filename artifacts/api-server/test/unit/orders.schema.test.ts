@@ -4,9 +4,7 @@ import {
   extractOrderNumber,
   extractOrderName,
   extractCurrentStage,
-  extractDepositAmount,
-  extractDepositPaid,
-  extractDepositSessionId,
+  extractInvoiceRelationId,
   extractDueDate,
   extractMilestonesGenerated,
   type NotionDatabaseSchema,
@@ -173,65 +171,27 @@ describe("extractMilestonesGenerated", () => {
   });
 });
 
-describe("extractDepositAmount", () => {
-  it("returns the number when set", () => {
-    const page: NotionOrderPage = {
-      id: "p",
-      properties: { "Deposit Amount": { type: "number", number: 150 } },
-    };
-    expect(extractDepositAmount(page)).toBe(150);
-  });
-
-  it("returns undefined when unset (null) or the property is missing", () => {
+describe("extractInvoiceRelationId", () => {
+  it("returns the first related invoice page id", () => {
     expect(
-      extractDepositAmount({
-        id: "p",
-        properties: { "Deposit Amount": { type: "number", number: null } },
-      }),
-    ).toBeUndefined();
-    expect(
-      extractDepositAmount({ id: "p", properties: {} } as NotionOrderPage),
-    ).toBeUndefined();
-  });
-});
-
-describe("extractDepositPaid", () => {
-  it("reflects the checkbox, defaulting to false when the property is missing", () => {
-    expect(
-      extractDepositPaid({
-        id: "p",
-        properties: { "Deposit Paid": { type: "checkbox", checkbox: true } },
-      }),
-    ).toBe(true);
-    expect(
-      extractDepositPaid({ id: "p", properties: {} } as NotionOrderPage),
-    ).toBe(false);
-  });
-});
-
-describe("extractDepositSessionId", () => {
-  it("joins the rich_text, and is undefined when empty or missing", () => {
-    expect(
-      extractDepositSessionId({
+      extractInvoiceRelationId({
         id: "p",
         properties: {
-          "Deposit Session Id": {
-            type: "rich_text",
-            rich_text: [{ plain_text: "cs_test_" }, { plain_text: "123" }],
-          },
+          Invoices: { type: "relation", relation: [{ id: "inv-7" }] },
         },
       }),
-    ).toBe("cs_test_123");
+    ).toBe("inv-7");
+  });
+
+  it("returns undefined when the relation is empty or missing", () => {
     expect(
-      extractDepositSessionId({
+      extractInvoiceRelationId({
         id: "p",
-        properties: {
-          "Deposit Session Id": { type: "rich_text", rich_text: [] },
-        },
+        properties: { Invoices: { type: "relation", relation: [] } },
       }),
     ).toBeUndefined();
     expect(
-      extractDepositSessionId({ id: "p", properties: {} } as NotionOrderPage),
+      extractInvoiceRelationId({ id: "p", properties: {} } as NotionOrderPage),
     ).toBeUndefined();
   });
 });

@@ -76,13 +76,6 @@ export function computeMilestoneSchedule(
   });
 }
 
-/** The client's name for the milestone row, derived from the order name
- * (`"{fullName} – Custom Dress"`). Falls back to the full order name. */
-function clientNameFromOrder(orderName: string): string {
-  const [name] = orderName.split(" – ");
-  return name?.trim() || orderName;
-}
-
 async function generateForOrder(
   order: PendingMilestoneOrder,
   now: Date,
@@ -101,16 +94,12 @@ async function generateForOrder(
     stages,
     now,
   );
-  const clientName = clientNameFromOrder(order.orderName);
-
   for (const milestone of schedule) {
     await createMilestone({
       orderPageId: order.pageId,
       projectName: `${order.orderName} — ${milestone.stage}`,
-      clientName,
       stage: milestone.stage,
       targetDate: milestone.targetDate,
-      dueDate: order.dueDate,
     });
   }
 

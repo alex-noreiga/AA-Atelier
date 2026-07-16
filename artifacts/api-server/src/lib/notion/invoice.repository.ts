@@ -7,19 +7,14 @@
 import {
   getInvoicesNotionClient,
   getInvoiceLineItemsNotionClient,
-  getNotionClient,
   type NotionClient,
 } from "./client.js";
 import {
-  ORDER_INVOICE_PAID_PROPERTY,
-  ORDER_INVOICE_SESSION_PROPERTY,
-} from "./orders.schema.js";
-import {
-  INVOICE_BALANCE_PAID_PROPERTY,
-  INVOICE_BALANCE_SESSION_PROPERTY,
   LINE_ITEM_INVOICE_RELATION_PROPERTY,
+  stagePaymentFields,
   extractInvoice,
   extractLineItem,
+  type PaymentStage,
   type InvoiceRecord,
   type InvoiceLineItemRecord,
   type NotionInvoicePage,
@@ -101,54 +96,35 @@ export async function listInvoiceLineItems(
 }
 
 /**
- * Record a paid invoice balance on both the order and the invoice. The webhook
- * calls this; setting the same values on redelivery is harmless, so it's
- * idempotent. Only the two write-back fields per page are touched — never the
- * costing formulas/rollups.
+ * Record a paid payment stage (first deposit, second deposit, or balance) on the
+ * invoice — the source of truth. The webhook calls this; setting the same values
+ * on redelivery is harmless, so it's idempotent. Only the stage's two write-back
+ * fields are touched — never the costing formulas/rollups.
  */
-export async function markBalancePaid(
-  orderPageId: string,
+export async function markInvoicePaid(
   invoicePageId: string,
+  stage: PaymentStage,
   sessionId: string,
-  ordersClient: NotionClient = getNotionClient(),
-  invoicesClient: NotionClient = getInvoicesNotionClient(),
+  client: NotionClient = getInvoicesNotionClient(),
 ): Promise<void> {
-  const orderResponse = await ordersClient.fetch(`/v1/pages/${orderPageId}`, {
+  assertConfigured(client, "NOTION_INVOICES_DATABASE_ID");
+
+  const { paidProp, sessionProp } = stagePaymentFields(stage);
+  const response = await client.fetch(`/v1/pages/${invoicePageId}`, {
     method: "PATCH",
     body: JSON.stringify({
       properties: {
-        [ORDER_INVOICE_PAID_PROPERTY]: { checkbox: true },
-        [ORDER_INVOICE_SESSION_PROPERTY]: {
+        [paidProp]: { checkbox: true },
+        [sessionProp]: {
           rich_text: [{ text: { content: sessionId } }],
         },
       },
     }),
   });
-  if (!orderResponse.ok) {
-    const errorText = await orderResponse.text();
+  if (!response.ok) {
+    const errorText = await response.text();
     throw new Error(
-      `Notion order invoice-paid update failed with status ${orderResponse.status}: ${errorText}`,
-    );
-  }
-
-  const invoiceResponse = await invoicesClient.fetch(
-    `/v1/pages/${invoicePageId}`,
-    {
-      method: "PATCH",
-      body: JSON.stringify({
-        properties: {
-          [INVOICE_BALANCE_PAID_PROPERTY]: { checkbox: true },
-          [INVOICE_BALANCE_SESSION_PROPERTY]: {
-            rich_text: [{ text: { content: sessionId } }],
-          },
-        },
-      }),
-    },
-  );
-  if (!invoiceResponse.ok) {
-    const errorText = await invoiceResponse.text();
-    throw new Error(
-      `Notion invoice balance-paid update failed with status ${invoiceResponse.status}: ${errorText}`,
+      `Notion invoice ${stage} paid update failed with status ${response.status}: ${errorText}`,
     );
   }
 }
