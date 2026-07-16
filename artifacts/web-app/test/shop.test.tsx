@@ -343,6 +343,29 @@ describe("Shop sizes", () => {
     renderShop(<Shop />);
     expect(screen.queryByTestId("link-size-chart")).not.toBeInTheDocument();
   });
+
+  it("shows the size chart for the live 'Dresses' Item Type value too", () => {
+    // The Notion "Item Type" option is currently the plural "Dresses"; the size
+    // chart must appear for it as well as the singular "Dress".
+    setHook({
+      products: [
+        product({
+          id: "p1",
+          title: "Keyhole Test Dress",
+          category: "Dresses",
+          variants: [
+            variant({
+              id: "v1",
+              name: "Keyhole Test Dress",
+              sizes: [{ name: "Adult S", available: true }],
+            }),
+          ],
+        }),
+      ],
+    });
+    renderShop(<Shop />);
+    expect(screen.getAllByTestId("link-size-chart").length).toBeGreaterThan(0);
+  });
 });
 
 describe("Shop contact CTAs", () => {

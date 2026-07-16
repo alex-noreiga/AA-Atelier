@@ -41,7 +41,12 @@ const ALL = "All";
 // server's STATUS_IN_STOCK), NOT a hardcoded copy of the category list: the
 // full list is still read live from Notion. Rename these options in Notion and
 // the size chart stops appearing, so keep them in sync.
-const SIZED_CATEGORIES = ["Dress", "Ready to Wear"];
+//
+// Both "Dress" and "Dresses" are listed: the live Notion "Item Type" option is
+// currently "Dresses" (so dresses would otherwise never get a size chart), and
+// "Dress" is the planned unified singular. Keeping both keeps the chart correct
+// before and after that rename.
+const SIZED_CATEGORIES = ["Dress", "Dresses", "Ready to Wear"];
 
 // At or below this countable stock level a card shows an "Only N left" nudge.
 // A null/undefined count (one-off items) never triggers it.
