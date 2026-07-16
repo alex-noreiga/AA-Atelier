@@ -5,7 +5,7 @@ import { z } from "zod";
 import { Link } from "wouter";
 import { useCreateOrder } from "@workspace/api-client-react";
 import { Button } from "@/components/ui/button";
-import { ctaVariants } from "@/components/cta";
+import { ctaVariants, CtaLink } from "@/components/cta";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
@@ -14,7 +14,7 @@ import { SuccessScreen } from "@/components/success-screen";
 import { Seo } from "@/components/seo";
 import { ROUTE_SEO } from "@/lib/seo-routes";
 import { useToast } from "@/hooks/use-toast";
-import { ArrowLeft, CheckCircle, Loader2 } from "lucide-react";
+import { ArrowLeft, CalendarCheck, CheckCircle, Loader2 } from "lucide-react";
 
 const MEASUREMENT_FIELDS = [
   { key: "waist", label: "Waist" },
@@ -52,6 +52,21 @@ const formSchema = z
     neededBy: z.string().optional(),
   })
   .superRefine((values, ctx) => {
+    // "Needed by", when supplied, must be in the future — it feeds the atelier's
+    // real scheduling (the order's Due Date), so a past date is a mistake.
+    if (values.neededBy) {
+      const today = new Date();
+      today.setHours(0, 0, 0, 0);
+      const chosen = new Date(`${values.neededBy}T00:00:00`);
+      if (!Number.isNaN(chosen.getTime()) && chosen < today) {
+        ctx.addIssue({
+          path: ["neededBy"],
+          code: z.ZodIssueCode.custom,
+          message: "Please choose a date in the future",
+        });
+      }
+    }
+
     if (values.measurementMode !== "self") return;
     for (const { key } of MEASUREMENT_FIELDS) {
       const raw = values[key];
@@ -118,6 +133,8 @@ export default function OrderForm() {
   const measurementMode = watch("measurementMode");
   const measurementUnit = watch("measurementUnit");
   const preferredContact = watch("preferredContact");
+  // Floor the "needed by" picker at today, so a past date can't be picked.
+  const todayIso = new Date().toISOString().split("T")[0];
 
   const onSubmit = (values: FormValues) => {
     const {
@@ -171,14 +188,26 @@ export default function OrderForm() {
             : "Thank you! We'll be in touch soon to confirm your details."
         }
         footer={
-          <Link
-            to="/shop/status"
-            className="inline-flex items-center gap-2 text-sm tracking-widest uppercase text-muted-foreground hover:text-primary transition-colors"
-            data-testid="link-track-order"
-          >
-            <ArrowLeft className="w-4 h-4" />
-            Track order status
-          </Link>
+          <div className="flex flex-col items-center gap-6">
+            {success.appointment && (
+              <CtaLink
+                to="/appointments?type=fitting"
+                variant="primary"
+                data-testid="link-book-fitting-success"
+              >
+                <CalendarCheck className="w-4 h-4" />
+                Book your fitting
+              </CtaLink>
+            )}
+            <Link
+              to="/shop/status"
+              className="inline-flex items-center gap-2 text-sm tracking-widest uppercase text-muted-foreground hover:text-primary transition-colors"
+              data-testid="link-track-order"
+            >
+              <ArrowLeft className="w-4 h-4" />
+              Track order status
+            </Link>
+          </div>
         }
       >
         <div className="border border-border rounded-lg p-6 mb-8 inline-block">
@@ -221,7 +250,14 @@ export default function OrderForm() {
           </p>
         </div>
 
-        <form onSubmit={handleSubmit(onSubmit)} className="space-y-12">
+        {/* noValidate: zod owns validation (incl. the needed-by floor), so the
+            browser's native constraint bubble can't pre-empt our inline
+            messages — the `min` on the date input stays a picker-UI hint. */}
+        <form
+          noValidate
+          onSubmit={handleSubmit(onSubmit)}
+          className="space-y-12"
+        >
           <section>
             <h2 className="text-xs tracking-[0.2em] uppercase text-muted-foreground mb-6 pb-2 border-b border-border">
               Contact Information
@@ -409,10 +445,19 @@ export default function OrderForm() {
             ) : (
               <div className="border border-border rounded-lg p-6 bg-muted/20">
                 <p className="text-sm font-light text-foreground/90 leading-relaxed">
-                  No problem — we'll take your measurements for you. Once you
-                  place your order, we'll reach out to schedule a measurement
-                  appointment, or take them during your consultation.
+                  No problem — we'll take your measurements for you. Book a
+                  fitting now and we'll take them then, or we'll arrange it when
+                  you place your order.
                 </p>
+                <CtaLink
+                  to="/appointments?type=fitting"
+                  variant="outline"
+                  className="mt-5"
+                  data-testid="link-book-fitting"
+                >
+                  <CalendarCheck className="w-4 h-4" />
+                  Book your fitting
+                </CtaLink>
               </div>
             )}
           </section>
@@ -454,12 +499,32 @@ export default function OrderForm() {
                 <Input
                   id="neededBy"
                   type="date"
+                  min={todayIso}
                   {...register("neededBy")}
                   className="mt-1.5 bg-transparent border-0 border-b border-border rounded-none px-0 py-3 focus-visible:ring-0 focus-visible:border-primary transition-colors shadow-none w-48"
                 />
+                {errors.neededBy ? (
+                  <p className="text-destructive text-xs mt-1">
+                    {errors.neededBy.message}
+                  </p>
+                ) : (
+                  <p className="text-muted-foreground/60 text-xs mt-1.5">
+                    Custom pieces typically take 8–12 weeks. If you have an event
+                    date, let us know and we'll advise on timing.
+                  </p>
+                )}
               </div>
             </div>
           </section>
+
+          <p
+            className="text-center text-xs font-light text-muted-foreground/70 max-w-md mx-auto"
+            data-testid="deposit-note"
+          >
+            This starts your order — it isn't a payment. Once we've reviewed your
+            details and quoted your piece, we'll send a deposit to reserve your
+            place in the atelier's schedule.
+          </p>
 
           <div className="flex justify-center pt-4 pb-8">
             <Button

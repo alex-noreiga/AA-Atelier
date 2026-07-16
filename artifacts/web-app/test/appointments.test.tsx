@@ -44,6 +44,8 @@ const OPTIONS = {
 const SLOT_ISO = "2026-07-20T09:00:00.000Z";
 
 beforeEach(() => {
+  // Reset the URL so a prior test's deep-link query can't leak into the next.
+  window.history.replaceState({}, "", "/");
   optionsState.current = {
     data: OPTIONS,
     isLoading: false,
@@ -83,6 +85,24 @@ describe("Appointments booking flow", () => {
     // Fitting has one location + one staff → straight to the time step.
     await user.click(screen.getByTestId("type-fitting"));
     expect(await screen.findByTestId("step-time")).toBeInTheDocument();
+  });
+
+  it("preselects the type from a ?type= deep link once options load", async () => {
+    // The "Book your fitting" links elsewhere point here with ?type=fitting.
+    window.history.replaceState({}, "", "/appointments?type=fitting");
+    render(<Appointments />);
+    // Preselecting fitting (single staff + location) advances past the Purpose
+    // step straight to the time step, without a click.
+    expect(await screen.findByTestId("step-time")).toBeInTheDocument();
+    expect(screen.queryByTestId("type-consultation")).not.toBeInTheDocument();
+  });
+
+  it("ignores an unknown ?type= value and starts at the Purpose step", async () => {
+    window.history.replaceState({}, "", "/appointments?type=nonsense");
+    render(<Appointments />);
+    // Unknown type → no preselect; the type picker is still shown.
+    expect(screen.getByTestId("type-fitting")).toBeInTheDocument();
+    expect(screen.queryByTestId("step-time")).not.toBeInTheDocument();
   });
 
   it("maps the full booking to the mutation payload, omitting staff for 'no preference'", async () => {

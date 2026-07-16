@@ -9,17 +9,9 @@ import { PageShell } from "@/components/page-shell";
 import { CtaLink } from "@/components/cta";
 import { Seo } from "@/components/seo";
 import { ROUTE_SEO } from "@/lib/seo-routes";
+import { ReceiptRow } from "@/components/receipt-row";
 import { formatPrice } from "@/lib/format";
 import { useCart } from "@/lib/cart";
-
-function ReceiptRow({ label, amount }: { label: string; amount: number }) {
-  return (
-    <div className="flex justify-between text-sm text-muted-foreground">
-      <span>{label}</span>
-      <span>{formatPrice(amount)}</span>
-    </div>
-  );
-}
 
 /**
  * Post-checkout landing page. Stripe redirects here (with `?session_id=…`) only
@@ -32,17 +24,21 @@ export default function ShopSuccess() {
   const sessionId = new URLSearchParams(search).get("session_id") ?? "";
   const { clear } = useCart();
 
-  // Clear once on arrival: reaching this page means payment completed.
-  useEffect(() => {
-    clear();
-  }, [clear]);
-
   const { data } = useGetCheckoutSession(sessionId, {
     query: {
       enabled: Boolean(sessionId),
       queryKey: getGetCheckoutSessionQueryKey(sessionId),
     },
   });
+
+  // Clear the cart only for a shop-cart order — not a deposit receipt view,
+  // which reaches this same page from the status page and must leave the
+  // shopper's cart untouched. Waits for the session to load so `kind` is known.
+  useEffect(() => {
+    if (data?.kind && data.kind !== "deposit") {
+      clear();
+    }
+  }, [data?.kind, clear]);
 
   const lineItems = data?.lineItems ?? [];
 

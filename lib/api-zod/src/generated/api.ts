@@ -31,7 +31,32 @@ export const GetOrderStatusResponse = zod.object({
   "currentStage": zod.string(),
   "stages": zod.array(zod.string()),
   "depositAmount": zod.number().optional().describe('The deposit the atelier set for this custom order, in dollars. Absent until they\'ve quoted the piece and set it in Notion.'),
-  "depositPaid": zod.boolean().optional().describe('Whether the customer has already paid the deposit.')
+  "depositPaid": zod.boolean().optional().describe('Whether the customer has already paid the deposit.'),
+  "depositSessionId": zod.string().optional().describe('The Stripe Checkout session id of the paid deposit, for linking to the on-site receipt. Present once the deposit has been paid.'),
+  "measurementsLocked": zod.boolean().describe('True once the garment has reached the production stage at\/after which measurements are frozen (MEASUREMENT_LOCK_FROM_STAGE). When true, a measurement-change request would be rejected, so the UI hides the request affordance.'),
+  "estimatedCompletion": zod.string().optional().describe('The atelier\'s target completion date for this custom order (the order\'s Due Date), as an ISO date (yyyy-mm-dd). A response pass-through, kept as a string (no format: date) so it isn\'t coerced to a Date and reserialized to a UTC timestamp. Absent until the atelier sets one in Notion.'),
+  "milestones": zod.array(zod.object({
+  "stage": zod.string(),
+  "targetDate": zod.string().describe('ISO date (yyyy-mm-dd). A pass-through string (no format: date), same as estimatedCompletion.')
+})).optional().describe('Per-stage target completion dates from the Production Schedule, present once the order\'s milestones have been generated. One entry per remaining (current + upcoming) stage; completed stages have none. Order is not significant — match by stage name.'),
+  "invoice": zod.object({
+  "invoiceId": zod.string().describe('The atelier\'s invoice identifier (its Notion title).'),
+  "paid": zod.boolean().describe('Whether the final balance has already been paid.'),
+  "lineItems": zod.array(zod.object({
+  "name": zod.string().describe('The line item\'s short name (e.g. \"Main fabric\").'),
+  "type": zod.string().describe('The line type — Garment, Material, Labor, or Adjustment.'),
+  "amount": zod.number().describe('The line total in dollars.')
+})).describe('The itemized charges (deposit lines excluded — see deposits).'),
+  "deposits": zod.array(zod.object({
+  "label": zod.string().describe('A display label, e.g. \"Deposit 1\".'),
+  "amount": zod.number().describe('The deposit amount in dollars.'),
+  "paid": zod.boolean().describe('Whether this deposit has been paid (only paid ones credit).')
+})).describe('Deposits credited against the balance, from the order.'),
+  "subtotal": zod.number().describe('Sum of the non-deposit line items, in dollars.'),
+  "depositsCreditedTotal": zod.number().describe('Sum of the deposits already paid, in dollars.'),
+  "balanceDue": zod.number().describe('subtotal − depositsCreditedTotal, floored at 0, in dollars.'),
+  "paymentDeadline": zod.string().optional().describe('The invoice\'s payment-due date (ISO), if the atelier set one.')
+}).optional().describe('The customer\'s invoice for a custom order, present only once the atelier has itemized it and flipped the \"Invoice Ready\" gate. Line items and deposits are dollars; balanceDue is what\'s charged online.')
 })
 
 
@@ -83,6 +108,19 @@ export const CreateOrderDepositParams = zod.object({
 })
 
 export const CreateOrderDepositResponse = zod.object({
+  "url": zod.string().describe('The Stripe-hosted checkout URL for the deposit payment.')
+})
+
+
+/**
+ * Creates a Stripe Checkout session for the order's invoice balance (subtotal of the itemized materials + labor, minus deposits already paid), priced server-side from the atelier's Notion invoice, and returns the hosted-checkout URL. Fails if the invoice isn't ready, is already paid, or has no outstanding balance.
+ * @summary Pay the outstanding balance on a custom order's invoice
+ */
+export const CreateInvoicePaymentParams = zod.object({
+  "orderNumber": zod.coerce.string()
+})
+
+export const CreateInvoicePaymentResponse = zod.object({
   "url": zod.string().describe('The Stripe-hosted checkout URL for the deposit payment.')
 })
 
@@ -221,6 +259,7 @@ export const GetCheckoutSessionParams = zod.object({
 export const GetCheckoutSessionResponse = zod.object({
   "status": zod.string().describe('The Stripe payment status of the session, e.g. \"paid\", \"unpaid\", or \"no_payment_required\".'),
   "orderNumber": zod.string().optional().describe('The human-readable shop order number (e.g. \"SHP-…\") the customer can use to track their order. Present for shop-cart orders; absent for deposit sessions.'),
+  "kind": zod.string().optional().describe('What the session paid for — \"shop\" for a shop-cart order, \"deposit\" for a custom-order deposit (from the session\'s metadata.kind). Lets the success page skip clearing the cart on a deposit receipt view.'),
   "email": zod.string().optional().describe('The customer\'s email, present once the session is complete.'),
   "currency": zod.string().optional().describe('ISO currency code of the totals, e.g. \"usd\".'),
   "lineItems": zod.array(zod.object({

@@ -11,10 +11,19 @@ import { PageShell } from "@/components/page-shell";
 import { Seo } from "@/components/seo";
 import { ROUTE_SEO } from "@/lib/seo-routes";
 import { MeasurementChangeDialog } from "@/components/measurement-change-dialog";
+import { CtaLink } from "@/components/cta";
 import { getStageDescription } from "@/lib/stage-descriptions";
-import { formatPrice } from "@/lib/format";
+import { formatPrice, formatDate } from "@/lib/format";
 import { useToast } from "@/hooks/use-toast";
-import { Loader2, ArrowRight, PenLine, Check, CreditCard } from "lucide-react";
+import {
+  Loader2,
+  ArrowRight,
+  PenLine,
+  Check,
+  CreditCard,
+  Receipt,
+  FileText,
+} from "lucide-react";
 
 /**
  * The deposit call-to-action on a custom order. Shows nothing until the atelier
@@ -25,10 +34,12 @@ function DepositSection({
   orderNumber,
   amount,
   paid,
+  sessionId,
 }: {
   orderNumber: string;
   amount?: number;
   paid?: boolean;
+  sessionId?: string;
 }) {
   const { toast } = useToast();
   const deposit = useCreateOrderDeposit({
@@ -58,12 +69,24 @@ function DepositSection({
 
   if (paid) {
     return (
-      <div
-        className="mb-12 flex items-center justify-center gap-2 text-sm tracking-widest uppercase text-primary"
-        data-testid="deposit-paid"
-      >
-        <Check className="w-4 h-4" />
-        Deposit paid
+      <div className="mb-12 flex flex-col items-center gap-4">
+        <div
+          className="flex items-center justify-center gap-2 text-sm tracking-widest uppercase text-primary"
+          data-testid="deposit-paid"
+        >
+          <Check className="w-4 h-4" />
+          Deposit paid
+        </div>
+        {sessionId && (
+          <CtaLink
+            to={`/shop/success?session_id=${encodeURIComponent(sessionId)}`}
+            variant="outline"
+            data-testid="link-deposit-receipt"
+          >
+            <Receipt className="w-4 h-4" />
+            View receipt
+          </CtaLink>
+        )}
       </div>
     );
   }
@@ -239,13 +262,50 @@ export default function Status() {
                 Order {orderStatus.orderNumber}
               </p>
               <h2 className="text-3xl font-serif">{orderStatus.orderName}</h2>
+              {orderStatus.estimatedCompletion && (
+                <p
+                  className="mt-4 text-sm font-light text-muted-foreground"
+                  data-testid="estimated-completion"
+                >
+                  <span className="tracking-[0.15em] uppercase text-xs">
+                    Estimated completion
+                  </span>
+                  <span className="mx-2 text-border">·</span>
+                  {formatDate(orderStatus.estimatedCompletion)}
+                </p>
+              )}
             </div>
 
             <DepositSection
               orderNumber={orderStatus.orderNumber}
               amount={orderStatus.depositAmount}
               paid={orderStatus.depositPaid}
+              sessionId={orderStatus.depositSessionId}
             />
+
+            {orderStatus.invoice && (
+              <div
+                className="mb-12 rounded-2xl border border-border/60 p-6 text-center"
+                data-testid="invoice-callout"
+              >
+                <p className="text-xs uppercase tracking-widest text-muted-foreground">
+                  {orderStatus.invoice.paid ? "Invoice" : "Balance due"}
+                </p>
+                <p className="mt-1 font-serif text-3xl text-primary">
+                  {orderStatus.invoice.paid
+                    ? "Paid in full"
+                    : formatPrice(orderStatus.invoice.balanceDue)}
+                </p>
+                <Link
+                  href={`/invoice/${orderStatus.orderNumber}`}
+                  className="mt-5 inline-flex items-center gap-2 border border-border text-foreground hover:border-primary hover:text-primary px-8 py-4 rounded-full tracking-widest uppercase text-xs transition-all duration-300"
+                  data-testid="link-view-invoice"
+                >
+                  <FileText className="w-4 h-4" />
+                  View invoice
+                </Link>
+              </div>
+            )}
 
             <div className="relative pl-6 md:pl-8 space-y-12">
               {/* Vertical Thread Line */}
@@ -258,6 +318,11 @@ export default function Status() {
                 const isCompleted = index < currentIndex;
                 const isActive = index === currentIndex;
                 const isFuture = index > currentIndex;
+                // Per-stage target date from the Production Schedule, when the
+                // atelier has generated milestones (matched by stage name).
+                const targetDate = orderStatus.milestones?.find(
+                  (m) => m.stage === stage,
+                )?.targetDate;
 
                 return (
                   <div
@@ -294,6 +359,14 @@ export default function Status() {
                       >
                         {stage}
                       </h3>
+                      {targetDate && (
+                        <p
+                          className="text-muted-foreground/70 font-light text-xs uppercase tracking-widest mb-1"
+                          data-testid={`stage-target-${index}`}
+                        >
+                          Target · {formatDate(targetDate)}
+                        </p>
+                      )}
                       {isActive && (
                         <p className="text-muted-foreground font-light text-sm animate-in fade-in slide-in-from-left-2 duration-700 delay-300 fill-mode-both">
                           {getStageDescription(stage)}
@@ -311,7 +384,17 @@ export default function Status() {
             </div>
 
             <div className="mt-16 flex flex-col items-center gap-6">
-              <MeasurementChangeDialog orderNumber={orderStatus.orderNumber} />
+              {orderStatus.measurementsLocked ? (
+                <p
+                  className="text-sm font-light text-muted-foreground/70 text-center max-w-sm"
+                  data-testid="measurements-locked"
+                >
+                  Measurements are locked now that your garment is in production.
+                  Need a change? Please contact us.
+                </p>
+              ) : (
+                <MeasurementChangeDialog orderNumber={orderStatus.orderNumber} />
+              )}
               <button
                 onClick={handleReset}
                 className="text-muted-foreground hover:text-primary transition-colors flex items-center gap-2 text-sm tracking-widest uppercase group"

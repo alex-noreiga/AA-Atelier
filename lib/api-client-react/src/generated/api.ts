@@ -370,6 +370,77 @@ export const useCreateOrderDeposit = <TError = ErrorType<ErrorEnvelope | OrderNo
       return useMutation(getCreateOrderDepositMutationOptions(options));
     }
 
+export const getCreateInvoicePaymentUrl = (orderNumber: string,) => {
+
+
+
+
+  return `/api/orders/${orderNumber}/invoice`
+}
+
+/**
+ * Creates a Stripe Checkout session for the order's invoice balance (subtotal of the itemized materials + labor, minus deposits already paid), priced server-side from the atelier's Notion invoice, and returns the hosted-checkout URL. Fails if the invoice isn't ready, is already paid, or has no outstanding balance.
+ * @summary Pay the outstanding balance on a custom order's invoice
+ */
+export const createInvoicePayment = async (orderNumber: string, options?: RequestInit): Promise<DepositSessionResponse> => {
+
+  return customFetch<DepositSessionResponse>(getCreateInvoicePaymentUrl(orderNumber),
+  {
+    ...options,
+    method: 'POST'
+
+
+  }
+);}
+
+
+
+
+export const getCreateInvoicePaymentMutationOptions = <TError = ErrorType<ErrorEnvelope | OrderNotFound>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof createInvoicePayment>>, TError,{orderNumber: string}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof createInvoicePayment>>, TError,{orderNumber: string}, TContext> => {
+
+const mutationKey = ['createInvoicePayment'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof createInvoicePayment>>, {orderNumber: string}> = (props) => {
+          const {orderNumber} = props ?? {};
+
+          return  createInvoicePayment(orderNumber,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type CreateInvoicePaymentMutationResult = NonNullable<Awaited<ReturnType<typeof createInvoicePayment>>>
+
+    export type CreateInvoicePaymentMutationError = ErrorType<ErrorEnvelope | OrderNotFound>
+
+    /**
+ * @summary Pay the outstanding balance on a custom order's invoice
+ */
+export const useCreateInvoicePayment = <TError = ErrorType<ErrorEnvelope | OrderNotFound>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof createInvoicePayment>>, TError,{orderNumber: string}, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof createInvoicePayment>>,
+        TError,
+        {orderNumber: string},
+        TContext
+      > => {
+      return useMutation(getCreateInvoicePaymentMutationOptions(options));
+    }
+
 export const getCreateMeasurementChangeRequestUrl = (orderNumber: string,) => {
 
 

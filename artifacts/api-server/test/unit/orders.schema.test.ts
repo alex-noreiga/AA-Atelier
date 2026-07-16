@@ -6,6 +6,7 @@ import {
   extractCurrentStage,
   extractDepositAmount,
   extractDepositPaid,
+  extractDepositSessionId,
   extractDueDate,
   extractMilestonesGenerated,
   type NotionDatabaseSchema,
@@ -205,5 +206,32 @@ describe("extractDepositPaid", () => {
     expect(
       extractDepositPaid({ id: "p", properties: {} } as NotionOrderPage),
     ).toBe(false);
+  });
+});
+
+describe("extractDepositSessionId", () => {
+  it("joins the rich_text, and is undefined when empty or missing", () => {
+    expect(
+      extractDepositSessionId({
+        id: "p",
+        properties: {
+          "Deposit Session Id": {
+            type: "rich_text",
+            rich_text: [{ plain_text: "cs_test_" }, { plain_text: "123" }],
+          },
+        },
+      }),
+    ).toBe("cs_test_123");
+    expect(
+      extractDepositSessionId({
+        id: "p",
+        properties: {
+          "Deposit Session Id": { type: "rich_text", rich_text: [] },
+        },
+      }),
+    ).toBeUndefined();
+    expect(
+      extractDepositSessionId({ id: "p", properties: {} } as NotionOrderPage),
+    ).toBeUndefined();
   });
 });

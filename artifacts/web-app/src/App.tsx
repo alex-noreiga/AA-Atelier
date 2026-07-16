@@ -13,6 +13,7 @@ import About from "@/pages/about";
 import Shop from "@/pages/shop";
 import ShopSuccess from "@/pages/shop-success";
 import ShopOrderStatus from "@/pages/shop-order-status";
+import InvoicePage from "@/pages/invoice";
 import Contact from "@/pages/contact";
 import Appointments from "@/pages/appointments";
 import Privacy from "@/pages/privacy";
@@ -32,6 +33,10 @@ function Router() {
       <Route path="/shop/success" component={ShopSuccess} />
       <Route path="/shop/status" component={Status} />
       <Route path="/shop/order-status" component={ShopOrderStatus} />
+      {/* Must follow the literal /shop/* routes: Switch takes the first match,
+          so a param route above them would shadow /shop/success and /shop/status. */}
+      <Route path="/shop/:productId" component={Shop} />
+      <Route path="/invoice/:orderNumber" component={InvoicePage} />
       <Route path="/order" component={OrderForm} />
       <Route path="/appointments" component={Appointments} />
       <Route path="/contact" component={Contact} />
