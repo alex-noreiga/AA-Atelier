@@ -13,12 +13,12 @@ Fonts: **Cormorant Garamond** (serif — headings) + **Jost** (sans — body).
 
 ## Core
 
-| Token                 | HSL            | Hex       |
-| --------------------- | -------------- | --------- |
-| `background`          | `320 30% 12%`  | `#281522` |
-| `foreground`          | `35 40% 92%`   | `#F3ECE2` |
-| `primary` (rose gold) | `355 35% 65%`  | `#C5878C` |
-| `primary-foreground`  | `320 30% 12%`  | `#281522` |
+| Token                 | HSL           | Hex       |
+| --------------------- | ------------- | --------- |
+| `background`          | `320 30% 12%` | `#281522` |
+| `foreground`          | `35 40% 92%`  | `#F3ECE2` |
+| `primary` (rose gold) | `355 35% 65%` | `#C5878C` |
+| `primary-foreground`  | `320 30% 12%` | `#281522` |
 
 ## Surfaces
 

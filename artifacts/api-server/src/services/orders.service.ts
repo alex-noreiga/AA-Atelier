@@ -6,7 +6,10 @@ import {
   findOrderByNumber,
 } from "../lib/notion/orders.repository.js";
 import { upsertClientByEmail } from "../lib/notion/clients.repository.js";
-import type { CreateOrderInput, OrderRecord } from "../lib/notion/orders.schema.js";
+import type {
+  CreateOrderInput,
+  OrderRecord,
+} from "../lib/notion/orders.schema.js";
 import { NotFoundError, ValidationError } from "../lib/errors.js";
 import {
   orderConfirmationEmail,

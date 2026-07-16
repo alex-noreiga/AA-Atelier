@@ -326,7 +326,11 @@ describe("getCheckoutSession", () => {
       customer_details: { email: "buyer@example.com" },
       line_items: {
         data: [
-          { description: "Keyhole Dress — Adult S", quantity: 1, amount_total: 12500 },
+          {
+            description: "Keyhole Dress — Adult S",
+            quantity: 1,
+            amount_total: 12500,
+          },
           { description: "Bow Fleece Soaker", quantity: 2, amount_total: 4400 },
         ],
       },

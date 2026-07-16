@@ -35,9 +35,7 @@ function byId(id: string): HTMLElement {
 
 async function open(user: ReturnType<typeof userEvent.setup>) {
   render(<MeasurementChangeDialog orderNumber="000002" />);
-  await user.click(
-    screen.getByTestId("button-request-measurement-change"),
-  );
+  await user.click(screen.getByTestId("button-request-measurement-change"));
   await screen.findByTestId("measurement-change-dialog");
 }
 

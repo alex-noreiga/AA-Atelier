@@ -177,7 +177,9 @@ describe("submitMeasurementChangeRequest — values-or-appointment rule", () => 
 
     expect(result).toEqual({ received: true });
     expect(mockWrite).toHaveBeenCalledOnce();
-    expect(mockWrite.mock.calls[0][0].request.measurementAppointment).toBe(true);
+    expect(mockWrite.mock.calls[0][0].request.measurementAppointment).toBe(
+      true,
+    );
   });
 });
 

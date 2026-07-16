@@ -9,7 +9,10 @@ import { useState, type ReactNode } from "react";
 // stubbed here too.
 vi.mock("@workspace/api-client-react", () => ({
   useCreateCheckoutSession: vi.fn(),
-  useCreateBackInStockRequest: vi.fn(() => ({ mutate: vi.fn(), isPending: false })),
+  useCreateBackInStockRequest: vi.fn(() => ({
+    mutate: vi.fn(),
+    isPending: false,
+  })),
 }));
 
 import { useCreateCheckoutSession } from "@workspace/api-client-react";

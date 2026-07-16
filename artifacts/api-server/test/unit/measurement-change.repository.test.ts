@@ -25,9 +25,9 @@ function row(
 describe("createMeasurementChangeRequest", () => {
   it("throws when the contact database id is not configured", async () => {
     const client = makeFakeClient(() => jsonResponse({}), "");
-    await expect(
-      createMeasurementChangeRequest(row(), client),
-    ).rejects.toThrow(/NOTION_CONTACT_DATABASE_ID is not configured/);
+    await expect(createMeasurementChangeRequest(row(), client)).rejects.toThrow(
+      /NOTION_CONTACT_DATABASE_ID is not configured/,
+    );
   });
 
   it("POSTs a page parented to the contact database with the built properties", async () => {
@@ -51,9 +51,7 @@ describe("createMeasurementChangeRequest", () => {
     const client = makeFakeClient(() =>
       errorResponse(400, "validation_error: bad property"),
     );
-    await expect(
-      createMeasurementChangeRequest(row(), client),
-    ).rejects.toThrow(
+    await expect(createMeasurementChangeRequest(row(), client)).rejects.toThrow(
       /Notion measurement-change request creation failed with status 400: validation_error: bad property/,
     );
   });
