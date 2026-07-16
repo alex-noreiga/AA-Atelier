@@ -2,7 +2,13 @@ import { describe, it, expect, vi } from "vitest";
 import { z, ZodError } from "zod";
 import type { Request, Response } from "express";
 import { errorHandler } from "../../src/middlewares/error.js";
-import { NotFoundError } from "../../src/lib/errors.js";
+import {
+  NotFoundError,
+  ValidationError,
+  BadRequestError,
+  ForbiddenError,
+  MeasurementsLockedError,
+} from "../../src/lib/errors.js";
 
 // Minimal Express `res` double that records the status/json it was given.
 function makeRes(headersSent = false) {
@@ -51,6 +57,65 @@ describe("errorHandler", () => {
     errorHandler(new NotFoundError("no such order"), req, res, vi.fn());
     expect(res.statusCode).toBe(404);
     expect(res.body).toEqual({ message: "no such order" });
+  });
+
+  // The domain errors below each carry a customer-safe message and map to a
+  // distinct status the API contract exposes; a NotFoundError is the only
+  // one that uses the { message } envelope, the rest use { error }.
+  it("maps a ValidationError to a 400 error envelope with its message", () => {
+    const res = makeRes();
+    errorHandler(
+      new ValidationError("Enter all measurements or request an appointment."),
+      req,
+      res,
+      vi.fn(),
+    );
+    expect(res.statusCode).toBe(400);
+    expect(res.body).toEqual({
+      error: "Enter all measurements or request an appointment.",
+    });
+  });
+
+  it("maps a BadRequestError to a 400 error envelope with its message", () => {
+    const res = makeRes();
+    errorHandler(
+      new BadRequestError('"Keyhole Dress" is sold out.'),
+      req,
+      res,
+      vi.fn(),
+    );
+    expect(res.statusCode).toBe(400);
+    expect(res.body).toEqual({ error: '"Keyhole Dress" is sold out.' });
+  });
+
+  it("maps a ForbiddenError to a 403 error envelope with its message", () => {
+    const res = makeRes();
+    errorHandler(
+      new ForbiddenError("That email doesn't match the one on this order."),
+      req,
+      res,
+      vi.fn(),
+    );
+    expect(res.statusCode).toBe(403);
+    expect(res.body).toEqual({
+      error: "That email doesn't match the one on this order.",
+    });
+  });
+
+  it("maps a MeasurementsLockedError to a 409 error envelope with its message", () => {
+    const res = makeRes();
+    errorHandler(
+      new MeasurementsLockedError(
+        "This order is already in production; measurements are locked.",
+      ),
+      req,
+      res,
+      vi.fn(),
+    );
+    expect(res.statusCode).toBe(409);
+    expect(res.body).toEqual({
+      error: "This order is already in production; measurements are locked.",
+    });
   });
 
   it("maps an unknown error to a 500 with a generic message (no leak)", () => {
