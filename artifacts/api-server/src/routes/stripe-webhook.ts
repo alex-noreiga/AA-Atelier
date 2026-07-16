@@ -17,6 +17,7 @@ import {
   recordInvoicePayment,
 } from "../services/invoice.service.js";
 import { logger } from "../lib/logger.js";
+import { reportError } from "../services/alert.service.js";
 
 export async function stripeWebhookHandler(
   req: Request,
@@ -58,7 +59,9 @@ export async function stripeWebhookHandler(
         await recordPaidOrder(session);
       }
     } catch (err) {
-      logger.error({ err }, "Failed to record completed checkout session");
+      // Payment succeeded but the order didn't record — alert so it isn't lost.
+      // Return 500 so Stripe retries (recorders are idempotent).
+      await reportError({ err }, "Failed to record completed checkout session");
       res.status(500).json({ received: false });
       return;
     }
