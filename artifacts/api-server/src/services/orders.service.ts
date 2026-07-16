@@ -5,10 +5,13 @@ import {
   createOrder,
   findOrderByNumber,
 } from "../lib/notion/orders.repository.js";
+import { listOrderMilestones } from "../lib/notion/production-schedule.repository.js";
 import { upsertClientByEmail } from "../lib/notion/clients.repository.js";
+import { measurementsLocked } from "./measurement-lock.js";
+import { getInvoiceView } from "./invoice.service.js";
 import type {
   CreateOrderInput,
-  OrderRecord,
+  OrderStatusResult,
 } from "../lib/notion/orders.schema.js";
 import { NotFoundError, ValidationError } from "../lib/errors.js";
 import {
@@ -34,11 +37,16 @@ function hasAllMeasurements(input: CreateOrderInput): boolean {
 
 export async function getOrderStatus(
   orderNumber: string,
-): Promise<OrderRecord> {
+): Promise<OrderStatusResult> {
   const order = await findOrderByNumber(orderNumber);
   if (!order) {
     throw new NotFoundError("We couldn't find an order with that number.");
   }
+
+  // Derive the production lock from the *raw* record (before the timeline fixup
+  // below), so it shares the measurement-change flow's fail-open semantics: a
+  // current stage absent from the live list reports unlocked, not locked.
+  const locked = measurementsLocked(order.currentStage, order.stages);
 
   // The current stage may not be present in the live options list (e.g. a
   // renamed/removed option); ensure the timeline still includes it.
@@ -46,7 +54,26 @@ export async function getOrderStatus(
     ? order.stages
     : [...order.stages, order.currentStage];
 
-  return { ...order, stages };
+  // Best-effort per-stage target dates from the Production Schedule (keyed by the
+  // order's Notion page id). Returns [] when that DB is unconfigured or the query
+  // fails, so this never breaks the core lookup. pageId is dropped from the
+  // response — it's an internal join key, not part of the contract.
+  const milestones = order.pageId
+    ? await listOrderMilestones(order.pageId)
+    : [];
+
+  // Attach the invoice only once it exists and the atelier has flipped
+  // "Invoice Ready" (one extra Notion read, and only then).
+  const invoice = await getInvoiceView(order);
+
+  const { pageId, invoicePageId, ...rest } = order;
+  return {
+    ...rest,
+    stages,
+    measurementsLocked: locked,
+    ...(invoice ? { invoice } : {}),
+    ...(milestones.length ? { milestones } : {}),
+  };
 }
 
 export async function submitOrder(

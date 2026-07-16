@@ -3,8 +3,9 @@ import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
 import { useCreateMeasurementChangeRequest } from "@workspace/api-client-react";
-import { CheckCircle, Loader2, PenLine } from "lucide-react";
+import { CalendarCheck, CheckCircle, Loader2, PenLine } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import { CtaLink } from "@/components/cta";
 import {
   Dialog,
   DialogContent,
@@ -358,10 +359,19 @@ export function MeasurementChangeDialog({
                   ) : (
                     <div className="border border-border rounded-lg p-6 bg-muted/20">
                       <p className="text-sm font-light text-foreground/90 leading-relaxed">
-                        No problem — we'll take your measurements for you. We'll
-                        reach out to schedule a fitting, or take them during
-                        your next consultation.
+                        No problem — we'll take your measurements for you. Book
+                        a fitting now, or we'll reach out to schedule one when
+                        you submit this request.
                       </p>
+                      <CtaLink
+                        to="/appointments?type=fitting"
+                        variant="outline"
+                        className="mt-5"
+                        data-testid="measurement-change-book-fitting"
+                      >
+                        <CalendarCheck className="w-4 h-4" />
+                        Book your fitting
+                      </CtaLink>
                     </div>
                   )}
                 </div>

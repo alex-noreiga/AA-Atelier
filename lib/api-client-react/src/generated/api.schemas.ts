@@ -9,6 +9,52 @@ export interface HealthStatus {
   status: string;
 }
 
+export type OrderStatusMilestonesItem = {
+  stage: string;
+  /** ISO date (yyyy-mm-dd). A pass-through string (no format: date), same as estimatedCompletion. */
+  targetDate: string;
+};
+
+export interface InvoiceLineItem {
+  /** The line item's short name (e.g. "Main fabric"). */
+  name: string;
+  /** The line type — Garment, Material, Labor, or Adjustment. */
+  type: string;
+  /** The line total in dollars. */
+  amount: number;
+}
+
+export interface InvoiceDeposit {
+  /** A display label, e.g. "Deposit 1". */
+  label: string;
+  /** The deposit amount in dollars. */
+  amount: number;
+  /** Whether this deposit has been paid (only paid ones credit). */
+  paid: boolean;
+}
+
+/**
+ * The customer's invoice for a custom order, present only once the atelier has itemized it and flipped the "Invoice Ready" gate. Line items and deposits are dollars; balanceDue is what's charged online.
+ */
+export interface Invoice {
+  /** The atelier's invoice identifier (its Notion title). */
+  invoiceId: string;
+  /** Whether the final balance has already been paid. */
+  paid: boolean;
+  /** The itemized charges (deposit lines excluded — see deposits). */
+  lineItems: InvoiceLineItem[];
+  /** Deposits credited against the balance, from the order. */
+  deposits: InvoiceDeposit[];
+  /** Sum of the non-deposit line items, in dollars. */
+  subtotal: number;
+  /** Sum of the deposits already paid, in dollars. */
+  depositsCreditedTotal: number;
+  /** subtotal − depositsCreditedTotal, floored at 0, in dollars. */
+  balanceDue: number;
+  /** The invoice's payment-due date (ISO), if the atelier set one. */
+  paymentDeadline?: string;
+}
+
 export interface OrderStatus {
   orderNumber: string;
   orderName: string;
@@ -18,10 +64,29 @@ export interface OrderStatus {
   depositAmount?: number;
   /** Whether the customer has already paid the deposit. */
   depositPaid?: boolean;
+  /** The Stripe Checkout session id of the paid deposit, for linking to the on-site receipt. Present once the deposit has been paid. */
+  depositSessionId?: string;
+  /** True once the garment has reached the production stage at/after which measurements are frozen (MEASUREMENT_LOCK_FROM_STAGE). When true, a measurement-change request would be rejected, so the UI hides the request affordance. */
+  measurementsLocked: boolean;
+  /** The atelier's target completion date for this custom order (the order's Due Date), as an ISO date (yyyy-mm-dd). A response pass-through, kept as a string (no format: date) so it isn't coerced to a Date and reserialized to a UTC timestamp. Absent until the atelier sets one in Notion. */
+  estimatedCompletion?: string;
+  /** Per-stage target completion dates from the Production Schedule, present once the order's milestones have been generated. One entry per remaining (current + upcoming) stage; completed stages have none. Order is not significant — match by stage name. */
+  milestones?: OrderStatusMilestonesItem[];
+  invoice?: Invoice;
 }
 
 export interface OrderNotFound {
   message: string;
+}
+
+export interface ShopOrderStatus {
+  orderNumber: string;
+  /** The order's current fulfilment status. */
+  status: string;
+  /** The live ordered list of possible fulfilment statuses (read from the Notion "Status" workflow options), so the client can render a progress timeline. Never hardcode this list. */
+  statuses: string[];
+  /** The order total in dollars. */
+  total?: number;
 }
 
 export type NewOrderRequestPreferredContact = typeof NewOrderRequestPreferredContact[keyof typeof NewOrderRequestPreferredContact];
@@ -201,6 +266,10 @@ export interface ReceiptLineItem {
 export interface CheckoutSessionStatus {
   /** The Stripe payment status of the session, e.g. "paid", "unpaid", or "no_payment_required". */
   status: string;
+  /** The human-readable shop order number (e.g. "SHP-…") the customer can use to track their order. Present for shop-cart orders; absent for deposit sessions. */
+  orderNumber?: string;
+  /** What the session paid for — "shop" for a shop-cart order, "deposit" for a custom-order deposit (from the session's metadata.kind). Lets the success page skip clearing the cart on a deposit receipt view. */
+  kind?: string;
   /** The customer's email, present once the session is complete. */
   email?: string;
   /** ISO currency code of the totals, e.g. "usd". */

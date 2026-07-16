@@ -7,7 +7,11 @@ test.describe("Order status lookup", () => {
     page,
   }) => {
     await mockOrderStatus(page, {
-      body: orderRecord({ orderNumber: "ORD-ABC-1" }),
+      body: orderRecord({
+        orderNumber: "ORD-ABC-1",
+        estimatedCompletion: "2026-08-01",
+        milestones: [{ stage: "Delivery", targetDate: "2026-08-01" }],
+      }),
     });
 
     await page.goto("/shop/status");
@@ -17,6 +21,15 @@ test.describe("Order status lookup", () => {
     const success = page.getByTestId("status-success");
     await expect(success).toBeVisible();
     await expect(success.getByText("Order ORD-ABC-1")).toBeVisible();
+
+    // The atelier's target completion date is surfaced on the timeline.
+    await expect(page.getByTestId("estimated-completion")).toContainText(
+      "August 1, 2026",
+    );
+    // A per-stage milestone date renders on its stage row.
+    await expect(page.getByTestId("stage-target-2")).toContainText(
+      "August 1, 2026",
+    );
     await expect(
       success.getByRole("heading", { name: "Ada – Custom Dress" }),
     ).toBeVisible();

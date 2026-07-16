@@ -419,3 +419,182 @@ export function measurementChangeNotificationEmail(
     text: renderRowsText(fields),
   };
 }
+
+// ---------------------------------------------------------------------------
+// Shop orders (paid Stripe checkout)
+//
+// Unlike a custom order, a shop-cart order has no `CreateXInput` domain type —
+// its source is the paid Stripe session. The caller (checkout.service) converts
+// that session into this already-formatted, Stripe-agnostic struct (all money in
+// dollars) so these builders stay pure and independently testable, the same
+// precedent as `AppointmentEmailDetails`.
+// ---------------------------------------------------------------------------
+
+/** One purchased line on a shop order; `amount` is the line total in dollars. */
+export interface ShopOrderEmailLine {
+  description: string;
+  quantity: number;
+  amount: number;
+}
+
+/** The already-formatted details of a paid shop order. Money is in dollars. */
+export interface ShopOrderEmailDetails {
+  email: string;
+  customerName?: string;
+  /** The human-readable order number (e.g. "SHP-…") the customer tracks by. */
+  orderNumber?: string;
+  lineItems: ShopOrderEmailLine[];
+  subtotal: number;
+  shipping: number;
+  tax: number;
+  total: number;
+  /** One-line shipping address, when Stripe collected one. */
+  shippingAddress?: string;
+}
+
+/** Format a dollar amount as "$X.XX". */
+function formatUsd(amount: number): string {
+  return `$${amount.toFixed(2)}`;
+}
+
+/** Confirmation sent to the customer when a shop-cart order is paid. */
+export function shopOrderConfirmationEmail(
+  details: ShopOrderEmailDetails,
+): EmailMessage {
+  const firstName = details.customerName?.trim().split(/\s+/)[0] || "there";
+
+  const itemsHtml = details.lineItems
+    .map(
+      (item) =>
+        `<tr>
+           <td style="padding:6px 0;">${escapeHtml(`${item.quantity} × ${item.description}`)}</td>
+           <td style="padding:6px 0;text-align:right;white-space:nowrap;">${formatUsd(item.amount)}</td>
+         </tr>`,
+    )
+    .join("\n         ");
+
+  // Subtotal always; shipping/tax only when charged (mirrors the on-site receipt).
+  const totals: [string, number][] = [
+    ["Subtotal", details.subtotal],
+    ...(details.shipping > 0
+      ? [["Shipping", details.shipping] as [string, number]]
+      : []),
+    ...(details.tax > 0 ? [["Tax", details.tax] as [string, number]] : []),
+  ];
+  const totalsHtml = totals
+    .map(
+      ([label, amount]) =>
+        `<tr>
+           <td style="padding:2px 0;color:#8a7f74;">${label}</td>
+           <td style="padding:2px 0;text-align:right;color:#8a7f74;">${formatUsd(amount)}</td>
+         </tr>`,
+    )
+    .join("\n         ");
+
+  const receiptHtml = `
+     <table style="width:100%;border-collapse:collapse;margin:20px 0;font-size:15px;">
+       ${itemsHtml}
+       <tr><td colspan="2" style="border-top:1px solid #e7e0d8;padding-top:8px;"></td></tr>
+       ${totalsHtml}
+       <tr>
+         <td style="padding:8px 0 0;font-weight:bold;">Total</td>
+         <td style="padding:8px 0 0;text-align:right;font-weight:bold;">${formatUsd(details.total)}</td>
+       </tr>
+     </table>`;
+
+  const shippingHtml = details.shippingAddress
+    ? `<p><strong>Shipping to:</strong> ${escapeHtml(details.shippingAddress)}</p>`
+    : "";
+
+  // Order number, shown prominently so the customer can track their order.
+  const orderNumberHtml = details.orderNumber
+    ? `<p style="margin:16px 0;">Your order number is
+         <strong style="letter-spacing:0.04em;">${escapeHtml(details.orderNumber)}</strong>.
+         Keep it handy to track your order's progress.</p>`
+    : "";
+
+  const html = layout(
+    "Thank you for your order",
+    `<p>Hi ${firstName},</p>
+     <p>Your payment went through and your order is confirmed. Here's what you bought:</p>
+     ${receiptHtml}
+     ${orderNumberHtml}
+     ${shippingHtml}
+     <p>We'll carefully prepare your pieces and be in touch with shipping details soon.</p>`,
+  );
+
+  const itemsText = details.lineItems.map(
+    (item) =>
+      `${item.quantity} × ${item.description} — ${formatUsd(item.amount)}`,
+  );
+  const totalsText = [
+    ...totals.map(([label, amount]) => `${label}: ${formatUsd(amount)}`),
+    `Total: ${formatUsd(details.total)}`,
+  ];
+
+  const text = [
+    `Hi ${firstName},`,
+    ``,
+    `Your payment went through and your order is confirmed. Here's what you bought:`,
+    ``,
+    ...itemsText,
+    ``,
+    ...totalsText,
+    ...(details.orderNumber
+      ? [
+          ``,
+          `Your order number is ${details.orderNumber}. Keep it handy to track your order's progress.`,
+        ]
+      : []),
+    ...(details.shippingAddress
+      ? [``, `Shipping to: ${details.shippingAddress}`]
+      : []),
+    ``,
+    `We'll carefully prepare your pieces and be in touch with shipping details soon.`,
+    ``,
+    `Thank you,`,
+    `The ${ATELIER_NAME} team`,
+  ].join("\n");
+
+  return {
+    to: details.email,
+    subject: `Your ${ATELIER_NAME} order is confirmed`,
+    html,
+    text,
+  };
+}
+
+/** Notify the atelier of a newly paid shop order. */
+export function shopOrderNotificationEmail(
+  details: ShopOrderEmailDetails,
+  to: string,
+): EmailMessage {
+  const items = details.lineItems
+    .map(
+      (item) =>
+        `${item.quantity} × ${item.description} — ${formatUsd(item.amount)}`,
+    )
+    .join("; ");
+
+  const who = details.customerName || details.email;
+  const fields: Field[] = [
+    ...(details.orderNumber
+      ? [["Order number", details.orderNumber] as Field]
+      : []),
+    ...(details.customerName ? [["Name", details.customerName] as Field] : []),
+    ["Email", details.email],
+    ["Items", items],
+    ...(details.shippingAddress
+      ? [["Shipping to", details.shippingAddress] as Field]
+      : []),
+    ["Total", formatUsd(details.total)],
+  ];
+
+  return {
+    to,
+    replyTo: details.email,
+    subject: `New shop order — ${who} (${formatUsd(details.total)})`,
+    html: internalLayout("New shop order", renderRowsHtml(fields)),
+    text: renderRowsText(fields),
+  };
+}

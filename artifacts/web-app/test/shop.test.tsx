@@ -2,6 +2,8 @@ import { describe, it, expect, vi, beforeEach } from "vitest";
 import { render, screen, type RenderResult } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import type { ReactElement } from "react";
+import { Router, Route } from "wouter";
+import { memoryLocation } from "wouter/memory-location";
 import { CartProvider } from "@/lib/cart";
 import { stubHook } from "./support/mock-hook.js";
 
@@ -9,6 +11,20 @@ import { stubHook } from "./support/mock-hook.js";
 // cart context — so every Shop render needs a CartProvider around it.
 const renderShop = (ui: ReactElement): RenderResult =>
   render(<CartProvider>{ui}</CartProvider>);
+
+// Mount Shop under a memory router at a given path, so the `/shop/:productId`
+// route param drives the quick-view (deep-link behavior).
+function renderShopAt(path: string): RenderResult {
+  const { hook } = memoryLocation({ path });
+  return render(
+    <CartProvider>
+      <Router hook={hook}>
+        <Route path="/shop/:productId" component={Shop} />
+        <Route path="/shop" component={Shop} />
+      </Router>
+    </CartProvider>,
+  );
+}
 
 // Control the data-fetching hook so we can drive each render state directly.
 // The notify dialog's mutation hook is mocked here too — the shop imports it
@@ -136,6 +152,60 @@ describe("Shop render states", () => {
     setHook({ products: [product()] });
     renderShop(<Shop />);
     expect(screen.getByText("inquire for price")).toBeInTheDocument();
+  });
+});
+
+describe("Shop product deep links", () => {
+  it("opens the quick-view and emits Product JSON-LD when deep-linked by id", () => {
+    setHook({
+      products: [
+        product({
+          id: "p1",
+          title: "Bow Fleece Soaker",
+          variants: [variant({ price: 22 })],
+        }),
+      ],
+    });
+    renderShopAt("/shop/p1");
+
+    // The controlled quick-view opens straight from the URL param.
+    expect(screen.getByRole("dialog")).toBeInTheDocument();
+
+    // Product structured data is injected for search indexing.
+    const jsonLd = document.querySelector('script[type="application/ld+json"]');
+    expect(jsonLd).not.toBeNull();
+    const data = JSON.parse(jsonLd?.textContent ?? "{}");
+    expect(data["@type"]).toBe("Product");
+    expect(data.name).toBe("Bow Fleece Soaker");
+    expect(data.offers).toMatchObject({
+      price: 22,
+      priceCurrency: "USD",
+      availability: "https://schema.org/InStock",
+    });
+  });
+
+  it("stays on the grid for an unknown product id", () => {
+    setHook({ products: [product({ id: "p1" })] });
+    renderShopAt("/shop/does-not-exist");
+
+    expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+    expect(screen.getByTestId("product-p1")).toBeInTheDocument();
+  });
+
+  it("navigates to the product URL when a card is opened (shareable link)", async () => {
+    setHook({
+      products: [product({ id: "p1", variants: [variant({ price: 22 })] })],
+    });
+    renderShopAt("/shop");
+
+    // Nothing open on the grid.
+    expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+
+    await userEvent.click(screen.getByTestId("product-view-p1"));
+
+    // Opening navigates to /shop/p1, and the route param drives the dialog open —
+    // proving the full open → navigate → param → open loop.
+    expect(await screen.findByRole("dialog")).toBeInTheDocument();
   });
 });
 

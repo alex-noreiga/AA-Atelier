@@ -1,9 +1,5 @@
 import { test, expect } from "./support/test";
-import {
-  checkoutSession,
-  GENERIC_ERROR,
-  productList,
-} from "@workspace/test-fixtures";
+import { GENERIC_ERROR, productList } from "@workspace/test-fixtures";
 import {
   mockCreateCheckout,
   mockGetCheckoutSession,
@@ -56,7 +52,21 @@ test.describe("Shop checkout", () => {
   test("confirms the order and empties the cart on the success page", async ({
     page,
   }) => {
-    await mockGetCheckoutSession(page, { body: checkoutSession() });
+    await mockGetCheckoutSession(page, {
+      body: {
+        status: "paid",
+        kind: "shop",
+        email: "grace@example.com",
+        currency: "usd",
+        lineItems: [
+          { description: "Bow Fleece Soaker", quantity: 1, amount: 22 },
+        ],
+        amountSubtotal: 22,
+        amountShipping: 8,
+        amountTax: 0,
+        amountTotal: 30,
+      },
+    });
     // Seed a cart the way a mid-purchase buyer would have one, so we can prove
     // the success page clears it. Seeding via storage keeps this to a single
     // navigation (Stripe → the app), matching how the customer actually arrives.

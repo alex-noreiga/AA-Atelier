@@ -139,6 +139,20 @@ describe("POST /api/checkout", () => {
     expect(create).not.toHaveBeenCalled();
   });
 
+  it("returns 400 with a customer-safe message when the quantity exceeds stock", async () => {
+    const create = vi.fn();
+    mockListVariants.mockResolvedValue([variant({ quantityAvailable: 2 })]);
+    stubStripe({ create });
+
+    const res = await request(app)
+      .post("/api/checkout")
+      .send({ items: [{ variantId: "v1", quantity: 3 }] });
+
+    expect(res.status).toBe(400);
+    expect(res.body).toHaveProperty("error");
+    expect(create).not.toHaveBeenCalled();
+  });
+
   it("returns 400 when the cart is empty (schema violation)", async () => {
     const res = await request(app).post("/api/checkout").send({ items: [] });
 

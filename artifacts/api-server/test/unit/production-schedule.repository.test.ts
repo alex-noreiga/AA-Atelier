@@ -1,10 +1,13 @@
 import { describe, it, expect } from "vitest";
 import {
   createMilestone,
+  listOrderMilestones,
   orderHasMilestones,
 } from "../../src/lib/notion/production-schedule.repository.js";
 import {
   PS_ORDER_RELATION_PROPERTY,
+  PS_STAGE_PROPERTY,
+  PS_TARGET_DATE_PROPERTY,
   type MilestoneInput,
 } from "../../src/lib/notion/production-schedule.blocks.js";
 import {
@@ -67,6 +70,72 @@ describe("orderHasMilestones (idempotency guard)", () => {
     await expect(orderHasMilestones("order-page-1", client)).rejects.toThrow(
       /Notion query failed with status 500/,
     );
+  });
+});
+
+describe("listOrderMilestones (status read-back)", () => {
+  const row = (stage: string | null, targetDate: string | null) => ({
+    properties: {
+      [PS_STAGE_PROPERTY]: { select: stage === null ? null : { name: stage } },
+      [PS_TARGET_DATE_PROPERTY]: {
+        date: targetDate === null ? null : { start: targetDate },
+      },
+    },
+  });
+
+  it("returns [] without querying when the database id is not configured", async () => {
+    const client = makeFakeClient(() => jsonResponse({ results: [] }), "");
+    expect(await listOrderMilestones("order-page-1", client)).toEqual([]);
+    // Degrades silently — no fetch is attempted against an unconfigured db.
+    expect(client.calls).toHaveLength(0);
+  });
+
+  it("filters by the Order relation and parses stage + target date from each row", async () => {
+    const client = makeFakeClient((path) => {
+      if (isQuery(path))
+        return jsonResponse({
+          results: [
+            row("Cutting/Pinning", "2026-08-01"),
+            row("Delivery", "2026-08-10"),
+          ],
+        });
+      throw new Error(`unexpected path ${path}`);
+    });
+
+    const result = await listOrderMilestones("order-page-1", client);
+
+    const call = client.calls.find((c) => isQuery(c.path))!;
+    expect(call.path).toBe("/v1/databases/test-db-id/query");
+    expect(JSON.parse(call.init!.body as string).filter).toEqual({
+      property: PS_ORDER_RELATION_PROPERTY,
+      relation: { contains: "order-page-1" },
+    });
+    expect(result).toEqual([
+      { stage: "Cutting/Pinning", targetDate: "2026-08-01" },
+      { stage: "Delivery", targetDate: "2026-08-10" },
+    ]);
+  });
+
+  it("skips rows missing a stage or a target date", async () => {
+    const client = makeFakeClient(() =>
+      jsonResponse({
+        results: [
+          row("Sewing/Construction", "2026-08-05"),
+          row(null, "2026-08-06"),
+          row("Delivery", null),
+        ],
+      }),
+    );
+
+    expect(await listOrderMilestones("order-page-1", client)).toEqual([
+      { stage: "Sewing/Construction", targetDate: "2026-08-05" },
+    ]);
+  });
+
+  it("returns [] (fail-soft) when the query response is not ok", async () => {
+    const client = makeFakeClient(() => errorResponse(500));
+    // A Production Schedule outage must not break the core status lookup.
+    expect(await listOrderMilestones("order-page-1", client)).toEqual([]);
   });
 });
 

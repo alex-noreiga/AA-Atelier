@@ -9,6 +9,11 @@ vi.mock("../../src/lib/notion/shop-orders.repository.js", () => ({
   findOrderBySessionId: vi.fn(),
   createShopOrder: vi.fn(),
 }));
+// The confirmation email is a best-effort side effect; mock the transport so no
+// mail is attempted and the dispatch can be asserted.
+vi.mock("../../src/lib/resend/send.js", () => ({
+  sendEmailBestEffort: vi.fn(),
+}));
 
 import type Stripe from "stripe";
 import {
@@ -23,11 +28,13 @@ import {
   createShopOrder,
   findOrderBySessionId,
 } from "../../src/lib/notion/shop-orders.repository.js";
+import { sendEmailBestEffort } from "../../src/lib/resend/send.js";
 import type { VariantRecord } from "../../src/lib/notion/products.schema.js";
 
 const mockListVariants = vi.mocked(listVariants);
 const mockFind = vi.mocked(findOrderBySessionId);
 const mockCreate = vi.mocked(createShopOrder);
+const mockSend = vi.mocked(sendEmailBestEffort);
 
 function variant(overrides: Partial<VariantRecord> = {}): VariantRecord {
   return {
@@ -63,7 +70,11 @@ function fakeStripe(url = "https://checkout.stripe.test/pay") {
 
 beforeEach(() => {
   process.env.PUBLIC_BASE_URL = "https://shop.test";
+  process.env.RESEND_FROM_EMAIL = "orders@shop.test";
   delete process.env.STRIPE_SHIPPING_RATE_IDS;
+  // The atelier notification is opt-in; individual tests set the inbox when they
+  // want to exercise it, so clear it by default.
+  delete process.env.ATELIER_INBOX_EMAIL;
   // Silence (and let tests assert) the actionable shipping-config error logs.
   vi.spyOn(logger, "error").mockImplementation(() => logger);
 });
@@ -94,6 +105,8 @@ describe("createCheckoutSession", () => {
     ]);
     // Stripe Tax is computed on the shop cart (deposits stay untaxed).
     expect(params.automatic_tax).toEqual({ enabled: true });
+    // Promo/discount codes can be redeemed on Stripe's hosted page.
+    expect(params.allow_promotion_codes).toBe(true);
     expect(params.success_url).toContain(
       "https://shop.test/shop/success?session_id={CHECKOUT_SESSION_ID}",
     );
@@ -139,6 +152,36 @@ describe("createCheckoutSession", () => {
       createCheckoutSession([{ variantId: "v1", quantity: 1 }], stripe),
     ).rejects.toBeInstanceOf(BadRequestError);
     expect(create).not.toHaveBeenCalled();
+  });
+
+  it("rejects a quantity that exceeds the live stock count (overselling guard)", async () => {
+    mockListVariants.mockResolvedValue([variant({ quantityAvailable: 2 })]);
+    const { stripe, create } = fakeStripe();
+
+    await expect(
+      createCheckoutSession([{ variantId: "v1", quantity: 3 }], stripe),
+    ).rejects.toBeInstanceOf(BadRequestError);
+    expect(create).not.toHaveBeenCalled();
+  });
+
+  it("allows a quantity up to the live stock count", async () => {
+    mockListVariants.mockResolvedValue([variant({ quantityAvailable: 2 })]);
+    const { stripe, create } = fakeStripe();
+
+    await createCheckoutSession([{ variantId: "v1", quantity: 2 }], stripe);
+
+    expect(create.mock.calls[0][0].line_items[0].quantity).toBe(2);
+  });
+
+  it("treats a null/absent stock count as uncapped (one-off items)", async () => {
+    // quantityAvailable omitted -> undefined -> no ceiling, mirroring how
+    // availability treats a null count as available.
+    mockListVariants.mockResolvedValue([variant()]);
+    const { stripe, create } = fakeStripe();
+
+    await createCheckoutSession([{ variantId: "v1", quantity: 99 }], stripe);
+
+    expect(create.mock.calls[0][0].line_items[0].quantity).toBe(99);
   });
 
   it("requires an in-stock size for a sized item and names it on the line", async () => {
@@ -391,6 +434,17 @@ describe("getCheckoutSession", () => {
       { description: "Item", quantity: 1, amount: 50 },
     ]);
   });
+
+  it("surfaces the session kind from metadata (so the success page can skip clearing a deposit's cart)", async () => {
+    const { stripe, retrieve } = fakeStripe();
+    retrieve.mockResolvedValue({
+      payment_status: "paid",
+      metadata: { kind: "deposit" },
+    });
+
+    const view = await getCheckoutSession("cs_deposit", stripe);
+    expect(view.kind).toBe("deposit");
+  });
 });
 
 describe("recordPaidOrder", () => {
@@ -432,5 +486,92 @@ describe("recordPaidOrder", () => {
     await recordPaidOrder({ id: "cs_2" } as Stripe.Checkout.Session, stripe);
 
     expect(mockCreate).not.toHaveBeenCalled();
+    // No record -> no confirmation email.
+    expect(mockSend).not.toHaveBeenCalled();
+  });
+
+  it("sends a best-effort confirmation email to the customer after recording", async () => {
+    mockFind.mockResolvedValue(false);
+    const fullSession = {
+      id: "cs_email",
+      payment_status: "paid",
+      customer_details: { email: "buyer@example.com", name: "Ada Lovelace" },
+      metadata: { kind: "shop", orderNumber: "SHP-XYZ-9999" },
+      line_items: {
+        data: [
+          { description: "Bow Fleece Soaker", quantity: 1, amount_total: 2200 },
+        ],
+      },
+      amount_subtotal: 2200,
+      total_details: { amount_shipping: 0, amount_tax: 0 },
+      amount_total: 2200,
+    } as unknown as Stripe.Checkout.Session;
+    const { stripe, retrieve } = fakeStripe();
+    retrieve.mockResolvedValue(fullSession);
+
+    await recordPaidOrder(
+      { id: "cs_email" } as Stripe.Checkout.Session,
+      stripe,
+    );
+
+    expect(mockCreate).toHaveBeenCalledWith(fullSession);
+    // Customer confirmation dispatched, from the orders sender.
+    expect(mockSend).toHaveBeenCalledTimes(1);
+    const message = mockSend.mock.calls[0][0];
+    expect(message.to).toBe("buyer@example.com");
+    expect(message.from).toBe("orders@shop.test");
+    expect(message.subject).toMatch(/order is confirmed/i);
+    // The order number (from session metadata) rides on the email.
+    expect(message.text).toContain("SHP-XYZ-9999");
+  });
+
+  it("also notifies the atelier when ATELIER_INBOX_EMAIL is set", async () => {
+    process.env.ATELIER_INBOX_EMAIL = "studio@shop.test";
+    mockFind.mockResolvedValue(false);
+    const fullSession = {
+      id: "cs_email2",
+      payment_status: "paid",
+      customer_details: { email: "buyer@example.com", name: "Ada" },
+      line_items: {
+        data: [{ description: "Soaker", quantity: 1, amount_total: 2200 }],
+      },
+      amount_subtotal: 2200,
+      total_details: {},
+      amount_total: 2200,
+    } as unknown as Stripe.Checkout.Session;
+    const { stripe, retrieve } = fakeStripe();
+    retrieve.mockResolvedValue(fullSession);
+
+    await recordPaidOrder(
+      { id: "cs_email2" } as Stripe.Checkout.Session,
+      stripe,
+    );
+
+    // Two sends: the customer confirmation and the atelier notification, which
+    // replies to the customer.
+    expect(mockSend).toHaveBeenCalledTimes(2);
+    const atelier = mockSend.mock.calls.find(
+      (call) => call[0].to === "studio@shop.test",
+    );
+    expect(atelier).toBeDefined();
+    expect(atelier?.[0].replyTo).toBe("buyer@example.com");
+  });
+
+  it("skips the confirmation email when the session has no customer email", async () => {
+    mockFind.mockResolvedValue(false);
+    const { stripe, retrieve } = fakeStripe();
+    retrieve.mockResolvedValue({
+      id: "cs_noemail",
+      payment_status: "paid",
+      line_items: { data: [] },
+    } as unknown as Stripe.Checkout.Session);
+
+    await recordPaidOrder(
+      { id: "cs_noemail" } as Stripe.Checkout.Session,
+      stripe,
+    );
+
+    expect(mockCreate).toHaveBeenCalled();
+    expect(mockSend).not.toHaveBeenCalled();
   });
 });

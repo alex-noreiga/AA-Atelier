@@ -5,6 +5,8 @@
  * API specification
  * OpenAPI spec version: 0.1.0
  */
+import type { Invoice } from './invoice';
+import type { OrderStatusMilestonesItem } from './orderStatusMilestonesItem';
 
 export interface OrderStatus {
   orderNumber: string;
@@ -15,4 +17,13 @@ export interface OrderStatus {
   depositAmount?: number;
   /** Whether the customer has already paid the deposit. */
   depositPaid?: boolean;
+  /** The Stripe Checkout session id of the paid deposit, for linking to the on-site receipt. Present once the deposit has been paid. */
+  depositSessionId?: string;
+  /** True once the garment has reached the production stage at/after which measurements are frozen (MEASUREMENT_LOCK_FROM_STAGE). When true, a measurement-change request would be rejected, so the UI hides the request affordance. */
+  measurementsLocked: boolean;
+  /** The atelier's target completion date for this custom order (the order's Due Date), as an ISO date (yyyy-mm-dd). A response pass-through, kept as a string (no format: date) so it isn't coerced to a Date and reserialized to a UTC timestamp. Absent until the atelier sets one in Notion. */
+  estimatedCompletion?: string;
+  /** Per-stage target completion dates from the Production Schedule, present once the order's milestones have been generated. One entry per remaining (current + upcoming) stage; completed stages have none. Order is not significant — match by stage name. */
+  milestones?: OrderStatusMilestonesItem[];
+  invoice?: Invoice;
 }

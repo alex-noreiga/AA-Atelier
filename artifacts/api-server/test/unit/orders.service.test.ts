@@ -10,6 +10,13 @@ vi.mock("../../src/lib/notion/orders.repository.js", () => ({
   createOrder: vi.fn(),
 }));
 
+// getOrderStatus also reads per-stage milestones from the Production Schedule;
+// mock that so the service test drives it without touching Notion. Defaults to
+// none, so the existing status cases (whose records carry no pageId) are unaffected.
+vi.mock("../../src/lib/notion/production-schedule.repository.js", () => ({
+  listOrderMilestones: vi.fn().mockResolvedValue([]),
+}));
+
 // The CRM upsert is a best-effort side effect; mock it so the service test can
 // drive the link/skip/failure branches without touching Notion.
 vi.mock("../../src/lib/notion/clients.repository.js", () => ({
@@ -30,12 +37,14 @@ import {
   findOrderByNumber,
   createOrder,
 } from "../../src/lib/notion/orders.repository.js";
+import { listOrderMilestones } from "../../src/lib/notion/production-schedule.repository.js";
 import { upsertClientByEmail } from "../../src/lib/notion/clients.repository.js";
 import { sendEmailBestEffort } from "../../src/lib/resend/send.js";
 import { NotFoundError, ValidationError } from "../../src/lib/errors.js";
 
 const mockFind = vi.mocked(findOrderByNumber);
 const mockCreate = vi.mocked(createOrder);
+const mockListMilestones = vi.mocked(listOrderMilestones);
 const mockUpsertClient = vi.mocked(upsertClientByEmail);
 const mockSend = vi.mocked(sendEmailBestEffort);
 
@@ -82,6 +91,75 @@ describe("getOrderStatus", () => {
       "Delivery",
       "Archived",
     ]);
+  });
+
+  it("reports measurementsLocked=false before the production lock stage", async () => {
+    mockFind.mockResolvedValue(
+      orderRecord({
+        currentStage: "Sketching",
+        stages: ["Consultation", "Sketching", "Cutting/Pinning", "Delivery"],
+      }),
+    );
+
+    const result = await getOrderStatus("000002");
+    expect(result.measurementsLocked).toBe(false);
+  });
+
+  it("reports measurementsLocked=true at/after the production lock stage", async () => {
+    mockFind.mockResolvedValue(
+      orderRecord({
+        currentStage: "Cutting/Pinning",
+        stages: ["Consultation", "Sketching", "Cutting/Pinning", "Delivery"],
+      }),
+    );
+
+    const result = await getOrderStatus("000002");
+    expect(result.measurementsLocked).toBe(true);
+  });
+
+  it("passes the estimated completion date through unchanged", async () => {
+    mockFind.mockResolvedValue(
+      orderRecord({ estimatedCompletion: "2026-08-01" }),
+    );
+
+    const result = await getOrderStatus("000002");
+    expect(result.estimatedCompletion).toBe("2026-08-01");
+  });
+
+  it("attaches per-stage milestone dates, looked up by the order's page id", async () => {
+    mockFind.mockResolvedValue({
+      ...orderRecord({
+        orderNumber: "000002",
+        currentStage: "Sewing",
+        stages: ["Consultation", "Sewing", "Delivery"],
+      }),
+      pageId: "order-page-1",
+    });
+    mockListMilestones.mockResolvedValue([
+      { stage: "Sewing", targetDate: "2026-08-01" },
+      { stage: "Delivery", targetDate: "2026-08-10" },
+    ]);
+
+    const result = await getOrderStatus("000002");
+
+    expect(mockListMilestones).toHaveBeenCalledWith("order-page-1");
+    expect(result.milestones).toEqual([
+      { stage: "Sewing", targetDate: "2026-08-01" },
+      { stage: "Delivery", targetDate: "2026-08-10" },
+    ]);
+    // The internal page id is never exposed on the status result.
+    expect(result).not.toHaveProperty("pageId");
+  });
+
+  it("omits milestones entirely when none have been generated", async () => {
+    mockFind.mockResolvedValue({
+      ...orderRecord({ currentStage: "Consultation" }),
+      pageId: "order-page-2",
+    });
+    mockListMilestones.mockResolvedValue([]);
+
+    const result = await getOrderStatus("000002");
+    expect(result.milestones).toBeUndefined();
   });
 });
 

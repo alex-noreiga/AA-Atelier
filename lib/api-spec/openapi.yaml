@@ -133,6 +133,48 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/ErrorEnvelope"
+  /orders/{orderNumber}/invoice:
+    post:
+      operationId: createInvoicePayment
+      tags: [orders]
+      summary: Pay the outstanding balance on a custom order's invoice
+      description: >-
+        Creates a Stripe Checkout session for the order's invoice balance
+        (subtotal of the itemized materials + labor, minus deposits already
+        paid), priced server-side from the atelier's Notion invoice, and returns
+        the hosted-checkout URL. Fails if the invoice isn't ready, is already
+        paid, or has no outstanding balance.
+      parameters:
+        - name: orderNumber
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "201":
+          description: Invoice balance checkout session created
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/DepositSessionResponse"
+        "400":
+          description: No balance is due, or the invoice isn't ready
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorEnvelope"
+        "404":
+          description: Order not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/OrderNotFound"
+        "500":
+          description: Server error
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorEnvelope"
   /orders/{orderNumber}/measurement-change-requests:
     post:
       operationId: createMeasurementChangeRequest
@@ -340,6 +382,34 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/ErrorEnvelope"
+  /shop-orders/{orderNumber}:
+    get:
+      operationId: getShopOrderStatus
+      tags: [checkout]
+      summary: Look up a shop order's fulfilment status
+      description: >-
+        Returns the current fulfilment status of a ready-to-wear shop order by
+        its human-readable order number (issued at checkout), along with the
+        live list of possible statuses so the client can render a timeline.
+      parameters:
+        - name: orderNumber
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Shop order status
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ShopOrderStatus"
+        "404":
+          description: No shop order with that number
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/OrderNotFound"
   /appointments/options:
     get:
       operationId: getAppointmentOptions
@@ -494,11 +564,130 @@ components:
         depositPaid:
           type: boolean
           description: Whether the customer has already paid the deposit.
+        depositSessionId:
+          type: string
+          description: >-
+            The Stripe Checkout session id of the paid deposit, for linking to the
+            on-site receipt. Present once the deposit has been paid.
+        measurementsLocked:
+          type: boolean
+          description: >-
+            True once the garment has reached the production stage at/after which
+            measurements are frozen (MEASUREMENT_LOCK_FROM_STAGE). When true, a
+            measurement-change request would be rejected, so the UI hides the
+            request affordance.
+        estimatedCompletion:
+          type: string
+          description: >-
+            The atelier's target completion date for this custom order (the
+            order's Due Date), as an ISO date (yyyy-mm-dd). A response
+            pass-through, kept as a string (no format: date) so it isn't coerced
+            to a Date and reserialized to a UTC timestamp. Absent until the
+            atelier sets one in Notion.
+        milestones:
+          type: array
+          description: >-
+            Per-stage target completion dates from the Production Schedule,
+            present once the order's milestones have been generated. One entry
+            per remaining (current + upcoming) stage; completed stages have none.
+            Order is not significant — match by stage name.
+          items:
+            type: object
+            required:
+              - stage
+              - targetDate
+            properties:
+              stage:
+                type: string
+              targetDate:
+                type: string
+                description: >-
+                  ISO date (yyyy-mm-dd). A pass-through string (no format: date),
+                  same as estimatedCompletion.
+        invoice:
+          $ref: "#/components/schemas/Invoice"
       required:
         - orderNumber
         - orderName
         - currentStage
         - stages
+        - measurementsLocked
+        - measurementsLocked
+    Invoice:
+      type: object
+      description: >-
+        The customer's invoice for a custom order, present only once the atelier
+        has itemized it and flipped the "Invoice Ready" gate. Line items and
+        deposits are dollars; balanceDue is what's charged online.
+      required:
+        - invoiceId
+        - paid
+        - lineItems
+        - deposits
+        - subtotal
+        - depositsCreditedTotal
+        - balanceDue
+      properties:
+        invoiceId:
+          type: string
+          description: The atelier's invoice identifier (its Notion title).
+        paid:
+          type: boolean
+          description: Whether the final balance has already been paid.
+        lineItems:
+          type: array
+          items:
+            $ref: "#/components/schemas/InvoiceLineItem"
+          description: The itemized charges (deposit lines excluded — see deposits).
+        deposits:
+          type: array
+          items:
+            $ref: "#/components/schemas/InvoiceDeposit"
+          description: Deposits credited against the balance, from the order.
+        subtotal:
+          type: number
+          description: Sum of the non-deposit line items, in dollars.
+        depositsCreditedTotal:
+          type: number
+          description: Sum of the deposits already paid, in dollars.
+        balanceDue:
+          type: number
+          description: subtotal − depositsCreditedTotal, floored at 0, in dollars.
+        paymentDeadline:
+          type: string
+          description: The invoice's payment-due date (ISO), if the atelier set one.
+    InvoiceLineItem:
+      type: object
+      required:
+        - name
+        - type
+        - amount
+      properties:
+        name:
+          type: string
+          description: The line item's short name (e.g. "Main fabric").
+        type:
+          type: string
+          description: The line type — Garment, Material, Labor, or Adjustment.
+        amount:
+          type: number
+          description: The line total in dollars.
+    InvoiceDeposit:
+      type: object
+      required:
+        - label
+        - amount
+        - paid
+      properties:
+        label:
+          type: string
+          description: A display label, e.g. "Deposit 1".
+        amount:
+          type: number
+          description: The deposit amount in dollars.
+        paid:
+          type: boolean
+          description: Whether this deposit has been paid (only paid ones credit).
     OrderNotFound:
       type: object
       properties:
@@ -506,6 +695,29 @@ components:
           type: string
       required:
         - message
+    ShopOrderStatus:
+      type: object
+      properties:
+        orderNumber:
+          type: string
+        status:
+          type: string
+          description: The order's current fulfilment status.
+        statuses:
+          type: array
+          description: >-
+            The live ordered list of possible fulfilment statuses (read from the
+            Notion "Status" workflow options), so the client can render a
+            progress timeline. Never hardcode this list.
+          items:
+            type: string
+        total:
+          type: number
+          description: The order total in dollars.
+      required:
+        - orderNumber
+        - status
+        - statuses
     NewOrderRequest:
       type: object
       required:
@@ -821,6 +1033,18 @@ components:
           description: >-
             The Stripe payment status of the session, e.g. "paid", "unpaid", or
             "no_payment_required".
+        orderNumber:
+          type: string
+          description: >-
+            The human-readable shop order number (e.g. "SHP-…") the customer can
+            use to track their order. Present for shop-cart orders; absent for
+            deposit sessions.
+        kind:
+          type: string
+          description: >-
+            What the session paid for — "shop" for a shop-cart order, "deposit"
+            for a custom-order deposit (from the session's metadata.kind). Lets
+            the success page skip clearing the cart on a deposit receipt view.
         email:
           type: string
           description: The customer's email, present once the session is complete.

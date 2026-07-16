@@ -95,6 +95,12 @@ describe("MeasurementChangeDialog submission mapping", () => {
     await user.click(screen.getByTestId("measurement-change-mode-appointment"));
     // The measurement inputs are gone in appointment mode.
     expect(document.getElementById("mc-waist")).toBeNull();
+
+    // The re-measure panel links straight to booking a fitting.
+    expect(
+      screen.getByTestId("measurement-change-book-fitting"),
+    ).toHaveAttribute("href", "/appointments?type=fitting");
+
     await user.click(screen.getByTestId("measurement-change-submit"));
 
     await waitFor(() => expect(hoisted.mutate).toHaveBeenCalledTimes(1));

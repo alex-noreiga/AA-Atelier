@@ -41,7 +41,8 @@ import type {
   NewOrderResponse,
   OrderNotFound,
   OrderStatus,
-  ProductList
+  ProductList,
+  ShopOrderStatus
 } from './api.schemas';
 
 import { customFetch } from '../custom-fetch';
@@ -367,6 +368,77 @@ export const useCreateOrderDeposit = <TError = ErrorType<ErrorEnvelope | OrderNo
         TContext
       > => {
       return useMutation(getCreateOrderDepositMutationOptions(options));
+    }
+
+export const getCreateInvoicePaymentUrl = (orderNumber: string,) => {
+
+
+
+
+  return `/api/orders/${orderNumber}/invoice`
+}
+
+/**
+ * Creates a Stripe Checkout session for the order's invoice balance (subtotal of the itemized materials + labor, minus deposits already paid), priced server-side from the atelier's Notion invoice, and returns the hosted-checkout URL. Fails if the invoice isn't ready, is already paid, or has no outstanding balance.
+ * @summary Pay the outstanding balance on a custom order's invoice
+ */
+export const createInvoicePayment = async (orderNumber: string, options?: RequestInit): Promise<DepositSessionResponse> => {
+
+  return customFetch<DepositSessionResponse>(getCreateInvoicePaymentUrl(orderNumber),
+  {
+    ...options,
+    method: 'POST'
+
+
+  }
+);}
+
+
+
+
+export const getCreateInvoicePaymentMutationOptions = <TError = ErrorType<ErrorEnvelope | OrderNotFound>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof createInvoicePayment>>, TError,{orderNumber: string}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof createInvoicePayment>>, TError,{orderNumber: string}, TContext> => {
+
+const mutationKey = ['createInvoicePayment'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof createInvoicePayment>>, {orderNumber: string}> = (props) => {
+          const {orderNumber} = props ?? {};
+
+          return  createInvoicePayment(orderNumber,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type CreateInvoicePaymentMutationResult = NonNullable<Awaited<ReturnType<typeof createInvoicePayment>>>
+
+    export type CreateInvoicePaymentMutationError = ErrorType<ErrorEnvelope | OrderNotFound>
+
+    /**
+ * @summary Pay the outstanding balance on a custom order's invoice
+ */
+export const useCreateInvoicePayment = <TError = ErrorType<ErrorEnvelope | OrderNotFound>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof createInvoicePayment>>, TError,{orderNumber: string}, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof createInvoicePayment>>,
+        TError,
+        {orderNumber: string},
+        TContext
+      > => {
+      return useMutation(getCreateInvoicePaymentMutationOptions(options));
     }
 
 export const getCreateMeasurementChangeRequestUrl = (orderNumber: string,) => {
@@ -798,6 +870,84 @@ export function useGetCheckoutSession<TData = Awaited<ReturnType<typeof getCheck
  ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
 
   const queryOptions = getGetCheckoutSessionQueryOptions(sessionId,options)
+
+  const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
+
+  return withQueryKey(query, queryOptions.queryKey);
+}
+
+
+
+
+
+
+
+export const getGetShopOrderStatusUrl = (orderNumber: string,) => {
+
+
+
+
+  return `/api/shop-orders/${orderNumber}`
+}
+
+/**
+ * Returns the current fulfilment status of a ready-to-wear shop order by its human-readable order number (issued at checkout), along with the live list of possible statuses so the client can render a timeline.
+ * @summary Look up a shop order's fulfilment status
+ */
+export const getShopOrderStatus = async (orderNumber: string, options?: RequestInit): Promise<ShopOrderStatus> => {
+
+  return customFetch<ShopOrderStatus>(getGetShopOrderStatusUrl(orderNumber),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
+
+
+
+
+export const getGetShopOrderStatusQueryKey = (orderNumber: string,) => {
+    return [
+    `/api/shop-orders/${orderNumber}`
+    ] as const;
+    }
+
+
+export const getGetShopOrderStatusQueryOptions = <TData = Awaited<ReturnType<typeof getShopOrderStatus>>, TError = ErrorType<OrderNotFound>>(orderNumber: string, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getShopOrderStatus>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getGetShopOrderStatusQueryKey(orderNumber);
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof getShopOrderStatus>>> = ({ signal }) => getShopOrderStatus(orderNumber, { signal, ...requestOptions });
+
+
+
+
+
+   return  { queryKey, queryFn, enabled: orderNumber !== null && orderNumber !== undefined, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof getShopOrderStatus>>, TError, TData> & { queryKey: QueryKey }
+}
+
+export type GetShopOrderStatusQueryResult = NonNullable<Awaited<ReturnType<typeof getShopOrderStatus>>>
+export type GetShopOrderStatusQueryError = ErrorType<OrderNotFound>
+
+
+/**
+ * @summary Look up a shop order's fulfilment status
+ */
+
+export function useGetShopOrderStatus<TData = Awaited<ReturnType<typeof getShopOrderStatus>>, TError = ErrorType<OrderNotFound>>(
+ orderNumber: string, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getShopOrderStatus>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+
+ ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+
+  const queryOptions = getGetShopOrderStatusQueryOptions(orderNumber,options)
 
   const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
 

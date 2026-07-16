@@ -21,6 +21,7 @@
 import { findOrderForMeasurementChange } from "../lib/notion/orders.repository.js";
 import { createMeasurementChangeRequest } from "../lib/notion/measurement-change.repository.js";
 import type { CreateMeasurementChangeInput } from "../lib/notion/measurement-change.blocks.js";
+import { measurementsLocked } from "./measurement-lock.js";
 import {
   NotFoundError,
   ForbiddenError,
@@ -45,32 +46,6 @@ const MEASUREMENT_FIELDS = [
 /** True when every body measurement is present as a number. */
 function hasAllMeasurements(input: CreateMeasurementChangeInput): boolean {
   return MEASUREMENT_FIELDS.every((field) => typeof input[field] === "number");
-}
-
-// A targeted business rule naming one live Stage option — the first stage at
-// which the garment is being physically made and measurements are frozen. This
-// names a value, not the stage list (which stays live-read from Notion), so it
-// is the same kind of deliberate exception as `STATUS_IN_STOCK`: if the atelier
-// renames this stage in Notion, update it here (or set the env override).
-const DEFAULT_LOCK_FROM_STAGE = "Cutting/Pinning";
-
-function lockFromStage(): string {
-  return (
-    process.env.MEASUREMENT_LOCK_FROM_STAGE?.trim() || DEFAULT_LOCK_FROM_STAGE
-  );
-}
-
-/** True when the order's current stage is at or past the production lock point.
- * If either stage is absent from the live list (a renamed/removed option) we
- * fail open and allow the request — a human vets it, and this matches the
- * codebase's graceful-degradation philosophy for live-read stage data. */
-function measurementsLocked(currentStage: string, stages: string[]): boolean {
-  const thresholdIndex = stages.indexOf(lockFromStage());
-  const currentIndex = stages.indexOf(currentStage);
-  if (thresholdIndex === -1 || currentIndex === -1) {
-    return false;
-  }
-  return currentIndex >= thresholdIndex;
 }
 
 export async function submitMeasurementChangeRequest(

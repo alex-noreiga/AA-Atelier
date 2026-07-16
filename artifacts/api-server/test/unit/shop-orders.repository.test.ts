@@ -1,15 +1,46 @@
-import { describe, it, expect } from "vitest";
+import { describe, it, expect, beforeEach, vi } from "vitest";
 import type Stripe from "stripe";
 import {
   findOrderBySessionId,
   createShopOrder,
+  findShopOrderByNumber,
 } from "../../src/lib/notion/shop-orders.repository.js";
-import { SHOP_ORDER_SESSION_PROPERTY } from "../../src/lib/notion/shop-orders.blocks.js";
+import {
+  SHOP_ORDER_SESSION_PROPERTY,
+  SHOP_ORDER_NUMBER_PROPERTY,
+  SHOP_ORDER_STATUS_PROPERTY,
+  SHOP_ORDER_TOTAL_PROPERTY,
+} from "../../src/lib/notion/shop-orders.blocks.js";
 import {
   makeFakeClient,
   jsonResponse,
   errorResponse,
 } from "../support/fake-notion.js";
+
+/** A Notion query result page carrying the number/status/total we read back. */
+function shopOrderResultPage(opts: {
+  orderNumber?: string;
+  status?: string;
+  total?: number | null;
+}) {
+  return {
+    id: "so-page",
+    properties: {
+      [SHOP_ORDER_NUMBER_PROPERTY]: {
+        type: "rich_text",
+        rich_text: opts.orderNumber ? [{ plain_text: opts.orderNumber }] : [],
+      },
+      [SHOP_ORDER_STATUS_PROPERTY]: {
+        type: "status",
+        status: opts.status ? { name: opts.status } : null,
+      },
+      [SHOP_ORDER_TOTAL_PROPERTY]: {
+        type: "number",
+        number: opts.total ?? null,
+      },
+    },
+  };
+}
 
 // A minimal paid Checkout session — only the fields the block builder reads.
 function session(
@@ -113,5 +144,87 @@ describe("createShopOrder", () => {
     await expect(createShopOrder(session(), client)).rejects.toThrow(
       /status 400: validation_error: bad property/,
     );
+  });
+});
+
+describe("findShopOrderByNumber", () => {
+  it("returns null for a blank order number without querying", async () => {
+    const client = makeFakeClient(() => jsonResponse({ results: [] }));
+    expect(await findShopOrderByNumber("  ", client)).toBeNull();
+    expect(client.calls).toHaveLength(0);
+  });
+
+  it("filters by the order number as a rich_text equals and maps the page", async () => {
+    const client = makeFakeClient((path) => {
+      if (isQuery(path)) {
+        return jsonResponse({
+          results: [
+            shopOrderResultPage({
+              orderNumber: "SHP-ABC-1234",
+              status: "Processing",
+              total: 44,
+            }),
+          ],
+        });
+      }
+      throw new Error(`unexpected path ${path}`);
+    });
+
+    const order = await findShopOrderByNumber("shp-abc-1234", client);
+
+    const body = JSON.parse(client.calls[0].init!.body as string);
+    expect(body.filter).toEqual({
+      property: SHOP_ORDER_NUMBER_PROPERTY,
+      rich_text: { equals: "shp-abc-1234" },
+    });
+    expect(order).toEqual({
+      orderNumber: "SHP-ABC-1234",
+      status: "Processing",
+      total: 44,
+    });
+  });
+
+  it("returns null when no order matches", async () => {
+    const client = makeFakeClient(() => jsonResponse({ results: [] }));
+    expect(await findShopOrderByNumber("SHP-NONE", client)).toBeNull();
+  });
+});
+
+describe("fetchLiveShopOrderStatuses", () => {
+  // Module-level TTL cache — re-import fresh per test to start clean.
+  let repo: typeof import("../../src/lib/notion/shop-orders.repository.js");
+  beforeEach(async () => {
+    vi.resetModules();
+    repo = await import("../../src/lib/notion/shop-orders.repository.js");
+  });
+
+  const isSchema = (path: string) => /\/v1\/databases\/[^/]+$/.test(path);
+
+  it("reads the live Status workflow options from the database schema", async () => {
+    const client = makeFakeClient((path) => {
+      if (isSchema(path)) {
+        return jsonResponse({
+          properties: {
+            [SHOP_ORDER_STATUS_PROPERTY]: {
+              type: "status",
+              status: {
+                options: [
+                  { name: "Payment Confirmed" },
+                  { name: "Processing" },
+                  { name: "Shipped" },
+                ],
+              },
+            },
+          },
+        });
+      }
+      throw new Error(`unexpected path ${path}`);
+    });
+
+    expect(await repo.fetchLiveShopOrderStatuses(client)).toEqual([
+      "Payment Confirmed",
+      "Processing",
+      "Shipped",
+    ]);
   });
 });

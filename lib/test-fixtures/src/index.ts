@@ -66,6 +66,7 @@ export function orderRecord(overrides: Partial<OrderStatus> = {}): OrderStatus {
     orderName: "Ada – Custom Dress",
     currentStage: "Sewing/Construction",
     stages: STAGES,
+    measurementsLocked: false,
     ...overrides,
   };
 }
