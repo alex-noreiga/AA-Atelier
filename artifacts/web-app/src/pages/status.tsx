@@ -389,11 +389,13 @@ export default function Status() {
                   className="text-sm font-light text-muted-foreground/70 text-center max-w-sm"
                   data-testid="measurements-locked"
                 >
-                  Measurements are locked now that your garment is in production.
-                  Need a change? Please contact us.
+                  Measurements are locked now that your garment is in
+                  production. Need a change? Please contact us.
                 </p>
               ) : (
-                <MeasurementChangeDialog orderNumber={orderStatus.orderNumber} />
+                <MeasurementChangeDialog
+                  orderNumber={orderStatus.orderNumber}
+                />
               )}
               <button
                 onClick={handleReset}

@@ -45,8 +45,8 @@ export default function Terms() {
       <LegalSection title="Appointments">
         <p>
           Appointments are booked for a specific time and staff member. If you
-          need to reschedule or cancel, please let us know as early as you can so
-          we can offer the slot to another client.
+          need to reschedule or cancel, please let us know as early as you can
+          so we can offer the slot to another client.
         </p>
       </LegalSection>
 

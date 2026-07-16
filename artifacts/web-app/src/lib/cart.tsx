@@ -133,7 +133,10 @@ export function CartProvider({ children }: { children: ReactNode }) {
           ? current.filter((i) => lineKey(i.variantId, i.size) !== key)
           : current.map((i) =>
               lineKey(i.variantId, i.size) === key
-                ? { ...i, quantity: clampToStock(quantity, i.quantityAvailable) }
+                ? {
+                    ...i,
+                    quantity: clampToStock(quantity, i.quantityAvailable),
+                  }
                 : i,
             ),
       );

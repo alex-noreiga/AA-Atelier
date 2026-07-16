@@ -27,8 +27,8 @@ export default function ShippingReturns() {
         <p>
           Shipping options and rates are shown at checkout and calculated from
           your address. Once your order ships, delivery times depend on the
-          carrier and destination. We are not responsible for carrier delays once
-          a package has left the atelier.
+          carrier and destination. We are not responsible for carrier delays
+          once a package has left the atelier.
         </p>
       </LegalSection>
 
@@ -37,15 +37,15 @@ export default function ShippingReturns() {
           Because custom, made-to-measure garments are crafted specifically for
           you, they cannot be returned or exchanged. We work closely with you —
           through measurements, notes, and fittings where offered — to get it
-          right. If something isn't as agreed when your piece arrives, contact us
-          right away and we'll make it right.
+          right. If something isn't as agreed when your piece arrives, contact
+          us right away and we'll make it right.
         </p>
       </LegalSection>
 
       <LegalSection title="Ready-to-wear returns">
         <p>
-          Unworn ready-to-wear items with tags attached may be returned within 30
-          days of delivery for a refund of the item price. To start a return,
+          Unworn ready-to-wear items with tags attached may be returned within
+          30 days of delivery for a refund of the item price. To start a return,
           email us with your order number. Return shipping is the customer's
           responsibility unless the item arrived damaged or incorrect.
         </p>

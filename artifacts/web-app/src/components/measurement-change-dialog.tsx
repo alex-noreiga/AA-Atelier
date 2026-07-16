@@ -359,9 +359,9 @@ export function MeasurementChangeDialog({
                   ) : (
                     <div className="border border-border rounded-lg p-6 bg-muted/20">
                       <p className="text-sm font-light text-foreground/90 leading-relaxed">
-                        No problem — we'll take your measurements for you. Book a
-                        fitting now, or we'll reach out to schedule one when you
-                        submit this request.
+                        No problem — we'll take your measurements for you. Book
+                        a fitting now, or we'll reach out to schedule one when
+                        you submit this request.
                       </p>
                       <CtaLink
                         to="/appointments?type=fitting"
