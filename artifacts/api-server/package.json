@@ -27,7 +27,7 @@
     "@types/cors": "^2.8.19",
     "@types/express": "^5.0.6",
     "@types/node": "catalog:",
-    "@types/supertest": "^6.0.3",
+    "@types/supertest": "^7.2.1",
     "@workspace/test-fixtures": "workspace:*",
     "esbuild": "0.28.1",
     "esbuild-plugin-pino": "^2.3.3",
