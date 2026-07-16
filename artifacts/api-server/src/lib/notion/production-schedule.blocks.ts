@@ -6,14 +6,16 @@
 // Property *types* here must match the live Production Schedule schema, not the
 // property name (same lesson as `.agents/memory/notion-status-filters.md`). Two
 // properties are new and must be added to that database (the atelier does this
-// once): `Stage` (select) and `Order` (relation -> Order Tracking Pipeline).
+// once): `Production Stage` (select) and `Order` (relation -> Order Tracking
+// Pipeline). `Production Stage` is the milestone's stage label (Cutting, Fitting,
+// …) and is named apart from `Status` (its completion state) on purpose.
 
 // Live-schema property names (a Notion rename is a one-line change here). The
 // milestone row is deliberately lean: the client name and the order's due date
 // are reachable through the `Order` relation, so they aren't duplicated here.
 export const PS_TITLE_PROPERTY = "Project / Dress Name"; // title
-export const PS_STATUS_PROPERTY = "Status"; // status
-export const PS_STAGE_PROPERTY = "Stage"; // select (new)
+export const PS_STATUS_PROPERTY = "Status"; // status (completion)
+export const PS_STAGE_PROPERTY = "Production Stage"; // select — the stage label
 export const PS_TARGET_DATE_PROPERTY = "Target Completion Date"; // date
 export const PS_ORDER_RELATION_PROPERTY = "Order"; // relation -> orders (new)
 

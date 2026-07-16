@@ -3,7 +3,10 @@ import cors from "cors";
 import pinoHttp from "pino-http";
 import router from "./routes/index.js";
 import { stripeWebhookHandler } from "./routes/stripe-webhook.js";
-import { generateMilestonesHandler } from "./routes/cron.js";
+import {
+  generateMilestonesHandler,
+  generateMilestonesButtonHandler,
+} from "./routes/cron.js";
 import { errorHandler } from "./middlewares/error.js";
 import { logger } from "./lib/logger.js";
 
@@ -45,10 +48,13 @@ app.use(express.urlencoded({ extended: true }));
 
 app.use("/api", router);
 
-// Vercel Cron reconciliation endpoint. Like the Stripe webhook it's deliberately
-// outside the OpenAPI contract / generated client, so it's mounted here rather
-// than on the /api router. Auth is a CRON_SECRET bearer token (see routes/cron.ts).
+// Milestone reconciliation, two triggers for the same job (both outside the
+// OpenAPI contract / generated client, mounted directly like the Stripe webhook):
+//   - Vercel Cron, on a schedule (Bearer CRON_SECRET, JSON response).
+//   - a Notion "Open link" button, on demand (?secret= query token, HTML page).
+// See routes/cron.ts.
 app.get("/api/cron/generate-milestones", generateMilestonesHandler);
+app.get("/api/cron/generate-milestones/run", generateMilestonesButtonHandler);
 
 // Central error handler — must be registered after the routes.
 app.use(errorHandler);

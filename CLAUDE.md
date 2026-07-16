@@ -131,13 +131,20 @@ Express app (artifacts/api-server)  ──►  Notion REST API (orders database)
   │                                  On checkout.session.completed, records the
   │                                  paid order in the Notion "Shop Orders"
   │                                  database. NOT part of the OpenAPI contract.
-  └─ GET  /api/cron/generate-milestones
-                                   → Vercel Cron reconciliation (CRON_SECRET-
-                                     guarded). Finds orders with a "Due Date" but
-                                     no milestones and writes one per-stage
-                                     milestone row to the Notion "Production
-                                     Schedule" database. NOT part of the OpenAPI
-                                     contract.
+  ├─ GET  /api/cron/generate-milestones
+  │                                → Vercel Cron reconciliation (CRON_SECRET-
+  │                                  guarded, Bearer header, JSON). Finds orders
+  │                                  with a "Due Date" but no milestones and writes
+  │                                  one per-stage milestone row to the Notion
+  │                                  "Production Schedule" database. NOT part of
+  │                                  the OpenAPI contract.
+  └─ GET  /api/cron/generate-milestones/run
+                                   → the SAME reconciliation, on demand: a Notion
+                                     "Open link" button the atelier presses. Auth
+                                     is a `?secret=<CRON_SECRET>` query token
+                                     (a button can't send a Bearer header) and it
+                                     returns a small HTML confirmation page. NOT
+                                     part of the OpenAPI contract.
 ```
 
 The customer-notification POST endpoints (`/api/orders`, `/api/contact`,
@@ -412,15 +419,23 @@ Calendar views keyed on `Target Completion Date`. To fill it, the app
 order that has a firm due date. See `.agents/memory/production-schedule-milestones.md`
 for the full design; the load-bearing points:
 
-1. **Trigger is a reconciliation cron, not a Notion push.** There is no Notion→app
-   trigger (see the deposits/status notes), so the atelier sets a `Due Date` on the
-   order in the Order Tracking Pipeline and a **Vercel Cron** job
-   (`GET /api/cron/generate-milestones`, in `vercel.json` `crons`) later scans for
-   orders that have a due date but whose `Milestones Generated` checkbox is unset,
-   and generates their milestones. The endpoint is CRON_SECRET-guarded and, like the
-   Stripe webhook, is **deliberately outside the OpenAPI contract** (mounted in
-   `app.ts`, not the `/api` router). Code: `routes/cron.ts` →
-   `services/schedule.service.ts` → `lib/notion/orders.repository.ts`
+1. **Trigger is a reconciliation cron (plus an on-demand button), not a Notion
+   push.** There is no Notion→app trigger (see the deposits/status notes), so the
+   atelier sets a `Due Date` on the order in the Order Tracking Pipeline and the
+   reconciliation later scans for orders that have a due date but whose
+   `Milestones Generated` checkbox is unset, and generates their milestones. It
+   runs two ways, both calling `generatePendingMilestones`: a **Vercel Cron** job
+   nightly (`GET /api/cron/generate-milestones`, Bearer `CRON_SECRET`, JSON; in
+   `vercel.json` `crons`) and an on-demand **Notion "Open link" button**
+   (`GET /api/cron/generate-milestones/run?secret=<CRON_SECRET>`, query token,
+   returns an HTML confirmation — a native button can't send a Bearer header). The
+   query token sits in the button config + browser history (the request logger
+   strips it), so it's a low-stakes reuse of `CRON_SECRET` for an idempotent
+   internal action; rotate it or add a dedicated token if that matters. Both
+   endpoints are CRON_SECRET-guarded and, like the Stripe webhook, **deliberately
+   outside the OpenAPI contract** (mounted in `app.ts`, not the `/api` router).
+   Code: `routes/cron.ts` → `services/schedule.service.ts` →
+   `lib/notion/orders.repository.ts`
    (`findOrdersNeedingMilestones`/`markMilestonesGenerated`) +
    `lib/notion/production-schedule.{blocks,repository}.ts`.
 
@@ -429,8 +444,10 @@ for the full design; the load-bearing points:
    forward evenly across `[today, dueDate]` (the final stage lands on the due date;
    a past-due date clamps all to the due date). The stage list comes live from
    Notion via `fetchLiveOrderStages`, so the schedule adapts when the atelier edits
-   stages. The milestone's `Stage` is written to a **select** property, which Notion
-   auto-creates options for, so no stage constant is baked in either.
+   stages. The milestone's `Production Stage` is written to a **select** property,
+   which Notion auto-creates options for, so no stage constant is baked in either.
+   (`Production Stage` is the stage label — named apart from the milestone's
+   `Status`, which is its completion state.)
 
 3. **Idempotent.** The `Milestones Generated` checkbox plus an
    existing-milestones lookup (`orderHasMilestones`, by the `Order` relation) stop a
@@ -440,10 +457,13 @@ for the full design; the load-bearing points:
    `Milestones Generated` (and delete the stale rows); the next run regenerates.
 
 The atelier must, one time: add `Due Date` (date) + `Milestones Generated`
-(checkbox) to the Order Tracking Pipeline; add `Stage` (select) + `Order`
-(relation → Order Tracking Pipeline) to the Production Schedule; share the Notion
-integration with the Production Schedule database; and set
-`NOTION_PRODUCTION_SCHEDULE_DATABASE_ID` + `CRON_SECRET`. Property names live in
+(checkbox) to the Order Tracking Pipeline; add `Production Stage` (select) +
+`Order` (relation → Order Tracking Pipeline) to the Production Schedule; share the
+Notion integration with the Production Schedule database; set
+`NOTION_PRODUCTION_SCHEDULE_DATABASE_ID` + `CRON_SECRET`; and (optional) add a
+Notion **Button** → "Open link" →
+`https://<PUBLIC_BASE_URL>/api/cron/generate-milestones/run?secret=<CRON_SECRET>`
+on a dashboard page to generate milestones on demand. Property names live in
 `orders.schema.ts` (orders) and `production-schedule.blocks.ts` (schedule).
 
 ## Appointment scheduling (real-time slot booking)
@@ -721,7 +741,9 @@ and in the maintainer's env without edits.
   the two the custom-order invoice flow reads to show a customer their balance.
   The Notion integration must be shared with each database or queries 404. The
   production-schedule cron also needs `CRON_SECRET` (the bearer token Vercel Cron
-  sends to `GET /api/cron/generate-milestones`; unset ⇒ that endpoint 401s).
+  sends to `GET /api/cron/generate-milestones`; unset ⇒ that endpoint 401s). The
+  same secret doubles as the `?secret=` query token for the on-demand Notion
+  button (`GET /api/cron/generate-milestones/run`).
   Optionally `NOTION_CLIENT_CRM_DATABASE_ID` (the "Client CRM" database): when set,
   a new custom order **best-effort** upserts a client record there (deduped by
   email) and links the order via the `Client ⇄ Orders` relation; unset ⇒ CRM
