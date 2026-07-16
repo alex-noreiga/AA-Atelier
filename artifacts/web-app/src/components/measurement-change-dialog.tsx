@@ -55,7 +55,9 @@ const formSchema = z
           path: [key],
           code: z.ZodIssueCode.custom,
           message:
-            raw && !Number.isNaN(num) ? "Must be a positive number" : "Required",
+            raw && !Number.isNaN(num)
+              ? "Must be a positive number"
+              : "Required",
         });
       }
     }
@@ -150,7 +152,11 @@ export function MeasurementChangeDialog({
     createRequest.mutate({
       orderNumber,
       // Omit an empty note so the server never receives an empty string.
-      data: { email, ...measurements, ...(note?.trim() ? { note: note.trim() } : {}) },
+      data: {
+        email,
+        ...measurements,
+        ...(note?.trim() ? { note: note.trim() } : {}),
+      },
     });
   };
 
@@ -203,8 +209,8 @@ export function MeasurementChangeDialog({
                 ) : (
                   <>
                     We've passed your updated measurements to the atelier for
-                    order <span className="text-foreground">{orderNumber}</span>.
-                    We'll be in touch to confirm.
+                    order <span className="text-foreground">{orderNumber}</span>
+                    . We'll be in touch to confirm.
                   </>
                 )}
               </DialogDescription>
@@ -293,7 +299,10 @@ export function MeasurementChangeDialog({
                     {(
                       [
                         { mode: "self", label: "I'll enter new measurements" },
-                        { mode: "appointment", label: "Re-measure at a fitting" },
+                        {
+                          mode: "appointment",
+                          label: "Re-measure at a fitting",
+                        },
                       ] as const
                     ).map(({ mode, label }) => (
                       <button

@@ -39,7 +39,8 @@ describe("upsertClientByEmail", () => {
       if (isQuery(path)) {
         return jsonResponse({ results: [crmClientPage({ id: "client-7" })] });
       }
-      if (path === "/v1/pages/client-7") return jsonResponse({ id: "client-7" });
+      if (path === "/v1/pages/client-7")
+        return jsonResponse({ id: "client-7" });
       throw new Error(`unexpected ${path}`);
     });
 
@@ -110,7 +111,10 @@ describe("upsertClientByEmail", () => {
   it("throws when the lookup query fails", async () => {
     const client = makeFakeClient(() => errorResponse(500));
     await expect(
-      upsertClientByEmail({ fullName: "Ada", email: "ada@example.com" }, client),
+      upsertClientByEmail(
+        { fullName: "Ada", email: "ada@example.com" },
+        client,
+      ),
     ).rejects.toThrow(/status 500/);
   });
 });

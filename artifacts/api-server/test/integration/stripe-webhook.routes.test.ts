@@ -136,6 +136,74 @@ describe("POST /api/webhooks/stripe", () => {
     expect(mockRecord).not.toHaveBeenCalled();
   });
 
+  it("returns 400 when the webhook secret is not configured", async () => {
+    delete process.env.STRIPE_WEBHOOK_SECRET;
+    // The guard short-circuits before any signature verification, so the Stripe
+    // client is never consulted.
+    const constructEvent = stubConstructEvent(
+      () =>
+        ({
+          type: "checkout.session.completed",
+          data: { object: { id: "cs_1" } },
+        }) as unknown as Stripe.Event,
+    );
+
+    const res = await request(app)
+      .post("/api/webhooks/stripe")
+      .set("Content-Type", "application/json")
+      .set("stripe-signature", "t=1,v1=abc")
+      .send(JSON.stringify({ id: "evt_1" }));
+
+    expect(res.status).toBe(400);
+    expect(constructEvent).not.toHaveBeenCalled();
+    expect(mockRecord).not.toHaveBeenCalled();
+  });
+
+  it("returns 500 so Stripe retries when recording a shop order throws", async () => {
+    const sessionObject = { id: "cs_boom" };
+    stubConstructEvent(
+      () =>
+        ({
+          type: "checkout.session.completed",
+          data: { object: sessionObject },
+        }) as unknown as Stripe.Event,
+    );
+    // The recorder failing (e.g. a Notion outage) must not be swallowed: Stripe
+    // delivers at-least-once and retries on any non-2xx, and recordPaidOrder is
+    // idempotent, so a 500 here is what makes the retry safe.
+    mockRecord.mockRejectedValue(new Error("Notion is down"));
+
+    const res = await request(app)
+      .post("/api/webhooks/stripe")
+      .set("Content-Type", "application/json")
+      .set("stripe-signature", "t=1,v1=abc")
+      .send(JSON.stringify({ id: "evt_boom" }));
+
+    expect(res.status).toBe(500);
+    expect(res.body).toEqual({ received: false });
+  });
+
+  it("returns 500 when recording a deposit payment throws", async () => {
+    const sessionObject = { id: "cs_dep_boom", metadata: { kind: "deposit" } };
+    stubConstructEvent(
+      () =>
+        ({
+          type: "checkout.session.completed",
+          data: { object: sessionObject },
+        }) as unknown as Stripe.Event,
+    );
+    mockRecordDeposit.mockRejectedValue(new Error("Notion is down"));
+
+    const res = await request(app)
+      .post("/api/webhooks/stripe")
+      .set("Content-Type", "application/json")
+      .set("stripe-signature", "t=1,v1=abc")
+      .send(JSON.stringify({ id: "evt_dep_boom" }));
+
+    expect(res.status).toBe(500);
+    expect(res.body).toEqual({ received: false });
+  });
+
   it("ignores unrelated event types with a 200", async () => {
     stubConstructEvent(
       () =>

@@ -97,6 +97,52 @@ describe("createDepositCheckout", () => {
     );
     expect(create).not.toHaveBeenCalled();
   });
+
+  it("400s when the deposit amount is zero (never charges $0)", async () => {
+    mockFind.mockResolvedValue({
+      pageId: "p",
+      orderName: "Ada",
+      depositAmount: 0,
+      depositPaid: false,
+    });
+    const { stripe, create } = fakeStripe();
+
+    await expect(createDepositCheckout("ORD-1", stripe)).rejects.toBeInstanceOf(
+      BadRequestError,
+    );
+    expect(create).not.toHaveBeenCalled();
+  });
+
+  it("rounds a fractional-dollar deposit to whole cents", async () => {
+    mockFind.mockResolvedValue({
+      pageId: "p",
+      orderName: "Ada",
+      depositAmount: 149.99,
+      depositPaid: false,
+    });
+    const { stripe, create } = fakeStripe();
+
+    await createDepositCheckout("ORD-1", stripe);
+
+    expect(create.mock.calls[0][0].line_items[0].price_data.unit_amount).toBe(
+      14999,
+    );
+  });
+
+  it("throws when Stripe returns a session without a URL", async () => {
+    mockFind.mockResolvedValue({
+      pageId: "p",
+      orderName: "Ada",
+      depositAmount: 150,
+      depositPaid: false,
+    });
+    const { stripe, create } = fakeStripe();
+    create.mockResolvedValue({ url: null });
+
+    await expect(createDepositCheckout("ORD-1", stripe)).rejects.toThrow(
+      /Stripe did not return a checkout URL/,
+    );
+  });
 });
 
 describe("recordDepositPayment", () => {
@@ -128,5 +174,24 @@ describe("recordDepositPayment", () => {
         metadata: {},
       } as unknown as Stripe.Checkout.Session),
     ).rejects.toThrow(/orderPageId/);
+  });
+
+  it("is idempotent on redelivery — the update-in-place just re-sets the same values", async () => {
+    const session = {
+      id: "cs_dup",
+      payment_status: "paid",
+      metadata: { kind: "deposit", orderPageId: "page-42" },
+    } as unknown as Stripe.Checkout.Session;
+
+    // Unlike a shop order (which creates a new page and dedupes on session id),
+    // a deposit marks an existing order paid — so a redelivered webhook just
+    // PATCHes the same Deposit Paid / Deposit Session Id, with no duplicate and
+    // no dedup lookup needed.
+    await recordDepositPayment(session);
+    await recordDepositPayment(session);
+
+    expect(mockMark).toHaveBeenCalledTimes(2);
+    expect(mockMark).toHaveBeenNthCalledWith(1, "page-42", "cs_dup");
+    expect(mockMark).toHaveBeenNthCalledWith(2, "page-42", "cs_dup");
   });
 });

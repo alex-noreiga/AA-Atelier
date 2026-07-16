@@ -138,13 +138,19 @@ export function extractCategoryOptions(
 function extractTitle(page: NotionInventoryPage, name: string): string {
   const p = page.properties[name];
   if (p?.type !== "title") return "";
-  return p.title.map((t) => t.plain_text).join("").trim();
+  return p.title
+    .map((t) => t.plain_text)
+    .join("")
+    .trim();
 }
 
 function extractRichText(page: NotionInventoryPage, name: string): string {
   const p = page.properties[name];
   if (p?.type !== "rich_text") return "";
-  return p.rich_text.map((t) => t.plain_text).join("").trim();
+  return p.rich_text
+    .map((t) => t.plain_text)
+    .join("")
+    .trim();
 }
 
 function extractSelect(page: NotionInventoryPage, name: string): string | null {
@@ -180,10 +186,7 @@ function extractFormulaNumber(
   return typeof p.formula.number === "number" ? p.formula.number : null;
 }
 
-function extractMultiSelect(
-  page: NotionInventoryPage,
-  name: string,
-): string[] {
+function extractMultiSelect(page: NotionInventoryPage, name: string): string[] {
   const p = page.properties[name];
   if (p?.type !== "multi_select") return [];
   return p.multi_select.map((option) => option.name);

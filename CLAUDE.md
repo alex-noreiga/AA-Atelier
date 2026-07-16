@@ -483,13 +483,13 @@ in `api-server/src/lib/appointments/*` (pure logic + config),
 
 2. **Working hours are a Google Sheet; conflicts are Google free/busy.**
    `computeSlots` (`lib/appointments/availability.ts`, pure + heavily unit-tested)
-   needs a *positive* grid of open hours, which Google free/busy can't give (it
-   only says when someone is *busy*). That grid comes from a **Google Sheet** the
+   needs a _positive_ grid of open hours, which Google free/busy can't give (it
+   only says when someone is _busy_). That grid comes from a **Google Sheet** the
    atelier edits live (no redeploy) — columns `Staff | Email | Day | Start | End |
-   Locations`. `lib/google/sheets.repository.ts` reads it (`APPOINTMENT_SHEET_ID`,
+Locations`. `lib/google/sheets.repository.ts` reads it (`APPOINTMENT_SHEET_ID`,
    60s cache + fallback, service account reads it as itself via a direct share)
    and `lib/appointments/staff.ts` is the pure `parseScheduleRows` parser
-   (`Mon-Fri` ranges, comma lists). The *subtractive* side — every busy interval,
+   (`Mon-Fri` ranges, comma lists). The _subtractive_ side — every busy interval,
    including existing bookings **and** any event the staff added (a day off is
    just a calendar event) — comes from the **FreeBusy API** in
    `lib/google/calendar.repository.ts` (`listBusyInRange`), fed into `computeSlots`
@@ -499,7 +499,7 @@ in `api-server/src/lib/appointments/*` (pure logic + config),
    are UTC instants.
 
 3. **Never trust a client-sent slot.** `POST /appointments` re-derives the type
-   from the catalog and re-runs the *same* `computeSlots` for the requested day
+   from the catalog and re-runs the _same_ `computeSlots` for the requested day
    (with fresh free/busy) before writing; a `start` that isn't currently an open
    slot (stale, taken, off the grid, or inside the lead-time window) is a
    `BadRequestError` (→ 400). The availability endpoint and the booking re-check
@@ -530,6 +530,7 @@ in `api-server/src/lib/appointments/*` (pure logic + config),
    email** (Viewer) — no delegation needed for Sheets, since the SA reads it as
    itself. `google-auth-library` mints the tokens (impersonated for Calendar,
    plain for Sheets); the rest is raw `fetch`, mirroring the Notion adapter.
+
 ## Development workflow
 
 ### Prerequisites

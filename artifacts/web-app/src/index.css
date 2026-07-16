@@ -52,20 +52,20 @@
 }
 
 :root {
-  --button-outline: rgba(255,255,255, .10);
-  --badge-outline: rgba(255,255,255, .05);
+  --button-outline: rgba(255, 255, 255, 0.1);
+  --badge-outline: rgba(255, 255, 255, 0.05);
   --opaque-button-border-intensity: -8;
-  --elevate-1: rgba(255,255,255, .05);
-  --elevate-2: rgba(255,255,255, .10);
+  --elevate-1: rgba(255, 255, 255, 0.05);
+  --elevate-2: rgba(255, 255, 255, 0.1);
 
   /* Rose-gold glow used behind CTA/hover states — derived from `primary`
      rather than a hardcoded rgba literal so it can never drift from the token. */
   --glow-primary: hsl(var(--primary) / 0.25);
 
   /* Deep Plum & Champagne Palette */
-  --background: 320 30% 12%; 
-  --foreground: 35 40% 92%; 
-  
+  --background: 320 30% 12%;
+  --foreground: 35 40% 92%;
+
   --card: 320 30% 15%;
   --card-foreground: 35 40% 92%;
   --card-border: 320 25% 22%;
@@ -77,26 +77,26 @@
   /* Soft Rose Gold/Blush */
   --primary: 355 35% 65%;
   --primary-foreground: 320 30% 12%;
-  
+
   --secondary: 320 20% 20%;
   --secondary-foreground: 35 40% 92%;
-  
+
   --muted: 320 20% 20%;
   --muted-foreground: 35 20% 75%;
-  
+
   --accent: 320 25% 18%;
   --accent-foreground: 35 40% 92%;
-  
+
   --destructive: 0 50% 50%;
   --destructive-foreground: 35 40% 92%;
-  
+
   --border: 320 20% 25%;
   --input: 320 20% 25%;
   --ring: 355 35% 65%;
 
-  --app-font-sans: 'Jost', sans-serif;
-  --app-font-serif: 'Cormorant Garamond', serif;
-  --app-font-mono: ui-monospace, 'SFMono-Regular', Menlo, Consolas, monospace;
+  --app-font-sans: "Jost", sans-serif;
+  --app-font-serif: "Cormorant Garamond", serif;
+  --app-font-mono: ui-monospace, "SFMono-Regular", Menlo, Consolas, monospace;
   --radius: 0.25rem;
 
   --sidebar: var(--card);
@@ -115,19 +115,40 @@
   --chart-5: 0 20% 60%;
 
   /* Fallback for older browsers */
-  --primary-border: hsl(from hsl(var(--primary)) h s calc(l + var(--opaque-button-border-intensity)) / alpha);
-  --secondary-border: hsl(from hsl(var(--secondary)) h s calc(l + var(--opaque-button-border-intensity)) / alpha);
-  --muted-border: hsl(from hsl(var(--muted)) h s calc(l + var(--opaque-button-border-intensity)) / alpha);
-  --accent-border: hsl(from hsl(var(--accent)) h s calc(l + var(--opaque-button-border-intensity)) / alpha);
-  --destructive-border: hsl(from hsl(var(--destructive)) h s calc(l + var(--opaque-button-border-intensity)) / alpha);
-  --sidebar-primary-border: hsl(from hsl(var(--sidebar-primary)) h s calc(l + var(--opaque-button-border-intensity)) / alpha);
-  --sidebar-accent-border: hsl(from hsl(var(--sidebar-accent)) h s calc(l + var(--opaque-button-border-intensity)) / alpha);
+  --primary-border: hsl(
+    from hsl(var(--primary)) h s
+      calc(l + var(--opaque-button-border-intensity)) / alpha
+  );
+  --secondary-border: hsl(
+    from hsl(var(--secondary)) h s
+      calc(l + var(--opaque-button-border-intensity)) / alpha
+  );
+  --muted-border: hsl(
+    from hsl(var(--muted)) h s calc(l + var(--opaque-button-border-intensity)) /
+      alpha
+  );
+  --accent-border: hsl(
+    from hsl(var(--accent)) h s
+      calc(l + var(--opaque-button-border-intensity)) / alpha
+  );
+  --destructive-border: hsl(
+    from hsl(var(--destructive)) h s
+      calc(l + var(--opaque-button-border-intensity)) / alpha
+  );
+  --sidebar-primary-border: hsl(
+    from hsl(var(--sidebar-primary)) h s
+      calc(l + var(--opaque-button-border-intensity)) / alpha
+  );
+  --sidebar-accent-border: hsl(
+    from hsl(var(--sidebar-accent)) h s
+      calc(l + var(--opaque-button-border-intensity)) / alpha
+  );
 }
 
 .dark {
   /* Inherit same deep palette for consistency since the vibe is naturally dark/moody */
-  --background: 320 30% 12%; 
-  --foreground: 35 40% 92%; 
+  --background: 320 30% 12%;
+  --foreground: 35 40% 92%;
   --border: 320 20% 25%;
   --input: 320 20% 25%;
   --ring: 355 35% 65%;
@@ -156,7 +177,12 @@
   body {
     @apply font-sans antialiased bg-background text-foreground selection:bg-primary/30 selection:text-foreground;
   }
-  h1, h2, h3, h4, h5, h6 {
+  h1,
+  h2,
+  h3,
+  h4,
+  h5,
+  h6 {
     @apply font-serif tracking-wide;
   }
 }
