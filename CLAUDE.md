@@ -793,11 +793,9 @@ Notion "Website Contact Form" closed; and the code changes shipped (shop-order
 tagging, order↔hub linking, `Due Date` from `neededBy`, online balance payment,
 order-form reference uploads). What remains:
 
-- [ ] **CRM "Leads to follow up" view filter** _(manual, Notion UI — 1 min)._ Add
-  `Status is Lead` to the "Leads to follow up" view of the **Client CRM** database
-  (`cc6c9305…`). It currently has an empty filter, so it shows every client. The
-  Notion API can't set a filter on a `status`-type property, so this must be done in
-  the UI.
+- [x] **CRM "Leads to follow up" view filter** — done (set `Status is Lead` in the
+  Notion UI on the **Client CRM** "Leads to follow up" view; the API can't set a
+  filter on a `status`-type property).
 - [ ] **Activate order-form reference uploads.** Connect a **Vercel Blob** store to
   the project (auto-provisions `BLOB_READ_WRITE_TOKEN`), deploy, and smoke-test an
   upload on a preview. Until the token is set, `POST /api/uploads/order-refs` returns
