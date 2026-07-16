@@ -191,9 +191,9 @@ export function SizeChartDialog({ className }: { className?: string }) {
         </div>
 
         <p className="text-muted-foreground/70 text-xs font-light leading-relaxed mt-2">
-          Between two sizes? Size up for comfort, or reach out and we'll help you
-          choose. Every piece is finished to measure, so let us know your exact
-          measurements when you reserve.
+          Between two sizes? Size up for comfort, or reach out and we'll help
+          you choose. Every piece is finished to measure, so let us know your
+          exact measurements when you reserve.
         </p>
       </DialogContent>
     </Dialog>

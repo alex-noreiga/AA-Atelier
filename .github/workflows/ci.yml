@@ -10,33 +10,49 @@ concurrency:
   group: ci-${{ github.ref }}
   cancel-in-progress: true
 
+# Least privilege: CI only needs to read the repo. Jobs that need more
+# (e.g. CodeQL) request it explicitly in their own workflow.
+permissions:
+  contents: read
+
 jobs:
-  test:
+  # Format + typecheck + production build + unit/integration tests. These are
+  # fast and share one install; a break here fails independently of e2e.
+  build-and-test:
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
+      # No explicit version: pnpm/action-setup reads the `packageManager`
+      # field in package.json, so the pinned pnpm is the single source of truth.
       - uses: pnpm/action-setup@v4
-        with:
-          version: 10
 
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v7
         with:
-          node-version: 22
+          node-version-file: .nvmrc
           cache: pnpm
 
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
 
+      - name: Format check
+        run: pnpm format:check
+
       - name: Typecheck
         run: pnpm typecheck
+
+      # Verify the actual production bundle Vercel builds (esbuild + Vite),
+      # so a build break fails here instead of on deploy.
+      - name: Build (Vercel target)
+        run: pnpm build:vercel
 
       - name: Unit & integration tests
         run: pnpm test:coverage
 
       - name: Upload coverage reports
         if: ${{ !cancelled() }}
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: coverage
           path: |
@@ -44,17 +60,55 @@ jobs:
             artifacts/web-app/coverage/
           retention-days: 7
 
-      - name: Install Playwright browser
+  # End-to-end tests run in parallel with build-and-test. The specs mock every
+  # /api/* call and Playwright starts the frontend itself (webServer), so no
+  # api-server or Notion credentials are needed.
+  e2e:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: pnpm/action-setup@v4
+
+      - uses: actions/setup-node@v7
+        with:
+          node-version-file: .nvmrc
+          cache: pnpm
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      # Cache the downloaded browser binaries keyed on the resolved Playwright
+      # version, so Chromium isn't re-downloaded on every run.
+      - name: Resolve Playwright version
+        id: pw
+        run: echo "version=$(pnpm --filter @workspace/tests exec playwright --version | awk '{print $NF}')" >> "$GITHUB_OUTPUT"
+
+      - name: Cache Playwright browsers
+        id: playwright-cache
+        uses: actions/cache@v6
+        with:
+          path: ~/.cache/ms-playwright
+          key: playwright-${{ runner.os }}-${{ steps.pw.outputs.version }}
+
+      # On a cache hit the browser binary is restored, but the OS libraries it
+      # links against aren't cached — install just those. On a miss, do the full
+      # download + system deps in one step.
+      - name: Install Playwright browser (cache miss)
+        if: steps.playwright-cache.outputs.cache-hit != 'true'
         run: pnpm --filter @workspace/tests exec playwright install --with-deps chromium
 
-      # The e2e specs mock every /api/* call and Playwright starts the frontend
-      # itself (webServer), so no api-server or Notion credentials are needed.
+      - name: Install Playwright system deps (cache hit)
+        if: steps.playwright-cache.outputs.cache-hit == 'true'
+        run: pnpm --filter @workspace/tests exec playwright install-deps chromium
+
       - name: End-to-end tests
         run: pnpm test:e2e
 
       - name: Upload Playwright report
         if: ${{ !cancelled() }}
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: playwright-report
           path: tests/playwright-report/

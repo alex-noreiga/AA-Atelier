@@ -103,7 +103,7 @@ Check, in order:
    with a distinct, actionable message — "mailer is not configured …" (missing
    env var) vs. "Resend rejected the request" (includes the HTTP status + Resend
    response body). Grep the function logs for `Email NOT sent` / `Email send
-   failed`.
+failed`.
 
 Gate detail: `sendEmail` requires an API key **and** a resolved sender
 (`message.from || client.baseFrom`), so a per-category override

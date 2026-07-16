@@ -49,7 +49,11 @@ export function CtaLink({
   ...props
 }: CtaLinkProps) {
   return (
-    <Link to={to} className={cn(ctaVariants({ variant, size }), className)} {...props}>
+    <Link
+      to={to}
+      className={cn(ctaVariants({ variant, size }), className)}
+      {...props}
+    >
       {children}
     </Link>
   );

@@ -1,4 +1,4 @@
-import { test, expect } from "@playwright/test";
+import { test, expect } from "./support/test";
 
 // The navbar fetches nothing, and neither the order form nor the status page
 // calls the API until it is submitted — so no API mocking is needed here.
@@ -15,7 +15,10 @@ test.describe("Navbar", () => {
     await page.getByTestId("nav-place-an-order").click();
 
     await expect(page).toHaveURL(/\/order$/);
-    await expect(page.getByTestId("nav-services")).toHaveClass(/text-primary/);
+    await expect(page.getByTestId("nav-services")).toHaveAttribute(
+      "data-active",
+      "true",
+    );
   });
 
   test("reaches order tracking through the Services dropdown", async ({
@@ -29,7 +32,10 @@ test.describe("Navbar", () => {
     await expect(page).toHaveURL(/\/shop\/status$/);
     await expect(page.getByTestId("input-order-number")).toBeVisible();
     // /shop/status belongs to Services, not Shop.
-    await expect(page.getByTestId("nav-shop")).not.toHaveClass(/text-primary/);
+    await expect(page.getByTestId("nav-shop")).toHaveAttribute(
+      "data-active",
+      "false",
+    );
   });
 
   test("closes the dropdown on Escape", async ({ page }) => {
