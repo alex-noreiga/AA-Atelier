@@ -17,11 +17,11 @@ export default function Privacy() {
     >
       <LegalSection title="Information we collect">
         <p>
-          When you place a custom order, request a quote, book an appointment, or
-          contact us, we collect the details you provide — your name, email
+          When you place a custom order, request a quote, book an appointment,
+          or contact us, we collect the details you provide — your name, email
           address, phone number, body measurements, and any notes about your
-          design. When you buy from our shop, our payment processor collects your
-          shipping address and payment details on our behalf.
+          design. When you buy from our shop, our payment processor collects
+          your shipping address and payment details on our behalf.
         </p>
         <p>
           We do not knowingly collect information from children, and we ask that
@@ -66,10 +66,10 @@ export default function Privacy() {
 
       <LegalSection title="Data retention">
         <p>
-          We keep your information for as long as needed to fulfil your order and
-          maintain our business records, after which we remove or anonymise it.
-          You may ask us to update or delete your information at any time, subject
-          to records we are required to keep.
+          We keep your information for as long as needed to fulfil your order
+          and maintain our business records, after which we remove or anonymise
+          it. You may ask us to update or delete your information at any time,
+          subject to records we are required to keep.
         </p>
       </LegalSection>
 

@@ -509,8 +509,8 @@ export default function OrderForm() {
                   </p>
                 ) : (
                   <p className="text-muted-foreground/60 text-xs mt-1.5">
-                    Custom pieces typically take 8–12 weeks. If you have an event
-                    date, let us know and we'll advise on timing.
+                    Custom pieces typically take 8–12 weeks. If you have an
+                    event date, let us know and we'll advise on timing.
                   </p>
                 )}
               </div>
@@ -521,9 +521,9 @@ export default function OrderForm() {
             className="text-center text-xs font-light text-muted-foreground/70 max-w-md mx-auto"
             data-testid="deposit-note"
           >
-            This starts your order — it isn't a payment. Once we've reviewed your
-            details and quoted your piece, we'll send a deposit to reserve your
-            place in the atelier's schedule.
+            This starts your order — it isn't a payment. Once we've reviewed
+            your details and quoted your piece, we'll send a deposit to reserve
+            your place in the atelier's schedule.
           </p>
 
           <div className="flex justify-center pt-4 pb-8">

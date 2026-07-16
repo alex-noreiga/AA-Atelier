@@ -141,7 +141,9 @@ export default function ShopOrderStatus() {
             data-testid="status-error"
           >
             <div className="w-16 h-[1px] bg-destructive/50 mx-auto"></div>
-            <p className="text-destructive font-serif text-xl">{errorMessage}</p>
+            <p className="text-destructive font-serif text-xl">
+              {errorMessage}
+            </p>
             <Button
               variant="outline"
               onClick={handleReset}

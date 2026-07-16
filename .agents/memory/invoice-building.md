@@ -22,7 +22,7 @@ finance system under the "finances" page:
   `Unit Price` (formula), `Line Total` (formula), relations to Order / Invoice /
   Costing Item / Material Usage Line.
 - **`costing (custom orders)`**, **`material usage database`**, **`materials
-  inventory`**: feed the line-item prices. The per-material breakdown (main
+inventory`**: feed the line-item prices. The per-material breakdown (main
   fabric, crystal/rhinestones, appliqué…) lives here and surfaces as individual
   `Line Type = Material` rows. The app reads only the priced `Invoice Line Items`.
 
@@ -61,7 +61,7 @@ finance system under the "finances" page:
 6. **Write-back = order + invoice, idempotent.** On a paid balance the webhook
    (`kind: "invoice"`) calls `markBalancePaid`, which sets `Invoice Paid` +
    `Invoice Session Id` on the order and `Balance Paid` + `Balance Payment Session
-   Id` on the invoice. Only these plain checkbox/text fields are written — never
+Id` on the invoice. Only these plain checkbox/text fields are written — never
    the costing formulas/rollups. Idempotent on Stripe redelivery; `Balance Paid`
    is the "already paid" guard.
 

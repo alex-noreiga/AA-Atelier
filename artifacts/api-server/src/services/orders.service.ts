@@ -58,7 +58,9 @@ export async function getOrderStatus(
   // order's Notion page id). Returns [] when that DB is unconfigured or the query
   // fails, so this never breaks the core lookup. pageId is dropped from the
   // response — it's an internal join key, not part of the contract.
-  const milestones = order.pageId ? await listOrderMilestones(order.pageId) : [];
+  const milestones = order.pageId
+    ? await listOrderMilestones(order.pageId)
+    : [];
 
   // Attach the invoice only once it exists and the atelier has flipped
   // "Invoice Ready" (one extra Notion read, and only then).

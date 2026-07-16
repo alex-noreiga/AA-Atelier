@@ -39,7 +39,10 @@ describe("Footer", () => {
     );
 
     const instagram = screen.getByTestId("footer-instagram");
-    expect(instagram).toHaveAttribute("href", "https://instagram.com/a3iceanddance");
+    expect(instagram).toHaveAttribute(
+      "href",
+      "https://instagram.com/a3iceanddance",
+    );
     expect(instagram).toHaveAttribute("target", "_blank");
     expect(instagram).toHaveAttribute("rel", "noreferrer");
   });

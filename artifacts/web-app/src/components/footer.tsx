@@ -83,10 +83,18 @@ export default function Footer() {
           </div>
 
           {/* Explore */}
-          <LinkColumn heading="Explore" links={EXPLORE_LINKS} prefix="explore" />
+          <LinkColumn
+            heading="Explore"
+            links={EXPLORE_LINKS}
+            prefix="explore"
+          />
 
           {/* Company / legal */}
-          <LinkColumn heading="Company" links={COMPANY_LINKS} prefix="company" />
+          <LinkColumn
+            heading="Company"
+            links={COMPANY_LINKS}
+            prefix="company"
+          />
 
           {/* Contact */}
           <div className="flex flex-col gap-4">

@@ -56,9 +56,7 @@ function assertConfigured(client: NotionClient): void {
   }
 }
 
-function readRichText(
-  prop: NotionReadProperty | undefined,
-): string {
+function readRichText(prop: NotionReadProperty | undefined): string {
   if (prop?.type !== "rich_text") return "";
   return prop.rich_text
     .map((t) => t.plain_text)

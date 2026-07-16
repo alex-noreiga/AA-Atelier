@@ -524,7 +524,8 @@ export function shopOrderConfirmationEmail(
   );
 
   const itemsText = details.lineItems.map(
-    (item) => `${item.quantity} × ${item.description} — ${formatUsd(item.amount)}`,
+    (item) =>
+      `${item.quantity} × ${item.description} — ${formatUsd(item.amount)}`,
   );
   const totalsText = [
     ...totals.map(([label, amount]) => `${label}: ${formatUsd(amount)}`),
@@ -569,7 +570,10 @@ export function shopOrderNotificationEmail(
   to: string,
 ): EmailMessage {
   const items = details.lineItems
-    .map((item) => `${item.quantity} × ${item.description} — ${formatUsd(item.amount)}`)
+    .map(
+      (item) =>
+        `${item.quantity} × ${item.description} — ${formatUsd(item.amount)}`,
+    )
     .join("; ");
 
   const who = details.customerName || details.email;

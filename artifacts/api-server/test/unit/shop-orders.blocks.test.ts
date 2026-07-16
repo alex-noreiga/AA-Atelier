@@ -87,7 +87,10 @@ describe("buildShopOrderProperties", () => {
   });
 
   it("omits the order-number property when the session carries no metadata", () => {
-    const props = buildShopOrderProperties(session()) as Record<string, unknown>;
+    const props = buildShopOrderProperties(session()) as Record<
+      string,
+      unknown
+    >;
     expect(props[SHOP_ORDER_NUMBER_PROPERTY]).toBeUndefined();
   });
 

@@ -118,7 +118,9 @@ describe("getOrderStatus", () => {
   });
 
   it("passes the estimated completion date through unchanged", async () => {
-    mockFind.mockResolvedValue(orderRecord({ estimatedCompletion: "2026-08-01" }));
+    mockFind.mockResolvedValue(
+      orderRecord({ estimatedCompletion: "2026-08-01" }),
+    );
 
     const result = await getOrderStatus("000002");
     expect(result.estimatedCompletion).toBe("2026-08-01");
