@@ -12,6 +12,7 @@ const INVENTORY = productList({
       id: "p1",
       title: "Bow Fleece Soaker",
       category: "Soaker",
+      sized: false,
       variants: [
         {
           id: "v1",
@@ -27,6 +28,7 @@ const INVENTORY = productList({
       id: "p2",
       title: "Keyhole Dress",
       category: "Dress",
+      sized: true,
       variants: [
         {
           id: "v2",

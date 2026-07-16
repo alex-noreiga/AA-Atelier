@@ -69,6 +69,7 @@ function product(overrides: Record<string, unknown> = {}) {
     id: "p1",
     title: "Bow Fleece Soaker",
     category: "Soaker",
+    sized: false,
     variants: [variant()],
     ...overrides,
   };
@@ -283,6 +284,7 @@ describe("Shop sizes", () => {
       id: "p1",
       title: "Keyhole Test Dress",
       category: "Dress",
+      sized: true,
       variants: [variant({ id: "v1", name: "Keyhole Test Dress", sizes })],
     });
 
@@ -344,15 +346,17 @@ describe("Shop sizes", () => {
     expect(screen.queryByTestId("link-size-chart")).not.toBeInTheDocument();
   });
 
-  it("shows the size chart for the live 'Dresses' Item Type value too", () => {
-    // The Notion "Item Type" option is currently the plural "Dresses"; the size
-    // chart must appear for it as well as the singular "Dress".
+  it("shows the size chart from the server `sized` flag, not the category name", () => {
+    // `sized` is decided server-side (the Notion "Product Categories" data), so a
+    // card shows the chart whenever the flag is set — regardless of its category
+    // label. This is what makes the size-chart categories editable in Notion.
     setHook({
       products: [
         product({
           id: "p1",
           title: "Keyhole Test Dress",
-          category: "Dresses",
+          category: "Test Dresses",
+          sized: true,
           variants: [
             variant({
               id: "v1",

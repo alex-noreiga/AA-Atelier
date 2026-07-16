@@ -136,6 +136,28 @@ export function inventoryPage(opts: {
   return { id: opts.id ?? "inv-page", properties };
 }
 
+/** Minimal "Product Categories" page as returned by a query — a category name
+ * plus its "Show size guide" checkbox. */
+export function categoryPage(opts: {
+  id?: string;
+  name?: string;
+  showSizeGuide?: boolean;
+}) {
+  return {
+    id: opts.id ?? "category-page",
+    properties: {
+      Name: {
+        type: "title",
+        title: opts.name ? [{ plain_text: opts.name }] : [],
+      },
+      "Show size guide": {
+        type: "checkbox",
+        checkbox: opts.showSizeGuide ?? false,
+      },
+    },
+  };
+}
+
 /**
  * Minimal Client CRM page as returned by a query. The upsert only reads the
  * page `id` back, so that's all this carries.

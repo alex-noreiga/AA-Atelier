@@ -903,6 +903,7 @@ components:
         - id
         - title
         - category
+        - sized
         - variants
       properties:
         id:
@@ -911,6 +912,15 @@ components:
           type: string
         category:
           type: string
+        sized:
+          type: boolean
+          description: >-
+            Whether this product's category should show the ready-to-wear body-
+            measurement size guide. Computed server-side from the Notion "Product
+            Categories" database (a "Show size guide" checkbox per category) when
+            configured, otherwise from a built-in fallback list. Clients render
+            the size chart from this flag and must not hardcode which categories
+            are sized.
         variants:
           type: array
           items:

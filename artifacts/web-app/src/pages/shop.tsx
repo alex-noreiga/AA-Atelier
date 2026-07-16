@@ -35,25 +35,16 @@ import { cn } from "@/lib/utils";
 
 const ALL = "All";
 
-// The size guide describes body measurements for garments, so it's only shown
-// on garment cards — it means nothing for soakers, cloths, or hair accessories.
-// A targeted business rule keyed to Notion's "Item Type" values (like the
-// server's STATUS_IN_STOCK), NOT a hardcoded copy of the category list: the
-// full list is still read live from Notion. Rename these options in Notion and
-// the size chart stops appearing, so keep them in sync.
-//
-// Both "Dress" and "Dresses" are listed: the live Notion "Item Type" option is
-// currently "Dresses" (so dresses would otherwise never get a size chart), and
-// "Dress" is the planned unified singular. Keeping both keeps the chart correct
-// before and after that rename.
-const SIZED_CATEGORIES = ["Dress", "Dresses", "Ready to Wear"];
-
 // At or below this countable stock level a card shows an "Only N left" nudge.
 // A null/undefined count (one-off items) never triggers it.
 const LOW_STOCK_THRESHOLD = 5;
 
+// Whether a card shows the ready-to-wear body-measurement size guide. Decided
+// server-side (`sized` on the Product) from the Notion "Product Categories" data,
+// so the client no longer hardcodes which categories are sized — the atelier
+// toggles it per category in Notion with no redeploy.
 function hasSizeChart(product: Product): boolean {
-  return SIZED_CATEGORIES.includes(product.category);
+  return product.sized;
 }
 
 /** An in-stock item invites an enquiry; a sold-out one opens the notify dialog. */

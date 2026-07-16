@@ -5,6 +5,10 @@ vi.mock("../../src/lib/notion/products.repository.js", () => ({
   listCategories: vi.fn(),
 }));
 
+vi.mock("../../src/lib/notion/product-categories.repository.js", () => ({
+  listSizedCategoryNames: vi.fn(),
+}));
+
 import request from "supertest";
 import { GENERIC_ERROR } from "@workspace/test-fixtures";
 import app from "../../src/app.js";
@@ -12,10 +16,12 @@ import {
   listVariants,
   listCategories,
 } from "../../src/lib/notion/products.repository.js";
+import { listSizedCategoryNames } from "../../src/lib/notion/product-categories.repository.js";
 import type { VariantRecord } from "../../src/lib/notion/products.schema.js";
 
 const mockListVariants = vi.mocked(listVariants);
 const mockListCategories = vi.mocked(listCategories);
+const mockListSizedCategoryNames = vi.mocked(listSizedCategoryNames);
 
 const CACHE_HEADER = "public, s-maxage=120, stale-while-revalidate=600";
 
@@ -36,6 +42,9 @@ describe("GET /api/products", () => {
   it("returns 200 with grouped products, visible categories, and the edge cache header", async () => {
     mockListVariants.mockResolvedValue([variant()]);
     mockListCategories.mockResolvedValue(["Ready to Wear", "Dress"]);
+    // null → "Product Categories" DB not configured, so the shop falls back to
+    // the built-in sized list, which includes "Ready to Wear".
+    mockListSizedCategoryNames.mockResolvedValue(null);
 
     const res = await request(app).get("/api/products");
 
@@ -46,6 +55,7 @@ describe("GET /api/products", () => {
         id: "var-1",
         title: "Aurora Soaker",
         category: "Ready to Wear",
+        sized: true,
         variants: [
           {
             id: "var-1",
@@ -65,6 +75,7 @@ describe("GET /api/products", () => {
   it("does not set the edge cache header on an error response", async () => {
     mockListVariants.mockRejectedValue(new Error("Notion query failed"));
     mockListCategories.mockResolvedValue([]);
+    mockListSizedCategoryNames.mockResolvedValue(null);
 
     const res = await request(app).get("/api/products");
 

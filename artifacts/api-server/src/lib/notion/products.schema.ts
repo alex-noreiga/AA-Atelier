@@ -65,6 +65,10 @@ export interface ProductRecord {
   id: string;
   title: string;
   category: string;
+  /** Whether this card's category shows the ready-to-wear size guide. Computed
+   * server-side (see products.service) from the live "Product Categories" data
+   * or the built-in fallback — the client never decides this. */
+  sized: boolean;
   variants: ProductVariantRecord[];
 }
 
