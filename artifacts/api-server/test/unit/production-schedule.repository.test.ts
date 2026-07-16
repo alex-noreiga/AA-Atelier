@@ -19,10 +19,8 @@ import {
 const milestone: MilestoneInput = {
   orderPageId: "order-page-1",
   projectName: "Ada – Custom Dress — Fitting",
-  clientName: "Ada",
   stage: "Fitting",
   targetDate: "2026-08-15",
-  dueDate: "2026-09-01",
 };
 
 const isQuery = (path: string) => path.endsWith("/query");

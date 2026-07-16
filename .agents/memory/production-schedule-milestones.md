@@ -66,8 +66,10 @@ per-stage upsert above.
 - **Order Tracking Pipeline** (the orders DB): add `Due Date` (date) +
   `Milestones Generated` (checkbox). Property names in `lib/notion/schema.ts`.
 - **Production Schedule**: add `Stage` (select) + `Order` (relation → Order
-  Tracking Pipeline). Existing `Project / Dress Name`, `Client Name`, `Status`,
-  `Target Completion Date`, `Competition/Test Date` are reused. Property names in
+  Tracking Pipeline). Existing `Project / Dress Name`, `Status`, and
+  `Target Completion Date` are reused. (The redundant `Client Name` and
+  `Competition/Test Date` columns were dropped — both were write-only duplicates
+  of data reachable through the `Order` relation.) Property names in
   `lib/notion/production-schedule.blocks.ts`.
 - Share the Notion integration with the Production Schedule database (else 404).
 - Env: `NOTION_PRODUCTION_SCHEDULE_DATABASE_ID`, `CRON_SECRET`.

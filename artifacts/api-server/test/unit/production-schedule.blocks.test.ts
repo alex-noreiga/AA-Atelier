@@ -3,11 +3,9 @@ import {
   buildMilestoneProperties,
   PRODUCTION_SCHEDULE_INITIAL_STATUS,
   PS_TITLE_PROPERTY,
-  PS_CLIENT_NAME_PROPERTY,
   PS_STAGE_PROPERTY,
   PS_STATUS_PROPERTY,
   PS_TARGET_DATE_PROPERTY,
-  PS_COMPETITION_DATE_PROPERTY,
   PS_ORDER_RELATION_PROPERTY,
   type MilestoneInput,
 } from "../../src/lib/notion/production-schedule.blocks.js";
@@ -15,10 +13,8 @@ import {
 const base: MilestoneInput = {
   orderPageId: "order-page-1",
   projectName: "Ada – Custom Dress — Fitting",
-  clientName: "Ada",
   stage: "Fitting",
   targetDate: "2026-08-15",
-  dueDate: "2026-09-01",
 };
 
 describe("buildMilestoneProperties", () => {
@@ -40,26 +36,18 @@ describe("buildMilestoneProperties", () => {
     expect(props[PS_ORDER_RELATION_PROPERTY]).toEqual({
       relation: [{ id: "order-page-1" }],
     });
-    expect(props[PS_CLIENT_NAME_PROPERTY].rich_text[0].text.content).toBe(
-      "Ada",
-    );
-    expect(props[PS_COMPETITION_DATE_PROPERTY]).toEqual({
-      date: { start: "2026-09-01" },
-    });
   });
 
-  it("omits Client Name when empty and Competition/Test Date when no due date", () => {
-    const props = buildMilestoneProperties({
-      ...base,
-      clientName: "",
-      dueDate: undefined,
-    }) as Record<string, unknown>;
-
-    expect(props[PS_CLIENT_NAME_PROPERTY]).toBeUndefined();
-    expect(props[PS_COMPETITION_DATE_PROPERTY]).toBeUndefined();
-    // Required fields are still present.
-    expect(props[PS_TITLE_PROPERTY]).toBeDefined();
-    expect(props[PS_STAGE_PROPERTY]).toBeDefined();
-    expect(props[PS_TARGET_DATE_PROPERTY]).toBeDefined();
+  it("writes only the lean set of properties (no client name / due-date dupes)", () => {
+    const props = buildMilestoneProperties(base) as Record<string, unknown>;
+    expect(Object.keys(props).sort()).toEqual(
+      [
+        PS_TITLE_PROPERTY,
+        PS_STAGE_PROPERTY,
+        PS_TARGET_DATE_PROPERTY,
+        PS_STATUS_PROPERTY,
+        PS_ORDER_RELATION_PROPERTY,
+      ].sort(),
+    );
   });
 });
