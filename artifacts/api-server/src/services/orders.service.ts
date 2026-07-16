@@ -4,9 +4,9 @@
 import {
   createOrder,
   findOrderByNumber,
+  markOrderReferenceImages,
 } from "../lib/notion/orders.repository.js";
 import { upsertClientByEmail } from "../lib/notion/clients.repository.js";
-import { linkOrderFormSubmission } from "../lib/notion/order-form-submissions.repository.js";
 import {
   findInvoiceById,
   computeBalanceDue,
@@ -141,18 +141,19 @@ export async function submitOrder(
     clientPageId,
   );
 
-  // Best-effort: anchor the order in the "Order Form Submissions" hub so a
-  // website order lands in the same back office (costing / invoicing / production)
-  // the atelier builds manual orders in, rather than being orphaned. A hub
-  // failure must never fail the order — swallow and log, like the CRM upsert and
-  // the mailers — and when the hub db isn't configured this is a no-op (null).
-  try {
-    await linkOrderFormSubmission(input, pageId);
-  } catch (err) {
-    logger.warn(
-      { err },
-      "Failed to link the order into the Order Form Submissions hub; the order was still created",
-    );
+  // Best-effort: attach the customer's uploaded reference images/videos to the
+  // order's "Reference Images" file property. A failure (e.g. the property isn't
+  // set up yet) must never fail the order — swallow and log, like the CRM upsert
+  // and the mailers — and it's a no-op when no images were uploaded.
+  if (input.imageUrls && input.imageUrls.length > 0) {
+    try {
+      await markOrderReferenceImages(pageId, input.imageUrls);
+    } catch (err) {
+      logger.warn(
+        { err },
+        "Failed to attach reference images to the order; the order was still created",
+      );
+    }
   }
 
   // Best-effort emails; a mail failure must not fail the order.

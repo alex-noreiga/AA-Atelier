@@ -77,8 +77,8 @@ Express app (artifacts/api-server)  ──►  Notion REST API (orders database)
   │                                  + sends an order-confirmation email
   │                                  + (best-effort) upserts a Client CRM record
   │                                  by email and links the order to it
-  │                                  + (best-effort) creates an Order Form
-  │                                  Submissions hub row linked to the order
+  │                                  + (best-effort) attaches any uploaded
+  │                                  reference images to the order
   ├─ POST /api/orders/:n/deposit   → creates a Stripe Checkout session for the
   │                                  deposit the atelier set on custom order :n
   │                                  in Notion; the webhook marks it paid
@@ -646,9 +646,13 @@ and in the maintainer's env without edits.
   contract like the Stripe webhook / cron) only issues the client-upload token via
   `handleUpload`, gated on `BLOB_READ_WRITE_TOKEN` (unset ⇒ 503, form still works
   without attachments). The resulting URLs ride along in the create-order payload as
-  `imageUrls` (in the contract) and are attached to the Notion order: as external
-  files on the Order Form Submission's file property (`order-form-submissions.repository.ts`)
-  and as a "Reference Images" links section on the order page body (`orders.blocks.ts`).
+  `imageUrls` (in the contract) and are attached, **best-effort after order creation**,
+  to the order's **`Reference Images`** file property as external files
+  (`markOrderReferenceImages` in `orders.repository.ts`, wired from `orders.service.ts`
+  with the created order's page id). The atelier must add a `Reference Images` (file)
+  property to the orders database or the attach is a logged no-op — it never fails the
+  order. (Attaching post-create, not in the create payload, is deliberate: writing a
+  missing property in the atomic create would 400 the whole order.)
   **Dependency note:** `@vercel/blob` transitively pulls zod v4 (via `@vercel/oidc`);
   a root `pnpm.overrides` pins `zod` to the v3 the app uses so `@hookform/resolvers`
   (no zod peer) can't latch onto v4 — don't remove that override.
@@ -694,15 +698,6 @@ and in the maintainer's env without edits.
   `artifacts/api-server/src/lib/notion/clients.repository.ts`
   (`upsertClientByEmail`), wired from `orders.service.ts`; the order's `Client`
   relation is written by `orders.blocks.ts`. Optionally
-  `NOTION_ORDER_FORM_SUBMISSIONS_DATABASE_ID` (the "Order Form Submissions" hub
-  database): when set, a new custom order **best-effort** also creates a submission
-  row there linked to the order via the hub's `Order Tracking Pipeline` relation,
-  so a website order lands in the same back office (costing / invoicing /
-  production) the atelier builds manual orders in rather than being orphaned; unset
-  ⇒ hub linking is skipped and orders are unchanged. Code:
-  `artifacts/api-server/src/lib/notion/order-form-submissions.repository.ts`
-  (`linkOrderFormSubmission`), wired from `orders.service.ts` with the created
-  order's page id (now returned by `createOrder`). Optionally
   `NOTION_INVOICES_DATABASE_ID` (the "invoices & payments" database): when set, a
   custom order's status page shows a "Pay balance" action once the atelier marks
   the linked invoice ready (`POST /orders/:n/balance`, priced as Final Balance −
@@ -796,14 +791,17 @@ order-form reference uploads). What remains:
 - [x] **CRM "Leads to follow up" view filter** — done (set `Status is Lead` in the
   Notion UI on the **Client CRM** "Leads to follow up" view; the API can't set a
   filter on a `status`-type property).
-- [ ] **Activate order-form reference uploads.** Connect a **Vercel Blob** store to
-  the project (auto-provisions `BLOB_READ_WRITE_TOKEN`), deploy, and smoke-test an
-  upload on a preview. Until the token is set, `POST /api/uploads/order-refs` returns
-  503 and the order form works without attachments.
-- [ ] **Retire the duplicate Notion "Custom Dress Order Form"** _(after the upload
-  smoke-test passes)._ `FORM CLOSE` the form view `9ce2ecd1-9425-405e-a866-dde489ee28bd`
-  on the **Order Form Submissions** database so the website order form is the single
-  order intake. Left open deliberately until the website form is proven end-to-end.
+- [ ] **Activate order-form reference uploads.** Two one-time steps: (a) add a
+  `Reference Images` (**file**) property to the **Order Tracking Pipeline** database
+  (uploaded images attach there; without it the attach is a logged no-op); (b) connect
+  a **Vercel Blob** store to the project (auto-provisions `BLOB_READ_WRITE_TOKEN`),
+  deploy, and smoke-test an upload on a preview. Until the token is set,
+  `POST /api/uploads/order-refs` returns 503 and the order form works without
+  attachments.
+- [x] **Retire the duplicate Notion order form** — moot: the atelier deprecated the
+  whole **Order Form Submissions** database (2026-07-16), so the website order form is
+  already the single order intake. The app's hub-linking code was removed to match;
+  reference images now attach to the order's own `Reference Images` property.
 - [ ] **Inventory / materials taxonomy cleanup** _(Tier-2 #3 — needs a product call)._
   On the shop **`inventory`** database, clarify the distinct roles of `Item Type` vs
   `Website Group` (two overlapping category systems) and `Sizes Available` vs

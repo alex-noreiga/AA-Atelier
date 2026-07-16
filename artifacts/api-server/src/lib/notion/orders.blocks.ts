@@ -53,17 +53,6 @@ function dividerBlock() {
   return { object: "block", type: "divider", divider: {} };
 }
 
-/** A bulleted list item whose text is a clickable link to `url`. */
-function linkBulletBlock(url: string) {
-  return {
-    object: "block",
-    type: "bulleted_list_item",
-    bulleted_list_item: {
-      rich_text: [{ type: "text", text: { content: url, link: { url } } }],
-    },
-  };
-}
-
 /**
  * Notion page `properties` for a new order. When `clientPageId` is given (the
  * order flow upserted a Client CRM record for this customer), the order is
@@ -151,22 +140,5 @@ export function buildOrderPageBlocks(data: CreateOrderInput): unknown[] {
   }
   dressSection.push(dividerBlock());
 
-  // Reference images/videos the customer uploaded, as clickable links so the
-  // atelier can open them straight from the order page (they're also attached to
-  // the linked Order Form Submission's file property).
-  const referenceSection: unknown[] = [];
-  if (data.imageUrls && data.imageUrls.length > 0) {
-    referenceSection.push(headingBlock("Reference Images"));
-    for (const url of data.imageUrls) {
-      referenceSection.push(linkBulletBlock(url));
-    }
-    referenceSection.push(dividerBlock());
-  }
-
-  return [
-    ...contactSection,
-    ...measurementSection,
-    ...dressSection,
-    ...referenceSection,
-  ];
+  return [...contactSection, ...measurementSection, ...dressSection];
 }
