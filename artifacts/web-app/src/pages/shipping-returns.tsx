@@ -44,7 +44,7 @@ export default function ShippingReturns() {
 
       <LegalSection title="Ready-to-wear returns">
         <p>
-          Unworn ready-to-wear items with tags attached may be returned within 14
+          Unworn ready-to-wear items with tags attached may be returned within 30
           days of delivery for a refund of the item price. To start a return,
           email us with your order number. Return shipping is the customer's
           responsibility unless the item arrived damaged or incorrect.
