@@ -190,22 +190,6 @@ export const GetProductsResponse = zod.object({
 
 
 /**
- * Returns published gallery items (past custom commissions) from the Notion portfolio database, each with one or more photos and an optional caption and category.
- * @summary List portfolio / gallery items
- */
-export const GetPortfolioResponse = zod.object({
-  "items": zod.array(zod.object({
-  "id": zod.string(),
-  "title": zod.string(),
-  "category": zod.string().optional(),
-  "caption": zod.string().optional(),
-  "photos": zod.array(zod.string())
-})),
-  "categories": zod.array(zod.string()).optional().describe('Optional gallery category filters, read live from the \"Category\" select options on the Notion portfolio database. Editing the options in Notion changes this list without a redeploy, so clients must not hardcode it.')
-})
-
-
-/**
  * Validates the requested in-stock shop items against live Notion inventory, prices them server-side (the client never sends prices), and creates a Stripe Checkout session. Returns the hosted-checkout URL for the browser to redirect to.
  * @summary Create a Stripe Checkout session for shop items
  */

@@ -32,17 +32,10 @@ const isHighlighted = (el: HTMLElement) =>
   el.className.includes("text-primary");
 
 describe("Navbar", () => {
-  it("renders the six top-level links", () => {
+  it("renders the five top-level links", () => {
     renderAt("/");
 
-    for (const id of [
-      "home",
-      "about",
-      "services",
-      "portfolio",
-      "shop",
-      "contact",
-    ]) {
+    for (const id of ["home", "about", "services", "shop", "contact"]) {
       expect(desktop(id)).toBeVisible();
     }
   });

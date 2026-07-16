@@ -136,62 +136,6 @@ export function inventoryPage(opts: {
   return { id: opts.id ?? "inv-page", properties };
 }
 
-/** Minimal portfolio database schema carrying the "Category" select options. */
-export function portfolioDatabaseSchemaWithCategories(names: string[]) {
-  return {
-    properties: {
-      Category: {
-        type: "select",
-        select: { options: names.map((name) => ({ name })) },
-      },
-    },
-  };
-}
-
-/**
- * Minimal Notion portfolio page as returned by a query. Only the properties the
- * repository/schema read are populated; each is optional so a test names just
- * the fields it cares about.
- */
-export function portfolioPage(opts: {
-  id?: string;
-  title?: string;
-  category?: string;
-  caption?: string;
-  published?: boolean;
-  photos?: string[];
-}) {
-  const properties: Record<string, unknown> = {
-    Title: {
-      type: "title",
-      title: opts.title ? [{ plain_text: opts.title }] : [],
-    },
-    "Show on website": {
-      type: "checkbox",
-      checkbox: opts.published ?? true,
-    },
-  };
-  if (opts.category !== undefined) {
-    properties["Category"] = {
-      type: "select",
-      select: { name: opts.category },
-    };
-  }
-  if (opts.caption !== undefined) {
-    properties["Caption"] = {
-      type: "rich_text",
-      rich_text: [{ plain_text: opts.caption }],
-    };
-  }
-  if (opts.photos !== undefined) {
-    properties["Website Photos"] = {
-      type: "files",
-      files: opts.photos.map((url) => ({ type: "external", external: { url } })),
-    };
-  }
-  return { id: opts.id ?? "portfolio-page", properties };
-}
-
 /**
  * Minimal Client CRM page as returned by a query. The upsert only reads the
  * page `id` back, so that's all this carries.

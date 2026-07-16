@@ -35,7 +35,6 @@ const NAV_LINKS: readonly NavLink[] = [
       { to: "/shop/order-status", label: "Track a Shop Order" },
     ],
   },
-  { to: "/portfolio", label: "Portfolio" },
   { to: "/shop", label: "Shop" },
   { to: "/contact", label: "Contact" },
 ];

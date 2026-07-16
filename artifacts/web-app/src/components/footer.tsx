@@ -17,7 +17,6 @@ import {
 const EXPLORE_LINKS: { to: string; label: string }[] = [
   { to: "/about", label: "About" },
   { to: "/services", label: "Services" },
-  { to: "/portfolio", label: "Portfolio" },
   { to: "/shop", label: "Shop" },
   { to: "/contact", label: "Contact" },
 ];

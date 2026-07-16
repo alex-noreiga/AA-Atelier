@@ -41,7 +41,6 @@ import type {
   NewOrderResponse,
   OrderNotFound,
   OrderStatus,
-  PortfolioList,
   ProductList,
   ShopOrderStatus
 } from './api.schemas';
@@ -651,84 +650,6 @@ export function useGetProducts<TData = Awaited<ReturnType<typeof getProducts>>, 
  ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
 
   const queryOptions = getGetProductsQueryOptions(options)
-
-  const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
-
-  return withQueryKey(query, queryOptions.queryKey);
-}
-
-
-
-
-
-
-
-export const getGetPortfolioUrl = () => {
-
-
-
-
-  return `/api/portfolio`
-}
-
-/**
- * Returns published gallery items (past custom commissions) from the Notion portfolio database, each with one or more photos and an optional caption and category.
- * @summary List portfolio / gallery items
- */
-export const getPortfolio = async ( options?: RequestInit): Promise<PortfolioList> => {
-
-  return customFetch<PortfolioList>(getGetPortfolioUrl(),
-  {
-    ...options,
-    method: 'GET'
-
-
-  }
-);}
-
-
-
-
-
-export const getGetPortfolioQueryKey = () => {
-    return [
-    `/api/portfolio`
-    ] as const;
-    }
-
-
-export const getGetPortfolioQueryOptions = <TData = Awaited<ReturnType<typeof getPortfolio>>, TError = ErrorType<ErrorEnvelope>>( options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getPortfolio>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
-) => {
-
-const {query: queryOptions, request: requestOptions} = options ?? {};
-
-  const queryKey =  queryOptions?.queryKey ?? getGetPortfolioQueryKey();
-
-
-
-    const queryFn: QueryFunction<Awaited<ReturnType<typeof getPortfolio>>> = ({ signal }) => getPortfolio({ signal, ...requestOptions });
-
-
-
-
-
-   return  { queryKey, queryFn, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof getPortfolio>>, TError, TData> & { queryKey: QueryKey }
-}
-
-export type GetPortfolioQueryResult = NonNullable<Awaited<ReturnType<typeof getPortfolio>>>
-export type GetPortfolioQueryError = ErrorType<ErrorEnvelope>
-
-
-/**
- * @summary List portfolio / gallery items
- */
-
-export function useGetPortfolio<TData = Awaited<ReturnType<typeof getPortfolio>>, TError = ErrorType<ErrorEnvelope>>(
-  options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getPortfolio>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
-
- ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
-
-  const queryOptions = getGetPortfolioQueryOptions(options)
 
   const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
 

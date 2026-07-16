@@ -278,28 +278,6 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/ErrorEnvelope"
-  /portfolio:
-    get:
-      operationId: getPortfolio
-      tags: [portfolio]
-      summary: List portfolio / gallery items
-      description: >-
-        Returns published gallery items (past custom commissions) from the Notion
-        portfolio database, each with one or more photos and an optional caption
-        and category.
-      responses:
-        "200":
-          description: Portfolio list
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/PortfolioList"
-        "500":
-          description: Server error
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/ErrorEnvelope"
   /checkout:
     post:
       operationId: createCheckoutSession
@@ -823,43 +801,6 @@ components:
             options on the Notion inventory database and returned in the order
             the atelier arranged them. Editing the options in Notion changes
             this list without a redeploy, so clients must not hardcode it.
-          items:
-            type: string
-    PortfolioItem:
-      type: object
-      required:
-        - id
-        - title
-        - photos
-      properties:
-        id:
-          type: string
-        title:
-          type: string
-        category:
-          type: string
-        caption:
-          type: string
-        photos:
-          type: array
-          items:
-            type: string
-    PortfolioList:
-      type: object
-      required:
-        - items
-      properties:
-        items:
-          type: array
-          items:
-            $ref: "#/components/schemas/PortfolioItem"
-        categories:
-          type: array
-          description: >-
-            Optional gallery category filters, read live from the "Category"
-            select options on the Notion portfolio database. Editing the options
-            in Notion changes this list without a redeploy, so clients must not
-            hardcode it.
           items:
             type: string
     CheckoutItem:

@@ -38,7 +38,7 @@ artifacts/
     src/App.tsx      wouter routes + a global <Navbar />
     src/pages/       one component per route (home landing, status, order-form,
                      services, about, shop, shop-success, shop-order-status,
-                     portfolio, contact, appointments, privacy, terms,
+                     contact, appointments, privacy, terms,
                      shipping-returns, not-found)
     src/components/  ... plus a global footer.tsx and legal-page.tsx shell
     src/components/  navbar.tsx (global nav), page-shell.tsx (page wrapper),
@@ -97,10 +97,6 @@ Express app (artifacts/api-server)  ──►  Notion REST API (orders database)
   │                                  + sends an acknowledgement email
   ├─ GET  /api/products            → shop inventory + the live category list,
   │                                  from the Notion "inventory" database
-  ├─ GET  /api/portfolio           → published gallery items (past custom work)
-  │                                  from the Notion "Portfolio" database, with a
-  │                                  live category list. Same short-CDN + Notion
-  │                                  signed-URL model as /products.
   ├─ GET  /api/shop-orders/:orderNumber
   │                                → a ready-to-wear shop order's current
   │                                  fulfillment Status + the live status list
@@ -357,21 +353,6 @@ idempotently), everything else is a shop-cart order. The atelier must add
 (rich_text) to the orders database — property names live in `orders.schema.ts`. Code:
 `services/deposit.service.ts`, `lib/notion/orders.repository.ts`
 (`findDepositTarget`/`markDepositPaid`), and the status page's `DepositSection`.
-
-## Portfolio gallery (live Notion, mirrors the shop)
-
-The `/portfolio` page (`pages/portfolio.tsx` → `useGetPortfolio`) is a public
-gallery of past custom work, curated live in Notion exactly like the shop — no
-hardcoded gallery. `GET /api/portfolio` (`routes/portfolio.ts` →
-`services/portfolio.service.ts` → `lib/notion/portfolio.{repository,schema}.ts`)
-reads published rows from the "Portfolio" database (`NOTION_PORTFOLIO_DATABASE_ID`,
-its own `getPortfolioNotionClient`), with the same **files-property image
-extraction**, **60s TTL cache + fallback**, live **"Category"** filter list, and
-**short CDN header** as the products stack (Notion file URLs are ~1h signed URLs).
-The atelier one time: create the Portfolio DB (Title, "Website Photos" files,
-"Show on website" checkbox, optional "Category" select + "Caption" text), share
-the integration with it, set `NOTION_PORTFOLIO_DATABASE_ID`. Unset ⇒ the endpoint
-500s and the page shows its error state (not a crash).
 
 ## Production schedule (auto-generated stage milestones)
 
@@ -682,9 +663,7 @@ and in the maintainer's env without edits.
   `NOTION_INVENTORY_DATABASE_ID` (the finished-goods "inventory" database the
   shop's `/products` endpoint reads), `NOTION_SHOP_ORDERS_DATABASE_ID` (the
   "Shop Orders" database the checkout webhook writes paid orders to — it needs an
-  `Order Number` rich_text property so the shop-order-tracking lookup works),
-  `NOTION_PORTFOLIO_DATABASE_ID` (the "Portfolio" database the `/portfolio`
-  gallery reads), and
+  `Order Number` rich_text property so the shop-order-tracking lookup works), and
   `NOTION_PRODUCTION_SCHEDULE_DATABASE_ID` (the "Production Schedule" database the
   milestone-reconciliation cron writes per-stage milestones to). The Notion
   integration must be shared with each database or queries 404. The
@@ -754,7 +733,6 @@ and in the maintainer's env without edits.
 | Change the shop (live Notion inventory) | `artifacts/web-app/src/pages/shop.tsx` + `services/products.service.ts` + `lib/notion/products.*`                                                                                                                                                                        |
 | Change the back-in-stock notify dialog  | `artifacts/web-app/src/components/notify-dialog.tsx` + `services/notify.service.ts` + `lib/notion/notify.*` (writes to the **contact** database — see below)                                                                                                             |
 | Change shop checkout / payments         | `artifacts/web-app/src/lib/cart.tsx` + `components/cart-drawer.tsx` + `components/add-to-cart.tsx` (frontend); `api-server/src/services/checkout.service.ts` + `routes/checkout.ts` + `routes/stripe-webhook.ts` + `lib/stripe/*` + `lib/notion/shop-orders.*` (backend) |
-| Change the portfolio / gallery          | `artifacts/web-app/src/pages/portfolio.tsx` + `services/portfolio.service.ts` + `lib/notion/portfolio.*` (live Notion, mirrors the shop)                                                                                                                                      |
 | Change shop-order tracking              | `artifacts/web-app/src/pages/shop-order-status.tsx` (+ order number on `pages/shop-success.tsx`); `api-server/src/services/shop-orders.service.ts` + `routes/shop-orders.ts` + `lib/notion/shop-orders.{blocks,repository}.ts` + `services/checkout.service.ts` (mints the number) |
 | Change the footer / legal pages         | `artifacts/web-app/src/components/footer.tsx` (global, in `App.tsx`) + `pages/{privacy,terms,shipping-returns}.tsx` + `components/legal-page.tsx`; shared studio contact details in `lib/contact-info.ts`                                                                       |
 | Change custom-order deposits            | `artifacts/web-app/src/pages/status.tsx` (`DepositSection`); `api-server/src/services/deposit.service.ts` + `routes/orders.ts` + `lib/notion/orders.repository.ts` (`findDepositTarget`/`markDepositPaid`) + `routes/stripe-webhook.ts`                                  |

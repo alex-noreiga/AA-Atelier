@@ -177,20 +177,6 @@ export interface ProductList {
   categories: string[];
 }
 
-export interface PortfolioItem {
-  id: string;
-  title: string;
-  category?: string;
-  caption?: string;
-  photos: string[];
-}
-
-export interface PortfolioList {
-  items: PortfolioItem[];
-  /** Optional gallery category filters, read live from the "Category" select options on the Notion portfolio database. Editing the options in Notion changes this list without a redeploy, so clients must not hardcode it. */
-  categories?: string[];
-}
-
 export interface CheckoutItem {
   /** The Notion inventory page id of the variant being purchased (the `id` on a ProductVariant). */
   variantId: string;

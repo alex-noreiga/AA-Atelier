@@ -47,9 +47,9 @@ describe("Footer", () => {
   it("links back to the primary pages", () => {
     renderFooter();
 
-    expect(screen.getByTestId("footer-explore-portfolio")).toHaveAttribute(
+    expect(screen.getByTestId("footer-explore-about")).toHaveAttribute(
       "href",
-      "/portfolio",
+      "/about",
     );
     expect(screen.getByTestId("footer-explore-shop")).toHaveAttribute(
       "href",

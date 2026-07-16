@@ -94,14 +94,6 @@ export const ROUTE_SEO: Record<string, RouteSeo> = {
     changefreq: "monthly",
     priority: 0.6,
   },
-  "/portfolio": {
-    path: "/portfolio",
-    title: "Portfolio — Custom Costume Gallery | A.A Atelier",
-    description:
-      "A gallery of custom figure skating and dance costumes handcrafted by A.A Atelier — past commissions, finishes, and rhinestone work.",
-    changefreq: "weekly",
-    priority: 0.8,
-  },
   "/privacy": {
     path: "/privacy",
     title: "Privacy Policy | A.A Atelier",
