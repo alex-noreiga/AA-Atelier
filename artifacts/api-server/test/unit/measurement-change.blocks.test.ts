@@ -5,7 +5,9 @@ import {
   type MeasurementChangeRow,
 } from "../../src/lib/notion/measurement-change.blocks.js";
 
-function row(overrides: Partial<MeasurementChangeRow> = {}): MeasurementChangeRow {
+function row(
+  overrides: Partial<MeasurementChangeRow> = {},
+): MeasurementChangeRow {
   return {
     orderNumber: "000002",
     emailVerified: true,

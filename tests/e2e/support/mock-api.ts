@@ -112,6 +112,31 @@ export async function mockCreateDeposit(
   return { requestedPaths };
 }
 
+/**
+ * Mock `POST /api/orders/:orderNumber/measurement-change-requests` — the status
+ * page's "request a measurement change" dialog. Records each request body so a
+ * test can assert the measurements (or the re-measure appointment flag) the
+ * dialog submitted. The `**` glob's `*` never crosses a `/`, so this pattern is
+ * distinct from the `**​/api/orders/*` status GET above.
+ */
+export async function mockMeasurementChange(
+  page: Page,
+  opts: { status?: number; body: unknown },
+): Promise<{ requests: unknown[]; requestedPaths: string[] }> {
+  const requests: unknown[] = [];
+  const requestedPaths: string[] = [];
+  await page.route(
+    "**/api/orders/*/measurement-change-requests",
+    async (route) => {
+      if (route.request().method() !== "POST") return route.fallback();
+      requests.push(route.request().postDataJSON());
+      requestedPaths.push(new URL(route.request().url()).pathname);
+      await json(route, opts.status ?? 201, opts.body);
+    },
+  );
+  return { requests, requestedPaths };
+}
+
 /** Mock `GET /api/checkout/session/:id` — the success page's status lookup. */
 export async function mockGetCheckoutSession(
   page: Page,

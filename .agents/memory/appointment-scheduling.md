@@ -21,9 +21,9 @@ busy), so the two halves come from two places:
   (no redeploy), read by `lib/google/sheets.repository.ts` (`APPOINTMENT_SHEET_ID`,
   60s cache + fallback) and parsed by the pure `parseScheduleRows` in
   `lib/appointments/staff.ts`. Columns `Staff | Email | Day | Start | End |
-  Locations` (row 1 header, data from `A2:F`); `Day` accepts `Mon`/`Monday`, comma
+Locations` (row 1 header, data from `A2:F`); `Day` accepts `Mon`/`Monday`, comma
   lists, and `Mon-Fri` ranges. `Staff` must match the catalog staff names; `Email`
-  is the Workspace calendar. The SA reads the sheet as *itself* (sheet shared with
+  is the Workspace calendar. The SA reads the sheet as _itself_ (sheet shared with
   the SA email), so no domain-wide delegation for Sheets. (Earlier this was an
   `APPOINTMENT_STAFF` JSON env var; moved to a Sheet so standing hours are easy to
   edit without touching JSON/env or redeploying. Reading it makes the schedule
@@ -45,6 +45,7 @@ of the library; calendar calls are raw `fetch`, mirroring the Notion adapter.
 The client is injectable (`GoogleCalendarClient`) so tests pass a fake.
 
 Setup the atelier must do once:
+
 1. GCP project → enable **Google Calendar API** and **Google Sheets API** →
    create a **service account** + JSON key → set `GOOGLE_SERVICE_ACCOUNT_KEY`.
 2. Workspace **Admin → Security → API controls → Domain-wide delegation**:

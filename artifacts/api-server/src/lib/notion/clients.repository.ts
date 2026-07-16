@@ -72,7 +72,8 @@ export async function upsertClientByEmail(
     );
   }
 
-  const existing = ((await queryResponse.json()) as CrmQueryResponse).results[0];
+  const existing = ((await queryResponse.json()) as CrmQueryResponse)
+    .results[0];
   if (existing) {
     const patchResponse = await client.fetch(`/v1/pages/${existing.id}`, {
       method: "PATCH",

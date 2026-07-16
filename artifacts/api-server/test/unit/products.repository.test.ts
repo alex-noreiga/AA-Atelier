@@ -226,9 +226,7 @@ describe("listCategories", () => {
     it("caches for the 60s TTL, then refetches", async () => {
       const client = makeFakeClient((path) => {
         if (isSchema(path)) {
-          return jsonResponse(
-            inventoryDatabaseSchemaWithCategories(["Dress"]),
-          );
+          return jsonResponse(inventoryDatabaseSchemaWithCategories(["Dress"]));
         }
         throw new Error(`unexpected path ${path}`);
       });

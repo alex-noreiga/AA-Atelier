@@ -3,6 +3,11 @@
   "version": "0.0.0",
   "license": "MIT",
   "type": "module",
+  "packageManager": "pnpm@10.33.0",
+  "engines": {
+    "node": ">=22",
+    "pnpm": ">=10"
+  },
   "scripts": {
     "preinstall": "sh -c 'rm -f package-lock.json yarn.lock; case \"$npm_config_user_agent\" in pnpm/*) ;; *) echo \"Use pnpm instead\" >&2; exit 1 ;; esac'",
     "dev": "pnpm --parallel --filter @workspace/api-server --filter @workspace/web-app run dev",
@@ -10,6 +15,8 @@
     "build:vercel": "pnpm --filter @workspace/api-server run build && pnpm --filter @workspace/web-app run build",
     "typecheck:libs": "tsc --build",
     "typecheck": "pnpm run typecheck:libs && pnpm -r --filter \"./artifacts/**\" --filter \"./tests\" --if-present run typecheck",
+    "format": "prettier --write .",
+    "format:check": "prettier --check .",
     "test": "pnpm --filter \"./artifacts/**\" --if-present run test",
     "test:coverage": "pnpm --filter \"./artifacts/**\" --if-present run test:coverage",
     "test:e2e": "pnpm --filter @workspace/tests run test",
@@ -20,7 +27,7 @@
   "private": true,
   "devDependencies": {
     "@types/node": "catalog:",
-    "prettier": "^3.8.4",
+    "prettier": "^3.9.5",
     "typescript": "~5.9.3"
   }
 }
