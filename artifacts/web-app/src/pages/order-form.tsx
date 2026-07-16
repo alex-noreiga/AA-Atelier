@@ -447,24 +447,6 @@ export default function OrderForm() {
               </div>
 
               <div>
-                <Label
-                  htmlFor="neededBy"
-                  className="text-sm font-light tracking-wide"
-                >
-                  Needed By
-                  <span className="text-muted-foreground/60 ml-1 text-xs">
-                    (optional)
-                  </span>
-                </Label>
-                <Input
-                  id="neededBy"
-                  type="date"
-                  {...register("neededBy")}
-                  className="mt-1.5 bg-transparent border-0 border-b border-border rounded-none px-0 py-3 focus-visible:ring-0 focus-visible:border-primary transition-colors shadow-none w-48"
-                />
-              </div>
-
-              <div>
                 <Label className="text-sm font-light tracking-wide">
                   Reference Images / Video
                   <span className="text-muted-foreground/60 ml-1 text-xs">
@@ -479,6 +461,24 @@ export default function OrderForm() {
                   value={references}
                   onChange={setReferences}
                   disabled={submitting}
+                />
+              </div>
+
+              <div>
+                <Label
+                  htmlFor="neededBy"
+                  className="text-sm font-light tracking-wide"
+                >
+                  Needed By
+                  <span className="text-muted-foreground/60 ml-1 text-xs">
+                    (optional)
+                  </span>
+                </Label>
+                <Input
+                  id="neededBy"
+                  type="date"
+                  {...register("neededBy")}
+                  className="mt-1.5 bg-transparent border-0 border-b border-border rounded-none px-0 py-3 focus-visible:ring-0 focus-visible:border-primary transition-colors shadow-none w-48"
                 />
               </div>
             </div>

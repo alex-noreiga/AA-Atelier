@@ -9,6 +9,20 @@ export interface UploadedReference {
   url: string;
 }
 
+// Cap each upload so a misconfigured Blob store (the token route 503s and the SDK
+// retries) or a stalled network can't leave the field spinning forever.
+const UPLOAD_TIMEOUT_MS = 60_000;
+
+function describeUploadError(err: unknown): string {
+  if (err instanceof Error && err.name === "AbortError") {
+    return "The upload timed out — please check your connection and try again. If it keeps happening, uploads may not be enabled yet.";
+  }
+  return (
+    (err as Error)?.message ||
+    "We couldn't upload that file. Please try again."
+  );
+}
+
 /**
  * Reference image/video uploader for the order form. Files upload directly from
  * the browser to Vercel Blob (via the `/api/uploads/order-refs` token route),
@@ -34,22 +48,28 @@ export function ReferenceUpload({
     const uploaded: UploadedReference[] = [];
     try {
       for (const file of Array.from(files)) {
-        const result = await upload(`order-references/${file.name}`, file, {
-          access: "public",
-          handleUploadUrl: "/api/uploads/order-refs",
-        });
-        uploaded.push({ name: file.name, url: result.url });
+        const controller = new AbortController();
+        const timer = setTimeout(() => controller.abort(), UPLOAD_TIMEOUT_MS);
+        try {
+          const result = await upload(`order-references/${file.name}`, file, {
+            access: "public",
+            handleUploadUrl: "/api/uploads/order-refs",
+            abortSignal: controller.signal,
+          });
+          uploaded.push({ name: file.name, url: result.url });
+        } finally {
+          clearTimeout(timer);
+        }
       }
-      onChange([...value, ...uploaded]);
     } catch (err) {
       toast({
         variant: "destructive",
         title: "Upload failed",
-        description:
-          (err as Error)?.message ||
-          "We couldn't upload that file. Please try again.",
+        description: describeUploadError(err),
       });
     } finally {
+      // Keep any files that uploaded before an error, and always stop spinning.
+      if (uploaded.length > 0) onChange([...value, ...uploaded]);
       setUploading(false);
       if (inputRef.current) inputRef.current.value = "";
     }
