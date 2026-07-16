@@ -94,6 +94,38 @@ export const ROUTE_SEO: Record<string, RouteSeo> = {
     changefreq: "monthly",
     priority: 0.6,
   },
+  "/portfolio": {
+    path: "/portfolio",
+    title: "Portfolio — Custom Costume Gallery | A.A Atelier",
+    description:
+      "A gallery of custom figure skating and dance costumes handcrafted by A.A Atelier — past commissions, finishes, and rhinestone work.",
+    changefreq: "weekly",
+    priority: 0.8,
+  },
+  "/privacy": {
+    path: "/privacy",
+    title: "Privacy Policy | A.A Atelier",
+    description:
+      "How A.A Atelier collects, uses, and protects your personal information, including contact details, measurements, and payment data.",
+    changefreq: "yearly",
+    priority: 0.3,
+  },
+  "/terms": {
+    path: "/terms",
+    title: "Terms of Service | A.A Atelier",
+    description:
+      "The terms governing your use of the A.A Atelier website, custom orders, deposits, appointments, and shop purchases.",
+    changefreq: "yearly",
+    priority: 0.3,
+  },
+  "/shipping-returns": {
+    path: "/shipping-returns",
+    title: "Shipping & Returns | A.A Atelier",
+    description:
+      "A.A Atelier's shipping timelines and return policy, including why custom, made-to-measure garments are final sale.",
+    changefreq: "yearly",
+    priority: 0.3,
+  },
 
   // ── Noindex routes — carry per-route titles but are kept out of the sitemap
   //    and out of prerendering (they render behind dynamic, per-visitor state).
@@ -109,6 +141,13 @@ export const ROUTE_SEO: Record<string, RouteSeo> = {
     title: "Order Confirmed | A.A Atelier",
     description:
       "Your A.A Atelier order is confirmed. Thank you for your purchase.",
+    noindex: true,
+  },
+  "/shop/order-status": {
+    path: "/shop/order-status",
+    title: "Track Your Shop Order | A.A Atelier",
+    description:
+      "Look up your A.A Atelier shop order by its order number and follow its progress toward delivery.",
     noindex: true,
   },
 };

@@ -278,6 +278,28 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/ErrorEnvelope"
+  /portfolio:
+    get:
+      operationId: getPortfolio
+      tags: [portfolio]
+      summary: List portfolio / gallery items
+      description: >-
+        Returns published gallery items (past custom commissions) from the Notion
+        portfolio database, each with one or more photos and an optional caption
+        and category.
+      responses:
+        "200":
+          description: Portfolio list
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PortfolioList"
+        "500":
+          description: Server error
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorEnvelope"
   /checkout:
     post:
       operationId: createCheckoutSession
@@ -340,6 +362,34 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/ErrorEnvelope"
+  /shop-orders/{orderNumber}:
+    get:
+      operationId: getShopOrderStatus
+      tags: [checkout]
+      summary: Look up a shop order's fulfilment status
+      description: >-
+        Returns the current fulfilment status of a ready-to-wear shop order by
+        its human-readable order number (issued at checkout), along with the
+        live list of possible statuses so the client can render a timeline.
+      parameters:
+        - name: orderNumber
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Shop order status
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ShopOrderStatus"
+        "404":
+          description: No shop order with that number
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/OrderNotFound"
   /appointments/options:
     get:
       operationId: getAppointmentOptions
@@ -506,6 +556,29 @@ components:
           type: string
       required:
         - message
+    ShopOrderStatus:
+      type: object
+      properties:
+        orderNumber:
+          type: string
+        status:
+          type: string
+          description: The order's current fulfilment status.
+        statuses:
+          type: array
+          description: >-
+            The live ordered list of possible fulfilment statuses (read from the
+            Notion "Status" workflow options), so the client can render a
+            progress timeline. Never hardcode this list.
+          items:
+            type: string
+        total:
+          type: number
+          description: The order total in dollars.
+      required:
+        - orderNumber
+        - status
+        - statuses
     NewOrderRequest:
       type: object
       required:
@@ -752,6 +825,43 @@ components:
             this list without a redeploy, so clients must not hardcode it.
           items:
             type: string
+    PortfolioItem:
+      type: object
+      required:
+        - id
+        - title
+        - photos
+      properties:
+        id:
+          type: string
+        title:
+          type: string
+        category:
+          type: string
+        caption:
+          type: string
+        photos:
+          type: array
+          items:
+            type: string
+    PortfolioList:
+      type: object
+      required:
+        - items
+      properties:
+        items:
+          type: array
+          items:
+            $ref: "#/components/schemas/PortfolioItem"
+        categories:
+          type: array
+          description: >-
+            Optional gallery category filters, read live from the "Category"
+            select options on the Notion portfolio database. Editing the options
+            in Notion changes this list without a redeploy, so clients must not
+            hardcode it.
+          items:
+            type: string
     CheckoutItem:
       type: object
       required:
@@ -821,6 +931,12 @@ components:
           description: >-
             The Stripe payment status of the session, e.g. "paid", "unpaid", or
             "no_payment_required".
+        orderNumber:
+          type: string
+          description: >-
+            The human-readable shop order number (e.g. "SHP-…") the customer can
+            use to track their order. Present for shop-cart orders; absent for
+            deposit sessions.
         email:
           type: string
           description: The customer's email, present once the session is complete.

@@ -15,6 +15,12 @@ import { Seo } from "@/components/seo";
 import { ROUTE_SEO } from "@/lib/seo-routes";
 import { useToast } from "@/hooks/use-toast";
 import {
+  CONTACT_EMAIL,
+  CONTACT_LOCATION,
+  INSTAGRAM_HANDLE,
+  INSTAGRAM_URL,
+} from "@/lib/contact-info";
+import {
   ArrowRight,
   AtSign,
   CheckCircle,
@@ -22,12 +28,6 @@ import {
   Mail,
   MapPin,
 } from "lucide-react";
-
-// TODO: replace these placeholders with the atelier's real details before shipping.
-const CONTACT_EMAIL = "hello@a3iceanddance.com";
-const CONTACT_LOCATION = "Huntsville, Alabama — by appointment";
-const INSTAGRAM_HANDLE = "@a3iceanddance";
-const INSTAGRAM_URL = "https://instagram.com/a3iceanddance";
 
 // Form-friendly schema (friendly messages). Its output shape is handed to the
 // `useCreateContactMessage` mutation below, whose `data` is typed as the

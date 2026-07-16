@@ -24,6 +24,16 @@ export interface OrderNotFound {
   message: string;
 }
 
+export interface ShopOrderStatus {
+  orderNumber: string;
+  /** The order's current fulfilment status. */
+  status: string;
+  /** The live ordered list of possible fulfilment statuses (read from the Notion "Status" workflow options), so the client can render a progress timeline. Never hardcode this list. */
+  statuses: string[];
+  /** The order total in dollars. */
+  total?: number;
+}
+
 export type NewOrderRequestPreferredContact = typeof NewOrderRequestPreferredContact[keyof typeof NewOrderRequestPreferredContact];
 
 
@@ -167,6 +177,20 @@ export interface ProductList {
   categories: string[];
 }
 
+export interface PortfolioItem {
+  id: string;
+  title: string;
+  category?: string;
+  caption?: string;
+  photos: string[];
+}
+
+export interface PortfolioList {
+  items: PortfolioItem[];
+  /** Optional gallery category filters, read live from the "Category" select options on the Notion portfolio database. Editing the options in Notion changes this list without a redeploy, so clients must not hardcode it. */
+  categories?: string[];
+}
+
 export interface CheckoutItem {
   /** The Notion inventory page id of the variant being purchased (the `id` on a ProductVariant). */
   variantId: string;
@@ -201,6 +225,8 @@ export interface ReceiptLineItem {
 export interface CheckoutSessionStatus {
   /** The Stripe payment status of the session, e.g. "paid", "unpaid", or "no_payment_required". */
   status: string;
+  /** The human-readable shop order number (e.g. "SHP-…") the customer can use to track their order. Present for shop-cart orders; absent for deposit sessions. */
+  orderNumber?: string;
   /** The customer's email, present once the session is complete. */
   email?: string;
   /** ISO currency code of the totals, e.g. "usd". */

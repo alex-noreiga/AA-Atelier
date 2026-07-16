@@ -14,6 +14,7 @@ import {
   createShopOrder,
   findOrderBySessionId,
 } from "../lib/notion/shop-orders.repository.js";
+import { generateShopOrderNumber } from "../lib/notion/shop-orders.blocks.js";
 import { getStripeClient } from "../lib/stripe/client.js";
 import { siteBaseUrl } from "../lib/site.js";
 import { BadRequestError } from "../lib/errors.js";
@@ -159,6 +160,7 @@ export async function createCheckoutSession(
   const lineItems = items.map((item) => toLineItem(item, variantsById));
 
   const base = siteBaseUrl();
+  const orderNumber = generateShopOrderNumber();
   const shippingOptions = await resolveShippingOptions(stripe);
   const session = await stripe.checkout.sessions.create({
     mode: "payment",
@@ -178,9 +180,11 @@ export async function createCheckoutSession(
       : {}),
     success_url: `${base}/shop/success?session_id={CHECKOUT_SESSION_ID}`,
     cancel_url: `${base}/shop`,
-    // Lets the webhook route this session to shop-order recording rather than
-    // to a deposit payment (see routes/stripe-webhook.ts).
-    metadata: { kind: "shop" },
+    // `kind` lets the webhook route this session to shop-order recording rather
+    // than to a deposit payment (see routes/stripe-webhook.ts). `orderNumber` is
+    // minted here so the success page can show it immediately and the webhook can
+    // store it on the Notion order — no extra Stripe round-trip.
+    metadata: { kind: "shop", orderNumber },
   });
 
   if (!session.url) {
@@ -197,6 +201,7 @@ interface ReceiptLine {
 
 export interface CheckoutSessionView {
   status: string;
+  orderNumber?: string;
   email?: string;
   currency?: string;
   lineItems?: ReceiptLine[];
@@ -220,6 +225,7 @@ export async function getCheckoutSession(
     expand: ["line_items"],
   });
   const email = session.customer_details?.email ?? undefined;
+  const orderNumber = session.metadata?.orderNumber ?? undefined;
   const lineItems = (session.line_items?.data ?? []).map((item) => ({
     description: item.description ?? "Item",
     quantity: item.quantity ?? 1,
@@ -228,6 +234,7 @@ export async function getCheckoutSession(
 
   return {
     status: session.payment_status,
+    ...(orderNumber ? { orderNumber } : {}),
     ...(email ? { email } : {}),
     ...(session.currency ? { currency: session.currency } : {}),
     ...(lineItems.length > 0 ? { lineItems } : {}),

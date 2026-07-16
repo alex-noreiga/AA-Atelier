@@ -43,6 +43,7 @@ function createNotionClient(config: NotionClientConfig): NotionClient {
 let defaultClient: NotionClient | null = null;
 let contactClient: NotionClient | null = null;
 let inventoryClient: NotionClient | null = null;
+let portfolioClient: NotionClient | null = null;
 let shopOrdersClient: NotionClient | null = null;
 let productionScheduleClient: NotionClient | null = null;
 let clientCrmClient: NotionClient | null = null;
@@ -89,6 +90,20 @@ export function getInventoryNotionClient(): NotionClient {
     });
   }
   return inventoryClient;
+}
+
+/**
+ * Client for the "Portfolio" database that feeds the public gallery of past
+ * custom work. Same lazy construction, reads `NOTION_PORTFOLIO_DATABASE_ID`.
+ */
+export function getPortfolioNotionClient(): NotionClient {
+  if (!portfolioClient) {
+    portfolioClient = createNotionClient({
+      apiKey: process.env.NOTION_API_KEY ?? "",
+      databaseId: process.env.NOTION_PORTFOLIO_DATABASE_ID ?? "",
+    });
+  }
+  return portfolioClient;
 }
 
 /**

@@ -32,8 +32,10 @@ const NAV_LINKS: readonly NavLink[] = [
       { to: "/order", label: "Place an Order" },
       { to: "/appointments", label: "Book an Appointment" },
       { to: "/shop/status", label: "Track Your Order" },
+      { to: "/shop/order-status", label: "Track a Shop Order" },
     ],
   },
+  { to: "/portfolio", label: "Portfolio" },
   { to: "/shop", label: "Shop" },
   { to: "/contact", label: "Contact" },
 ];

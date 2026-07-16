@@ -10,6 +10,8 @@ import type { ReceiptLineItem } from './receiptLineItem';
 export interface CheckoutSessionStatus {
   /** The Stripe payment status of the session, e.g. "paid", "unpaid", or "no_payment_required". */
   status: string;
+  /** The human-readable shop order number (e.g. "SHP-…") the customer can use to track their order. Present for shop-cart orders; absent for deposit sessions. */
+  orderNumber?: string;
   /** The customer's email, present once the session is complete. */
   email?: string;
   /** ISO currency code of the totals, e.g. "usd". */

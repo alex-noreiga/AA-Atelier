@@ -190,6 +190,22 @@ export const GetProductsResponse = zod.object({
 
 
 /**
+ * Returns published gallery items (past custom commissions) from the Notion portfolio database, each with one or more photos and an optional caption and category.
+ * @summary List portfolio / gallery items
+ */
+export const GetPortfolioResponse = zod.object({
+  "items": zod.array(zod.object({
+  "id": zod.string(),
+  "title": zod.string(),
+  "category": zod.string().optional(),
+  "caption": zod.string().optional(),
+  "photos": zod.array(zod.string())
+})),
+  "categories": zod.array(zod.string()).optional().describe('Optional gallery category filters, read live from the \"Category\" select options on the Notion portfolio database. Editing the options in Notion changes this list without a redeploy, so clients must not hardcode it.')
+})
+
+
+/**
  * Validates the requested in-stock shop items against live Notion inventory, prices them server-side (the client never sends prices), and creates a Stripe Checkout session. Returns the hosted-checkout URL for the browser to redirect to.
  * @summary Create a Stripe Checkout session for shop items
  */
@@ -220,6 +236,7 @@ export const GetCheckoutSessionParams = zod.object({
 
 export const GetCheckoutSessionResponse = zod.object({
   "status": zod.string().describe('The Stripe payment status of the session, e.g. \"paid\", \"unpaid\", or \"no_payment_required\".'),
+  "orderNumber": zod.string().optional().describe('The human-readable shop order number (e.g. \"SHP-…\") the customer can use to track their order. Present for shop-cart orders; absent for deposit sessions.'),
   "email": zod.string().optional().describe('The customer\'s email, present once the session is complete.'),
   "currency": zod.string().optional().describe('ISO currency code of the totals, e.g. \"usd\".'),
   "lineItems": zod.array(zod.object({
@@ -231,6 +248,22 @@ export const GetCheckoutSessionResponse = zod.object({
   "amountShipping": zod.number().optional().describe('Shipping charged in dollars.'),
   "amountTax": zod.number().optional().describe('Tax charged in dollars (Stripe Tax).'),
   "amountTotal": zod.number().optional().describe('Grand total in dollars (items + shipping + tax).')
+})
+
+
+/**
+ * Returns the current fulfilment status of a ready-to-wear shop order by its human-readable order number (issued at checkout), along with the live list of possible statuses so the client can render a timeline.
+ * @summary Look up a shop order's fulfilment status
+ */
+export const GetShopOrderStatusParams = zod.object({
+  "orderNumber": zod.coerce.string()
+})
+
+export const GetShopOrderStatusResponse = zod.object({
+  "orderNumber": zod.string(),
+  "status": zod.string().describe('The order\'s current fulfilment status.'),
+  "statuses": zod.array(zod.string()).describe('The live ordered list of possible fulfilment statuses (read from the Notion \"Status\" workflow options), so the client can render a progress timeline. Never hardcode this list.'),
+  "total": zod.number().optional().describe('The order total in dollars.')
 })
 
 

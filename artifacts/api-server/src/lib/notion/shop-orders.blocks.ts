@@ -12,12 +12,25 @@ import type Stripe from "stripe";
 
 // Live-schema property names (a Notion rename is a one-line change here).
 export const SHOP_ORDER_TITLE_PROPERTY = "Order Name"; // title
+export const SHOP_ORDER_NUMBER_PROPERTY = "Order Number"; // rich_text
 export const SHOP_ORDER_SESSION_PROPERTY = "Stripe Session Id"; // rich_text
 export const SHOP_ORDER_EMAIL_PROPERTY = "Customer Email"; // email
 export const SHOP_ORDER_NAME_PROPERTY = "Customer Name"; // rich_text
 export const SHOP_ORDER_TOTAL_PROPERTY = "Total"; // number
 export const SHOP_ORDER_STATUS_PROPERTY = "Status"; // status (workflow)
 export const SHOP_ORDER_SHIPPING_PROPERTY = "Shipping Address"; // rich_text
+
+/**
+ * A human-readable shop order number the customer can track their order by
+ * (surfaced on the success page + stored on the order). Mirrors the custom-order
+ * `generateOrderNumber` but with a distinct "SHP-" prefix. Generated at checkout
+ * and carried to the webhook via the Stripe session metadata.
+ */
+export function generateShopOrderNumber(): string {
+  const timestamp = Date.now().toString(36).toUpperCase();
+  const random = Math.random().toString(36).substring(2, 6).toUpperCase();
+  return `SHP-${timestamp}-${random}`;
+}
 
 /**
  * The "Status" option a freshly-paid order lands in. Must be one of the live
@@ -84,11 +97,12 @@ export function buildShopOrderProperties(
   const email = session.customer_details?.email ?? undefined;
   const name = session.customer_details?.name ?? undefined;
   const shipping = formatShippingAddress(session);
-  const title = name
-    ? `Shop order — ${name}`
-    : email
-      ? `Shop order — ${email}`
-      : `Shop order — ${session.id}`;
+  // The order number is minted at checkout and carried on the session metadata.
+  const orderNumber = session.metadata?.orderNumber ?? undefined;
+  const label = name ?? email ?? session.id;
+  const title = orderNumber
+    ? `Shop order ${orderNumber} — ${label}`
+    : `Shop order — ${label}`;
 
   const properties: Record<string, unknown> = {
     [SHOP_ORDER_TITLE_PROPERTY]: {
@@ -105,6 +119,11 @@ export function buildShopOrderProperties(
     },
   };
 
+  if (orderNumber) {
+    properties[SHOP_ORDER_NUMBER_PROPERTY] = {
+      rich_text: [{ text: { content: orderNumber } }],
+    };
+  }
   if (email) {
     properties[SHOP_ORDER_EMAIL_PROPERTY] = { email };
   }
