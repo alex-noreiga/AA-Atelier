@@ -5,13 +5,11 @@ import { describe, it, expect, vi, beforeEach } from "vitest";
 vi.mock("../../src/lib/notion/orders.repository.js", () => ({
   findOrderByNumber: vi.fn(),
   createOrder: vi.fn(),
-  findDepositTarget: vi.fn(),
-  markDepositPaid: vi.fn(),
 }));
 vi.mock("../../src/lib/notion/invoice.repository.js", () => ({
   findInvoice: vi.fn(),
   listInvoiceLineItems: vi.fn(),
-  markBalancePaid: vi.fn(),
+  markInvoicePaid: vi.fn(),
 }));
 vi.mock("../../src/lib/stripe/client.js", () => ({ getStripeClient: vi.fn() }));
 
@@ -22,24 +20,35 @@ import app from "../../src/app.js";
 import {
   findOrderByNumber,
   createOrder,
-  findDepositTarget,
 } from "../../src/lib/notion/orders.repository.js";
 import {
   findInvoice,
   listInvoiceLineItems,
 } from "../../src/lib/notion/invoice.repository.js";
+import type { InvoiceRecord } from "../../src/lib/notion/invoice.schema.js";
 import { getStripeClient } from "../../src/lib/stripe/client.js";
 
 const mockFind = vi.mocked(findOrderByNumber);
 const mockCreate = vi.mocked(createOrder);
-const mockFindDeposit = vi.mocked(findDepositTarget);
 const mockFindInvoice = vi.mocked(findInvoice);
 const mockListLines = vi.mocked(listInvoiceLineItems);
 const mockGetStripe = vi.mocked(getStripeClient);
 
 const validBody = createOrderInput();
 
-function stubStripe(url = "https://checkout.stripe.test/deposit") {
+/** An invoice head with sane defaults; override per test. */
+function invoiceHead(overrides: Partial<InvoiceRecord> = {}): InvoiceRecord {
+  return {
+    pageId: "inv-1",
+    invoiceId: "Toothless",
+    ready: true,
+    balancePaid: false,
+    deposits: [],
+    ...overrides,
+  };
+}
+
+function stubStripe(url = "https://checkout.stripe.test/pay") {
   const create = vi.fn().mockResolvedValue({ url });
   mockGetStripe.mockReturnValue({
     checkout: { sessions: { create } },
@@ -108,20 +117,24 @@ describe("GET /api/orders/:orderNumber", () => {
     expect(res.body).toHaveProperty("message");
   });
 
-  it("includes the invoice breakdown once the invoice is ready", async () => {
+  it("includes the deposits + invoice breakdown once the invoice is ready", async () => {
     mockFind.mockResolvedValue({
       ...orderRecord({ orderNumber: "000002" }),
       pageId: "order-1",
       invoicePageId: "inv-1",
-      depositAmount: 100,
-      depositPaid: true,
     });
-    mockFindInvoice.mockResolvedValue({
-      pageId: "inv-1",
-      invoiceId: "Toothless",
-      ready: true,
-      balancePaid: false,
-    });
+    mockFindInvoice.mockResolvedValue(
+      invoiceHead({
+        deposits: [
+          {
+            stage: "first_deposit",
+            label: "First deposit",
+            amount: 100,
+            paid: true,
+          },
+        ],
+      }),
+    );
     mockListLines.mockResolvedValue([
       { name: "Main fabric", type: "Material", amount: 40 },
       { name: "Construction", type: "Labor", amount: 120 },
@@ -130,6 +143,14 @@ describe("GET /api/orders/:orderNumber", () => {
     const res = await request(app).get("/api/orders/000002");
 
     expect(res.status).toBe(200);
+    expect(res.body.deposits).toEqual([
+      {
+        stage: "first_deposit",
+        label: "First deposit",
+        amount: 100,
+        paid: true,
+      },
+    ]);
     expect(res.body.invoice).toEqual({
       invoiceId: "Toothless",
       paid: false,
@@ -137,30 +158,38 @@ describe("GET /api/orders/:orderNumber", () => {
         { name: "Main fabric", type: "Material", amount: 40 },
         { name: "Construction", type: "Labor", amount: 120 },
       ],
-      deposits: [{ label: "Deposit 1", amount: 100, paid: true }],
       subtotal: 160,
       depositsCreditedTotal: 100,
       balanceDue: 60,
     });
   });
 
-  it("omits the invoice when the atelier hasn't flipped Invoice Ready", async () => {
+  it("surfaces deposits but omits the invoice before Invoice Ready is flipped", async () => {
     mockFind.mockResolvedValue({
       ...orderRecord({ orderNumber: "000002" }),
       pageId: "order-1",
       invoicePageId: "inv-1",
     });
-    mockFindInvoice.mockResolvedValue({
-      pageId: "inv-1",
-      invoiceId: "Draft",
-      ready: false,
-      balancePaid: false,
-    });
+    mockFindInvoice.mockResolvedValue(
+      invoiceHead({
+        invoiceId: "Draft",
+        ready: false,
+        deposits: [
+          {
+            stage: "first_deposit",
+            label: "First deposit",
+            amount: 100,
+            paid: false,
+          },
+        ],
+      }),
+    );
 
     const res = await request(app).get("/api/orders/000002");
 
     expect(res.status).toBe(200);
     expect(res.body.invoice).toBeUndefined();
+    expect(res.body.deposits).toHaveLength(1);
   });
 });
 
@@ -225,88 +254,82 @@ describe("POST /api/orders", () => {
   });
 });
 
-describe("POST /api/orders/:orderNumber/deposit", () => {
-  it("returns 201 { url } when a deposit is due", async () => {
-    mockFindDeposit.mockResolvedValue({
-      pageId: "page-42",
-      orderName: "Ada – Custom Dress",
-      depositAmount: 150,
-      depositPaid: false,
-    });
+describe("POST /api/orders/:orderNumber/payments/:stage", () => {
+  function readyOrder() {
+    return {
+      ...orderRecord({ orderNumber: "000002" }),
+      pageId: "order-1",
+      invoicePageId: "inv-1",
+    };
+  }
+
+  it("returns 201 { url } for a deposit that's due", async () => {
+    mockFind.mockResolvedValue(readyOrder());
+    mockFindInvoice.mockResolvedValue(
+      invoiceHead({
+        deposits: [
+          {
+            stage: "first_deposit",
+            label: "First deposit",
+            amount: 150,
+            paid: false,
+          },
+        ],
+      }),
+    );
     stubStripe("https://checkout.stripe.test/abc");
 
-    const res = await request(app).post("/api/orders/000002/deposit");
+    const res = await request(app).post(
+      "/api/orders/000002/payments/first_deposit",
+    );
 
     expect(res.status).toBe(201);
     expect(res.body).toEqual({ url: "https://checkout.stripe.test/abc" });
   });
 
-  it("returns 400 when no deposit has been set on the order", async () => {
-    mockFindDeposit.mockResolvedValue({
-      pageId: "page-42",
-      orderName: "Ada",
-      depositPaid: false,
-    });
+  it("returns 201 { url } for a balance that's due", async () => {
+    mockFind.mockResolvedValue(readyOrder());
+    mockFindInvoice.mockResolvedValue(
+      invoiceHead({
+        deposits: [
+          {
+            stage: "first_deposit",
+            label: "First deposit",
+            amount: 100,
+            paid: true,
+          },
+        ],
+      }),
+    );
+    mockListLines.mockResolvedValue([
+      { name: "Main fabric", type: "Material", amount: 220 },
+    ]);
+    stubStripe("https://checkout.stripe.test/inv");
+
+    const res = await request(app).post("/api/orders/000002/payments/balance");
+
+    expect(res.status).toBe(201);
+    expect(res.body).toEqual({ url: "https://checkout.stripe.test/inv" });
+  });
+
+  it("returns 400 when the requested deposit has no amount set", async () => {
+    mockFind.mockResolvedValue(readyOrder());
+    mockFindInvoice.mockResolvedValue(invoiceHead({ deposits: [] }));
     const create = stubStripe();
 
-    const res = await request(app).post("/api/orders/000002/deposit");
+    const res = await request(app).post(
+      "/api/orders/000002/payments/second_deposit",
+    );
 
     expect(res.status).toBe(400);
     expect(res.body).toHaveProperty("error");
     expect(create).not.toHaveBeenCalled();
   });
 
-  it("returns 404 when the order does not exist", async () => {
-    mockFindDeposit.mockResolvedValue(null);
-
-    const res = await request(app).post("/api/orders/ORD-NOPE/deposit");
-
-    expect(res.status).toBe(404);
-    expect(res.body).toHaveProperty("message");
-  });
-});
-
-describe("POST /api/orders/:orderNumber/invoice", () => {
-  function readyOrder() {
-    return {
-      ...orderRecord({ orderNumber: "000002" }),
-      pageId: "order-1",
-      invoicePageId: "inv-1",
-      depositAmount: 100,
-      depositPaid: true,
-    };
-  }
-
-  it("returns 201 { url } when a balance is due", async () => {
-    mockFind.mockResolvedValue(readyOrder());
-    mockFindInvoice.mockResolvedValue({
-      pageId: "inv-1",
-      invoiceId: "Toothless",
-      ready: true,
-      balancePaid: false,
-    });
-    mockListLines.mockResolvedValue([
-      { name: "Main fabric", type: "Material", amount: 220 },
-    ]);
-    stubStripe("https://checkout.stripe.test/inv");
-
-    const res = await request(app).post("/api/orders/000002/invoice");
-
-    expect(res.status).toBe(201);
-    expect(res.body).toEqual({ url: "https://checkout.stripe.test/inv" });
-  });
-
-  it("returns 400 when the invoice isn't ready", async () => {
-    mockFind.mockResolvedValue(readyOrder());
-    mockFindInvoice.mockResolvedValue({
-      pageId: "inv-1",
-      invoiceId: "Draft",
-      ready: false,
-      balancePaid: false,
-    });
+  it("returns 400 for an unknown payment stage (rejected by validation)", async () => {
     const create = stubStripe();
 
-    const res = await request(app).post("/api/orders/000002/invoice");
+    const res = await request(app).post("/api/orders/000002/payments/bogus");
 
     expect(res.status).toBe(400);
     expect(res.body).toHaveProperty("error");
@@ -316,7 +339,9 @@ describe("POST /api/orders/:orderNumber/invoice", () => {
   it("returns 404 when the order does not exist", async () => {
     mockFind.mockResolvedValue(null);
 
-    const res = await request(app).post("/api/orders/ORD-NOPE/invoice");
+    const res = await request(app).post(
+      "/api/orders/ORD-NOPE/payments/first_deposit",
+    );
 
     expect(res.status).toBe(404);
     expect(res.body).toHaveProperty("message");

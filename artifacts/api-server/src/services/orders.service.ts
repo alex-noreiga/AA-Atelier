@@ -8,7 +8,7 @@ import {
 import { listOrderMilestones } from "../lib/notion/production-schedule.repository.js";
 import { upsertClientByEmail } from "../lib/notion/clients.repository.js";
 import { measurementsLocked } from "./measurement-lock.js";
-import { getInvoiceView } from "./invoice.service.js";
+import { getInvoicePaymentInfo } from "./invoice.service.js";
 import type {
   CreateOrderInput,
   OrderStatusResult,
@@ -62,15 +62,17 @@ export async function getOrderStatus(
     ? await listOrderMilestones(order.pageId)
     : [];
 
-  // Attach the invoice only once it exists and the atelier has flipped
-  // "Invoice Ready" (one extra Notion read, and only then).
-  const invoice = await getInvoiceView(order);
+  // Read the order's invoice once: its staged deposits (payable as soon as the
+  // atelier sets an amount) and — only once "Invoice Ready" is flipped — the
+  // itemized invoice view. No invoice ⇒ empty deposits + null invoice.
+  const { deposits, invoice } = await getInvoicePaymentInfo(order);
 
   const { pageId, invoicePageId, ...rest } = order;
   return {
     ...rest,
     stages,
     measurementsLocked: locked,
+    ...(deposits.length ? { deposits } : {}),
     ...(invoice ? { invoice } : {}),
     ...(milestones.length ? { milestones } : {}),
   };

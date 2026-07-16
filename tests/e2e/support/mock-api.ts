@@ -22,7 +22,6 @@ export interface OrderStatusPayload {
   measurementsLocked: boolean;
   estimatedCompletion?: string;
   milestones?: { stage: string; targetDate: string }[];
-  depositSessionId?: string;
 }
 
 /**
@@ -98,13 +97,14 @@ export async function mockCreateCheckout(
   return { requests };
 }
 
-/** Mock `POST /api/orders/:orderNumber/deposit` — the status page's deposit button. */
-export async function mockCreateDeposit(
+/** Mock `POST /api/orders/:orderNumber/payments/:stage` — the status/invoice
+ * pages' pay buttons (first deposit, second deposit, or balance). */
+export async function mockCreatePayment(
   page: Page,
   opts: { status?: number; body: unknown },
 ): Promise<{ requestedPaths: string[] }> {
   const requestedPaths: string[] = [];
-  await page.route("**/api/orders/*/deposit", async (route) => {
+  await page.route("**/api/orders/*/payments/*", async (route) => {
     if (route.request().method() !== "POST") return route.fallback();
     requestedPaths.push(new URL(route.request().url()).pathname);
     await json(route, opts.status ?? 201, opts.body);

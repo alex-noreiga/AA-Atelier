@@ -144,17 +144,13 @@ export function crmClientPage(opts: { id?: string } = {}) {
   return { id: opts.id ?? "client-page" };
 }
 
-/** Minimal Notion order page as returned by a database query. */
+/** Minimal Notion order page as returned by a database query. Payments live on
+ * the linked invoice now, so the order carries only the `Invoices` relation. */
 export function orderPage(opts: {
   id?: string;
   orderNumber?: string;
   orderName?: string;
   currentStage?: string | null;
-  depositAmount?: number;
-  depositPaid?: boolean;
-  depositSessionId?: string;
-  deposit2Amount?: number;
-  deposit2Paid?: boolean;
   invoicePageId?: string;
   email?: string | null;
   dueDate?: string | null;
@@ -182,28 +178,6 @@ export function orderPage(opts: {
             ? null
             : { name: opts.currentStage },
       },
-      "Deposit Amount": {
-        type: "number",
-        number: opts.depositAmount ?? null,
-      },
-      "Deposit Paid": {
-        type: "checkbox",
-        checkbox: opts.depositPaid ?? false,
-      },
-      "Deposit Session Id": {
-        type: "rich_text",
-        rich_text: opts.depositSessionId
-          ? [{ plain_text: opts.depositSessionId }]
-          : [],
-      },
-      "Deposit 2 Amount": {
-        type: "number",
-        number: opts.deposit2Amount ?? null,
-      },
-      "Deposit 2 Paid": {
-        type: "checkbox",
-        checkbox: opts.deposit2Paid ?? false,
-      },
       Invoices: {
         type: "relation",
         relation: opts.invoicePageId ? [{ id: opts.invoicePageId }] : [],
@@ -223,7 +197,8 @@ export function orderPage(opts: {
   };
 }
 
-/** Minimal "invoices & payments" page (the invoice head). */
+/** Minimal "invoices & payments" page (the invoice head), including its staged
+ * deposits — the source of truth for what the customer pays online. */
 export function invoicePage(opts: {
   id?: string;
   invoiceId?: string;
@@ -231,6 +206,12 @@ export function invoicePage(opts: {
   balancePaid?: boolean;
   finalBalance?: number | null;
   paymentDeadline?: string | null;
+  firstDepositAmount?: number | null;
+  firstDepositPaid?: boolean;
+  firstDepositSessionId?: string;
+  secondDepositAmount?: number | null;
+  secondDepositPaid?: boolean;
+  secondDepositSessionId?: string;
 }) {
   return {
     id: opts.id ?? "invoice-page",
@@ -257,6 +238,34 @@ export function invoicePage(opts: {
           opts.paymentDeadline === null || opts.paymentDeadline === undefined
             ? null
             : { start: opts.paymentDeadline, end: null },
+      },
+      "First Deposit Amount": {
+        type: "number",
+        number: opts.firstDepositAmount ?? null,
+      },
+      "First Deposit Paid": {
+        type: "checkbox",
+        checkbox: opts.firstDepositPaid ?? false,
+      },
+      "First Deposit Session Id": {
+        type: "rich_text",
+        rich_text: opts.firstDepositSessionId
+          ? [{ plain_text: opts.firstDepositSessionId }]
+          : [],
+      },
+      "Second Deposit Amount": {
+        type: "number",
+        number: opts.secondDepositAmount ?? null,
+      },
+      "Second Deposit Paid": {
+        type: "checkbox",
+        checkbox: opts.secondDepositPaid ?? false,
+      },
+      "Second Deposit Session Id": {
+        type: "rich_text",
+        rich_text: opts.secondDepositSessionId
+          ? [{ plain_text: opts.secondDepositSessionId }]
+          : [],
       },
     },
   };

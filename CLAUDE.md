@@ -79,9 +79,12 @@ Express app (artifacts/api-server)  ──►  Notion REST API (orders database)
   │                                  + sends an order-confirmation email
   │                                  + (best-effort) upserts a Client CRM record
   │                                  by email and links the order to it
-  ├─ POST /api/orders/:n/deposit   → creates a Stripe Checkout session for the
-  │                                  deposit the atelier set on custom order :n
-  │                                  in Notion; the webhook marks it paid
+  ├─ POST /api/orders/:n/payments/:stage
+  │                                → creates a Stripe Checkout session for one
+  │                                  payment stage of custom order :n — first
+  │                                  deposit, second deposit, or the final balance
+  │                                  — each priced server-side from the order's
+  │                                  Notion invoice; the webhook marks it paid
   ├─ POST /api/orders/:n/measurement-change-requests
   │                                → files a customer request to change order :n's
   │                                  measurements in the SAME "Website Contact
@@ -92,11 +95,6 @@ Express app (artifacts/api-server)  ──►  Notion REST API (orders database)
   │                                  (MEASUREMENT_LOCK_FROM_STAGE). Never edits the
   │                                  order — the atelier applies the change by hand
   │                                  (Approach A) + sends a confirmation email
-  ├─ POST /api/orders/:n/invoice   → creates a Stripe Checkout session for the
-  │                                  outstanding balance on custom order :n's
-  │                                  invoice (itemized materials + labor from the
-  │                                  Notion "invoices & payments" system, minus
-  │                                  deposits paid); the webhook marks it paid
   ├─ POST /api/contact             → saves a contact message to the Notion
   │                                  "Website Contact Messages" database
   │                                  + sends an acknowledgement email
@@ -313,8 +311,8 @@ and `src/lib/notion/shop-orders.*`. Four things are load-bearing:
    prices are pre-tax; tax is added on top), so tax is computed from the collected
    address — configure the origin + a default tax category in the Stripe Dashboard,
    or it computes $0. **Deposits are intentionally untaxed** (tax is assessed on
-   the final balance, not the deposit), so `deposit.service` sets no
-   `automatic_tax`.
+   the final balance, not the deposits), so `invoice.service` sets
+   `automatic_tax` only on the `balance` payment stage, not the deposit stages.
 
 7. **Receipts are Stripe's job; the success page mirrors them.** The emailed
    receipt is a Stripe Dashboard setting (Settings → Emails → "Successful
@@ -345,77 +343,65 @@ The atelier must create the "Shop Orders" Notion database (properties in
 share the integration with it. Local testing uses Stripe test-mode keys +
 `stripe listen --forward-to localhost:3000/api/webhooks/stripe`.
 
-### Custom-order deposits
+### Custom-order payments (invoice = source of truth for all three stages)
 
-Custom (bespoke) orders are quoted offline, so a deposit rides on the **orders**
-database, not a purchasable cart. After quoting, the atelier sets a `Deposit
-Amount` (number) on the order in Notion; the customer pays it from the
-order-status page (`pages/status.tsx` → `POST /orders/:n/deposit`), which prices
-the deposit server-side from that property (never trusting the client) and
-creates a Checkout session tagged `metadata.kind = "deposit"`. The **one** webhook
-handler routes on that tag: a deposit session calls `recordDepositPayment`
-(which sets `Deposit Paid` + `Deposit Session Id` on the order page —
-idempotently), everything else is a shop-cart order. The atelier must add
-`Deposit Amount` (number), `Deposit Paid` (checkbox), and `Deposit Session Id`
-(rich_text) to the orders database — property names live in `orders.schema.ts`. Code:
-`services/deposit.service.ts`, `lib/notion/orders.repository.ts`
-(`findDepositTarget`/`markDepositPaid`), and the status page's `DepositSection`.
-
-### Custom-order invoices (reads the atelier's Notion finance system)
-
-The final bill is an **invoice**: itemized materials + labor, minus the deposits
-paid, = the balance the customer pays online. The atelier already models all of
-this in Notion (under the "finances" page) — the app **reads** it, it does not
-recreate or recompute the costing:
+Custom (bespoke) orders are quoted offline and paid online in **three staged
+payments**: a **first deposit** (after the sketch is finalized), a **second
+deposit** (at the first fitting), and the **final balance** (after delivery =
+itemized materials + labor − both deposits). All three are owned by the order's
+**invoice** in the atelier's Notion finance system (under the "finances" page) —
+the app **reads** that, it does not recreate or recompute the costing. The order
+row itself carries only the `Invoices` relation (limit 1); it holds **no** deposit
+fields.
 
 - **`invoices & payments`** (`NOTION_INVOICES_DATABASE_ID`): one invoice per order
-  (`Order` relation, limit 1), with `Final Balance` (rollup), `Line Items`
-  relation, and the app-added `Invoice Ready` / `Balance Paid` /
-  `Balance Payment Session Id`.
+  (`Order` relation), with `Final Balance` (rollup), `Line Items` relation,
+  `Invoice Ready`, and the payment fields: `First/Second Deposit Amount` (number),
+  `First/Second Deposit Paid` (checkbox), `First/Second Deposit Session Id`
+  (rich_text), `Balance Paid` (checkbox), `Balance Payment Session Id` (rich_text),
+  and a `Balance Due` formula (`Final Balance − deposits`, for the atelier's view).
+  Property names live in `lib/notion/invoice.schema.ts`.
 - **`Invoice Line Items`** (`NOTION_INVOICE_LINE_ITEMS_DATABASE_ID`): each line has
   a `Line Type` (Garment / Material / Labor / Deposit / Adjustment) and a
-  `Line Total` (formula). Each material is its own `Material` row (main fabric,
-  crystal/rhinestones, appliqué…), so the invoice breaks materials out per item.
+  `Line Total` (formula). Each material is its own `Material` row, so the invoice
+  breaks materials out per item.
 
-Five things are load-bearing:
+One endpoint serves all three: `POST /orders/:n/payments/:stage`, `stage ∈
+{first_deposit, second_deposit, balance}` (`routes/orders.ts` →
+`createPaymentCheckout` in `services/invoice.service.ts`). Load-bearing points:
 
-1. **Balance is computed from the line items, not `Final Balance`.**
-   `balanceDue = Σ(non-deposit Line Totals) − Σ(deposits paid on the order)`,
-   floored at 0 (`buildInvoiceView` in `services/invoice.service.ts`). `Line Type
-= Deposit` rows are **excluded** from the subtotal — deposits are credited from
-   the order's paid-deposit amounts instead, so they can't be double-counted. This
-   avoids depending on how the `Final Balance` rollup treats deposit lines.
+1. **Every amount is priced server-side from the invoice.** A deposit's amount is
+   its `First/Second Deposit Amount`; the balance is
+   `balanceDue = Σ(non-deposit Line Totals) − Σ(deposits marked paid on the
+invoice)`, floored at 0 (`buildInvoiceView`). `Line Type = Deposit` rows are
+   **excluded** from the subtotal — deposits are payments against the total, not
+   line items, so they can't be double-counted. A stage with no amount set / an
+   already-paid stage / (for the balance) an unready invoice all 400.
 
-2. **Only the balance is collected online.** Deposits are collected however the
-   atelier does today and tracked on the **order** (`Deposit Amount`/`Deposit
-Paid` = deposit 1; `Deposit 2 Amount`/`Deposit 2 Paid` = deposit 2, both in
-   `schema.ts`). The existing deposit-1 flow + `DepositSection` are untouched;
-   only **paid** deposits credit the balance.
+2. **Deposits are payable before the invoice is itemized.** `getOrderStatus`
+   surfaces `deposits[]` (from the invoice head) as soon as the atelier sets a
+   deposit amount, independent of `Invoice Ready`. The itemized `invoice` object
+   (and the balance charge) is gated on `Invoice Ready` — the status page's deposit
+   cards + "View Invoice" button (`pages/status.tsx`), and `pages/invoice.tsx`
+   (`/invoice/:orderNumber`) render from these.
 
-3. **Tax on the balance only.** The invoice checkout sets `automatic_tax`,
+3. **Tax on the balance only.** The balance checkout sets `automatic_tax`,
    `tax_behavior: "exclusive"`, and `billing_address_collection: "required"` (no
    shipping step). Deposits stay untaxed.
 
-4. **`Invoice Ready` gates it.** `getOrderStatus` attaches the `invoice` object —
-   and the status page shows a **"View Invoice"** button → `pages/invoice.tsx`
-   (`/invoice/:orderNumber`) — only once the atelier ticks `Invoice Ready`.
-   `createInvoiceCheckout` 400s until then.
+4. **Write-back is invoice-only + idempotent.** The **one** webhook routes
+   `metadata.kind = "custom_payment"` to `recordPayment` → `markInvoicePaid(invoice,
+stage, sessionId)`, which ticks that stage's paid checkbox + session-id text on
+   the invoice (never the costing formulas). Everything else is a shop-cart order.
+   The paid checkbox is the "already paid" guard; the shop-success page skips
+   clearing the cart for `custom_payment`.
 
-5. **Write-back is order + invoice, idempotent.** The one webhook routes
-   `metadata.kind = "invoice"` to `recordInvoicePayment` → `markBalancePaid`,
-   which sets `Invoice Paid` + `Invoice Session Id` on the order and `Balance
-Paid` + `Balance Payment Session Id` on the invoice. Only those plain
-   checkbox/text fields are written (never the costing formulas); `Balance Paid`
-   is the "already paid" guard.
-
-The atelier must, one time: add `Deposit 2 Amount` (number), `Deposit 2 Paid`
-(checkbox), `Invoice Paid` (checkbox), `Invoice Session Id` (rich_text) to the
-Order Tracking Pipeline; add `Invoice Ready` (checkbox), `Balance Paid`
-(checkbox), `Balance Payment Session Id` (rich_text) to invoices & payments;
-share the Notion integration with **invoices & payments** and **Invoice Line
-Items**; and set the two env vars. Code: `services/invoice.service.ts`,
-`routes/orders.ts` (`POST /orders/:n/invoice`), `routes/stripe-webhook.ts`,
-`lib/notion/invoice.{schema,repository}.ts`, and `pages/invoice.tsx`.
+The atelier must, one time: add the deposit + balance payment fields above to
+**invoices & payments** (the order keeps only the `Invoices` relation); share the
+Notion integration with **invoices & payments** and **Invoice Line Items**; and
+set the two env vars. Code: `services/invoice.service.ts`, `routes/orders.ts`,
+`routes/stripe-webhook.ts`, `lib/notion/invoice.{schema,repository}.ts`,
+`pages/status.tsx`, and `pages/invoice.tsx`.
 
 ## Production schedule (auto-generated stage milestones)
 
@@ -785,36 +771,35 @@ and in the maintainer's env without edits.
 
 ## Quick reference — where things live
 
-| I want to…                               | Go to                                                                                                                                                                                                                                                                              |
-| ---------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Change an API request/response shape     | `lib/api-spec/openapi.yaml` → run codegen                                                                                                                                                                                                                                          |
-| Change order use-case logic              | `artifacts/api-server/src/services/orders.service.ts`                                                                                                                                                                                                                              |
-| Change Notion I/O                        | `artifacts/api-server/src/lib/notion/*`                                                                                                                                                                                                                                            |
-| Change a customer email / template       | `artifacts/api-server/src/lib/resend/*` (`emails.ts` copy, `send.ts` transport, `client.ts` config)                                                                                                                                                                                |
-| Add/modify an API route                  | `artifacts/api-server/src/routes/*`                                                                                                                                                                                                                                                |
-| Add request validation / error mapping   | `artifacts/api-server/src/middlewares/*`                                                                                                                                                                                                                                           |
-| Change the status-lookup UI              | `artifacts/web-app/src/pages/status.tsx`                                                                                                                                                                                                                                           |
-| Change the order intake form             | `artifacts/web-app/src/pages/order-form.tsx`                                                                                                                                                                                                                                       |
-| Change the measurement-change request    | `artifacts/web-app/src/components/measurement-change-dialog.tsx` (opened from `pages/status.tsx`); `api-server/src/services/measurement-change.service.ts` + `routes/orders.ts` + `lib/notion/measurement-change.{blocks,repository}.ts` (writes to the **contact** database)      |
-| Change the landing page                  | `artifacts/web-app/src/pages/home.tsx`                                                                                                                                                                                                                                             |
-| Change the shop (live Notion inventory)  | `artifacts/web-app/src/pages/shop.tsx` + `services/products.service.ts` + `lib/notion/products.*`                                                                                                                                                                                  |
-| Change the back-in-stock notify dialog   | `artifacts/web-app/src/components/notify-dialog.tsx` + `services/notify.service.ts` + `lib/notion/notify.*` (writes to the **contact** database — see below)                                                                                                                       |
-| Change shop checkout / payments          | `artifacts/web-app/src/lib/cart.tsx` + `components/cart-drawer.tsx` + `components/add-to-cart.tsx` (frontend); `api-server/src/services/checkout.service.ts` + `routes/checkout.ts` + `routes/stripe-webhook.ts` + `lib/stripe/*` + `lib/notion/shop-orders.*` (backend)           |
-| Change shop-order tracking               | `artifacts/web-app/src/pages/shop-order-status.tsx` (+ order number on `pages/shop-success.tsx`); `api-server/src/services/shop-orders.service.ts` + `routes/shop-orders.ts` + `lib/notion/shop-orders.{blocks,repository}.ts` + `services/checkout.service.ts` (mints the number) |
-| Change the footer / legal pages          | `artifacts/web-app/src/components/footer.tsx` (global, in `App.tsx`) + `pages/{privacy,terms,shipping-returns}.tsx` + `components/legal-page.tsx`; shared studio contact details in `lib/contact-info.ts`                                                                          |
-| Change custom-order deposits             | `artifacts/web-app/src/pages/status.tsx` (`DepositSection`); `api-server/src/services/deposit.service.ts` + `routes/orders.ts` + `lib/notion/orders.repository.ts` (`findDepositTarget`/`markDepositPaid`) + `routes/stripe-webhook.ts`                                            |
-| Change custom-order invoice / balance    | `artifacts/web-app/src/pages/invoice.tsx` + status page's "View Invoice" card; `api-server/src/services/invoice.service.ts` + `routes/orders.ts` (`POST /orders/:n/invoice`) + `lib/notion/invoice.{schema,repository}.ts` + `routes/stripe-webhook.ts`                            |
-| Change production-schedule milestones    | `api-server/src/services/schedule.service.ts` + `routes/cron.ts` + `lib/notion/production-schedule.{blocks,repository}.ts` + `lib/notion/orders.repository.ts` (`findOrdersNeedingMilestones`/`markMilestonesGenerated`); cron in `vercel.json`                                    |
-| Change appointment booking (UI)          | `artifacts/web-app/src/pages/appointments.tsx`                                                                                                                                                                                                                                     |
-| Change appointment types / routing rules | `api-server/src/lib/appointments/catalog.ts` (targeted business rule — durations, which staff, which locations)                                                                                                                                                                    |
-| Change staff working hours / calendars   | The working-hours **Google Sheet** (`APPOINTMENT_SHEET_ID`); read in `api-server/src/lib/google/sheets.repository.ts`, parsed by `lib/appointments/staff.ts`                                                                                                                       |
-| Change appointment slot logic / policy   | `api-server/src/lib/appointments/availability.ts` (`computeSlots`) + `time.ts` + `settings.ts`; `services/appointments.service.ts` + `routes/appointments.ts` + `lib/google/*` (Calendar free/busy + event insert)                                                                 |
-| Add a page / route                       | new `src/pages/*.tsx` + `<Route>` in `src/App.tsx`                                                                                                                                                                                                                                 |
-| Add or rename a nav link                 | `NAV_LINKS` in `artifacts/web-app/src/components/navbar.tsx`                                                                                                                                                                                                                       |
-| Add a shared UI component                | `artifacts/web-app/src/components/ui/`                                                                                                                                                                                                                                             |
-| Add/change a shared test fixture         | `lib/test-fixtures/src/index.ts` (read its guardrail first)                                                                                                                                                                                                                        |
-| Understand a past decision / gotcha      | `.agents/memory/`                                                                                                                                                                                                                                                                  |
-| Adjust the Vercel serverless entrypoint  | `api/index.ts` + `vercel.json`                                                                                                                                                                                                                                                     |
+| I want to…                                        | Go to                                                                                                                                                                                                                                                                                                          |
+| ------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Change an API request/response shape              | `lib/api-spec/openapi.yaml` → run codegen                                                                                                                                                                                                                                                                      |
+| Change order use-case logic                       | `artifacts/api-server/src/services/orders.service.ts`                                                                                                                                                                                                                                                          |
+| Change Notion I/O                                 | `artifacts/api-server/src/lib/notion/*`                                                                                                                                                                                                                                                                        |
+| Change a customer email / template                | `artifacts/api-server/src/lib/resend/*` (`emails.ts` copy, `send.ts` transport, `client.ts` config)                                                                                                                                                                                                            |
+| Add/modify an API route                           | `artifacts/api-server/src/routes/*`                                                                                                                                                                                                                                                                            |
+| Add request validation / error mapping            | `artifacts/api-server/src/middlewares/*`                                                                                                                                                                                                                                                                       |
+| Change the status-lookup UI                       | `artifacts/web-app/src/pages/status.tsx`                                                                                                                                                                                                                                                                       |
+| Change the order intake form                      | `artifacts/web-app/src/pages/order-form.tsx`                                                                                                                                                                                                                                                                   |
+| Change the measurement-change request             | `artifacts/web-app/src/components/measurement-change-dialog.tsx` (opened from `pages/status.tsx`); `api-server/src/services/measurement-change.service.ts` + `routes/orders.ts` + `lib/notion/measurement-change.{blocks,repository}.ts` (writes to the **contact** database)                                  |
+| Change the landing page                           | `artifacts/web-app/src/pages/home.tsx`                                                                                                                                                                                                                                                                         |
+| Change the shop (live Notion inventory)           | `artifacts/web-app/src/pages/shop.tsx` + `services/products.service.ts` + `lib/notion/products.*`                                                                                                                                                                                                              |
+| Change the back-in-stock notify dialog            | `artifacts/web-app/src/components/notify-dialog.tsx` + `services/notify.service.ts` + `lib/notion/notify.*` (writes to the **contact** database — see below)                                                                                                                                                   |
+| Change shop checkout / payments                   | `artifacts/web-app/src/lib/cart.tsx` + `components/cart-drawer.tsx` + `components/add-to-cart.tsx` (frontend); `api-server/src/services/checkout.service.ts` + `routes/checkout.ts` + `routes/stripe-webhook.ts` + `lib/stripe/*` + `lib/notion/shop-orders.*` (backend)                                       |
+| Change shop-order tracking                        | `artifacts/web-app/src/pages/shop-order-status.tsx` (+ order number on `pages/shop-success.tsx`); `api-server/src/services/shop-orders.service.ts` + `routes/shop-orders.ts` + `lib/notion/shop-orders.{blocks,repository}.ts` + `services/checkout.service.ts` (mints the number)                             |
+| Change the footer / legal pages                   | `artifacts/web-app/src/components/footer.tsx` (global, in `App.tsx`) + `pages/{privacy,terms,shipping-returns}.tsx` + `components/legal-page.tsx`; shared studio contact details in `lib/contact-info.ts`                                                                                                      |
+| Change custom-order payments (deposits + balance) | `artifacts/web-app/src/pages/status.tsx` (`DepositsSection`) + `pages/invoice.tsx`; `api-server/src/services/invoice.service.ts` (`createPaymentCheckout`/`recordPayment`) + `routes/orders.ts` (`POST /orders/:n/payments/:stage`) + `lib/notion/invoice.{schema,repository}.ts` + `routes/stripe-webhook.ts` |
+| Change production-schedule milestones             | `api-server/src/services/schedule.service.ts` + `routes/cron.ts` + `lib/notion/production-schedule.{blocks,repository}.ts` + `lib/notion/orders.repository.ts` (`findOrdersNeedingMilestones`/`markMilestonesGenerated`); cron in `vercel.json`                                                                |
+| Change appointment booking (UI)                   | `artifacts/web-app/src/pages/appointments.tsx`                                                                                                                                                                                                                                                                 |
+| Change appointment types / routing rules          | `api-server/src/lib/appointments/catalog.ts` (targeted business rule — durations, which staff, which locations)                                                                                                                                                                                                |
+| Change staff working hours / calendars            | The working-hours **Google Sheet** (`APPOINTMENT_SHEET_ID`); read in `api-server/src/lib/google/sheets.repository.ts`, parsed by `lib/appointments/staff.ts`                                                                                                                                                   |
+| Change appointment slot logic / policy            | `api-server/src/lib/appointments/availability.ts` (`computeSlots`) + `time.ts` + `settings.ts`; `services/appointments.service.ts` + `routes/appointments.ts` + `lib/google/*` (Calendar free/busy + event insert)                                                                                             |
+| Add a page / route                                | new `src/pages/*.tsx` + `<Route>` in `src/App.tsx`                                                                                                                                                                                                                                                             |
+| Add or rename a nav link                          | `NAV_LINKS` in `artifacts/web-app/src/components/navbar.tsx`                                                                                                                                                                                                                                                   |
+| Add a shared UI component                         | `artifacts/web-app/src/components/ui/`                                                                                                                                                                                                                                                                         |
+| Add/change a shared test fixture                  | `lib/test-fixtures/src/index.ts` (read its guardrail first)                                                                                                                                                                                                                                                    |
+| Understand a past decision / gotcha               | `.agents/memory/`                                                                                                                                                                                                                                                                                              |
+| Adjust the Vercel serverless entrypoint           | `api/index.ts` + `vercel.json`                                                                                                                                                                                                                                                                                 |
 
 ```
 

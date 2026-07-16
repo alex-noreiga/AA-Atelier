@@ -9,7 +9,7 @@ import {
 import {
   findInvoice,
   listInvoiceLineItems,
-  markBalancePaid,
+  markInvoicePaid,
 } from "../../src/lib/notion/invoice.repository.js";
 
 const isQuery = (path: string) => path.endsWith("/query");
@@ -31,7 +31,40 @@ describe("findInvoice", () => {
       invoiceId: "Toothless",
       ready: true,
       balancePaid: false,
+      deposits: [],
     });
+  });
+
+  it("maps the staged deposits that have an amount set", async () => {
+    const client = makeFakeClient(() =>
+      jsonResponse(
+        invoicePage({
+          id: "inv-1",
+          firstDepositAmount: 100,
+          firstDepositPaid: true,
+          firstDepositSessionId: "cs_dep1",
+          secondDepositAmount: 50,
+          secondDepositPaid: false,
+        }),
+      ),
+    );
+
+    const invoice = await findInvoice("inv-1", client);
+    expect(invoice?.deposits).toEqual([
+      {
+        stage: "first_deposit",
+        label: "First deposit",
+        amount: 100,
+        paid: true,
+        sessionId: "cs_dep1",
+      },
+      {
+        stage: "second_deposit",
+        label: "Second deposit",
+        amount: 50,
+        paid: false,
+      },
+    ]);
   });
 
   it("returns null when the invoice page is gone (404)", async () => {
@@ -92,47 +125,39 @@ describe("listInvoiceLineItems", () => {
   });
 });
 
-describe("markBalancePaid", () => {
-  it("PATCHes the order and the invoice with the paid flags + session id", async () => {
-    const ordersClient = makeFakeClient((path) => {
-      if (path === "/v1/pages/order-1") return jsonResponse({ id: "order-1" });
-      throw new Error(`unexpected orders ${path}`);
-    });
-    const invoicesClient = makeFakeClient((path) => {
+describe("markInvoicePaid", () => {
+  it("PATCHes the invoice with a deposit stage's paid flag + session id", async () => {
+    const client = makeFakeClient((path) => {
       if (path === "/v1/pages/inv-1") return jsonResponse({ id: "inv-1" });
-      throw new Error(`unexpected invoices ${path}`);
+      throw new Error(`unexpected ${path}`);
     });
 
-    await markBalancePaid(
-      "order-1",
-      "inv-1",
-      "cs_test_9",
-      ordersClient,
-      invoicesClient,
-    );
+    await markInvoicePaid("inv-1", "first_deposit", "cs_test_9", client);
 
-    const orderBody = JSON.parse(ordersClient.calls[0].init!.body as string);
-    expect(ordersClient.calls[0].init?.method).toBe("PATCH");
-    expect(orderBody.properties["Invoice Paid"]).toEqual({ checkbox: true });
+    expect(client.calls[0].init?.method).toBe("PATCH");
+    const body = JSON.parse(client.calls[0].init!.body as string);
+    expect(body.properties["First Deposit Paid"]).toEqual({ checkbox: true });
     expect(
-      orderBody.properties["Invoice Session Id"].rich_text[0].text.content,
-    ).toBe("cs_test_9");
-
-    const invoiceBody = JSON.parse(
-      invoicesClient.calls[0].init!.body as string,
-    );
-    expect(invoiceBody.properties["Balance Paid"]).toEqual({ checkbox: true });
-    expect(
-      invoiceBody.properties["Balance Payment Session Id"].rich_text[0].text
-        .content,
+      body.properties["First Deposit Session Id"].rich_text[0].text.content,
     ).toBe("cs_test_9");
   });
 
-  it("throws when the order update fails", async () => {
-    const ordersClient = makeFakeClient(() => errorResponse(400, "bad"));
-    const invoicesClient = makeFakeClient(() => jsonResponse({ id: "inv-1" }));
+  it("PATCHes the balance paid flag + session id for the balance stage", async () => {
+    const client = makeFakeClient(() => jsonResponse({ id: "inv-1" }));
+
+    await markInvoicePaid("inv-1", "balance", "cs_bal", client);
+
+    const body = JSON.parse(client.calls[0].init!.body as string);
+    expect(body.properties["Balance Paid"]).toEqual({ checkbox: true });
+    expect(
+      body.properties["Balance Payment Session Id"].rich_text[0].text.content,
+    ).toBe("cs_bal");
+  });
+
+  it("throws when the update fails", async () => {
+    const client = makeFakeClient(() => errorResponse(400, "bad"));
     await expect(
-      markBalancePaid("order-1", "inv-1", "cs_1", ordersClient, invoicesClient),
+      markInvoicePaid("inv-1", "second_deposit", "cs_1", client),
     ).rejects.toThrow(/status 400: bad/);
   });
 });

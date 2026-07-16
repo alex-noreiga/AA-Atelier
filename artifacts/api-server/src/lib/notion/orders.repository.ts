@@ -9,19 +9,12 @@ import { getNotionClient, type NotionClient } from "./client.js";
 import { buildOrderProperties, buildOrderPageBlocks } from "./orders.blocks.js";
 import {
   ORDER_NUMBER_PROPERTY,
-  ORDER_DEPOSIT_PAID_PROPERTY,
-  ORDER_DEPOSIT_SESSION_PROPERTY,
   ORDER_DUE_DATE_PROPERTY,
   ORDER_MILESTONES_GENERATED_PROPERTY,
   extractStageOptions,
   extractOrderNumber,
   extractOrderName,
   extractCurrentStage,
-  extractDepositAmount,
-  extractDepositPaid,
-  extractDepositSessionId,
-  extractDeposit2Amount,
-  extractDeposit2Paid,
   extractInvoiceRelationId,
   extractDueDate,
   extractOrderEmail,
@@ -138,10 +131,7 @@ export async function findOrderByNumber(
     return null;
   }
 
-  const depositAmount = extractDepositAmount(page);
   const estimatedCompletion = extractDueDate(page);
-  const depositSessionId = extractDepositSessionId(page);
-  const deposit2Amount = extractDeposit2Amount(page);
   const invoicePageId = extractInvoiceRelationId(page);
   return {
     orderNumber: trimmedOrderNumber,
@@ -149,103 +139,9 @@ export async function findOrderByNumber(
     currentStage: extractCurrentStage(page),
     stages,
     pageId: page.id,
-    ...(depositAmount !== undefined ? { depositAmount } : {}),
-    depositPaid: extractDepositPaid(page),
     ...(estimatedCompletion !== undefined ? { estimatedCompletion } : {}),
-    ...(depositSessionId !== undefined ? { depositSessionId } : {}),
-    ...(deposit2Amount !== undefined ? { deposit2Amount } : {}),
-    deposit2Paid: extractDeposit2Paid(page),
     ...(invoicePageId !== undefined ? { invoicePageId } : {}),
   };
-}
-
-/** A custom order's deposit state plus its Notion page id, for the deposit flow. */
-export interface DepositTarget {
-  pageId: string;
-  orderName: string;
-  depositAmount?: number;
-  depositPaid: boolean;
-}
-
-/**
- * Look up just what the deposit flow needs: the order's Notion page id (so the
- * webhook can mark it paid) and its current deposit state. Returns null when no
- * order matches the number.
- */
-export async function findDepositTarget(
-  orderNumber: string,
-  client: NotionClient = getNotionClient(),
-): Promise<DepositTarget | null> {
-  assertConfigured(client);
-
-  const trimmedOrderNumber = orderNumber.trim();
-  if (!trimmedOrderNumber) {
-    return null;
-  }
-
-  const response = await client.fetch(
-    `/v1/databases/${client.databaseId}/query`,
-    {
-      method: "POST",
-      body: JSON.stringify({
-        filter: {
-          property: ORDER_NUMBER_PROPERTY,
-          rich_text: { equals: trimmedOrderNumber },
-        },
-        page_size: 1,
-      }),
-    },
-  );
-
-  if (!response.ok) {
-    throw new Error(`Notion query failed with status ${response.status}`);
-  }
-
-  const data = (await response.json()) as NotionQueryResponse;
-  const page = data.results[0];
-  if (!page) {
-    return null;
-  }
-
-  const depositAmount = extractDepositAmount(page);
-  return {
-    pageId: page.id,
-    orderName: extractOrderName(page),
-    ...(depositAmount !== undefined ? { depositAmount } : {}),
-    depositPaid: extractDepositPaid(page),
-  };
-}
-
-/**
- * Mark a custom order's deposit as paid, recording the Stripe session id.
- * Called from the webhook. Setting the same values on redelivery is harmless,
- * so this is idempotent.
- */
-export async function markDepositPaid(
-  pageId: string,
-  sessionId: string,
-  client: NotionClient = getNotionClient(),
-): Promise<void> {
-  assertConfigured(client);
-
-  const response = await client.fetch(`/v1/pages/${pageId}`, {
-    method: "PATCH",
-    body: JSON.stringify({
-      properties: {
-        [ORDER_DEPOSIT_PAID_PROPERTY]: { checkbox: true },
-        [ORDER_DEPOSIT_SESSION_PROPERTY]: {
-          rich_text: [{ text: { content: sessionId } }],
-        },
-      },
-    }),
-  });
-
-  if (!response.ok) {
-    const errorText = await response.text();
-    throw new Error(
-      `Notion deposit update failed with status ${response.status}: ${errorText}`,
-    );
-  }
 }
 
 /** An order that has a due date set but whose per-stage milestones haven't been

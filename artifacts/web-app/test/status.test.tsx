@@ -5,13 +5,13 @@ import { orderRecord } from "@workspace/test-fixtures";
 import { stubHook } from "./support/mock-hook.js";
 
 // Control the data-fetching hook so we can drive each render state directly.
-// The deposit mutation hook is mocked too — the status page's DepositSection
-// calls it on every render of a found order.
+// The payment mutation hook is mocked too — each of the status page's deposit
+// cards calls it on render.
 // The success view also renders the measurement-change dialog, which calls the
 // create mutation hook — stub it so the page renders without the network.
 vi.mock("@workspace/api-client-react", () => ({
   useGetOrderStatus: vi.fn(),
-  useCreateOrderDeposit: vi.fn(),
+  useCreateOrderPayment: vi.fn(),
   getGetOrderStatusQueryKey: (n: string) => [n],
   useCreateMeasurementChangeRequest: () => ({
     mutate: vi.fn(),
@@ -21,18 +21,18 @@ vi.mock("@workspace/api-client-react", () => ({
 
 import {
   useGetOrderStatus,
-  useCreateOrderDeposit,
+  useCreateOrderPayment,
 } from "@workspace/api-client-react";
 import Status from "@/pages/status";
 
 const mockHook = vi.mocked(useGetOrderStatus);
-const mockDeposit = vi.mocked(useCreateOrderDeposit);
-const depositMutate = vi.fn();
+const mockPayment = vi.mocked(useCreateOrderPayment);
+const paymentMutate = vi.fn();
 
 beforeEach(() => {
-  depositMutate.mockReset();
-  mockDeposit.mockReturnValue({
-    mutate: depositMutate,
+  paymentMutate.mockReset();
+  mockPayment.mockReturnValue({
+    mutate: paymentMutate,
     isPending: false,
   } as never);
 });
@@ -116,54 +116,83 @@ describe("Status timeline completed/active/future computation", () => {
   });
 });
 
-describe("Status deposit", () => {
-  it("shows nothing about a deposit until the atelier sets one", async () => {
+describe("Status deposits", () => {
+  const firstDue = {
+    stage: "first_deposit" as const,
+    label: "First deposit",
+    amount: 150,
+    paid: false,
+  };
+
+  it("shows nothing about deposits until the atelier sets one", async () => {
     setHook({ data: orderRecord({ currentStage: "Consultation" }) });
     await submitLookup();
-    expect(screen.queryByTestId("deposit-due")).not.toBeInTheDocument();
-    expect(screen.queryByTestId("deposit-paid")).not.toBeInTheDocument();
+    expect(screen.queryByTestId("deposits")).not.toBeInTheDocument();
   });
 
-  it("invites payment when a deposit is due, and pays it for that order", async () => {
-    setHook({
-      data: orderRecord({ depositAmount: 150, depositPaid: false }),
-    });
+  it("invites payment for a due deposit, and pays that stage for that order", async () => {
+    setHook({ data: orderRecord({ deposits: [firstDue] }) });
     await submitLookup("ORD-1");
 
-    const card = screen.getByTestId("deposit-due");
+    const card = screen.getByTestId("deposit-due-first_deposit");
     expect(within(card).getByText("$150")).toBeInTheDocument();
 
-    await userEvent.click(screen.getByTestId("button-pay-deposit"));
-    expect(depositMutate).toHaveBeenCalledWith({ orderNumber: "ORD-1" });
+    await userEvent.click(screen.getByTestId("button-pay-first_deposit"));
+    expect(paymentMutate).toHaveBeenCalledWith({
+      orderNumber: "ORD-1",
+      stage: "first_deposit",
+    });
   });
 
-  it("confirms once the deposit is paid and offers no button", async () => {
-    setHook({ data: orderRecord({ depositAmount: 150, depositPaid: true }) });
+  it("renders both deposits, each independently payable", async () => {
+    setHook({
+      data: orderRecord({
+        deposits: [
+          firstDue,
+          {
+            stage: "second_deposit",
+            label: "Second deposit",
+            amount: 75,
+            paid: false,
+          },
+        ],
+      }),
+    });
     await submitLookup();
-    expect(screen.getByTestId("deposit-paid")).toBeInTheDocument();
-    expect(screen.queryByTestId("button-pay-deposit")).not.toBeInTheDocument();
+    expect(screen.getByTestId("deposit-due-first_deposit")).toBeInTheDocument();
+    expect(
+      screen.getByTestId("deposit-due-second_deposit"),
+    ).toBeInTheDocument();
+  });
+
+  it("confirms once a deposit is paid and offers no button", async () => {
+    setHook({ data: orderRecord({ deposits: [{ ...firstDue, paid: true }] }) });
+    await submitLookup();
+    expect(
+      screen.getByTestId("deposit-paid-first_deposit"),
+    ).toBeInTheDocument();
+    expect(
+      screen.queryByTestId("button-pay-first_deposit"),
+    ).not.toBeInTheDocument();
   });
 
   it("links to the receipt once the deposit session id is available", async () => {
     setHook({
       data: orderRecord({
-        depositAmount: 150,
-        depositPaid: true,
-        depositSessionId: "cs_test_123",
+        deposits: [{ ...firstDue, paid: true, sessionId: "cs_test_123" }],
       }),
     });
     await submitLookup();
-    expect(screen.getByTestId("link-deposit-receipt")).toHaveAttribute(
-      "href",
-      "/shop/success?session_id=cs_test_123",
-    );
+    expect(
+      screen.getByTestId("link-deposit-receipt-first_deposit"),
+    ).toHaveAttribute("href", "/shop/success?session_id=cs_test_123");
   });
 
   it("shows no receipt link when the paid deposit has no session id", async () => {
-    setHook({ data: orderRecord({ depositAmount: 150, depositPaid: true }) });
+    setHook({ data: orderRecord({ deposits: [{ ...firstDue, paid: true }] }) });
     await submitLookup();
     expect(
-      screen.queryByTestId("link-deposit-receipt"),
+      screen.queryByTestId("link-deposit-receipt-first_deposit"),
     ).not.toBeInTheDocument();
   });
 });
@@ -243,7 +272,6 @@ describe("Status invoice callout", () => {
     invoiceId: "Toothless",
     paid: false,
     lineItems: [],
-    deposits: [],
     subtotal: 150,
     depositsCreditedTotal: 0,
     balanceDue: 150,

@@ -2,9 +2,10 @@ import { useState } from "react";
 import { Link } from "wouter";
 import {
   useGetOrderStatus,
-  useCreateOrderDeposit,
+  useCreateOrderPayment,
   getGetOrderStatusQueryKey,
 } from "@workspace/api-client-react";
+import type { InvoiceDeposit } from "@workspace/api-client-react";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { PageShell } from "@/components/page-shell";
@@ -26,23 +27,19 @@ import {
 } from "lucide-react";
 
 /**
- * The deposit call-to-action on a custom order. Shows nothing until the atelier
- * has set a deposit amount; then it invites payment, or confirms once paid.
- * Paying redirects to Stripe's hosted checkout (like the shop cart).
+ * One staged deposit call-to-action on a custom order (first or second). Invites
+ * payment, or confirms once paid (with a receipt link). Paying redirects to
+ * Stripe's hosted checkout (like the shop cart). Sourced from the invoice.
  */
-function DepositSection({
+function DepositCard({
   orderNumber,
-  amount,
-  paid,
-  sessionId,
+  deposit,
 }: {
   orderNumber: string;
-  amount?: number;
-  paid?: boolean;
-  sessionId?: string;
+  deposit: InvoiceDeposit;
 }) {
   const { toast } = useToast();
-  const deposit = useCreateOrderDeposit({
+  const payment = useCreateOrderPayment({
     mutation: {
       onSuccess: ({ url }) => {
         window.location.href = url;
@@ -67,21 +64,21 @@ function DepositSection({
     },
   });
 
-  if (paid) {
+  if (deposit.paid) {
     return (
-      <div className="mb-12 flex flex-col items-center gap-4">
+      <div className="flex flex-col items-center gap-4">
         <div
           className="flex items-center justify-center gap-2 text-sm tracking-widest uppercase text-primary"
-          data-testid="deposit-paid"
+          data-testid={`deposit-paid-${deposit.stage}`}
         >
           <Check className="w-4 h-4" />
-          Deposit paid
+          {deposit.label} paid
         </div>
-        {sessionId && (
+        {deposit.sessionId && (
           <CtaLink
-            to={`/shop/success?session_id=${encodeURIComponent(sessionId)}`}
+            to={`/shop/success?session_id=${encodeURIComponent(deposit.sessionId)}`}
             variant="outline"
-            data-testid="link-deposit-receipt"
+            data-testid={`link-deposit-receipt-${deposit.stage}`}
           >
             <Receipt className="w-4 h-4" />
             View receipt
@@ -91,26 +88,24 @@ function DepositSection({
     );
   }
 
-  if (typeof amount !== "number" || amount <= 0) return null;
-
   return (
     <div
-      className="mb-12 rounded-2xl border border-border/60 p-6 text-center"
-      data-testid="deposit-due"
+      className="rounded-2xl border border-border/60 p-6 text-center"
+      data-testid={`deposit-due-${deposit.stage}`}
     >
       <p className="text-xs uppercase tracking-widest text-muted-foreground">
-        Deposit due
+        {deposit.label} due
       </p>
       <p className="mt-1 font-serif text-3xl text-primary">
-        {formatPrice(amount)}
+        {formatPrice(deposit.amount)}
       </p>
       <Button
-        onClick={() => deposit.mutate({ orderNumber })}
-        disabled={deposit.isPending}
+        onClick={() => payment.mutate({ orderNumber, stage: deposit.stage })}
+        disabled={payment.isPending}
         className="mt-5 bg-primary text-primary-foreground hover:bg-primary/90 px-8 py-6 rounded-full tracking-widest uppercase text-xs transition-all duration-300 disabled:opacity-50"
-        data-testid="button-pay-deposit"
+        data-testid={`button-pay-${deposit.stage}`}
       >
-        {deposit.isPending ? (
+        {payment.isPending ? (
           <>
             <Loader2 className="w-4 h-4 mr-2 animate-spin" />
             Redirecting…
@@ -118,10 +113,35 @@ function DepositSection({
         ) : (
           <>
             <CreditCard className="w-4 h-4 mr-2" />
-            Pay deposit
+            Pay {deposit.label.toLowerCase()}
           </>
         )}
       </Button>
+    </div>
+  );
+}
+
+/**
+ * The custom order's staged deposits (first, then second), each payable online
+ * from the invoice. Renders nothing until the atelier sets a deposit amount.
+ */
+function DepositsSection({
+  orderNumber,
+  deposits,
+}: {
+  orderNumber: string;
+  deposits?: InvoiceDeposit[];
+}) {
+  if (!deposits || deposits.length === 0) return null;
+  return (
+    <div className="mb-12 space-y-6" data-testid="deposits">
+      {deposits.map((deposit) => (
+        <DepositCard
+          key={deposit.stage}
+          orderNumber={orderNumber}
+          deposit={deposit}
+        />
+      ))}
     </div>
   );
 }
@@ -276,36 +296,36 @@ export default function Status() {
               )}
             </div>
 
-            <DepositSection
+            <DepositsSection
               orderNumber={orderStatus.orderNumber}
-              amount={orderStatus.depositAmount}
-              paid={orderStatus.depositPaid}
-              sessionId={orderStatus.depositSessionId}
+              deposits={orderStatus.deposits}
             />
 
-            {orderStatus.invoice && (
-              <div
-                className="mb-12 rounded-2xl border border-border/60 p-6 text-center"
-                data-testid="invoice-callout"
-              >
-                <p className="text-xs uppercase tracking-widest text-muted-foreground">
-                  {orderStatus.invoice.paid ? "Invoice" : "Balance due"}
-                </p>
-                <p className="mt-1 font-serif text-3xl text-primary">
-                  {orderStatus.invoice.paid
-                    ? "Paid in full"
-                    : formatPrice(orderStatus.invoice.balanceDue)}
-                </p>
-                <Link
-                  href={`/invoice/${orderStatus.orderNumber}`}
-                  className="mt-5 inline-flex items-center gap-2 border border-border text-foreground hover:border-primary hover:text-primary px-8 py-4 rounded-full tracking-widest uppercase text-xs transition-all duration-300"
-                  data-testid="link-view-invoice"
+            {orderStatus.invoice &&
+              (orderStatus.invoice.paid ||
+                orderStatus.invoice.balanceDue > 0) && (
+                <div
+                  className="mb-12 rounded-2xl border border-border/60 p-6 text-center"
+                  data-testid="invoice-callout"
                 >
-                  <FileText className="w-4 h-4" />
-                  View invoice
-                </Link>
-              </div>
-            )}
+                  <p className="text-xs uppercase tracking-widest text-muted-foreground">
+                    {orderStatus.invoice.paid ? "Invoice" : "Balance due"}
+                  </p>
+                  <p className="mt-1 font-serif text-3xl text-primary">
+                    {orderStatus.invoice.paid
+                      ? "Paid in full"
+                      : formatPrice(orderStatus.invoice.balanceDue)}
+                  </p>
+                  <Link
+                    href={`/invoice/${orderStatus.orderNumber}`}
+                    className="mt-5 inline-flex items-center gap-2 border border-border text-foreground hover:border-primary hover:text-primary px-8 py-4 rounded-full tracking-widest uppercase text-xs transition-all duration-300"
+                    data-testid="link-view-invoice"
+                  >
+                    <FileText className="w-4 h-4" />
+                    View invoice
+                  </Link>
+                </div>
+              )}
 
             <div className="relative pl-6 md:pl-8 space-y-12">
               {/* Vertical Thread Line */}

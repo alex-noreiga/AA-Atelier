@@ -25,6 +25,7 @@ describe("extractInvoice", () => {
       balancePaid: false,
       finalBalance: 420,
       paymentDeadline: "2026-09-01",
+      deposits: [],
     });
   });
 
@@ -41,7 +42,28 @@ describe("extractInvoice", () => {
       invoiceId: "Draft",
       ready: false,
       balancePaid: false,
+      deposits: [],
     });
+  });
+
+  it("maps staged deposits with an amount set, skipping unset ones", () => {
+    const page = invoicePage({
+      id: "inv-3",
+      secondDepositAmount: 75,
+      secondDepositPaid: true,
+      secondDepositSessionId: "cs_d2",
+    }) as NotionInvoicePage;
+
+    // First deposit has no amount → skipped; second is surfaced.
+    expect(extractInvoice(page).deposits).toEqual([
+      {
+        stage: "second_deposit",
+        label: "Second deposit",
+        amount: 75,
+        paid: true,
+        sessionId: "cs_d2",
+      },
+    ]);
   });
 });
 

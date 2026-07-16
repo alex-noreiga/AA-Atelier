@@ -6,6 +6,7 @@
  * OpenAPI spec version: 0.1.0
  */
 
-export interface OrderNotFound {
-  message: string;
+export interface PaymentSessionResponse {
+  /** The Stripe-hosted checkout URL for the payment. */
+  url: string;
 }

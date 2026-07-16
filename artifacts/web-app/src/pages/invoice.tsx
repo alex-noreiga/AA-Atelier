@@ -1,10 +1,14 @@
 import { Link, useParams } from "wouter";
 import {
   useGetOrderStatus,
-  useCreateInvoicePayment,
+  useCreateOrderPayment,
   getGetOrderStatusQueryKey,
 } from "@workspace/api-client-react";
-import type { Invoice, InvoiceLineItem } from "@workspace/api-client-react";
+import type {
+  Invoice,
+  InvoiceDeposit,
+  InvoiceLineItem,
+} from "@workspace/api-client-react";
 import { Button } from "@/components/ui/button";
 import { PageShell } from "@/components/page-shell";
 import { ReceiptRow } from "@/components/receipt-row";
@@ -48,13 +52,15 @@ function InvoiceBreakdown({
   orderNumber,
   orderName,
   invoice,
+  deposits,
 }: {
   orderNumber: string;
   orderName: string;
   invoice: Invoice;
+  deposits: InvoiceDeposit[];
 }) {
   const { toast } = useToast();
-  const payment = useCreateInvoicePayment({
+  const payment = useCreateOrderPayment({
     mutation: {
       onSuccess: ({ url }) => {
         window.location.href = url;
@@ -124,7 +130,7 @@ function InvoiceBreakdown({
 
         <div className="mt-4 space-y-1 border-t border-border/60 pt-4">
           <ReceiptRow label="Subtotal" amount={invoice.subtotal} />
-          {invoice.deposits.map((deposit, i) => (
+          {deposits.map((deposit, i) => (
             <div
               key={i}
               className="flex justify-between text-sm text-muted-foreground"
@@ -161,7 +167,7 @@ function InvoiceBreakdown({
       ) : canPay ? (
         <div className="mt-8 text-center">
           <Button
-            onClick={() => payment.mutate({ orderNumber })}
+            onClick={() => payment.mutate({ orderNumber, stage: "balance" })}
             disabled={payment.isPending}
             className="bg-primary text-primary-foreground hover:bg-primary/90 px-8 py-6 rounded-full tracking-widest uppercase text-xs transition-all duration-300 disabled:opacity-50"
             data-testid="button-pay-balance"
@@ -268,6 +274,7 @@ export default function InvoicePage() {
           orderNumber={orderStatus.orderNumber}
           orderName={orderStatus.orderName}
           invoice={orderStatus.invoice}
+          deposits={orderStatus.deposits ?? []}
         />
       )}
     </PageShell>

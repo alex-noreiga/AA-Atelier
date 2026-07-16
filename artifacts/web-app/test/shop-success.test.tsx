@@ -113,16 +113,16 @@ describe("Shop success cart clearing", () => {
     expect(screen.getByTestId("cart-count")).toHaveTextContent("0");
   });
 
-  it("leaves the cart intact when viewing a deposit receipt", () => {
+  it("leaves the cart intact when viewing a custom-order payment receipt", () => {
     seedCart();
-    setData({ status: "paid", kind: "deposit" });
+    setData({ status: "paid", kind: "custom_payment" });
     renderPage(
       <>
         <ShopSuccess />
         <CartProbe />
       </>,
     );
-    // A custom-order customer viewing their deposit receipt keeps their cart.
+    // A custom-order customer viewing their deposit/balance receipt keeps their cart.
     expect(screen.getByTestId("cart-count")).toHaveTextContent("2");
   });
 });
