@@ -16,7 +16,9 @@ import {
   measurementChangeNotificationEmail,
   shopOrderConfirmationEmail,
   shopOrderNotificationEmail,
+  errorAlertEmail,
   type ShopOrderEmailDetails,
+  type ErrorAlertDetails,
 } from "../../src/lib/resend/emails.js";
 
 const INBOX = "orders@a3iceanddance.com";
@@ -289,5 +291,71 @@ describe("shopOrderNotificationEmail", () => {
     expect(email.text).toContain("Bow Fleece Soaker — Black");
     expect(email.text).toContain("Total: $53.08");
     expect(email.text).toContain("Order number: SHP-ABC-1234");
+  });
+});
+
+describe("errorAlertEmail", () => {
+  const ALERT_TO = "alexandra@a3iceanddance.com";
+
+  function alertDetails(
+    overrides: Partial<ErrorAlertDetails> = {},
+  ): ErrorAlertDetails {
+    return {
+      message: "Unhandled error",
+      errorType: "Error",
+      errorMessage: "Notion 500",
+      method: "POST",
+      path: "/api/orders",
+      requestId: "req-123",
+      statusCode: 500,
+      environment: "production",
+      timestamp: "2026-07-16T12:00:00.000Z",
+      ...overrides,
+    };
+  }
+
+  it("goes to the alert inbox with the message in the subject and body", () => {
+    const email = errorAlertEmail(alertDetails(), ALERT_TO);
+
+    expect(email.to).toBe(ALERT_TO);
+    expect(email.subject).toContain("Error: Unhandled error");
+    expect(email.html).toContain("A.A Atelier");
+    // No customer to reply to.
+    expect(email.replyTo).toBeUndefined();
+    // Carries the diagnostic fields.
+    expect(email.text).toContain("Notion 500");
+    expect(email.text).toContain("POST /api/orders");
+    expect(email.text).toContain("req-123");
+    expect(email.text).toContain("production");
+  });
+
+  it("renders and escapes the stack trace when present", () => {
+    const email = errorAlertEmail(
+      alertDetails({ stack: "Error: <b>boom</b>\n  at handler" }),
+      ALERT_TO,
+    );
+
+    expect(email.text).toContain("Stack:");
+    expect(email.text).toContain("at handler");
+    // HTML-escaped so a stack can't inject markup into the alert.
+    expect(email.html).not.toContain("<b>boom</b>");
+    expect(email.html).toContain("&lt;b&gt;boom&lt;/b&gt;");
+  });
+
+  it("omits optional fields that aren't provided", () => {
+    const email = errorAlertEmail(
+      {
+        message: "Failed to record completed checkout session",
+        timestamp: "t",
+      },
+      ALERT_TO,
+    );
+
+    expect(email.subject).toContain(
+      "Failed to record completed checkout session",
+    );
+    expect(email.text).not.toContain("Request:");
+    expect(email.text).not.toContain("Status:");
+    expect(email.text).not.toContain("Stack:");
   });
 });

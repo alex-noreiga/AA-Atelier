@@ -7,7 +7,7 @@
 // checkbox on the order (plus an existing-milestones lookup) guards against
 // duplicates, mirroring the shop-orders webhook's idempotency.
 
-import { logger } from "../lib/logger.js";
+import { reportError } from "./alert.service.js";
 import {
   findOrdersNeedingMilestones,
   markMilestonesGenerated,
@@ -128,7 +128,7 @@ export async function generatePendingMilestones(
       milestonesCreated += await generateForOrder(order, now);
       ordersProcessed += 1;
     } catch (err) {
-      logger.error(
+      await reportError(
         { err, orderNumber: order.orderNumber },
         "Failed to generate milestones for order; will retry next run",
       );

@@ -88,5 +88,19 @@ export async function sendEmailBestEffort(
       { err, to: message.to, subject: message.subject },
       "Email send failed (Resend rejected the request); continuing without it",
     );
+    // Escalate a real send failure to a production alert, so a silently-dropped
+    // customer email surfaces. Env-guarded (no mailer ⇒ nothing to alert with,
+    // and it keeps this inert in dev/test) and lazily imported to avoid a static
+    // import cycle — resend must not statically depend on services. reportEmailFailure
+    // is itself best-effort and never throws.
+    if (process.env.RESEND_API_KEY) {
+      try {
+        const { reportEmailFailure } =
+          await import("../../services/alert.service.js");
+        await reportEmailFailure(message, err);
+      } catch {
+        // Alerting must never turn a swallowed email failure into a throw.
+      }
+    }
   }
 }

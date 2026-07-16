@@ -564,6 +564,85 @@ export function shopOrderConfirmationEmail(
   };
 }
 
+// ---------------------------------------------------------------------------
+// System alerts
+//
+// Not customer- or submission-facing: an internal heads-up sent to the atelier
+// when the app hits an error-level condition it would otherwise only log (an
+// unhandled 500, or a best-effort side effect that failed silently). Built here,
+// with the other atelier-facing builders, so the copy stays independently
+// testable; sent by `services/alert.service.ts`. See CLAUDE.md.
+// ---------------------------------------------------------------------------
+
+/** A plain internal shell for a system alert (distinct eyebrow from submissions). */
+function alertLayout(heading: string, bodyHtml: string): string {
+  return `<!doctype html>
+<html>
+  <body style="margin:0;padding:0;background:#faf8f5;">
+    <div style="max-width:560px;margin:0 auto;padding:32px 28px;font-family:Georgia,'Times New Roman',serif;color:#2b2622;line-height:1.6;">
+      <p style="font-size:13px;letter-spacing:0.18em;text-transform:uppercase;color:#a15c4a;margin:0 0 20px;">${ATELIER_NAME} · system alert</p>
+      <h1 style="font-size:20px;font-weight:normal;margin:0 0 16px;">${heading}</h1>
+      ${bodyHtml}
+    </div>
+  </body>
+</html>`;
+}
+
+/** The already-extracted details of a production error, for the alert email. */
+export interface ErrorAlertDetails {
+  /** The log message the error was reported with (e.g. "Unhandled error"). */
+  message: string;
+  errorType?: string;
+  errorMessage?: string;
+  /** A (truncated) stack trace, when the error carried one. */
+  stack?: string;
+  method?: string;
+  path?: string;
+  requestId?: string;
+  statusCode?: number;
+  /** Deploy environment, e.g. "production" (VERCEL_ENV) or the NODE_ENV. */
+  environment?: string;
+  /** ISO timestamp of when the alert was raised. */
+  timestamp: string;
+}
+
+/** Internal alert to the atelier that the app hit a production error. */
+export function errorAlertEmail(
+  details: ErrorAlertDetails,
+  to: string,
+): EmailMessage {
+  const fields: Field[] = [
+    ["What", details.message],
+    ...(details.errorType ? [["Error", details.errorType] as Field] : []),
+    ...(details.errorMessage
+      ? [["Detail", details.errorMessage] as Field]
+      : []),
+    ...(typeof details.statusCode === "number"
+      ? [["Status", String(details.statusCode)] as Field]
+      : []),
+    ...(details.method && details.path
+      ? [["Request", `${details.method} ${details.path}`] as Field]
+      : []),
+    ...(details.requestId ? [["Request ID", details.requestId] as Field] : []),
+    ...(details.environment
+      ? [["Environment", details.environment] as Field]
+      : []),
+    ["When", details.timestamp],
+  ];
+
+  const stackHtml = details.stack
+    ? `<pre style="margin:16px 0 0;padding:12px;background:#f1ece5;border:1px solid #e7e0d8;border-radius:4px;font-family:'SFMono-Regular',Consolas,monospace;font-size:12px;line-height:1.5;white-space:pre-wrap;overflow-x:auto;">${escapeHtml(details.stack)}</pre>`
+    : "";
+  const stackText = details.stack ? `\n\nStack:\n${details.stack}` : "";
+
+  return {
+    to,
+    subject: `[${ATELIER_NAME}] Error: ${details.message}`,
+    html: alertLayout("Production error", renderRowsHtml(fields) + stackHtml),
+    text: renderRowsText(fields) + stackText,
+  };
+}
+
 /** Notify the atelier of a newly paid shop order. */
 export function shopOrderNotificationEmail(
   details: ShopOrderEmailDetails,

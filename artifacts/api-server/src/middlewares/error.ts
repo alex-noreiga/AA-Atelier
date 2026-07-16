@@ -19,8 +19,14 @@ import {
   MeasurementsLockedError,
 } from "../lib/errors.js";
 import { logger } from "../lib/logger.js";
+import { reportError } from "../services/alert.service.js";
 
-export const errorHandler: ErrorRequestHandler = (err, _req, res, next) => {
+export const errorHandler: ErrorRequestHandler = async (
+  err,
+  req,
+  res,
+  next,
+) => {
   if (res.headersSent) {
     next(err);
     return;
@@ -64,7 +70,20 @@ export const errorHandler: ErrorRequestHandler = (err, _req, res, next) => {
     return;
   }
 
-  logger.error({ err }, "Unhandled error");
+  // Log AND email an alert for the unhandled failure. Awaited before the response
+  // so the send flushes on serverless (the function is frozen once the response
+  // is returned). reportError is best-effort and never throws.
+  const requestId = (req as { id?: unknown }).id;
+  await reportError(
+    {
+      err,
+      method: req.method,
+      path: req.path,
+      ...(typeof requestId === "string" ? { requestId } : {}),
+      statusCode: 500,
+    },
+    "Unhandled error",
+  );
   const body: ErrorEnvelope = {
     error: "Something went wrong. Please try again later.",
   };
