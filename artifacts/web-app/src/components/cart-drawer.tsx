@@ -97,6 +97,9 @@ export function CartButton({ className }: { className?: string }) {
             <div className="mt-6 flex-1 overflow-y-auto -mx-6 px-6 divide-y divide-border/60">
               {items.map((item) => {
                 const key = lineKey(item.variantId, item.size);
+                const atMax =
+                  typeof item.quantityAvailable === "number" &&
+                  item.quantity >= item.quantityAvailable;
                 return (
                   <div
                     key={key}
@@ -172,8 +175,19 @@ export function CartButton({ className }: { className?: string }) {
                                 item.quantity + 1,
                               )
                             }
+                            disabled={atMax}
                             aria-label="Increase quantity"
-                            className="text-muted-foreground hover:text-primary transition-colors"
+                            title={
+                              atMax
+                                ? `Only ${item.quantityAvailable} in stock`
+                                : undefined
+                            }
+                            className={cn(
+                              "text-muted-foreground transition-colors",
+                              atMax
+                                ? "opacity-40 cursor-not-allowed"
+                                : "hover:text-primary",
+                            )}
                             data-testid={`cart-increase-${key}`}
                           >
                             <Plus className="w-3.5 h-3.5" />

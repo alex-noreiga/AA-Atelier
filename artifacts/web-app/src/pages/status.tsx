@@ -22,6 +22,7 @@ import {
   Check,
   CreditCard,
   Receipt,
+  FileText,
 } from "lucide-react";
 
 /**
@@ -281,6 +282,30 @@ export default function Status() {
               paid={orderStatus.depositPaid}
               sessionId={orderStatus.depositSessionId}
             />
+
+            {orderStatus.invoice && (
+              <div
+                className="mb-12 rounded-2xl border border-border/60 p-6 text-center"
+                data-testid="invoice-callout"
+              >
+                <p className="text-xs uppercase tracking-widest text-muted-foreground">
+                  {orderStatus.invoice.paid ? "Invoice" : "Balance due"}
+                </p>
+                <p className="mt-1 font-serif text-3xl text-primary">
+                  {orderStatus.invoice.paid
+                    ? "Paid in full"
+                    : formatPrice(orderStatus.invoice.balanceDue)}
+                </p>
+                <Link
+                  href={`/invoice/${orderStatus.orderNumber}`}
+                  className="mt-5 inline-flex items-center gap-2 border border-border text-foreground hover:border-primary hover:text-primary px-8 py-4 rounded-full tracking-widest uppercase text-xs transition-all duration-300"
+                  data-testid="link-view-invoice"
+                >
+                  <FileText className="w-4 h-4" />
+                  View invoice
+                </Link>
+              </div>
+            )}
 
             <div className="relative pl-6 md:pl-8 space-y-12">
               {/* Vertical Thread Line */}

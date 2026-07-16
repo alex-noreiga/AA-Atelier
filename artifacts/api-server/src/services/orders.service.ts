@@ -7,11 +7,12 @@ import {
 } from "../lib/notion/orders.repository.js";
 import { listOrderMilestones } from "../lib/notion/production-schedule.repository.js";
 import { upsertClientByEmail } from "../lib/notion/clients.repository.js";
+import { measurementsLocked } from "./measurement-lock.js";
+import { getInvoiceView } from "./invoice.service.js";
 import type {
   CreateOrderInput,
   OrderStatusResult,
 } from "../lib/notion/orders.schema.js";
-import { measurementsLocked } from "./measurement-lock.js";
 import { NotFoundError, ValidationError } from "../lib/errors.js";
 import {
   orderConfirmationEmail,
@@ -57,13 +58,18 @@ export async function getOrderStatus(
   // order's Notion page id). Returns [] when that DB is unconfigured or the query
   // fails, so this never breaks the core lookup. pageId is dropped from the
   // response — it's an internal join key, not part of the contract.
-  const { pageId, ...rest } = order;
-  const milestones = pageId ? await listOrderMilestones(pageId) : [];
+  const milestones = order.pageId ? await listOrderMilestones(order.pageId) : [];
 
+  // Attach the invoice only once it exists and the atelier has flipped
+  // "Invoice Ready" (one extra Notion read, and only then).
+  const invoice = await getInvoiceView(order);
+
+  const { pageId, invoicePageId, ...rest } = order;
   return {
     ...rest,
     stages,
     measurementsLocked: locked,
+    ...(invoice ? { invoice } : {}),
     ...(milestones.length ? { milestones } : {}),
   };
 }

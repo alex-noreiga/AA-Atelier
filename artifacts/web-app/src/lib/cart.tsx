@@ -26,6 +26,12 @@ export interface CartItem {
   price: number;
   /** A variant photo, if any (Notion signed URLs are short-lived). */
   photo?: string;
+  /**
+   * Live stock ceiling for this variant, when known. Display-only: the server
+   * re-checks it at checkout (see checkout.service `toLineItem`). Used here to
+   * stop the obvious over-order in the UI. Absent ⇒ uncapped (a one-off item).
+   */
+  quantityAvailable?: number;
   quantity: number;
 }
 
@@ -51,6 +57,11 @@ export function lineKey(variantId: string, size?: string): string {
 }
 
 const CartContext = createContext<CartContextValue | null>(null);
+
+/** Cap a desired quantity at the stock ceiling, when one is known. */
+function clampToStock(quantity: number, ceiling?: number): number {
+  return typeof ceiling === "number" ? Math.min(quantity, ceiling) : quantity;
+}
 
 function readStored(): CartItem[] {
   if (typeof window === "undefined") return [];
@@ -83,13 +94,25 @@ export function CartProvider({ children }: { children: ReactNode }) {
           (i) => lineKey(i.variantId, i.size) === key,
         );
         if (existing) {
+          // Refresh the stored ceiling with the freshest known count, and clamp
+          // the merged quantity to it so re-adding can't exceed stock.
+          const ceiling = item.quantityAvailable ?? existing.quantityAvailable;
           return current.map((i) =>
             lineKey(i.variantId, i.size) === key
-              ? { ...i, quantity: i.quantity + quantity }
+              ? {
+                  ...i,
+                  ...(ceiling !== undefined
+                    ? { quantityAvailable: ceiling }
+                    : {}),
+                  quantity: clampToStock(i.quantity + quantity, ceiling),
+                }
               : i,
           );
         }
-        return [...current, { ...item, quantity }];
+        return [
+          ...current,
+          { ...item, quantity: clampToStock(quantity, item.quantityAvailable) },
+        ];
       });
     },
     [],
@@ -109,7 +132,9 @@ export function CartProvider({ children }: { children: ReactNode }) {
         quantity <= 0
           ? current.filter((i) => lineKey(i.variantId, i.size) !== key)
           : current.map((i) =>
-              lineKey(i.variantId, i.size) === key ? { ...i, quantity } : i,
+              lineKey(i.variantId, i.size) === key
+                ? { ...i, quantity: clampToStock(quantity, i.quantityAvailable) }
+                : i,
             ),
       );
     },

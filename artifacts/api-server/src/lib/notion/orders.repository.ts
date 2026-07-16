@@ -20,6 +20,9 @@ import {
   extractDepositAmount,
   extractDepositPaid,
   extractDepositSessionId,
+  extractDeposit2Amount,
+  extractDeposit2Paid,
+  extractInvoiceRelationId,
   extractDueDate,
   extractOrderEmail,
   type CreateOrderInput,
@@ -138,6 +141,8 @@ export async function findOrderByNumber(
   const depositAmount = extractDepositAmount(page);
   const estimatedCompletion = extractDueDate(page);
   const depositSessionId = extractDepositSessionId(page);
+  const deposit2Amount = extractDeposit2Amount(page);
+  const invoicePageId = extractInvoiceRelationId(page);
   return {
     orderNumber: trimmedOrderNumber,
     orderName: extractOrderName(page),
@@ -148,6 +153,9 @@ export async function findOrderByNumber(
     depositPaid: extractDepositPaid(page),
     ...(estimatedCompletion !== undefined ? { estimatedCompletion } : {}),
     ...(depositSessionId !== undefined ? { depositSessionId } : {}),
+    ...(deposit2Amount !== undefined ? { deposit2Amount } : {}),
+    deposit2Paid: extractDeposit2Paid(page),
+    ...(invoicePageId !== undefined ? { invoicePageId } : {}),
   };
 }
 

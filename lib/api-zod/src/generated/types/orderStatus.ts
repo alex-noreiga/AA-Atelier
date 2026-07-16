@@ -5,6 +5,7 @@
  * API specification
  * OpenAPI spec version: 0.1.0
  */
+import type { Invoice } from './invoice';
 import type { OrderStatusMilestonesItem } from './orderStatusMilestonesItem';
 
 export interface OrderStatus {
@@ -24,4 +25,5 @@ export interface OrderStatus {
   estimatedCompletion?: string;
   /** Per-stage target completion dates from the Production Schedule, present once the order's milestones have been generated. One entry per remaining (current + upcoming) stage; completed stages have none. Order is not significant — match by stage name. */
   milestones?: OrderStatusMilestonesItem[];
+  invoice?: Invoice;
 }

@@ -114,6 +114,7 @@ describe("findOrderByNumber", () => {
       stages: ["Consultation", "Sewing", "Delivery"],
       pageId: "page-id",
       depositPaid: false,
+      deposit2Paid: false,
     });
 
     const queryCall = client.calls.find((c) => isQuery(c.path))!;
@@ -165,6 +166,33 @@ describe("deposit lookups & updates", () => {
     const record = await repo.findOrderByNumber("ORD-1", client);
     expect(record?.depositAmount).toBe(150);
     expect(record?.depositPaid).toBe(true);
+  });
+
+  it("maps the second deposit and the linked invoice page id", async () => {
+    const client = makeFakeClient((path) => {
+      if (isSchema(path)) return jsonResponse(databaseSchemaWithStages(["A"]));
+      if (isQuery(path)) {
+        return jsonResponse({
+          results: [
+            orderPage({
+              id: "order-9",
+              orderName: "Ada",
+              currentStage: "A",
+              deposit2Amount: 300,
+              deposit2Paid: true,
+              invoicePageId: "inv-7",
+            }),
+          ],
+        });
+      }
+      throw new Error(`unexpected ${path}`);
+    });
+
+    const record = await repo.findOrderByNumber("ORD-1", client);
+    expect(record?.pageId).toBe("order-9");
+    expect(record?.deposit2Amount).toBe(300);
+    expect(record?.deposit2Paid).toBe(true);
+    expect(record?.invoicePageId).toBe("inv-7");
   });
 
   it("findDepositTarget returns the page id and deposit state, no schema fetch", async () => {

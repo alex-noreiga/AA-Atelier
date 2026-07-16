@@ -153,6 +153,9 @@ export function orderPage(opts: {
   depositAmount?: number;
   depositPaid?: boolean;
   depositSessionId?: string;
+  deposit2Amount?: number;
+  deposit2Paid?: boolean;
+  invoicePageId?: string;
   email?: string | null;
   dueDate?: string | null;
   milestonesGenerated?: boolean;
@@ -193,6 +196,18 @@ export function orderPage(opts: {
           ? [{ plain_text: opts.depositSessionId }]
           : [],
       },
+      "Deposit 2 Amount": {
+        type: "number",
+        number: opts.deposit2Amount ?? null,
+      },
+      "Deposit 2 Paid": {
+        type: "checkbox",
+        checkbox: opts.deposit2Paid ?? false,
+      },
+      Invoices: {
+        type: "relation",
+        relation: opts.invoicePageId ? [{ id: opts.invoicePageId }] : [],
+      },
       "Due Date": {
         type: "date",
         date:
@@ -203,6 +218,71 @@ export function orderPage(opts: {
       "Milestones Generated": {
         type: "checkbox",
         checkbox: opts.milestonesGenerated ?? false,
+      },
+    },
+  };
+}
+
+/** Minimal "invoices & payments" page (the invoice head). */
+export function invoicePage(opts: {
+  id?: string;
+  invoiceId?: string;
+  ready?: boolean;
+  balancePaid?: boolean;
+  finalBalance?: number | null;
+  paymentDeadline?: string | null;
+}) {
+  return {
+    id: opts.id ?? "invoice-page",
+    properties: {
+      "Invoice ID": {
+        type: "title",
+        title: opts.invoiceId ? [{ plain_text: opts.invoiceId }] : [],
+      },
+      "Invoice Ready": {
+        type: "checkbox",
+        checkbox: opts.ready ?? false,
+      },
+      "Balance Paid": {
+        type: "checkbox",
+        checkbox: opts.balancePaid ?? false,
+      },
+      "Final Balance": {
+        type: "rollup",
+        rollup: { type: "number", number: opts.finalBalance ?? null },
+      },
+      "Payment Deadline": {
+        type: "date",
+        date:
+          opts.paymentDeadline === null || opts.paymentDeadline === undefined
+            ? null
+            : { start: opts.paymentDeadline, end: null },
+      },
+    },
+  };
+}
+
+/** Minimal "Invoice Line Items" page. `Line Total` is a Notion formula. */
+export function lineItemPage(opts: {
+  id?: string;
+  name?: string;
+  type?: string;
+  total?: number | null;
+}) {
+  return {
+    id: opts.id ?? "line-item",
+    properties: {
+      "Line Item": {
+        type: "title",
+        title: opts.name ? [{ plain_text: opts.name }] : [],
+      },
+      "Line Type": {
+        type: "select",
+        select: opts.type ? { name: opts.type } : null,
+      },
+      "Line Total": {
+        type: "formula",
+        formula: { type: "number", number: opts.total ?? null },
       },
     },
   };

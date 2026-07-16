@@ -38,7 +38,25 @@ export const GetOrderStatusResponse = zod.object({
   "milestones": zod.array(zod.object({
   "stage": zod.string(),
   "targetDate": zod.string().describe('ISO date (yyyy-mm-dd). A pass-through string (no format: date), same as estimatedCompletion.')
-})).optional().describe('Per-stage target completion dates from the Production Schedule, present once the order\'s milestones have been generated. One entry per remaining (current + upcoming) stage; completed stages have none. Order is not significant — match by stage name.')
+})).optional().describe('Per-stage target completion dates from the Production Schedule, present once the order\'s milestones have been generated. One entry per remaining (current + upcoming) stage; completed stages have none. Order is not significant — match by stage name.'),
+  "invoice": zod.object({
+  "invoiceId": zod.string().describe('The atelier\'s invoice identifier (its Notion title).'),
+  "paid": zod.boolean().describe('Whether the final balance has already been paid.'),
+  "lineItems": zod.array(zod.object({
+  "name": zod.string().describe('The line item\'s short name (e.g. \"Main fabric\").'),
+  "type": zod.string().describe('The line type — Garment, Material, Labor, or Adjustment.'),
+  "amount": zod.number().describe('The line total in dollars.')
+})).describe('The itemized charges (deposit lines excluded — see deposits).'),
+  "deposits": zod.array(zod.object({
+  "label": zod.string().describe('A display label, e.g. \"Deposit 1\".'),
+  "amount": zod.number().describe('The deposit amount in dollars.'),
+  "paid": zod.boolean().describe('Whether this deposit has been paid (only paid ones credit).')
+})).describe('Deposits credited against the balance, from the order.'),
+  "subtotal": zod.number().describe('Sum of the non-deposit line items, in dollars.'),
+  "depositsCreditedTotal": zod.number().describe('Sum of the deposits already paid, in dollars.'),
+  "balanceDue": zod.number().describe('subtotal − depositsCreditedTotal, floored at 0, in dollars.'),
+  "paymentDeadline": zod.string().optional().describe('The invoice\'s payment-due date (ISO), if the atelier set one.')
+}).optional().describe('The customer\'s invoice for a custom order, present only once the atelier has itemized it and flipped the \"Invoice Ready\" gate. Line items and deposits are dollars; balanceDue is what\'s charged online.')
 })
 
 
@@ -90,6 +108,19 @@ export const CreateOrderDepositParams = zod.object({
 })
 
 export const CreateOrderDepositResponse = zod.object({
+  "url": zod.string().describe('The Stripe-hosted checkout URL for the deposit payment.')
+})
+
+
+/**
+ * Creates a Stripe Checkout session for the order's invoice balance (subtotal of the itemized materials + labor, minus deposits already paid), priced server-side from the atelier's Notion invoice, and returns the hosted-checkout URL. Fails if the invoice isn't ready, is already paid, or has no outstanding balance.
+ * @summary Pay the outstanding balance on a custom order's invoice
+ */
+export const CreateInvoicePaymentParams = zod.object({
+  "orderNumber": zod.coerce.string()
+})
+
+export const CreateInvoicePaymentResponse = zod.object({
   "url": zod.string().describe('The Stripe-hosted checkout URL for the deposit payment.')
 })
 
