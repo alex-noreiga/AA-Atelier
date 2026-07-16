@@ -9,6 +9,15 @@ updates:
     # Group low-risk bumps into a single PR to cut review noise; majors stay
     # on their own so breaking changes get individual attention.
     groups:
+      # Vitest and its coverage provider must move in lockstep — a mismatched
+      # major pair (e.g. vitest@4 + @vitest/coverage-v8@3) crashes the v8
+      # coverage provider. Group them across ALL update types (majors
+      # included) so they always land in a single PR. Listed first so these
+      # packages match here before the catch-all minor-and-patch group.
+      vitest:
+        patterns:
+          - "vitest"
+          - "@vitest/*"
       minor-and-patch:
         update-types:
           - minor
