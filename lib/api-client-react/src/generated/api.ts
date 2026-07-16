@@ -41,7 +41,8 @@ import type {
   NewOrderResponse,
   OrderNotFound,
   OrderStatus,
-  ProductList
+  ProductList,
+  ShopOrderStatus
 } from './api.schemas';
 
 import { customFetch } from '../custom-fetch';
@@ -869,6 +870,84 @@ export function useGetCheckoutSession<TData = Awaited<ReturnType<typeof getCheck
  ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
 
   const queryOptions = getGetCheckoutSessionQueryOptions(sessionId,options)
+
+  const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
+
+  return withQueryKey(query, queryOptions.queryKey);
+}
+
+
+
+
+
+
+
+export const getGetShopOrderStatusUrl = (orderNumber: string,) => {
+
+
+
+
+  return `/api/shop-orders/${orderNumber}`
+}
+
+/**
+ * Returns the current fulfilment status of a ready-to-wear shop order by its human-readable order number (issued at checkout), along with the live list of possible statuses so the client can render a timeline.
+ * @summary Look up a shop order's fulfilment status
+ */
+export const getShopOrderStatus = async (orderNumber: string, options?: RequestInit): Promise<ShopOrderStatus> => {
+
+  return customFetch<ShopOrderStatus>(getGetShopOrderStatusUrl(orderNumber),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
+
+
+
+
+export const getGetShopOrderStatusQueryKey = (orderNumber: string,) => {
+    return [
+    `/api/shop-orders/${orderNumber}`
+    ] as const;
+    }
+
+
+export const getGetShopOrderStatusQueryOptions = <TData = Awaited<ReturnType<typeof getShopOrderStatus>>, TError = ErrorType<OrderNotFound>>(orderNumber: string, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getShopOrderStatus>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getGetShopOrderStatusQueryKey(orderNumber);
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof getShopOrderStatus>>> = ({ signal }) => getShopOrderStatus(orderNumber, { signal, ...requestOptions });
+
+
+
+
+
+   return  { queryKey, queryFn, enabled: orderNumber !== null && orderNumber !== undefined, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof getShopOrderStatus>>, TError, TData> & { queryKey: QueryKey }
+}
+
+export type GetShopOrderStatusQueryResult = NonNullable<Awaited<ReturnType<typeof getShopOrderStatus>>>
+export type GetShopOrderStatusQueryError = ErrorType<OrderNotFound>
+
+
+/**
+ * @summary Look up a shop order's fulfilment status
+ */
+
+export function useGetShopOrderStatus<TData = Awaited<ReturnType<typeof getShopOrderStatus>>, TError = ErrorType<OrderNotFound>>(
+ orderNumber: string, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getShopOrderStatus>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+
+ ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+
+  const queryOptions = getGetShopOrderStatusQueryOptions(orderNumber,options)
 
   const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
 

@@ -37,8 +37,10 @@ artifacts/
   web-app/           Frontend SPA (Vite + React 19 + Tailwind v4 + shadcn/ui)
     src/App.tsx      wouter routes + a global <Navbar />
     src/pages/       one component per route (home landing, status, order-form,
-                     services, about, shop, shop-success, contact,
-                     appointments, not-found)
+                     services, about, shop, shop-success, shop-order-status,
+                     contact, appointments, privacy, terms,
+                     shipping-returns, not-found)
+    src/components/  ... plus a global footer.tsx and legal-page.tsx shell
     src/components/  navbar.tsx (global nav), page-shell.tsx (page wrapper),
                      ui/ (shadcn primitives — pruned to only the ones actually
                      used; re-add others with `npx shadcn add <name>`)
@@ -100,6 +102,11 @@ Express app (artifacts/api-server)  ──►  Notion REST API (orders database)
   │                                  + sends an acknowledgement email
   ├─ GET  /api/products            → shop inventory + the live category list,
   │                                  from the Notion "inventory" database
+  ├─ GET  /api/shop-orders/:orderNumber
+  │                                → a ready-to-wear shop order's current
+  │                                  fulfillment Status + the live status list
+  │                                  (for a tracking timeline), by the order
+  │                                  number issued at checkout
   ├─ POST /api/notify              → files a back-in-stock request (email + item
   │                                  + optional size) in that SAME contact
   │                                  database, tagged Request type = "Back in
@@ -316,9 +323,27 @@ and `src/lib/notion/shop-orders.*`. Four things are load-bearing:
    shipping / tax / total, dollars); `pages/shop-success.tsx` renders it as an
    on-site receipt. Works for both shop-cart orders and deposits.
 
+8. **Each shop order gets a human-readable order number for tracking.**
+   `createCheckoutSession` mints an `SHP-…` number (`generateShopOrderNumber` in
+   `shop-orders.blocks.ts`) and stores it in `metadata.orderNumber`, so it flows
+   to the webhook session with no extra Stripe round-trip: `buildShopOrderProperties`
+   writes it to the Shop Orders `Order Number` (rich_text) property, and
+   `getCheckoutSession` returns it so `shop-success.tsx` shows it. The customer
+   tracks the order at `pages/shop-order-status.tsx` (`GET /shop-orders/:orderNumber`
+   → `services/shop-orders.service.ts` → `findShopOrderByNumber` /
+   `fetchLiveShopOrderStatuses`), which reports the live Notion `Status` workflow
+   as a timeline (the status option list is read live, never hardcoded — same rule
+   as order stages). The number is surfaced to the customer on the success page
+   **and** in the shop confirmation email (`sendShopOrderConfirmation` in
+   `checkout.service.ts` passes `metadata.orderNumber` into `ShopOrderEmailDetails`,
+   which `shopOrderConfirmationEmail` renders), plus the atelier notification. The
+   lookup only serves orders placed after this shipped (older ones have no
+   `Order Number`).
+
 The atelier must create the "Shop Orders" Notion database (properties in
-`shop-orders.blocks.ts`) and share the integration with it. Local testing uses
-Stripe test-mode keys + `stripe listen --forward-to localhost:3000/api/webhooks/stripe`.
+`shop-orders.blocks.ts`, including the `Order Number` rich_text property) and
+share the integration with it. Local testing uses Stripe test-mode keys +
+`stripe listen --forward-to localhost:3000/api/webhooks/stripe`.
 
 ### Custom-order deposits
 
@@ -700,7 +725,8 @@ and in the maintainer's env without edits.
   `/contact` form **and** the shop's `/notify` dialog both write to),
   `NOTION_INVENTORY_DATABASE_ID` (the finished-goods "inventory" database the
   shop's `/products` endpoint reads), `NOTION_SHOP_ORDERS_DATABASE_ID` (the
-  "Shop Orders" database the checkout webhook writes paid orders to), and
+  "Shop Orders" database the checkout webhook writes paid orders to — it needs an
+  `Order Number` rich_text property so the shop-order-tracking lookup works), and
   `NOTION_PRODUCTION_SCHEDULE_DATABASE_ID` (the "Production Schedule" database the
   milestone-reconciliation cron writes per-stage milestones to),
   `NOTION_INVOICES_DATABASE_ID` (the "invoices & payments" database) and
@@ -773,6 +799,8 @@ and in the maintainer's env without edits.
 | Change the shop (live Notion inventory) | `artifacts/web-app/src/pages/shop.tsx` + `services/products.service.ts` + `lib/notion/products.*`                                                                                                                                                                        |
 | Change the back-in-stock notify dialog  | `artifacts/web-app/src/components/notify-dialog.tsx` + `services/notify.service.ts` + `lib/notion/notify.*` (writes to the **contact** database — see below)                                                                                                             |
 | Change shop checkout / payments         | `artifacts/web-app/src/lib/cart.tsx` + `components/cart-drawer.tsx` + `components/add-to-cart.tsx` (frontend); `api-server/src/services/checkout.service.ts` + `routes/checkout.ts` + `routes/stripe-webhook.ts` + `lib/stripe/*` + `lib/notion/shop-orders.*` (backend) |
+| Change shop-order tracking              | `artifacts/web-app/src/pages/shop-order-status.tsx` (+ order number on `pages/shop-success.tsx`); `api-server/src/services/shop-orders.service.ts` + `routes/shop-orders.ts` + `lib/notion/shop-orders.{blocks,repository}.ts` + `services/checkout.service.ts` (mints the number) |
+| Change the footer / legal pages         | `artifacts/web-app/src/components/footer.tsx` (global, in `App.tsx`) + `pages/{privacy,terms,shipping-returns}.tsx` + `components/legal-page.tsx`; shared studio contact details in `lib/contact-info.ts`                                                                       |
 | Change custom-order deposits            | `artifacts/web-app/src/pages/status.tsx` (`DepositSection`); `api-server/src/services/deposit.service.ts` + `routes/orders.ts` + `lib/notion/orders.repository.ts` (`findDepositTarget`/`markDepositPaid`) + `routes/stripe-webhook.ts`                                  |
 | Change custom-order invoice / balance   | `artifacts/web-app/src/pages/invoice.tsx` + status page's "View Invoice" card; `api-server/src/services/invoice.service.ts` + `routes/orders.ts` (`POST /orders/:n/invoice`) + `lib/notion/invoice.{schema,repository}.ts` + `routes/stripe-webhook.ts`                    |
 | Change production-schedule milestones   | `api-server/src/services/schedule.service.ts` + `routes/cron.ts` + `lib/notion/production-schedule.{blocks,repository}.ts` + `lib/notion/orders.repository.ts` (`findOrdersNeedingMilestones`/`markMilestonesGenerated`); cron in `vercel.json`                               |

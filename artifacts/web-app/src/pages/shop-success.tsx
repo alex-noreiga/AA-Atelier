@@ -71,6 +71,36 @@ export default function ShopSuccess() {
           . We&apos;ll be in touch soon.
         </p>
 
+        {data?.orderNumber && (
+          <div
+            className="mt-10 rounded-2xl border border-border/60 p-6"
+            data-testid="order-number-card"
+          >
+            <p className="text-xs uppercase tracking-widest text-muted-foreground mb-2">
+              Your order number
+            </p>
+            <p
+              className="font-serif text-2xl text-foreground tracking-wide"
+              data-testid="order-number"
+            >
+              {data.orderNumber}
+            </p>
+            <p className="mt-3 text-sm text-muted-foreground font-light">
+              Save this — you can{" "}
+              <a
+                href={`/shop/order-status?orderNumber=${encodeURIComponent(
+                  data.orderNumber,
+                )}`}
+                className="text-primary hover:underline"
+                data-testid="track-order-link"
+              >
+                track your order
+              </a>{" "}
+              with it anytime.
+            </p>
+          </div>
+        )}
+
         {lineItems.length > 0 && (
           <div
             className="mt-10 rounded-2xl border border-border/60 p-6 text-left"

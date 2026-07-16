@@ -1,4 +1,4 @@
-import { test, expect } from "@playwright/test";
+import { test, expect } from "./support/test";
 
 const FIRST_QUESTION = "How long does a custom costume take?";
 const SECOND_QUESTION = "How do I get measured?";

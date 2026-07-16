@@ -4,7 +4,9 @@ import {
   buildShopOrderProperties,
   buildShopOrderPageBlocks,
   formatShippingAddress,
+  generateShopOrderNumber,
   SHOP_ORDER_TITLE_PROPERTY,
+  SHOP_ORDER_NUMBER_PROPERTY,
   SHOP_ORDER_SESSION_PROPERTY,
   SHOP_ORDER_EMAIL_PROPERTY,
   SHOP_ORDER_NAME_PROPERTY,
@@ -71,6 +73,24 @@ describe("buildShopOrderProperties", () => {
     );
   });
 
+  it("writes the order number (from session metadata) and puts it in the title", () => {
+    const props = buildShopOrderProperties(
+      session({ metadata: { kind: "shop", orderNumber: "SHP-ABC-1234" } }),
+    ) as Record<string, any>;
+
+    expect(props[SHOP_ORDER_NUMBER_PROPERTY].rich_text[0].text.content).toBe(
+      "SHP-ABC-1234",
+    );
+    expect(props[SHOP_ORDER_TITLE_PROPERTY].title[0].text.content).toBe(
+      "Shop order SHP-ABC-1234 — Ada Lovelace",
+    );
+  });
+
+  it("omits the order-number property when the session carries no metadata", () => {
+    const props = buildShopOrderProperties(session()) as Record<string, unknown>;
+    expect(props[SHOP_ORDER_NUMBER_PROPERTY]).toBeUndefined();
+  });
+
   it("omits optional properties (email, name, shipping) when Stripe didn't collect them", () => {
     const props = buildShopOrderProperties(
       session({ customer_details: null, collected_information: null }),
@@ -114,6 +134,13 @@ describe("buildShopOrderPageBlocks", () => {
       (b) => b.bulleted_list_item?.rich_text[0].text.content ?? "",
     );
     expect(texts.some((t: string) => t.startsWith("Shipping"))).toBe(false);
+  });
+});
+
+describe("generateShopOrderNumber", () => {
+  it("produces an uppercase SHP-prefixed order number", () => {
+    const number = generateShopOrderNumber();
+    expect(number).toMatch(/^SHP-[0-9A-Z]+-[0-9A-Z]{1,4}$/);
   });
 });
 

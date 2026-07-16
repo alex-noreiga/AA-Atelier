@@ -382,6 +382,34 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/ErrorEnvelope"
+  /shop-orders/{orderNumber}:
+    get:
+      operationId: getShopOrderStatus
+      tags: [checkout]
+      summary: Look up a shop order's fulfilment status
+      description: >-
+        Returns the current fulfilment status of a ready-to-wear shop order by
+        its human-readable order number (issued at checkout), along with the
+        live list of possible statuses so the client can render a timeline.
+      parameters:
+        - name: orderNumber
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Shop order status
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ShopOrderStatus"
+        "404":
+          description: No shop order with that number
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/OrderNotFound"
   /appointments/options:
     get:
       operationId: getAppointmentOptions
@@ -667,6 +695,29 @@ components:
           type: string
       required:
         - message
+    ShopOrderStatus:
+      type: object
+      properties:
+        orderNumber:
+          type: string
+        status:
+          type: string
+          description: The order's current fulfilment status.
+        statuses:
+          type: array
+          description: >-
+            The live ordered list of possible fulfilment statuses (read from the
+            Notion "Status" workflow options), so the client can render a
+            progress timeline. Never hardcode this list.
+          items:
+            type: string
+        total:
+          type: number
+          description: The order total in dollars.
+      required:
+        - orderNumber
+        - status
+        - statuses
     NewOrderRequest:
       type: object
       required:
@@ -982,6 +1033,12 @@ components:
           description: >-
             The Stripe payment status of the session, e.g. "paid", "unpaid", or
             "no_payment_required".
+        orderNumber:
+          type: string
+          description: >-
+            The human-readable shop order number (e.g. "SHP-…") the customer can
+            use to track their order. Present for shop-cart orders; absent for
+            deposit sessions.
         kind:
           type: string
           description: >-

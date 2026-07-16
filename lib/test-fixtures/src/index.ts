@@ -20,12 +20,19 @@
 // contract), so a fixture cannot silently drift from the API it stands in for.
 
 import type {
+  CheckoutSessionStatus,
   NewContactRequest,
   NewMeasurementChangeRequest,
   NewNotifyRequest,
   NewOrderRequest,
   OrderStatus,
+  ProductList,
 } from "@workspace/api-zod";
+
+// Re-export the generated contract types the e2e mock helpers type against, so
+// the `tests` package (which depends on this package, not on `@workspace/api-zod`
+// directly) can annotate mock bodies without drifting from the API.
+export type { OrderStatus } from "@workspace/api-zod";
 
 /** The stage vocabulary used by the status-lookup fixtures. */
 export const STAGES = ["Consultation", "Sewing/Construction", "Delivery"];
@@ -100,6 +107,57 @@ export function notifyInput(
   return {
     email: "grace@example.com",
     item: "Bow Fleece Soaker — Black",
+    ...overrides,
+  };
+}
+
+/**
+ * A `GET /api/products` response — the shop's live inventory. One in-stock,
+ * priced, one-size item by default; pass `products`/`categories` to reshape it
+ * (e.g. a sold-out variant, or a dress with a sold-out size band). Used as the
+ * mocked HTTP response in the shop/checkout e2e specs.
+ */
+export function productList(overrides: Partial<ProductList> = {}): ProductList {
+  return {
+    categories: ["Soaker"],
+    products: [
+      {
+        id: "p1",
+        title: "Bow Fleece Soaker",
+        category: "Soaker",
+        variants: [
+          {
+            id: "v1",
+            name: "Bow Fleece Soaker",
+            available: true,
+            price: 22,
+            photos: [],
+            sizes: [],
+          },
+        ],
+      },
+    ],
+    ...overrides,
+  };
+}
+
+/**
+ * A `GET /api/checkout/session/:id` response — the paid, itemized receipt the
+ * shop success page renders. Used as the mocked HTTP response in the checkout
+ * e2e spec.
+ */
+export function checkoutSession(
+  overrides: Partial<CheckoutSessionStatus> = {},
+): CheckoutSessionStatus {
+  return {
+    status: "paid",
+    email: "grace@example.com",
+    currency: "usd",
+    lineItems: [{ description: "Bow Fleece Soaker", quantity: 1, amount: 22 }],
+    amountSubtotal: 22,
+    amountShipping: 8,
+    amountTax: 0,
+    amountTotal: 30,
     ...overrides,
   };
 }

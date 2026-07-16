@@ -14,7 +14,10 @@ import {
   createShopOrder,
   findOrderBySessionId,
 } from "../lib/notion/shop-orders.repository.js";
-import { formatShippingAddress } from "../lib/notion/shop-orders.blocks.js";
+import {
+  generateShopOrderNumber,
+  formatShippingAddress,
+} from "../lib/notion/shop-orders.blocks.js";
 import {
   shopOrderConfirmationEmail,
   shopOrderNotificationEmail,
@@ -184,6 +187,7 @@ export async function createCheckoutSession(
   const lineItems = items.map((item) => toLineItem(item, variantsById));
 
   const base = siteBaseUrl();
+  const orderNumber = generateShopOrderNumber();
   const shippingOptions = await resolveShippingOptions(stripe);
   const session = await stripe.checkout.sessions.create({
     mode: "payment",
@@ -207,9 +211,11 @@ export async function createCheckoutSession(
       : {}),
     success_url: `${base}/shop/success?session_id={CHECKOUT_SESSION_ID}`,
     cancel_url: `${base}/shop`,
-    // Lets the webhook route this session to shop-order recording rather than
-    // to a deposit payment (see routes/stripe-webhook.ts).
-    metadata: { kind: "shop" },
+    // `kind` lets the webhook route this session to shop-order recording rather
+    // than to a deposit payment (see routes/stripe-webhook.ts). `orderNumber` is
+    // minted here so the success page can show it immediately and the webhook can
+    // store it on the Notion order — no extra Stripe round-trip.
+    metadata: { kind: "shop", orderNumber },
   });
 
   if (!session.url) {
@@ -226,6 +232,7 @@ interface ReceiptLine {
 
 export interface CheckoutSessionView {
   status: string;
+  orderNumber?: string;
   /** "shop" or "deposit" (from the session's metadata.kind). */
   kind?: string;
   email?: string;
@@ -251,6 +258,7 @@ export async function getCheckoutSession(
     expand: ["line_items"],
   });
   const email = session.customer_details?.email ?? undefined;
+  const orderNumber = session.metadata?.orderNumber ?? undefined;
   const kind = session.metadata?.kind ?? undefined;
   const lineItems = (session.line_items?.data ?? []).map((item) => ({
     description: item.description ?? "Item",
@@ -260,6 +268,7 @@ export async function getCheckoutSession(
 
   return {
     status: session.payment_status,
+    ...(orderNumber ? { orderNumber } : {}),
     ...(kind ? { kind } : {}),
     ...(email ? { email } : {}),
     ...(session.currency ? { currency: session.currency } : {}),
@@ -285,11 +294,13 @@ async function sendShopOrderConfirmation(
   if (!email) return;
 
   const shippingAddress = formatShippingAddress(session);
+  const orderNumber = session.metadata?.orderNumber;
   const details: ShopOrderEmailDetails = {
     email,
     ...(session.customer_details?.name
       ? { customerName: session.customer_details.name }
       : {}),
+    ...(orderNumber ? { orderNumber } : {}),
     lineItems: (session.line_items?.data ?? []).map((item) => ({
       description: item.description ?? "Item",
       quantity: item.quantity ?? 1,

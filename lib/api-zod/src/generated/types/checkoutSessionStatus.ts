@@ -10,6 +10,8 @@ import type { ReceiptLineItem } from './receiptLineItem';
 export interface CheckoutSessionStatus {
   /** The Stripe payment status of the session, e.g. "paid", "unpaid", or "no_payment_required". */
   status: string;
+  /** The human-readable shop order number (e.g. "SHP-…") the customer can use to track their order. Present for shop-cart orders; absent for deposit sessions. */
+  orderNumber?: string;
   /** What the session paid for — "shop" for a shop-cart order, "deposit" for a custom-order deposit (from the session's metadata.kind). Lets the success page skip clearing the cart on a deposit receipt view. */
   kind?: string;
   /** The customer's email, present once the session is complete. */

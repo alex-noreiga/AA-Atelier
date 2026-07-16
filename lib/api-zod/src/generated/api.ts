@@ -258,6 +258,7 @@ export const GetCheckoutSessionParams = zod.object({
 
 export const GetCheckoutSessionResponse = zod.object({
   "status": zod.string().describe('The Stripe payment status of the session, e.g. \"paid\", \"unpaid\", or \"no_payment_required\".'),
+  "orderNumber": zod.string().optional().describe('The human-readable shop order number (e.g. \"SHP-…\") the customer can use to track their order. Present for shop-cart orders; absent for deposit sessions.'),
   "kind": zod.string().optional().describe('What the session paid for — \"shop\" for a shop-cart order, \"deposit\" for a custom-order deposit (from the session\'s metadata.kind). Lets the success page skip clearing the cart on a deposit receipt view.'),
   "email": zod.string().optional().describe('The customer\'s email, present once the session is complete.'),
   "currency": zod.string().optional().describe('ISO currency code of the totals, e.g. \"usd\".'),
@@ -270,6 +271,22 @@ export const GetCheckoutSessionResponse = zod.object({
   "amountShipping": zod.number().optional().describe('Shipping charged in dollars.'),
   "amountTax": zod.number().optional().describe('Tax charged in dollars (Stripe Tax).'),
   "amountTotal": zod.number().optional().describe('Grand total in dollars (items + shipping + tax).')
+})
+
+
+/**
+ * Returns the current fulfilment status of a ready-to-wear shop order by its human-readable order number (issued at checkout), along with the live list of possible statuses so the client can render a timeline.
+ * @summary Look up a shop order's fulfilment status
+ */
+export const GetShopOrderStatusParams = zod.object({
+  "orderNumber": zod.coerce.string()
+})
+
+export const GetShopOrderStatusResponse = zod.object({
+  "orderNumber": zod.string(),
+  "status": zod.string().describe('The order\'s current fulfilment status.'),
+  "statuses": zod.array(zod.string()).describe('The live ordered list of possible fulfilment statuses (read from the Notion \"Status\" workflow options), so the client can render a progress timeline. Never hardcode this list.'),
+  "total": zod.number().optional().describe('The order total in dollars.')
 })
 
 

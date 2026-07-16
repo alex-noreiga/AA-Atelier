@@ -1,4 +1,5 @@
-import { test, expect } from "@playwright/test";
+import { test, expect } from "./support/test";
+import { GENERIC_ERROR } from "@workspace/test-fixtures";
 import { mockCreateDeposit, mockOrderStatus } from "./support/mock-api";
 
 const ORDER = {
@@ -62,5 +63,30 @@ test.describe("Custom-order deposit", () => {
       "href",
       "/shop/success?session_id=cs_test_paid_1",
     );
+  });
+
+  test("shows a destructive toast and stays put when the deposit fails", async ({
+    page,
+  }) => {
+    await mockOrderStatus(page, { body: ORDER });
+    await mockCreateDeposit(page, {
+      status: 500,
+      body: { error: GENERIC_ERROR },
+    });
+
+    await page.goto("/shop/status");
+    await page.getByTestId("input-order-number").fill("000002");
+    await page.getByTestId("button-lookup").click();
+
+    await page.getByTestId("button-pay-deposit").click();
+
+    // `exact` avoids matching sonner's aria-live span, which concatenates the
+    // toast title and description into one text node.
+    await expect(
+      page.getByText("Couldn't start the deposit payment", { exact: true }),
+    ).toBeVisible();
+    // No redirect; the pay button is still there to retry.
+    await expect(page).toHaveURL(/\/shop\/status$/);
+    await expect(page.getByTestId("button-pay-deposit")).toBeVisible();
   });
 });

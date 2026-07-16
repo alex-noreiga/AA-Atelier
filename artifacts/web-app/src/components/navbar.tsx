@@ -32,6 +32,7 @@ const NAV_LINKS: readonly NavLink[] = [
       { to: "/order", label: "Place an Order" },
       { to: "/appointments", label: "Book an Appointment" },
       { to: "/shop/status", label: "Track Your Order" },
+      { to: "/shop/order-status", label: "Track a Shop Order" },
     ],
   },
   { to: "/shop", label: "Shop" },
@@ -89,6 +90,7 @@ export default function Navbar() {
                     key={link.to}
                     to={link.to}
                     className={linkClass}
+                    data-active={active}
                     data-testid={`nav-${testId(link.label)}`}
                   >
                     {link.label}
@@ -101,6 +103,7 @@ export default function Navbar() {
                 <DropdownMenu key={link.to}>
                   <DropdownMenuTrigger
                     className={`${linkClass} flex items-center gap-1 outline-hidden`}
+                    data-active={active}
                     data-testid={`nav-${testId(link.label)}`}
                   >
                     {link.label}
