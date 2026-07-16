@@ -1,10 +1,7 @@
 import { test, expect } from "./support/test";
 import { orderRecord } from "@workspace/test-fixtures";
 import type { Page } from "@playwright/test";
-import {
-  mockMeasurementChange,
-  mockOrderStatus,
-} from "./support/mock-api";
+import { mockMeasurementChange, mockOrderStatus } from "./support/mock-api";
 
 // The "request a measurement change" flow lives behind an order lookup: the
 // customer finds their order on the status page, then opens the dialog from the
@@ -79,9 +76,7 @@ test.describe("Measurement change request", () => {
     await page.getByTestId("measurement-change-email").fill("ada@example.com");
     // Switch to the re-measure flow — the measurement inputs disappear.
     await page.getByTestId("measurement-change-mode-appointment").click();
-    await expect(
-      page.getByTestId("measurement-change-waist"),
-    ).toHaveCount(0);
+    await expect(page.getByTestId("measurement-change-waist")).toHaveCount(0);
     await page.getByTestId("measurement-change-submit").click();
 
     await expect(page.getByTestId("measurement-change-success")).toBeVisible();
