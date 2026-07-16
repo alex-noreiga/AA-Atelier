@@ -783,3 +783,45 @@ and in the maintainer's env without edits.
 ```
 
 ```
+
+## Pending workflow TODOs (from the Notion workflow review)
+
+Open follow-ups from the workspace review. The bulk of that review is already
+done — Production Schedule columns/views fixed; the redundant order-level payment
+fields (`Deposit 2 *`, `Invoice Paid`, `Invoice Session Id`) retired; the duplicate
+Notion "Website Contact Form" closed; and the code changes shipped (shop-order
+tagging, order↔hub linking, `Due Date` from `neededBy`, online balance payment,
+order-form reference uploads). What remains:
+
+- [ ] **CRM "Leads to follow up" view filter** _(manual, Notion UI — 1 min)._ Add
+  `Status is Lead` to the "Leads to follow up" view of the **Client CRM** database
+  (`cc6c9305…`). It currently has an empty filter, so it shows every client. The
+  Notion API can't set a filter on a `status`-type property, so this must be done in
+  the UI.
+- [ ] **Activate order-form reference uploads.** Connect a **Vercel Blob** store to
+  the project (auto-provisions `BLOB_READ_WRITE_TOKEN`), deploy, and smoke-test an
+  upload on a preview. Until the token is set, `POST /api/uploads/order-refs` returns
+  503 and the order form works without attachments.
+- [ ] **Retire the duplicate Notion "Custom Dress Order Form"** _(after the upload
+  smoke-test passes)._ `FORM CLOSE` the form view `9ce2ecd1-9425-405e-a866-dde489ee28bd`
+  on the **Order Form Submissions** database so the website order form is the single
+  order intake. Left open deliberately until the website form is proven end-to-end.
+- [ ] **Inventory / materials taxonomy cleanup** _(Tier-2 #3 — needs a product call)._
+  On the shop **`inventory`** database, clarify the distinct roles of `Item Type` vs
+  `Website Group` (two overlapping category systems) and `Sizes Available` vs
+  `Sizes Offered` (two near-identical size multi-selects), then retire the stale
+  **`materials inventory`** database (`8e63b46a…`), superseded by the costing system's
+  `Materials & Inventory Tracker`. **Check `lib/notion/products.repository.ts` /
+  `products.schema.ts` first** — the shop reads `Item Type`, `Website Group`,
+  `Sizes Available`, and `Sizes Offered`, so confirm what the site depends on before
+  deleting or merging any of them.
+- [ ] **Document load-bearing Notion property types** _(low priority)._ Add a one-line
+  description on each `Stage` / `Status` property noting the app relies on its Notion
+  *type* (orders `Stage` is a **status**; contact + Production Schedule `Stage` are
+  **select**), so a well-meaning "cleanup" doesn't flip the type and break the code's
+  extraction (see `orders.schema.ts` / `notion-status-filters.md`).
+- [ ] **Capture website leads as `Lead`** _(optional enhancement)._ The order flow
+  always upserts a Client CRM record with `Status = Active` (`clients.repository.ts`,
+  `NEW_CLIENT_STATUS`); there's no path that records a website *enquiry* (no order
+  yet) as a `Lead`. Consider one if the atelier wants the CRM to track leads from the
+  site, not just buyers.
