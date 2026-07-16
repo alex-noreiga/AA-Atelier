@@ -40,7 +40,11 @@ export function SizeSelector({
       <p className="text-xs uppercase tracking-widest text-muted-foreground mb-2">
         Sizes
       </p>
-      <div className="flex flex-wrap gap-2" role="group" aria-label="Select size">
+      <div
+        className="flex flex-wrap gap-2"
+        role="group"
+        aria-label="Select size"
+      >
         {variant.sizes.map((size) => {
           const testId = `size-${variant.id}-${slug(size.name)}`;
 

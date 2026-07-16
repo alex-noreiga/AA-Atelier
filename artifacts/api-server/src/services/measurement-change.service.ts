@@ -99,9 +99,7 @@ export async function submitMeasurementChangeRequest(
   } else if (storedEmail === suppliedEmail) {
     emailVerified = true;
   } else {
-    throw new ForbiddenError(
-      "That email doesn't match the one on this order.",
-    );
+    throw new ForbiddenError("That email doesn't match the one on this order.");
   }
 
   if (measurementsLocked(order.currentStage, order.stages)) {

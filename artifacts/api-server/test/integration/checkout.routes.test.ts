@@ -49,15 +49,13 @@ function stubStripe(overrides: {
     shippingRates: {
       retrieve:
         overrides.retrieveShippingRate ??
-        vi
-          .fn()
-          .mockImplementation((id: string) =>
-            Promise.resolve({
-              id,
-              active: true,
-              fixed_amount: { currency: "usd" },
-            }),
-          ),
+        vi.fn().mockImplementation((id: string) =>
+          Promise.resolve({
+            id,
+            active: true,
+            fixed_amount: { currency: "usd" },
+          }),
+        ),
     },
   } as unknown as Stripe);
 }

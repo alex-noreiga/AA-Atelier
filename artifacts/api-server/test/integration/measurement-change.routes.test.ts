@@ -88,9 +88,7 @@ describe("POST /api/orders/:orderNumber/measurement-change-requests", () => {
   });
 
   it("returns 400 when neither measurements nor an appointment are provided", async () => {
-    const res = await request(app)
-      .post(url)
-      .send({ email: "ada@example.com" });
+    const res = await request(app).post(url).send({ email: "ada@example.com" });
 
     expect(res.status).toBe(400);
     expect(res.body).toHaveProperty("error");

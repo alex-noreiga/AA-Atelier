@@ -1,0 +1,15 @@
+# Build output
+**/dist
+coverage
+tests/playwright-report
+tests/test-results
+
+# Dependencies & lockfile (pnpm owns the lockfile format)
+node_modules
+pnpm-lock.yaml
+
+# Generated code — orval writes these from lib/api-spec/openapi.yaml with a
+# "Do not edit manually" header; formatting is the generator's job, not ours.
+# Covers lib/api-zod/src/generated and lib/api-client-react/src/generated.
+# (custom-fetch.ts / index.ts are hand-written and intentionally NOT ignored.)
+**/src/generated

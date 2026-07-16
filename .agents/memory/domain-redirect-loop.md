@@ -64,7 +64,7 @@ canonical host is ever intentionally switched to www, flip those tags too.
 ## Also worth checking if the domain still looks "broken"
 
 - **Deployment Protection / Vercel Authentication:** if enabled on the
-  *production* environment, every public visitor is gated behind a Vercel login
+  _production_ environment, every public visitor is gated behind a Vercel login
   (401) regardless of the redirect config. Confirm production is **not** behind
   Standard Protection (Settings → Deployment Protection).
 - Stray extra domains `aa-atelier.com` / `www.aa-atelier.com` are also attached
