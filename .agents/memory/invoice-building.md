@@ -32,6 +32,20 @@ two-hop rollup. If a per-client deposit total is ever wanted again, add a
 deposits-sum formula on `invoices & payments`, a rollup on the order pulling it via
 the `Invoices` relation, then repoint a CRM rollup through `Orders`.
 
+**Follow-up (2026-07-17): removed five orphaned deposit fields from the order.**
+A later re-examination of the Order Tracking Pipeline found the order still carried
+`First Deposit Amount`, `First Deposit Paid`, `First Deposit Session Id`,
+`Second Deposit Amount`, and `Second Deposit Paid` — parallel copies of the invoice
+fields that survived this migration (the earlier cleanup deleted a different, older
+deposit number field, so these were missed both by the migration and by the initial
+audit). They were orphaned: `orders.schema.ts` has no deposit constants and no app
+code reads/writes them on the order (the only code using these names is
+`invoice.schema.ts`, against the **invoices & payments** data source). One test
+order still held stale fossil values (`First Deposit Amount=200 / Paid / a
+`cs_test_…` session id`) from the old pre-migration write path. All five were
+dropped, so the order row now genuinely keeps **only** the `Invoices` relation for
+finances, as intended above.
+
 ## The pre-existing Notion model (do not recreate)
 
 Discovered during planning — the orders database already relates to a full
