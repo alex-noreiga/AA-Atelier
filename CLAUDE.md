@@ -187,6 +187,23 @@ inbox `ATELIER_CONTACT_INBOX_EMAIL` / `ATELIER_APPOINTMENTS_INBOX_EMAIL` →
 message; the client uses a per-message `from` over its base. This lets, e.g.,
 order mail send from `orders@` and contact mail from `hello@`.
 
+**Production error alerting.** On top of logging, the app emails an alert to
+`ALERT_INBOX_EMAIL` (default `alexandra@a3iceanddance.com`) whenever it hits an
+error-level condition that would otherwise be invisible: an unhandled 500 (the
+central `middlewares/error.ts` handler), a failed Stripe-webhook record, a failed
+milestone cron, or a customer email Resend rejects (`lib/resend/send.ts`). This is
+`services/alert.service.ts` (`reportError` / `reportEmailFailure`), reusing the
+Resend adapter — chosen over a Vercel Log Drain because Log Drains need a Pro plan
+(the project is on Hobby) and an in-process, **awaited** send flushes reliably on
+serverless (a fire-and-forget drain can be frozen before it delivers). Load-bearing
+rules: the alert itself sends via the **strict** `sendEmail` and logs its own
+failures at `warn`, never re-entering `reportError` (the loop guard); it self-gates
+when `RESEND_API_KEY`/`RESEND_FROM_EMAIL` are unset (so it's inert in dev/test and
+never blocks a response); and a per-instance 5-minute de-dupe bounds repeats (it
+can't throttle across serverless instances). Deliberately **not** wired to the
+CRM-upsert (`warn`-level, order unaffected) or shipping-rate (documented degraded-
+but-OK, high-frequency) catches, to keep alerts high-signal.
+
 - **Locally:** the Vite dev server proxies `/api` to the Express server on
   `localhost:3000` (see `artifacts/web-app/vite.config.ts`).
 - **On Vercel:** `vercel.json` rewrites `/api/:path*` → `/api/index`, which is
