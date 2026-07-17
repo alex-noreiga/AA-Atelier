@@ -237,13 +237,17 @@ export function configDriftNotificationEmail(
     "A scheduled check found Notion options a website feature relies on but " +
     "that no longer exist (likely renamed or removed):\n\n" +
     findings
-      .map((finding) => `- ${finding.label}: missing ${finding.missing.join(", ")}`)
+      .map(
+        (finding) =>
+          `- ${finding.label}: missing ${finding.missing.join(", ")}`,
+      )
       .join("\n") +
     "\n\nRestore the option name in Notion (or ask a developer to update the " +
     "matching setting).";
   return {
     to,
-    subject: "A.A Atelier — a Notion option a website feature needs was renamed",
+    subject:
+      "A.A Atelier — a Notion option a website feature needs was renamed",
     html,
     text,
   };

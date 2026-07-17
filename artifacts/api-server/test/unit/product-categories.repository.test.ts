@@ -111,10 +111,13 @@ describe("listSizedCategoryNames", () => {
     it("falls back to the cached names when a later fetch fails", async () => {
       let fail = false;
       const client = makeFakeClient((path) => {
-        if (!path.endsWith("/query")) throw new Error(`unexpected path ${path}`);
+        if (!path.endsWith("/query"))
+          throw new Error(`unexpected path ${path}`);
         return fail
           ? errorResponse(503)
-          : queryResponse([categoryPage({ name: "Dress", showSizeGuide: true })]);
+          : queryResponse([
+              categoryPage({ name: "Dress", showSizeGuide: true }),
+            ]);
       });
 
       expect(await repo.listSizedCategoryNames(client)).toEqual(["Dress"]);

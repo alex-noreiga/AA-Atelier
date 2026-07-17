@@ -64,7 +64,9 @@ export interface ConfigAuditInput {
  * missing (a Notion rename/removal that will silently break that feature). Pure,
  * so the nightly config-check cron can log + email from the result.
  */
-export function auditNotionConfig(input: ConfigAuditInput): ConfigDriftFinding[] {
+export function auditNotionConfig(
+  input: ConfigAuditInput,
+): ConfigDriftFinding[] {
   const findings: ConfigDriftFinding[] = [];
   const check = (label: string, expected: string[], live: string[]): void => {
     const missing = missingOptionValues(expected, live);
@@ -77,7 +79,7 @@ export function auditNotionConfig(input: ConfigAuditInput): ConfigDriftFinding[]
     input.itemTypeOptions,
   );
   check(
-    'Sellable status (STATUS_IN_STOCK)',
+    "Sellable status (STATUS_IN_STOCK)",
     [input.statusInStock],
     input.statusOptions,
   );
