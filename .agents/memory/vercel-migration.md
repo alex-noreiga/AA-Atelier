@@ -56,8 +56,9 @@ Each is a **best-effort** side effect fired after the Notion write via
 the request's HTTP status (the Notion write stays the source of truth). The
 Resend client mirrors the Notion client's lazy env-at-first-use pattern.
 
-**Internal atelier notifications.** In addition to the customer email, each of the
-three flows sends an internal notification to `ATELIER_INBOX_EMAIL` (with
+**Internal atelier notifications.** In addition to the customer email, each of
+these flows (order, contact, back-in-stock, measurement-change, appointment, and
+paid shop order) sends an internal notification to `ATELIER_INBOX_EMAIL` (with
 **Reply-To** the customer) — but only when that env var is set; unset skips it and
 only the customer email goes out. The contact form was intentionally never an
 atelier-notification-by-email before this: contact messages land in the Notion

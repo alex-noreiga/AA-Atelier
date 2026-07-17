@@ -37,8 +37,8 @@ artifacts/
   web-app/           Frontend SPA (Vite + React 19 + Tailwind v4 + shadcn/ui)
     src/App.tsx      wouter routes + a global <Navbar />
     src/pages/       one component per route (home landing, status, order-form,
-                     services, about, shop, shop-success, shop-order-status,
-                     contact, appointments, privacy, terms,
+                     invoice, services, about, shop, shop-success,
+                     shop-order-status, contact, appointments, privacy, terms,
                      shipping-returns, not-found)
     src/components/  ... plus a global footer.tsx and legal-page.tsx shell
     src/components/  navbar.tsx (global nav), page-shell.tsx (page wrapper),
@@ -73,7 +73,7 @@ Browser (web-app SPA)
 Express app (artifacts/api-server)  ──►  Notion REST API (orders database)
                                     └──►  Resend REST API (customer emails)
   │
-  ├─ GET  /api/healthz             → { status: "ok" }
+  ├─ GET  /api/health              → { status: "ok" }
   ├─ GET  /api/orders/:orderNumber → order status + stage list
   ├─ POST /api/orders              → creates a Notion page, returns order number
   │                                  + sends an order-confirmation email
@@ -267,8 +267,10 @@ two hard-won lessons captured in `.agents/memory/`:
 
    The deliberate exceptions are _targeted business rules_ naming specific
    option values — `STATUS_IN_STOCK` ("In Stock" is the only sellable status) and
-   the `MEASUREMENT_LOCK_FROM_STAGE` stage (`services/measurement-change.service.ts`,
-   default `Cutting/Pinning`, env-overridable) at/after which measurements freeze.
+   the `MEASUREMENT_LOCK_FROM_STAGE` stage (`services/measurement-lock.ts`,
+   default `Cutting/Pinning`, env-overridable; `measurementsLocked()` is the gate,
+   consumed by `services/measurement-change.service.ts`) at/after which measurements
+   freeze.
    These name values, not the list; rename those options in Notion and you must
    update them here too. (The size chart used to be a third such rule —
    `SIZED_CATEGORIES` — but it is now Notion-driven via the Product Categories
@@ -829,7 +831,8 @@ and in the maintainer's env without edits.
   measurements are frozen and `POST /orders/:n/measurement-change-requests` is
   rejected. Like `STATUS_IN_STOCK`, this names a specific option value (a targeted
   business rule), so if the atelier renames that stage in Notion, set this override.
-  See `services/measurement-change.service.ts`.
+  Read in `services/measurement-lock.ts` (`measurementsLocked()`), enforced by
+  `services/measurement-change.service.ts`.
 
 ## Quick reference — where things live
 
