@@ -22,6 +22,16 @@ online. The order row keeps only the `Invoices` relation — no deposit fields.
 A single endpoint `POST /orders/:n/payments/:stage` (`stage ∈ {first_deposit,
 second_deposit, balance}`) serves all three.
 
+**Follow-up (2026-07): removed the dead Client CRM `Total Deposits` rollup.** That
+rollup summed a deposit **number field on the order** that this migration deleted,
+so once the field was gone it pointed at a missing target and rendered blank. The
+CRM only relates to Order Tracking (not to `invoices & payments`, where the deposit
+amounts now live), and **no app code reads `Total Deposits`** (the CRM is
+write-only from the app), so the column was dropped rather than rebuilt as a
+two-hop rollup. If a per-client deposit total is ever wanted again, add a
+deposits-sum formula on `invoices & payments`, a rollup on the order pulling it via
+the `Invoices` relation, then repoint a CRM rollup through `Orders`.
+
 ## The pre-existing Notion model (do not recreate)
 
 Discovered during planning — the orders database already relates to a full
