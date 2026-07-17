@@ -1,7 +1,6 @@
 import { describe, it, expect } from "vitest";
 import {
   missingOptionValues,
-  auditNotionConfig,
   SIZED_CATEGORY_NAMES,
 } from "../../src/lib/config-audit.js";
 
@@ -34,57 +33,6 @@ describe("missingOptionValues", () => {
       "Dress",
       "Ready to Wear",
     ]);
-  });
-});
-
-describe("auditNotionConfig", () => {
-  const healthy = {
-    itemTypeOptions: ["Dress", "Dresses", "Ready to Wear", "Skate Soakers"],
-    statusOptions: ["Planned", "In Stock", "Sold"],
-    stageOptions: ["Sketching", "Cutting/Pinning", "Sewing/Construction"],
-    statusInStock: "In Stock",
-    measurementLockStage: "Cutting/Pinning",
-  };
-
-  it("returns no findings when every named value is present", () => {
-    expect(auditNotionConfig(healthy)).toEqual([]);
-  });
-
-  it("flags the sellable status when it's missing from the live Status options", () => {
-    const findings = auditNotionConfig({
-      ...healthy,
-      statusOptions: ["Planned", "Sold"],
-    });
-    expect(findings).toHaveLength(1);
-    expect(findings[0].missing).toEqual(["In Stock"]);
-    expect(findings[0].label).toMatch(/status/i);
-  });
-
-  it("flags the measurement-lock stage when it's renamed away", () => {
-    const findings = auditNotionConfig({
-      ...healthy,
-      stageOptions: ["Sketching", "Sewing/Construction"],
-    });
-    expect(findings).toHaveLength(1);
-    expect(findings[0].missing).toEqual(["Cutting/Pinning"]);
-  });
-
-  it("flags the size-chart categories missing from Item Type", () => {
-    const findings = auditNotionConfig({
-      ...healthy,
-      itemTypeOptions: ["Skate Soakers"],
-    });
-    const sized = findings.find((f) => f.label.includes("Size-chart"));
-    expect(sized?.missing).toEqual([...SIZED_CATEGORY_NAMES]);
-  });
-
-  it("collects multiple findings in one pass", () => {
-    const findings = auditNotionConfig({
-      ...healthy,
-      statusOptions: ["Sold"],
-      stageOptions: ["Sketching"],
-    });
-    expect(findings.length).toBeGreaterThanOrEqual(2);
   });
 });
 

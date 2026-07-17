@@ -14,7 +14,6 @@ import { getInventoryNotionClient, type NotionClient } from "./client.js";
 import {
   PRODUCT_PUBLISH_PROPERTY,
   extractCategoryOptions,
-  extractStatusOptions,
   extractIsPublished,
   extractVariant,
   type NotionInventoryDatabaseSchema,
@@ -131,28 +130,6 @@ export async function listCategories(
     }
     throw error;
   }
-}
-
-/**
- * The live "Item Type" and "Status" option lists from the inventory database
- * schema, fetched together. Uncached — this is used only by the nightly config-
- * drift check (config-check.service), not the hot shop path.
- */
-export async function fetchInventoryOptionSets(
-  client: NotionClient = getInventoryNotionClient(),
-): Promise<{ itemTypeOptions: string[]; statusOptions: string[] }> {
-  assertConfigured(client);
-  const response = await client.fetch(`/v1/databases/${client.databaseId}`);
-  if (!response.ok) {
-    throw new Error(
-      `Notion database schema fetch failed with status ${response.status}`,
-    );
-  }
-  const schema = (await response.json()) as NotionInventoryDatabaseSchema;
-  return {
-    itemTypeOptions: extractCategoryOptions(schema),
-    statusOptions: extractStatusOptions(schema),
-  };
 }
 
 /**
