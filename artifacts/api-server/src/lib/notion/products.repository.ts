@@ -13,10 +13,8 @@
 import { getInventoryNotionClient, type NotionClient } from "./client.js";
 import {
   PRODUCT_PUBLISH_PROPERTY,
-  extractStatusOptions,
   extractIsPublished,
   extractVariant,
-  type NotionInventoryDatabaseSchema,
   type NotionInventoryQueryResponse,
   type VariantRecord,
 } from "./products.schema.js";
@@ -70,25 +68,6 @@ async function queryAllPublishedPages(
   } while (cursor);
 
   return variants;
-}
-
-/**
- * The live "Status" option list from the inventory database schema. Uncached —
- * this is used only by the nightly config-drift check (config-check.service) to
- * verify STATUS_IN_STOCK still exists, not the hot shop path.
- */
-export async function fetchInventoryOptionSets(
-  client: NotionClient = getInventoryNotionClient(),
-): Promise<{ statusOptions: string[] }> {
-  assertConfigured(client);
-  const response = await client.fetch(`/v1/databases/${client.databaseId}`);
-  if (!response.ok) {
-    throw new Error(
-      `Notion database schema fetch failed with status ${response.status}`,
-    );
-  }
-  const schema = (await response.json()) as NotionInventoryDatabaseSchema;
-  return { statusOptions: extractStatusOptions(schema) };
 }
 
 /**

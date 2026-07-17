@@ -120,32 +120,6 @@ export interface NotionInventoryQueryResponse {
   next_cursor: string | null;
 }
 
-/** The database schema, as returned by `GET /v1/databases/{id}`. */
-export interface NotionInventoryDatabaseSchema {
-  properties: Record<
-    string,
-    {
-      type: string;
-      status?: { options: Array<{ name: string }> };
-    }
-  >;
-}
-
-/**
- * The live "Status" options on the inventory database (e.g. In Stock, Sold, …),
- * read from the schema. Used by the config-drift check to verify STATUS_IN_STOCK
- * still exists after a Notion edit.
- */
-export function extractStatusOptions(
-  schema: NotionInventoryDatabaseSchema,
-): string[] {
-  return (
-    schema.properties[PRODUCT_STATUS_PROPERTY]?.status?.options.map(
-      (option) => option.name,
-    ) ?? []
-  );
-}
-
 // --- Extractors (narrow by the runtime `type` discriminator) ---
 
 function extractTitle(page: NotionInventoryPage, name: string): string {

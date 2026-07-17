@@ -138,23 +138,13 @@ Express app (artifacts/api-server)  ──►  Notion REST API (orders database)
   │                                  one per-stage milestone row to the Notion
   │                                  "Production Schedule" database. NOT part of
   │                                  the OpenAPI contract.
-  ├─ GET  /api/cron/generate-milestones/run
-  │                                → the SAME reconciliation, on demand: a Notion
-  │                                  "Open link" button the atelier presses. Auth
-  │                                  is a `?secret=<CRON_SECRET>` query token
-  │                                  (a button can't send a Bearer header) and it
-  │                                  returns a small HTML confirmation page. NOT
-  │                                  part of the OpenAPI contract.
-  └─ GET  /api/cron/config-check   → Vercel Cron config-drift guard (CRON_SECRET
-                                     Bearer, JSON). Verifies the code constants
-                                     that name live Notion option values
-                                     (STATUS_IN_STOCK and the measurement-lock
-                                     stage) still exist in the
-                                     live options; on drift it logs and best-effort
-                                     emails ATELIER_INBOX_EMAIL so a Notion rename
-                                     gets a same-day nudge. Read-only, NOT part of
-                                     the OpenAPI contract. (`services/config-check.
-                                     service.ts` + `lib/config-audit.ts`.)
+  └─ GET  /api/cron/generate-milestones/run
+                                   → the SAME reconciliation, on demand: a Notion
+                                     "Open link" button the atelier presses. Auth
+                                     is a `?secret=<CRON_SECRET>` query token
+                                     (a button can't send a Bearer header) and it
+                                     returns a small HTML confirmation page. NOT
+                                     part of the OpenAPI contract.
 ```
 
 The customer-notification POST endpoints (`/api/orders`, `/api/contact`,
