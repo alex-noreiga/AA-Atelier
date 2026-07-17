@@ -80,6 +80,24 @@ unchecked; the next run's `orderHasMilestones` sees those rows and flips the
 checkbox **without** creating the missing ones. Rare; the fix if it bites is the
 per-stage upsert above.
 
+## Current status — dormant (as of 2026-07)
+
+The Production Schedule database is intentionally **empty** right now, and that is
+expected, not a bug: **no orders in the Order Tracking Pipeline carry a `Due
+Date`**. `findOrdersNeedingMilestones` filters on `Due Date is_not_empty AND
+Milestones Generated = false`, so with no due dates it matches nothing and the
+cron writes no rows. Because the `Production Stage` **select** only gets options
+when the cron writes its first milestone (Notion auto-creates select options on
+write), that select is also still empty. The code path is correct and verified —
+it simply has no input yet.
+
+To **activate** it: set a `Due Date` on a real order (leave `Milestones Generated`
+unchecked), then either let the nightly Vercel cron run or press the on-demand
+Notion button (`.../generate-milestones/run?secret=<CRON_SECRET>`). Milestone rows
+appear and the `Production Stage` options auto-create on that first write. Also
+confirm `NOTION_PRODUCTION_SCHEDULE_DATABASE_ID` + `CRON_SECRET` are set in Vercel
+and the integration is shared with the database, or the run no-ops / 401s.
+
 ## One-time Notion setup
 
 - **Order Tracking Pipeline** (the orders DB): add `Due Date` (date) +

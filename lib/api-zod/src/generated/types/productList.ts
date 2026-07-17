@@ -9,6 +9,6 @@ import type { Product } from './product';
 
 export interface ProductList {
   products: Product[];
-  /** The shop's category filters, read live from the "Item Type" select options on the Notion inventory database and returned in the order the atelier arranged them. Editing the options in Notion changes this list without a redeploy, so clients must not hardcode it. */
+  /** The shop's category filters, read live from the Notion "Product Categories" database and returned in the order the atelier arranged them (its `Sort` field). Each inventory item links to its category through a `Category` relation. Editing the categories in Notion changes this list without a redeploy, so clients must not hardcode it. */
   categories: string[];
 }
