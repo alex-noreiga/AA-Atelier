@@ -196,6 +196,7 @@ export const GetProductsResponse = zod.object({
   "id": zod.string(),
   "title": zod.string(),
   "category": zod.string(),
+  "sized": zod.boolean(),
   "variants": zod.array(zod.object({
   "id": zod.string(),
   "name": zod.string(),

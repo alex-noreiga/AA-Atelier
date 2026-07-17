@@ -43,6 +43,7 @@ function createNotionClient(config: NotionClientConfig): NotionClient {
 let defaultClient: NotionClient | null = null;
 let contactClient: NotionClient | null = null;
 let inventoryClient: NotionClient | null = null;
+let productCategoriesClient: NotionClient | null = null;
 let shopOrdersClient: NotionClient | null = null;
 let productionScheduleClient: NotionClient | null = null;
 let clientCrmClient: NotionClient | null = null;
@@ -91,6 +92,24 @@ export function getInventoryNotionClient(): NotionClient {
     });
   }
   return inventoryClient;
+}
+
+/**
+ * Client for the optional "Product Categories" database — the data-driven source
+ * for which shop categories show a size chart (a "Show size guide" checkbox per
+ * category). Same lazy construction, reads `NOTION_PRODUCT_CATEGORIES_DATABASE_ID`.
+ * Optional: when the env var is unset the client's `databaseId` is empty, and the
+ * repository treats that as "not configured" so the shop falls back to its
+ * built-in sized-category list.
+ */
+export function getProductCategoriesNotionClient(): NotionClient {
+  if (!productCategoriesClient) {
+    productCategoriesClient = createNotionClient({
+      apiKey: process.env.NOTION_API_KEY ?? "",
+      databaseId: process.env.NOTION_PRODUCT_CATEGORIES_DATABASE_ID ?? "",
+    });
+  }
+  return productCategoriesClient;
 }
 
 /**

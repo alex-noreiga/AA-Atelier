@@ -214,6 +214,54 @@ describe("listCategories", () => {
     );
   });
 
+  describe("size-chart config-drift guard", () => {
+    it("logs an error when a size-chart Item Type value is missing from the live options", async () => {
+      // logger is imported as part of the (already-loaded) repo module graph, so
+      // this resolves to the same instance the repository logs through.
+      const { logger } = await import("../../src/lib/logger.js");
+      const errorSpy = vi.spyOn(logger, "error").mockImplementation(() => {});
+
+      const client = makeFakeClient((path) => {
+        if (isSchema(path)) {
+          // No "Dress"/"Dresses"/"Ready to Wear" — as if the option was renamed.
+          return jsonResponse(
+            inventoryDatabaseSchemaWithCategories(["Skate Soakers", "Other"]),
+          );
+        }
+        throw new Error(`unexpected path ${path}`);
+      });
+
+      await repo.listCategories(client);
+
+      expect(errorSpy).toHaveBeenCalledOnce();
+      errorSpy.mockRestore();
+    });
+
+    it("does not log when the size-chart Item Type values are present", async () => {
+      const { logger } = await import("../../src/lib/logger.js");
+      const errorSpy = vi.spyOn(logger, "error").mockImplementation(() => {});
+
+      const client = makeFakeClient((path) => {
+        if (isSchema(path)) {
+          return jsonResponse(
+            inventoryDatabaseSchemaWithCategories([
+              "Dress",
+              "Dresses",
+              "Ready to Wear",
+              "Skate Soakers",
+            ]),
+          );
+        }
+        throw new Error(`unexpected path ${path}`);
+      });
+
+      await repo.listCategories(client);
+
+      expect(errorSpy).not.toHaveBeenCalled();
+      errorSpy.mockRestore();
+    });
+  });
+
   describe("caching", () => {
     beforeEach(() => {
       vi.useFakeTimers();

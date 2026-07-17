@@ -6,6 +6,9 @@ import {
   listCategories,
   listVariants,
 } from "../lib/notion/products.repository.js";
+import { listCategoryRecords } from "../lib/notion/product-categories.repository.js";
+import { SIZED_CATEGORY_NAMES } from "../lib/config-audit.js";
+import type { CategoryRecord } from "../lib/notion/product-categories.schema.js";
 import type {
   ProductRecord,
   ProductVariantRecord,
@@ -22,7 +25,12 @@ function slugify(value: string): string {
 }
 
 function toVariantRecord(variant: VariantRecord): ProductVariantRecord {
-  const { category: _category, group: _group, ...rest } = variant;
+  const {
+    category: _category,
+    categoryId: _categoryId,
+    group: _group,
+    ...rest
+  } = variant;
   return rest;
 }
 
@@ -30,8 +38,15 @@ function toVariantRecord(variant: VariantRecord): ProductVariantRecord {
  * Group flat inventory variants into shop cards. Pure (no I/O) so it can be
  * unit-tested directly. Rows sharing a `Website Group` merge into one card
  * (first-seen order preserved); ungrouped rows become standalone cards.
+ *
+ * A card's `sized` flag (does its category show the size guide) is looked up from
+ * `sizedCategories` by the card's category — the caller passes the live set from
+ * the "Product Categories" database, or the built-in fallback.
  */
-export function groupVariants(variants: VariantRecord[]): ProductRecord[] {
+export function groupVariants(
+  variants: VariantRecord[],
+  sizedCategories: ReadonlySet<string> = new Set(),
+): ProductRecord[] {
   const cards: ProductRecord[] = [];
   // Grouped cards, keyed by the group value; preserves first-seen order.
   const groups = new Map<string, ProductRecord>();
@@ -44,6 +59,7 @@ export function groupVariants(variants: VariantRecord[]): ProductRecord[] {
           id: `group-${slugify(variant.group)}`,
           title: variant.group,
           category: variant.category,
+          sized: sizedCategories.has(variant.category),
           variants: [],
         };
         groups.set(variant.group, card);
@@ -55,6 +71,7 @@ export function groupVariants(variants: VariantRecord[]): ProductRecord[] {
         id: variant.id,
         title: variant.name,
         category: variant.category,
+        sized: sizedCategories.has(variant.category),
         variants: [toVariantRecord(variant)],
       });
     }
@@ -77,15 +94,55 @@ export function visibleCategories(
   return categories.filter((category) => stocked.has(category));
 }
 
+/**
+ * Build the shop payload from the Product Categories records (the configured
+ * path). Each variant's category + sized flag is resolved from its `Category`
+ * relation via the record's page id; a variant with no link falls back to its
+ * "Item Type" label. The chip list is the category names ordered by `Sort`,
+ * narrowed to those actually stocked. Pure, so it's unit-testable directly.
+ */
+export function resolveFromCategories(
+  variants: VariantRecord[],
+  records: CategoryRecord[],
+): { products: ProductRecord[]; categories: string[] } {
+  const byId = new Map(records.map((record) => [record.id, record]));
+  // Resolve the authoritative category name from the relation; keep the Item Type
+  // label when a row isn't linked (or its category was deleted).
+  const resolved = variants.map((variant) => {
+    const record = variant.categoryId
+      ? byId.get(variant.categoryId)
+      : undefined;
+    return record ? { ...variant, category: record.name } : variant;
+  });
+  const sizedCategories = new Set(
+    records.filter((record) => record.sized).map((record) => record.name),
+  );
+  const products = groupVariants(resolved, sizedCategories);
+  const orderedNames = [...records]
+    .sort((a, b) => (a.sort ?? Infinity) - (b.sort ?? Infinity))
+    .map((record) => record.name);
+
+  return { products, categories: visibleCategories(orderedNames, products) };
+}
+
 export async function getProducts(): Promise<{
   products: ProductRecord[];
   categories: string[];
 }> {
-  const [variants, categories] = await Promise.all([
+  const [variants, records] = await Promise.all([
     listVariants(),
-    listCategories(),
+    listCategoryRecords(),
   ]);
-  const products = groupVariants(variants);
 
+  // `records === null` means the "Product Categories" database isn't configured
+  // — fall back to the inventory "Item Type" options for the chip list and the
+  // built-in sized list, so behaviour is unchanged until the Notion source is
+  // enabled. Once configured, the category + sized flag follow the relation.
+  if (records) {
+    return resolveFromCategories(variants, records);
+  }
+
+  const categories = await listCategories();
+  const products = groupVariants(variants, new Set(SIZED_CATEGORY_NAMES));
   return { products, categories: visibleCategories(categories, products) };
 }

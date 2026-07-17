@@ -11,5 +11,6 @@ export interface Product {
   id: string;
   title: string;
   category: string;
+  sized: boolean;
   variants: ProductVariant[];
 }

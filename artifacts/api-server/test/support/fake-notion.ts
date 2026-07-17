@@ -87,6 +87,7 @@ export function inventoryPage(opts: {
   id?: string;
   name?: string;
   category?: string;
+  categoryId?: string;
   published?: boolean;
   status?: string | null;
   quantityAvailable?: number | null;
@@ -107,6 +108,12 @@ export function inventoryPage(opts: {
     properties["Item Type"] = {
       type: "select",
       select: { name: opts.category },
+    };
+  }
+  if (opts.categoryId !== undefined) {
+    properties["Category"] = {
+      type: "relation",
+      relation: [{ id: opts.categoryId }],
     };
   }
   if (opts.status !== undefined) {
@@ -134,6 +141,30 @@ export function inventoryPage(opts: {
     };
   }
   return { id: opts.id ?? "inv-page", properties };
+}
+
+/** Minimal "Product Categories" page as returned by a query — a category name,
+ * its "Show size guide" checkbox, and an optional "Sort" number. */
+export function categoryPage(opts: {
+  id?: string;
+  name?: string;
+  showSizeGuide?: boolean;
+  sort?: number;
+}) {
+  const properties: Record<string, unknown> = {
+    Name: {
+      type: "title",
+      title: opts.name ? [{ plain_text: opts.name }] : [],
+    },
+    "Show size guide": {
+      type: "checkbox",
+      checkbox: opts.showSizeGuide ?? false,
+    },
+  };
+  if (opts.sort !== undefined) {
+    properties["Sort"] = { type: "number", number: opts.sort };
+  }
+  return { id: opts.id ?? "category-page", properties };
 }
 
 /**
