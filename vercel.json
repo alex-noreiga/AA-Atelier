@@ -18,10 +18,6 @@
     {
       "path": "/api/cron/generate-milestones",
       "schedule": "0 8 * * *"
-    },
-    {
-      "path": "/api/cron/config-check",
-      "schedule": "0 13 * * *"
     }
   ]
 }

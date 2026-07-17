@@ -6,17 +6,11 @@ vi.mock("../../src/services/schedule.service.js", () => ({
   generatePendingMilestones: vi.fn(),
 }));
 
-vi.mock("../../src/services/config-check.service.js", () => ({
-  runConfigCheck: vi.fn(),
-}));
-
 import request from "supertest";
 import app from "../../src/app.js";
 import { generatePendingMilestones } from "../../src/services/schedule.service.js";
-import { runConfigCheck } from "../../src/services/config-check.service.js";
 
 const mockGenerate = vi.mocked(generatePendingMilestones);
-const mockConfigCheck = vi.mocked(runConfigCheck);
 
 const ENDPOINT = "/api/cron/generate-milestones";
 
@@ -68,54 +62,6 @@ describe("GET /api/cron/generate-milestones", () => {
 
     expect(res.status).toBe(401);
     expect(mockGenerate).not.toHaveBeenCalled();
-  });
-});
-
-describe("GET /api/cron/config-check", () => {
-  const ENDPOINT = "/api/cron/config-check";
-
-  beforeEach(() => {
-    process.env.CRON_SECRET = "s3cret";
-  });
-  afterEach(() => {
-    delete process.env.CRON_SECRET;
-  });
-
-  it("runs the check and reports ok:true when there is no drift", async () => {
-    mockConfigCheck.mockResolvedValue({ findings: [] });
-
-    const res = await request(app)
-      .get(ENDPOINT)
-      .set("Authorization", "Bearer s3cret");
-
-    expect(res.status).toBe(200);
-    expect(res.body).toEqual({ ok: true, findings: [] });
-    expect(mockConfigCheck).toHaveBeenCalledTimes(1);
-  });
-
-  it("reports ok:false with the findings when there is drift", async () => {
-    mockConfigCheck.mockResolvedValue({
-      findings: [
-        { label: "Sellable status (STATUS_IN_STOCK)", missing: ["In Stock"] },
-      ],
-    });
-
-    const res = await request(app)
-      .get(ENDPOINT)
-      .set("Authorization", "Bearer s3cret");
-
-    expect(res.status).toBe(200);
-    expect(res.body.ok).toBe(false);
-    expect(res.body.findings).toHaveLength(1);
-  });
-
-  it("returns 401 and does not run without a valid bearer token", async () => {
-    const res = await request(app)
-      .get(ENDPOINT)
-      .set("Authorization", "Bearer nope");
-
-    expect(res.status).toBe(401);
-    expect(mockConfigCheck).not.toHaveBeenCalled();
   });
 });
 

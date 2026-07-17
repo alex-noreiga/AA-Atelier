@@ -4,13 +4,12 @@ import {
   jsonResponse,
   errorResponse,
   inventoryPage,
-  inventoryDatabaseSchemaWithCategories,
   type FakeNotionClient,
 } from "../support/fake-notion.js";
 
-// The repository keeps two module-level TTL caches (variants + categories), so
-// each test imports a fresh copy of the module to start from a clean cache —
-// same approach as orders.repository.test.ts.
+// The repository keeps a module-level TTL cache for variants, so each test
+// imports a fresh copy of the module to start from a clean cache — same approach
+// as orders.repository.test.ts.
 let repo: typeof import("../../src/lib/notion/products.repository.js");
 
 beforeEach(async () => {
@@ -19,7 +18,6 @@ beforeEach(async () => {
 });
 
 const isQuery = (path: string) => path.endsWith("/query");
-const isSchema = (path: string) => /\/v1\/databases\/[^/]+$/.test(path);
 
 /** A query response page. `has_more`/`next_cursor` default to a single page. */
 function queryResponse(
@@ -44,7 +42,7 @@ describe("listVariants", () => {
           inventoryPage({
             id: "v1",
             name: "Keyhole Dress",
-            category: "Dress",
+            categoryId: "cat-dress",
             status: "In Stock",
           }),
         ]);
@@ -54,6 +52,8 @@ describe("listVariants", () => {
 
     const variants = await repo.listVariants(client);
 
+    // `category` (the name) is resolved from the relation in the service; the raw
+    // row carries only the linked category id.
     expect(variants).toEqual([
       {
         id: "v1",
@@ -61,7 +61,8 @@ describe("listVariants", () => {
         available: true,
         photos: [],
         sizes: [],
-        category: "Dress",
+        category: "",
+        categoryId: "cat-dress",
         group: null,
       },
     ]);
@@ -175,137 +176,6 @@ describe("listVariants", () => {
       vi.advanceTimersByTime(61_000);
       const second = await repo.listVariants(client);
       expect(second.map((v) => v.id)).toEqual(["v1"]); // served from cache
-    });
-  });
-});
-
-describe("listCategories", () => {
-  it("throws when the database id is not configured", async () => {
-    const client = makeFakeClient(() => jsonResponse({}), "");
-    await expect(repo.listCategories(client)).rejects.toThrow(
-      /NOTION_INVENTORY_DATABASE_ID is not configured/,
-    );
-  });
-
-  it("reads the live Item Type options in Notion's order", async () => {
-    const client = makeFakeClient((path) => {
-      if (isSchema(path)) {
-        return jsonResponse(
-          inventoryDatabaseSchemaWithCategories(["Dress", "Soaker", "Other"]),
-        );
-      }
-      throw new Error(`unexpected path ${path}`);
-    });
-
-    expect(await repo.listCategories(client)).toEqual([
-      "Dress",
-      "Soaker",
-      "Other",
-    ]);
-  });
-
-  it("throws with the status when the schema response is not ok", async () => {
-    const client = makeFakeClient((path) => {
-      if (isSchema(path)) return errorResponse(503);
-      throw new Error(`unexpected path ${path}`);
-    });
-    await expect(repo.listCategories(client)).rejects.toThrow(
-      /Notion database schema fetch failed with status 503/,
-    );
-  });
-
-  describe("size-chart config-drift guard", () => {
-    it("logs an error when a size-chart Item Type value is missing from the live options", async () => {
-      // logger is imported as part of the (already-loaded) repo module graph, so
-      // this resolves to the same instance the repository logs through.
-      const { logger } = await import("../../src/lib/logger.js");
-      const errorSpy = vi.spyOn(logger, "error").mockImplementation(() => {});
-
-      const client = makeFakeClient((path) => {
-        if (isSchema(path)) {
-          // No "Dress"/"Dresses"/"Ready to Wear" — as if the option was renamed.
-          return jsonResponse(
-            inventoryDatabaseSchemaWithCategories(["Skate Soakers", "Other"]),
-          );
-        }
-        throw new Error(`unexpected path ${path}`);
-      });
-
-      await repo.listCategories(client);
-
-      expect(errorSpy).toHaveBeenCalledOnce();
-      errorSpy.mockRestore();
-    });
-
-    it("does not log when the size-chart Item Type values are present", async () => {
-      const { logger } = await import("../../src/lib/logger.js");
-      const errorSpy = vi.spyOn(logger, "error").mockImplementation(() => {});
-
-      const client = makeFakeClient((path) => {
-        if (isSchema(path)) {
-          return jsonResponse(
-            inventoryDatabaseSchemaWithCategories([
-              "Dress",
-              "Dresses",
-              "Ready to Wear",
-              "Skate Soakers",
-            ]),
-          );
-        }
-        throw new Error(`unexpected path ${path}`);
-      });
-
-      await repo.listCategories(client);
-
-      expect(errorSpy).not.toHaveBeenCalled();
-      errorSpy.mockRestore();
-    });
-  });
-
-  describe("caching", () => {
-    beforeEach(() => {
-      vi.useFakeTimers();
-      vi.setSystemTime(new Date("2026-01-01T00:00:00Z"));
-    });
-    afterEach(() => {
-      vi.useRealTimers();
-    });
-
-    it("caches for the 60s TTL, then refetches", async () => {
-      const client = makeFakeClient((path) => {
-        if (isSchema(path)) {
-          return jsonResponse(inventoryDatabaseSchemaWithCategories(["Dress"]));
-        }
-        throw new Error(`unexpected path ${path}`);
-      });
-
-      await repo.listCategories(client);
-      await repo.listCategories(client); // within TTL → cached
-      let schemaFetches = client.calls.filter((c) => isSchema(c.path)).length;
-      expect(schemaFetches).toBe(1);
-
-      vi.advanceTimersByTime(61_000);
-      await repo.listCategories(client);
-      schemaFetches = client.calls.filter((c) => isSchema(c.path)).length;
-      expect(schemaFetches).toBe(2);
-    });
-
-    it("falls back to the cached categories when a later fetch fails", async () => {
-      let failSchema = false;
-      const client = makeFakeClient((path) => {
-        if (!isSchema(path)) throw new Error(`unexpected path ${path}`);
-        return failSchema
-          ? errorResponse(503)
-          : jsonResponse(inventoryDatabaseSchemaWithCategories(["Dress"]));
-      });
-
-      const first = await repo.listCategories(client);
-      expect(first).toEqual(["Dress"]);
-
-      failSchema = true;
-      vi.advanceTimersByTime(61_000);
-      const second = await repo.listCategories(client);
-      expect(second).toEqual(["Dress"]); // served from cache, not thrown
     });
   });
 });

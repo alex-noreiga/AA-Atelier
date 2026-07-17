@@ -138,23 +138,13 @@ Express app (artifacts/api-server)  ──►  Notion REST API (orders database)
   │                                  one per-stage milestone row to the Notion
   │                                  "Production Schedule" database. NOT part of
   │                                  the OpenAPI contract.
-  ├─ GET  /api/cron/generate-milestones/run
-  │                                → the SAME reconciliation, on demand: a Notion
-  │                                  "Open link" button the atelier presses. Auth
-  │                                  is a `?secret=<CRON_SECRET>` query token
-  │                                  (a button can't send a Bearer header) and it
-  │                                  returns a small HTML confirmation page. NOT
-  │                                  part of the OpenAPI contract.
-  └─ GET  /api/cron/config-check   → Vercel Cron config-drift guard (CRON_SECRET
-                                     Bearer, JSON). Verifies the code constants
-                                     that name live Notion option values
-                                     (STATUS_IN_STOCK, the size-chart categories,
-                                     the measurement-lock stage) still exist in the
-                                     live options; on drift it logs and best-effort
-                                     emails ATELIER_INBOX_EMAIL so a Notion rename
-                                     gets a same-day nudge. Read-only, NOT part of
-                                     the OpenAPI contract. (`services/config-check.
-                                     service.ts` + `lib/config-audit.ts`.)
+  └─ GET  /api/cron/generate-milestones/run
+                                   → the SAME reconciliation, on demand: a Notion
+                                     "Open link" button the atelier presses. Auth
+                                     is a `?secret=<CRON_SECRET>` query token
+                                     (a button can't send a Bearer header) and it
+                                     returns a small HTML confirmation page. NOT
+                                     part of the OpenAPI contract.
 ```
 
 The customer-notification POST endpoints (`/api/orders`, `/api/contact`,
@@ -259,21 +249,30 @@ two hard-won lessons captured in `.agents/memory/`:
 
 2. **Never hardcode a Notion option list.** The atelier team edits select/status
    options directly in Notion and expects changes to appear without a redeploy.
-   Two places read their options live from `GET /v1/databases/{id}` with a 60s
-   in-memory TTL cache, falling back to the cached list on error:
-   `fetchLiveOrderStages()` (order **Stage**, in `notion/orders.repository.ts`)
-   and `listCategories()` (shop **Item Type** → the shop's filter chips, in
-   `notion/products.repository.ts`). Don't reintroduce a hardcoded constant for
-   either. (The per-stage _description text_ in `lib/stage-descriptions.ts` is
-   cosmetic flavor only.)
+   `fetchLiveOrderStages()` reads the order **Stage** options live from
+   `GET /v1/databases/{id}` with a 60s in-memory TTL cache, falling back to the
+   cached list on error (`notion/orders.repository.ts`). Don't reintroduce a
+   hardcoded constant for it. (The per-stage _description text_ in
+   `lib/stage-descriptions.ts` is cosmetic flavor only.)
+
+   The **shop's category list is a dedicated "Product Categories" database** (not
+   the inventory "Item Type" select, which was retired). Each inventory row points
+   at a category via a `Category` **relation**; `listCategoryRecords()`
+   (`notion/product-categories.repository.ts`, same 60s cache + fallback) reads the
+   category name, `Show size guide` flag, and `Sort` order, and
+   `products.service` resolves each product's category + `sized` flag by joining
+   the relation. A category rename propagates automatically (the relation follows
+   the page); a new category defaults unsized. `NOTION_PRODUCT_CATEGORIES_DATABASE_ID`
+   must be set — there is no fallback.
 
    The deliberate exceptions are _targeted business rules_ naming specific
-   option values — `STATUS_IN_STOCK` ("In Stock" is the only sellable status),
-   `SIZED_CATEGORIES` in `pages/shop.tsx` (only Dress / Ready to Wear show
-   the size chart), and the `MEASUREMENT_LOCK_FROM_STAGE` stage
-   (`services/measurement-change.service.ts`, default `Cutting/Pinning`, env-
-   overridable) at/after which measurements freeze. These name values, not the
-   list; rename those options in Notion and you must update them here too.
+   option values — `STATUS_IN_STOCK` ("In Stock" is the only sellable status) and
+   the `MEASUREMENT_LOCK_FROM_STAGE` stage (`services/measurement-change.service.ts`,
+   default `Cutting/Pinning`, env-overridable) at/after which measurements freeze.
+   These name values, not the list; rename those options in Notion and you must
+   update them here too. (The size chart used to be a third such rule —
+   `SIZED_CATEGORIES` — but it is now Notion-driven via the Product Categories
+   relation, so no name is left to drift.)
 
 3. **The contact database has three writers.** "Website Contact Messages" holds
    contact-form messages (`contact.blocks.ts`), the shop's back-in-stock requests
@@ -508,8 +507,8 @@ in `api-server/src/lib/appointments/*` (pure logic + config),
 1. **The type catalog is a targeted business rule in code.**
    `lib/appointments/catalog.ts` names the four types, their durations, and their
    routing rules (Alayna takes consultations + design reviews; Alexandra takes
-   everything; fittings are in-person only). Like `STATUS_IN_STOCK` /
-   `SIZED_CATEGORIES`, these are values coupled to code (duration drives slot
+   everything; fittings are in-person only). Like `STATUS_IN_STOCK`, these are
+   values coupled to code (duration drives slot
    math; staff/locations drive UI + validation). Retune a duration or rename a
    staff member here; the staff names must match the `Staff` column in the
    working-hours sheet (below).
@@ -758,7 +757,10 @@ and in the maintainer's env without edits.
   `NOTION_CONTACT_DATABASE_ID` (the "Website Contact Messages" database that the
   `/contact` form **and** the shop's `/notify` dialog both write to),
   `NOTION_INVENTORY_DATABASE_ID` (the finished-goods "inventory" database the
-  shop's `/products` endpoint reads), `NOTION_SHOP_ORDERS_DATABASE_ID` (the
+  shop's `/products` endpoint reads), `NOTION_PRODUCT_CATEGORIES_DATABASE_ID` (the
+  "Product Categories" database the shop resolves each product's category + size-
+  guide flag from via the inventory `Category` relation — `/products` fails without
+  it, there is no fallback), `NOTION_SHOP_ORDERS_DATABASE_ID` (the
   "Shop Orders" database the checkout webhook writes paid orders to — it needs an
   `Order Number` rich_text property so the shop-order-tracking lookup works), and
   `NOTION_PRODUCTION_SCHEDULE_DATABASE_ID` (the "Production Schedule" database the

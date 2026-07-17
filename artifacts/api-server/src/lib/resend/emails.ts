@@ -11,7 +11,6 @@ import type { CreateOrderInput } from "../notion/orders.schema.js";
 import type { CreateContactInput } from "../notion/contact.blocks.js";
 import type { CreateNotifyInput } from "../notion/notify.blocks.js";
 import type { CreateMeasurementChangeInput } from "../notion/measurement-change.blocks.js";
-import type { ConfigDriftFinding } from "../config-audit.js";
 import type { EmailMessage } from "./client.js";
 
 const ATELIER_NAME = "A.A Atelier";
@@ -204,52 +203,6 @@ export function contactNotificationEmail(
     subject: `New contact message from ${input.name}`,
     html: internalLayout("New contact message", renderRowsHtml(fields)),
     text: renderRowsText(fields),
-  };
-}
-
-/**
- * Alert the atelier that a website feature depends on a Notion option value that
- * no longer exists (a rename/removal that will silently break it). Sent
- * best-effort by the nightly config-drift check.
- */
-export function configDriftNotificationEmail(
-  findings: ConfigDriftFinding[],
-  to: string,
-): EmailMessage {
-  const rowsHtml = findings
-    .map(
-      (finding) =>
-        `<p style="margin:0 0 12px;"><strong>${escapeHtml(finding.label)}</strong><br/>` +
-        `Missing from Notion: ${escapeHtml(finding.missing.join(", "))}</p>`,
-    )
-    .join("\n      ");
-  const intro =
-    `<p style="margin:0 0 16px;">A scheduled check found Notion options that a ` +
-    `website feature relies on but that no longer exist — most likely an option ` +
-    `was renamed or removed. Until it's restored, that feature quietly stops ` +
-    `working (for example, garments losing their size chart).</p>`;
-  const html = internalLayout(
-    "Website config check — action needed",
-    `${intro}\n      ${rowsHtml}`,
-    "config check",
-  );
-  const text =
-    "A scheduled check found Notion options a website feature relies on but " +
-    "that no longer exist (likely renamed or removed):\n\n" +
-    findings
-      .map(
-        (finding) =>
-          `- ${finding.label}: missing ${finding.missing.join(", ")}`,
-      )
-      .join("\n") +
-    "\n\nRestore the option name in Notion (or ask a developer to update the " +
-    "matching setting).";
-  return {
-    to,
-    subject:
-      "A.A Atelier — a Notion option a website feature needs was renamed",
-    html,
-    text,
   };
 }
 
