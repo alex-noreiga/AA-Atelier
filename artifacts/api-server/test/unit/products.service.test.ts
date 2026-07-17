@@ -9,7 +9,13 @@ import type {
 } from "../../src/lib/notion/products.schema.js";
 
 function card(category: string): ProductRecord {
-  return { id: `id-${category}`, title: category, category, variants: [] };
+  return {
+    id: `id-${category}`,
+    title: category,
+    category,
+    sized: false,
+    variants: [],
+  };
 }
 
 function variant(overrides: Partial<VariantRecord> = {}): VariantRecord {
@@ -95,5 +101,26 @@ describe("groupVariants", () => {
     ]);
     expect(product.variants[0]).not.toHaveProperty("category");
     expect(product.variants[0]).not.toHaveProperty("group");
+  });
+
+  it("sets each card's `sized` flag from the passed sized-category set", () => {
+    const products = groupVariants(
+      [
+        variant({ id: "v-dress", category: "Dress", group: null }),
+        variant({ id: "v-soaker", category: "Soaker", group: null }),
+      ],
+      new Set(["Dress"]),
+    );
+
+    const sizedById = Object.fromEntries(
+      products.map((product) => [product.id, product.sized]),
+    );
+    expect(sizedById["v-dress"]).toBe(true);
+    expect(sizedById["v-soaker"]).toBe(false);
+  });
+
+  it("defaults `sized` to false when no sized-category set is passed", () => {
+    const [product] = groupVariants([variant({ category: "Dress" })]);
+    expect(product.sized).toBe(false);
   });
 });

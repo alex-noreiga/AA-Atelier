@@ -69,6 +69,7 @@ function product(overrides: Record<string, unknown> = {}) {
     id: "p1",
     title: "Bow Fleece Soaker",
     category: "Soaker",
+    sized: false,
     variants: [variant()],
     ...overrides,
   };
@@ -283,6 +284,7 @@ describe("Shop sizes", () => {
       id: "p1",
       title: "Keyhole Test Dress",
       category: "Dress",
+      sized: true,
       variants: [variant({ id: "v1", name: "Keyhole Test Dress", sizes })],
     });
 
@@ -342,6 +344,31 @@ describe("Shop sizes", () => {
     setHook({ products: [product()] });
     renderShop(<Shop />);
     expect(screen.queryByTestId("link-size-chart")).not.toBeInTheDocument();
+  });
+
+  it("shows the size chart from the server `sized` flag, not the category name", () => {
+    // `sized` is decided server-side (the Notion "Product Categories" data), so a
+    // card shows the chart whenever the flag is set — regardless of its category
+    // label. This is what makes the size-chart categories editable in Notion.
+    setHook({
+      products: [
+        product({
+          id: "p1",
+          title: "Keyhole Test Dress",
+          category: "Test Dresses",
+          sized: true,
+          variants: [
+            variant({
+              id: "v1",
+              name: "Keyhole Test Dress",
+              sizes: [{ name: "Adult S", available: true }],
+            }),
+          ],
+        }),
+      ],
+    });
+    renderShop(<Shop />);
+    expect(screen.getAllByTestId("link-size-chart").length).toBeGreaterThan(0);
   });
 });
 

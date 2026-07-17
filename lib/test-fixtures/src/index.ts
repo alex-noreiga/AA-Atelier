@@ -125,6 +125,7 @@ export function productList(overrides: Partial<ProductList> = {}): ProductList {
         id: "p1",
         title: "Bow Fleece Soaker",
         category: "Soaker",
+        sized: false,
         variants: [
           {
             id: "v1",

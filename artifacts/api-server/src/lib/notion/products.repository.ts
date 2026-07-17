@@ -14,12 +14,15 @@ import { getInventoryNotionClient, type NotionClient } from "./client.js";
 import {
   PRODUCT_PUBLISH_PROPERTY,
   extractCategoryOptions,
+  extractStatusOptions,
   extractIsPublished,
   extractVariant,
   type NotionInventoryDatabaseSchema,
   type NotionInventoryQueryResponse,
   type VariantRecord,
 } from "./products.schema.js";
+import { logger } from "../logger.js";
+import { SIZED_CATEGORY_NAMES, missingOptionValues } from "../config-audit.js";
 
 const PRODUCTS_CACHE_TTL_MS = 60_000;
 let cachedVariants: { variants: VariantRecord[]; fetchedAt: number } | null =
@@ -103,6 +106,23 @@ export async function listCategories(
 
     const schema = (await response.json()) as NotionInventoryDatabaseSchema;
     const categories = extractCategoryOptions(schema);
+    // Config-drift guard: warn if a size-chart category name no longer exists in
+    // the live "Item Type" options (a Notion rename/removal), which would
+    // silently drop the size chart. Advisory only — never fails the request.
+    const missingSized = missingOptionValues(SIZED_CATEGORY_NAMES, categories);
+    if (missingSized.length > 0) {
+      logger.error(
+        {
+          missing: missingSized,
+          sizedCategories: SIZED_CATEGORY_NAMES,
+          liveItemTypes: categories,
+        },
+        'Size-chart "Item Type" values are missing from the live Notion options ' +
+          "— a category was likely renamed or removed, so those garments will " +
+          "silently lose their size chart. Update SIZED_CATEGORIES in " +
+          "artifacts/web-app/src/pages/shop.tsx (or restore the Notion option).",
+      );
+    }
     cachedCategories = { categories, fetchedAt: Date.now() };
     return categories;
   } catch (error) {
@@ -111,6 +131,28 @@ export async function listCategories(
     }
     throw error;
   }
+}
+
+/**
+ * The live "Item Type" and "Status" option lists from the inventory database
+ * schema, fetched together. Uncached — this is used only by the nightly config-
+ * drift check (config-check.service), not the hot shop path.
+ */
+export async function fetchInventoryOptionSets(
+  client: NotionClient = getInventoryNotionClient(),
+): Promise<{ itemTypeOptions: string[]; statusOptions: string[] }> {
+  assertConfigured(client);
+  const response = await client.fetch(`/v1/databases/${client.databaseId}`);
+  if (!response.ok) {
+    throw new Error(
+      `Notion database schema fetch failed with status ${response.status}`,
+    );
+  }
+  const schema = (await response.json()) as NotionInventoryDatabaseSchema;
+  return {
+    itemTypeOptions: extractCategoryOptions(schema),
+    statusOptions: extractStatusOptions(schema),
+  };
 }
 
 /**

@@ -6,6 +6,8 @@ import {
   listCategories,
   listVariants,
 } from "../lib/notion/products.repository.js";
+import { listSizedCategoryNames } from "../lib/notion/product-categories.repository.js";
+import { SIZED_CATEGORY_NAMES } from "../lib/config-audit.js";
 import type {
   ProductRecord,
   ProductVariantRecord,
@@ -30,8 +32,15 @@ function toVariantRecord(variant: VariantRecord): ProductVariantRecord {
  * Group flat inventory variants into shop cards. Pure (no I/O) so it can be
  * unit-tested directly. Rows sharing a `Website Group` merge into one card
  * (first-seen order preserved); ungrouped rows become standalone cards.
+ *
+ * A card's `sized` flag (does its category show the size guide) is looked up from
+ * `sizedCategories` by the card's category — the caller passes the live set from
+ * the "Product Categories" database, or the built-in fallback.
  */
-export function groupVariants(variants: VariantRecord[]): ProductRecord[] {
+export function groupVariants(
+  variants: VariantRecord[],
+  sizedCategories: ReadonlySet<string> = new Set(),
+): ProductRecord[] {
   const cards: ProductRecord[] = [];
   // Grouped cards, keyed by the group value; preserves first-seen order.
   const groups = new Map<string, ProductRecord>();
@@ -44,6 +53,7 @@ export function groupVariants(variants: VariantRecord[]): ProductRecord[] {
           id: `group-${slugify(variant.group)}`,
           title: variant.group,
           category: variant.category,
+          sized: sizedCategories.has(variant.category),
           variants: [],
         };
         groups.set(variant.group, card);
@@ -55,6 +65,7 @@ export function groupVariants(variants: VariantRecord[]): ProductRecord[] {
         id: variant.id,
         title: variant.name,
         category: variant.category,
+        sized: sizedCategories.has(variant.category),
         variants: [toVariantRecord(variant)],
       });
     }
@@ -81,11 +92,16 @@ export async function getProducts(): Promise<{
   products: ProductRecord[];
   categories: string[];
 }> {
-  const [variants, categories] = await Promise.all([
+  const [variants, categories, sizedNames] = await Promise.all([
     listVariants(),
     listCategories(),
+    listSizedCategoryNames(),
   ]);
-  const products = groupVariants(variants);
+  // `sizedNames === null` means the "Product Categories" database isn't
+  // configured yet — fall back to the built-in list so behaviour is unchanged
+  // until the atelier populates and enables the Notion source.
+  const sizedCategories = new Set(sizedNames ?? SIZED_CATEGORY_NAMES);
+  const products = groupVariants(variants, sizedCategories);
 
   return { products, categories: visibleCategories(categories, products) };
 }
