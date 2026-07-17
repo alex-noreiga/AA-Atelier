@@ -18,33 +18,28 @@ Order Tracking Pipeline (which actually had `First/Second Deposit …`, not thos
 names) so the deposit charge + balance write-back were **broken against the real
 DB**. Per the atelier's real flow (deposit → deposit → balance), everything a
 customer pays online now lives on the **invoice** and all three stages are payable
-online. The order row keeps only the `Invoices` relation — no deposit fields.
-A single endpoint `POST /orders/:n/payments/:stage` (`stage ∈ {first_deposit,
-second_deposit, balance}`) serves all three.
+online via a single endpoint `POST /orders/:n/payments/:stage` (`stage ∈
+{first_deposit, second_deposit, balance}`). The order row keeps **only** the
+`Invoices` relation for finances — `orders.schema.ts` has no deposit constants
+(the only code using the deposit field names is `invoice.schema.ts`, against the
+**invoices & payments** data source).
 
-**Follow-up (2026-07): removed the dead Client CRM `Total Deposits` rollup.** That
-rollup summed a deposit **number field on the order** that this migration deleted,
-so once the field was gone it pointed at a missing target and rendered blank. The
-CRM only relates to Order Tracking (not to `invoices & payments`, where the deposit
-amounts now live), and **no app code reads `Total Deposits`** (the CRM is
-write-only from the app), so the column was dropped rather than rebuilt as a
-two-hop rollup. If a per-client deposit total is ever wanted again, add a
-deposits-sum formula on `invoices & payments`, a rollup on the order pulling it via
-the `Invoices` relation, then repoint a CRM rollup through `Orders`.
+Two later cleanups finished squaring the Notion schema with that intent:
 
-**Follow-up (2026-07-17): removed five orphaned deposit fields from the order.**
-A later re-examination of the Order Tracking Pipeline found the order still carried
-`First Deposit Amount`, `First Deposit Paid`, `First Deposit Session Id`,
-`Second Deposit Amount`, and `Second Deposit Paid` — parallel copies of the invoice
-fields that survived this migration (the earlier cleanup deleted a different, older
-deposit number field, so these were missed both by the migration and by the initial
-audit). They were orphaned: `orders.schema.ts` has no deposit constants and no app
-code reads/writes them on the order (the only code using these names is
-`invoice.schema.ts`, against the **invoices & payments** data source). One test
-order still held stale fossil values (`First Deposit Amount=200 / Paid / a
-`cs_test_…` session id`) from the old pre-migration write path. All five were
-dropped, so the order row now genuinely keeps **only** the `Invoices` relation for
-finances, as intended above.
+- **Removed the dead Client CRM `Total Deposits` rollup** — it summed a deposit
+  number field on the order that the migration deleted, so it pointed at a missing
+  target and rendered blank. The CRM only relates to Order Tracking (not to
+  `invoices & payments`, where the amounts now live) and **no app code reads it**
+  (the CRM is write-only from the app), so it was dropped, not rebuilt. To restore
+  a per-client deposit total: add a deposits-sum formula on `invoices & payments`,
+  a rollup on the order pulling it via the `Invoices` relation, then repoint a CRM
+  rollup through `Orders`.
+- **Removed five orphaned deposit fields** the order still carried
+  (`First/Second Deposit Amount`, `First/Second Deposit Paid`, `First Deposit
+Session Id`) — parallel copies of the invoice fields that the migration missed
+  (the earlier pass deleted a different, older deposit number field). Nothing read
+  or wrote them on the order; one test order held stale fossil values from the old
+  write path. Gone now, so the order genuinely keeps only the `Invoices` relation.
 
 ## The pre-existing Notion model (do not recreate)
 

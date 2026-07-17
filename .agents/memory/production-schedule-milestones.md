@@ -51,9 +51,9 @@ due date that's today/past clamps every milestone to the due date.
 
 The stage list is read **live** from Notion (`fetchLiveOrderStages`), never
 hardcoded — so it tracks the atelier's edits (same rule as everywhere else, see
-`notion-status-filters.md`). The milestone's `Stage` is written to a Notion
-**select** property, and Notion auto-creates the option on first write, so no
-stage constant is baked into the block builder either.
+`notion-status-filters.md`). The milestone's `Production Stage` is written to a
+Notion **select** property, and Notion auto-creates the option on first write, so
+no stage constant is baked into the block builder either.
 
 ## Idempotency & rescheduling
 
@@ -101,7 +101,7 @@ and the integration is shared with the database, or the run no-ops / 401s.
 ## One-time Notion setup
 
 - **Order Tracking Pipeline** (the orders DB): add `Due Date` (date) +
-  `Milestones Generated` (checkbox). Property names in `lib/notion/schema.ts`.
+  `Milestones Generated` (checkbox). Property names in `lib/notion/orders.schema.ts`.
 - **Production Schedule**: add `Production Stage` (select) + `Order` (relation →
   Order Tracking Pipeline). Existing `Project / Dress Name`, `Status`, and
   `Target Completion Date` are reused. (`Production Stage` is the stage label —
