@@ -119,8 +119,10 @@ export async function listCategories(
         },
         'Size-chart "Item Type" values are missing from the live Notion options ' +
           "— a category was likely renamed or removed, so those garments will " +
-          "silently lose their size chart. Update SIZED_CATEGORIES in " +
-          "artifacts/web-app/src/pages/shop.tsx (or restore the Notion option).",
+          "silently lose their size chart. Update SIZED_CATEGORY_NAMES in " +
+          "artifacts/api-server/src/lib/config-audit.ts (or restore the Notion " +
+          "option). This fallback only runs when the Product Categories database " +
+          "is unconfigured; the relation-driven path doesn't drift.",
       );
     }
     cachedCategories = { categories, fetchedAt: Date.now() };

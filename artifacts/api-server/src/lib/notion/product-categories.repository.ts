@@ -1,26 +1,30 @@
 // Reads the optional "Product Categories" database — the data-driven source for
-// which shop categories show a size chart.
+// the shop's category list, ordering, and which categories show a size chart.
 //
 // Returns `null` when the database is not configured (the env var is unset), so
-// the shop service knows to fall back to its built-in sized-category list. When
-// configured, returns the category names whose "Show size guide" is ticked.
-// Same short-TTL cache + cache-fallback-on-error pattern as the inventory
-// repository, since category flags change rarely.
+// the shop service knows to fall back to the inventory "Item Type" options + its
+// built-in sized-category list. When configured, returns one record per category
+// (id, name, sized flag, sort). Same short-TTL cache + cache-fallback-on-error
+// pattern as the inventory repository, since category rows change rarely.
 
 import {
   getProductCategoriesNotionClient,
   type NotionClient,
 } from "./client.js";
 import {
-  extractSizedCategoryNames,
+  extractCategoryRecords,
+  type CategoryRecord,
   type NotionCategoriesQueryResponse,
 } from "./product-categories.schema.js";
 
 const CATEGORIES_CACHE_TTL_MS = 60_000;
-let cachedSizedNames: { names: string[]; fetchedAt: number } | null = null;
+let cachedRecords: { records: CategoryRecord[]; fetchedAt: number } | null =
+  null;
 
-async function queryAllSizedNames(client: NotionClient): Promise<string[]> {
-  const names: string[] = [];
+async function queryAllCategoryRecords(
+  client: NotionClient,
+): Promise<CategoryRecord[]> {
+  const records: CategoryRecord[] = [];
   let cursor: string | null = null;
 
   do {
@@ -42,39 +46,40 @@ async function queryAllSizedNames(client: NotionClient): Promise<string[]> {
     }
 
     const data = (await response.json()) as NotionCategoriesQueryResponse;
-    names.push(...extractSizedCategoryNames(data.results));
+    records.push(...extractCategoryRecords(data.results));
     cursor = data.has_more ? data.next_cursor : null;
   } while (cursor);
 
-  return names;
+  return records;
 }
 
 /**
- * The category `Name`s whose "Show size guide" checkbox is ticked, or `null` when
- * the "Product Categories" database is not configured
- * (`NOTION_PRODUCT_CATEGORIES_DATABASE_ID` unset) — the caller then uses its
- * built-in fallback. Cached for {@link CATEGORIES_CACHE_TTL_MS}; falls back to the
- * cached list on error (a Notion blip must not drop every size chart).
+ * The shop's category records (id, name, sized flag, sort), or `null` when the
+ * "Product Categories" database is not configured
+ * (`NOTION_PRODUCT_CATEGORIES_DATABASE_ID` unset) — the caller then falls back to
+ * the inventory "Item Type" select. Cached for {@link CATEGORIES_CACHE_TTL_MS};
+ * falls back to the cached list on error (a Notion blip must not drop every size
+ * chart or empty the shop's filter bar).
  */
-export async function listSizedCategoryNames(
+export async function listCategoryRecords(
   client: NotionClient = getProductCategoriesNotionClient(),
-): Promise<string[] | null> {
+): Promise<CategoryRecord[] | null> {
   if (!client.databaseId) return null;
 
   if (
-    cachedSizedNames &&
-    Date.now() - cachedSizedNames.fetchedAt < CATEGORIES_CACHE_TTL_MS
+    cachedRecords &&
+    Date.now() - cachedRecords.fetchedAt < CATEGORIES_CACHE_TTL_MS
   ) {
-    return cachedSizedNames.names;
+    return cachedRecords.records;
   }
 
   try {
-    const names = await queryAllSizedNames(client);
-    cachedSizedNames = { names, fetchedAt: Date.now() };
-    return names;
+    const records = await queryAllCategoryRecords(client);
+    cachedRecords = { records, fetchedAt: Date.now() };
+    return records;
   } catch (error) {
-    if (cachedSizedNames) {
-      return cachedSizedNames.names;
+    if (cachedRecords) {
+      return cachedRecords.records;
     }
     throw error;
   }

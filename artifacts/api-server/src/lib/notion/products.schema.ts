@@ -10,7 +10,8 @@
 // service layer; each row becomes a selectable variant.
 
 const PRODUCT_NAME_PROPERTY = "Item Name"; // title
-const PRODUCT_TYPE_PROPERTY = "Item Type"; // select
+const PRODUCT_TYPE_PROPERTY = "Item Type"; // select — fallback category label
+const PRODUCT_CATEGORY_RELATION_PROPERTY = "Category"; // relation → Product Categories
 const PRODUCT_PRICE_PROPERTY = "Listed Price"; // number
 const PRODUCT_STATUS_PROPERTY = "Status"; // status
 const PRODUCT_QTY_AVAILABLE_PROPERTY = "Quantity Available"; // formula (number)
@@ -44,8 +45,14 @@ export interface VariantRecord {
   photos: string[];
   sizes: SizeOptionRecord[];
   quantityAvailable?: number;
-  /** Item Type — used as the card category. */
+  /** Fallback card category — the "Item Type" select value. Superseded by the
+   * `Category` relation (via `categoryId`) when the Product Categories database is
+   * configured and the row is linked. */
   category: string;
+  /** The linked Product Categories page id from the `Category` relation, or absent
+   * when the row isn't related. The service joins this to a category record to get
+   * the authoritative name + sized flag; a missing link falls back to `category`. */
+  categoryId?: string;
   /** Website Group value, or null when the row stands alone. */
   group: string | null;
 }
@@ -94,6 +101,7 @@ type NotionPropertyValue =
   | { type: "title"; title: Array<{ plain_text: string }> }
   | { type: "rich_text"; rich_text: Array<{ plain_text: string }> }
   | { type: "select"; select: { name: string } | null }
+  | { type: "relation"; relation: Array<{ id: string }> }
   | { type: "multi_select"; multi_select: Array<{ name: string }> }
   | { type: "status"; status: { name: string } | null }
   | { type: "number"; number: number | null }
@@ -179,6 +187,16 @@ function extractSelect(page: NotionInventoryPage, name: string): string | null {
   const p = page.properties[name];
   if (p?.type !== "select") return null;
   return p.select?.name ?? null;
+}
+
+/** The first related page id of a relation property, or null when unrelated. */
+function extractRelationFirstId(
+  page: NotionInventoryPage,
+  name: string,
+): string | null {
+  const p = page.properties[name];
+  if (p?.type !== "relation") return null;
+  return p.relation[0]?.id ?? null;
 }
 
 function extractStatus(page: NotionInventoryPage, name: string): string | null {
@@ -271,6 +289,10 @@ export function extractVariant(page: NotionInventoryPage): VariantRecord {
   );
   const price = extractNumber(page, PRODUCT_PRICE_PROPERTY);
   const description = extractRichText(page, PRODUCT_NOTES_PROPERTY);
+  const categoryId = extractRelationFirstId(
+    page,
+    PRODUCT_CATEGORY_RELATION_PROPERTY,
+  );
 
   return {
     id: page.id,
@@ -285,6 +307,7 @@ export function extractVariant(page: NotionInventoryPage): VariantRecord {
     ),
     ...(quantityAvailable !== null ? { quantityAvailable } : {}),
     category: extractSelect(page, PRODUCT_TYPE_PROPERTY) ?? "",
+    ...(categoryId ? { categoryId } : {}),
     group: extractSelect(page, PRODUCT_GROUP_PROPERTY),
   };
 }

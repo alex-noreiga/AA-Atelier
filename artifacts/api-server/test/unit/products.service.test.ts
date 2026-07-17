@@ -2,11 +2,13 @@ import { describe, it, expect } from "vitest";
 import {
   groupVariants,
   visibleCategories,
+  resolveFromCategories,
 } from "../../src/services/products.service.js";
 import type {
   ProductRecord,
   VariantRecord,
 } from "../../src/lib/notion/products.schema.js";
+import type { CategoryRecord } from "../../src/lib/notion/product-categories.schema.js";
 
 function card(category: string): ProductRecord {
   return {
@@ -122,5 +124,71 @@ describe("groupVariants", () => {
   it("defaults `sized` to false when no sized-category set is passed", () => {
     const [product] = groupVariants([variant({ category: "Dress" })]);
     expect(product.sized).toBe(false);
+  });
+});
+
+describe("resolveFromCategories", () => {
+  const records: CategoryRecord[] = [
+    { id: "cat-rtw", name: "Ready to Wear", sized: false, sort: 1 },
+    { id: "cat-dress", name: "Dress", sized: true, sort: 2 },
+    { id: "cat-soakers", name: "Skate Soakers", sized: false, sort: 3 },
+  ];
+
+  it("resolves each card's category + sized flag from the linked category record", () => {
+    const { products } = resolveFromCategories(
+      [
+        variant({ id: "v-dress", category: "stale", categoryId: "cat-dress" }),
+        variant({
+          id: "v-soaker",
+          category: "stale",
+          categoryId: "cat-soakers",
+        }),
+      ],
+      records,
+    );
+
+    const byId = Object.fromEntries(
+      products.map((p) => [p.id, { category: p.category, sized: p.sized }]),
+    );
+    // The relation wins over the (stale) Item Type label.
+    expect(byId["v-dress"]).toEqual({ category: "Dress", sized: true });
+    expect(byId["v-soaker"]).toEqual({
+      category: "Skate Soakers",
+      sized: false,
+    });
+  });
+
+  it("orders the chip list by Sort, narrowed to stocked categories", () => {
+    const { categories } = resolveFromCategories(
+      [
+        variant({ id: "v-soaker", categoryId: "cat-soakers" }),
+        variant({ id: "v-dress", categoryId: "cat-dress" }),
+      ],
+      records,
+    );
+    // Sorted by Sort (Dress=2 before Skate Soakers=3); "Ready to Wear" (sort 1)
+    // is dropped because nothing is stocked in it.
+    expect(categories).toEqual(["Dress", "Skate Soakers"]);
+  });
+
+  it("falls back to the Item Type label when a row has no category link", () => {
+    const { products, categories } = resolveFromCategories(
+      [variant({ id: "v-x", category: "Costume" })],
+      records,
+    );
+    expect(products[0].category).toBe("Costume");
+    expect(products[0].sized).toBe(false);
+    // "Costume" isn't a category record, so it yields no chip.
+    expect(categories).toEqual([]);
+  });
+
+  it("falls back when the linked category id is unknown (deleted category)", () => {
+    const { products } = resolveFromCategories(
+      [variant({ id: "v-x", category: "Dress", categoryId: "cat-gone" })],
+      records,
+    );
+    expect(products[0].category).toBe("Dress");
+    // Still sized, because the fallback label "Dress" is in the sized set.
+    expect(products[0].sized).toBe(true);
   });
 });
