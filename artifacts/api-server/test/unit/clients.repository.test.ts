@@ -91,6 +91,42 @@ describe("upsertClientByEmail", () => {
     expect(body.properties["Last Contact"].date.start).toMatch(ISO_DATE);
   });
 
+  it("creates a new client with the given status (e.g. a contact-form Lead)", async () => {
+    const client = makeFakeClient((path) => {
+      if (isQuery(path)) return jsonResponse({ results: [] });
+      if (path === "/v1/pages") return jsonResponse({ id: "client-new" });
+      throw new Error(`unexpected ${path}`);
+    });
+
+    await upsertClientByEmail(
+      { fullName: "Ada", email: "ada@example.com", status: "Lead" },
+      client,
+    );
+
+    const create = client.calls.find((c) => c.path === "/v1/pages")!;
+    const body = JSON.parse(create.init!.body as string);
+    expect(body.properties["Status"].status.name).toBe("Lead");
+  });
+
+  it("names a new client by its email when no name is given (back-in-stock)", async () => {
+    const client = makeFakeClient((path) => {
+      if (isQuery(path)) return jsonResponse({ results: [] });
+      if (path === "/v1/pages") return jsonResponse({ id: "client-new" });
+      throw new Error(`unexpected ${path}`);
+    });
+
+    await upsertClientByEmail(
+      { fullName: "   ", email: "ada@example.com", status: "Lead" },
+      client,
+    );
+
+    const create = client.calls.find((c) => c.path === "/v1/pages")!;
+    const body = JSON.parse(create.init!.body as string);
+    expect(body.properties["Client Name"].title[0].text.content).toBe(
+      "ada@example.com",
+    );
+  });
+
   it("omits Phone when no phone number is provided", async () => {
     const client = makeFakeClient((path) => {
       if (isQuery(path)) return jsonResponse({ results: [] });

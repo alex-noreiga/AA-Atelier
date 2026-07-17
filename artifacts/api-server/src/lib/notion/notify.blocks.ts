@@ -15,6 +15,7 @@ import {
   CONTACT_EMAIL_PROPERTY,
   CONTACT_STAGE_PROPERTY,
   CONTACT_SUBJECT_PROPERTY,
+  contactClientRelation,
 } from "./contact.blocks.js";
 
 // Live-schema property names (a Notion rename is a one-line change here). The
@@ -30,9 +31,14 @@ export const NOTIFY_REQUEST_TYPE = "Back in stock";
 /** Validated back-in-stock payload, derived from the OpenAPI contract. */
 export type CreateNotifyInput = z.infer<typeof CreateBackInStockRequestBody>;
 
-/** Notion page `properties` for a new back-in-stock request. */
+/**
+ * Notion page `properties` for a new back-in-stock request. When `clientPageId`
+ * is given, the request is linked to the customer's Client CRM record via the
+ * shared `Client` relation.
+ */
 export function buildNotifyProperties(
   data: CreateNotifyInput,
+  clientPageId?: string,
 ): Record<string, unknown> {
   // The subject names the exact piece, so the inbox row reads on its own.
   const subject = data.size
@@ -55,6 +61,7 @@ export function buildNotifyProperties(
     [NOTIFY_ITEM_PROPERTY]: {
       rich_text: [{ text: { content: data.item } }],
     },
+    ...contactClientRelation(clientPageId),
   };
 
   // Absent when the whole variant is sold out rather than one size band.

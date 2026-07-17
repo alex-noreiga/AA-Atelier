@@ -10,6 +10,9 @@ vi.mock("../../src/lib/notion/orders.repository.js", () => ({
 vi.mock("../../src/lib/notion/measurement-change.repository.js", () => ({
   createMeasurementChangeRequest: vi.fn(),
 }));
+vi.mock("../../src/lib/notion/clients.repository.js", () => ({
+  upsertClientByEmail: vi.fn(),
+}));
 vi.mock("../../src/lib/resend/send.js", () => ({
   sendEmailBestEffort: vi.fn(),
 }));
@@ -17,6 +20,7 @@ vi.mock("../../src/lib/resend/send.js", () => ({
 import { submitMeasurementChangeRequest } from "../../src/services/measurement-change.service.js";
 import { findOrderForMeasurementChange } from "../../src/lib/notion/orders.repository.js";
 import { createMeasurementChangeRequest } from "../../src/lib/notion/measurement-change.repository.js";
+import { upsertClientByEmail } from "../../src/lib/notion/clients.repository.js";
 import { sendEmailBestEffort } from "../../src/lib/resend/send.js";
 import {
   NotFoundError,
@@ -27,6 +31,7 @@ import {
 
 const mockFind = vi.mocked(findOrderForMeasurementChange);
 const mockWrite = vi.mocked(createMeasurementChangeRequest);
+const mockUpsertClient = vi.mocked(upsertClientByEmail);
 const mockSend = vi.mocked(sendEmailBestEffort);
 
 // Stages ordered so "Cutting/Pinning" (the default lock point) sits mid-list.
@@ -85,6 +90,25 @@ describe("submitMeasurementChangeRequest — identity gate", () => {
     const row = mockWrite.mock.calls[0][0];
     expect(row.orderNumber).toBe("000002");
     expect(row.emailVerified).toBe(true);
+  });
+
+  it("links the request to the customer's Client CRM record (dedupe by email)", async () => {
+    mockFind.mockResolvedValue(preProduction("ada@example.com"));
+    mockUpsertClient.mockResolvedValue("client-5");
+
+    await submitMeasurementChangeRequest(
+      "000002",
+      measurementChangeInput({ email: "ada@example.com" }),
+    );
+
+    // The order customer is already Active; upsert dedupes by email (no status
+    // override, so a new row would default to Active).
+    expect(mockUpsertClient).toHaveBeenCalledWith({
+      fullName: "",
+      email: "ada@example.com",
+    });
+    // The resolved client page id is threaded into the inbox-row write.
+    expect(mockWrite.mock.calls[0][2]).toBe("client-5");
   });
 
   it("accepts a legacy order (no stored email) but flags it unverified", async () => {

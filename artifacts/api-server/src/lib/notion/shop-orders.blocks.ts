@@ -19,6 +19,7 @@ export const SHOP_ORDER_NAME_PROPERTY = "Customer Name"; // rich_text
 export const SHOP_ORDER_TOTAL_PROPERTY = "Total"; // number
 export const SHOP_ORDER_STATUS_PROPERTY = "Status"; // status (workflow)
 export const SHOP_ORDER_SHIPPING_PROPERTY = "Shipping Address"; // rich_text
+export const SHOP_ORDER_CLIENT_PROPERTY = "Client"; // relation -> Client CRM
 
 /**
  * A human-readable shop order number the customer can track their order by
@@ -90,9 +91,14 @@ interface AddressParts {
   country?: string | null;
 }
 
-/** Notion page `properties` for a paid shop order. */
+/**
+ * Notion page `properties` for a paid shop order. When `clientPageId` is given
+ * (the webhook upserted a Client CRM record for the buyer's email), the order is
+ * linked to it through the `Client` relation — the same pattern as custom orders.
+ */
 export function buildShopOrderProperties(
   session: Stripe.Checkout.Session,
+  clientPageId?: string,
 ): Record<string, unknown> {
   const email = session.customer_details?.email ?? undefined;
   const name = session.customer_details?.name ?? undefined;
@@ -135,6 +141,11 @@ export function buildShopOrderProperties(
   if (shipping) {
     properties[SHOP_ORDER_SHIPPING_PROPERTY] = {
       rich_text: [{ text: { content: shipping } }],
+    };
+  }
+  if (clientPageId) {
+    properties[SHOP_ORDER_CLIENT_PROPERTY] = {
+      relation: [{ id: clientPageId }],
     };
   }
 

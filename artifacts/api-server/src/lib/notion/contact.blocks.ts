@@ -20,13 +20,35 @@ export const CONTACT_STAGE_PROPERTY = "Stage"; // select
 export const CONTACT_DEFAULT_STAGE = "New";
 export const CONTACT_TYPE_PROPERTY = "Request type"; // select
 const CONTACT_REQUEST_TYPE = "Inquiry";
+// Relation to the Client CRM database. Shared by all three writers to this
+// database (like CONTACT_EMAIL_PROPERTY) so the row links to the canonical
+// customer record instead of only re-typing name/email as free text.
+export const CONTACT_CLIENT_PROPERTY = "Client"; // relation -> Client CRM
+
+/**
+ * The `Client` relation property for a contact-message row, or `{}` when no CRM
+ * client was resolved (CRM unconfigured, or the upsert failed / was skipped).
+ * Spread into any of the three writers' properties so they can't drift.
+ */
+export function contactClientRelation(
+  clientPageId?: string,
+): Record<string, unknown> {
+  return clientPageId
+    ? { [CONTACT_CLIENT_PROPERTY]: { relation: [{ id: clientPageId }] } }
+    : {};
+}
 
 /** Validated contact-message payload, derived from the OpenAPI contract. */
 export type CreateContactInput = z.infer<typeof CreateContactMessageBody>;
 
-/** Notion page `properties` for a new contact message. */
+/**
+ * Notion page `properties` for a new contact message. When `clientPageId` is
+ * given (the contact flow upserted a Client CRM record for this email), the
+ * message is linked to it through the `Client` relation.
+ */
 export function buildContactProperties(
   data: CreateContactInput,
+  clientPageId?: string,
 ): Record<string, unknown> {
   const properties: Record<string, unknown> = {
     [CONTACT_SUBJECT_PROPERTY]: {
@@ -47,6 +69,7 @@ export function buildContactProperties(
     [CONTACT_TYPE_PROPERTY]: {
       select: { name: CONTACT_REQUEST_TYPE },
     },
+    ...contactClientRelation(clientPageId),
   };
 
   if (data.phone) {

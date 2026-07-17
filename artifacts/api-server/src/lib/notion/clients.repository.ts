@@ -1,9 +1,12 @@
-// Client CRM upsert, keyed on the customer's email. Called best-effort from the
-// order flow so the CRM stays current without manual data entry: an existing
-// client (same email) is reused — deduping repeat customers — and only its
-// `Last Contact` is refreshed; a new email creates a client row. The order↔client
-// link itself is written on the *order* side (the synced `Client` relation, see
-// `blocks.ts`), which auto-populates the CRM's `Orders` relation.
+// Client CRM upsert, keyed on the customer's email. Called best-effort from
+// every customer touchpoint — custom orders, shop orders, contact-form
+// inquiries, back-in-stock and measurement-change requests — so the CRM stays
+// the single customer record without manual data entry: an existing client
+// (same email) is reused — deduping repeat customers — and only its
+// `Last Contact` is refreshed; a new email creates a client row. The
+// row↔client link itself is written on the *other* side (a `Client` relation on
+// the order / shop-order / contact-message page, see the respective `blocks.ts`),
+// which auto-populates the CRM's reverse relation.
 //
 // The `Client CRM` database id comes from the optional
 // `NOTION_CLIENT_CRM_DATABASE_ID`. When it's unset the client's `databaseId` is
@@ -18,13 +21,18 @@ export const CLIENT_PHONE_PROPERTY = "Phone"; // phone_number
 export const CLIENT_STATUS_PROPERTY = "Status"; // status
 export const CLIENT_LAST_CONTACT_PROPERTY = "Last Contact"; // date
 
-// A client who reached us by placing an order is Active (not a cold Lead).
+// Default status for a newly-created client. A customer who reached us by
+// placing an order (custom or shop) is Active; a contact-form inquiry or a
+// back-in-stock request is a cold Lead — the caller passes `status` to say which.
 const NEW_CLIENT_STATUS = "Active";
 
 export interface ClientUpsertInput {
   fullName: string;
   email: string;
   phone?: string;
+  /** Status for a *new* client row; defaults to "Active". Ignored for an
+   *  existing client — its status is left as the atelier maintains it. */
+  status?: string;
 }
 
 interface CrmQueryResponse {
@@ -92,12 +100,17 @@ export async function upsertClientByEmail(
     return existing.id;
   }
 
+  // Some entry points (a back-in-stock request) know only the email; fall back
+  // to it for the title so the CRM row is never nameless.
+  const clientName = input.fullName.trim() || email;
   const properties: Record<string, unknown> = {
     [CLIENT_NAME_PROPERTY]: {
-      title: [{ text: { content: input.fullName } }],
+      title: [{ text: { content: clientName } }],
     },
     [CLIENT_EMAIL_PROPERTY]: { email },
-    [CLIENT_STATUS_PROPERTY]: { status: { name: NEW_CLIENT_STATUS } },
+    [CLIENT_STATUS_PROPERTY]: {
+      status: { name: input.status ?? NEW_CLIENT_STATUS },
+    },
     [CLIENT_LAST_CONTACT_PROPERTY]: { date: { start: today() } },
   };
   const phone = input.phone?.trim();

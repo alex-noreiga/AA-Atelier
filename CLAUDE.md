@@ -284,7 +284,11 @@ two hard-won lessons captured in `.agents/memory/`:
    inbox by request type rather than reading it out of free text. The property names
    these writers share are exported from `contact.blocks.ts` and imported by
    `notify.blocks.ts` / `measurement-change.blocks.ts` — keep it that way so they
-   can't drift.
+   can't drift. All three also best-effort **link to the Client CRM** (the shared
+   `Client` relation — `CONTACT_CLIENT_PROPERTY`), via the same `upsertClientByEmail`
+   the order flow uses: a contact inquiry / back-in-stock request creates a `Lead`,
+   a measurement change reuses the order's existing (`Active`) client. See
+   `.agents/memory/notion-p2-duplicates.md`.
 
 Auth: the server reads `NOTION_API_KEY` and `NOTION_ORDERS_DATABASE_ID` from
 environment variables (via `createNotionClient` in `notion/client.ts`, read at
@@ -774,12 +778,19 @@ and in the maintainer's env without edits.
   same secret doubles as the `?secret=` query token for the on-demand Notion
   button (`GET /api/cron/generate-milestones/run`).
   Optionally `NOTION_CLIENT_CRM_DATABASE_ID` (the "Client CRM" database): when set,
-  a new custom order **best-effort** upserts a client record there (deduped by
-  email) and links the order via the `Client ⇄ Orders` relation; unset ⇒ CRM
-  linking is skipped and orders are unchanged. Code:
+  every customer touchpoint **best-effort** upserts a client record there (deduped by
+  email) and links back to it — a new custom order, a paid **shop order**, and the
+  three **contact-message** writers (inquiry / back-in-stock / measurement change),
+  each via a `Client` relation on its row; unset ⇒ CRM linking is skipped and those
+  writes are unchanged. New clients are `Active` for buyers / order customers and
+  `Lead` for inquiries and back-in-stock requests; an existing client's status is
+  left untouched. Code:
   `artifacts/api-server/src/lib/notion/clients.repository.ts`
-  (`upsertClientByEmail`), wired from `orders.service.ts`; the order's `Client`
-  relation is written by `orders.blocks.ts`. **Appointment scheduling** instead uses Google: `GOOGLE_SERVICE_ACCOUNT_KEY` (the full
+  (`upsertClientByEmail`), wired from `orders.service.ts`, `checkout.service.ts`
+  (`recordPaidOrder`), and the contact/notify/measurement-change services; the
+  `Client` relation is written by each domain's `*.blocks.ts`. The Shop Orders and
+  Website Contact Messages databases must each have a `Client` relation to Client CRM
+  (see `.agents/memory/notion-p2-duplicates.md`). **Appointment scheduling** instead uses Google: `GOOGLE_SERVICE_ACCOUNT_KEY` (the full
   service-account JSON key, with domain-wide delegation authorized for the
   Calendar scope) and `APPOINTMENT_SHEET_ID` (the working-hours Google Sheet,
   shared with the service-account email; optional `APPOINTMENT_SHEET_RANGE`,

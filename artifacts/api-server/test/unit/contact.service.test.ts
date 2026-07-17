@@ -4,15 +4,20 @@ import { contactInput } from "@workspace/test-fixtures";
 vi.mock("../../src/lib/notion/contact.repository.js", () => ({
   createContactMessage: vi.fn(),
 }));
+vi.mock("../../src/lib/notion/clients.repository.js", () => ({
+  upsertClientByEmail: vi.fn(),
+}));
 vi.mock("../../src/lib/resend/send.js", () => ({
   sendEmailBestEffort: vi.fn(),
 }));
 
 import { submitContactMessage } from "../../src/services/contact.service.js";
 import { createContactMessage } from "../../src/lib/notion/contact.repository.js";
+import { upsertClientByEmail } from "../../src/lib/notion/clients.repository.js";
 import { sendEmailBestEffort } from "../../src/lib/resend/send.js";
 
 const mockCreate = vi.mocked(createContactMessage);
+const mockUpsertClient = vi.mocked(upsertClientByEmail);
 const mockSend = vi.mocked(sendEmailBestEffort);
 
 afterEach(() => {
@@ -34,6 +39,32 @@ describe("submitContactMessage", () => {
     expect(mockCreate).toHaveBeenCalledOnce();
     expect(mockSend).toHaveBeenCalledOnce();
     expect(mockSend.mock.calls[0][0].to).toBe("grace@example.com");
+  });
+
+  it("upserts a Client CRM record (as a Lead) and links the message to it", async () => {
+    mockUpsertClient.mockResolvedValue("client-42");
+    const input = contactInput({ email: "grace@example.com" });
+
+    await submitContactMessage(input);
+
+    expect(mockUpsertClient).toHaveBeenCalledWith({
+      fullName: input.name,
+      email: "grace@example.com",
+      phone: input.phone,
+      status: "Lead",
+    });
+    // The resolved client page id is threaded into the message write.
+    expect(mockCreate).toHaveBeenCalledWith(input, undefined, "client-42");
+  });
+
+  it("still files the message (unlinked) when the CRM upsert fails", async () => {
+    mockUpsertClient.mockRejectedValue(new Error("CRM down"));
+    const input = contactInput({ email: "grace@example.com" });
+
+    const result = await submitContactMessage(input);
+
+    expect(result).toEqual({ success: true });
+    expect(mockCreate).toHaveBeenCalledWith(input, undefined, undefined);
   });
 
   it("also notifies the atelier inbox (reply-to the customer) when configured", async () => {

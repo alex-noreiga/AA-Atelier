@@ -21,7 +21,9 @@
 import { findOrderForMeasurementChange } from "../lib/notion/orders.repository.js";
 import { createMeasurementChangeRequest } from "../lib/notion/measurement-change.repository.js";
 import type { CreateMeasurementChangeInput } from "../lib/notion/measurement-change.blocks.js";
+import { upsertClientByEmail } from "../lib/notion/clients.repository.js";
 import { measurementsLocked } from "./measurement-lock.js";
+import { logger } from "../lib/logger.js";
 import {
   NotFoundError,
   ForbiddenError,
@@ -83,12 +85,34 @@ export async function submitMeasurementChangeRequest(
     );
   }
 
+  // Best-effort: link the request to the customer's Client CRM record (dedupe by
+  // email). This customer placed the order, so a new CRM row is "Active"; the
+  // upsert almost always finds the existing client the order flow created. Never
+  // fails the request; no-ops when CRM is unconfigured.
+  let clientPageId: string | undefined;
+  try {
+    clientPageId =
+      (await upsertClientByEmail({
+        fullName: "",
+        email: input.email,
+      })) ?? undefined;
+  } catch (err) {
+    logger.warn(
+      { err },
+      "Failed to upsert Client CRM record; filing the measurement-change request without a client link",
+    );
+  }
+
   const trimmedOrderNumber = orderNumber.trim();
-  await createMeasurementChangeRequest({
-    orderNumber: trimmedOrderNumber,
-    emailVerified,
-    request: input,
-  });
+  await createMeasurementChangeRequest(
+    {
+      orderNumber: trimmedOrderNumber,
+      emailVerified,
+      request: input,
+    },
+    undefined,
+    clientPageId,
+  );
 
   // Best-effort emails; a mail failure must not fail the request. A measurement
   // change is order-related, so it uses the "orders" sender/inbox.

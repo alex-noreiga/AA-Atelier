@@ -9,6 +9,11 @@ vi.mock("../../src/lib/notion/shop-orders.repository.js", () => ({
   findOrderBySessionId: vi.fn(),
   createShopOrder: vi.fn(),
 }));
+// The CRM upsert is a best-effort side effect on the webhook path; mock it so
+// the tests drive the link/skip/failure branches without touching Notion.
+vi.mock("../../src/lib/notion/clients.repository.js", () => ({
+  upsertClientByEmail: vi.fn(),
+}));
 // The confirmation email is a best-effort side effect; mock the transport so no
 // mail is attempted and the dispatch can be asserted.
 vi.mock("../../src/lib/resend/send.js", () => ({
@@ -28,12 +33,14 @@ import {
   createShopOrder,
   findOrderBySessionId,
 } from "../../src/lib/notion/shop-orders.repository.js";
+import { upsertClientByEmail } from "../../src/lib/notion/clients.repository.js";
 import { sendEmailBestEffort } from "../../src/lib/resend/send.js";
 import type { VariantRecord } from "../../src/lib/notion/products.schema.js";
 
 const mockListVariants = vi.mocked(listVariants);
 const mockFind = vi.mocked(findOrderBySessionId);
 const mockCreate = vi.mocked(createShopOrder);
+const mockUpsertClient = vi.mocked(upsertClientByEmail);
 const mockSend = vi.mocked(sendEmailBestEffort);
 
 function variant(overrides: Partial<VariantRecord> = {}): VariantRecord {
@@ -461,7 +468,53 @@ describe("recordPaidOrder", () => {
     await recordPaidOrder({ id: "cs_1" } as Stripe.Checkout.Session, stripe);
 
     expect(retrieve).toHaveBeenCalledWith("cs_1", { expand: ["line_items"] });
-    expect(mockCreate).toHaveBeenCalledWith(fullSession);
+    // No customer email on this session -> no CRM upsert, no client link.
+    expect(mockUpsertClient).not.toHaveBeenCalled();
+    expect(mockCreate).toHaveBeenCalledWith(fullSession, undefined, undefined);
+  });
+
+  it("upserts the buyer into the Client CRM (Active) and links the order to it", async () => {
+    mockFind.mockResolvedValue(false);
+    mockUpsertClient.mockResolvedValue("client-9");
+    const fullSession = {
+      id: "cs_crm",
+      payment_status: "paid",
+      customer_details: { email: "buyer@example.com", name: "Ada Lovelace" },
+      line_items: { data: [] },
+    } as unknown as Stripe.Checkout.Session;
+    const { stripe, retrieve } = fakeStripe();
+    retrieve.mockResolvedValue(fullSession);
+
+    await recordPaidOrder({ id: "cs_crm" } as Stripe.Checkout.Session, stripe);
+
+    // Dedupe by the buyer's email; a new buyer is an Active client (default).
+    expect(mockUpsertClient).toHaveBeenCalledWith({
+      fullName: "Ada Lovelace",
+      email: "buyer@example.com",
+    });
+    // The resolved client page id is threaded into the shop-order write.
+    expect(mockCreate).toHaveBeenCalledWith(fullSession, undefined, "client-9");
+  });
+
+  it("still records the order (unlinked) when the CRM upsert fails", async () => {
+    mockFind.mockResolvedValue(false);
+    mockUpsertClient.mockRejectedValue(new Error("Notion CRM down"));
+    const fullSession = {
+      id: "cs_crm_fail",
+      payment_status: "paid",
+      customer_details: { email: "buyer@example.com", name: "Ada" },
+      line_items: { data: [] },
+    } as unknown as Stripe.Checkout.Session;
+    const { stripe, retrieve } = fakeStripe();
+    retrieve.mockResolvedValue(fullSession);
+
+    await recordPaidOrder(
+      { id: "cs_crm_fail" } as Stripe.Checkout.Session,
+      stripe,
+    );
+
+    // A CRM failure never fails the webhook; the order is recorded unlinked.
+    expect(mockCreate).toHaveBeenCalledWith(fullSession, undefined, undefined);
   });
 
   it("is idempotent — skips an already-recorded session without retrieving it", async () => {
@@ -514,7 +567,7 @@ describe("recordPaidOrder", () => {
       stripe,
     );
 
-    expect(mockCreate).toHaveBeenCalledWith(fullSession);
+    expect(mockCreate).toHaveBeenCalledWith(fullSession, undefined, undefined);
     // Customer confirmation dispatched, from the orders sender.
     expect(mockSend).toHaveBeenCalledTimes(1);
     const message = mockSend.mock.calls[0][0];

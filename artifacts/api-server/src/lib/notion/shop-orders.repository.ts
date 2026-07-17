@@ -103,16 +103,18 @@ export async function findOrderBySessionId(
   return data.results.length > 0;
 }
 
-/** Create the Notion page for a completed checkout session. */
+/** Create the Notion page for a completed checkout session. When `clientPageId`
+ * is given, the order is linked to that Client CRM record (`Client` relation). */
 export async function createShopOrder(
   session: Stripe.Checkout.Session,
   client: NotionClient = getShopOrdersNotionClient(),
+  clientPageId?: string,
 ): Promise<void> {
   assertConfigured(client);
 
   const body: Record<string, unknown> = {
     parent: { database_id: client.databaseId },
-    properties: buildShopOrderProperties(session),
+    properties: buildShopOrderProperties(session, clientPageId),
     children: buildShopOrderPageBlocks(session),
   };
 

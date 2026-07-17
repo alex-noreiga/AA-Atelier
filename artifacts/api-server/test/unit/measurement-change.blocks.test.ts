@@ -90,4 +90,14 @@ describe("buildMeasurementChangeProperties", () => {
       "Email verified: no (confirm requester) (ada@example.com)",
     );
   });
+
+  it("links to the Client CRM record when a client page id is given", () => {
+    const props = buildMeasurementChangeProperties(row(), "client-3") as any;
+    expect(props.Client).toEqual({ relation: [{ id: "client-3" }] });
+  });
+
+  it("omits the Client relation when no client page id is given", () => {
+    const props = buildMeasurementChangeProperties(row()) as any;
+    expect(props).not.toHaveProperty("Client");
+  });
 });
