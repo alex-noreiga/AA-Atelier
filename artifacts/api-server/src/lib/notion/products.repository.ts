@@ -13,7 +13,6 @@
 import { getInventoryNotionClient, type NotionClient } from "./client.js";
 import {
   PRODUCT_PUBLISH_PROPERTY,
-  extractCategoryOptions,
   extractStatusOptions,
   extractIsPublished,
   extractVariant,
@@ -21,13 +20,10 @@ import {
   type NotionInventoryQueryResponse,
   type VariantRecord,
 } from "./products.schema.js";
-import { logger } from "../logger.js";
-import { SIZED_CATEGORY_NAMES, missingOptionValues } from "../config-audit.js";
 
 const PRODUCTS_CACHE_TTL_MS = 60_000;
 let cachedVariants: { variants: VariantRecord[]; fetchedAt: number } | null =
   null;
-let cachedCategories: { categories: string[]; fetchedAt: number } | null = null;
 
 function assertConfigured(client: NotionClient): void {
   if (!client.databaseId) {
@@ -77,72 +73,13 @@ async function queryAllPublishedPages(
 }
 
 /**
- * The live "Item Type" select options, in the order the atelier arranged them.
- * Read from the database schema (not derived from the rows) so a newly added
- * option is a real, empty category rather than an invisible one — and so the
- * team's ordering is preserved. Cached for {@link PRODUCTS_CACHE_TTL_MS};
- * falls back to the cached list on error, and to an empty list if we've never
- * fetched it (a missing filter bar must not fail the whole shop).
- */
-export async function listCategories(
-  client: NotionClient = getInventoryNotionClient(),
-): Promise<string[]> {
-  assertConfigured(client);
-
-  if (
-    cachedCategories &&
-    Date.now() - cachedCategories.fetchedAt < PRODUCTS_CACHE_TTL_MS
-  ) {
-    return cachedCategories.categories;
-  }
-
-  try {
-    const response = await client.fetch(`/v1/databases/${client.databaseId}`);
-    if (!response.ok) {
-      throw new Error(
-        `Notion database schema fetch failed with status ${response.status}`,
-      );
-    }
-
-    const schema = (await response.json()) as NotionInventoryDatabaseSchema;
-    const categories = extractCategoryOptions(schema);
-    // Config-drift guard: warn if a size-chart category name no longer exists in
-    // the live "Item Type" options (a Notion rename/removal), which would
-    // silently drop the size chart. Advisory only — never fails the request.
-    const missingSized = missingOptionValues(SIZED_CATEGORY_NAMES, categories);
-    if (missingSized.length > 0) {
-      logger.error(
-        {
-          missing: missingSized,
-          sizedCategories: SIZED_CATEGORY_NAMES,
-          liveItemTypes: categories,
-        },
-        'Size-chart "Item Type" values are missing from the live Notion options ' +
-          "— a category was likely renamed or removed, so those garments will " +
-          "silently lose their size chart. Update SIZED_CATEGORY_NAMES in " +
-          "artifacts/api-server/src/lib/config-audit.ts (or restore the Notion " +
-          "option). This fallback only runs when the Product Categories database " +
-          "is unconfigured; the relation-driven path doesn't drift.",
-      );
-    }
-    cachedCategories = { categories, fetchedAt: Date.now() };
-    return categories;
-  } catch (error) {
-    if (cachedCategories) {
-      return cachedCategories.categories;
-    }
-    throw error;
-  }
-}
-
-/**
- * The live "Item Type" and "Status" option lists from the inventory database
- * schema, fetched together. Uncached — this is used only by the nightly config-
- * drift check (config-check.service), not the hot shop path.
+ * The live "Status" option list from the inventory database schema. Uncached —
+ * this is used only by the nightly config-drift check (config-check.service) to
+ * verify STATUS_IN_STOCK still exists, not the hot shop path.
  */
 export async function fetchInventoryOptionSets(
   client: NotionClient = getInventoryNotionClient(),
-): Promise<{ itemTypeOptions: string[]; statusOptions: string[] }> {
+): Promise<{ statusOptions: string[] }> {
   assertConfigured(client);
   const response = await client.fetch(`/v1/databases/${client.databaseId}`);
   if (!response.ok) {
@@ -151,10 +88,7 @@ export async function fetchInventoryOptionSets(
     );
   }
   const schema = (await response.json()) as NotionInventoryDatabaseSchema;
-  return {
-    itemTypeOptions: extractCategoryOptions(schema),
-    statusOptions: extractStatusOptions(schema),
-  };
+  return { statusOptions: extractStatusOptions(schema) };
 }
 
 /**

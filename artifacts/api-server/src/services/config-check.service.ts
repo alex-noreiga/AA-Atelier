@@ -1,10 +1,10 @@
 // Nightly config-drift check, independent of HTTP.
 //
-// Several features name a specific live Notion option value in code (the shop's
-// size-chart categories, the sellable STATUS_IN_STOCK, the measurement-lock
-// stage). When the atelier renames or removes that option in Notion, the name
-// stops matching and the feature quietly breaks — with no error and no test
-// failure (that's how the "Dresses" → "Dress" size-chart bug reached prod).
+// Two features name a specific live Notion option value in code (the sellable
+// STATUS_IN_STOCK and the measurement-lock stage). When the atelier renames or
+// removes that option in Notion, the name stops matching and the feature quietly
+// breaks — with no error and no test failure. (The shop's size chart was a third
+// such name until it became Notion-driven via the Product Categories relation.)
 //
 // This check reads the live options and compares them to the code constants
 // (config-audit.ts). On drift it logs an error AND emails the atelier inbox
@@ -31,13 +31,12 @@ import { logger } from "../lib/logger.js";
 export async function runConfigCheck(): Promise<{
   findings: ConfigDriftFinding[];
 }> {
-  const [{ itemTypeOptions, statusOptions }, stageOptions] = await Promise.all([
+  const [{ statusOptions }, stageOptions] = await Promise.all([
     fetchInventoryOptionSets(),
     listOrderStages(),
   ]);
 
   const findings = auditNotionConfig({
-    itemTypeOptions,
     statusOptions,
     stageOptions,
     statusInStock: STATUS_IN_STOCK,

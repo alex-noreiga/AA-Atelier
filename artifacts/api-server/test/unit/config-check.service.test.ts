@@ -23,7 +23,6 @@ const mockSend = vi.mocked(sendEmailBestEffort);
 
 // A live config where every code-named value is present.
 const HEALTHY_OPTIONS = {
-  itemTypeOptions: ["Dress", "Dresses", "Ready to Wear", "Skate Soakers"],
   statusOptions: ["Planned", "In Stock", "Sold"],
 };
 const HEALTHY_STAGES = ["Sketching", "Cutting/Pinning", "Sewing/Construction"];

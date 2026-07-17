@@ -10,7 +10,6 @@
 // service layer; each row becomes a selectable variant.
 
 const PRODUCT_NAME_PROPERTY = "Item Name"; // title
-const PRODUCT_TYPE_PROPERTY = "Item Type"; // select — fallback category label
 const PRODUCT_CATEGORY_RELATION_PROPERTY = "Category"; // relation → Product Categories
 const PRODUCT_PRICE_PROPERTY = "Listed Price"; // number
 const PRODUCT_STATUS_PROPERTY = "Status"; // status
@@ -45,13 +44,14 @@ export interface VariantRecord {
   photos: string[];
   sizes: SizeOptionRecord[];
   quantityAvailable?: number;
-  /** Fallback card category — the "Item Type" select value. Superseded by the
-   * `Category` relation (via `categoryId`) when the Product Categories database is
-   * configured and the row is linked. */
+  /** The card's category name. Resolved from the `Category` relation in the
+   * service layer (products.service) by joining `categoryId` to a category record;
+   * the raw inventory row carries only the relation id, so this is `""` here until
+   * resolved (and stays `""` for a row that isn't linked to a category). */
   category: string;
   /** The linked Product Categories page id from the `Category` relation, or absent
-   * when the row isn't related. The service joins this to a category record to get
-   * the authoritative name + sized flag; a missing link falls back to `category`. */
+   * when the row isn't related. The service joins this to a category record for the
+   * authoritative name + sized flag. */
   categoryId?: string;
   /** Website Group value, or null when the row stands alone. */
   group: string | null;
@@ -126,32 +126,15 @@ export interface NotionInventoryDatabaseSchema {
     string,
     {
       type: string;
-      select?: { options: Array<{ name: string }> };
       status?: { options: Array<{ name: string }> };
     }
   >;
 }
 
 /**
- * The shop's category list — the live "Item Type" select options, in the order
- * the atelier arranged them in Notion. Never hardcode this list: the team edits
- * the options directly and expects the shop's filters to follow without a
- * redeploy (the same rule as the order "Stage" options, see `schema.ts`).
- */
-export function extractCategoryOptions(
-  schema: NotionInventoryDatabaseSchema,
-): string[] {
-  return (
-    schema.properties[PRODUCT_TYPE_PROPERTY]?.select?.options.map(
-      (option) => option.name,
-    ) ?? []
-  );
-}
-
-/**
  * The live "Status" options on the inventory database (e.g. In Stock, Sold, …),
- * read from the schema like the categories. Used by the config-drift check to
- * verify STATUS_IN_STOCK still exists after a Notion edit.
+ * read from the schema. Used by the config-drift check to verify STATUS_IN_STOCK
+ * still exists after a Notion edit.
  */
 export function extractStatusOptions(
   schema: NotionInventoryDatabaseSchema,
@@ -306,7 +289,9 @@ export function extractVariant(page: NotionInventoryPage): VariantRecord {
       extractMultiSelect(page, PRODUCT_SIZES_AVAILABLE_PROPERTY),
     ),
     ...(quantityAvailable !== null ? { quantityAvailable } : {}),
-    category: extractSelect(page, PRODUCT_TYPE_PROPERTY) ?? "",
+    // The category NAME is resolved from the relation in the service; the raw row
+    // carries only its id (below). Empty here, and for a row with no link.
+    category: "",
     ...(categoryId ? { categoryId } : {}),
     group: extractSelect(page, PRODUCT_GROUP_PROPERTY),
   };

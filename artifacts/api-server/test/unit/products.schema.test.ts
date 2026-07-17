@@ -1,7 +1,6 @@
 import { describe, it, expect } from "vitest";
 import {
   computeSizeOptions,
-  extractCategoryOptions,
   extractVariant,
   type NotionInventoryPage,
 } from "../../src/lib/notion/products.schema.js";
@@ -37,32 +36,6 @@ describe("computeSizeOptions", () => {
   });
 });
 
-describe("extractCategoryOptions", () => {
-  it("reads the live Item Type options in Notion's order", () => {
-    expect(
-      extractCategoryOptions({
-        properties: {
-          "Item Type": {
-            type: "select",
-            select: {
-              options: [
-                { name: "Dress" },
-                { name: "Soaker" },
-                { name: "Other" },
-              ],
-            },
-          },
-        },
-      }),
-    ).toEqual(["Dress", "Soaker", "Other"]);
-  });
-
-  it("returns an empty list when the property is missing", () => {
-    // A missing filter bar must not fail the whole shop.
-    expect(extractCategoryOptions({ properties: {} })).toEqual([]);
-  });
-});
-
 describe("extractVariant mapping", () => {
   it("maps every property, extracts photo URLs, and derives availability", () => {
     const page = {
@@ -72,7 +45,7 @@ describe("extractVariant mapping", () => {
           type: "title",
           title: [{ plain_text: "Keyhole Dress" }],
         },
-        "Item Type": { type: "select", select: { name: "Dress" } },
+        Category: { type: "relation", relation: [{ id: "cat-dress" }] },
         "Listed Price": { type: "number", number: 189 },
         Status: { type: "status", status: { name: "In Stock" } },
         "Quantity Available": {
@@ -95,6 +68,8 @@ describe("extractVariant mapping", () => {
       },
     } as unknown as NotionInventoryPage;
 
+    // The category NAME is resolved from the relation in the service; the raw row
+    // maps only the linked category id (and category stays "").
     expect(extractVariant(page)).toEqual({
       id: "page-full",
       name: "Keyhole Dress",
@@ -104,7 +79,8 @@ describe("extractVariant mapping", () => {
       photos: ["https://notion.test/a.jpg", "https://cdn.test/b.jpg"],
       sizes: [],
       quantityAvailable: 3,
-      category: "Dress",
+      category: "",
+      categoryId: "cat-dress",
       group: "Competition",
     });
   });

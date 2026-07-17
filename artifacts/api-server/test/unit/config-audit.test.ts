@@ -2,7 +2,6 @@ import { describe, it, expect } from "vitest";
 import {
   missingOptionValues,
   auditNotionConfig,
-  SIZED_CATEGORY_NAMES,
 } from "../../src/lib/config-audit.js";
 
 describe("missingOptionValues", () => {
@@ -39,7 +38,6 @@ describe("missingOptionValues", () => {
 
 describe("auditNotionConfig", () => {
   const healthy = {
-    itemTypeOptions: ["Dress", "Ready to Wear", "Skate Soakers"],
     statusOptions: ["Planned", "In Stock", "Sold"],
     stageOptions: ["Sketching", "Cutting/Pinning", "Sewing/Construction"],
     statusInStock: "In Stock",
@@ -69,15 +67,6 @@ describe("auditNotionConfig", () => {
     expect(findings[0].missing).toEqual(["Cutting/Pinning"]);
   });
 
-  it("flags the size-chart categories missing from Item Type", () => {
-    const findings = auditNotionConfig({
-      ...healthy,
-      itemTypeOptions: ["Skate Soakers"],
-    });
-    const sized = findings.find((f) => f.label.includes("Size-chart"));
-    expect(sized?.missing).toEqual([...SIZED_CATEGORY_NAMES]);
-  });
-
   it("collects multiple findings in one pass", () => {
     const findings = auditNotionConfig({
       ...healthy,
@@ -85,15 +74,5 @@ describe("auditNotionConfig", () => {
       stageOptions: ["Sketching"],
     });
     expect(findings.length).toBeGreaterThanOrEqual(2);
-  });
-});
-
-describe("SIZED_CATEGORY_NAMES", () => {
-  it("names the canonical sized Item Type values (server-side fallback)", () => {
-    // The inventory "Item Type" options were unified to the singular "Dress"
-    // (was "Dresses"), so the fallback must name "Dress" exactly — otherwise the
-    // nightly config-check would falsely report "Dress"/"Dresses" drift. This
-    // list is only used when the Notion "Product Categories" DB is unconfigured.
-    expect(SIZED_CATEGORY_NAMES).toEqual(["Dress", "Ready to Wear"]);
   });
 });

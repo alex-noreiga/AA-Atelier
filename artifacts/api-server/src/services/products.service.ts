@@ -2,12 +2,8 @@
 // variants into cards: rows sharing a `Website Group` become one card with
 // selectable variants; ungrouped rows become standalone single-variant cards.
 
-import {
-  listCategories,
-  listVariants,
-} from "../lib/notion/products.repository.js";
+import { listVariants } from "../lib/notion/products.repository.js";
 import { listCategoryRecords } from "../lib/notion/product-categories.repository.js";
-import { SIZED_CATEGORY_NAMES } from "../lib/config-audit.js";
 import type { CategoryRecord } from "../lib/notion/product-categories.schema.js";
 import type {
   ProductRecord,
@@ -134,15 +130,14 @@ export async function getProducts(): Promise<{
     listCategoryRecords(),
   ]);
 
-  // `records === null` means the "Product Categories" database isn't configured
-  // — fall back to the inventory "Item Type" options for the chip list and the
-  // built-in sized list, so behaviour is unchanged until the Notion source is
-  // enabled. Once configured, the category + sized flag follow the relation.
-  if (records) {
-    return resolveFromCategories(variants, records);
+  // The "Product Categories" database is the shop's sole source for the category
+  // list + size-guide flag. `null` means its env var is unset — fail loud rather
+  // than silently empty the shop, since there is no longer a fallback source.
+  if (!records) {
+    throw new Error(
+      "NOTION_PRODUCT_CATEGORIES_DATABASE_ID is not configured for the shop category source",
+    );
   }
 
-  const categories = await listCategories();
-  const products = groupVariants(variants, new Set(SIZED_CATEGORY_NAMES));
-  return { products, categories: visibleCategories(categories, products) };
+  return resolveFromCategories(variants, records);
 }

@@ -150,7 +150,7 @@ describe("resolveFromCategories", () => {
     const byId = Object.fromEntries(
       products.map((p) => [p.id, { category: p.category, sized: p.sized }]),
     );
-    // The relation wins over the (stale) Item Type label.
+    // The linked record's name + sized flag win over the raw row value.
     expect(byId["v-dress"]).toEqual({ category: "Dress", sized: true });
     expect(byId["v-soaker"]).toEqual({
       category: "Skate Soakers",
@@ -171,24 +171,24 @@ describe("resolveFromCategories", () => {
     expect(categories).toEqual(["Dress", "Skate Soakers"]);
   });
 
-  it("falls back to the Item Type label when a row has no category link", () => {
+  it("leaves a row with no category link unresolved (empty category, no chip)", () => {
+    // A published row that isn't linked to a category resolves to the raw empty
+    // category (extractVariant sets ""), so it's unsized and yields no chip.
     const { products, categories } = resolveFromCategories(
-      [variant({ id: "v-x", category: "Costume" })],
+      [variant({ id: "v-x", category: "" })],
       records,
     );
-    expect(products[0].category).toBe("Costume");
+    expect(products[0].category).toBe("");
     expect(products[0].sized).toBe(false);
-    // "Costume" isn't a category record, so it yields no chip.
     expect(categories).toEqual([]);
   });
 
-  it("falls back when the linked category id is unknown (deleted category)", () => {
+  it("leaves a row unresolved when its linked category id is unknown (deleted category)", () => {
     const { products } = resolveFromCategories(
-      [variant({ id: "v-x", category: "Dress", categoryId: "cat-gone" })],
+      [variant({ id: "v-x", category: "", categoryId: "cat-gone" })],
       records,
     );
-    expect(products[0].category).toBe("Dress");
-    // Still sized, because the fallback label "Dress" is in the sized set.
-    expect(products[0].sized).toBe(true);
+    expect(products[0].category).toBe("");
+    expect(products[0].sized).toBe(false);
   });
 });

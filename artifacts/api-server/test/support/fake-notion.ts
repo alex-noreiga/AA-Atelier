@@ -66,18 +66,6 @@ export function databaseSchemaWithStages(stageNames: string[]) {
   };
 }
 
-/** Minimal inventory database schema carrying the "Item Type" select options. */
-export function inventoryDatabaseSchemaWithCategories(names: string[]) {
-  return {
-    properties: {
-      "Item Type": {
-        type: "select",
-        select: { options: names.map((name) => ({ name })) },
-      },
-    },
-  };
-}
-
 /**
  * Minimal Notion inventory page as returned by a query on the inventory
  * database. Only the properties the repository/schema read are populated; each
