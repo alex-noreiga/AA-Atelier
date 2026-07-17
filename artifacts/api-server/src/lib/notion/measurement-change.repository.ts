@@ -20,12 +20,13 @@ function assertConfigured(client: NotionClient): void {
 export async function createMeasurementChangeRequest(
   row: MeasurementChangeRow,
   client: NotionClient = getContactNotionClient(),
+  clientPageId?: string,
 ): Promise<void> {
   assertConfigured(client);
 
   const body: Record<string, unknown> = {
     parent: { database_id: client.databaseId },
-    properties: buildMeasurementChangeProperties(row),
+    properties: buildMeasurementChangeProperties(row, clientPageId),
   };
 
   const response = await client.fetch("/v1/pages", {

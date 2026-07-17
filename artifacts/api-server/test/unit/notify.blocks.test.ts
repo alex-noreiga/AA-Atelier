@@ -41,6 +41,16 @@ describe("buildNotifyProperties", () => {
       "Back in stock: Bow Fleece Soaker — Black — Adult S",
     );
   });
+
+  it("links to the Client CRM record when a client page id is given", () => {
+    const props = buildNotifyProperties(baseRequest, "client-2") as any;
+    expect(props.Client).toEqual({ relation: [{ id: "client-2" }] });
+  });
+
+  it("omits the Client relation when no client page id is given", () => {
+    const props = buildNotifyProperties(baseRequest) as any;
+    expect(props).not.toHaveProperty("Client");
+  });
 });
 
 // Both writers share the "Website Contact Messages" database, so the property

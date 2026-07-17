@@ -21,6 +21,7 @@ import {
   CONTACT_STAGE_PROPERTY,
   CONTACT_SUBJECT_PROPERTY,
   CONTACT_TYPE_PROPERTY,
+  contactClientRelation,
 } from "./contact.blocks.js";
 
 /** The "Request type" value that marks a row as a measurement-change request. */
@@ -66,9 +67,14 @@ function buildMessageBody(row: MeasurementChangeRow): string {
   return lines.join("\n");
 }
 
-/** Notion page `properties` for a new measurement-change request. */
+/**
+ * Notion page `properties` for a new measurement-change request. When
+ * `clientPageId` is given, the request is linked to the customer's Client CRM
+ * record via the shared `Client` relation.
+ */
 export function buildMeasurementChangeProperties(
   row: MeasurementChangeRow,
+  clientPageId?: string,
 ): Record<string, unknown> {
   return {
     [CONTACT_SUBJECT_PROPERTY]: {
@@ -86,5 +92,6 @@ export function buildMeasurementChangeProperties(
     [CONTACT_MESSAGE_PROPERTY]: {
       rich_text: [{ text: { content: buildMessageBody(row) } }],
     },
+    ...contactClientRelation(clientPageId),
   };
 }

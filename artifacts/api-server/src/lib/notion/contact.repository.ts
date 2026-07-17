@@ -19,12 +19,13 @@ function assertConfigured(client: NotionClient): void {
 export async function createContactMessage(
   data: CreateContactInput,
   client: NotionClient = getContactNotionClient(),
+  clientPageId?: string,
 ): Promise<void> {
   assertConfigured(client);
 
   const body: Record<string, unknown> = {
     parent: { database_id: client.databaseId },
-    properties: buildContactProperties(data),
+    properties: buildContactProperties(data, clientPageId),
   };
 
   const response = await client.fetch("/v1/pages", {

@@ -13,6 +13,7 @@ import {
   SHOP_ORDER_TOTAL_PROPERTY,
   SHOP_ORDER_STATUS_PROPERTY,
   SHOP_ORDER_SHIPPING_PROPERTY,
+  SHOP_ORDER_CLIENT_PROPERTY,
 } from "../../src/lib/notion/shop-orders.blocks.js";
 
 function session(
@@ -92,6 +93,24 @@ describe("buildShopOrderProperties", () => {
       unknown
     >;
     expect(props[SHOP_ORDER_NUMBER_PROPERTY]).toBeUndefined();
+  });
+
+  it("links to the Client CRM record when a client page id is given", () => {
+    const props = buildShopOrderProperties(session(), "client-9") as Record<
+      string,
+      any
+    >;
+    expect(props[SHOP_ORDER_CLIENT_PROPERTY]).toEqual({
+      relation: [{ id: "client-9" }],
+    });
+  });
+
+  it("omits the Client relation when no client page id is given", () => {
+    const props = buildShopOrderProperties(session()) as Record<
+      string,
+      unknown
+    >;
+    expect(props[SHOP_ORDER_CLIENT_PROPERTY]).toBeUndefined();
   });
 
   it("omits optional properties (email, name, shipping) when Stripe didn't collect them", () => {

@@ -41,4 +41,14 @@ describe("buildContactProperties", () => {
     }) as any;
     expect(props.Phone).toEqual({ phone_number: "+1 555 987 6543" });
   });
+
+  it("links to the Client CRM record when a client page id is given", () => {
+    const props = buildContactProperties(baseContact, "client-1") as any;
+    expect(props.Client).toEqual({ relation: [{ id: "client-1" }] });
+  });
+
+  it("omits the Client relation when no client page id is given", () => {
+    const props = buildContactProperties(baseContact) as any;
+    expect(props).not.toHaveProperty("Client");
+  });
 });

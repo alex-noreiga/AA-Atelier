@@ -14,6 +14,7 @@ import {
   createShopOrder,
   findOrderBySessionId,
 } from "../lib/notion/shop-orders.repository.js";
+import { upsertClientByEmail } from "../lib/notion/clients.repository.js";
 import {
   generateShopOrderNumber,
   formatShippingAddress,
@@ -348,7 +349,29 @@ export async function recordPaidOrder(
     return;
   }
 
-  await createShopOrder(full);
+  // Best-effort: mirror the buyer into the Client CRM (dedupe by email) and link
+  // the shop order to that record, so the CRM is the single customer store — the
+  // same pattern as custom orders. A paying buyer is "Active". A CRM failure must
+  // never fail the webhook (a throw would 500 it and make Stripe retry, risking a
+  // duplicate); no-ops when CRM is unconfigured or Stripe collected no email.
+  let clientPageId: string | undefined;
+  try {
+    const email = full.customer_details?.email;
+    if (email) {
+      clientPageId =
+        (await upsertClientByEmail({
+          fullName: full.customer_details?.name ?? "",
+          email,
+        })) ?? undefined;
+    }
+  } catch (err) {
+    logger.warn(
+      { err },
+      "Failed to upsert Client CRM record; recording the shop order without a client link",
+    );
+  }
+
+  await createShopOrder(full, undefined, clientPageId);
 
   // Confirmation email after the source-of-truth Notion write, and below the
   // idempotency dedupe above so a retried-but-already-recorded event won't
