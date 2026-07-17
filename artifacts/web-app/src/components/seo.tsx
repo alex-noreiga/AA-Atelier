@@ -19,9 +19,6 @@ import { useEffect } from "react";
 /** Canonical production origin — used to build absolute canonical/og:url. */
 export const SITE_ORIGIN = "https://a3iceanddance.com";
 
-/** The brand name, shown as the `og:site_name` and title suffix source. */
-export const SITE_NAME = "A3 Ice and Dance";
-
 interface SeoProps {
   /** The full document title, e.g. "Custom Costumes | A.A Atelier". */
   title: string;
