@@ -39,7 +39,7 @@ describe("missingOptionValues", () => {
 
 describe("auditNotionConfig", () => {
   const healthy = {
-    itemTypeOptions: ["Dress", "Dresses", "Ready to Wear", "Skate Soakers"],
+    itemTypeOptions: ["Dress", "Ready to Wear", "Skate Soakers"],
     statusOptions: ["Planned", "In Stock", "Sold"],
     stageOptions: ["Sketching", "Cutting/Pinning", "Sewing/Construction"],
     statusInStock: "In Stock",
@@ -89,12 +89,11 @@ describe("auditNotionConfig", () => {
 });
 
 describe("SIZED_CATEGORY_NAMES", () => {
-  it("covers both the current live value and the planned singular", () => {
-    // The "Dresses" (live) → "Dress" (planned) drift is exactly what bit before;
-    // both must stay listed so the size chart survives on either side of the
-    // future rename. Mirrors SIZED_CATEGORIES in web-app/src/pages/shop.tsx.
-    expect(SIZED_CATEGORY_NAMES).toContain("Dress");
-    expect(SIZED_CATEGORY_NAMES).toContain("Dresses");
-    expect(SIZED_CATEGORY_NAMES).toContain("Ready to Wear");
+  it("names the canonical sized Item Type values (server-side fallback)", () => {
+    // The inventory "Item Type" options were unified to the singular "Dress"
+    // (was "Dresses"), so the fallback must name "Dress" exactly — otherwise the
+    // nightly config-check would falsely report "Dress"/"Dresses" drift. This
+    // list is only used when the Notion "Product Categories" DB is unconfigured.
+    expect(SIZED_CATEGORY_NAMES).toEqual(["Dress", "Ready to Wear"]);
   });
 });

@@ -19,11 +19,15 @@
  * Values that must exist among the live inventory "Item Type" select options for
  * the shop's size chart to keep appearing on garments.
  *
- * ⚠ Mirrors `SIZED_CATEGORIES` in `artifacts/web-app/src/pages/shop.tsx`. Keep
- * the two in sync until that frontend list is replaced by a Notion-driven
- * "sized" flag, at which point both disappear.
+ * This is the server-side FALLBACK list used by `products.service` only when the
+ * Notion "Product Categories" DB is unconfigured (see Option C phase 1) — the
+ * frontend `SIZED_CATEGORIES` list that this used to mirror was removed when the
+ * shop switched to the Notion-driven `product.sized` flag. It must match the
+ * canonical inventory "Item Type" option values ("Dress", not "Dresses"). Both
+ * this and the guard disappear at Option C phase 2, when Item Type becomes a
+ * relation and no hardcoded name is left to drift.
  */
-export const SIZED_CATEGORY_NAMES = ["Dress", "Dresses", "Ready to Wear"];
+export const SIZED_CATEGORY_NAMES = ["Dress", "Ready to Wear"];
 
 /**
  * The `expected` values that are NOT present in `live`, in the order they were
