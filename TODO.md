@@ -1,8 +1,6 @@
 # TODO
 
-Deferred features surfaced by a missing-features review of the site. These are
-real gaps that were consciously parked, not bugs. Each note points at where the
-work would land so it's actionable later.
+Deferred features I don't really need at the moment, but want to keep track of. 
 
 ## Web analytics
 
@@ -34,8 +32,7 @@ The shop filters by category chips only — no free-text search and no sort
 - **Where:** frontend-only, `artifacts/web-app/src/pages/shop.tsx` (filter the
   already-fetched product list client-side).
 
----
+## Customer reviews
+Customer reviews and testimonials
 
-**Intentionally excluded:** customer reviews/testimonials (in progress on
-`feature/reviews` and `claude/customer-reviews-display-*`) and a bespoke-work
-portfolio/lookbook (parked pending more photography).
+## Portfolio / lookbook
