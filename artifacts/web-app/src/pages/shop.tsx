@@ -52,6 +52,34 @@ function contactHref(variant: ProductVariant): string {
   return `/contact?item=${encodeURIComponent(variant.name)}`;
 }
 
+/** Flatten every variant across all products into an id→variant lookup, so a
+ * variant's `addOnIds` (which reference other variants in the same payload) can
+ * be resolved to full records without the API sending them twice. */
+export function indexVariants(
+  products: Product[],
+): Map<string, ProductVariant> {
+  const byId = new Map<string, ProductVariant>();
+  for (const product of products) {
+    for (const variant of product.variants) byId.set(variant.id, variant);
+  }
+  return byId;
+}
+
+/** Resolve a variant's matching add-ons to buyable records: they must exist in
+ * the payload, be in stock, and be priced (an unpriced/sold-out add-on can't be
+ * dropped into the cart, so it's simply not offered). Pure, so it's unit-tested. */
+export function resolveAddOns(
+  variant: ProductVariant,
+  byId: Map<string, ProductVariant>,
+): ProductVariant[] {
+  return (variant.addOnIds ?? [])
+    .map((id) => byId.get(id))
+    .filter(
+      (v): v is ProductVariant =>
+        !!v && v.available && typeof v.price === "number",
+    );
+}
+
 function testId(value: string): string {
   return value.toLowerCase().replace(/\s+/g, "-");
 }
@@ -167,15 +195,18 @@ function LowStockNote({ variant }: { variant: ProductVariant }) {
 function VariantCta({
   variant,
   size,
+  addOns = [],
 }: {
   variant: ProductVariant;
   size: string;
+  /** Matching add-ons for this variant, resolved from the product list. */
+  addOns?: ProductVariant[];
 }) {
   if (variant.available) {
     // A priced, in-stock item can be bought; an unpriced one ("inquire for
     // price") still routes to an enquiry, since we can't charge for it.
     if (typeof variant.price === "number") {
-      return <AddToCartButton variant={variant} size={size} />;
+      return <AddToCartButton variant={variant} size={size} addOns={addOns} />;
     }
     return (
       <Link
@@ -210,11 +241,14 @@ function ProductCard({
   product,
   open,
   onOpenChange,
+  variantsById,
 }: {
   product: Product;
   /** Quick-view open state — driven by the `/shop/:productId` route. */
   open: boolean;
   onOpenChange: (open: boolean) => void;
+  /** All variants across the shop, for resolving each variant's add-ons. */
+  variantsById: Map<string, ProductVariant>;
 }) {
   const [selected, setSelected] = useState(0);
   // A size chosen on the card is shared with the quick-view dialog (both render
@@ -223,6 +257,9 @@ function ProductCard({
   const [size, setSize] = useState("");
   const variant = product.variants[selected] ?? product.variants[0];
   const selectable = variant.available && typeof variant.price === "number";
+  // Matching add-ons follow the selected variant (color/style-specific), so a
+  // pink soaker offers its pink cloth. Recomputed per render — cheap map lookups.
+  const addOns = resolveAddOns(variant, variantsById);
 
   // A size stocked in one variant may be absent in another, so clear the
   // selection when the customer switches variants.
@@ -312,7 +349,7 @@ function ProductCard({
 
               <div className="mt-auto pt-6">
                 <LowStockNote variant={variant} />
-                <VariantCta variant={variant} size={size} />
+                <VariantCta variant={variant} size={size} addOns={addOns} />
               </div>
             </div>
           </div>
@@ -353,7 +390,7 @@ function ProductCard({
 
         <div className="mt-auto pt-6">
           <LowStockNote variant={variant} />
-          <VariantCta variant={variant} size={size} />
+          <VariantCta variant={variant} size={size} addOns={addOns} />
         </div>
       </div>
     </div>
@@ -431,6 +468,9 @@ export default function Shop() {
   const { data, isLoading, isError } = useGetProducts();
 
   const products = data?.products ?? [];
+  // Built from the full catalogue (not just the filtered view) so an add-on can
+  // resolve even when its own category is filtered out of the grid.
+  const variantsById = indexVariants(products);
   const activeProductId = params.productId;
   const activeProduct = activeProductId
     ? products.find((product) => product.id === activeProductId)
@@ -523,6 +563,7 @@ export default function Shop() {
                 onOpenChange={(next) =>
                   navigate(next ? `/shop/${product.id}` : "/shop")
                 }
+                variantsById={variantsById}
               />
             ))}
           </div>

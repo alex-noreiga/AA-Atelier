@@ -213,6 +213,82 @@ describe("Add to cart", () => {
   });
 });
 
+describe("Matching add-on option", () => {
+  const cloth = variant({ id: "cloth1", name: "Blade Cloth", price: 12 });
+
+  it("renders a checkbox per add-on but adds only the main item when unchecked", async () => {
+    render(
+      <CartProvider>
+        <AddToCartButton variant={variant()} addOns={[cloth]} />
+        <CartButton />
+      </CartProvider>,
+    );
+
+    // The add-on is offered but off by default.
+    expect(screen.getByTestId("add-on-checkbox-cloth1")).not.toBeChecked();
+
+    await userEvent.click(screen.getByTestId("add-to-cart-v1"));
+
+    // Only the soaker landed in the cart.
+    expect(screen.getByTestId("cart-count")).toHaveTextContent("1");
+    await userEvent.click(screen.getByTestId("cart-button"));
+    expect(screen.getByTestId("cart-subtotal")).toHaveTextContent("$22");
+  });
+
+  it("adds the matching cloth as its own line when the box is checked", async () => {
+    render(
+      <CartProvider>
+        <AddToCartButton variant={variant()} addOns={[cloth]} />
+        <CartButton />
+      </CartProvider>,
+    );
+
+    await userEvent.click(screen.getByTestId("add-on-checkbox-cloth1"));
+    await userEvent.click(screen.getByTestId("add-to-cart-v1"));
+
+    // Two units (soaker + cloth), subtotal 22 + 12.
+    expect(screen.getByTestId("cart-count")).toHaveTextContent("2");
+    await userEvent.click(screen.getByTestId("cart-button"));
+    expect(screen.getByTestId("cart-subtotal")).toHaveTextContent("$34");
+  });
+
+  it("resets the add-on selection after adding so a re-add doesn't re-tick it", async () => {
+    render(
+      <CartProvider>
+        <AddToCartButton variant={variant()} addOns={[cloth]} />
+      </CartProvider>,
+    );
+
+    await userEvent.click(screen.getByTestId("add-on-checkbox-cloth1"));
+    await userEvent.click(screen.getByTestId("add-to-cart-v1"));
+
+    expect(screen.getByTestId("add-on-checkbox-cloth1")).not.toBeChecked();
+  });
+
+  it("submits both the item and its checked add-on to checkout", async () => {
+    render(
+      <CartProvider>
+        <AddToCartButton variant={variant()} addOns={[cloth]} />
+        <CartButton />
+      </CartProvider>,
+    );
+
+    await userEvent.click(screen.getByTestId("add-on-checkbox-cloth1"));
+    await userEvent.click(screen.getByTestId("add-to-cart-v1"));
+    await userEvent.click(screen.getByTestId("cart-button"));
+    await userEvent.click(screen.getByTestId("cart-checkout"));
+
+    expect(checkoutMutate).toHaveBeenCalledWith({
+      data: {
+        items: [
+          { variantId: "v1", quantity: 1 },
+          { variantId: "cloth1", quantity: 1 },
+        ],
+      },
+    });
+  });
+});
+
 describe("Cart drawer interactions", () => {
   async function openDrawerWithOneItem() {
     render(

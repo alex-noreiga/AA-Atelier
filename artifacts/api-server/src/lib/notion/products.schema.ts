@@ -20,6 +20,7 @@ const PRODUCT_PHOTOS_PROPERTY = "Website Photos"; // files
 const PRODUCT_GROUP_PROPERTY = "Website Group"; // select
 const PRODUCT_SIZES_AVAILABLE_PROPERTY = "Sizes Available"; // multi_select
 const PRODUCT_SIZES_OFFERED_PROPERTY = "Sizes Offered"; // multi_select
+const PRODUCT_ADDONS_RELATION_PROPERTY = "Matching Add-ons"; // relation → inventory (self)
 
 // The single status value that counts as sellable. This is an intentional,
 // targeted business rule (not a hardcoded copy of the full option list, which
@@ -44,6 +45,10 @@ export interface VariantRecord {
   photos: string[];
   sizes: SizeOptionRecord[];
   quantityAvailable?: number;
+  /** Ids of inventory rows offered as matching add-ons for this variant (the
+   * `Matching Add-ons` self-relation) — e.g. a soaker points at its blade cloth.
+   * Empty when the row has no add-ons. */
+  addOnIds: string[];
   /** The card's category name. Resolved from the `Category` relation in the
    * service layer (products.service) by joining `categoryId` to a category record;
    * the raw inventory row carries only the relation id, so this is `""` here until
@@ -67,6 +72,10 @@ export interface ProductVariantRecord {
   photos: string[];
   sizes: SizeOptionRecord[];
   quantityAvailable?: number;
+  /** Ids of other variants offered as matching add-ons (see VariantRecord).
+   * Each id is the `id` of a ProductVariant elsewhere in the same product list,
+   * so the client resolves the add-on locally. Absent when there are none. */
+  addOnIds?: string[];
 }
 
 /** A shop card: one or more variants sharing a group. */
@@ -154,6 +163,13 @@ function extractRelationFirstId(
   const p = page.properties[name];
   if (p?.type !== "relation") return null;
   return p.relation[0]?.id ?? null;
+}
+
+/** All related page ids of a relation property, in Notion order. */
+function extractRelationIds(page: NotionInventoryPage, name: string): string[] {
+  const p = page.properties[name];
+  if (p?.type !== "relation") return [];
+  return p.relation.map((r) => r.id);
 }
 
 function extractStatus(page: NotionInventoryPage, name: string): string | null {
@@ -263,6 +279,7 @@ export function extractVariant(page: NotionInventoryPage): VariantRecord {
       extractMultiSelect(page, PRODUCT_SIZES_AVAILABLE_PROPERTY),
     ),
     ...(quantityAvailable !== null ? { quantityAvailable } : {}),
+    addOnIds: extractRelationIds(page, PRODUCT_ADDONS_RELATION_PROPERTY),
     // The category NAME is resolved from the relation in the service; the raw row
     // carries only its id (below). Empty here, and for a row with no link.
     category: "",

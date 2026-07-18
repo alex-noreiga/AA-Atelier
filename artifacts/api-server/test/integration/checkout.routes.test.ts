@@ -27,6 +27,7 @@ function variant(overrides: Partial<VariantRecord> = {}): VariantRecord {
     price: 22,
     photos: [],
     sizes: [],
+    addOnIds: [],
     category: "Soaker",
     group: null,
     ...overrides,

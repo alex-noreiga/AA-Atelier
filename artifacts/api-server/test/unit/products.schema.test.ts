@@ -57,6 +57,10 @@ describe("extractVariant mapping", () => {
           rich_text: [{ plain_text: "Hand-beaded bodice." }],
         },
         "Website Group": { type: "select", select: { name: "Competition" } },
+        "Matching Add-ons": {
+          type: "relation",
+          relation: [{ id: "cloth-1" }, { id: "cloth-2" }],
+        },
         "Website Photos": {
           type: "files",
           files: [
@@ -79,10 +83,33 @@ describe("extractVariant mapping", () => {
       photos: ["https://notion.test/a.jpg", "https://cdn.test/b.jpg"],
       sizes: [],
       quantityAvailable: 3,
+      addOnIds: ["cloth-1", "cloth-2"],
       category: "",
       categoryId: "cat-dress",
       group: "Competition",
     });
+  });
+
+  it("maps the Matching Add-ons relation to add-on ids in Notion order, empty when absent", () => {
+    const withAddOns = {
+      id: "soaker",
+      properties: {
+        "Item Name": { type: "title", title: [{ plain_text: "Bow Soaker" }] },
+        "Matching Add-ons": {
+          type: "relation",
+          relation: [{ id: "cloth-pink" }],
+        },
+      },
+    } as unknown as NotionInventoryPage;
+    expect(extractVariant(withAddOns).addOnIds).toEqual(["cloth-pink"]);
+
+    const withoutAddOns = {
+      id: "cloth",
+      properties: {
+        "Item Name": { type: "title", title: [{ plain_text: "Blade Cloth" }] },
+      },
+    } as unknown as NotionInventoryPage;
+    expect(extractVariant(withoutAddOns).addOnIds).toEqual([]);
   });
 
   it("omits optional fields when the source properties are absent or empty", () => {

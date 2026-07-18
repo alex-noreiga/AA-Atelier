@@ -380,6 +380,24 @@ and `src/lib/notion/shop-orders.*`. Four things are load-bearing:
    lookup only serves orders placed after this shipped (older ones have no
    `Order Number`).
 
+9. **Matching add-ons are a self-relation on the inventory, resolved client-side.**
+   A product can offer companion items (a skate soaker → its matching blade cloth)
+   via a **`Matching Add-ons`** relation on the inventory database pointing at other
+   inventory rows. The add-on is an ordinary in-stock, priced, one-size variant —
+   it also appears as its own shop card. `products.schema.ts` maps the relation to
+   `addOnIds: string[]` on each variant (`extractRelationIds`), the service passes
+   it through (omitted when empty), and the OpenAPI `ProductVariant.addOnIds` carries
+   just the ids — the frontend resolves them against the already-loaded product list
+   (`resolveAddOns`/`indexVariants` in `pages/shop.tsx`, keeping only in-stock priced
+   add-ons) so the payload never carries the cloth twice. `add-to-cart.tsx` renders an
+   opt-in checkbox per resolved add-on; a ticked one is added as its **own** cart line
+   (quantity 1, independent of the main item's quantity), so `checkout.service` prices
+   and stock-checks it with **no** checkout changes. Because they're distinct lines,
+   removing the soaker doesn't remove the cloth (accepted for v1). Add-ons follow the
+   _selected_ variant, so a color-specific relation (pink soaker → pink cloth) shows
+   the right match. No new env var; the atelier just adds the `Matching Add-ons`
+   relation and links each soaker to its cloth.
+
 The atelier must create the "Shop Orders" Notion database (properties in
 `shop-orders.blocks.ts`, including the `Order Number` rich_text property) and
 share the integration with it. Local testing uses Stripe test-mode keys +
