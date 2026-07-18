@@ -27,6 +27,7 @@ function variant(overrides: Partial<VariantRecord> = {}): VariantRecord {
     available: true,
     photos: [],
     sizes: [],
+    addOnIds: [],
     category: "Soaker",
     group: null,
     ...overrides,
@@ -103,6 +104,19 @@ describe("groupVariants", () => {
     ]);
     expect(product.variants[0]).not.toHaveProperty("category");
     expect(product.variants[0]).not.toHaveProperty("group");
+  });
+
+  it("omits addOnIds when empty but passes it through when the row has add-ons", () => {
+    const [noAddOns] = groupVariants([
+      variant({ id: "v-plain", addOnIds: [] }),
+    ]);
+    // A clean payload: no empty array on the vast majority of items that have none.
+    expect(noAddOns.variants[0]).not.toHaveProperty("addOnIds");
+
+    const [withAddOns] = groupVariants([
+      variant({ id: "v-soaker", addOnIds: ["cloth-1"] }),
+    ]);
+    expect(withAddOns.variants[0].addOnIds).toEqual(["cloth-1"]);
   });
 
   it("sets each card's `sized` flag from the passed sized-category set", () => {

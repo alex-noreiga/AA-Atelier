@@ -25,9 +25,12 @@ function toVariantRecord(variant: VariantRecord): ProductVariantRecord {
     category: _category,
     categoryId: _categoryId,
     group: _group,
+    addOnIds,
     ...rest
   } = variant;
-  return rest;
+  // Omit the add-ons array entirely when empty so the payload only carries it
+  // for variants that actually have a matching add-on.
+  return addOnIds.length > 0 ? { ...rest, addOnIds } : rest;
 }
 
 /**

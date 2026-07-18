@@ -17,4 +17,6 @@ export interface ProductVariant {
   /** Every size band this item is offered in ("Sizes Offered" in Notion), each flagged with whether it is currently in stock ("Sizes Available"). A size that is offered but not available is sold out, and the shop offers a per-size back-in-stock request. Empty for one-size items (soakers, cloths). */
   sizes: SizeOption[];
   quantityAvailable?: number;
+  /** Ids of other ProductVariants offered as matching add-ons for this variant (the "Matching Add-ons" self-relation in the Notion inventory database) — e.g. a skate soaker points at its matching blade cloth. Each id is the `id` of a ProductVariant that also appears in this same product list, so clients resolve the add-on's name/price/availability locally rather than the payload carrying it twice. Empty or absent when the variant has no add-ons. */
+  addOnIds?: string[];
 }

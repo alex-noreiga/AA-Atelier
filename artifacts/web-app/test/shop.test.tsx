@@ -38,7 +38,8 @@ import {
   useGetProducts,
   useCreateBackInStockRequest,
 } from "@workspace/api-client-react";
-import Shop from "@/pages/shop";
+import Shop, { indexVariants, resolveAddOns } from "@/pages/shop";
+import type { Product, ProductVariant } from "@workspace/api-client-react";
 
 const mockHook = vi.mocked(useGetProducts);
 const mockNotify = vi.mocked(useCreateBackInStockRequest);
@@ -153,6 +154,61 @@ describe("Shop render states", () => {
     setHook({ products: [product()] });
     renderShop(<Shop />);
     expect(screen.getByText("inquire for price")).toBeInTheDocument();
+  });
+});
+
+describe("Shop matching add-ons", () => {
+  // The cloth is its own in-stock, priced product; the soaker points at it via
+  // addOnIds. This exercises the full prop chain: Shop builds the variant index,
+  // ProductCard resolves the selected variant's add-ons, and AddToCartButton
+  // surfaces the checkbox.
+  function soakerAndCloth() {
+    return [
+      product({
+        id: "soaker",
+        title: "Bow Fleece Soaker",
+        variants: [variant({ id: "soaker", price: 22, addOnIds: ["cloth"] })],
+      }),
+      product({
+        id: "cloth",
+        title: "Blade Cloth",
+        variants: [variant({ id: "cloth", name: "Blade Cloth", price: 12 })],
+      }),
+    ];
+  }
+
+  it("surfaces the matching add-on checkbox on a soaker card", () => {
+    setHook({ products: soakerAndCloth() });
+    // Grid level (no dialog open) — VariantCta renders in both the card body and
+    // the quick-view, so a deep-linked open dialog would duplicate the testid.
+    renderShop(<Shop />);
+    expect(screen.getByTestId("add-on-checkbox-cloth")).toBeInTheDocument();
+    expect(screen.getByTestId("add-on-cloth")).toHaveTextContent("Blade Cloth");
+  });
+
+  it("does not offer an add-on that is sold out", () => {
+    const [soaker] = soakerAndCloth();
+    setHook({
+      products: [
+        soaker,
+        product({
+          id: "cloth",
+          title: "Blade Cloth",
+          variants: [
+            variant({
+              id: "cloth",
+              name: "Blade Cloth",
+              price: 12,
+              available: false,
+            }),
+          ],
+        }),
+      ],
+    });
+    renderShop(<Shop />);
+    expect(
+      screen.queryByTestId("add-on-checkbox-cloth"),
+    ).not.toBeInTheDocument();
   });
 });
 
@@ -447,5 +503,41 @@ describe("Shop contact CTAs", () => {
     await userEvent.click(screen.getByTestId("notify-submit"));
 
     expect(await screen.findByTestId("notify-success")).toBeInTheDocument();
+  });
+});
+
+describe("resolveAddOns", () => {
+  const v = (o: Record<string, unknown> = {}): ProductVariant =>
+    variant(o) as ProductVariant;
+
+  it("indexes every variant across all products by id", () => {
+    const products = [
+      product({ id: "p1", variants: [v({ id: "a" }), v({ id: "b" })] }),
+      product({ id: "p2", variants: [v({ id: "c" })] }),
+    ] as unknown as Product[];
+    const byId = indexVariants(products);
+    expect([...byId.keys()].sort()).toEqual(["a", "b", "c"]);
+  });
+
+  it("resolves add-on ids to their full, buyable variant records", () => {
+    const cloth = v({ id: "cloth", name: "Blade Cloth", price: 12 });
+    const byId = new Map([["cloth", cloth]]);
+    const soaker = v({ id: "soaker", addOnIds: ["cloth"] });
+    expect(resolveAddOns(soaker, byId)).toEqual([cloth]);
+  });
+
+  it("drops an add-on that is sold out, unpriced, or missing from the payload", () => {
+    const soldOut = v({ id: "a", price: 12, available: false });
+    const unpriced = v({ id: "b", available: true, price: undefined });
+    const byId = new Map([
+      ["a", soldOut],
+      ["b", unpriced],
+    ]);
+    const soaker = v({ id: "s", addOnIds: ["a", "b", "missing"] });
+    expect(resolveAddOns(soaker, byId)).toEqual([]);
+  });
+
+  it("returns an empty list when the variant has no add-ons", () => {
+    expect(resolveAddOns(v({ id: "s" }), new Map())).toEqual([]);
   });
 });

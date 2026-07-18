@@ -61,6 +61,7 @@ describe("listVariants", () => {
         available: true,
         photos: [],
         sizes: [],
+        addOnIds: [],
         category: "",
         categoryId: "cat-dress",
         group: null,
