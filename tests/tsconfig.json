@@ -12,5 +12,10 @@
       "@workspace/test-fixtures": ["../lib/test-fixtures/src/index.ts"]
     }
   },
-  "include": ["e2e", "playwright.config.ts"]
+  "include": [
+    "e2e",
+    "smoke",
+    "playwright.config.ts",
+    "playwright.smoke.config.ts"
+  ]
 }

@@ -713,6 +713,25 @@ won't spawn its own server). `order-form.spec.ts` also carries an **opt-in**
 live-Notion smoke test guarded by `E2E_LIVE_NOTION=1` — that's the only path that
 writes to the real Notion database.
 
+**Production smoke tests (Playwright).** A separate, deliberately **non-mocking**
+suite in `tests/smoke/*.smoke.ts` with its own config
+(`playwright.smoke.config.ts`, `pnpm test:smoke`) drives the **real deployed
+site** (`PLAYWRIGHT_BASE_URL`, default the apex `https://a3iceanddance.com`) to
+catch production breakage the mocked run can't see — a bad deploy, a Notion/Google
+outage, an unshared database. Two rules make it distinct from the `e2e/` suite and
+must hold: (1) it **never** intercepts `/api/*` — every request hits the live
+backend, and it does **not** import `e2e/support/test.ts` (whose fixture fails any
+unmocked call); (2) every spec is **read-only** — it exercises `GET` read paths
+(health, shop inventory, the appointment catalog), an order lookup for a
+nonexistent number (the real Notion 404 path), and client-side form validation,
+but **never** creates an order/checkout/booking/contact message or sends an email,
+so it's safe to run against production forever. The `.smoke.ts` extension +
+`testMatch` keep it out of the `e2e` run (and Vitest) and vice versa, same
+extension-tracks-the-runner convention as `.test.ts`/`.spec.ts`. It runs **weekly**
+(not on every push) via `.github/workflows/smoke.yml` (`schedule` cron +
+`workflow_dispatch`); on a scheduled failure the workflow opens or updates a single
+GitHub issue so a regression is visible rather than buried.
+
 **CI.** `.github/workflows/ci.yml` runs on every pull request and push to `main`:
 install → `pnpm typecheck` → `pnpm test` (both Vitest suites) → `pnpm test:e2e`
 (Playwright installs its own Chromium; the mocked specs need no backend). The
