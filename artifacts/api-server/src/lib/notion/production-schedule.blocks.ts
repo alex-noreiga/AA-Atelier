@@ -20,14 +20,29 @@ export const PS_TARGET_DATE_PROPERTY = "Target Completion Date"; // date
 export const PS_ORDER_RELATION_PROPERTY = "Order"; // relation -> orders (new)
 
 /**
- * The "Status" option a freshly-generated milestone lands in. Must be one of the
- * live options on the Production Schedule "Status" property (Not Started /
- * In Progress / Completed). "Not Started" is where a new milestone begins; the
- * atelier advances it as work progresses. This names a value, not the list —
- * rename the option in Notion and you must update it here too (a deliberate,
- * targeted business rule, like SHOP_ORDER_PAID_STATUS).
+ * The three live options on the Production Schedule "Status" property, in
+ * workflow order. These name specific option values (not the list), coupling
+ * them to code the same way SHOP_ORDER_PAID_STATUS does — rename an option in
+ * Notion and you must update it here too. They're used both to seed a new
+ * milestone and to keep an existing one in step with its order's live stage
+ * (see `milestoneStatusFor` / `syncMilestoneStatuses` in schedule.service).
  */
-export const PRODUCTION_SCHEDULE_INITIAL_STATUS = "Not Started";
+export const MILESTONE_STATUS_NOT_STARTED = "Not Started";
+export const MILESTONE_STATUS_IN_PROGRESS = "In Progress";
+export const MILESTONE_STATUS_COMPLETED = "Completed";
+
+export type MilestoneStatus =
+  | typeof MILESTONE_STATUS_NOT_STARTED
+  | typeof MILESTONE_STATUS_IN_PROGRESS
+  | typeof MILESTONE_STATUS_COMPLETED;
+
+/**
+ * The "Status" a freshly-generated milestone lands in. "Not Started" is where a
+ * new milestone begins; the reconciliation advances it as the order's stage
+ * moves past it.
+ */
+export const PRODUCTION_SCHEDULE_INITIAL_STATUS: MilestoneStatus =
+  MILESTONE_STATUS_NOT_STARTED;
 
 /** One stage's target completion date — the unit both the schedule writer
  * (`computeMilestoneSchedule`) and the status-lookup reader
@@ -73,5 +88,18 @@ export function buildMilestoneProperties(
     [PS_ORDER_RELATION_PROPERTY]: {
       relation: [{ id: input.orderPageId }],
     },
+  };
+}
+
+/**
+ * The `properties` patch that sets *only* a milestone's completion `Status`,
+ * used by the reconciliation to advance an existing row without touching its
+ * stage, date, or order relation.
+ */
+export function buildMilestoneStatusUpdate(
+  status: MilestoneStatus,
+): Record<string, unknown> {
+  return {
+    [PS_STATUS_PROPERTY]: { status: { name: status } },
   };
 }

@@ -19,7 +19,7 @@
 //      logged; it is still visible in the button's config + browser history.
 
 import type { Request, Response } from "express";
-import { generatePendingMilestones } from "../services/schedule.service.js";
+import { reconcileMilestones } from "../services/schedule.service.js";
 import { logger } from "../lib/logger.js";
 
 export async function generateMilestonesHandler(
@@ -32,7 +32,7 @@ export async function generateMilestonesHandler(
     return;
   }
 
-  const result = await generatePendingMilestones();
+  const result = await reconcileMilestones();
   logger.info(result, "Milestone reconciliation complete");
   res.json(result);
 }
@@ -61,13 +61,17 @@ export async function generateMilestonesButtonHandler(
   }
 
   try {
-    const result = await generatePendingMilestones();
+    const result = await reconcileMilestones();
     logger.info(result, "Milestone reconciliation complete (button)");
-    const { ordersProcessed, milestonesCreated } = result;
+    const { ordersProcessed, milestonesCreated, milestonesUpdated } = result;
+    const updatedNote =
+      milestonesUpdated === 0
+        ? ""
+        : ` Refreshed the status of ${milestonesUpdated} existing milestone${milestonesUpdated === 1 ? "" : "s"}.`;
     const summary =
       milestonesCreated === 0
-        ? "Everything was already up to date — no new milestones were needed."
-        : `Generated ${milestonesCreated} milestone${milestonesCreated === 1 ? "" : "s"} across ${ordersProcessed} order${ordersProcessed === 1 ? "" : "s"}.`;
+        ? `Everything was already up to date — no new milestones were needed.${updatedNote}`
+        : `Generated ${milestonesCreated} milestone${milestonesCreated === 1 ? "" : "s"} across ${ordersProcessed} order${ordersProcessed === 1 ? "" : "s"}.${updatedNote}`;
     res
       .status(200)
       .type("html")

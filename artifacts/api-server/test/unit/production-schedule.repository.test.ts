@@ -2,11 +2,14 @@ import { describe, it, expect } from "vitest";
 import {
   createMilestone,
   listOrderMilestones,
+  listOrderMilestonePages,
   orderHasMilestones,
+  updateMilestoneStatus,
 } from "../../src/lib/notion/production-schedule.repository.js";
 import {
   PS_ORDER_RELATION_PROPERTY,
   PS_STAGE_PROPERTY,
+  PS_STATUS_PROPERTY,
   PS_TARGET_DATE_PROPERTY,
   type MilestoneInput,
 } from "../../src/lib/notion/production-schedule.blocks.js";
@@ -134,6 +137,107 @@ describe("listOrderMilestones (status read-back)", () => {
     const client = makeFakeClient(() => errorResponse(500));
     // A Production Schedule outage must not break the core status lookup.
     expect(await listOrderMilestones("order-page-1", client)).toEqual([]);
+  });
+});
+
+describe("listOrderMilestonePages (status sync read)", () => {
+  const pageRow = (
+    id: string,
+    stage: string | null,
+    status: string | null,
+  ) => ({
+    id,
+    properties: {
+      [PS_STAGE_PROPERTY]: { select: stage === null ? null : { name: stage } },
+      [PS_STATUS_PROPERTY]: {
+        status: status === null ? null : { name: status },
+      },
+    },
+  });
+
+  it("returns [] without querying when the database id is not configured", async () => {
+    const client = makeFakeClient(() => jsonResponse({ results: [] }), "");
+    expect(await listOrderMilestonePages("order-page-1", client)).toEqual([]);
+    expect(client.calls).toHaveLength(0);
+  });
+
+  it("filters by the Order relation and returns id, stage, and status per row", async () => {
+    const client = makeFakeClient((path) => {
+      if (isQuery(path))
+        return jsonResponse({
+          results: [
+            pageRow("m-1", "Fitting", "In Progress"),
+            pageRow("m-2", "Delivered", "Not Started"),
+          ],
+        });
+      throw new Error(`unexpected path ${path}`);
+    });
+
+    const result = await listOrderMilestonePages("order-page-1", client);
+
+    const call = client.calls.find((c) => isQuery(c.path))!;
+    expect(JSON.parse(call.init!.body as string).filter).toEqual({
+      property: PS_ORDER_RELATION_PROPERTY,
+      relation: { contains: "order-page-1" },
+    });
+    expect(result).toEqual([
+      { pageId: "m-1", stage: "Fitting", status: "In Progress" },
+      { pageId: "m-2", stage: "Delivered", status: "Not Started" },
+    ]);
+  });
+
+  it("coerces a missing stage or status to an empty string", async () => {
+    const client = makeFakeClient(() =>
+      jsonResponse({ results: [pageRow("m-3", null, null)] }),
+    );
+    expect(await listOrderMilestonePages("order-page-1", client)).toEqual([
+      { pageId: "m-3", stage: "", status: "" },
+    ]);
+  });
+
+  it("throws with the status when the query response is not ok", async () => {
+    const client = makeFakeClient(() => errorResponse(500));
+    await expect(
+      listOrderMilestonePages("order-page-1", client),
+    ).rejects.toThrow(/Notion query failed with status 500/);
+  });
+});
+
+describe("updateMilestoneStatus", () => {
+  it("throws when the production-schedule database id is not configured", async () => {
+    const client = makeFakeClient(() => jsonResponse({}), "");
+    await expect(
+      updateMilestoneStatus("m-1", "Completed", client),
+    ).rejects.toThrow(
+      /NOTION_PRODUCTION_SCHEDULE_DATABASE_ID is not configured/,
+    );
+  });
+
+  it("PATCHes the milestone page with only the Status property", async () => {
+    const client = makeFakeClient((path) => {
+      if (path === "/v1/pages/m-1") return jsonResponse({ id: "m-1" });
+      throw new Error(`unexpected path ${path}`);
+    });
+
+    await updateMilestoneStatus("m-1", "Completed", client);
+
+    expect(client.calls).toHaveLength(1);
+    const call = client.calls[0];
+    expect(call.path).toBe("/v1/pages/m-1");
+    expect(call.init?.method).toBe("PATCH");
+    const body = JSON.parse(call.init!.body as string);
+    expect(body.properties).toEqual({
+      [PS_STATUS_PROPERTY]: { status: { name: "Completed" } },
+    });
+  });
+
+  it("throws with the status and Notion error text on a non-ok response", async () => {
+    const client = makeFakeClient(() =>
+      errorResponse(400, "validation_error: bad status"),
+    );
+    await expect(
+      updateMilestoneStatus("m-1", "Completed", client),
+    ).rejects.toThrow(/status 400: validation_error: bad status/);
   });
 });
 

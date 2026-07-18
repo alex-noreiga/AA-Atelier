@@ -318,6 +318,54 @@ describe("findOrdersNeedingMilestones", () => {
   });
 });
 
+describe("findOrdersWithMilestones", () => {
+  it("filters on due-date-set AND milestones-generated, and attaches the live stage list", async () => {
+    const client = makeFakeClient((path) => {
+      if (isSchema(path)) {
+        return jsonResponse(
+          databaseSchemaWithStages(["Consultation", "Fitting", "Delivery"]),
+        );
+      }
+      if (isQuery(path)) {
+        return jsonResponse({
+          results: [
+            orderPage({
+              id: "page-9",
+              orderNumber: "000009",
+              orderName: "Cyd – Custom Dress",
+              currentStage: "Fitting",
+              dueDate: "2026-09-01",
+            }),
+          ],
+        });
+      }
+      throw new Error(`unexpected path ${path}`);
+    });
+
+    const orders = await repo.findOrdersWithMilestones(client);
+
+    expect(orders).toEqual([
+      {
+        pageId: "page-9",
+        orderNumber: "000009",
+        orderName: "Cyd – Custom Dress",
+        currentStage: "Fitting",
+        dueDate: "2026-09-01",
+        stages: ["Consultation", "Fitting", "Delivery"],
+      },
+    ]);
+
+    const queryCall = client.calls.find((c) => isQuery(c.path))!;
+    const filter = JSON.parse(queryCall.init!.body as string).filter;
+    expect(filter).toEqual({
+      and: [
+        { property: "Due Date", date: { is_not_empty: true } },
+        { property: "Milestones Generated", checkbox: { equals: true } },
+      ],
+    });
+  });
+});
+
 describe("markMilestonesGenerated", () => {
   it("PATCHes the order page with the checkbox set", async () => {
     const client = makeFakeClient((path) => {
