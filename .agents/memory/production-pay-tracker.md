@@ -5,107 +5,71 @@
 The atelier pays each team member (Alexandra / Alayna) a **share of an item's
 sale value** for the production stages they personally work. Different item
 **categories** split that value across stages differently (a soaker is just
-cutting + sewing; a dress spans five stages). This note captures the model, the
-locked percentages, what's now live in Notion, and the remaining UI-only steps.
-It is a **Notion-side** system under the `finances` page — there is no app/repo
-code for it (the app never reads or writes pay).
+cutting + sewing; a dress spans five stages). This is a **Notion-side** system
+under the `finances` page — there is no app/repo code for it (the app never reads
+or writes pay).
 
-## Diagnosis (why the old setup hurt)
+## Final design (item-level — no Work Log, no buttons)
 
-The pre-existing `production pay tracker` (Notion DB titled **"pay distribution"**,
-`collection://66e784e8-…` = *Stage work entries* + `collection://bfe8eef7-…` =
-*stage percentage split rules*, plus *production items* `collection://d5e3d564-…`)
-had four pains that reduce to two causes:
-
-- **A — pay inputs were re-typed, not derived:** each entry hand-linked a `Rule`
-  row and hand-typed a `Sale price`. → manual entry, wrong %s, sale-price drift
-  from the invoice. Live example found: the old split table summed **Dresses to
-  105%** (a duplicate consultation row) and the non-dress categories carried
-  identical placeholder splits.
-- **B — people were modeled as columns:** `Alexandra owed ($)` / `Alayna owed ($)`
-  formulas (and matching rollups on production items). → won't scale past two.
-
-## Locked distribution (source of truth)
-
-Categories **follow the inventory taxonomy** (Product Categories
-`collection://3868b1d0-…`: Ready to Wear · Men's Costume · Dresses · Hair
-Accessory · Skate Soakers · Other) so pay categories can't diverge from the
-catalog. Canonical stages: **Consultation & sketching · Sourcing materials ·
-Cutting & pinning · Sewing/construction · Rhinestoning/Detailing** (Assembly &
-Packaging retired — no category pays them; dress packaging folds into detailing +
-consult).
-
-| Category | Consult&sketch | Sourcing | Cutting&pin | Sewing | Detailing | Σ |
-|---|---|---|---|---|---|---|
-| Dresses | 15 | 10 | 20 | 35 | 20 | 100 |
-| Men's Costume | 15 | 10 | 20 | 35 | 20 | 100 |
-| Ready to Wear | 15 | 10 | 20 | 35 | 20 | 100 |
-| Skate Soakers | 0 | 0 | 30 | 70 | 0 | 100 |
-| Hair Accessory | 0 | 0 | 30 | 40 | 30 | 100 |
-| Other / bags | 0 | 0 | 30 | 40 | 30 | 100 |
-
-**Invariants:** every category **sums to 100%**; a 0 means the stage doesn't apply
-(the generator emits no entry for it). Pay formula:
-**`Owed = item sale price × units × stage % × share`**, where `share` = 1 normally
-and 0.5 on each of two rows when a single stage is split between both workers.
-
-## What is LIVE now (built + wired via the Notion API)
+Pay is computed **entirely on the `production items` row**. There is no separate
+per-stage log and no "Generate stages" buttons — both were removed. One row per
+item; you fill in who did each stage; the two owed formulas compute.
 
 - **`Category Pay Splits`** — DB `65b9c8b9e12d409eb292f1210000966f`, data source
   `collection://6560e0a5-8304-4a8d-ae82-b6497ce2d030`. One row per category, a
   percent column per stage (`Consult & sketch` / `Sourcing` / `Cutting & pinning`
-  / `Sewing` / `Detailing`), and a **`Total` formula** (sum of the five) = the
-  100% guard. Seeded with the six rows above. Edit a % by typing; `Total` stays 100.
-- **`Team`** — DB `5f903672e8684fea9e9c2eb7df88148b`, data source
-  `collection://66ea699b-a07c-482b-a237-c02a12450a35`. Rows: Alexandra, Alayna.
-  A roster for reporting/future; `Worked by` was **kept as a select** (adding a
-  select option is enough to scale, and the By-worker grouping sums the single
-  `Owed`), so the relation swap wasn't needed.
-- **`production items`** (`collection://d5e3d564-…`): added a **`Pay Split`**
-  relation → Category Pay Splits + 5 rollups (`Consult %`…`Detailing %`) + an
-  **`Item value`** formula (`Sale price × Units`, Units→1 if blank). Dropped the
-  `Alexandra/Alayna total owed` per-person rollups; `Total production owed` stays
-  and sums the new `Owed`.
-- **`pay distribution` Work Log** (`collection://66e784e8-…`): `Stage` reduced to
-  the 5 canonical stages; added **`Category split`** relation → Category Pay
-  Splits, the 5 `%` rollups off it, an **`Item value`** rollup (via `Production
-  item`), a **`Share`** number, and an **`Applied %`** display formula. **`Owed
-  ($)`** is now an **inline** formula: `Item value × (stage % picked from the
-  category, honouring a manual Stage % override) × (Share, default 1)`. Dropped
-  the `Rule` / `Rule Stage %` / `Effective Stage %` chain, the per-person
-  `Alexandra/Alayna owed` formulas, and the entry's own `Sale price`.
+  / `Sewing` / `Detailing`), and a **`Total`** formula (=100% guard). Six rows:
+  Dresses / Men's Costume / Ready to Wear (15/10/20/35/20), Skate Soakers
+  (0/0/30/70/0), Hair Accessory & Other (0/0/30/40/30). Edit a % by typing;
+  `Total` must stay 100. **Categories mirror the inventory Product Categories** —
+  don't reintroduce a hand-kept pay-category list.
+- **`production items`** (`collection://d5e3d564-…`) — the single working table:
+  - `Pay Split` relation → Category Pay Splits (set per item to its category row),
+    with 5 rollups `Consult %`…`Detailing %` pulling that category's percentages.
+  - Per-stage assignee selects, each **Alexandra / Alayna / Split**:
+    `Consult & sketch by`, `Sourcing materials by`, `Cutting & pinning fabric by`,
+    `Sewing by`, `Detailing by`. "Split" = both worked it, 50/50.
+  - `Sale price`, `Units`.
+  - **`Alexandra owed`** / **`Alayna owed`** formulas:
+    `Sale price × Units × Σ over stages (stage % × factor)`, where factor = 1 if
+    that stage's "…by" is that person, 0.5 if "Split", else 0. Inapplicable stages
+    contribute 0 (their category % is 0).
+  - `Team` DB (`5f903672…`, Alexandra/Alayna) exists as a roster; not required by
+    the calc (assignees are selects). A third worker = add a select option to each
+    "…by" + a third owed column.
 
-  **Gotcha (load-bearing):** referencing a *stored* formula that wraps rollups in
-  a multiplication throws "Type error with formula" in the Notion API. The stage-%
-  selector had to be **inlined into `Owed`** (the standalone `Applied %` column is
-  display-only for that reason). Keep `Owed` inline if you edit it.
+**Payout:** a view of `production items` filtered by `Paid?`, summing the
+`Alexandra owed` / `Alayna owed` columns (Notion column sum). Per-stage `…done`
+/ `…completed date` fields remain for production tracking.
 
-Verified end-to-end with a throwaway $500 dress item: Sewing (full) → **$175**
-(500×35%), Detailing (Share 0.5) → **$50** (500×20%×0.5).
+**Trade-off accepted:** only *even* 2-way splits (Split = 50/50) between the two
+of them, and per-person owed as columns. Chosen for simplicity in a two-person
+shop; uneven splits / 3+ workers would need the per-stage-row model instead.
 
-## Remaining UI-only steps (the API can't do these)
+Verified end-to-end on the Knight dress ($500, Units 1): Consult+Sourcing =
+Alexandra, Cutting+Detailing = Alayna, Sewing = Split → **Alexandra $212.50**
+(15+10+17.5%), **Alayna $287.50** (20+20+17.5%), summing to the full $500.
 
-1. **Generate-stages buttons** on `production items` (per-category buttons already
-   exist: Dress/Soakers/Hair accessory/Hot tools bag). Configure each to add one
-   Work Log row per **applicable** stage for that category, setting `Stage`,
-   `Category split` = that category's Pay Splits row, `Worked by` (default), and
-   `Share` = 1. A split stage = duplicate that row and set each `Share` to 0.5.
-   (Buttons aren't API-creatable.)
-2. **Payout view:** the existing **By worker** view on the Work Log groups on
-   `Worked by` and sums `Owed` — that's each person's period total. Add a `Paid?`
-   filter for a pay run.
-3. **Delete the stale bits by hand** (the integration can't trash pages): any
-   `ZZ TEST` rows; the old **`stage percentage split rules`** data source
-   (`collection://bfe8eef7-…`, still holds the old %s as reference); the 8 legacy
-   per-stage page templates on the Work Log; and optionally align the
-   `production items.Category` select names to the six inventory categories
-   (rename options in place to preserve values).
+## Load-bearing Notion-formula gotchas (hit repeatedly building this)
 
-## Guardrails
+1. **You cannot reference a *stored* formula property inside a multiplication via
+   the API** — `prop("SomeFormula") * x` throws "Type error with formula". Inline
+   the computation instead (that's why owed uses `Sale price × Units × …` directly,
+   not the `Item value` formula, and why the deposit/stage-% logic is inlined).
+2. **An `if` that *returns* a rollup** taints the type when combined; make the `if`
+   return a plain **number factor** (1 / 0.5 / 0) and multiply the rollup by it.
+3. **Renaming a column and changing its options in the same DDL batch** creates a
+   duplicate `… 1` column — do renames in a separate call from `ALTER … SET`.
 
-- **Category list is the inventory taxonomy** — don't reintroduce a hand-kept pay
-  category select; add categories in Product Categories and mirror the row here.
-- **Σ = 100% per category** is the invariant the `Total` column exists to protect;
-  a distribution that's wrong but still totals 100 is only catchable by the owner.
-- **Free Notion plan:** everything here is rows/relations/rollups/formulas/views/
-  buttons — none of it depends on the data-source query quota.
+## History / cleanup
+
+An earlier iteration wired a **Work Log** ("pay distribution" DB
+`collection://66e784e8-…`) with a `Category split` relation, per-stage rows, and
+an inline `Owed` formula — then we simplified to the item-level model above and
+**removed the buttons**. That Work Log is now unused; the old
+`stage percentage split rules` data source (`collection://bfe8eef7-…`) still holds
+the original %s as reference. **Delete by hand** (the API can't trash pages): any
+`ZZ TEST` rows, the unused Work Log / old split-rules DB if you don't want them,
+and optionally align the `production items.Category` option names to the six
+inventory categories (rename in place to keep values). Free Notion plan: all of
+this is rows/relations/rollups/formulas/views — no query-quota dependency.
