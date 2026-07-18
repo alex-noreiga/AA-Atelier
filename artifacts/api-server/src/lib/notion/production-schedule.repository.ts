@@ -10,10 +10,13 @@ import {
 } from "./client.js";
 import {
   buildMilestoneProperties,
+  buildMilestoneStatusUpdate,
   PS_ORDER_RELATION_PROPERTY,
   PS_STAGE_PROPERTY,
+  PS_STATUS_PROPERTY,
   PS_TARGET_DATE_PROPERTY,
   type MilestoneInput,
+  type MilestoneStatus,
   type StageMilestone,
 } from "./production-schedule.blocks.js";
 
@@ -115,6 +118,93 @@ export async function listOrderMilestones(
     }
   }
   return milestones;
+}
+
+// A milestone row as the status reconciliation reads it: the page id (to patch),
+// its stage label (Production Stage select), and its current completion Status.
+interface MilestonePageRow {
+  id: string;
+  properties?: {
+    [PS_STAGE_PROPERTY]?: { select?: { name?: string } | null };
+    [PS_STATUS_PROPERTY]?: { status?: { name?: string } | null };
+  };
+}
+
+interface MilestonePageQueryResponse {
+  results: MilestonePageRow[];
+}
+
+/** One milestone page, reduced to what the status sync needs. */
+export interface MilestonePage {
+  pageId: string;
+  /** Production Stage select value; `""` if the row has none. */
+  stage: string;
+  /** Current completion Status; `""` if unset. */
+  status: string;
+}
+
+/**
+ * List an order's milestone pages (by the `Order` relation) with their stage and
+ * current status, so the reconciliation can advance any whose status has drifted
+ * from the order's live stage. Fail-soft on an unconfigured database (returns
+ * `[]`, like `listOrderMilestones`) so a missing Production Schedule never turns
+ * the reconciliation into an alert storm; a query error still throws so the
+ * per-order guard in the service logs and retries it.
+ */
+export async function listOrderMilestonePages(
+  orderPageId: string,
+  client: NotionClient = getProductionScheduleNotionClient(),
+): Promise<MilestonePage[]> {
+  if (!client.databaseId) {
+    return [];
+  }
+
+  const response = await client.fetch(
+    `/v1/databases/${client.databaseId}/query`,
+    {
+      method: "POST",
+      body: JSON.stringify({
+        filter: {
+          property: PS_ORDER_RELATION_PROPERTY,
+          relation: { contains: orderPageId },
+        },
+      }),
+    },
+  );
+
+  if (!response.ok) {
+    throw new Error(`Notion query failed with status ${response.status}`);
+  }
+
+  const data = (await response.json()) as MilestonePageQueryResponse;
+  return data.results.map((row) => ({
+    pageId: row.id,
+    stage: row.properties?.[PS_STAGE_PROPERTY]?.select?.name ?? "",
+    status: row.properties?.[PS_STATUS_PROPERTY]?.status?.name ?? "",
+  }));
+}
+
+/** Set a single milestone page's completion `Status` (leaves stage/date/relation
+ * untouched). Used by the reconciliation to keep milestones in step with the
+ * order's stage. */
+export async function updateMilestoneStatus(
+  pageId: string,
+  status: MilestoneStatus,
+  client: NotionClient = getProductionScheduleNotionClient(),
+): Promise<void> {
+  assertConfigured(client);
+
+  const response = await client.fetch(`/v1/pages/${pageId}`, {
+    method: "PATCH",
+    body: JSON.stringify({ properties: buildMilestoneStatusUpdate(status) }),
+  });
+
+  if (!response.ok) {
+    const errorText = await response.text();
+    throw new Error(
+      `Notion milestone status update failed with status ${response.status}: ${errorText}`,
+    );
+  }
 }
 
 /** Create one per-stage milestone page in the Production Schedule database. */

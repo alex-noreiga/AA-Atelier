@@ -157,14 +157,14 @@ export interface PendingMilestoneOrder {
 }
 
 /**
- * Find custom orders that need milestones: `Due Date` is set and
- * `Milestones Generated` is not yet checked. Returns the live ordered stage list
- * alongside each order (fetched once, shared) so the scheduler doesn't hardcode
- * stages. Orders with an empty due date are skipped defensively even though the
- * filter already excludes them.
+ * Query custom orders with a `Due Date` set, split by whether their milestones
+ * have been generated. Returns the live ordered stage list alongside each order
+ * (fetched once, shared) so callers don't hardcode stages. Orders with an empty
+ * due date are skipped defensively even though the filter already excludes them.
  */
-export async function findOrdersNeedingMilestones(
-  client: NotionClient = getNotionClient(),
+async function queryOrdersByMilestoneState(
+  client: NotionClient,
+  milestonesGenerated: boolean,
 ): Promise<PendingMilestoneOrder[]> {
   assertConfigured(client);
 
@@ -180,7 +180,7 @@ export async function findOrdersNeedingMilestones(
             },
             {
               property: ORDER_MILESTONES_GENERATED_PROPERTY,
-              checkbox: { equals: false },
+              checkbox: { equals: milestonesGenerated },
             },
           ],
         },
@@ -208,6 +208,29 @@ export async function findOrdersNeedingMilestones(
     });
   }
   return orders;
+}
+
+/**
+ * Find custom orders that need milestones: `Due Date` is set and
+ * `Milestones Generated` is not yet checked — the unit of work for the
+ * generation pass of the reconciliation.
+ */
+export function findOrdersNeedingMilestones(
+  client: NotionClient = getNotionClient(),
+): Promise<PendingMilestoneOrder[]> {
+  return queryOrdersByMilestoneState(client, false);
+}
+
+/**
+ * Find custom orders that already have milestones (`Due Date` set and
+ * `Milestones Generated` checked) — the ones the status-sync pass re-checks so
+ * each milestone's completion state tracks the order's live stage instead of
+ * being frozen at "Not Started".
+ */
+export function findOrdersWithMilestones(
+  client: NotionClient = getNotionClient(),
+): Promise<PendingMilestoneOrder[]> {
+  return queryOrdersByMilestoneState(client, true);
 }
 
 /**

@@ -3,14 +3,14 @@ import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 // Mock the reconciliation service so the route runs end-to-end over the real
 // Express stack without touching Notion.
 vi.mock("../../src/services/schedule.service.js", () => ({
-  generatePendingMilestones: vi.fn(),
+  reconcileMilestones: vi.fn(),
 }));
 
 import request from "supertest";
 import app from "../../src/app.js";
-import { generatePendingMilestones } from "../../src/services/schedule.service.js";
+import { reconcileMilestones } from "../../src/services/schedule.service.js";
 
-const mockGenerate = vi.mocked(generatePendingMilestones);
+const mockGenerate = vi.mocked(reconcileMilestones);
 
 const ENDPOINT = "/api/cron/generate-milestones";
 
@@ -26,6 +26,7 @@ describe("GET /api/cron/generate-milestones", () => {
     mockGenerate.mockResolvedValue({
       ordersProcessed: 2,
       milestonesCreated: 7,
+      milestonesUpdated: 3,
     });
 
     const res = await request(app)
@@ -33,7 +34,11 @@ describe("GET /api/cron/generate-milestones", () => {
       .set("Authorization", "Bearer s3cret");
 
     expect(res.status).toBe(200);
-    expect(res.body).toEqual({ ordersProcessed: 2, milestonesCreated: 7 });
+    expect(res.body).toEqual({
+      ordersProcessed: 2,
+      milestonesCreated: 7,
+      milestonesUpdated: 3,
+    });
     expect(mockGenerate).toHaveBeenCalledTimes(1);
   });
 
@@ -79,6 +84,7 @@ describe("GET /api/cron/generate-milestones/run (Notion button)", () => {
     mockGenerate.mockResolvedValue({
       ordersProcessed: 2,
       milestonesCreated: 7,
+      milestonesUpdated: 0,
     });
 
     const res = await request(app).get(`${RUN}?secret=s3cret`);
@@ -94,12 +100,26 @@ describe("GET /api/cron/generate-milestones/run (Notion button)", () => {
     mockGenerate.mockResolvedValue({
       ordersProcessed: 0,
       milestonesCreated: 0,
+      milestonesUpdated: 0,
     });
 
     const res = await request(app).get(`${RUN}?secret=s3cret`);
 
     expect(res.status).toBe(200);
     expect(res.text).toContain("already up to date");
+  });
+
+  it("notes refreshed statuses even when no new milestones were created", async () => {
+    mockGenerate.mockResolvedValue({
+      ordersProcessed: 0,
+      milestonesCreated: 0,
+      milestonesUpdated: 4,
+    });
+
+    const res = await request(app).get(`${RUN}?secret=s3cret`);
+
+    expect(res.status).toBe(200);
+    expect(res.text).toContain("Refreshed the status of 4 existing milestones");
   });
 
   it("returns 401 (HTML) for a wrong secret and does not run", async () => {

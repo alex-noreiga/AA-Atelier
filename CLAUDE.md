@@ -136,8 +136,11 @@ Express app (artifacts/api-server)  ──►  Notion REST API (orders database)
   │                                  guarded, Bearer header, JSON). Finds orders
   │                                  with a "Due Date" but no milestones and writes
   │                                  one per-stage milestone row to the Notion
-  │                                  "Production Schedule" database. NOT part of
-  │                                  the OpenAPI contract.
+  │                                  "Production Schedule" database, then re-syncs
+  │                                  every existing milestone's Status from its
+  │                                  order's live stage (so the calendar reflects
+  │                                  real progress, not a frozen "Not Started").
+  │                                  NOT part of the OpenAPI contract.
   └─ GET  /api/cron/generate-milestones/run
                                    → the SAME reconciliation, on demand: a Notion
                                      "Open link" button the atelier presses. Auth
@@ -456,7 +459,8 @@ for the full design; the load-bearing points:
    atelier sets a `Due Date` on the order in the Order Tracking Pipeline and the
    reconciliation later scans for orders that have a due date but whose
    `Milestones Generated` checkbox is unset, and generates their milestones. It
-   runs two ways, both calling `generatePendingMilestones`: a **Vercel Cron** job
+   runs two ways, both calling `reconcileMilestones` (generation +
+   `syncMilestoneStatuses`, see point 4): a **Vercel Cron** job
    nightly (`GET /api/cron/generate-milestones`, Bearer `CRON_SECRET`, JSON; in
    `vercel.json` `crons`) and an on-demand **Notion "Open link" button**
    (`GET /api/cron/generate-milestones/run?secret=<CRON_SECRET>`, query token,
@@ -468,7 +472,7 @@ for the full design; the load-bearing points:
    outside the OpenAPI contract** (mounted in `app.ts`, not the `/api` router).
    Code: `routes/cron.ts` → `services/schedule.service.ts` →
    `lib/notion/orders.repository.ts`
-   (`findOrdersNeedingMilestones`/`markMilestonesGenerated`) +
+   (`findOrdersNeedingMilestones`/`findOrdersWithMilestones`/`markMilestonesGenerated`) +
    `lib/notion/production-schedule.{blocks,repository}.ts`.
 
 2. **Scheduling is even-split over the live stage list — don't hardcode stages.**
@@ -487,6 +491,19 @@ for the full design; the load-bearing points:
    order is written, and one order's failure is logged-and-skipped (retried next run)
    rather than aborting the batch. To **reschedule** after changing a due date, uncheck
    `Milestones Generated` (and delete the stale rows); the next run regenerates.
+
+4. **Status stays live — milestones aren't write-once.** After generation, the
+   same reconciliation runs `syncMilestoneStatuses`: for every order that already
+   has milestones (`findOrdersWithMilestones`), it re-derives each row's `Status`
+   from the order's current `Stage` — stages the order has passed → `Completed`,
+   the current stage → `In Progress` (`Completed` if it's the final stage, i.e.
+   delivered), stages ahead → `Not Started` — and PATCHes only the rows that
+   drifted (`milestoneStatusFor` + `updateMilestoneStatus`). Ordering comes from
+   the live `fetchLiveOrderStages` list, so no stage names are baked in; a
+   blank-`Production Stage` row is skipped rather than blanked. This is what keeps
+   the "Coming Up" calendar honest instead of every milestone reading a frozen
+   "Not Started" (the milestone `Status` has no Notion→app trigger otherwise). Same
+   per-order isolation as generation: one order's failure is logged and skipped.
 
 The atelier must, one time: add `Due Date` (date) + `Milestones Generated`
 (checkbox) to the Order Tracking Pipeline; add `Production Stage` (select) +
