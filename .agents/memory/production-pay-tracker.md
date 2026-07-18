@@ -49,50 +49,57 @@ consult).
 **`Owed = item sale price × units × stage % × share`**, where `share` = 1 normally
 and 0.5 on each of two rows when a single stage is split between both workers.
 
-## What is LIVE now (built via the Notion API)
+## What is LIVE now (built + wired via the Notion API)
 
 - **`Category Pay Splits`** — DB `65b9c8b9e12d409eb292f1210000966f`, data source
   `collection://6560e0a5-8304-4a8d-ae82-b6497ce2d030`. One row per category, a
-  percent column per stage, and a **`Total` formula** (sum of the five) = the
-  100% guard. Seeded with the six rows above. Edit a % by typing in a cell; watch
-  `Total` stays 100.
+  percent column per stage (`Consult & sketch` / `Sourcing` / `Cutting & pinning`
+  / `Sewing` / `Detailing`), and a **`Total` formula** (sum of the five) = the
+  100% guard. Seeded with the six rows above. Edit a % by typing; `Total` stays 100.
 - **`Team`** — DB `5f903672e8684fea9e9c2eb7df88148b`, data source
-  `collection://66ea699b-a07c-482b-a237-c02a12450a35`. Rows: Alexandra, Alayna
-  (`Active` checkbox). Relation target for the Work Log's `Worked by`; adding a
-  worker = adding a row (no formula edits).
+  `collection://66ea699b-a07c-482b-a237-c02a12450a35`. Rows: Alexandra, Alayna.
+  A roster for reporting/future; `Worked by` was **kept as a select** (adding a
+  select option is enough to scale, and the By-worker grouping sums the single
+  `Owed`), so the relation swap wasn't needed.
+- **`production items`** (`collection://d5e3d564-…`): added a **`Pay Split`**
+  relation → Category Pay Splits + 5 rollups (`Consult %`…`Detailing %`) + an
+  **`Item value`** formula (`Sale price × Units`, Units→1 if blank). Dropped the
+  `Alexandra/Alayna total owed` per-person rollups; `Total production owed` stays
+  and sums the new `Owed`.
+- **`pay distribution` Work Log** (`collection://66e784e8-…`): `Stage` reduced to
+  the 5 canonical stages; added **`Category split`** relation → Category Pay
+  Splits, the 5 `%` rollups off it, an **`Item value`** rollup (via `Production
+  item`), a **`Share`** number, and an **`Applied %`** display formula. **`Owed
+  ($)`** is now an **inline** formula: `Item value × (stage % picked from the
+  category, honouring a manual Stage % override) × (Share, default 1)`. Dropped
+  the `Rule` / `Rule Stage %` / `Effective Stage %` chain, the per-person
+  `Alexandra/Alayna owed` formulas, and the entry's own `Sale price`.
 
-## Remaining UI-only runbook (rewiring the live tracker — do by hand)
+  **Gotcha (load-bearing):** referencing a *stored* formula that wraps rollups in
+  a multiplication throws "Type error with formula" in the Notion API. The stage-%
+  selector had to be **inlined into `Owed`** (the standalone `Applied %` column is
+  display-only for that reason). Keep `Owed` inline if you edit it.
 
-Deliberately NOT auto-applied: the "pay distribution" DB is multi-source with
-formulas that decide real pay + saved views, and buttons can't be created via the
-API at all. Apply in order; nothing old is deleted until the new path verifies.
+Verified end-to-end with a throwaway $500 dress item: Sewing (full) → **$175**
+(500×35%), Detailing (Share 0.5) → **$50** (500×20%×0.5).
 
-1. **Production items** (`collection://d5e3d564-…`): add a relation **Pay Split →
-   Category Pay Splits** and set each item to its category's row; add 5 rollups
-   (Consult% / Sourcing% / Cutting% / Sewing% / Detailing%, "show original").
-   Make **`Sale price`** a rollup from the invoice (Order → *invoices & payments*
-   `collection://d64a9c2f-…`) instead of hand-typed. Align its `Category` select
-   to the six inventory categories.
-2. **Work Log** (`collection://66e784e8-…`): point **`Worked by`** at a relation →
-   Team; add a **`Share`** number (default 1); keep/repurpose the existing
-   **`Stage %`** number as the per-row stage share the button stamps in. Replace
-   the **`Owed ($)`** formula with `item Sale price × Units × Stage % × Share`
-   (Sale price + Units come via the `Production item` relation or are copied in by
-   the button). Add a **By worker** group on the Team relation.
-3. **Generate-stages button** (on production items, UI-only): make it emit one
-   Work Log row per **applicable** stage for the item's category (stage %>0 → soaker
-   = 2 rows, dress = 5), setting `Stage`, `Worked by` (default), `Share` = 1, and
-   `Stage %` = the item's matching rollup for that stage. Splitting a stage = duplicate
-   that row and set each `Share` to 0.5. (Because the button snapshots the % at
-   generation, later edits to `Category Pay Splits` don't retroactively change
-   already-recorded pay — desirable for a pay ledger.)
-4. **Retire after verify:** the old `stage percentage split rules` data source
-   (`collection://bfe8eef7-…`) and the `Rule` / `Rule Stage %` / `Effective Stage
-   %` chain; the `Alexandra owed ($)` / `Alayna owed ($)` columns (replaced by one
-   `Owed` grouped by worker); the `Applies to` select.
+## Remaining UI-only steps (the API can't do these)
 
-**Per-person payout** = group the Work Log **By worker** for a period, or roll
-`Owed` up onto each Team row.
+1. **Generate-stages buttons** on `production items` (per-category buttons already
+   exist: Dress/Soakers/Hair accessory/Hot tools bag). Configure each to add one
+   Work Log row per **applicable** stage for that category, setting `Stage`,
+   `Category split` = that category's Pay Splits row, `Worked by` (default), and
+   `Share` = 1. A split stage = duplicate that row and set each `Share` to 0.5.
+   (Buttons aren't API-creatable.)
+2. **Payout view:** the existing **By worker** view on the Work Log groups on
+   `Worked by` and sums `Owed` — that's each person's period total. Add a `Paid?`
+   filter for a pay run.
+3. **Delete the stale bits by hand** (the integration can't trash pages): any
+   `ZZ TEST` rows; the old **`stage percentage split rules`** data source
+   (`collection://bfe8eef7-…`, still holds the old %s as reference); the 8 legacy
+   per-stage page templates on the Work Log; and optionally align the
+   `production items.Category` select names to the six inventory categories
+   (rename options in place to preserve values).
 
 ## Guardrails
 
