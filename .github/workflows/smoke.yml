@@ -1,0 +1,122 @@
+name: Production smoke tests
+
+# Weekly synthetic monitor: drives the REAL deployed site through its standard,
+# read-only customer flows (see tests/smoke/) to catch production breakage a
+# mocked CI run can't — a bad deploy, a Notion/Google outage, an unshared
+# database. On failure it opens (or updates) a GitHub issue so a regression is
+# visible, not buried in an inbox.
+on:
+  schedule:
+    # Mondays at 13:00 UTC (~7-8am US Central, the atelier's timezone).
+    - cron: "0 13 * * 1"
+  # Manual runs, optionally against a Vercel preview instead of production.
+  workflow_dispatch:
+    inputs:
+      base_url:
+        description: "Base URL to smoke-test (defaults to production)"
+        required: false
+        type: string
+
+# Never run two monitors at once; a manual run supersedes a scheduled one.
+concurrency:
+  group: smoke
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+  issues: write
+
+jobs:
+  smoke:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    env:
+      # Precedence: manual input → repo variable PRODUCTION_URL → the canonical
+      # apex. The Playwright config also defaults to the apex, so this is belt
+      # and suspenders / an easy override point.
+      PLAYWRIGHT_BASE_URL: ${{ github.event.inputs.base_url || vars.PRODUCTION_URL || 'https://a3iceanddance.com' }}
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: pnpm/action-setup@v6
+
+      - uses: actions/setup-node@v7
+        with:
+          node-version-file: .nvmrc
+          cache: pnpm
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      # Cache Chromium keyed on the resolved Playwright version (same scheme as
+      # ci.yml) so it isn't re-downloaded every week.
+      - name: Resolve Playwright version
+        id: pw
+        run: echo "version=$(pnpm --filter @workspace/tests exec playwright --version | awk '{print $NF}')" >> "$GITHUB_OUTPUT"
+
+      - name: Cache Playwright browsers
+        id: playwright-cache
+        uses: actions/cache@v6
+        with:
+          path: ~/.cache/ms-playwright
+          key: playwright-${{ runner.os }}-${{ steps.pw.outputs.version }}
+
+      - name: Install Playwright browser (cache miss)
+        if: steps.playwright-cache.outputs.cache-hit != 'true'
+        run: pnpm --filter @workspace/tests exec playwright install --with-deps chromium
+
+      - name: Install Playwright system deps (cache hit)
+        if: steps.playwright-cache.outputs.cache-hit == 'true'
+        run: pnpm --filter @workspace/tests exec playwright install-deps chromium
+
+      - name: Run production smoke tests
+        run: pnpm test:smoke
+
+      - name: Upload smoke report
+        if: ${{ !cancelled() }}
+        uses: actions/upload-artifact@v7
+        with:
+          name: smoke-report
+          path: tests/smoke-report/
+          retention-days: 30
+
+      # On failure, open a fresh issue or comment on the existing open one so
+      # repeated weekly failures collapse into a single thread instead of
+      # spamming. Skipped for manual preview runs (they're exploratory).
+      - name: Open/update failure issue
+        if: ${{ failure() && github.event_name == 'schedule' }}
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const marker = "Weekly production smoke test failed";
+            const runUrl = `${context.serverUrl}/${context.repo.owner}/${context.repo.repo}/actions/runs/${context.runId}`;
+            const body = [
+              `The weekly production smoke test **failed**.`,
+              ``,
+              `- Target: \`${process.env.PLAYWRIGHT_BASE_URL}\``,
+              `- Run: ${runUrl}`,
+              `- Time: ${new Date().toISOString()}`,
+              ``,
+              `A standard customer flow may be broken in production. Open the run above and download the \`smoke-report\` artifact for the failing steps + screenshots.`,
+            ].join("\n");
+
+            const { owner, repo } = context.repo;
+            const found = await github.rest.search.issuesAndPullRequests({
+              q: `repo:${owner}/${repo} is:issue is:open in:title "${marker}"`,
+            });
+
+            if (found.data.total_count > 0) {
+              const issue = found.data.items[0];
+              await github.rest.issues.createComment({
+                owner, repo, issue_number: issue.number,
+                body: `Failed again — ${runUrl} (${new Date().toISOString()}).`,
+              });
+              core.notice(`Commented on existing issue #${issue.number}.`);
+            } else {
+              const created = await github.rest.issues.create({
+                owner, repo,
+                title: `⚠️ ${marker}`,
+                body,
+              });
+              core.notice(`Opened issue #${created.data.number}.`);
+            }

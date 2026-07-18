@@ -51,4 +51,5 @@ Thumbs.db
 # Playwright test artifacts
 tests/test-results/
 tests/playwright-report/
+tests/smoke-report/
 tests/blob-report/

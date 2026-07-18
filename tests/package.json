@@ -4,7 +4,9 @@
   "private": true,
   "scripts": {
     "test": "playwright test",
+    "test:smoke": "playwright test --config playwright.smoke.config.ts",
     "test:report": "playwright show-report",
+    "test:smoke:report": "playwright show-report smoke-report",
     "typecheck": "tsc -p tsconfig.json"
   },
   "devDependencies": {

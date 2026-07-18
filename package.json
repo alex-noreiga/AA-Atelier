@@ -20,6 +20,7 @@
     "test": "pnpm --filter \"./artifacts/**\" --if-present run test",
     "test:coverage": "pnpm --filter \"./artifacts/**\" --if-present run test:coverage",
     "test:e2e": "pnpm --filter @workspace/tests run test",
+    "test:smoke": "pnpm --filter @workspace/tests run test:smoke",
     "clean": "bash scripts/cleanup.sh",
     "clean:deep": "bash scripts/cleanup.sh --deep",
     "hooks:install": "bash scripts/install-hooks.sh"
