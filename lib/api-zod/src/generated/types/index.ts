@@ -44,6 +44,7 @@ export * from './orderStatusMilestonesItem';
 export * from './paymentSessionResponse';
 export * from './product';
 export * from './productList';
+export * from './productSizeGuide';
 export * from './productVariant';
 export * from './receiptLineItem';
 export * from './shopOrderStatus';

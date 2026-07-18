@@ -230,11 +230,25 @@ export interface ProductVariant {
   addOnIds?: string[];
 }
 
+/**
+ * Which size chart this product's category uses. "garment" (the default, and the value when this field is omitted) is the ready-to- wear body-measurement chart; "soaker" is the skate-soaker blade-length chart. Resolved server-side from the Notion "Product Categories" database ("Size guide type" select per category, following the inventory `Category` relation) — clients pick the chart from this and must not hardcode which category is a soaker. Only meaningful when `sized` is true.
+ */
+export type ProductSizeGuide = typeof ProductSizeGuide[keyof typeof ProductSizeGuide];
+
+
+export const ProductSizeGuide = {
+  garment: 'garment',
+  soaker: 'soaker',
+} as const;
+
 export interface Product {
   id: string;
   title: string;
   category: string;
+  /** Whether this product's category should show the ready-to-wear body- measurement size guide. Computed server-side from the Notion "Product Categories" database (a "Show size guide" checkbox per category) when configured, otherwise from a built-in fallback list. Clients render the size chart from this flag and must not hardcode which categories are sized. */
   sized: boolean;
+  /** Which size chart this product's category uses. "garment" (the default, and the value when this field is omitted) is the ready-to- wear body-measurement chart; "soaker" is the skate-soaker blade-length chart. Resolved server-side from the Notion "Product Categories" database ("Size guide type" select per category, following the inventory `Category` relation) — clients pick the chart from this and must not hardcode which category is a soaker. Only meaningful when `sized` is true. */
+  sizeGuide?: ProductSizeGuide;
   variants: ProductVariant[];
 }
 

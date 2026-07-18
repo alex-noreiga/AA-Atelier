@@ -31,7 +31,7 @@ describe("listCategoryRecords", () => {
     expect(client.calls).toHaveLength(0);
   });
 
-  it("maps each row to id, name, sized flag, and sort", async () => {
+  it("maps each row to id, name, sized flag, size-guide type, and sort", async () => {
     const client = makeFakeClient((path) => {
       if (path.endsWith("/query")) {
         return queryResponse([
@@ -45,6 +45,7 @@ describe("listCategoryRecords", () => {
             id: "c-soakers",
             name: "Skate Soakers",
             showSizeGuide: false,
+            sizeGuideType: "Skate soaker",
             sort: 4,
           }),
         ]);
@@ -53,8 +54,20 @@ describe("listCategoryRecords", () => {
     });
 
     expect(await repo.listCategoryRecords(client)).toEqual([
-      { id: "c-dress", name: "Dress", sized: true, sort: 2 },
-      { id: "c-soakers", name: "Skate Soakers", sized: false, sort: 4 },
+      {
+        id: "c-dress",
+        name: "Dress",
+        sized: true,
+        sizeGuide: "garment",
+        sort: 2,
+      },
+      {
+        id: "c-soakers",
+        name: "Skate Soakers",
+        sized: false,
+        sizeGuide: "soaker",
+        sort: 4,
+      },
     ]);
   });
 
@@ -78,8 +91,20 @@ describe("listCategoryRecords", () => {
     });
 
     expect(await repo.listCategoryRecords(client)).toEqual([
-      { id: "c-dress", name: "Dress", sized: true, sort: null },
-      { id: "c-rtw", name: "Ready to Wear", sized: true, sort: null },
+      {
+        id: "c-dress",
+        name: "Dress",
+        sized: true,
+        sizeGuide: "garment",
+        sort: null,
+      },
+      {
+        id: "c-rtw",
+        name: "Ready to Wear",
+        sized: true,
+        sizeGuide: "garment",
+        sort: null,
+      },
     ]);
     expect(client.calls.filter((c) => c.path.endsWith("/query"))).toHaveLength(
       2,
@@ -138,7 +163,13 @@ describe("listCategoryRecords", () => {
       });
 
       expect(await repo.listCategoryRecords(client)).toEqual([
-        { id: "c-dress", name: "Dress", sized: true, sort: null },
+        {
+          id: "c-dress",
+          name: "Dress",
+          sized: true,
+          sizeGuide: "garment",
+          sort: null,
+        },
       ]);
 
       fail = true;
@@ -146,7 +177,13 @@ describe("listCategoryRecords", () => {
       // Served from cache rather than throwing — a Notion blip must not drop
       // every size chart.
       expect(await repo.listCategoryRecords(client)).toEqual([
-        { id: "c-dress", name: "Dress", sized: true, sort: null },
+        {
+          id: "c-dress",
+          name: "Dress",
+          sized: true,
+          sizeGuide: "garment",
+          sort: null,
+        },
       ]);
     });
   });

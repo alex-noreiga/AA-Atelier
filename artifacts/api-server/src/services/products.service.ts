@@ -34,17 +34,36 @@ function toVariantRecord(variant: VariantRecord): ProductVariantRecord {
 }
 
 /**
+ * The size-guide fields for a card in `category`. A soaker category (in
+ * `soakerCategories`) always shows its blade-length chart — its size guide is
+ * implied by the type, so it needn't also be in `sizedCategories`. Otherwise the
+ * card is sized only if its category shows the ready-to-wear chart, and carries
+ * no `sizeGuide` (the client treats absent as "garment").
+ */
+function sizeGuideFields(
+  category: string,
+  sizedCategories: ReadonlySet<string>,
+  soakerCategories: ReadonlySet<string>,
+): { sized: boolean; sizeGuide?: "soaker" } {
+  if (soakerCategories.has(category))
+    return { sized: true, sizeGuide: "soaker" };
+  return { sized: sizedCategories.has(category) };
+}
+
+/**
  * Group flat inventory variants into shop cards. Pure (no I/O) so it can be
  * unit-tested directly. Rows sharing a `Website Group` merge into one card
  * (first-seen order preserved); ungrouped rows become standalone cards.
  *
- * A card's `sized` flag (does its category show the size guide) is looked up from
- * `sizedCategories` by the card's category — the caller passes the live set from
- * the "Product Categories" database, or the built-in fallback.
+ * A card's size-guide fields (does its category show a chart, and which one) are
+ * looked up by the card's category from `sizedCategories` (ready-to-wear chart)
+ * and `soakerCategories` (skate-soaker blade chart) — the caller passes the live
+ * sets from the "Product Categories" database.
  */
 export function groupVariants(
   variants: VariantRecord[],
   sizedCategories: ReadonlySet<string> = new Set(),
+  soakerCategories: ReadonlySet<string> = new Set(),
 ): ProductRecord[] {
   const cards: ProductRecord[] = [];
   // Grouped cards, keyed by the group value; preserves first-seen order.
@@ -58,7 +77,11 @@ export function groupVariants(
           id: `group-${slugify(variant.group)}`,
           title: variant.group,
           category: variant.category,
-          sized: sizedCategories.has(variant.category),
+          ...sizeGuideFields(
+            variant.category,
+            sizedCategories,
+            soakerCategories,
+          ),
           variants: [],
         };
         groups.set(variant.group, card);
@@ -70,7 +93,7 @@ export function groupVariants(
         id: variant.id,
         title: variant.name,
         category: variant.category,
-        sized: sizedCategories.has(variant.category),
+        ...sizeGuideFields(variant.category, sizedCategories, soakerCategories),
         variants: [toVariantRecord(variant)],
       });
     }
@@ -116,7 +139,12 @@ export function resolveFromCategories(
   const sizedCategories = new Set(
     records.filter((record) => record.sized).map((record) => record.name),
   );
-  const products = groupVariants(resolved, sizedCategories);
+  const soakerCategories = new Set(
+    records
+      .filter((record) => record.sizeGuide === "soaker")
+      .map((record) => record.name),
+  );
+  const products = groupVariants(resolved, sizedCategories, soakerCategories);
   const orderedNames = [...records]
     .sort((a, b) => (a.sort ?? Infinity) - (b.sort ?? Infinity))
     .map((record) => record.name);

@@ -132,11 +132,13 @@ export function inventoryPage(opts: {
 }
 
 /** Minimal "Product Categories" page as returned by a query — a category name,
- * its "Show size guide" checkbox, and an optional "Sort" number. */
+ * its "Show size guide" checkbox, an optional "Size guide type" select, and an
+ * optional "Sort" number. */
 export function categoryPage(opts: {
   id?: string;
   name?: string;
   showSizeGuide?: boolean;
+  sizeGuideType?: string;
   sort?: number;
 }) {
   const properties: Record<string, unknown> = {
@@ -149,6 +151,12 @@ export function categoryPage(opts: {
       checkbox: opts.showSizeGuide ?? false,
     },
   };
+  if (opts.sizeGuideType !== undefined) {
+    properties["Size guide type"] = {
+      type: "select",
+      select: { name: opts.sizeGuideType },
+    };
+  }
   if (opts.sort !== undefined) {
     properties["Sort"] = { type: "number", number: opts.sort };
   }
