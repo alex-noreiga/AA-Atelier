@@ -4,13 +4,26 @@ import userEvent from "@testing-library/user-event";
 import { stubHook } from "./support/mock-hook.js";
 
 // Control the data-fetching hook so we can drive each render state directly.
+// Track calls the custom hook too (Rules of Hooks); an SHP-* order number
+// routes to the shop hook, so the custom side just needs benign idle stubs.
 vi.mock("@workspace/api-client-react", () => ({
   useGetShopOrderStatus: vi.fn(),
   getGetShopOrderStatusQueryKey: (n: string) => [n],
+  useGetOrderStatus: vi.fn(() => ({
+    data: undefined,
+    isLoading: false,
+    error: null,
+  })),
+  getGetOrderStatusQueryKey: (n: string) => [n],
+  useCreateOrderPayment: vi.fn(() => ({ mutate: vi.fn(), isPending: false })),
+  useCreateMeasurementChangeRequest: () => ({
+    mutate: vi.fn(),
+    isPending: false,
+  }),
 }));
 
 import { useGetShopOrderStatus } from "@workspace/api-client-react";
-import ShopOrderStatus from "@/pages/shop-order-status";
+import Track from "@/pages/track";
 
 const mockHook = vi.mocked(useGetShopOrderStatus);
 
@@ -23,7 +36,7 @@ function setHook(state: {
 }
 
 async function submitLookup(orderNumber = "SHP-1") {
-  render(<ShopOrderStatus />);
+  render(<Track />);
   await userEvent.type(screen.getByTestId("input-order-number"), orderNumber);
   await userEvent.click(screen.getByTestId("button-lookup"));
 }

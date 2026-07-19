@@ -14,7 +14,7 @@ import { mockMeasurementChange, mockOrderStatus } from "./support/mock-api";
 /** Look up the default order and open the measurement-change dialog. */
 async function openDialog(page: Page): Promise<void> {
   await mockOrderStatus(page, { body: orderRecord({ orderNumber: "ORD-1" }) });
-  await page.goto("/shop/status");
+  await page.goto("/track");
   await page.getByTestId("input-order-number").fill("ORD-1");
   await page.getByTestId("button-lookup").click();
   await expect(page.getByTestId("status-success")).toBeVisible();

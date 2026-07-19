@@ -180,7 +180,7 @@ export async function createPaymentCheckout(
         }
       : {}),
     success_url: `${base}/shop/success?session_id={CHECKOUT_SESSION_ID}`,
-    cancel_url: `${base}/shop/status`,
+    cancel_url: `${base}/track`,
     // The webhook reads these to mark the right invoice stage paid.
     metadata: {
       kind: CUSTOM_PAYMENT_KIND,

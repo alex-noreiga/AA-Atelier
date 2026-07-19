@@ -33,7 +33,7 @@ test.describe("Custom-order deposit", () => {
       }),
     );
 
-    await page.goto("/shop/status");
+    await page.goto("/track");
     await page.getByTestId("input-order-number").fill("000002");
     await page.getByTestId("button-lookup").click();
 
@@ -70,7 +70,7 @@ test.describe("Custom-order deposit", () => {
       },
     });
 
-    await page.goto("/shop/status");
+    await page.goto("/track");
     await page.getByTestId("input-order-number").fill("000002");
     await page.getByTestId("button-lookup").click();
 
@@ -91,7 +91,7 @@ test.describe("Custom-order deposit", () => {
       body: { error: GENERIC_ERROR },
     });
 
-    await page.goto("/shop/status");
+    await page.goto("/track");
     await page.getByTestId("input-order-number").fill("000002");
     await page.getByTestId("button-lookup").click();
 
@@ -103,7 +103,7 @@ test.describe("Custom-order deposit", () => {
       page.getByText("Couldn't start the deposit payment", { exact: true }),
     ).toBeVisible();
     // No redirect; the pay button is still there to retry.
-    await expect(page).toHaveURL(/\/shop\/status$/);
+    await expect(page).toHaveURL(/\/track$/);
     await expect(page.getByTestId("button-pay-first_deposit")).toBeVisible();
   });
 });

@@ -200,7 +200,7 @@ export default function OrderForm() {
               </CtaLink>
             )}
             <Link
-              to="/shop/status"
+              to="/track"
               className="inline-flex items-center gap-2 text-sm tracking-widest uppercase text-muted-foreground hover:text-primary transition-colors"
               data-testid="link-track-order"
             >
@@ -235,7 +235,7 @@ export default function OrderForm() {
       <div className="max-w-2xl mx-auto px-6 pt-24 pb-20">
         <div className="mb-10">
           <Link
-            to="/shop/status"
+            to="/track"
             className="inline-flex items-center gap-2 text-sm text-muted-foreground hover:text-primary transition-colors tracking-widest uppercase mb-8 group"
             data-testid="link-track-my-order"
           >

@@ -594,7 +594,7 @@ export default function Shop() {
               <ArrowRight className="w-4 h-4 group-hover:translate-x-1 transition-transform" />
             </CtaLink>
             <CtaLink
-              to="/shop/status"
+              to="/track"
               variant="outline"
               data-testid="link-order-status"
             >

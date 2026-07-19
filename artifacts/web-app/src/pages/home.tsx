@@ -76,7 +76,7 @@ export default function Home() {
               <ArrowRight className="w-4 h-4 group-hover:translate-x-1 transition-transform" />
             </CtaLink>
             <CtaLink
-              to="/shop/status"
+              to="/track"
               variant="outline"
               data-testid="cta-order-status"
             >

@@ -57,7 +57,7 @@ describe("Navbar", () => {
     );
     expect(screen.getByTestId("nav-track-your-order")).toHaveAttribute(
       "href",
-      "/shop/status",
+      "/track",
     );
   });
 
@@ -69,7 +69,7 @@ describe("Navbar", () => {
   });
 
   it("marks Services — not Shop — active on the order status page", () => {
-    renderAt("/shop/status");
+    renderAt("/track");
 
     expect(isHighlighted(desktop("services"))).toBe(true);
     expect(isHighlighted(desktop("shop"))).toBe(false);
@@ -98,7 +98,7 @@ describe("Navbar", () => {
     );
     expect(screen.getByTestId("nav-mobile-track-your-order")).toHaveAttribute(
       "href",
-      "/shop/status",
+      "/track",
     );
   });
 });

@@ -29,9 +29,9 @@ test.describe("Navbar", () => {
     await page.getByTestId("nav-services").click();
     await page.getByTestId("nav-track-your-order").click();
 
-    await expect(page).toHaveURL(/\/shop\/status$/);
+    await expect(page).toHaveURL(/\/track$/);
     await expect(page.getByTestId("input-order-number")).toBeVisible();
-    // /shop/status belongs to Services, not Shop.
+    // /track belongs to Services, not Shop.
     await expect(page.getByTestId("nav-shop")).toHaveAttribute(
       "data-active",
       "false",
@@ -60,7 +60,7 @@ test.describe("Navbar", () => {
 
     await page.getByTestId("nav-mobile-track-your-order").click();
 
-    await expect(page).toHaveURL(/\/shop\/status$/);
+    await expect(page).toHaveURL(/\/track$/);
     await expect(page.getByTestId("input-order-number")).toBeVisible();
   });
 });

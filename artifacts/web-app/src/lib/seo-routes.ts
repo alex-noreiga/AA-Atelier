@@ -121,11 +121,11 @@ export const ROUTE_SEO: Record<string, RouteSeo> = {
 
   // ── Noindex routes — carry per-route titles but are kept out of the sitemap
   //    and out of prerendering (they render behind dynamic, per-visitor state).
-  "/shop/status": {
-    path: "/shop/status",
+  "/track": {
+    path: "/track",
     title: "Track Your Order | A.A Atelier",
     description:
-      "Look up your A.A Atelier commission by order number and follow its progress through each stage of the atelier.",
+      "Look up any A.A Atelier order — a custom commission or a shop purchase — by its order number and follow its progress.",
     noindex: true,
   },
   "/shop/success": {
@@ -133,13 +133,6 @@ export const ROUTE_SEO: Record<string, RouteSeo> = {
     title: "Order Confirmed | A.A Atelier",
     description:
       "Your A.A Atelier order is confirmed. Thank you for your purchase.",
-    noindex: true,
-  },
-  "/shop/order-status": {
-    path: "/shop/order-status",
-    title: "Track Your Shop Order | A.A Atelier",
-    description:
-      "Look up your A.A Atelier shop order by its order number and follow its progress toward delivery.",
     noindex: true,
   },
 };

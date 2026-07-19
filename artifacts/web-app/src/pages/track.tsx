@@ -1,7 +1,9 @@
 import { useEffect, useState } from "react";
 import { Link, useSearch } from "wouter";
 import {
+  useGetOrderStatus,
   useGetShopOrderStatus,
+  getGetOrderStatusQueryKey,
   getGetShopOrderStatusQueryKey,
 } from "@workspace/api-client-react";
 import { Input } from "@/components/ui/input";
@@ -9,17 +11,28 @@ import { Button } from "@/components/ui/button";
 import { PageShell } from "@/components/page-shell";
 import { Seo } from "@/components/seo";
 import { ROUTE_SEO } from "@/lib/seo-routes";
-import { formatPrice } from "@/lib/format";
-import { Loader2, ArrowRight, ShoppingBag } from "lucide-react";
+import { CustomOrderResult } from "@/components/custom-order-result";
+import { ShopOrderResult } from "@/components/shop-order-result";
+import { Loader2, PenLine } from "lucide-react";
 
 /**
- * Track a ready-to-wear shop order by its order number (issued at checkout,
- * shown on the success page). A stripped sibling of the custom-order status
- * page: it reports the Notion fulfilment "Status" workflow as a timeline, with
- * no deposit or measurement-change controls. Arriving with `?orderNumber=…`
- * (from the success page) looks the order up straight away.
+ * Unified order tracking. A single lookup serves both custom (bespoke) orders
+ * and ready-to-wear shop orders — the customer never has to know which kind
+ * they have. The two order-number formats are disjoint (shop orders are issued
+ * as "SHP-XXXX-XXXX"; custom orders are numeric, e.g. "000002"), so we route the
+ * entered number to the right backend by prefix and render the matching result.
+ *
+ * Arriving with `?orderNumber=…` (from the shop success page) looks it up on
+ * arrival. Replaces the old split `/shop/status` + `/shop/order-status` pages,
+ * which now redirect here.
  */
-export default function ShopOrderStatus() {
+type OrderKind = "custom" | "shop";
+
+function detectKind(orderNumber: string): OrderKind {
+  return orderNumber.toUpperCase().startsWith("SHP") ? "shop" : "custom";
+}
+
+export default function Track() {
   const search = useSearch();
   const prefill = new URLSearchParams(search).get("orderNumber") ?? "";
 
@@ -36,19 +49,32 @@ export default function ShopOrderStatus() {
     }
   }, [prefill]);
 
-  const {
-    data: order,
-    isLoading,
-    error,
-  } = useGetShopOrderStatus(submittedOrderNumber || "", {
+  const kind = submittedOrderNumber ? detectKind(submittedOrderNumber) : null;
+
+  // Both hooks are always called (Rules of Hooks); only the one matching the
+  // detected format is enabled, so a lookup hits a single backend.
+  const custom = useGetOrderStatus(submittedOrderNumber || "", {
     query: {
-      enabled: !!submittedOrderNumber,
+      enabled: !!submittedOrderNumber && kind === "custom",
+      queryKey: submittedOrderNumber
+        ? getGetOrderStatusQueryKey(submittedOrderNumber)
+        : ["none"],
+      retry: false, // Don't retry on 404
+    },
+  });
+  const shop = useGetShopOrderStatus(submittedOrderNumber || "", {
+    query: {
+      enabled: !!submittedOrderNumber && kind === "shop",
       queryKey: submittedOrderNumber
         ? getGetShopOrderStatusQueryKey(submittedOrderNumber)
         : ["none"],
       retry: false, // Don't retry on 404
     },
   });
+
+  const active = kind === "shop" ? shop : custom;
+  const isLoading = active.isLoading;
+  const isError = !!active.error;
 
   const handleLookup = (e: React.FormEvent) => {
     e.preventDefault();
@@ -62,14 +88,15 @@ export default function ShopOrderStatus() {
     setInputValue("");
   };
 
-  const isError = !!error;
   const errorMessage =
-    (error as { data?: { message?: string } })?.data?.message ||
-    "We couldn't find a shop order with that number. Please check and try again.";
+    (active.error as { data?: { message?: string } })?.data?.message ||
+    (kind === "shop"
+      ? "We couldn't find a shop order with that number. Please check and try again."
+      : "We couldn't find an order with that number. Please check and try again.");
 
   return (
     <PageShell>
-      <Seo {...ROUTE_SEO["/shop/order-status"]} />
+      <Seo {...ROUTE_SEO["/track"]} />
       <div className="w-full max-w-lg z-10 mx-auto animate-in fade-in zoom-in-95 duration-1000">
         {/* Header */}
         <div className="text-center mb-12">
@@ -77,7 +104,7 @@ export default function ShopOrderStatus() {
             Track Your Order
           </h1>
           <p className="text-muted-foreground font-light text-lg">
-            Enter your shop order number to see its progress.
+            Enter your order number to follow its progress.
           </p>
         </div>
 
@@ -87,7 +114,7 @@ export default function ShopOrderStatus() {
             <div className="relative group">
               <Input
                 type="text"
-                placeholder="e.g. SHP-XXXX-XXXX"
+                placeholder="Enter your order number"
                 value={inputValue}
                 onChange={(e) => setInputValue(e.target.value)}
                 className="w-full bg-transparent border-0 border-b border-border rounded-none px-4 py-6 text-center text-xl tracking-widest placeholder:text-muted-foreground/50 focus-visible:ring-0 focus-visible:border-primary transition-colors h-auto shadow-none"
@@ -95,6 +122,9 @@ export default function ShopOrderStatus() {
               />
               <div className="absolute bottom-0 left-1/2 -translate-x-1/2 w-0 h-[1px] bg-primary transition-all duration-500 group-focus-within:w-full"></div>
             </div>
+            <p className="text-center text-xs text-muted-foreground/70 font-light tracking-wide">
+              Works for both custom commissions and shop orders (SHP-…).
+            </p>
             <div className="flex justify-center pt-4">
               <Button
                 type="submit"
@@ -107,12 +137,12 @@ export default function ShopOrderStatus() {
             </div>
             <div className="flex justify-center pt-2">
               <Link
-                to="/shop"
+                to="/order"
                 className="inline-flex items-center gap-2 text-sm text-muted-foreground hover:text-primary transition-colors tracking-widest uppercase group"
-                data-testid="link-shop"
+                data-testid="link-place-order"
               >
-                <ShoppingBag className="w-4 h-4" />
-                Back to the shop
+                <PenLine className="w-4 h-4" />
+                Place a new order instead
               </Link>
             </div>
           </form>
@@ -155,90 +185,14 @@ export default function ShopOrderStatus() {
           </div>
         )}
 
-        {/* State: Success / Order Found */}
-        {order && !isLoading && !isError && (
-          <div
-            className="animate-in slide-in-from-bottom-8 fade-in duration-1000"
-            data-testid="status-success"
-          >
-            <div className="text-center mb-16">
-              <p className="text-primary text-sm tracking-[0.15em] uppercase mb-2">
-                Order {order.orderNumber}
-              </p>
-              {typeof order.total === "number" && (
-                <h2 className="text-3xl font-serif">
-                  {formatPrice(order.total)}
-                </h2>
-              )}
-            </div>
+        {/* State: Success — custom (bespoke) order */}
+        {kind === "custom" && custom.data && !isLoading && !isError && (
+          <CustomOrderResult orderStatus={custom.data} onReset={handleReset} />
+        )}
 
-            <div className="relative pl-6 md:pl-8 space-y-12">
-              {/* Vertical Thread Line */}
-              <div className="absolute left-[11px] md:left-[15px] top-2 bottom-2 w-[1px] bg-border z-0"></div>
-
-              {order.statuses.map((status, index) => {
-                const currentIndex = order.statuses.indexOf(order.status);
-                const isCompleted = index < currentIndex;
-                const isActive = index === currentIndex;
-                const isFuture = index > currentIndex;
-
-                return (
-                  <div
-                    key={status}
-                    className="relative z-10 flex items-start group"
-                    data-testid={`row-status-${index}`}
-                  >
-                    {/* Status Indicator Node */}
-                    <div className="absolute -left-6 md:-left-8 flex items-center justify-center w-6 h-6 bg-background">
-                      <div
-                        className={`
-                        w-2.5 h-2.5 rounded-full transition-all duration-700
-                        ${isActive ? "bg-primary shadow-[0_0_12px_var(--color-primary)] scale-125" : ""}
-                        ${isCompleted ? "bg-primary/50" : ""}
-                        ${isFuture ? "bg-border" : ""}
-                      `}
-                      />
-                    </div>
-
-                    {/* Status Content */}
-                    <div
-                      className={`
-                      flex-1 pl-6 transition-all duration-500
-                      ${isActive ? "opacity-100 translate-x-2" : ""}
-                      ${isCompleted ? "opacity-60" : ""}
-                      ${isFuture ? "opacity-30" : ""}
-                    `}
-                    >
-                      <h3
-                        className={`
-                        font-serif text-2xl mb-1
-                        ${isActive ? "text-primary" : "text-foreground"}
-                      `}
-                      >
-                        {status}
-                      </h3>
-                      {isCompleted && (
-                        <p className="text-muted-foreground/50 font-light text-xs uppercase tracking-widest">
-                          Completed
-                        </p>
-                      )}
-                    </div>
-                  </div>
-                );
-              })}
-            </div>
-
-            <div className="mt-16 flex flex-col items-center gap-6">
-              <button
-                onClick={handleReset}
-                className="text-muted-foreground hover:text-primary transition-colors flex items-center gap-2 text-sm tracking-widest uppercase group"
-                data-testid="button-check-another"
-              >
-                <span>Check another order</span>
-                <ArrowRight className="w-4 h-4 group-hover:translate-x-1 transition-transform" />
-              </button>
-            </div>
-          </div>
+        {/* State: Success — ready-to-wear shop order */}
+        {kind === "shop" && shop.data && !isLoading && !isError && (
+          <ShopOrderResult order={shop.data} onReset={handleReset} />
         )}
       </div>
     </PageShell>
