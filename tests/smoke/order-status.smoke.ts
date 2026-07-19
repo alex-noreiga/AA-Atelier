@@ -11,7 +11,7 @@ test.describe("Production smoke: order status lookup", () => {
   test("a nonexistent order number returns the not-found state", async ({
     page,
   }) => {
-    await page.goto("/shop/status");
+    await page.goto("/track");
 
     await page
       .getByTestId("input-order-number")
@@ -19,7 +19,7 @@ test.describe("Production smoke: order status lookup", () => {
     await page.getByTestId("button-lookup").click();
 
     // The lookup resolves to the error card (a 404 from Notion), not a hang and
-    // not a success. `status.tsx` renders the 404 body text here.
+    // not a success. `track.tsx` renders the 404 body text here.
     const error = page.getByTestId("status-error");
     await expect(error).toBeVisible({ timeout: 30_000 });
     await expect(error).toContainText(/couldn't find|no order|not found/i);

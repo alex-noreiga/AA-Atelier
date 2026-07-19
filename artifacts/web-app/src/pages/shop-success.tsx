@@ -89,7 +89,7 @@ export default function ShopSuccess() {
             <p className="mt-3 text-sm text-muted-foreground font-light">
               Save this — you can{" "}
               <a
-                href={`/shop/order-status?orderNumber=${encodeURIComponent(
+                href={`/track?orderNumber=${encodeURIComponent(
                   data.orderNumber,
                 )}`}
                 className="text-primary hover:underline"

@@ -189,7 +189,7 @@ function InvoiceBreakdown({
 
       <div className="mt-12 text-center">
         <Link
-          href="/shop/status"
+          href="/track"
           className="group inline-flex items-center gap-2 text-muted-foreground hover:text-primary transition-colors text-sm tracking-widest uppercase"
           data-testid="link-back-to-status"
         >
@@ -245,7 +245,7 @@ export default function InvoicePage() {
             We couldn&apos;t find an order with that number.
           </p>
           <Link
-            href="/shop/status"
+            href="/track"
             className="mt-8 inline-flex items-center gap-2 text-muted-foreground hover:text-primary transition-colors text-sm tracking-widest uppercase"
             data-testid="link-back-to-status"
           >
@@ -261,7 +261,7 @@ export default function InvoicePage() {
             is.
           </p>
           <Link
-            href="/shop/status"
+            href="/track"
             className="mt-8 inline-flex items-center gap-2 text-muted-foreground hover:text-primary transition-colors text-sm tracking-widest uppercase"
             data-testid="link-back-to-status"
           >
