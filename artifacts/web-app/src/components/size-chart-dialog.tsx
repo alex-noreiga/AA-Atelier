@@ -119,29 +119,22 @@ interface SoakerSizeRow {
   skate: string;
 }
 
-// Blade-length bands, anchored so the atelier's MK Flight test blade (9⅓" ≈
-// 237 mm) sits in Small. ~1" steps overlap at the edges so no blade falls in a
-// gap; soakers stretch, so between-size shoppers size up.
+// Two blade-length bands, split at 9½" — the atelier makes and stocks two
+// physical soaker sizes. Soakers stretch (~1–1.5"), so each band covers a range
+// of blades and between-size shoppers size up. The atelier's MK Flight test
+// blade (9⅓" ≈ 237 mm) is a Small. The split value here must match the size
+// option names in Notion ("Small (up to 9½\")" / "Large (9½\"+)"); re-tune both
+// together if the cutoff changes.
 const SOAKER_SIZE_CHART: SoakerSizeRow[] = [
   {
-    band: "XS",
-    blade: { in: '7–8½"', mm: "178–216" },
-    skate: "Toddler–youth · ~9C–1Y",
-  },
-  {
     band: "Small",
-    blade: { in: '8½–9½"', mm: "216–241" },
-    skate: "Youth 1–4 / women’s ~4–6",
-  },
-  {
-    band: "Medium",
-    blade: { in: '9½–10½"', mm: "241–267" },
-    skate: "Women’s ~6–9 / men’s ~5–8",
+    blade: { in: 'up to 9½"', mm: "≤ 241" },
+    skate: "Youth to average adult",
   },
   {
     band: "Large",
-    blade: { in: '10½–11½"+', mm: "267–292" },
-    skate: "Men’s ~8+",
+    blade: { in: '9½" and up', mm: "241 +" },
+    skate: "Larger adult / men’s",
   },
 ];
 
