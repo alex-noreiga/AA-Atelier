@@ -57,8 +57,8 @@ Setup the atelier must do once:
 ## Load-bearing rules (don't regress these)
 
 - **The type catalog stays in code** (`lib/appointments/catalog.ts`): the four
-  types, durations, and routing (Alayna: consultations + design reviews;
-  Alexandra: everything; fittings in-person only). Targeted business rule, like
+  types, durations, and routing (consultations: Alayna only; fittings, design
+  reviews, general: either Alexandra or Alayna; fittings in-person only). Targeted business rule, like
   `STATUS_IN_STOCK`. Staff `name`s here must equal the `Staff` column in the
   working-hours Sheet.
 - **Never trust a client-sent slot.** `POST /appointments` re-runs the same

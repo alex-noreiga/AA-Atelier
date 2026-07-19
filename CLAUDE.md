@@ -485,8 +485,7 @@ The atelier plans work in the **"📅 Production Schedule"** Notion database
 (`NOTION_PRODUCTION_SCHEDULE_DATABASE_ID`), which has ready-made Timeline and
 Calendar views keyed on `Target Completion Date`. To fill it, the app
 **auto-generates one dated milestone row per remaining stage** for any custom
-order that has a firm due date. See `.agents/memory/production-schedule-milestones.md`
-for the full design; the load-bearing points:
+order that has a firm due date. The load-bearing points:
 
 1. **Trigger is a reconciliation cron (plus an on-demand button), not a Notion
    push.** There is no Notion→app trigger (see the deposits/status notes), so the
@@ -563,8 +562,9 @@ in `api-server/src/lib/appointments/*` (pure logic + config),
 
 1. **The type catalog is a targeted business rule in code.**
    `lib/appointments/catalog.ts` names the four types, their durations, and their
-   routing rules (Alayna takes consultations + design reviews; Alexandra takes
-   everything; fittings are in-person only). Like `STATUS_IN_STOCK`, these are
+   routing rules (consultations are Alayna only; fittings, design reviews, and
+   general appointments can be booked with either Alexandra or Alayna; fittings
+   are in-person only). Like `STATUS_IN_STOCK`, these are
    values coupled to code (duration drives slot
    math; staff/locations drive UI + validation). Retune a duration or rename a
    staff member here; the staff names must match the `Staff` column in the
