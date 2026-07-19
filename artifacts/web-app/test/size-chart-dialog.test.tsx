@@ -26,7 +26,7 @@ describe("SizeChartDialog", () => {
     expect(await screen.findByText("Soaker Size Guide")).toBeInTheDocument();
     expect(screen.getByText("Blade length")).toBeInTheDocument();
     // The four blade-length bands, anchored on the atelier's test blade.
-    expect(screen.getByTestId("soaker-size-row-youth")).toBeInTheDocument();
+    expect(screen.getByTestId("soaker-size-row-xs")).toBeInTheDocument();
     expect(screen.getByTestId("soaker-size-row-small")).toBeInTheDocument();
     expect(screen.getByTestId("soaker-size-row-medium")).toBeInTheDocument();
     expect(screen.getByTestId("soaker-size-row-large")).toBeInTheDocument();

@@ -124,7 +124,7 @@ interface SoakerSizeRow {
 // gap; soakers stretch, so between-size shoppers size up.
 const SOAKER_SIZE_CHART: SoakerSizeRow[] = [
   {
-    band: "Youth",
+    band: "XS",
     blade: { in: '7–8½"', mm: "178–216" },
     skate: "Toddler–youth · ~9C–1Y",
   },
