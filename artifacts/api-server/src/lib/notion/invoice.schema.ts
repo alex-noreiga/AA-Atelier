@@ -18,7 +18,6 @@ export const INVOICE_ID_PROPERTY = "Invoice ID"; // title
 export const INVOICE_READY_PROPERTY = "Invoice Ready"; // checkbox (the balance gate)
 export const INVOICE_BALANCE_PAID_PROPERTY = "Balance Paid"; // checkbox
 export const INVOICE_BALANCE_SESSION_PROPERTY = "Balance Payment Session Id"; // rich_text
-export const INVOICE_DEPOSIT_STATUS_PROPERTY = "Deposit Status"; // status
 export const INVOICE_PAYMENT_DEADLINE_PROPERTY = "Payment Deadline"; // date
 export const INVOICE_FINAL_BALANCE_PROPERTY = "Final Balance"; // rollup (number)
 // The two staged deposits, held on the invoice. Amounts are `number` (dollars),
