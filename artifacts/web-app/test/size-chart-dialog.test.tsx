@@ -11,7 +11,7 @@ describe("SizeChartDialog", () => {
     expect(await screen.findByText("Size Guide")).toBeInTheDocument();
     // Body-measurement columns (one header per Adult/Children table) + the band
     // tables.
-    expect(screen.getAllByText("Bust").length).toBeGreaterThan(0);
+    expect(screen.getAllByText("Chest").length).toBeGreaterThan(0);
     expect(screen.getAllByText("Waist").length).toBeGreaterThan(0);
     expect(screen.getByText("Adult")).toBeInTheDocument();
     expect(screen.getByText("Children")).toBeInTheDocument();
@@ -29,6 +29,6 @@ describe("SizeChartDialog", () => {
     expect(screen.getByTestId("soaker-size-row-small")).toBeInTheDocument();
     expect(screen.getByTestId("soaker-size-row-large")).toBeInTheDocument();
     // Not the body-measurement chart.
-    expect(screen.queryByText("Bust")).not.toBeInTheDocument();
+    expect(screen.queryByText("Chest")).not.toBeInTheDocument();
   });
 });

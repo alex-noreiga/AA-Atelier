@@ -66,7 +66,7 @@ export const ROUTE_SEO: Record<string, RouteSeo> = {
     path: "/shop",
     title: "Shop — Ready-to-Wear Skating & Dance | A.A Atelier",
     description:
-      "Browse ready-to-wear figure skating and dance pieces from A.A Atelier. In-stock dresses and accessories, with restock notifications on sold-out sizes.",
+      "Browse ready-to-wear figure skating and dance pieces from A.A Atelier. In-stock costumes and accessories, with restock notifications on sold-out sizes.",
     changefreq: "weekly",
     priority: 0.9,
   },

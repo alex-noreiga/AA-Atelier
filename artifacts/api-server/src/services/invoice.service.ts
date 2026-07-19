@@ -7,10 +7,11 @@
 // and, on payment, records the paid stage back on the invoice.
 //
 // All amounts are priced server-side (never trusting the client): deposits from
-// the invoice's deposit-amount fields, and the balance as the sum of the
-// non-deposit line items minus the deposits already paid — deposits are credits,
-// not charges, so a "Deposit" line is excluded from the subtotal to avoid
-// double-counting. Only the balance is taxed (Stripe Tax); deposits are untaxed.
+// the invoice's deposit-amount fields, and the balance as the sum of the line
+// items minus the deposits already paid — deposits are credits, not charges, and
+// live on the invoice head rather than as line items ("Deposit" is no longer a
+// `Line Type` option; the filter in `buildInvoiceView` is a guard against it
+// coming back). Only the balance is taxed (Stripe Tax); deposits are untaxed.
 
 import type Stripe from "stripe";
 import { findOrderByNumber } from "../lib/notion/orders.repository.js";
@@ -60,6 +61,10 @@ export function buildInvoiceView(
   invoice: InvoiceRecord,
   lineItems: InvoiceLineItemRecord[],
 ): InvoiceView {
+  // "Deposit" is no longer an option on the live `Line Type` select, so this is
+  // a guard rather than an active filter — see `LINE_TYPE_DEPOSIT`. Keep it:
+  // without it, re-adding that option in Notion would bill a customer for their
+  // own deposit.
   const charged = lineItems.filter((li) => li.type !== LINE_TYPE_DEPOSIT);
 
   const subtotal = roundCents(charged.reduce((sum, li) => sum + li.amount, 0));

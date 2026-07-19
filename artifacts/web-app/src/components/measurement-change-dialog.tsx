@@ -20,7 +20,8 @@ import { useToast } from "@/hooks/use-toast";
 
 const MEASUREMENT_FIELDS = [
   { key: "waist", label: "Waist" },
-  { key: "bust", label: "Bust" },
+  // The contract field stays `bust`; only the visible label is neutral.
+  { key: "bust", label: "Chest" },
   { key: "hips", label: "Hips" },
   { key: "height", label: "Height" },
   { key: "bodyGirth", label: "Body Girth" },

@@ -32,7 +32,7 @@ describe("buildOrderProperties", () => {
 
     // "Order Name" is the Notion title property.
     expect(props["Order Name"].title[0].text.content).toBe(
-      "Ada Lovelace – Custom Dress",
+      "Ada Lovelace – Custom Costume",
     );
     // "Order Number" is rich_text — NOT a number — so leading-zero ids survive.
     expect(props["Order Number"].rich_text[0].text.content).toBe("ORD-ABC-123");
@@ -63,7 +63,7 @@ describe("buildOrderPageBlocks", () => {
     expect(headings(blocks)).toEqual([
       "Contact Information",
       "Measurements (cm)",
-      "Dress Details",
+      "Costume Details",
     ]);
   });
 
@@ -75,7 +75,7 @@ describe("buildOrderPageBlocks", () => {
       Phone: "+1 555 000 1234",
       "Preferred Contact": "email",
       Waist: "28",
-      Bust: "36",
+      Chest: "36",
       Hips: "38",
       Height: "65",
       "Body Girth": "32",
@@ -114,7 +114,7 @@ describe("buildOrderPageBlocks", () => {
     expect(headings(blocks)).toEqual([
       "Contact Information",
       "Measurements",
-      "Dress Details",
+      "Costume Details",
     ]);
     const pairs = textPairs(blocks);
     expect(pairs).not.toHaveProperty("Waist");

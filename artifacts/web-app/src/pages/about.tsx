@@ -98,7 +98,7 @@ export default function About() {
               A.A. Atelier is a local, women owned business founded by figure
               skaters. We understand performative ice and dance attire can be
               expensive or not quite what you envisioned. That's why our mission
-              is to bring your ideas to life by creating custom dresses and
+              is to bring your ideas to life by creating custom costumes and
               accessories that are as unique as you are.
             </p>
             <p>

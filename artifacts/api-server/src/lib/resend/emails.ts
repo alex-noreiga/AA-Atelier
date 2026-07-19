@@ -213,7 +213,7 @@ export function orderNotificationEmail(
   to: string,
 ): EmailMessage {
   const measurements =
-    `waist ${input.waist}, bust ${input.bust}, hips ${input.hips}, ` +
+    `waist ${input.waist}, chest ${input.bust}, hips ${input.hips}, ` +
     `height ${input.height}, girth ${input.bodyGirth} (${input.measurementUnit})`;
 
   const fields: Field[] = [
@@ -405,7 +405,7 @@ export function measurementChangeNotificationEmail(
     ? ["Requested", "Re-measurement at a fitting/consultation"]
     : [
         "Measurements",
-        `waist ${input.waist}, bust ${input.bust}, hips ${input.hips}, ` +
+        `waist ${input.waist}, chest ${input.bust}, hips ${input.hips}, ` +
           `height ${input.height}, girth ${input.bodyGirth} (${input.measurementUnit})`,
       ];
 

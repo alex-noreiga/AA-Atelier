@@ -18,9 +18,11 @@ export const INVOICE_ID_PROPERTY = "Invoice ID"; // title
 export const INVOICE_READY_PROPERTY = "Invoice Ready"; // checkbox (the balance gate)
 export const INVOICE_BALANCE_PAID_PROPERTY = "Balance Paid"; // checkbox
 export const INVOICE_BALANCE_SESSION_PROPERTY = "Balance Payment Session Id"; // rich_text
-export const INVOICE_DEPOSIT_STATUS_PROPERTY = "Deposit Status"; // status
 export const INVOICE_PAYMENT_DEADLINE_PROPERTY = "Payment Deadline"; // date
-export const INVOICE_FINAL_BALANCE_PROPERTY = "Final Balance"; // rollup (number)
+// `Final Balance` sums the linked line items' `Line Total`. It has been both a
+// rollup and (currently) a formula in the live schema; `extractNumericValue`
+// reads either, so the app doesn't care which the atelier uses.
+export const INVOICE_FINAL_BALANCE_PROPERTY = "Final Balance"; // formula/rollup (number)
 // The two staged deposits, held on the invoice. Amounts are `number` (dollars),
 // paid a `checkbox`, and the session id `rich_text` — property *types* must
 // match the live Notion schema, not the name.
@@ -79,9 +81,14 @@ export const LINE_ITEM_TYPE_PROPERTY = "Line Type"; // select
 export const LINE_ITEM_TOTAL_PROPERTY = "Line Total"; // formula (number)
 export const LINE_ITEM_INVOICE_RELATION_PROPERTY = "Invoice"; // relation → invoice
 
-// The one line type that is NOT charged: deposits are credited against the
-// balance from the order's paid-deposit amounts (see invoice.service.ts), so a
-// "Deposit" line is excluded from the invoice subtotal to avoid double-counting.
+// A defensive guard, NOT a live option. The `Line Type` select is currently
+// Garment / Material / Labor / Adjustment — "Deposit" was retired as a line
+// type because deposits live on the invoice HEAD (`First/Second Deposit Amount`
+// + their paid checkboxes) and are credits against the total, never charges.
+// The filter in `buildInvoiceView` stays so that re-adding a "Deposit" option in
+// Notion can't silently bill a customer for their own deposit. Note that
+// Notion's `Final Balance` has no equivalent filter, so a Deposit line would
+// inflate the atelier's view while the app stayed correct — don't create one.
 // A targeted business rule naming one value, like `STATUS_IN_STOCK`.
 export const LINE_TYPE_DEPOSIT = "Deposit";
 

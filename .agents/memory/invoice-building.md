@@ -47,13 +47,15 @@ Discovered during planning — the orders database already relates to a full
 finance system under the "finances" page:
 
 - **`invoices & payments`** (one invoice per order): `Invoice ID` (title),
-  `Deposit Status` (Paid/Pending/Partial), `Payment Deadline`, `Final Balance`
-  (rollup summing line-item `Line Total`), `Line Items` (relation), `Order`
-  (relation, limit 1).
+  `Payment Deadline`, `Final Balance` (sums line-item `Line Total`), `Line Items`
+  (relation), `Order` (relation, limit 1). (The original `Deposit Status`
+  status property is **gone** — superseded by the `Payment Status` formula, see
+  the 2026-07-19 note below.)
 - **`Invoice Line Items`**: `Line Item` (title), `Line Type` (select: **Garment /
-  Material / Labor / Deposit / Adjustment**), `Quantity`, `Manual Unit Price`,
+  Material / Labor / Adjustment**), `Quantity`, `Manual Unit Price`,
   `Unit Price` (formula), `Line Total` (formula), relations to Order / Invoice /
-  Costing Item / Material Usage Line.
+  Costing Item / Material Usage Line. ("Deposit" was retired as a line type —
+  deposits live on the invoice head.)
 - **`costing (custom orders)`**, **`material usage database`**, **`materials
 inventory`**: feed the line-item prices. The per-material breakdown (main
   fabric, crystal/rhinestones, appliqué…) lives here and surfaces as individual
@@ -68,19 +70,22 @@ inventory`**: feed the line-item prices. The per-material breakdown (main
    used to edit the schema).
 
 2. **Deposits + balance all live on the invoice.** `First/Second Deposit
-Amount/Paid/Session Id`, `Balance Paid`/`Balance Payment Session Id`, and a
-   `Balance Due` formula (for the atelier's own view) sit on "invoices & payments".
-   The app reads a deposit's amount from its field; the balance is computed from
-   the line items (below). Property names live in `lib/notion/invoice.schema.ts`
-   (`DEPOSIT_STAGE_FIELDS` / `stagePaymentFields` map stage → field names).
+Amount/Paid/Session Id/Due`, `Balance Paid`/`Balance Payment Session Id`, and
+   `Payment Deadline` sit on "invoices & payments", plus three atelier-facing
+   formulas the app does **not** read (`Paid to Date`, `Remaining to Collect`,
+   `Payment Status`). The app reads a deposit's amount from its field; the balance
+   is computed from the line items (below). Property names live in
+   `lib/notion/invoice.schema.ts` (`DEPOSIT_STAGE_FIELDS` / `stagePaymentFields`
+   map stage → field names).
 
 3. **Balance is computed from the line items, NOT `Final Balance`.**
-   `balanceDue = Σ(non-deposit Line Totals) − Σ(deposits marked paid on the
+   `balanceDue = Σ(Line Totals) − Σ(deposits marked paid on the
 invoice)`, floored at 0 (`buildInvoiceView`). `Line Type = Deposit` lines are
    **excluded** from the subtotal — deposits are payments against the total, not
-   line items, so they can't be double-counted. This deliberately avoids depending
-   on whether the `Final Balance` rollup nets deposit lines. If the atelier ever
-   wants `Final Balance` authoritative, revisit with populated data.
+   line items. That option no longer exists in Notion, so `LINE_TYPE_DEPOSIT` is
+   now a **guard**, deliberately kept: without it, re-adding the option would bill
+   a customer for their own deposit. Note `Final Balance` has no such filter, so
+   the app and the atelier's view agree only while no Deposit line exists.
 
 4. **All three stages are collected online, priced server-side.** `POST
 /orders/:n/payments/:stage` → `createPaymentCheckout(orderNumber, stage)`. A
@@ -106,6 +111,31 @@ invoice)`, floored at 0 (`buildInvoiceView`). `Line Type = Deposit` lines are
      old broken path). Idempotent on Stripe redelivery; the paid checkbox is the
      "already paid" guard. The shop-success page skips clearing the cart for
      `custom_payment`.
+
+## 2026-07-19 audit — `Payment Status` was silently dead
+
+The atelier had since replaced `Deposit Status` with three formulas. Two were
+correct (`Paid to Date`, `Remaining to Collect` — verified to agree with the app's
+`balanceDue`, since `Final Balance` == the app's subtotal while no Deposit line
+items exist). The third, **`Payment Status`, had never worked**: it called
+`dateBefore(x, now())`, which is not a Notion function, so the property errored to
+empty and the atelier never got an overdue signal. Fixed by rewriting it as nested
+`if()`s using `x < now()`.
+
+Two gotchas worth keeping, both learned the hard way:
+
+- **Notion's API formula compiler rejects `ifs()`** ("Type error with formula") even
+  though the UI accepts it — use nested `if()`. Comparisons inside a boolean chain
+  need parens: `a and (b < c)`.
+- **Don't edit Notion formulas via a browser-automation pane.** Typing sometimes
+  lands but `Backspace`/`Cmd+Z` silently don't, so you can get stuck mid-edit. Use
+  `notion-update-data-source` → `ALTER COLUMN "X" SET FORMULA('…')` with
+  `prop("Name")` references; it validates before writing, so a bad expression 400s
+  and changes nothing. Test on a throwaway `ADD COLUMN` first, then `DROP` it.
+
+Also note `Final Balance` has been both a rollup and a formula; `extractNumericValue`
+reads either, so the app is indifferent. Overdue triggers at midnight on the due
+date (the due dates are date-only).
 
 ## Where the code lives
 

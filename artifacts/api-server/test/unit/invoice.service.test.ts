@@ -63,6 +63,9 @@ function invoice(overrides: Partial<InvoiceRecord> = {}): InvoiceRecord {
   };
 }
 
+// The "Deposit" line is deliberately not a live `Line Type` option any more —
+// it's here to pin the guard in `buildInvoiceView`, so that re-adding that
+// option in Notion can never bill a customer for their own deposit.
 const LINES: InvoiceLineItemRecord[] = [
   { name: "Main fabric", type: "Material", amount: 40 },
   { name: "Rhinestones", type: "Material", amount: 55.5 },

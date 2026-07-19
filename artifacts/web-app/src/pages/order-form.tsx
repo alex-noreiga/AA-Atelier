@@ -18,7 +18,8 @@ import { ArrowLeft, CalendarCheck, CheckCircle, Loader2 } from "lucide-react";
 
 const MEASUREMENT_FIELDS = [
   { key: "waist", label: "Waist" },
-  { key: "bust", label: "Bust" },
+  // The contract field stays `bust`; only the visible label is neutral.
+  { key: "bust", label: "Chest" },
   { key: "hips", label: "Hips" },
   { key: "height", label: "Height" },
   { key: "bodyGirth", label: "Body Girth" },
@@ -246,7 +247,7 @@ export default function OrderForm() {
             Place an Order
           </h1>
           <p className="text-muted-foreground font-light text-lg">
-            Tell us about your dream dress and we'll bring it to life.
+            Tell us about your dream costume and we'll bring it to life.
           </p>
         </div>
 
@@ -464,7 +465,7 @@ export default function OrderForm() {
 
           <section>
             <h2 className="text-xs tracking-[0.2em] uppercase text-muted-foreground mb-6 pb-2 border-b border-border">
-              Dress Details
+              Costume Details
             </h2>
             <div className="space-y-6">
               <div>

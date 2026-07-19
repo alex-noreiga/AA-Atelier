@@ -450,7 +450,7 @@ describe("Shop sizes", () => {
     await userEvent.click(screen.getAllByTestId("link-size-chart")[0]);
     expect(await screen.findByText("Soaker Size Guide")).toBeInTheDocument();
     expect(screen.getByText("Blade length")).toBeInTheDocument();
-    expect(screen.queryByText("Bust")).not.toBeInTheDocument();
+    expect(screen.queryByText("Chest")).not.toBeInTheDocument();
   });
 });
 

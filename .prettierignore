@@ -11,5 +11,13 @@ pnpm-lock.yaml
 # Generated code — orval writes these from lib/api-spec/openapi.yaml with a
 # "Do not edit manually" header; formatting is the generator's job, not ours.
 # Covers lib/api-zod/src/generated and lib/api-client-react/src/generated.
-# (custom-fetch.ts / index.ts are hand-written and intentionally NOT ignored.)
+# (custom-fetch.ts is hand-written and intentionally NOT ignored.)
 **/src/generated
+
+# The api-zod / api-client-react barrels are PARTLY orval-managed: orval appends
+# its export lines on each run and dedupes on the exact single-quoted text it
+# writes. Letting prettier requote them makes orval stop recognising its own
+# lines and append a duplicate pair every codegen run (this had already
+# accumulated three). Ignored so the file stays stable.
+lib/api-zod/src/index.ts
+lib/api-client-react/src/index.ts

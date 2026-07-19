@@ -57,6 +57,14 @@ export default defineConfig({
       prettier: true,
       override: {
         zod: {
+          // Pin the output target to Zod 3 to match the workspace `zod` catalog
+          // entry (^3.25.76). Orval's default is `'auto'`, which infers from the
+          // `zod` resolved in the *output* project — but @workspace/api-spec has
+          // no zod dependency of its own, so detection fails and it silently
+          // falls back to Zod 4 syntax (`zod.email()` instead of
+          // `zod.string().email()`), which does not typecheck against zod 3.
+          // Bump this to 4 only together with the catalog.
+          version: 3,
           coerce: {
             query: ["boolean", "number", "string"],
             param: ["boolean", "number", "string"],

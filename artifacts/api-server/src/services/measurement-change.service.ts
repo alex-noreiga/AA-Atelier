@@ -81,7 +81,7 @@ export async function submitMeasurementChangeRequest(
 
   if (measurementsLocked(order.currentStage, order.stages)) {
     throw new MeasurementsLockedError(
-      "Measurements can no longer be changed once your dress is in production. Please contact us.",
+      "Measurements can no longer be changed once your costume is in production. Please contact us.",
     );
   }
 

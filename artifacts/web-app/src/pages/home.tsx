@@ -126,9 +126,9 @@ export default function Home() {
           <SectionHeader eyebrow="Our Story" title="Founded by skaters" />
           <p className="max-w-2xl mx-auto text-center text-muted-foreground font-light text-lg leading-relaxed">
             A.A. Atelier is a local, women owned business founded by figure
-            skaters. Our mission is to bring your ideas to life — custom dresses
-            and accessories that are as unique as you are, handmade with care,
-            creativity, and attention to detail.
+            skaters. Our mission is to bring your ideas to life — custom
+            costumes and accessories that are as unique as you are, handmade
+            with care, creativity, and attention to detail.
           </p>
           <p className="mt-12 text-center font-serif italic text-2xl md:text-3xl text-primary">
             Come with a vision and leave with confidence.

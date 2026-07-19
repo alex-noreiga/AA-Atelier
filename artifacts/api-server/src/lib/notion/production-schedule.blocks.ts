@@ -57,7 +57,7 @@ export interface StageMilestone {
 export interface MilestoneInput {
   /** Notion page id of the order in the Order Tracking Pipeline (the relation). */
   orderPageId: string;
-  /** The row title, e.g. "Ada – Custom Dress — Fitting". */
+  /** The row title, e.g. "Ada – Custom Costume — Fitting". */
   projectName: string;
   /** The stage this milestone represents (a live "Stage" option name). */
   stage: string;

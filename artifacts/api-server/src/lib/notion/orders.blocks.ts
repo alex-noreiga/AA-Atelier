@@ -54,7 +54,7 @@ export function buildOrderProperties(
 ): Record<string, unknown> {
   const properties: Record<string, unknown> = {
     [ORDER_NAME_PROPERTY]: {
-      title: [{ text: { content: `${data.fullName} – Custom Dress` } }],
+      title: [{ text: { content: `${data.fullName} – Custom Costume` } }],
     },
     [ORDER_NUMBER_PROPERTY]: {
       rich_text: [{ text: { content: orderNumber } }],
@@ -96,7 +96,7 @@ export function buildOrderPageBlocks(data: CreateOrderInput): unknown[] {
     ? [
         headingBlock(`Measurements (${data.measurementUnit})`),
         textBlock("Waist", String(data.waist)),
-        textBlock("Bust", String(data.bust)),
+        textBlock("Chest", String(data.bust)),
         textBlock("Hips", String(data.hips)),
         textBlock("Height", String(data.height)),
         textBlock("Body Girth", String(data.bodyGirth)),
@@ -111,18 +111,18 @@ export function buildOrderPageBlocks(data: CreateOrderInput): unknown[] {
         dividerBlock(),
       ];
 
-  const dressSection: unknown[] = [headingBlock("Dress Details")];
+  const costumeSection: unknown[] = [headingBlock("Costume Details")];
   if (data.description) {
-    dressSection.push(textBlock("Description", data.description));
+    costumeSection.push(textBlock("Description", data.description));
   }
   if (data.neededBy) {
     const dateStr =
       data.neededBy instanceof Date
         ? data.neededBy.toISOString().split("T")[0]
         : String(data.neededBy);
-    dressSection.push(textBlock("Needed By", dateStr));
+    costumeSection.push(textBlock("Needed By", dateStr));
   }
-  dressSection.push(dividerBlock());
+  costumeSection.push(dividerBlock());
 
-  return [...contactSection, ...measurementSection, ...dressSection];
+  return [...contactSection, ...measurementSection, ...costumeSection];
 }

@@ -430,16 +430,22 @@ row itself carries only the `Invoices` relation (limit 1); it holds **no** depos
 fields.
 
 - **`invoices & payments`** (`NOTION_INVOICES_DATABASE_ID`): one invoice per order
-  (`Order` relation), with `Final Balance` (rollup), `Line Items` relation,
+  (`Order` relation), with `Final Balance` (sums the linked `Line Total`s — it has
+  been both a rollup and a formula; the app reads either), `Line Items` relation,
   `Invoice Ready`, and the payment fields: `First/Second Deposit Amount` (number),
   `First/Second Deposit Paid` (checkbox), `First/Second Deposit Session Id`
-  (rich_text), `Balance Paid` (checkbox), `Balance Payment Session Id` (rich_text),
-  and a `Balance Due` formula (`Final Balance − deposits`, for the atelier's view).
-  Property names live in `lib/notion/invoice.schema.ts`.
+  (rich_text), `First/Second Deposit Due` (date), `Balance Paid` (checkbox),
+  `Balance Payment Session Id` (rich_text), `Payment Deadline` (date). Three
+  atelier-facing formulas sit on top and are **not** read by the app:
+  `Paid to Date` (paid deposits, or `Final Balance` once `Balance Paid`),
+  `Remaining to Collect` (`max(0, Final Balance − Paid to Date)`), and
+  `Payment Status` (a ✅/⚠️ label driven by the three due dates). Property names
+  live in `lib/notion/invoice.schema.ts`.
 - **`Invoice Line Items`** (`NOTION_INVOICE_LINE_ITEMS_DATABASE_ID`): each line has
-  a `Line Type` (Garment / Material / Labor / Deposit / Adjustment) and a
-  `Line Total` (formula). Each material is its own `Material` row, so the invoice
-  breaks materials out per item.
+  a `Line Type` (Garment / Material / Labor / Adjustment) and a `Line Total`
+  (formula). Each material is its own `Material` row, so the invoice breaks
+  materials out per item. **Deposits are not line items** — they live on the
+  invoice head, so there is deliberately no "Deposit" option here.
 
 One endpoint serves all three: `POST /orders/:n/payments/:stage`, `stage ∈
 {first_deposit, second_deposit, balance}` (`routes/orders.ts` →
@@ -447,11 +453,14 @@ One endpoint serves all three: `POST /orders/:n/payments/:stage`, `stage ∈
 
 1. **Every amount is priced server-side from the invoice.** A deposit's amount is
    its `First/Second Deposit Amount`; the balance is
-   `balanceDue = Σ(non-deposit Line Totals) − Σ(deposits marked paid on the
+   `balanceDue = Σ(Line Totals) − Σ(deposits marked paid on the
 invoice)`, floored at 0 (`buildInvoiceView`). `Line Type = Deposit` rows are
    **excluded** from the subtotal — deposits are payments against the total, not
-   line items, so they can't be double-counted. A stage with no amount set / an
-   already-paid stage / (for the balance) an unready invoice all 400.
+   line items. That option no longer exists in Notion, so the filter is a
+   **guard**, kept because re-adding it would otherwise bill a customer for their
+   own deposit (Notion's `Final Balance` has no such filter, so a Deposit line
+   would inflate the atelier's view while the app stayed correct). A stage with no
+   amount set / an already-paid stage / (for the balance) an unready invoice all 400.
 
 2. **Deposits are payable before the invoice is itemized.** `getOrderStatus`
    surfaces `deposits[]` (from the invoice head) as soon as the atelier sets a
