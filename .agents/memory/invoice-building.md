@@ -121,5 +121,5 @@ invoice)`, floored at 0 (`buildInvoiceView`). `Line Type = Deposit` lines are
 - Contract: `OrderStatus.deposits[]` + `Invoice`/`InvoiceLineItem`/`InvoiceDeposit`,
   plus `createOrderPayment` (`/orders/{n}/payments/{stage}`), in `lib/api-spec/openapi.yaml`.
 - Frontend: `components/custom-order-result.tsx` (`DepositsSection` — deposit cards
-  + "View Invoice"; rendered by the unified `pages/track.tsx`), `pages/invoice.tsx`
-  (the document + balance pay), shared `components/receipt-row.tsx`.
+  - "View Invoice"; rendered by the unified `pages/track.tsx`), `pages/invoice.tsx`
+    (the document + balance pay), shared `components/receipt-row.tsx`.
