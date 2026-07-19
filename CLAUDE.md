@@ -469,8 +469,7 @@ The atelier plans work in the **"📅 Production Schedule"** Notion database
 (`NOTION_PRODUCTION_SCHEDULE_DATABASE_ID`), which has ready-made Timeline and
 Calendar views keyed on `Target Completion Date`. To fill it, the app
 **auto-generates one dated milestone row per remaining stage** for any custom
-order that has a firm due date. See `.agents/memory/production-schedule-milestones.md`
-for the full design; the load-bearing points:
+order that has a firm due date. The load-bearing points:
 
 1. **Trigger is a reconciliation cron (plus an on-demand button), not a Notion
    push.** There is no Notion→app trigger (see the deposits/status notes), so the
