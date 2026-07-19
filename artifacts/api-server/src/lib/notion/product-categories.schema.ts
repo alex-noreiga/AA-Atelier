@@ -12,7 +12,7 @@
 
 export const CATEGORY_NAME_PROPERTY = "Name"; // title
 export const CATEGORY_SHOW_SIZE_GUIDE_PROPERTY = "Show size guide"; // checkbox
-export const CATEGORY_SIZE_GUIDE_TYPE_PROPERTY = "Size guide type"; // select
+export const CATEGORY_SIZE_GUIDE_TYPE_PROPERTY = "Size Guide Type"; // select
 export const CATEGORY_SORT_PROPERTY = "Sort"; // number — shop chip ordering
 
 // Which size chart a category uses. The default (and the value for every
@@ -20,7 +20,7 @@ export const CATEGORY_SORT_PROPERTY = "Sort"; // number — shop chip ordering
 // chart; "soaker" is the skate-soaker blade-length chart.
 export type SizeGuideType = "garment" | "soaker";
 
-// The "Size guide type" select option that routes a category to the skate-soaker
+// The "Size Guide Type" select option that routes a category to the skate-soaker
 // blade-length chart. A targeted business rule naming one live Notion option
 // value (like `STATUS_IN_STOCK` / `MEASUREMENT_LOCK_FROM_STAGE`): rename this
 // option in Notion and it must change here too, or soaker categories silently

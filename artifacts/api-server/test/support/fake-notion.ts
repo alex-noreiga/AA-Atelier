@@ -132,7 +132,7 @@ export function inventoryPage(opts: {
 }
 
 /** Minimal "Product Categories" page as returned by a query — a category name,
- * its "Show size guide" checkbox, an optional "Size guide type" select, and an
+ * its "Show size guide" checkbox, an optional "Size Guide Type" select, and an
  * optional "Sort" number. */
 export function categoryPage(opts: {
   id?: string;
@@ -152,7 +152,7 @@ export function categoryPage(opts: {
     },
   };
   if (opts.sizeGuideType !== undefined) {
-    properties["Size guide type"] = {
+    properties["Size Guide Type"] = {
       type: "select",
       select: { name: opts.sizeGuideType },
     };

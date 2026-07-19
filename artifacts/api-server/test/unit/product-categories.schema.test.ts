@@ -18,7 +18,7 @@ describe("extractCategoryRecords", () => {
           properties: {
             Name: { type: "title", title: [{ plain_text: "Skate Soakers" }] },
             "Show size guide": { type: "checkbox", checkbox: false },
-            "Size guide type": {
+            "Size Guide Type": {
               type: "select",
               select: { name: "Skate soaker" },
             },
@@ -51,7 +51,7 @@ describe("extractCategoryRecords", () => {
           id: "c2",
           properties: {
             Name: { type: "title", title: [{ plain_text: "Garment select" }] },
-            "Size guide type": { type: "select", select: { name: "Garment" } },
+            "Size Guide Type": { type: "select", select: { name: "Garment" } },
           },
         },
       ]),

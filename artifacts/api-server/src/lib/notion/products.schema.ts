@@ -90,7 +90,7 @@ export interface ProductRecord {
   /** Which size chart this card uses — the ready-to-wear body-measurement chart
    * ("garment") or the skate-soaker blade-length chart ("soaker"). Omitted for
    * garments (the client treats absent as "garment"); only meaningful when
-   * `sized`. Resolved from the category's "Size guide type", not the name. */
+   * `sized`. Resolved from the category's "Size Guide Type", not the name. */
   sizeGuide?: "garment" | "soaker";
   variants: ProductVariantRecord[];
 }

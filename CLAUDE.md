@@ -262,7 +262,7 @@ two hard-won lessons captured in `.agents/memory/`:
    the inventory "Item Type" select, which was retired). Each inventory row points
    at a category via a `Category` **relation**; `listCategoryRecords()`
    (`notion/product-categories.repository.ts`, same 60s cache + fallback) reads the
-   category name, `Show size guide` flag, `Size guide type` (which chart — see
+   category name, `Show size guide` flag, `Size Guide Type` (which chart — see
    below), and `Sort` order, and `products.service` resolves each product's
    category + `sized` flag + `sizeGuide` by joining the relation. A category
    rename propagates automatically (the relation follows the page); a new category
@@ -272,7 +272,7 @@ two hard-won lessons captured in `.agents/memory/`:
    **Which size chart a category shows is Notion-driven, not name-matched.** The
    shop has two size charts (`web-app/src/components/size-chart-dialog.tsx`): the
    ready-to-wear body-measurement chart (Jalie bands) and the skate-soaker
-   blade-length chart. A category's `Size guide type` **select** picks between
+   blade-length chart. A category's `Size Guide Type` **select** picks between
    them via the same `Category` relation — so renaming the "Skate Soakers"
    category never breaks routing (nothing matches on the name). A soaker category
    is treated as sized regardless of its `Show size guide` checkbox (the blade
@@ -286,7 +286,7 @@ two hard-won lessons captured in `.agents/memory/`:
    default `Cutting/Pinning`, env-overridable; `measurementsLocked()` is the gate,
    consumed by `services/measurement-change.service.ts`) at/after which measurements
    freeze, and `SIZE_GUIDE_TYPE_SOAKER` (the `"Skate soaker"` value of the
-   `Size guide type` select that routes a category to the blade-length chart, in
+   `Size Guide Type` select that routes a category to the blade-length chart, in
    `notion/product-categories.schema.ts`).
    These name values, not the list; rename those options in Notion and you must
    update them here too. (The size chart's category list used to be a fourth such
