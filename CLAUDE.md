@@ -262,22 +262,36 @@ two hard-won lessons captured in `.agents/memory/`:
    the inventory "Item Type" select, which was retired). Each inventory row points
    at a category via a `Category` **relation**; `listCategoryRecords()`
    (`notion/product-categories.repository.ts`, same 60s cache + fallback) reads the
-   category name, `Show size guide` flag, and `Sort` order, and
-   `products.service` resolves each product's category + `sized` flag by joining
-   the relation. A category rename propagates automatically (the relation follows
-   the page); a new category defaults unsized. `NOTION_PRODUCT_CATEGORIES_DATABASE_ID`
-   must be set — there is no fallback.
+   category name, `Show size guide` flag, `Size Guide Type` (which chart — see
+   below), and `Sort` order, and `products.service` resolves each product's
+   category + `sized` flag + `sizeGuide` by joining the relation. A category
+   rename propagates automatically (the relation follows the page); a new category
+   defaults unsized. `NOTION_PRODUCT_CATEGORIES_DATABASE_ID` must be set — there is
+   no fallback.
+
+   **Which size chart a category shows is Notion-driven, not name-matched.** The
+   shop has two size charts (`web-app/src/components/size-chart-dialog.tsx`): the
+   ready-to-wear body-measurement chart (Jalie bands) and the skate-soaker
+   blade-length chart. A category's `Size Guide Type` **select** picks between
+   them via the same `Category` relation — so renaming the "Skate Soakers"
+   category never breaks routing (nothing matches on the name). A soaker category
+   is treated as sized regardless of its `Show size guide` checkbox (the blade
+   chart is implied by the type), so the atelier only sets the one select. On the
+   API this is `Product.sizeGuide` (`garment` | `soaker`, omitted ⇒ garment); the
+   frontend passes it to `SizeChartDialog`'s `variant` prop.
 
    The deliberate exceptions are _targeted business rules_ naming specific
-   option values — `STATUS_IN_STOCK` ("In Stock" is the only sellable status) and
+   option values — `STATUS_IN_STOCK` ("In Stock" is the only sellable status),
    the `MEASUREMENT_LOCK_FROM_STAGE` stage (`services/measurement-lock.ts`,
    default `Cutting/Pinning`, env-overridable; `measurementsLocked()` is the gate,
    consumed by `services/measurement-change.service.ts`) at/after which measurements
-   freeze.
+   freeze, and `SIZE_GUIDE_TYPE_SOAKER` (the `"Skate soaker"` value of the
+   `Size Guide Type` select that routes a category to the blade-length chart, in
+   `notion/product-categories.schema.ts`).
    These name values, not the list; rename those options in Notion and you must
-   update them here too. (The size chart used to be a third such rule —
-   `SIZED_CATEGORIES` — but it is now Notion-driven via the Product Categories
-   relation, so no name is left to drift.)
+   update them here too. (The size chart's category list used to be a fourth such
+   rule — `SIZED_CATEGORIES` — but it is now Notion-driven via the Product
+   Categories relation, so no name is left to drift.)
 
 3. **The contact database has three writers.** "Website Contact Messages" holds
    contact-form messages (`contact.blocks.ts`), the shop's back-in-stock requests

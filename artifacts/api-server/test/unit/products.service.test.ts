@@ -139,16 +139,44 @@ describe("groupVariants", () => {
     const [product] = groupVariants([variant({ category: "Dress" })]);
     expect(product.sized).toBe(false);
   });
+
+  it("marks a soaker category sized and tags its sizeGuide, even when not in the sized set", () => {
+    const [product] = groupVariants(
+      [variant({ id: "v-soaker", category: "Skate Soakers", group: null })],
+      new Set(), // not in the ready-to-wear sized set
+      new Set(["Skate Soakers"]),
+    );
+    expect(product.sized).toBe(true);
+    expect(product.sizeGuide).toBe("soaker");
+  });
 });
 
 describe("resolveFromCategories", () => {
   const records: CategoryRecord[] = [
-    { id: "cat-rtw", name: "Ready to Wear", sized: false, sort: 1 },
-    { id: "cat-dress", name: "Dress", sized: true, sort: 2 },
-    { id: "cat-soakers", name: "Skate Soakers", sized: false, sort: 3 },
+    {
+      id: "cat-rtw",
+      name: "Ready to Wear",
+      sized: false,
+      sizeGuide: "garment",
+      sort: 1,
+    },
+    {
+      id: "cat-dress",
+      name: "Dress",
+      sized: true,
+      sizeGuide: "garment",
+      sort: 2,
+    },
+    {
+      id: "cat-soakers",
+      name: "Skate Soakers",
+      sized: false,
+      sizeGuide: "soaker",
+      sort: 3,
+    },
   ];
 
-  it("resolves each card's category + sized flag from the linked category record", () => {
+  it("resolves each card's category + size-guide fields from the linked category record", () => {
     const { products } = resolveFromCategories(
       [
         variant({ id: "v-dress", category: "stale", categoryId: "cat-dress" }),
@@ -162,13 +190,23 @@ describe("resolveFromCategories", () => {
     );
 
     const byId = Object.fromEntries(
-      products.map((p) => [p.id, { category: p.category, sized: p.sized }]),
+      products.map((p) => [
+        p.id,
+        { category: p.category, sized: p.sized, sizeGuide: p.sizeGuide },
+      ]),
     );
     // The linked record's name + sized flag win over the raw row value.
-    expect(byId["v-dress"]).toEqual({ category: "Dress", sized: true });
+    expect(byId["v-dress"]).toEqual({
+      category: "Dress",
+      sized: true,
+      sizeGuide: undefined,
+    });
+    // A soaker category is sized even though its "Show size guide" checkbox is
+    // off — the blade chart is implied by the type — and carries sizeGuide.
     expect(byId["v-soaker"]).toEqual({
       category: "Skate Soakers",
-      sized: false,
+      sized: true,
+      sizeGuide: "soaker",
     });
   });
 

@@ -38,8 +38,20 @@ describe("GET /api/products", () => {
   it("resolves the category + sized flag from the linked category relation", async () => {
     mockListVariants.mockResolvedValue([variant({ categoryId: "cat-dress" })]);
     mockListCategoryRecords.mockResolvedValue([
-      { id: "cat-dress", name: "Dress", sized: true, sort: 2 },
-      { id: "cat-rtw", name: "Ready to Wear", sized: false, sort: 1 },
+      {
+        id: "cat-dress",
+        name: "Dress",
+        sized: true,
+        sizeGuide: "garment",
+        sort: 2,
+      },
+      {
+        id: "cat-rtw",
+        name: "Ready to Wear",
+        sized: false,
+        sizeGuide: "garment",
+        sort: 1,
+      },
     ]);
 
     const res = await request(app).get("/api/products");

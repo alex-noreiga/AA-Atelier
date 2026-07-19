@@ -39,10 +39,11 @@ const ALL = "All";
 // A null/undefined count (one-off items) never triggers it.
 const LOW_STOCK_THRESHOLD = 5;
 
-// Whether a card shows the ready-to-wear body-measurement size guide. Decided
-// server-side (`sized` on the Product) from the Notion "Product Categories" data,
-// so the client no longer hardcodes which categories are sized — the atelier
-// toggles it per category in Notion with no redeploy.
+// Whether a card shows a size guide at all. Decided server-side (`sized` on the
+// Product) from the Notion "Product Categories" data, so the client no longer
+// hardcodes which categories are sized — the atelier toggles it per category in
+// Notion with no redeploy. Which chart shows (garment vs. soaker) is a separate
+// server-resolved field, `product.sizeGuide`.
 function hasSizeChart(product: Product): boolean {
   return product.sized;
 }
@@ -338,7 +339,14 @@ function ProductCard({
                 onSelectSize={setSize}
                 selectable={selectable}
               />
-              {hasSizeChart(product) && <SizeChartDialog className="mt-3" />}
+              {hasSizeChart(product) && (
+                <SizeChartDialog
+                  className="mt-3"
+                  variant={
+                    product.sizeGuide === "soaker" ? "soaker" : "garment"
+                  }
+                />
+              )}
 
               {!variant.available && (
                 <p className="mt-4 text-sm text-muted-foreground">
@@ -386,7 +394,12 @@ function ProductCard({
           onSelectSize={setSize}
           selectable={selectable}
         />
-        {hasSizeChart(product) && <SizeChartDialog className="mt-3" />}
+        {hasSizeChart(product) && (
+          <SizeChartDialog
+            className="mt-3"
+            variant={product.sizeGuide === "soaker" ? "soaker" : "garment"}
+          />
+        )}
 
         <div className="mt-auto pt-6">
           <LowStockNote variant={variant} />

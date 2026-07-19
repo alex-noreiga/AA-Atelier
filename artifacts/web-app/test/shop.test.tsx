@@ -426,6 +426,32 @@ describe("Shop sizes", () => {
     renderShop(<Shop />);
     expect(screen.getAllByTestId("link-size-chart").length).toBeGreaterThan(0);
   });
+
+  it("opens the blade-length chart on a soaker card, driven by `sizeGuide` not the category name", async () => {
+    // The card body's own size-chart link (the one shown without opening the
+    // quick-view) must route by the server-resolved sizeGuide — a regression
+    // guard: this call site once hardcoded the garment chart. The category is a
+    // renamed one, proving routing follows sizeGuide, not the name.
+    setHook({
+      products: [
+        product({
+          id: "p1",
+          title: "Bow Fleece Soaker",
+          category: "Renamed Soakers",
+          sized: true,
+          sizeGuide: "soaker",
+          variants: [variant({ id: "v1", name: "Bow Fleece Soaker" })],
+        }),
+      ],
+    });
+    renderShop(<Shop />);
+    // The card body renders the size-chart link; open it and assert the
+    // blade-length chart, not the Jalie body-measurement one.
+    await userEvent.click(screen.getAllByTestId("link-size-chart")[0]);
+    expect(await screen.findByText("Soaker Size Guide")).toBeInTheDocument();
+    expect(screen.getByText("Blade length")).toBeInTheDocument();
+    expect(screen.queryByText("Bust")).not.toBeInTheDocument();
+  });
 });
 
 describe("Shop contact CTAs", () => {

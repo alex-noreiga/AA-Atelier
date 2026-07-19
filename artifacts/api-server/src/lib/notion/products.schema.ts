@@ -83,10 +83,15 @@ export interface ProductRecord {
   id: string;
   title: string;
   category: string;
-  /** Whether this card's category shows the ready-to-wear size guide. Computed
-   * server-side (see products.service) from the live "Product Categories" data
-   * or the built-in fallback — the client never decides this. */
+  /** Whether this card's category shows a size guide. Computed server-side (see
+   * products.service) from the live "Product Categories" data — the client never
+   * decides this. A soaker category is always sized (its blade chart implies it). */
   sized: boolean;
+  /** Which size chart this card uses — the ready-to-wear body-measurement chart
+   * ("garment") or the skate-soaker blade-length chart ("soaker"). Omitted for
+   * garments (the client treats absent as "garment"); only meaningful when
+   * `sized`. Resolved from the category's "Size Guide Type", not the name. */
+  sizeGuide?: "garment" | "soaker";
   variants: ProductVariantRecord[];
 }
 

@@ -108,6 +108,77 @@ const CHILD_SIZE_CHART: SizeRow[] = [
   },
 ];
 
+/**
+ * A skate-soaker size band. Soakers are sized by blade length (the fit
+ * constraint is the blade, not the skater), so each band is a blade-length range
+ * in inches + mm, with an approximate skate/boot size as a rough helper only.
+ */
+interface SoakerSizeRow {
+  band: string;
+  blade: { in: string; mm: string };
+  skate: string;
+}
+
+// Two blade-length bands, split at 9½" — the atelier makes and stocks two
+// physical soaker sizes. Soakers stretch (~1–1.5"), so each band covers a range
+// of blades and between-size shoppers size up. The atelier's MK Flight test
+// blade (9⅓" ≈ 237 mm) is a Small. The split value here must match the size
+// option names in Notion ("Small (up to 9½\")" / "Large (9½\"+)"); re-tune both
+// together if the cutoff changes.
+const SOAKER_SIZE_CHART: SoakerSizeRow[] = [
+  {
+    band: "Small",
+    blade: { in: 'up to 9½"', mm: "≤ 241" },
+    skate: "Youth to average adult",
+  },
+  {
+    band: "Large",
+    blade: { in: '9½" and up', mm: "241 +" },
+    skate: "Larger adult / men’s",
+  },
+];
+
+function SoakerChartTable() {
+  return (
+    <Table>
+      <TableHeader>
+        <TableRow className="hover:bg-transparent border-border/60">
+          <TableHead className="text-foreground">Size</TableHead>
+          <TableHead className="text-foreground">Blade length</TableHead>
+          <TableHead className="text-foreground">
+            Skate size{" "}
+            <span className="text-muted-foreground/60 normal-case tracking-normal">
+              (approx.)
+            </span>
+          </TableHead>
+        </TableRow>
+      </TableHeader>
+      <TableBody>
+        {SOAKER_SIZE_CHART.map((row) => (
+          <TableRow
+            key={row.band}
+            className="hover:bg-primary/5 border-border/40"
+            data-testid={`soaker-size-row-${row.band.toLowerCase()}`}
+          >
+            <TableCell className="font-light text-foreground">
+              {row.band}
+            </TableCell>
+            <TableCell className="whitespace-nowrap">
+              <span className="text-foreground">{row.blade.in}</span>{" "}
+              <span className="text-muted-foreground/70 text-xs">
+                {row.blade.mm} mm
+              </span>
+            </TableCell>
+            <TableCell className="text-muted-foreground font-light text-sm">
+              {row.skate}
+            </TableCell>
+          </TableRow>
+        ))}
+      </TableBody>
+    </Table>
+  );
+}
+
 function MeasureCell({ value }: { value: { in: string; cm: string } }) {
   return (
     <TableCell className="whitespace-nowrap">
@@ -155,11 +226,22 @@ function ChartTable({ title, rows }: { title: string; rows: SizeRow[] }) {
 }
 
 /**
- * Reusable size guide for the atelier's ready-to-wear garments. Renders a small
- * "Size Chart" trigger link; the dialog shows the Adult and Child bands with
- * their Jalie body measurements. Accessories don't use this.
+ * Reusable size guide. Renders a small "Size Chart" trigger link; the dialog
+ * content depends on `variant`:
+ *  - "garment" (default) — the ready-to-wear Adult + Child Jalie body-measurement
+ *    bands.
+ *  - "soaker" — the skate-soaker blade-length chart.
+ * The caller (shop.tsx) picks the variant from the product's server-resolved
+ * `sizeGuide`, so which chart shows follows the Notion category, not a name.
  */
-export function SizeChartDialog({ className }: { className?: string }) {
+export function SizeChartDialog({
+  className,
+  variant = "garment",
+}: {
+  className?: string;
+  variant?: "garment" | "soaker";
+}) {
+  const isSoaker = variant === "soaker";
   return (
     <Dialog>
       <DialogTrigger
@@ -173,28 +255,56 @@ export function SizeChartDialog({ className }: { className?: string }) {
         Size Chart
       </DialogTrigger>
       <DialogContent className="max-w-2xl max-h-[85vh] overflow-y-auto">
-        <DialogHeader>
-          <DialogTitle className="font-serif text-2xl text-foreground">
-            Size Guide
-          </DialogTitle>
-          <DialogDescription>
-            Our ready-to-wear garments follow{" "}
-            <span className="italic text-primary">Jalie pattern</span> sizing.
-            Measure your body and choose the band closest to your bust, waist,
-            and hip.
-          </DialogDescription>
-        </DialogHeader>
+        {isSoaker ? (
+          <>
+            <DialogHeader>
+              <DialogTitle className="font-serif text-2xl text-foreground">
+                Soaker Size Guide
+              </DialogTitle>
+              <DialogDescription>
+                Skate soakers are sized by{" "}
+                <span className="italic text-primary">blade length</span>.
+                Measure your blade from the tip of the toe pick to the end of
+                the tail, then choose the size that covers it.
+              </DialogDescription>
+            </DialogHeader>
 
-        <div className="space-y-8 mt-2">
-          <ChartTable title="Adult" rows={ADULT_SIZE_CHART} />
-          <ChartTable title="Children" rows={CHILD_SIZE_CHART} />
-        </div>
+            <div className="mt-2">
+              <SoakerChartTable />
+            </div>
 
-        <p className="text-muted-foreground/70 text-xs font-light leading-relaxed mt-2">
-          Between two sizes? Size up for comfort, or reach out and we'll help
-          you choose. Every piece is finished to measure, so let us know your
-          exact measurements when you reserve.
-        </p>
+            <p className="text-muted-foreground/70 text-xs font-light leading-relaxed mt-2">
+              Between two sizes? Size up — soakers stretch to fit. The
+              skate-size column is approximate; measuring your blade is the
+              reliable guide. Not sure? Reach out and we'll help you choose.
+            </p>
+          </>
+        ) : (
+          <>
+            <DialogHeader>
+              <DialogTitle className="font-serif text-2xl text-foreground">
+                Size Guide
+              </DialogTitle>
+              <DialogDescription>
+                Our ready-to-wear garments follow{" "}
+                <span className="italic text-primary">Jalie pattern</span>{" "}
+                sizing. Measure your body and choose the band closest to your
+                bust, waist, and hip.
+              </DialogDescription>
+            </DialogHeader>
+
+            <div className="space-y-8 mt-2">
+              <ChartTable title="Adult" rows={ADULT_SIZE_CHART} />
+              <ChartTable title="Children" rows={CHILD_SIZE_CHART} />
+            </div>
+
+            <p className="text-muted-foreground/70 text-xs font-light leading-relaxed mt-2">
+              Between two sizes? Size up for comfort, or reach out and we'll
+              help you choose. Every piece is finished to measure, so let us
+              know your exact measurements when you reserve.
+            </p>
+          </>
+        )}
       </DialogContent>
     </Dialog>
   );

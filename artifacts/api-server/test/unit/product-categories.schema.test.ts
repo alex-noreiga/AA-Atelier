@@ -2,7 +2,7 @@ import { describe, it, expect } from "vitest";
 import { extractCategoryRecords } from "../../src/lib/notion/product-categories.schema.js";
 
 describe("extractCategoryRecords", () => {
-  it("maps each row to id, name, sized flag, and sort", () => {
+  it("maps each row to id, name, sized flag, size-guide type, and sort", () => {
     expect(
       extractCategoryRecords([
         {
@@ -18,13 +18,58 @@ describe("extractCategoryRecords", () => {
           properties: {
             Name: { type: "title", title: [{ plain_text: "Skate Soakers" }] },
             "Show size guide": { type: "checkbox", checkbox: false },
+            "Size Guide Type": {
+              type: "select",
+              select: { name: "Skate soaker" },
+            },
             Sort: { type: "number", number: 4 },
           },
         },
       ]),
     ).toEqual([
-      { id: "c1", name: "Dress", sized: true, sort: 2 },
-      { id: "c2", name: "Skate Soakers", sized: false, sort: 4 },
+      { id: "c1", name: "Dress", sized: true, sizeGuide: "garment", sort: 2 },
+      {
+        id: "c2",
+        name: "Skate Soakers",
+        sized: false,
+        sizeGuide: "soaker",
+        sort: 4,
+      },
+    ]);
+  });
+
+  it("defaults sizeGuide to garment when the select is unset or a garment value", () => {
+    expect(
+      extractCategoryRecords([
+        {
+          id: "c1",
+          properties: {
+            Name: { type: "title", title: [{ plain_text: "No select" }] },
+          },
+        },
+        {
+          id: "c2",
+          properties: {
+            Name: { type: "title", title: [{ plain_text: "Garment select" }] },
+            "Size Guide Type": { type: "select", select: { name: "Garment" } },
+          },
+        },
+      ]),
+    ).toEqual([
+      {
+        id: "c1",
+        name: "No select",
+        sized: false,
+        sizeGuide: "garment",
+        sort: null,
+      },
+      {
+        id: "c2",
+        name: "Garment select",
+        sized: false,
+        sizeGuide: "garment",
+        sort: null,
+      },
     ]);
   });
 
@@ -38,7 +83,15 @@ describe("extractCategoryRecords", () => {
           },
         },
       ]),
-    ).toEqual([{ id: "c1", name: "Other", sized: false, sort: null }]);
+    ).toEqual([
+      {
+        id: "c1",
+        name: "Other",
+        sized: false,
+        sizeGuide: "garment",
+        sort: null,
+      },
+    ]);
   });
 
   it("drops a row whose name is empty", () => {
@@ -59,6 +112,14 @@ describe("extractCategoryRecords", () => {
           },
         },
       ]),
-    ).toEqual([{ id: "c2", name: "Dress", sized: true, sort: null }]);
+    ).toEqual([
+      {
+        id: "c2",
+        name: "Dress",
+        sized: true,
+        sizeGuide: "garment",
+        sort: null,
+      },
+    ]);
   });
 });
