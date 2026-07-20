@@ -28,7 +28,7 @@ function toCartLine(variant: ProductVariant): Omit<CartItem, "quantity"> {
  * Unpriced items never reach here — the shop routes those to an enquiry instead
  * (see `CtaLink`).
  *
- * `addOns` are matching companion products (a soaker's blade cloth) resolved by
+ * `addOns` are matching companion products (a soaker's blade towel) resolved by
  * the shop from the variant's `addOnIds`. Each renders an opt-in checkbox; a
  * checked add-on is dropped into the cart as its own one-size line (quantity 1)
  * alongside the main item. Removing the main item later does not remove the
