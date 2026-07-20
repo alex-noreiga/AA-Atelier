@@ -130,8 +130,15 @@ export function ReferenceImageUpload({
             className="relative w-24 h-24 rounded-lg overflow-hidden border border-border bg-muted/20 group"
             data-testid="reference-image-item"
           >
+            {/* Only ever a blob: object URL we created below; the scheme check
+                keeps any non-blob value out of the src (and satisfies static
+                XSS analysis of the attribute). */}
             <img
-              src={item.previewUrl}
+              src={
+                item.previewUrl.startsWith("blob:")
+                  ? item.previewUrl
+                  : undefined
+              }
               alt={item.fileName}
               className={cn(
                 "w-full h-full object-cover",
