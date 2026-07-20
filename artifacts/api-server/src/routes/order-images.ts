@@ -34,17 +34,17 @@ const EXTENSION_FOR_TYPE: Record<string, string> = {
   "image/gif": "gif",
 };
 
-/** Derive a safe, extension-correct filename from the client-supplied name. */
-function safeFilename(raw: unknown, contentType: string): string {
+/** Derive a safe, extension-correct filename from the client-supplied name.
+ *  `raw` is already narrowed to a plain string (or undefined) by the caller —
+ *  a query param can otherwise be an array/object, so it's normalized at the
+ *  request boundary before reaching any string operation. */
+function safeFilename(raw: string | undefined, contentType: string): string {
   const ext = EXTENSION_FOR_TYPE[contentType] ?? "img";
-  const base =
-    typeof raw === "string"
-      ? raw
-          .replace(/\.[^.]+$/, "") // drop any existing extension
-          .replace(/[^a-zA-Z0-9-_ ]/g, "") // strip anything unusual
-          .trim()
-          .slice(0, 80)
-      : "";
+  const base = (raw ?? "")
+    .replace(/\.[^.]+$/, "") // drop any existing extension
+    .replace(/[^a-zA-Z0-9-_ ]/g, "") // strip anything unusual
+    .trim()
+    .slice(0, 80);
   return `${base || "reference-image"}.${ext}`;
 }
 
@@ -76,10 +76,15 @@ export async function uploadReferenceImageHandler(
     return;
   }
 
+  // A query param can be a string, an array, or an object (parsed query) — take
+  // it only when it's a plain string, so no array/object reaches safeFilename.
+  const filenameParam =
+    typeof req.query.filename === "string" ? req.query.filename : undefined;
+
   try {
     const id = await uploadImageToNotion({
       data: body,
-      filename: safeFilename(req.query.filename, contentType),
+      filename: safeFilename(filenameParam, contentType),
       contentType,
     });
     res.status(201).json({ id });

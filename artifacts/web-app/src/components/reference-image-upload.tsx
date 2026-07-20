@@ -9,6 +9,15 @@ import {
 
 type ItemStatus = "uploading" | "done" | "error";
 
+/** A display-safe version of the user-supplied file name, used only for `alt`
+ * text and the remove button's label. Strips HTML meta-characters and control
+ * characters so the untrusted name can't be reinterpreted as markup (React
+ * already escapes, but this keeps the value clean at the source too). */
+function displayName(name: string): string {
+  const cleaned = name.replace(/[<>"'&\u0000-\u001f]/g, "").trim();
+  return cleaned.slice(0, 100) || "image";
+}
+
 interface ReferenceImageItem {
   key: string;
   previewUrl: string;
@@ -91,7 +100,12 @@ export function ReferenceImageUpload({
       const previewUrl = URL.createObjectURL(file);
       setItems((current) => [
         ...current,
-        { key, previewUrl, fileName: file.name, status: "uploading" },
+        {
+          key,
+          previewUrl,
+          fileName: displayName(file.name),
+          status: "uploading",
+        },
       ]);
       void startUpload(key, file);
     }
