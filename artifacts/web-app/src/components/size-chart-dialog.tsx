@@ -119,21 +119,26 @@ interface SoakerSizeRow {
   skate: string;
 }
 
-// Two blade-length bands, split at 9½" — the atelier makes and stocks two
-// physical soaker sizes. Soakers stretch (~1–1.5"), so each band covers a range
-// of blades and between-size shoppers size up. The atelier's MK Flight test
-// blade (9⅓" ≈ 237 mm) is a Small. The split value here must match the size
-// option names in Notion ("Small (up to 9½\")" / "Large (9½\"+)"); re-tune both
-// together if the cutoff changes.
+// Three blade-length bands, split at 9" and 10½" — the atelier makes and stocks
+// three physical soaker sizes. Soakers stretch (~1–1.5"), so each band covers a
+// range of blades and between-size shoppers size up. The atelier's MK Flight
+// test blade (9⅓" ≈ 237 mm) is a Small. The split values here must match the
+// size option names in Notion ("Extra Small (up to 9\")" / "Small (9–10½\")" /
+// "Large (10½\"+)"); re-tune both together if the cutoffs change.
 const SOAKER_SIZE_CHART: SoakerSizeRow[] = [
   {
+    band: "Extra Small",
+    blade: { in: 'up to 9"', mm: "≤ 229" },
+    skate: "Child to small youth",
+  },
+  {
     band: "Small",
-    blade: { in: 'up to 9½"', mm: "≤ 241" },
+    blade: { in: '9–10½"', mm: "229–267" },
     skate: "Youth to average adult",
   },
   {
     band: "Large",
-    blade: { in: '9½" and up', mm: "241 +" },
+    blade: { in: '10½" and up', mm: "267 +" },
     skate: "Larger adult",
   },
 ];
@@ -158,7 +163,7 @@ function SoakerChartTable() {
           <TableRow
             key={row.band}
             className="hover:bg-primary/5 border-border/40"
-            data-testid={`soaker-size-row-${row.band.toLowerCase()}`}
+            data-testid={`soaker-size-row-${row.band.toLowerCase().replace(/\s+/g, "-")}`}
           >
             <TableCell className="font-light text-foreground">
               {row.band}
