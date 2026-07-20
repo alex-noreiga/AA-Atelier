@@ -1,6 +1,12 @@
 import { useEffect, useRef, useState } from "react";
-import { ImagePlus, Loader2, X, AlertCircle } from "lucide-react";
-import { cn } from "@/lib/utils";
+import {
+  FileImage,
+  ImagePlus,
+  Loader2,
+  X,
+  AlertCircle,
+  Check,
+} from "lucide-react";
 import {
   ACCEPT_ATTR,
   MAX_REFERENCE_IMAGES,
@@ -9,24 +15,16 @@ import {
 
 type ItemStatus = "uploading" | "done" | "error";
 
-/** A display-safe version of the user-supplied file name, used only for `alt`
- * text and the remove button's label. Strips HTML meta-characters and control
- * characters so the untrusted name can't be reinterpreted as markup (React
- * already escapes, but this keeps the value clean at the source too). */
+/** A display-safe version of the user-supplied file name (rendered as plain
+ * text). Strips HTML meta-characters and control characters so the untrusted
+ * name stays inert wherever it's shown. */
 function displayName(name: string): string {
   const cleaned = name.replace(/[<>"'&\u0000-\u001f]/g, "").trim();
   return cleaned.slice(0, 100) || "image";
 }
 
-/** The preview source for the <img>, but only when it's a blob: object URL we
- * created ourselves — so no other (untrusted) value can reach the src. */
-function blobPreviewSrc(url: string): string | undefined {
-  return /^blob:/.test(url) ? url : undefined;
-}
-
 interface ReferenceImageItem {
   key: string;
-  previewUrl: string;
   fileName: string;
   status: ItemStatus;
   /** The Notion file_upload id, once the upload succeeds. */
@@ -43,9 +41,10 @@ interface ReferenceImageUploadProps {
 /**
  * Optional reference / inspiration image picker for the order form. Each chosen
  * image is downscaled and uploaded immediately (see `lib/reference-images.ts`),
- * showing a live thumbnail with per-image progress and errors. The parent form
- * receives just the uploaded ids via `onChange` and sends them as the order's
- * `referenceImageIds`.
+ * shown as a filename row with live per-image status. The parent form receives
+ * just the uploaded ids via `onChange` and sends them as the order's
+ * `referenceImageIds`; the atelier sees the images themselves on the order's
+ * Notion page.
  */
 export function ReferenceImageUpload({
   onChange,
@@ -67,16 +66,6 @@ export function ReferenceImageUpload({
   useEffect(() => {
     onChangeRef.current(idsKey ? idsKey.split(",") : []);
   }, [idsKey]);
-
-  // Revoke object URLs on unmount to avoid leaks.
-  useEffect(() => {
-    return () => {
-      setItems((current) => {
-        current.forEach((item) => URL.revokeObjectURL(item.previewUrl));
-        return current;
-      });
-    };
-  }, []);
 
   function patchItem(key: string, patch: Partial<ReferenceImageItem>) {
     setItems((current) =>
@@ -103,84 +92,81 @@ export function ReferenceImageUpload({
 
     for (const file of files) {
       const key = `ref-${keyCounter.current++}`;
-      const previewUrl = URL.createObjectURL(file);
       setItems((current) => [
         ...current,
-        {
-          key,
-          previewUrl,
-          fileName: displayName(file.name),
-          status: "uploading",
-        },
+        { key, fileName: displayName(file.name), status: "uploading" },
       ]);
       void startUpload(key, file);
     }
   }
 
   function removeItem(key: string) {
-    setItems((current) => {
-      const target = current.find((item) => item.key === key);
-      if (target) URL.revokeObjectURL(target.previewUrl);
-      return current.filter((item) => item.key !== key);
-    });
+    setItems((current) => current.filter((item) => item.key !== key));
   }
 
   const atLimit = items.length >= MAX_REFERENCE_IMAGES;
 
   return (
     <div>
-      <div className="flex flex-wrap gap-3">
-        {items.map((item) => (
-          <div
-            key={item.key}
-            className="relative w-24 h-24 rounded-lg overflow-hidden border border-border bg-muted/20 group"
-            data-testid="reference-image-item"
-          >
-            <img
-              src={blobPreviewSrc(item.previewUrl)}
-              alt={item.fileName}
-              className={cn(
-                "w-full h-full object-cover",
-                item.status !== "done" && "opacity-60",
-              )}
-            />
-            {item.status === "uploading" && (
-              <div className="absolute inset-0 flex items-center justify-center bg-background/40">
-                <Loader2 className="w-5 h-5 animate-spin text-primary" />
-              </div>
-            )}
-            {item.status === "error" && (
-              <div className="absolute inset-0 flex flex-col items-center justify-center bg-background/70 px-1 text-center">
-                <AlertCircle className="w-4 h-4 text-destructive mb-0.5" />
-                <span className="text-[10px] leading-tight text-destructive">
-                  {item.error}
-                </span>
-              </div>
-            )}
-            <button
-              type="button"
-              onClick={() => removeItem(item.key)}
-              aria-label={`Remove ${item.fileName}`}
-              className="absolute top-1 right-1 w-5 h-5 rounded-full bg-background/80 border border-border flex items-center justify-center text-muted-foreground hover:text-destructive hover:border-destructive transition-colors"
+      {items.length > 0 && (
+        <ul className="flex flex-col gap-2 mb-3">
+          {items.map((item) => (
+            <li
+              key={item.key}
+              className="flex items-center gap-3 rounded-lg border border-border bg-muted/20 px-3 py-2"
+              data-testid="reference-image-item"
             >
-              <X className="w-3 h-3" />
-            </button>
-          </div>
-        ))}
+              <FileImage className="w-4 h-4 shrink-0 text-muted-foreground" />
+              <div className="min-w-0 flex-1">
+                <p className="truncate text-sm text-foreground/80">
+                  {item.fileName}
+                </p>
+                {item.status === "error" && (
+                  <p className="truncate text-xs text-destructive">
+                    {item.error}
+                  </p>
+                )}
+              </div>
+              {item.status === "uploading" && (
+                <Loader2
+                  className="w-4 h-4 shrink-0 animate-spin text-primary"
+                  aria-label="Uploading"
+                />
+              )}
+              {item.status === "done" && (
+                <Check
+                  className="w-4 h-4 shrink-0 text-primary"
+                  aria-label="Uploaded"
+                />
+              )}
+              {item.status === "error" && (
+                <AlertCircle className="w-4 h-4 shrink-0 text-destructive" />
+              )}
+              <button
+                type="button"
+                onClick={() => removeItem(item.key)}
+                aria-label={`Remove ${item.fileName}`}
+                className="shrink-0 text-muted-foreground hover:text-destructive transition-colors"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </li>
+          ))}
+        </ul>
+      )}
 
-        {!atLimit && (
-          <button
-            type="button"
-            onClick={() => inputRef.current?.click()}
-            disabled={disabled}
-            className="w-24 h-24 rounded-lg border border-dashed border-border flex flex-col items-center justify-center gap-1 text-muted-foreground hover:border-primary/50 hover:text-primary transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
-            data-testid="add-reference-image"
-          >
-            <ImagePlus className="w-5 h-5" />
-            <span className="text-[10px] tracking-wide uppercase">Add</span>
-          </button>
-        )}
-      </div>
+      {!atLimit && (
+        <button
+          type="button"
+          onClick={() => inputRef.current?.click()}
+          disabled={disabled}
+          className="inline-flex items-center gap-2 rounded-full border border-dashed border-border px-4 py-2 text-xs uppercase tracking-widest text-muted-foreground hover:border-primary/50 hover:text-primary transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+          data-testid="add-reference-image"
+        >
+          <ImagePlus className="w-4 h-4" />
+          Add images
+        </button>
+      )}
 
       <input
         ref={inputRef}
