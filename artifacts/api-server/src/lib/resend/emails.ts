@@ -227,6 +227,14 @@ export function orderNotificationEmail(
       ? [["Needed by", input.neededBy.toISOString().slice(0, 10)] as Field]
       : []),
     ...(input.description ? [["Notes", input.description] as Field] : []),
+    ...(input.referenceImageIds && input.referenceImageIds.length > 0
+      ? [
+          [
+            "Reference images",
+            `${input.referenceImageIds.length} attached — see the order page in Notion`,
+          ] as Field,
+        ]
+      : []),
   ];
 
   return {
