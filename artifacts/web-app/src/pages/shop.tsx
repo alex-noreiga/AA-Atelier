@@ -259,7 +259,7 @@ function ProductCard({
   const variant = product.variants[selected] ?? product.variants[0];
   const selectable = variant.available && typeof variant.price === "number";
   // Matching add-ons follow the selected variant (color/style-specific), so a
-  // pink soaker offers its pink cloth. Recomputed per render — cheap map lookups.
+  // pink soaker offers its pink towel. Recomputed per render — cheap map lookups.
   const addOns = resolveAddOns(variant, variantsById);
 
   // A size stocked in one variant may be absent in another, so clear the

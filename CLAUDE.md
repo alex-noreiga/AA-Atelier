@@ -396,7 +396,7 @@ and `src/lib/notion/shop-orders.*`. Four things are load-bearing:
    `Order Number`).
 
 9. **Matching add-ons are a self-relation on the inventory, resolved client-side.**
-   A product can offer companion items (a skate soaker → its matching blade cloth)
+   A product can offer companion items (a skate soaker → its matching blade towel)
    via a **`Matching Add-ons`** relation on the inventory database pointing at other
    inventory rows. The add-on is an ordinary in-stock, priced, one-size variant —
    it also appears as its own shop card. `products.schema.ts` maps the relation to
