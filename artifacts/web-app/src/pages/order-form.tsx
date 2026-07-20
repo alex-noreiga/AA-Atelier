@@ -510,7 +510,7 @@ export default function OrderForm() {
                   </p>
                 ) : (
                   <p className="text-muted-foreground/60 text-xs mt-1.5">
-                    Custom pieces typically take 8–12 weeks. If you have an
+                    Custom pieces typically take 4-8 weeks. If you have an
                     event date, let us know and we'll advise on timing.
                   </p>
                 )}
