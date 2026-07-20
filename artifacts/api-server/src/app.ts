@@ -7,6 +7,7 @@ import {
   generateMilestonesHandler,
   generateMilestonesButtonHandler,
 } from "./routes/cron.js";
+import { uploadReferenceImageHandler } from "./routes/order-images.js";
 import { errorHandler } from "./middlewares/error.js";
 import { logger } from "./lib/logger.js";
 
@@ -41,6 +42,17 @@ app.post(
   "/api/webhooks/stripe",
   express.raw({ type: "application/json" }),
   stripeWebhookHandler,
+);
+
+// Order reference-image upload. Like the Stripe webhook, this reads a raw body
+// (the image bytes) and so is mounted BEFORE the JSON parser and directly on the
+// app (not the /api router) — it's a binary endpoint outside the OpenAPI
+// contract. `type: () => true` buffers whatever content type the browser sends;
+// the handler validates it's an accepted image and enforces the size cap.
+app.post(
+  "/api/orders/reference-images",
+  express.raw({ type: () => true, limit: "4.5mb" }),
+  uploadReferenceImageHandler,
 );
 
 app.use(express.json());

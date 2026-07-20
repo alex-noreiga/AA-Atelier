@@ -42,6 +42,16 @@ function dividerBlock() {
   return { object: "block", type: "divider", divider: {} };
 }
 
+/** An image block backed by an already-uploaded Notion `file_upload` id (see
+ * `file-uploads.repository.ts`). Notion renders it inline on the order page. */
+function imageBlock(fileUploadId: string) {
+  return {
+    object: "block",
+    type: "image",
+    image: { type: "file_upload", file_upload: { id: fileUploadId } },
+  };
+}
+
 /**
  * Notion page `properties` for a new order. When `clientPageId` is given (the
  * order flow upserted a Client CRM record for this customer), the order is
@@ -124,5 +134,22 @@ export function buildOrderPageBlocks(data: CreateOrderInput): unknown[] {
   }
   costumeSection.push(dividerBlock());
 
-  return [...contactSection, ...measurementSection, ...costumeSection];
+  // Customer-uploaded reference / inspiration images, attached as inline image
+  // blocks by their Notion file_upload id (uploaded ahead of order-create via
+  // POST /orders/reference-images). Omitted entirely when none were uploaded.
+  const referenceSection: unknown[] =
+    data.referenceImageIds && data.referenceImageIds.length > 0
+      ? [
+          headingBlock("Reference Images"),
+          ...data.referenceImageIds.map(imageBlock),
+          dividerBlock(),
+        ]
+      : [];
+
+  return [
+    ...contactSection,
+    ...measurementSection,
+    ...costumeSection,
+    ...referenceSection,
+  ];
 }

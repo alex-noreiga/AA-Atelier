@@ -90,7 +90,8 @@ export const CreateOrderBody = zod.object({
   "measurementUnit": zod.enum(['inches', 'cm']).optional(),
   "measurementAppointment": zod.boolean().optional().describe('True when the customer opted to have their measurements taken at a scheduled fitting or consultation instead of entering them now. When true the measurement fields are omitted.'),
   "description": zod.string().optional(),
-  "neededBy": zod.coerce.date().optional()
+  "neededBy": zod.coerce.date().optional(),
+  "referenceImageIds": zod.array(zod.string()).optional().describe('Notion file_upload ids for customer-supplied reference \/ inspiration images, each obtained by first POSTing the image bytes to POST \/orders\/reference-images (a binary endpoint outside this contract, mounted like the Stripe webhook). They are attached to the order\'s Notion page as image blocks. Optional; omitted when the customer uploaded none.')
 }).describe('A new custom-dress order. Measurements are optional: the customer either supplies all five now (with a measurementUnit), or sets measurementAppointment=true to have them taken at a scheduled fitting or consultation. The server rejects a body with neither.')
 
 export const CreateOrderResponse = zod.object({

@@ -138,6 +138,20 @@ describe("orderNotificationEmail", () => {
     expect(email.text).toContain("waist 28");
     expect(email.text).toContain("Order number: 000002");
   });
+
+  it("omits the reference-images line when none were attached", () => {
+    const email = orderNotificationEmail(createOrderInput(), "000002", INBOX);
+    expect(email.text).not.toContain("Reference images");
+  });
+
+  it("notes the count when reference images were attached", () => {
+    const email = orderNotificationEmail(
+      createOrderInput({ referenceImageIds: ["a", "b", "c"] }),
+      "000002",
+      INBOX,
+    );
+    expect(email.text).toContain("Reference images: 3 attached");
+  });
 });
 
 describe("backInStockNotificationEmail", () => {

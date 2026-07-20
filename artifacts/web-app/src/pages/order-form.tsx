@@ -10,6 +10,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { PageShell } from "@/components/page-shell";
+import { ReferenceImageUpload } from "@/components/reference-image-upload";
 import { SuccessScreen } from "@/components/success-screen";
 import { Seo } from "@/components/seo";
 import { ROUTE_SEO } from "@/lib/seo-routes";
@@ -92,6 +93,9 @@ export default function OrderForm() {
     orderNumber: string;
     appointment: boolean;
   } | null>(null);
+  // Notion file_upload ids for reference images the customer uploaded (managed
+  // by <ReferenceImageUpload/>, which uploads each as it's chosen).
+  const [referenceImageIds, setReferenceImageIds] = useState<string[]>([]);
   const { toast } = useToast();
 
   const createOrder = useCreateOrder({
@@ -174,6 +178,7 @@ export default function OrderForm() {
         ...measurements,
         ...(description ? { description } : {}),
         ...(neededBy ? { neededBy } : {}),
+        ...(referenceImageIds.length ? { referenceImageIds } : {}),
       },
     });
   };
@@ -510,10 +515,25 @@ export default function OrderForm() {
                   </p>
                 ) : (
                   <p className="text-muted-foreground/60 text-xs mt-1.5">
-                    Custom pieces typically take 4-8 weeks. If you have an
-                    event date, let us know and we'll advise on timing.
+                    Custom pieces typically take 4-8 weeks. If you have an event
+                    date, let us know and we'll advise on timing.
                   </p>
                 )}
+              </div>
+
+              <div>
+                <Label className="text-sm font-light tracking-wide">
+                  Reference Images
+                  <span className="text-muted-foreground/60 ml-1 text-xs">
+                    (optional)
+                  </span>
+                </Label>
+                <div className="mt-2">
+                  <ReferenceImageUpload
+                    onChange={setReferenceImageIds}
+                    disabled={submitting}
+                  />
+                </div>
               </div>
             </div>
           </section>

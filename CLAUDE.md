@@ -78,7 +78,15 @@ Express app (artifacts/api-server)  ──►  Notion REST API (orders database)
   ├─ POST /api/orders              → creates a Notion page, returns order number
   │                                  + sends an order-confirmation email
   │                                  + (best-effort) upserts a Client CRM record
-  │                                  by email and links the order to it
+  │                                  by email and links the order to it. Optional
+  │                                  referenceImageIds (from the upload endpoint
+  │                                  below) are attached as image blocks.
+  ├─ POST /api/orders/reference-images
+  │                                → relays one raw customer-uploaded reference/
+  │                                  inspiration image to Notion's File Upload API
+  │                                  and returns its file_upload id (for the order
+  │                                  body's referenceImageIds). Raw bytes, NOT part
+  │                                  of the OpenAPI contract.
   ├─ POST /api/orders/:n/payments/:stage
   │                                → creates a Stripe Checkout session for one
   │                                  payment stage of custom order :n — first
@@ -809,11 +817,28 @@ and in the maintainer's env without edits.
   navbar clearance, and optional centering — follow `pages/home.tsx` as the
   scaffold.
 - **Prettier** is the formatter (root devDependency).
-- **Image upload is not supported.** The GCS/Replit-sidecar upload path was
-  deleted during the Vercel migration, and the `/storage/*` endpoints,
-  `imageUrls` field, and the `lib/object-storage-web` widget have since been
-  removed from the spec and workspace. If upload is ever reintroduced, add it
-  to `openapi.yaml` first and regenerate.
+- **Order reference-image upload goes to Notion, not object storage.** The old
+  GCS/Replit-sidecar upload path was deleted during the Vercel migration; the
+  order form's optional **reference / inspiration images** were reintroduced on
+  top of **Notion's File Upload API** instead of reviving object storage, so
+  there is _no new service or env var_ — it reuses `NOTION_API_KEY`, and the
+  images land as inline image blocks on the order's own Notion page. The flow:
+  the browser downscales each chosen image on a canvas
+  (`web-app/src/lib/reference-images.ts`), then POSTs the bytes **one at a time**
+  to `POST /api/orders/reference-images` (`web-app/src/components/reference-image-upload.tsx`);
+  the server (`api-server/src/routes/order-images.ts` →
+  `lib/notion/file-uploads.repository.ts`) relays each to Notion (create →
+  send) and returns a `file_upload` id; the form collects the ids and sends them
+  as the order body's `referenceImageIds`, which `orders.blocks.ts` attaches as
+  image blocks. Two load-bearing points: (1) the upload endpoint is a **raw-bytes
+  route deliberately outside the OpenAPI contract** (like the Stripe webhook /
+  cron routes) — it's hand-mounted in `app.ts` with `express.raw()` ahead of the
+  JSON parser, and the frontend calls it with a plain `fetch`, not the generated
+  client; only the `referenceImageIds` array is in the contract. (2) Client-side
+  downscaling + a **4 MB cap** keep each request under Vercel's ~4.5 MB
+  serverless body limit — the one-image-per-request design is what avoids
+  multipart parsing and stays under that limit. Notion single-part uploads are
+  ≤ 20 MB and must be attached within an hour (the order-create call does that).
 - **No relational database.** Orders live in Notion; there is no Postgres/Drizzle
   package. (An empty `lib/db` scaffold used to exist but was removed, along with
   its stale `drizzle-orm` catalog entry.)

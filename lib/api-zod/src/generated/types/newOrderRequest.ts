@@ -33,4 +33,6 @@ export interface NewOrderRequest {
   measurementAppointment?: boolean;
   description?: string;
   neededBy?: Date;
+  /** Notion file_upload ids for customer-supplied reference / inspiration images, each obtained by first POSTing the image bytes to POST /orders/reference-images (a binary endpoint outside this contract, mounted like the Stripe webhook). They are attached to the order's Notion page as image blocks. Optional; omitted when the customer uploaded none. */
+  referenceImageIds?: string[];
 }
