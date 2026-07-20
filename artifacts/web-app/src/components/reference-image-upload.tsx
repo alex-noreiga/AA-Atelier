@@ -18,6 +18,12 @@ function displayName(name: string): string {
   return cleaned.slice(0, 100) || "image";
 }
 
+/** The preview source for the <img>, but only when it's a blob: object URL we
+ * created ourselves — so no other (untrusted) value can reach the src. */
+function blobPreviewSrc(url: string): string | undefined {
+  return /^blob:/.test(url) ? url : undefined;
+}
+
 interface ReferenceImageItem {
   key: string;
   previewUrl: string;
@@ -130,15 +136,8 @@ export function ReferenceImageUpload({
             className="relative w-24 h-24 rounded-lg overflow-hidden border border-border bg-muted/20 group"
             data-testid="reference-image-item"
           >
-            {/* Only ever a blob: object URL we created below; the scheme check
-                keeps any non-blob value out of the src (and satisfies static
-                XSS analysis of the attribute). */}
             <img
-              src={
-                item.previewUrl.startsWith("blob:")
-                  ? item.previewUrl
-                  : undefined
-              }
+              src={blobPreviewSrc(item.previewUrl)}
               alt={item.fileName}
               className={cn(
                 "w-full h-full object-cover",

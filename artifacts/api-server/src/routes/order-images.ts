@@ -64,15 +64,21 @@ export async function uploadReferenceImageHandler(
     return;
   }
 
-  // `req.body` (raw bytes from express.raw) is a Buffer; keep the Buffer check
-  // in the same expression as each `.length` read so the size never depends on
-  // a value that could be an array/string (defends against type confusion).
+  // `req.body` is the raw Buffer from express.raw. Reject anything else first:
+  // the explicit string/array checks (not just Buffer.isBuffer) rule out the
+  // type confusion a tampered body could otherwise cause on the byte-length
+  // comparison below — a string's `.length` counts characters, not bytes.
   const body = req.body;
-  if (!Buffer.isBuffer(body) || body.length === 0) {
+  if (
+    typeof body === "string" ||
+    Array.isArray(body) ||
+    !Buffer.isBuffer(body) ||
+    body.length === 0
+  ) {
     res.status(400).json({ error: "No image data was received." });
     return;
   }
-  if (Buffer.isBuffer(body) && body.length > MAX_IMAGE_BYTES) {
+  if (body.length > MAX_IMAGE_BYTES) {
     res
       .status(413)
       .json({ error: "That image is too large. Please keep it under 4 MB." });
