@@ -15,7 +15,7 @@ const FAQS: { question: string; answer: string }[] = [
   {
     question: "How long does a custom costume take?",
     answer:
-      "Most commissions take six to eight weeks from consultation to final fitting. Competition season fills quickly, so we recommend booking a few months ahead of the date you need the costume in hand to account for any supply chain issues along the way.",
+      "Most commissions take between four to eight weeks from consultation to final fitting, depending on the complexity of the piece. Competition season fills quickly, so we recommend booking a few months ahead of the date you need the costume in hand to account for any supply chain issues along the way.",
   },
   {
     question: "How do I get measured?",
