@@ -190,21 +190,34 @@ export default function OrderForm() {
         title="Order Received"
         description={
           success.appointment
-            ? "Thank you! We'll be in touch soon to schedule your measurement appointment and confirm your details."
-            : "Thank you! We'll be in touch soon to confirm your details."
+            ? "Thank you! We'll be in touch soon to schedule your measurement appointment and confirm your details. You can also schedule a consultation now to talk through your design."
+            : "Thank you! We'll be in touch soon to confirm your details. Want to talk through your design? Schedule a consultation now."
         }
         footer={
           <div className="flex flex-col items-center gap-6">
-            {success.appointment && (
+            <div className="flex flex-col sm:flex-row items-center gap-3">
+              {success.appointment && (
+                <CtaLink
+                  to="/appointments?type=fitting"
+                  variant="primary"
+                  data-testid="link-book-fitting-success"
+                >
+                  <CalendarCheck className="w-4 h-4" />
+                  Book your fitting
+                </CtaLink>
+              )}
+              {/* A consultation to talk through the piece is offered on every
+                  order confirmation; when a fitting is also on offer it steps
+                  down to the secondary (outline) action. */}
               <CtaLink
-                to="/appointments?type=fitting"
-                variant="primary"
-                data-testid="link-book-fitting-success"
+                to="/appointments?type=consultation"
+                variant={success.appointment ? "outline" : "primary"}
+                data-testid="link-book-consultation-success"
               >
                 <CalendarCheck className="w-4 h-4" />
-                Book your fitting
+                Schedule a consultation
               </CtaLink>
-            )}
+            </div>
             <Link
               to="/track"
               className="inline-flex items-center gap-2 text-sm tracking-widest uppercase text-muted-foreground hover:text-primary transition-colors"
