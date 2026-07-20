@@ -52,6 +52,19 @@ describe("buildOrderProperties", () => {
     ) as any;
     expect(props["Client"].relation).toEqual([{ id: "client-9" }]);
   });
+
+  it("seeds the Due Date property from the customer's neededBy date", () => {
+    const props = buildOrderProperties(
+      { ...baseOrder, neededBy: new Date("2026-09-01T12:34:56Z") },
+      "ORD-ABC-123",
+    ) as any;
+    expect(props["Due Date"].date.start).toBe("2026-09-01");
+  });
+
+  it("omits the Due Date property when no neededBy date is provided", () => {
+    const props = buildOrderProperties(baseOrder, "ORD-ABC-123") as any;
+    expect(props).not.toHaveProperty("Due Date");
+  });
 });
 
 describe("buildOrderPageBlocks", () => {
