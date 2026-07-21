@@ -11,6 +11,7 @@ import {
 } from "./client.js";
 import {
   LINE_ITEM_INVOICE_RELATION_PROPERTY,
+  INVOICE_ID_PROPERTY,
   stagePaymentFields,
   extractInvoice,
   extractLineItem,
@@ -20,6 +21,10 @@ import {
   type NotionInvoicePage,
   type NotionInvoiceLineItemsQueryResponse,
 } from "./invoice.schema.js";
+import {
+  buildInvoiceLineItemProperties,
+  type InvoiceLineItemInput,
+} from "./invoice-line-items.blocks.js";
 
 function assertConfigured(client: NotionClient, envVar: string): void {
   if (!client.databaseId) {
@@ -125,6 +130,65 @@ export async function markInvoicePaid(
     const errorText = await response.text();
     throw new Error(
       `Notion invoice ${stage} paid update failed with status ${response.status}: ${errorText}`,
+    );
+  }
+}
+
+/**
+ * Create one "Invoice Line Items" row from the generator's input. Prices via
+ * `Manual Unit Price` at quantity 1 and never links the costing item (see
+ * `invoice-line-items.blocks.ts` for why), so a material/labor/adjustment line's
+ * `Line Total` is exactly the amount we computed.
+ */
+export async function createInvoiceLineItem(
+  input: InvoiceLineItemInput,
+  client: NotionClient = getInvoiceLineItemsNotionClient(),
+): Promise<void> {
+  assertConfigured(client, "NOTION_INVOICE_LINE_ITEMS_DATABASE_ID");
+
+  const response = await client.fetch("/v1/pages", {
+    method: "POST",
+    body: JSON.stringify({
+      parent: { database_id: client.databaseId },
+      properties: buildInvoiceLineItemProperties(input),
+    }),
+  });
+
+  if (!response.ok) {
+    const errorText = await response.text();
+    throw new Error(
+      `Notion invoice line item creation failed with status ${response.status}: ${errorText}`,
+    );
+  }
+}
+
+/**
+ * Set an invoice's title (`Invoice ID`) — the generator names it after the
+ * order's `ORD-` number. Display-only: the app looks an invoice up via the
+ * order's `Invoices` relation, never by this title, so renaming it is safe.
+ */
+export async function setInvoiceTitle(
+  invoicePageId: string,
+  title: string,
+  client: NotionClient = getInvoicesNotionClient(),
+): Promise<void> {
+  assertConfigured(client, "NOTION_INVOICES_DATABASE_ID");
+
+  const response = await client.fetch(`/v1/pages/${invoicePageId}`, {
+    method: "PATCH",
+    body: JSON.stringify({
+      properties: {
+        [INVOICE_ID_PROPERTY]: {
+          title: [{ text: { content: title } }],
+        },
+      },
+    }),
+  });
+
+  if (!response.ok) {
+    const errorText = await response.text();
+    throw new Error(
+      `Notion invoice title update failed with status ${response.status}: ${errorText}`,
     );
   }
 }

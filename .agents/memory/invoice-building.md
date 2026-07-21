@@ -137,6 +137,50 @@ Also note `Final Balance` has been both a rollup and a formula; `extractNumericV
 reads either, so the app is indifferent. Overdue triggers at midnight on the due
 date (the due dates are date-only).
 
+## 2026-07 — generating line items from the costing (the double-charge fix)
+
+Itemizing by hand double-charged: the `costing (custom orders)` item is a
+whole-garment aggregate (`Suggested Price` folds in materials + labor + margin),
+and an `Invoice Line Item` linked to it prices at that aggregate — so a
+costing-item line **plus** separate material/labor lines bills the same money
+twice. Worse, the line-item `Unit Price` formula resolves **Costing Item before
+Material Usage Line**, so a "Material" line linked to both silently pulls the
+whole-garment price (this is what the "Toothless" test invoice showed).
+
+Fix = the app owns itemization. `GET /api/invoices/generate-line-items`
+(`?order=`, CRON_SECRET, outside the OpenAPI contract; on-demand `/run` variant
+is a Notion formula-link the atelier clicks) reads the order's costing and writes:
+one **Material** line per non-packaging material usage line (at its `Line Material
+Cost`), one **Labor** line (summed costing `Labor Cost`), and one reconciling
+**Adjustment** line "Design & finishing" = Σ(`Suggested Price`) − (materials +
+labor). The adjustment folds the margin in so the itemized total lands exactly on
+the costing's `Suggested Price`, regardless of what that formula includes.
+
+Load-bearing:
+
+- **Every generated line prices via `Manual Unit Price` (qty 1) and never links
+  the `Costing Item`.** Manual price is the top of the `Unit Price` precedence, so
+  the line total is exactly the amount computed; not linking the costing item is
+  what makes the aggregate-vs-components double charge structurally impossible.
+  (`lib/notion/invoice-line-items.blocks.ts`.)
+- **Idempotent via the existing-lines guard.** If the invoice already has any line
+  items, generation is skipped (only the title is reconciled) — a re-press never
+  duplicates. To regenerate, delete the lines and press again.
+- **Title = the `ORD-` number.** `setInvoiceTitle` sets `Invoice ID`. Display-only
+  (lookup is via the order's `Invoices` relation, never the title), so it's safe.
+- **Packaging usage lines are skipped** (`USAGE_TYPE_PACKAGING` — an internal cost,
+  not itemized to the customer).
+- **`Suggested Price`'s formula is CORRECT; its description is stale.** The Notion
+  description still reads "Break-even price + labor cost," but the real formula is
+  `round(Break Even × (1 + margin) / (Production ? 1 − sellingFees : 1), 2)` —
+  markup-on-cost, grossing up fees on Production rows only. Do **not** rewrite the
+  formula to match the description. (The description text can't be edited via the
+  Notion API's `update-data-source` DDL — it's a manual UI fix.)
+
+New env: `NOTION_COSTING_DATABASE_ID`, `NOTION_MATERIAL_USAGE_DATABASE_ID`
+(integration shared with both). Traversal is order → `Costing Items` → each
+costing item's `Material Usage Lines`, all by relation page-id fetch (no queries).
+
 ## Where the code lives
 
 - Notion adapter: `lib/notion/invoice.schema.ts` (readers, `InvoiceView`,

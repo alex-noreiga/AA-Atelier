@@ -149,12 +149,32 @@ Express app (artifacts/api-server)  ──►  Notion REST API (orders database)
   │                                  order's live stage (so the calendar reflects
   │                                  real progress, not a frozen "Not Started").
   │                                  NOT part of the OpenAPI contract.
-  └─ GET  /api/cron/generate-milestones/run
-                                   → the SAME reconciliation, on demand: a Notion
-                                     "Open link" button the atelier presses. Auth
-                                     is a `?secret=<CRON_SECRET>` query token
-                                     (a button can't send a Bearer header) and it
-                                     returns a small HTML confirmation page. NOT
+  ├─ GET  /api/cron/generate-milestones/run
+  │                                → the SAME reconciliation, on demand: a Notion
+  │                                  "Open link" button the atelier presses. Auth
+  │                                  is a `?secret=<CRON_SECRET>` query token
+  │                                  (a button can't send a Bearer header) and it
+  │                                  returns a small HTML confirmation page. NOT
+  │                                  part of the OpenAPI contract.
+  ├─ GET  /api/invoices/generate-line-items
+  │                                → itemize a custom order's invoice from its
+  │                                  costing (CRON_SECRET Bearer, JSON, `?order=`).
+  │                                  Mirrors the order's costing items into
+  │                                  "Invoice Line Items": one Material line per
+  │                                  non-packaging usage line (at cost), one Labor
+  │                                  line, and one reconciling "Design & finishing"
+  │                                  Adjustment line = Σ(Suggested Price) −
+  │                                  (materials + labor) so the total lands on the
+  │                                  costing's margin-loaded price. Also names the
+  │                                  invoice after the ORD- number. Idempotent
+  │                                  (skips an invoice that already has lines). NOT
+  │                                  part of the OpenAPI contract.
+  └─ GET  /api/invoices/generate-line-items/run
+                                   → the SAME generation, on demand: a Notion link
+                                     the atelier clicks (a formula-built URL
+                                     carrying the row's Order Number). Auth is a
+                                     `?secret=<CRON_SECRET>&order=<ORD>` query
+                                     token; returns an HTML confirmation page. NOT
                                      part of the OpenAPI contract.
 ```
 
@@ -495,6 +515,55 @@ Notion integration with **invoices & payments** and **Invoice Line Items**; and
 set the two env vars. Code: `services/invoice.service.ts`, `routes/orders.ts`,
 `routes/stripe-webhook.ts`, `lib/notion/invoice.{schema,repository}.ts`,
 `pages/track.tsx` (via `components/custom-order-result.tsx`), and `pages/invoice.tsx`.
+
+### Generating invoice line items from the costing (button)
+
+Itemizing an invoice by hand is where a **double charge** used to creep in: the
+`costing (custom orders)` item is a *whole-garment aggregate* (its `Suggested
+Price` folds in materials + labor + margin), and an `Invoice Line Item` linked to
+that costing item prices at the aggregate — so a costing-item line **plus**
+separate material/labor lines counts the same money twice (the `Unit Price`
+formula resolves the costing item ahead of the material usage line, so even a
+"Material" line linked to both silently bills the whole garment). The generator
+removes the foot-gun by owning the itemization:
+`GET /api/invoices/generate-line-items` (`?order=<ORD>`, CRON_SECRET-guarded,
+outside the OpenAPI contract like the milestone button) reads the order's costing
+and writes the lines itself —
+
+1. **one Material line per non-packaging material usage line**, priced at that
+   line's `Line Material Cost` (at cost);
+2. **one Labor line** at the summed costing `Labor Cost`;
+3. **one reconciling `Adjustment` line "Design & finishing"** = Σ(costing
+   `Suggested Price`) − (materials + labor), which folds the margin in so the
+   itemized total lands **exactly** on the costing's margin-loaded price.
+
+Load-bearing: every generated line prices via **`Manual Unit Price`** at quantity
+1 and **never links the `Costing Item`** (that link only matters when the manual
+price is blank; avoiding it makes the aggregate-vs-components double charge
+structurally impossible). It also sets the invoice title (`Invoice ID`) to the
+order's `ORD-` number (display-only — lookup is by the order's `Invoices`
+relation, never the title). **Idempotent**: it skips an invoice that already has
+line items (a re-press only reconciles the title); to regenerate after changing
+the costing, delete the existing lines and press again. **Packaging** usage lines
+(`Usage Type = "Packaging"`, `USAGE_TYPE_PACKAGING`) are internal cost and never
+itemized. Code: `services/invoice-generator.service.ts`,
+`routes/invoice-generator.ts`, `lib/notion/costing.{schema,repository}.ts`,
+`lib/notion/invoice-line-items.blocks.ts`, and the `createInvoiceLineItem` /
+`setInvoiceTitle` writers in `lib/notion/invoice.repository.ts`.
+
+The atelier must, one time: share the Notion integration with **costing (custom
+orders)** and the **material usage database**; set `NOTION_COSTING_DATABASE_ID` +
+`NOTION_MATERIAL_USAGE_DATABASE_ID`; and add the on-demand trigger — a **formula
+property** on invoices & payments (or on the order, which already has `Order
+Number`) that builds the clickable URL
+`https://<PUBLIC_BASE_URL>/api/invoices/generate-line-items/run?secret=<CRON_SECRET>&order=` +
+the order number (a formula that returns a URL renders as a link; a native Button
+can't interpolate the row's order number into its URL, which is why this is a
+formula link rather than a Button). The `Suggested Price` costing formula is the
+source of truth for the invoice total; its Notion *description* text is stale
+("Break-even price + labor cost") but the **formula is correct** (marks up
+`Break Even Price` by the profit margin, grossing up for selling fees on
+Production rows only) — don't "fix" the formula to match the description.
 
 ## Production schedule (auto-generated stage milestones)
 
@@ -877,7 +946,10 @@ and in the maintainer's env without edits.
   milestone-reconciliation cron writes per-stage milestones to),
   `NOTION_INVOICES_DATABASE_ID` (the "invoices & payments" database) and
   `NOTION_INVOICE_LINE_ITEMS_DATABASE_ID` (the "Invoice Line Items" database) —
-  the two the custom-order invoice flow reads to show a customer their balance.
+  the two the custom-order invoice flow reads to show a customer their balance —
+  plus `NOTION_COSTING_DATABASE_ID` (the "costing (custom orders)" database) and
+  `NOTION_MATERIAL_USAGE_DATABASE_ID` (the "material usage database") — the two
+  the invoice line-item generator reads to itemize an order from its costing.
   The Notion integration must be shared with each database or queries 404. The
   production-schedule cron also needs `CRON_SECRET` (the bearer token Vercel Cron
   sends to `GET /api/cron/generate-milestones`; unset ⇒ that endpoint 401s). The
@@ -958,6 +1030,7 @@ and in the maintainer's env without edits.
 | Change shop-order tracking                        | `artifacts/web-app/src/components/shop-order-result.tsx` (rendered by `pages/track.tsx`; + order number on `pages/shop-success.tsx`); `api-server/src/services/shop-orders.service.ts` + `routes/shop-orders.ts` + `lib/notion/shop-orders.{blocks,repository}.ts` + `services/checkout.service.ts` (mints the number)                                          |
 | Change the footer / legal pages                   | `artifacts/web-app/src/components/footer.tsx` (global, in `App.tsx`) + `pages/{privacy,terms,shipping-returns}.tsx` + `components/legal-page.tsx`; shared studio contact details in `lib/contact-info.ts`                                                                                                                                                       |
 | Change custom-order payments (deposits + balance) | `artifacts/web-app/src/components/custom-order-result.tsx` (`DepositsSection`, rendered by `pages/track.tsx`) + `pages/invoice.tsx`; `api-server/src/services/invoice.service.ts` (`createPaymentCheckout`/`recordPayment`) + `routes/orders.ts` (`POST /orders/:n/payments/:stage`) + `lib/notion/invoice.{schema,repository}.ts` + `routes/stripe-webhook.ts` |
+| Change invoice line-item generation (from costing) | `api-server/src/services/invoice-generator.service.ts` + `routes/invoice-generator.ts` (button, `?order=`) + `lib/notion/costing.{schema,repository}.ts` + `lib/notion/invoice-line-items.blocks.ts` + `createInvoiceLineItem`/`setInvoiceTitle` in `lib/notion/invoice.repository.ts` |
 | Change production-schedule milestones             | `api-server/src/services/schedule.service.ts` + `routes/cron.ts` + `lib/notion/production-schedule.{blocks,repository}.ts` + `lib/notion/orders.repository.ts` (`findOrdersNeedingMilestones`/`markMilestonesGenerated`); cron in `vercel.json`                                                                                                                 |
 | Change appointment booking (UI)                   | `artifacts/web-app/src/pages/appointments.tsx`                                                                                                                                                                                                                                                                                                                  |
 | Change appointment types / routing rules          | `api-server/src/lib/appointments/catalog.ts` (targeted business rule — durations, which staff, which locations)                                                                                                                                                                                                                                                 |

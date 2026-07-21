@@ -16,6 +16,7 @@ import {
   extractOrderName,
   extractCurrentStage,
   extractInvoiceRelationId,
+  extractCostingItemIds,
   extractDueDate,
   extractOrderEmail,
   type CreateOrderInput,
@@ -133,6 +134,7 @@ export async function findOrderByNumber(
 
   const estimatedCompletion = extractDueDate(page);
   const invoicePageId = extractInvoiceRelationId(page);
+  const costingItemIds = extractCostingItemIds(page);
   return {
     orderNumber: trimmedOrderNumber,
     orderName: extractOrderName(page),
@@ -141,6 +143,7 @@ export async function findOrderByNumber(
     pageId: page.id,
     ...(estimatedCompletion !== undefined ? { estimatedCompletion } : {}),
     ...(invoicePageId !== undefined ? { invoicePageId } : {}),
+    ...(costingItemIds.length > 0 ? { costingItemIds } : {}),
   };
 }
 
