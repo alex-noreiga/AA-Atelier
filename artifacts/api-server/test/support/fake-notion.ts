@@ -179,6 +179,7 @@ export function orderPage(opts: {
   orderName?: string;
   currentStage?: string | null;
   invoicePageId?: string;
+  costingItemIds?: string[];
   email?: string | null;
   dueDate?: string | null;
   milestonesGenerated?: boolean;
@@ -186,6 +187,10 @@ export function orderPage(opts: {
   return {
     id: opts.id ?? "page-id",
     properties: {
+      "Costing Items": {
+        type: "relation",
+        relation: (opts.costingItemIds ?? []).map((id) => ({ id })),
+      },
       "Order Number": {
         type: "rich_text",
         rich_text: opts.orderNumber ? [{ plain_text: opts.orderNumber }] : [],
@@ -293,6 +298,61 @@ export function invoicePage(opts: {
         rich_text: opts.secondDepositSessionId
           ? [{ plain_text: opts.secondDepositSessionId }]
           : [],
+      },
+    },
+  };
+}
+
+/** Minimal "costing (custom orders)" page. `Labor Cost` / `Suggested Price` are
+ * Notion formulas; `Material Usage Lines` is a relation. */
+export function costingPage(opts: {
+  id?: string;
+  laborCost?: number | null;
+  suggestedPrice?: number | null;
+  usageLineIds?: string[];
+}) {
+  return {
+    id: opts.id ?? "costing-page",
+    properties: {
+      Item: { type: "title", title: [{ plain_text: "Costing item" }] },
+      "Labor Cost": {
+        type: "formula",
+        formula: { type: "number", number: opts.laborCost ?? null },
+      },
+      "Suggested Price": {
+        type: "formula",
+        formula: { type: "number", number: opts.suggestedPrice ?? null },
+      },
+      "Material Usage Lines": {
+        type: "relation",
+        relation: (opts.usageLineIds ?? []).map((id) => ({ id })),
+      },
+    },
+  };
+}
+
+/** Minimal "material usage database" page. `Line Material Cost` is a Notion
+ * formula; `Usage Type` is a select (Material | Packaging). */
+export function materialUsagePage(opts: {
+  id?: string;
+  name?: string;
+  materialCost?: number | null;
+  usageType?: string;
+}) {
+  return {
+    id: opts.id ?? "usage-page",
+    properties: {
+      "Usage Line": {
+        type: "title",
+        title: opts.name ? [{ plain_text: opts.name }] : [],
+      },
+      "Line Material Cost": {
+        type: "formula",
+        formula: { type: "number", number: opts.materialCost ?? null },
+      },
+      "Usage Type": {
+        type: "select",
+        select: opts.usageType ? { name: opts.usageType } : null,
       },
     },
   };

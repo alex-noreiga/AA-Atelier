@@ -7,6 +7,10 @@ import {
   generateMilestonesHandler,
   generateMilestonesButtonHandler,
 } from "./routes/cron.js";
+import {
+  generateLineItemsHandler,
+  generateLineItemsButtonHandler,
+} from "./routes/invoice-generator.js";
 import { uploadReferenceImageHandler } from "./routes/order-images.js";
 import { errorHandler } from "./middlewares/error.js";
 import { logger } from "./lib/logger.js";
@@ -67,6 +71,15 @@ app.use("/api", router);
 // See routes/cron.ts.
 app.get("/api/cron/generate-milestones", generateMilestonesHandler);
 app.get("/api/cron/generate-milestones/run", generateMilestonesButtonHandler);
+
+// Invoice line-item generation, on demand from Notion (outside the OpenAPI
+// contract, mounted directly like the milestone button). Takes ?order= and
+// reuses CRON_SECRET as its token. See routes/invoice-generator.ts.
+app.get("/api/invoices/generate-line-items", generateLineItemsHandler);
+app.get(
+  "/api/invoices/generate-line-items/run",
+  generateLineItemsButtonHandler,
+);
 
 // Central error handler — must be registered after the routes.
 app.use(errorHandler);

@@ -27,6 +27,11 @@ const STAGE_PROPERTY_NAME = "Stage";
 // the customer pays online (both deposits + the balance); the invoice flow
 // follows this relation to read/write it. See `invoice.service.ts`.
 export const ORDER_INVOICES_RELATION_PROPERTY = "Invoices"; // relation → invoices
+// Relation to the order's costing items ("costing (custom orders)" database).
+// The invoice generator follows this to itemize the order — each costing item
+// contributes its material usage lines + labor + margin. See
+// `services/invoice-generator.service.ts`.
+export const ORDER_COSTING_ITEMS_RELATION_PROPERTY = "Costing Items"; // relation → costing
 // The delivery/competition target the atelier sets on a custom order once it's
 // quoted and scheduled. Drives the per-stage production milestones (see
 // schedule.service.ts). `Milestones Generated` is the idempotency marker the
@@ -55,6 +60,10 @@ export interface OrderRecord {
   pageId?: string;
   /** The linked invoice's Notion page id, or undefined when no invoice exists. */
   invoicePageId?: string;
+  /** Page ids of the order's costing items (`Costing Items` relation) — the
+   * invoice generator itemizes from these. Empty when none are linked.
+   * Stripped from the HTTP response by the `GetOrderStatusResponse` zod parse. */
+  costingItemIds?: string[];
 }
 
 /** The status-lookup response: the raw record plus the derived production-lock
@@ -101,6 +110,7 @@ export interface NotionOrderPage {
     // can read them back and `PATCH /v1/pages/{id}` can update them in place.
     Stage?: { type: "status"; status: { name: string } | null };
     Invoices?: { type: "relation"; relation: Array<{ id: string }> };
+    "Costing Items"?: { type: "relation"; relation: Array<{ id: string }> };
     "Due Date"?: {
       type: "date";
       date: { start: string; end: string | null } | null;
@@ -150,6 +160,14 @@ export function extractInvoiceRelationId(
   const property = page.properties[ORDER_INVOICES_RELATION_PROPERTY];
   if (property?.type !== "relation") return undefined;
   return property.relation[0]?.id;
+}
+
+/** The page ids of the order's costing items (`Costing Items` relation), or an
+ * empty array when none are linked. */
+export function extractCostingItemIds(page: NotionOrderPage): string[] {
+  const property = page.properties[ORDER_COSTING_ITEMS_RELATION_PROPERTY];
+  if (property?.type !== "relation") return [];
+  return property.relation.map((r) => r.id);
 }
 
 /** Read the customer email off an order page (empty for pre-Email orders). */
