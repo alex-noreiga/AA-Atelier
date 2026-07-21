@@ -24,7 +24,7 @@ describe("About", () => {
       screen.getByRole("heading", { name: "Frequently asked" }),
     ).toBeInTheDocument();
     const faq = within(screen.getByTestId("faq-section"));
-    expect(faq.getAllByRole("button")).toHaveLength(7);
+    expect(faq.getAllByRole("button")).toHaveLength(8);
     expect(faq.getByRole("button", { name: FIRST_QUESTION })).toBeVisible();
     expect(faq.getByRole("button", { name: SECOND_QUESTION })).toBeVisible();
   });
