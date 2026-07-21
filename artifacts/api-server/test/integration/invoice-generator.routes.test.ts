@@ -99,6 +99,21 @@ describe("GET /api/invoices/generate-line-items/run (Notion link)", () => {
     expect(res.text).toContain("$140.00");
   });
 
+  it("escapes dynamic values in the HTML confirmation (no reflected XSS)", async () => {
+    mockGenerate.mockResolvedValue({
+      ...okResult,
+      orderNumber: "<script>alert(1)</script>",
+    });
+
+    const res = await request(app).get(
+      `${RUN}?secret=s3cret&order=%3Cscript%3E`,
+    );
+
+    expect(res.status).toBe(200);
+    expect(res.text).not.toContain("<script>alert(1)</script>");
+    expect(res.text).toContain("&lt;script&gt;");
+  });
+
   it("reports when the invoice already had lines", async () => {
     mockGenerate.mockResolvedValue({
       ...okResult,
