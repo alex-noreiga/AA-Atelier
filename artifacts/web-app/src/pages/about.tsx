@@ -25,7 +25,7 @@ const FAQS: { question: string; answer: string }[] = [
   {
     question: "What does a commission cost?",
     answer:
-      "Every piece is priced individually — the final cost depends on the fabric, the amount of embellishment, and the complexity of the design. We quote each commission after your consultation, once we know what it calls for. As a starting point, commissions begin with a $100 deposit, and standalone services like fittings, alterations, and rhinestoning start at $50.",
+      "Every piece is priced individually — the final cost depends on the fabric, the amount of embellishment, and the complexity of the design. We quote each commission after your consultation, once we know what it calls for. As a starting point, commissions begin with a $100 deposit, and standalone services like fittings, alterations, rhinestoning, and repairs start at $50.",
   },
   {
     question: "How do deposits and payment work?",

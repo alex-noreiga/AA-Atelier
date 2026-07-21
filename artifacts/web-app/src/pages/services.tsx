@@ -48,7 +48,7 @@ const SERVICES: Service[] = [
     title: "Repairs & Restoration",
     description:
       "Mending, refreshing, and restoring beloved costumes — from re-securing stones to reworking seams — giving a treasured piece another season.",
-    price: "Quoted per piece",
+    price: "From $50",
   },
 ];
 
@@ -184,9 +184,9 @@ export default function Services() {
             ))}
           </ol>
           <p className="mt-14 text-center text-muted-foreground font-light leading-relaxed max-w-2xl mx-auto">
-            Prefer a standalone service? Fittings, alterations, and rhinestoning
-            start at $50 and are quoted based on the work involved; repairs and
-            restoration are quoted per piece once we've seen it.
+            Prefer a standalone service? Fittings, alterations, rhinestoning,
+            and repairs all start at $50 and are quoted based on the work
+            involved.
           </p>
         </div>
 
