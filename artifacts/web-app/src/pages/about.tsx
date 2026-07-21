@@ -25,7 +25,12 @@ const FAQS: { question: string; answer: string }[] = [
   {
     question: "What does a commission cost?",
     answer:
-      "Price depends on the fabric, the amount of embellishment, and the complexity of the design. We quote each piece after the consultation, once we know what your commission calls for.",
+      "Every piece is priced individually — the final cost depends on the fabric, the amount of embellishment, and the complexity of the design. We quote each commission after your consultation, once we know what it calls for. As a starting point, commissions begin with a $100 deposit, and standalone services like fittings, alterations, and rhinestoning start at $50.",
+  },
+  {
+    question: "How do deposits and payment work?",
+    answer:
+      "Commissions are paid in stages, not all at once. You begin with a $100 deposit to reserve your place and start your design, followed by a second deposit of $50 to $100 at your first fitting depending on the detailing your piece calls for. The final balance — your materials and labor, itemized on an invoice — is due when the finished costume is ready. Each stage can be paid securely online from your order's tracking page.",
   },
   {
     question: "Can you rush an order?",
