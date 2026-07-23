@@ -85,7 +85,7 @@ jobs:
       # spamming. Skipped for manual preview runs (they're exploratory).
       - name: Open/update failure issue
         if: ${{ failure() && github.event_name == 'schedule' }}
-        uses: actions/github-script@v7
+        uses: actions/github-script@v9
         with:
           script: |
             const marker = "Weekly production smoke test failed";
