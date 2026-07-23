@@ -28,7 +28,7 @@
   "private": true,
   "devDependencies": {
     "@types/node": "catalog:",
-    "prettier": "^3.9.5",
+    "prettier": "^3.9.6",
     "typescript": "~5.9.3"
   }
 }
