@@ -9,12 +9,24 @@
 // customer mail in the app: a Resend failure is logged-and-swallowed and never
 // turns the webhook into an error.
 //
-// There is deliberately no stored "last notified stage" marker: the Notion
-// automation fires precisely on a Stage change, so each call is one genuine
-// transition. (Adding a marker would buy dedupe + forward-only detection at the
-// cost of a new Notion property — see CLAUDE.md.)
+// Forward-only: the email is sent only when the order has moved FORWARD past the
+// stage the customer was last emailed about (the `Last Notified Stage` marker on
+// the order). A backward stage edit (a correction/rework) or a re-fire of the
+// same stage is skipped, so the customer is never emailed about moving backward.
+// The Notion webhook payload doesn't carry the previous stage, so this marker is
+// the only way to tell a forward move from a backward one. The marker tracks the
+// high-water mark (it only ever advances), so re-traversing already-notified
+// stages after a rework doesn't re-email either. After a send, the marker is
+// advanced to the current stage (best-effort — a marker-write hiccup at worst
+// risks one duplicate on a later double-fire, never a wrong-direction email).
+//
+// The on-demand `/run` link may pass `force` to bypass the forward-only gate (a
+// manual "notify now" / resend); forcing still never moves the marker backward.
 
-import { findOrderForStageNotification } from "../lib/notion/orders.repository.js";
+import {
+  findOrderForStageNotification,
+  updateLastNotifiedStage,
+} from "../lib/notion/orders.repository.js";
 import { orderStageChangeEmail } from "../lib/resend/emails.js";
 import { sendEmailBestEffort } from "../lib/resend/send.js";
 import { fromAddress } from "../lib/resend/config.js";
@@ -25,8 +37,34 @@ export interface StageChangeNotificationResult {
   orderNumber: string;
   status: "sent" | "not_found" | "skipped";
   currentStage?: string;
-  /** Why the send was skipped (no email / no stage), for the skipped status. */
+  /** Why the send was skipped (no email / no stage / not forward). */
   reason?: string;
+}
+
+/** Options for a notification attempt. */
+export interface NotifyOptions {
+  /** Bypass the forward-only gate (a manual resend from the on-demand link). */
+  force?: boolean;
+}
+
+/**
+ * Whether `currentStage` is strictly ahead of `lastNotifiedStage` in the ordered
+ * pipeline — the gate for sending a status-change email. An empty marker (never
+ * notified) counts as forward (the first genuine change should email). When
+ * either stage isn't in the list we can't compare, so we do NOT treat it as
+ * forward (fail toward not emailing on an ambiguous/backward move). `stages` is
+ * expected to already include `currentStage` (the caller's timeline fixup).
+ */
+export function isForwardStageChange(
+  lastNotifiedStage: string,
+  currentStage: string,
+  stages: string[],
+): boolean {
+  if (!lastNotifiedStage) return true;
+  const oldIndex = stages.indexOf(lastNotifiedStage);
+  const newIndex = stages.indexOf(currentStage);
+  if (oldIndex === -1 || newIndex === -1) return false;
+  return newIndex > oldIndex;
 }
 
 /** The tracking-page URL, when PUBLIC_BASE_URL is set (same base Stripe uses). */
@@ -37,13 +75,16 @@ function trackingUrl(): string | undefined {
 }
 
 /**
- * Send the customer a status-change email for the given order number. Reads the
- * order (with its email) from Notion, skips gracefully when there's no recipient
- * or no stage set, and otherwise dispatches a best-effort email from the orders
- * sender (`orders@…`). Only Notion read failures throw; the email never does.
+ * Send the customer a status-change email for the given order number, unless the
+ * order hasn't moved forward. Reads the order (with its email + last-notified
+ * marker) from Notion, skips gracefully when there's no recipient, no stage, or
+ * the move isn't forward (unless `force`), and otherwise dispatches a best-effort
+ * email from the orders sender (`orders@`) and advances the marker. Only Notion
+ * read failures throw; the email and the marker write never do.
  */
 export async function notifyOrderStageChange(
   orderNumber: string,
+  options: NotifyOptions = {},
 ): Promise<StageChangeNotificationResult> {
   const order = await findOrderForStageNotification(orderNumber);
   if (!order) {
@@ -70,6 +111,21 @@ export async function notifyOrderStageChange(
     ? order.stages
     : [...order.stages, order.currentStage];
 
+  const forward = isForwardStageChange(
+    order.lastNotifiedStage,
+    order.currentStage,
+    stages,
+  );
+  if (!forward && !options.force) {
+    // A backward edit or a re-fire of an already-notified stage — never email.
+    return {
+      orderNumber: order.orderNumber,
+      status: "skipped",
+      reason: "not a forward stage change",
+      currentStage: order.currentStage,
+    };
+  }
+
   const link = trackingUrl();
   await sendEmailBestEffort({
     ...orderStageChangeEmail({
@@ -86,8 +142,27 @@ export async function notifyOrderStageChange(
     from: fromAddress("orders"),
   });
 
+  // Advance the high-water marker only on genuine forward movement, so a forced
+  // resend of an earlier/same stage never moves it backward (which would re-arm
+  // an email for a stage the customer has already been told about). Best-effort:
+  // a marker-write failure mustn't turn a sent email into a webhook error.
+  if (forward) {
+    try {
+      await updateLastNotifiedStage(order.pageId, order.currentStage);
+    } catch (err) {
+      logger.warn(
+        { err, orderNumber: order.orderNumber, stage: order.currentStage },
+        "Sent status-change email but failed to advance the Last Notified Stage marker",
+      );
+    }
+  }
+
   logger.info(
-    { orderNumber: order.orderNumber, stage: order.currentStage },
+    {
+      orderNumber: order.orderNumber,
+      stage: order.currentStage,
+      forced: !forward,
+    },
     "Sent order status-change email",
   );
   return {

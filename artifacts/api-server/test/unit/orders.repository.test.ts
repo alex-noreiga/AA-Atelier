@@ -259,7 +259,7 @@ describe("findOrderForStageNotification", () => {
     expect(client.calls).toHaveLength(0);
   });
 
-  it("reads the number, name, email, current stage, live stages, and due date", async () => {
+  it("reads the page id, number, name, email, stage, marker, live stages, and due date", async () => {
     const client = makeFakeClient((path) => {
       if (isSchema(path)) {
         return jsonResponse(
@@ -270,11 +270,13 @@ describe("findOrderForStageNotification", () => {
         return jsonResponse({
           results: [
             orderPage({
+              id: "order-page-9",
               orderNumber: "000002",
               orderName: "Ada – Custom Dress",
               currentStage: "Sewing",
               email: "ada@example.com",
               dueDate: "2026-09-01",
+              lastNotifiedStage: "Consultation",
             }),
           ],
         });
@@ -288,13 +290,27 @@ describe("findOrderForStageNotification", () => {
     );
 
     expect(order).toEqual({
+      pageId: "order-page-9",
       orderNumber: "000002",
       orderName: "Ada – Custom Dress",
       email: "ada@example.com",
       currentStage: "Sewing",
       stages: ["Consultation", "Sewing", "Delivery"],
+      lastNotifiedStage: "Consultation",
       estimatedCompletion: "2026-09-01",
     });
+  });
+
+  it("reads an empty marker for an order that has never been notified", async () => {
+    const client = makeFakeClient((path) => {
+      if (isSchema(path)) return jsonResponse(databaseSchemaWithStages(["A"]));
+      return jsonResponse({
+        results: [orderPage({ orderNumber: "000002", currentStage: "A" })],
+      });
+    });
+
+    const order = await repo.findOrderForStageNotification("000002", client);
+    expect(order?.lastNotifiedStage).toBe("");
   });
 
   it("filters by the Order Number rich_text (not number) property", async () => {
@@ -341,6 +357,33 @@ describe("findOrderForStageNotification", () => {
     expect(
       await repo.findOrderForStageNotification("ORD-NOPE", client),
     ).toBeNull();
+  });
+});
+
+describe("updateLastNotifiedStage", () => {
+  it("PATCHes the order page's Last Notified Stage rich_text with the given stage", async () => {
+    const client = makeFakeClient((path) => {
+      if (path === "/v1/pages/order-page-9") return jsonResponse({ id: "ok" });
+      throw new Error(`unexpected path ${path}`);
+    });
+
+    await repo.updateLastNotifiedStage("order-page-9", "Fitting", client);
+
+    expect(client.calls).toHaveLength(1);
+    const call = client.calls[0];
+    expect(call.path).toBe("/v1/pages/order-page-9");
+    expect(call.init?.method).toBe("PATCH");
+    const body = JSON.parse(call.init!.body as string);
+    expect(
+      body.properties["Last Notified Stage"].rich_text[0].text.content,
+    ).toBe("Fitting");
+  });
+
+  it("throws with status and the Notion error text on a non-ok response", async () => {
+    const client = makeFakeClient(() => errorResponse(400, "bad property"));
+    await expect(
+      repo.updateLastNotifiedStage("order-page-9", "Fitting", client),
+    ).rejects.toThrow(/status 400: bad property/);
   });
 });
 

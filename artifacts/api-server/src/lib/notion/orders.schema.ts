@@ -38,6 +38,12 @@ export const ORDER_COSTING_ITEMS_RELATION_PROPERTY = "Costing Items"; // relatio
 // reconciliation cron flips once an order's milestones exist.
 export const ORDER_DUE_DATE_PROPERTY = "Due Date"; // date
 export const ORDER_MILESTONES_GENERATED_PROPERTY = "Milestones Generated"; // checkbox
+// The furthest stage the customer has been emailed about, stored as a rich_text
+// marker so the status-change webhook only notifies on FORWARD movement — a
+// backward stage edit (a correction/rework) or a re-fire must not email. Empty
+// for orders that predate this or haven't been notified yet. Written after a
+// notification is sent. See `services/order-notification.service.ts`.
+export const ORDER_LAST_NOTIFIED_STAGE_PROPERTY = "Last Notified Stage"; // rich_text
 // Relation to the Client CRM database (the synced end of the CRM's "Orders"
 // dual relation). Set on order create when a client record was upserted, so the
 // order lands against a durable customer record. See `clients.repository.ts`.
@@ -116,6 +122,10 @@ export interface NotionOrderPage {
       date: { start: string; end: string | null } | null;
     };
     "Milestones Generated"?: { type: "checkbox"; checkbox: boolean };
+    "Last Notified Stage"?: {
+      type: "rich_text";
+      rich_text: Array<{ plain_text: string }>;
+    };
   };
 }
 
@@ -188,4 +198,15 @@ export function extractDueDate(page: NotionOrderPage): string | undefined {
 export function extractMilestonesGenerated(page: NotionOrderPage): boolean {
   const property = page.properties[ORDER_MILESTONES_GENERATED_PROPERTY];
   return property?.type === "checkbox" ? property.checkbox : false;
+}
+
+/** The furthest stage the customer has been emailed about (empty when never
+ * notified / the property doesn't exist), used to gate status-change emails to
+ * forward movement only. */
+export function extractLastNotifiedStage(page: NotionOrderPage): string {
+  return (
+    page.properties[ORDER_LAST_NOTIFIED_STAGE_PROPERTY]?.rich_text
+      ?.map((t) => t.plain_text)
+      .join("") ?? ""
+  );
 }

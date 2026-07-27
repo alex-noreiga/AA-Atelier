@@ -11,6 +11,7 @@ import {
   ORDER_NUMBER_PROPERTY,
   ORDER_DUE_DATE_PROPERTY,
   ORDER_MILESTONES_GENERATED_PROPERTY,
+  ORDER_LAST_NOTIFIED_STAGE_PROPERTY,
   extractStageOptions,
   extractOrderNumber,
   extractOrderName,
@@ -19,6 +20,7 @@ import {
   extractCostingItemIds,
   extractDueDate,
   extractOrderEmail,
+  extractLastNotifiedStage,
   type CreateOrderInput,
   type NotionDatabaseSchema,
   type NotionQueryResponse,
@@ -265,16 +267,20 @@ export async function markMilestonesGenerated(
 }
 
 /** What the status-change notification needs about an order: the recipient email
- * (never exposed by the public order lookup), plus the fields the email renders —
- * the order name/number, the live pipeline, the current stage, and the target
- * completion date. Kept separate from `OrderRecord` so email stays out of the
- * public status view. */
+ * (never exposed by the public order lookup) and the order's page id (to write the
+ * marker back), plus the fields the email renders — the order name/number, the
+ * live pipeline, the current stage, the target completion date, and the
+ * last-notified stage marker that gates the send to forward movement. Kept
+ * separate from `OrderRecord` so email stays out of the public status view. */
 export interface OrderStageNotification {
+  pageId: string;
   orderNumber: string;
   orderName: string;
   email: string;
   currentStage: string;
   stages: string[];
+  /** The furthest stage already emailed about; empty when never notified. */
+  lastNotifiedStage: string;
   estimatedCompletion?: string;
 }
 
@@ -320,13 +326,46 @@ export async function findOrderForStageNotification(
 
   const estimatedCompletion = extractDueDate(page);
   return {
+    pageId: page.id,
     orderNumber: extractOrderNumber(page) || trimmedOrderNumber,
     orderName: extractOrderName(page),
     email: extractOrderEmail(page),
     currentStage: extractCurrentStage(page),
     stages,
+    lastNotifiedStage: extractLastNotifiedStage(page),
     ...(estimatedCompletion !== undefined ? { estimatedCompletion } : {}),
   };
+}
+
+/**
+ * Record the stage the customer was last emailed about (the marker the
+ * status-change webhook reads to notify only on forward movement). Written after
+ * a notification is sent; setting the same value again is harmless (idempotent).
+ */
+export async function updateLastNotifiedStage(
+  pageId: string,
+  stage: string,
+  client: NotionClient = getNotionClient(),
+): Promise<void> {
+  assertConfigured(client);
+
+  const response = await client.fetch(`/v1/pages/${pageId}`, {
+    method: "PATCH",
+    body: JSON.stringify({
+      properties: {
+        [ORDER_LAST_NOTIFIED_STAGE_PROPERTY]: {
+          rich_text: [{ text: { content: stage } }],
+        },
+      },
+    }),
+  });
+
+  if (!response.ok) {
+    const errorText = await response.text();
+    throw new Error(
+      `Notion last-notified-stage update failed with status ${response.status}: ${errorText}`,
+    );
+  }
 }
 
 /** What the measurement-change gates need about an order: the email to verify

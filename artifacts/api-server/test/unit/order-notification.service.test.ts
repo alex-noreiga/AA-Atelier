@@ -1,32 +1,44 @@
 import { describe, it, expect, vi, afterEach } from "vitest";
 
-// The service reads the order (with its email) from the repository and dispatches
-// a best-effort email. Mock both seams so the test drives the service's own logic
-// (found / not-found / skip branches, the stage fixup, the sender) in isolation.
+// The service reads the order (with its email + last-notified marker) from the
+// repository, gates the send to forward movement, dispatches a best-effort email,
+// and advances the marker. Mock those seams so the test drives the service's own
+// logic (found / not-found / skip / forward-only / force / marker write) in
+// isolation.
 vi.mock("../../src/lib/notion/orders.repository.js", () => ({
   findOrderForStageNotification: vi.fn(),
+  updateLastNotifiedStage: vi.fn(),
 }));
 vi.mock("../../src/lib/resend/send.js", () => ({
   sendEmailBestEffort: vi.fn(),
 }));
 
-import { notifyOrderStageChange } from "../../src/services/order-notification.service.js";
-import { findOrderForStageNotification } from "../../src/lib/notion/orders.repository.js";
+import {
+  notifyOrderStageChange,
+  isForwardStageChange,
+} from "../../src/services/order-notification.service.js";
+import {
+  findOrderForStageNotification,
+  updateLastNotifiedStage,
+} from "../../src/lib/notion/orders.repository.js";
 import { sendEmailBestEffort } from "../../src/lib/resend/send.js";
 import type { OrderStageNotification } from "../../src/lib/notion/orders.repository.js";
 
 const mockFind = vi.mocked(findOrderForStageNotification);
+const mockUpdateMarker = vi.mocked(updateLastNotifiedStage);
 const mockSend = vi.mocked(sendEmailBestEffort);
 
 function order(
   overrides: Partial<OrderStageNotification> = {},
 ): OrderStageNotification {
   return {
+    pageId: "order-page-1",
     orderNumber: "000002",
     orderName: "Ada's Competition Dress",
     email: "ada@example.com",
     currentStage: "Sketching",
     stages: ["Consultation", "Sketching", "Sewing/Construction", "Delivery"],
+    lastNotifiedStage: "Consultation",
     ...overrides,
   };
 }
@@ -34,6 +46,30 @@ function order(
 afterEach(() => {
   delete process.env.RESEND_FROM_EMAIL;
   delete process.env.PUBLIC_BASE_URL;
+});
+
+describe("isForwardStageChange", () => {
+  const stages = ["Consultation", "Sketching", "Sewing", "Delivery"];
+
+  it("is forward when the current stage is later in the pipeline", () => {
+    expect(isForwardStageChange("Sketching", "Delivery", stages)).toBe(true);
+  });
+
+  it("is NOT forward when the current stage is earlier (a backward move)", () => {
+    expect(isForwardStageChange("Delivery", "Sketching", stages)).toBe(false);
+  });
+
+  it("is NOT forward when the stage is unchanged (a re-fire)", () => {
+    expect(isForwardStageChange("Sketching", "Sketching", stages)).toBe(false);
+  });
+
+  it("is forward on first notification (empty marker)", () => {
+    expect(isForwardStageChange("", "Consultation", stages)).toBe(true);
+  });
+
+  it("is NOT forward when the marker isn't in the list (can't compare)", () => {
+    expect(isForwardStageChange("Renamed", "Sketching", stages)).toBe(false);
+  });
 });
 
 describe("notifyOrderStageChange", () => {
@@ -44,6 +80,7 @@ describe("notifyOrderStageChange", () => {
 
     expect(result).toEqual({ orderNumber: "NOPE", status: "not_found" });
     expect(mockSend).not.toHaveBeenCalled();
+    expect(mockUpdateMarker).not.toHaveBeenCalled();
   });
 
   it("skips (no send) when the order has no email", async () => {
@@ -66,8 +103,10 @@ describe("notifyOrderStageChange", () => {
     expect(mockSend).not.toHaveBeenCalled();
   });
 
-  it("sends a status-change email to the customer and reports the stage", async () => {
-    mockFind.mockResolvedValue(order());
+  it("sends on a forward move and advances the marker to the current stage", async () => {
+    mockFind.mockResolvedValue(
+      order({ currentStage: "Sketching", lastNotifiedStage: "Consultation" }),
+    );
 
     const result = await notifyOrderStageChange("000002");
 
@@ -77,9 +116,71 @@ describe("notifyOrderStageChange", () => {
       currentStage: "Sketching",
     });
     expect(mockSend).toHaveBeenCalledOnce();
-    const message = mockSend.mock.calls[0][0];
-    expect(message.to).toBe("ada@example.com");
-    expect(message.subject).toContain("Sketching");
+    expect(mockSend.mock.calls[0][0].to).toBe("ada@example.com");
+    expect(mockUpdateMarker).toHaveBeenCalledWith("order-page-1", "Sketching");
+  });
+
+  it("sends on the first notification (empty marker)", async () => {
+    mockFind.mockResolvedValue(
+      order({ currentStage: "Consultation", lastNotifiedStage: "" }),
+    );
+
+    const result = await notifyOrderStageChange("000002");
+
+    expect(result.status).toBe("sent");
+    expect(mockSend).toHaveBeenCalledOnce();
+    expect(mockUpdateMarker).toHaveBeenCalledWith(
+      "order-page-1",
+      "Consultation",
+    );
+  });
+
+  it("does NOT send (or advance the marker) on a backward move", async () => {
+    mockFind.mockResolvedValue(
+      order({ currentStage: "Sketching", lastNotifiedStage: "Delivery" }),
+    );
+
+    const result = await notifyOrderStageChange("000002");
+
+    expect(result.status).toBe("skipped");
+    expect(result.reason).toMatch(/forward/);
+    expect(result.currentStage).toBe("Sketching");
+    expect(mockSend).not.toHaveBeenCalled();
+    expect(mockUpdateMarker).not.toHaveBeenCalled();
+  });
+
+  it("does NOT send when the stage is unchanged (a re-fire of the same stage)", async () => {
+    mockFind.mockResolvedValue(
+      order({ currentStage: "Sketching", lastNotifiedStage: "Sketching" }),
+    );
+
+    const result = await notifyOrderStageChange("000002");
+
+    expect(result.status).toBe("skipped");
+    expect(mockSend).not.toHaveBeenCalled();
+  });
+
+  it("force resends on a non-forward move but never moves the marker backward", async () => {
+    mockFind.mockResolvedValue(
+      order({ currentStage: "Sketching", lastNotifiedStage: "Delivery" }),
+    );
+
+    const result = await notifyOrderStageChange("000002", { force: true });
+
+    expect(result.status).toBe("sent");
+    expect(mockSend).toHaveBeenCalledOnce();
+    // A forced backward/same resend must not advance (rewind) the high-water mark.
+    expect(mockUpdateMarker).not.toHaveBeenCalled();
+  });
+
+  it("still returns sent when advancing the marker fails (best-effort write)", async () => {
+    mockFind.mockResolvedValue(order());
+    mockUpdateMarker.mockRejectedValue(new Error("Notion PATCH failed"));
+
+    const result = await notifyOrderStageChange("000002");
+
+    expect(result.status).toBe("sent");
+    expect(mockSend).toHaveBeenCalledOnce();
   });
 
   it("sends from the orders sender (orders@…)", async () => {
@@ -98,12 +199,13 @@ describe("notifyOrderStageChange", () => {
       order({
         currentStage: "Archived",
         stages: ["Consultation", "Sketching", "Delivery"],
+        lastNotifiedStage: "Consultation",
       }),
     );
 
     await notifyOrderStageChange("000002");
 
-    // The email's plaintext pipeline includes the out-of-list current stage.
+    // Out-of-list current stage lands last → still forward → sends, pipeline shows it.
     expect(mockSend.mock.calls[0][0].text).toContain("Archived");
   });
 

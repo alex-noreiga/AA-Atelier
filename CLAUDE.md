@@ -146,9 +146,11 @@ Express app (artifacts/api-server)  ──►  Notion REST API (orders database)
   │                                  order back from Notion (never trusting the
   │                                  payload's stage) and sends the customer a
   │                                  status-update email with a pipeline graphic
-  │                                  (best-effort, from orders@). Auth is a
-  │                                  `?secret=<CRON_SECRET>` query token. NOT part
-  │                                  of the OpenAPI contract.
+  │                                  (best-effort, from orders@) — but only on
+  │                                  FORWARD movement, gated by a `Last Notified
+  │                                  Stage` marker so a backward edit / re-fire
+  │                                  doesn't email. Auth is a `?secret=<CRON_SECRET>`
+  │                                  query token. NOT part of the OpenAPI contract.
   ├─ GET  /api/webhooks/notion-stage-change/run
   │                                → the SAME send, on demand: a link the atelier
   │                                  opens (`?secret=<CRON_SECRET>&order=<ORD>`) to
@@ -684,28 +686,41 @@ happens **inside Notion**, and there's no Notion→app trigger, so this is drive
    is logged-and-swallowed and never turns the webhook into an error, same contract
    as every other customer email. A missing email or unset stage is a graceful skip.
 
-3. **No stored marker — the automation is the granularity.** There is deliberately
-   **no** "last notified stage" property: the Notion automation fires precisely on a
-   `Stage` change, so each call is one genuine transition. That means no dedupe /
-   forward-only guard — a double-fire or a manual backward stage edit would send an
-   email. Adding a marker (a new Notion property) would buy dedupe + forward-only at
-   the cost of that setup; it was left out to keep the feature zero-config.
+3. **Forward-only, via a `Last Notified Stage` marker.** The email is sent only when
+   the order has moved **forward** past the stage the customer was last emailed about.
+   The Notion webhook payload doesn't carry the _previous_ stage (and an automation
+   condition can't compare status ordering), so the server keeps a `Last Notified
+Stage` **rich_text** property on the order: it reads the marker, sends only when the
+   current stage is strictly ahead of it in the live pipeline, then advances the marker
+   to the current stage. A **backward** edit (a correction/rework) or a **re-fire** of
+   the same stage is skipped — the customer is never emailed about moving backward, and
+   double-fires are deduped for free. The marker is a **high-water mark** (it only ever
+   advances), so re-traversing already-notified stages after a rework doesn't re-email.
+   An empty marker (an order that predates this / was never notified) counts as forward,
+   so the first genuine change emails. The gate is the pure `isForwardStageChange`
+   (`order-notification.service.ts`); the marker write is best-effort (a write hiccup at
+   worst risks one duplicate on a later double-fire, never a wrong-direction email).
 
 4. **On-demand + test trigger.** `GET /api/webhooks/notion-stage-change/run?secret=
 <CRON_SECRET>&order=<ORD>` runs the same send from a browser and returns an HTML
    confirmation. This is how the atelier **tests in production** — hit the link for
    one test order (their own email) and no customer is touched, because no automation
-   is firing for real orders until it's wired up. It's also a manual "notify now".
+   is firing for real orders until it's wired up. It's also a manual "notify now";
+   append **`&force=1`** to resend even when the order hasn't moved forward (a forced
+   resend never rewinds the high-water marker). The automation itself never forces.
 
-There are **no new env vars and no new Notion property**: it reuses `CRON_SECRET`
-(auth), `RESEND_FROM_EMAIL` (the `orders@` sender via `fromAddress("orders")`), and
-`PUBLIC_BASE_URL` (the tracking-link base, omitted when unset). The atelier's only
-one-time setup is the Notion automation above. The per-stage description text in the
-email mirrors the frontend's `web-app/src/lib/stage-descriptions.ts` (cosmetic
-flavor, graceful fallback for unknown stages). Code: `orderStageChangeEmail` in
-`lib/resend/emails.ts` (the template + pipeline graphic), `findOrderForStageNotification`
-in `lib/notion/orders.repository.ts`, `services/order-notification.service.ts`, and
-`routes/order-notification.ts`.
+There are **no new env vars** (it reuses `CRON_SECRET` for auth, `RESEND_FROM_EMAIL`
+for the `orders@` sender via `fromAddress("orders")`, and `PUBLIC_BASE_URL` for the
+tracking link, omitted when unset). The atelier's one-time setup is the Notion
+automation above **plus** adding a **`Last Notified Stage`** (rich_text) property to
+the Order Tracking Pipeline (the app writes it; leave it empty). The per-stage
+description text in the email mirrors the frontend's
+`web-app/src/lib/stage-descriptions.ts` (cosmetic flavor, graceful fallback for
+unknown stages). Code: `orderStageChangeEmail` in `lib/resend/emails.ts` (the template
+
+- pipeline graphic), `findOrderForStageNotification` + `updateLastNotifiedStage` in
+  `lib/notion/orders.repository.ts`, `services/order-notification.service.ts`, and
+  `routes/order-notification.ts`.
 
 ## Appointment scheduling (real-time slot booking)
 

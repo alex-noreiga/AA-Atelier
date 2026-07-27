@@ -106,7 +106,22 @@ describe("GET /api/webhooks/notion-stage-change/run (on-demand link)", () => {
     expect(res.headers["content-type"]).toMatch(/text\/html/);
     expect(res.text).toContain("000002");
     expect(res.text).toContain("Sketching");
-    expect(mockNotify).toHaveBeenCalledWith("000002");
+    expect(mockNotify).toHaveBeenCalledWith("000002", { force: false });
+  });
+
+  it("passes force through when ?force=1 is set (a manual resend)", async () => {
+    mockNotify.mockResolvedValue({
+      orderNumber: "000002",
+      status: "sent",
+      currentStage: "Sketching",
+    });
+
+    const res = await request(app).get(
+      `${RUN}?secret=s3cret&order=000002&force=1`,
+    );
+
+    expect(res.status).toBe(200);
+    expect(mockNotify).toHaveBeenCalledWith("000002", { force: true });
   });
 
   it("reports a not-found order in the HTML", async () => {

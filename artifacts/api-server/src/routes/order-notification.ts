@@ -9,7 +9,8 @@
 //   2. GET  /api/webhooks/notion-stage-change/run?order=<n> — a link the atelier
 //      opens by hand to send an update on demand (and to test in production
 //      against one order without wiring up the automation). Returns a small HTML
-//      confirmation page for the tab it opens.
+//      confirmation page for the tab it opens. Add `&force=1` to resend even when
+//      the order hasn't moved forward (the automation never forces).
 //
 // Auth: both reuse `CRON_SECRET` as a `?secret=` query token — a Notion "Send
 // webhook" action can set the URL but not custom headers, same tradeoff as the
@@ -103,8 +104,11 @@ export async function notionStageChangeButtonHandler(
     return;
   }
 
+  // `&force=1` resends even when the order hasn't moved forward (a manual notify).
+  const force = req.query.force === "1" || req.query.force === "true";
+
   try {
-    const result = await notifyOrderStageChange(orderNumber);
+    const result = await notifyOrderStageChange(orderNumber, { force });
     logger.info(result, "Order status-change link processed");
     const message =
       result.status === "sent"
