@@ -392,7 +392,7 @@ describe("errorAlertEmail", () => {
 });
 
 describe("orderStageChangeEmail", () => {
-  it("addresses the customer and names the current stage in subject + heading", () => {
+  it("uses the good-news subject + heading and leads with the stage flavor", () => {
     const email = orderStageChangeEmail(
       stageChangeDetails({
         email: "ada@example.com",
@@ -401,8 +401,17 @@ describe("orderStageChangeEmail", () => {
     );
 
     expect(email.to).toBe("ada@example.com");
-    expect(email.subject).toBe("Your order 000002 is now at Sketching");
-    expect(email.html).toContain("Your order has moved to Sketching");
+    expect(email.subject).toBe(
+      "Good news! Your custom piece has progressed to a new stage in our atelier.",
+    );
+    expect(email.html).toContain("Good news!");
+    // Body leads with "We're now <flavor>" (HTML uses a typographic apostrophe).
+    expect(email.html).toContain(
+      "re now translating your ideas into the first designs",
+    );
+    expect(email.text).toContain(
+      "We're now translating your ideas into the first designs",
+    );
     expect(email.html).toContain("000002");
     expect(email.html).toContain("A.A Atelier");
   });
@@ -436,15 +445,15 @@ describe("orderStageChangeEmail", () => {
     expect(email.text).toContain("[ ] Delivery");
   });
 
-  it("shows the active stage's description blurb", () => {
+  it("shows the active stage's flavor after \"We're now\"", () => {
     const email = orderStageChangeEmail(
       stageChangeDetails({ currentStage: "Cutting/Pinning" }),
     );
-    expect(email.html).toContain("Cutting fabric to pattern");
-    expect(email.text).toContain("Cutting fabric to pattern");
+    expect(email.html).toContain("cutting the fabric to pattern");
+    expect(email.text).toContain("We're now cutting the fabric to pattern");
   });
 
-  it("falls back to a generic blurb for an unknown stage", () => {
+  it("falls back to a generic flavor for an unknown stage", () => {
     const email = orderStageChangeEmail(
       stageChangeDetails({
         stages: ["Consultation", "Bespoke Beading"],
@@ -452,6 +461,7 @@ describe("orderStageChangeEmail", () => {
       }),
     );
     expect(email.html).toContain("carefully working on this stage");
+    expect(email.text).toContain("We're now carefully working on this stage");
   });
 
   it("includes the estimated completion date when provided, omits it otherwise", () => {
@@ -466,15 +476,22 @@ describe("orderStageChangeEmail", () => {
     expect(withoutDate.html).not.toContain("Estimated completion");
   });
 
-  it("includes a tracking link only when a trackingUrl is provided", () => {
+  it("includes a direct tracking link only when a trackingUrl is provided", () => {
     const withLink = orderStageChangeEmail(
-      stageChangeDetails({ trackingUrl: "https://a3iceanddance.com/track" }),
+      stageChangeDetails({
+        trackingUrl: "https://a3iceanddance.com/track?orderNumber=000002",
+      }),
     );
-    expect(withLink.html).toContain("https://a3iceanddance.com/track");
-    expect(withLink.text).toContain("https://a3iceanddance.com/track");
+    expect(withLink.html).toContain(
+      "https://a3iceanddance.com/track?orderNumber=000002",
+    );
+    expect(withLink.html).toContain("View your order");
+    expect(withLink.text).toContain(
+      "https://a3iceanddance.com/track?orderNumber=000002",
+    );
 
     const withoutLink = orderStageChangeEmail(stageChangeDetails());
-    expect(withoutLink.html).not.toContain("Follow your order");
+    expect(withoutLink.html).not.toContain("tracking page");
   });
 
   it("HTML-escapes dynamic values from Notion (stage names, order name)", () => {

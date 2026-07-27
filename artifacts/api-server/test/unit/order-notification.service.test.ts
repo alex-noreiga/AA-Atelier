@@ -243,14 +243,15 @@ describe("notifyOrderStageChange", () => {
     expect(mockSend.mock.calls[0][0].text).toContain("Archived");
   });
 
-  it("includes a tracking link built from PUBLIC_BASE_URL, trimming a trailing slash", async () => {
+  it("builds a direct order tracking link from PUBLIC_BASE_URL, trimming a trailing slash", async () => {
     process.env.PUBLIC_BASE_URL = "https://a3iceanddance.com/";
-    mockFind.mockResolvedValue(order());
+    mockFind.mockResolvedValue(order({ orderNumber: "000002" }));
 
     await notifyOrderStageChange("000002");
 
+    // Deep-links straight to this order via the track page's ?orderNumber= param.
     expect(mockSend.mock.calls[0][0].text).toContain(
-      "https://a3iceanddance.com/track",
+      "https://a3iceanddance.com/track?orderNumber=000002",
     );
   });
 
@@ -259,6 +260,6 @@ describe("notifyOrderStageChange", () => {
 
     await notifyOrderStageChange("000002");
 
-    expect(mockSend.mock.calls[0][0].html).not.toContain("Follow your order");
+    expect(mockSend.mock.calls[0][0].html).not.toContain("tracking page");
   });
 });

@@ -95,11 +95,13 @@ export function isForwardStageChange(
   return newIndex > oldIndex;
 }
 
-/** The tracking-page URL, when PUBLIC_BASE_URL is set (same base Stripe uses). */
-function trackingUrl(): string | undefined {
+/** A direct link to this order's tracking page, when PUBLIC_BASE_URL is set (same
+ * base Stripe uses). The track page reads `?orderNumber=` and looks it up on
+ * arrival, so this deep-links straight to the customer's order. */
+function trackingUrl(orderNumber: string): string | undefined {
   const base = process.env.PUBLIC_BASE_URL?.trim();
   if (!base) return undefined;
-  return `${base.replace(/\/+$/, "")}/track`;
+  return `${base.replace(/\/+$/, "")}/track?orderNumber=${encodeURIComponent(orderNumber)}`;
 }
 
 /**
@@ -155,7 +157,7 @@ export async function notifyOrderStageChange(
     };
   }
 
-  const link = trackingUrl();
+  const link = trackingUrl(order.orderNumber);
   await sendEmailBestEffort({
     ...orderStageChangeEmail({
       email: order.email,
