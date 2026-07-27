@@ -116,11 +116,11 @@ const STAGE_BLURBS: Record<string, string> = {
     "We're sewing and constructing the garment by hand and machine.",
   Assembly: "We're assembling all the pieces of your final costume.",
   Fitting: "We're in the process of scheduling your fitting(s)!",
-  "Rhinestoning/Deatiling":
+  "Rhinestoning/Detailing":
     "We're applying hand-beading, crystals, and all the artistic final touches.",
   "Ready for delivery/pickup":
     "Your garment is complete and awaiting delivery or pickup.",
-  Delivery: "Your costume is now delivered!",
+  Delivered: "Your costume is now delivered!",
 };
 
 function stageBlurb(stage: string): string {
