@@ -9,14 +9,19 @@ import {
   CreateMeasurementChangeRequestParams,
   CreateMeasurementChangeRequestBody,
   CreateMeasurementChangeRequestResponse,
+  CreateOrderReviewParams,
+  CreateOrderReviewBody,
+  CreateOrderReviewResponse,
 } from "@workspace/api-zod";
 import { validate } from "../middlewares/validate.js";
 import { getOrderStatus, submitOrder } from "../services/orders.service.js";
 import { createPaymentCheckout } from "../services/invoice.service.js";
 import { submitMeasurementChangeRequest } from "../services/measurement-change.service.js";
+import { submitOrderReview } from "../services/review.service.js";
 import type { CreateOrderInput } from "../lib/notion/orders.schema.js";
 import type { PaymentStage } from "../lib/notion/invoice.schema.js";
 import type { CreateMeasurementChangeInput } from "../lib/notion/measurement-change.blocks.js";
+import type { CreateReviewInput } from "../lib/notion/reviews.blocks.js";
 
 const router = Router();
 
@@ -64,6 +69,20 @@ router.post(
     const body = res.locals.body as CreateMeasurementChangeInput;
     const result = await submitMeasurementChangeRequest(orderNumber, body);
     res.status(201).json(CreateMeasurementChangeRequestResponse.parse(result));
+  },
+);
+
+router.post(
+  "/orders/:orderNumber/reviews",
+  validate({
+    params: CreateOrderReviewParams,
+    body: CreateOrderReviewBody,
+  }),
+  async (_req, res) => {
+    const { orderNumber } = res.locals.params as { orderNumber: string };
+    const body = res.locals.body as CreateReviewInput;
+    const result = await submitOrderReview(orderNumber, body);
+    res.status(201).json(CreateOrderReviewResponse.parse(result));
   },
 );
 

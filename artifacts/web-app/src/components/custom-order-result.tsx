@@ -3,6 +3,7 @@ import { useCreateOrderPayment } from "@workspace/api-client-react";
 import type { OrderStatus, InvoiceDeposit } from "@workspace/api-client-react";
 import { Button } from "@/components/ui/button";
 import { MeasurementChangeDialog } from "@/components/measurement-change-dialog";
+import { ReviewDialog } from "@/components/review-dialog";
 import { CtaLink } from "@/components/cta";
 import { getStageDescription } from "@/lib/stage-descriptions";
 import { formatPrice, formatDate } from "@/lib/format";
@@ -149,6 +150,14 @@ export function CustomOrderResult({
   orderStatus: OrderStatus;
   onReset: () => void;
 }) {
+  // "Delivered" is the final stage in the live list — the moment we invite a
+  // review. Derived positionally (no baked-in stage name) so it survives the
+  // atelier renaming stages, mirroring the server's own delivery gate.
+  const isDelivered =
+    orderStatus.stages.length > 0 &&
+    orderStatus.currentStage ===
+      orderStatus.stages[orderStatus.stages.length - 1];
+
   return (
     <div
       className="animate-in slide-in-from-bottom-8 fade-in duration-1000"
@@ -202,6 +211,23 @@ export function CustomOrderResult({
             </Link>
           </div>
         )}
+
+      {isDelivered && (
+        <div
+          className="mb-12 rounded-2xl border border-border/60 p-6 text-center"
+          data-testid="review-invite"
+        >
+          <p className="text-xs uppercase tracking-widest text-muted-foreground">
+            Your piece is finished
+          </p>
+          <p className="mt-1 font-serif text-2xl">
+            We'd love to hear how it turned out
+          </p>
+          <div className="mt-5 flex justify-center">
+            <ReviewDialog orderNumber={orderStatus.orderNumber} />
+          </div>
+        </div>
+      )}
 
       <div className="relative pl-6 md:pl-8 space-y-12">
         {/* Vertical Thread Line */}
@@ -280,17 +306,21 @@ export function CustomOrderResult({
       </div>
 
       <div className="mt-16 flex flex-col items-center gap-6">
-        {orderStatus.measurementsLocked ? (
-          <p
-            className="text-sm font-light text-muted-foreground/70 text-center max-w-sm"
-            data-testid="measurements-locked"
-          >
-            Measurements are locked now that your garment is in production. Need
-            a change? Please contact us.
-          </p>
-        ) : (
-          <MeasurementChangeDialog orderNumber={orderStatus.orderNumber} />
-        )}
+        {/* A delivered order shows the review invite above; here it needs no
+            measurement affordance. Otherwise: the change dialog until the
+            garment is in production, then a locked notice. */}
+        {!isDelivered &&
+          (orderStatus.measurementsLocked ? (
+            <p
+              className="text-sm font-light text-muted-foreground/70 text-center max-w-sm"
+              data-testid="measurements-locked"
+            >
+              Measurements are locked now that your garment is in production.
+              Need a change? Please contact us.
+            </p>
+          ) : (
+            <MeasurementChangeDialog orderNumber={orderStatus.orderNumber} />
+          ))}
         <button
           onClick={onReset}
           className="text-muted-foreground hover:text-primary transition-colors flex items-center gap-2 text-sm tracking-widest uppercase group"

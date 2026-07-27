@@ -25,6 +25,11 @@ vi.mock("@workspace/api-client-react", () => ({
     mutate: vi.fn(),
     isPending: false,
   }),
+  // A delivered order renders the review dialog, which uses this hook.
+  useCreateOrderReview: () => ({
+    mutate: vi.fn(),
+    isPending: false,
+  }),
 }));
 
 import {

@@ -4,6 +4,7 @@ import {
   contactInput,
   notifyInput,
   measurementChangeInput,
+  reviewInput,
 } from "@workspace/test-fixtures";
 import {
   orderConfirmationEmail,
@@ -14,6 +15,8 @@ import {
   backInStockNotificationEmail,
   measurementChangeConfirmationEmail,
   measurementChangeNotificationEmail,
+  reviewConfirmationEmail,
+  reviewNotificationEmail,
   shopOrderConfirmationEmail,
   shopOrderNotificationEmail,
   errorAlertEmail,
@@ -221,6 +224,55 @@ describe("measurementChangeNotificationEmail", () => {
 
     expect(email.text).toContain("Re-measurement at a fitting/consultation");
     expect(email.text).not.toContain("waist");
+  });
+});
+
+describe("reviewConfirmationEmail", () => {
+  it("thanks the customer and carries the order number", () => {
+    const email = reviewConfirmationEmail(
+      reviewInput({ email: "ada@example.com" }),
+      "000002",
+    );
+
+    expect(email.to).toBe("ada@example.com");
+    expect(email.subject).toContain("000002");
+    expect(email.html).toContain("000002");
+    expect(email.html).toContain("A.A Atelier");
+    expect(email.text).toContain("Thank you");
+  });
+});
+
+describe("reviewNotificationEmail", () => {
+  it("goes to the inbox with the rating and review, and replies to the customer", () => {
+    const email = reviewNotificationEmail(
+      reviewInput({ email: "ada@example.com", rating: 5 }),
+      "000002",
+      INBOX,
+    );
+
+    expect(email.to).toBe(INBOX);
+    expect(email.replyTo).toBe("ada@example.com");
+    expect(email.subject).toContain("000002");
+    expect(email.subject).toContain("5/5");
+    expect(email.text).toContain("Order number: 000002");
+    expect(email.text).toContain("Rating:");
+    expect(email.text).toContain("stunning craftsmanship");
+  });
+
+  it("records the publish consent and the credit name when given", () => {
+    const email = reviewNotificationEmail(
+      reviewInput({ displayName: "Ada L.", consentToPublish: true }),
+      "000002",
+      INBOX,
+    );
+
+    expect(email.text).toContain("Credit as: Ada L.");
+    expect(email.text).toContain("May publish: Yes");
+  });
+
+  it("marks non-consented reviews as not publishable", () => {
+    const email = reviewNotificationEmail(reviewInput(), "000002", INBOX);
+    expect(email.text).toContain("May publish: No");
   });
 });
 

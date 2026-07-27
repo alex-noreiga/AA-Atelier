@@ -11,6 +11,7 @@ import type { CreateOrderInput } from "../notion/orders.schema.js";
 import type { CreateContactInput } from "../notion/contact.blocks.js";
 import type { CreateNotifyInput } from "../notion/notify.blocks.js";
 import type { CreateMeasurementChangeInput } from "../notion/measurement-change.blocks.js";
+import type { CreateReviewInput } from "../notion/reviews.blocks.js";
 import type { EmailMessage } from "./client.js";
 
 const ATELIER_NAME = "A.A Atelier";
@@ -303,6 +304,79 @@ export function measurementChangeConfirmationEmail(
     subject: `We've received your measurement change (${orderNumber})`,
     html,
     text,
+  };
+}
+
+/** Render a 1–5 rating as filled/empty stars for email copy. */
+function ratingStars(rating: number): string {
+  const filled = Math.max(0, Math.min(5, Math.round(rating)));
+  return "★".repeat(filled) + "☆".repeat(5 - filled);
+}
+
+/** Thank-you sent to the customer after they leave a post-delivery review. */
+export function reviewConfirmationEmail(
+  input: CreateReviewInput,
+  orderNumber: string,
+): EmailMessage {
+  const html = layout(
+    "Thank you for your review",
+    `<p>Hi there,</p>
+     <p>Thank you for taking a moment to share your thoughts on order
+        <strong>${orderNumber}</strong> — it means the world to a small atelier.</p>
+     <p>We've passed your words to the team, and we hope your piece brings you
+        confidence every time you wear it.</p>`,
+  );
+
+  const text = [
+    `Hi there,`,
+    ``,
+    `Thank you for taking a moment to share your thoughts on order ${orderNumber} —`,
+    `it means the world to a small atelier.`,
+    ``,
+    `We've passed your words to the team, and we hope your piece brings you`,
+    `confidence every time you wear it.`,
+    ``,
+    `Thank you,`,
+    `The ${ATELIER_NAME} team`,
+  ].join("\n");
+
+  return {
+    to: input.email,
+    subject: `Thank you for your review (${orderNumber})`,
+    html,
+    text,
+  };
+}
+
+/** Notify the atelier of a new post-delivery review. */
+export function reviewNotificationEmail(
+  input: CreateReviewInput,
+  orderNumber: string,
+  to: string,
+): EmailMessage {
+  const fields: Field[] = [
+    ["Order number", orderNumber],
+    ["Rating", `${ratingStars(input.rating)} (${input.rating}/5)`],
+    ...(input.displayName ? [["Credit as", input.displayName] as Field] : []),
+    ["Email", input.email],
+    ["May publish", input.consentToPublish ? "Yes" : "No"],
+    ...(input.photoIds && input.photoIds.length > 0
+      ? [
+          [
+            "Photos",
+            `${input.photoIds.length} attached — see the review page in Notion`,
+          ] as Field,
+        ]
+      : []),
+    ["Review", input.comment],
+  ];
+
+  return {
+    to,
+    replyTo: input.email,
+    subject: `New review (${input.rating}/5) — order ${orderNumber}`,
+    html: internalLayout("New review", renderRowsHtml(fields)),
+    text: renderRowsText(fields),
   };
 }
 

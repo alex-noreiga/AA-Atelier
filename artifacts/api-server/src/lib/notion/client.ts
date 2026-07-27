@@ -51,6 +51,7 @@ let invoicesClient: NotionClient | null = null;
 let invoiceLineItemsClient: NotionClient | null = null;
 let costingClient: NotionClient | null = null;
 let materialUsageClient: NotionClient | null = null;
+let reviewsClient: NotionClient | null = null;
 
 /**
  * Lazily-constructed client reading credentials from the environment. Deferring
@@ -219,4 +220,19 @@ export function getMaterialUsageNotionClient(): NotionClient {
     });
   }
   return materialUsageClient;
+}
+
+/**
+ * Client for the "Reviews" database that holds customers' post-delivery reviews
+ * (rating + testimonial + photos), the raw material for testimonials and the
+ * portfolio. Same lazy construction, reads `NOTION_REVIEWS_DATABASE_ID`.
+ */
+export function getReviewsNotionClient(): NotionClient {
+  if (!reviewsClient) {
+    reviewsClient = createNotionClient({
+      apiKey: process.env.NOTION_API_KEY ?? "",
+      databaseId: process.env.NOTION_REVIEWS_DATABASE_ID ?? "",
+    });
+  }
+  return reviewsClient;
 }

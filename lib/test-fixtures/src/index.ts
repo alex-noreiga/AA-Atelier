@@ -25,6 +25,7 @@ import type {
   NewMeasurementChangeRequest,
   NewNotifyRequest,
   NewOrderRequest,
+  NewReviewRequest,
   OrderStatus,
   ProductList,
 } from "@workspace/api-zod";
@@ -96,6 +97,19 @@ export function measurementChangeInput(
     hips: 39,
     height: 66,
     bodyGirth: 33,
+    ...overrides,
+  };
+}
+
+/** A valid post-delivery review. Email matches `createOrderInput` by default so
+ * the identity gate passes; override it to exercise a mismatch. */
+export function reviewInput(
+  overrides: Partial<NewReviewRequest> = {},
+): NewReviewRequest {
+  return {
+    email: "ada@example.com",
+    rating: 5,
+    comment: "Absolutely stunning craftsmanship — it fit like a dream.",
     ...overrides,
   };
 }
