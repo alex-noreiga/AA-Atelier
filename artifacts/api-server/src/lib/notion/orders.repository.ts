@@ -264,6 +264,71 @@ export async function markMilestonesGenerated(
   }
 }
 
+/** What the status-change notification needs about an order: the recipient email
+ * (never exposed by the public order lookup), plus the fields the email renders —
+ * the order name/number, the live pipeline, the current stage, and the target
+ * completion date. Kept separate from `OrderRecord` so email stays out of the
+ * public status view. */
+export interface OrderStageNotification {
+  orderNumber: string;
+  orderName: string;
+  email: string;
+  currentStage: string;
+  stages: string[];
+  estimatedCompletion?: string;
+}
+
+/**
+ * Look up an order for a status-change email by its number, including the
+ * customer email (which `findOrderByNumber` deliberately omits from the public
+ * view). Returns null when the order number is blank or no order matches.
+ */
+export async function findOrderForStageNotification(
+  orderNumber: string,
+  client: NotionClient = getNotionClient(),
+): Promise<OrderStageNotification | null> {
+  assertConfigured(client);
+
+  const trimmedOrderNumber = orderNumber.trim();
+  if (!trimmedOrderNumber) {
+    return null;
+  }
+
+  const [response, stages] = await Promise.all([
+    client.fetch(`/v1/databases/${client.databaseId}/query`, {
+      method: "POST",
+      body: JSON.stringify({
+        filter: {
+          property: ORDER_NUMBER_PROPERTY,
+          rich_text: { equals: trimmedOrderNumber },
+        },
+        page_size: 1,
+      }),
+    }),
+    fetchLiveOrderStages(client),
+  ]);
+
+  if (!response.ok) {
+    throw new Error(`Notion query failed with status ${response.status}`);
+  }
+
+  const data = (await response.json()) as NotionQueryResponse;
+  const page = data.results[0];
+  if (!page) {
+    return null;
+  }
+
+  const estimatedCompletion = extractDueDate(page);
+  return {
+    orderNumber: extractOrderNumber(page) || trimmedOrderNumber,
+    orderName: extractOrderName(page),
+    email: extractOrderEmail(page),
+    currentStage: extractCurrentStage(page),
+    stages,
+    ...(estimatedCompletion !== undefined ? { estimatedCompletion } : {}),
+  };
+}
+
 /** What the measurement-change gates need about an order: the email to verify
  * against, plus the current stage and the live ordered stage list to decide
  * whether measurements are still editable. Kept separate from `OrderRecord`

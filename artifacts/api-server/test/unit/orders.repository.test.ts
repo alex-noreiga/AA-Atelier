@@ -250,6 +250,100 @@ describe("findOrderForMeasurementChange", () => {
   });
 });
 
+describe("findOrderForStageNotification", () => {
+  it("returns null for an empty/whitespace number without calling Notion", async () => {
+    const client = makeFakeClient(() => {
+      throw new Error("should not fetch");
+    });
+    expect(await repo.findOrderForStageNotification("   ", client)).toBeNull();
+    expect(client.calls).toHaveLength(0);
+  });
+
+  it("reads the number, name, email, current stage, live stages, and due date", async () => {
+    const client = makeFakeClient((path) => {
+      if (isSchema(path)) {
+        return jsonResponse(
+          databaseSchemaWithStages(["Consultation", "Sewing", "Delivery"]),
+        );
+      }
+      if (isQuery(path)) {
+        return jsonResponse({
+          results: [
+            orderPage({
+              orderNumber: "000002",
+              orderName: "Ada – Custom Dress",
+              currentStage: "Sewing",
+              email: "ada@example.com",
+              dueDate: "2026-09-01",
+            }),
+          ],
+        });
+      }
+      throw new Error(`unexpected path ${path}`);
+    });
+
+    const order = await repo.findOrderForStageNotification(
+      "  000002  ",
+      client,
+    );
+
+    expect(order).toEqual({
+      orderNumber: "000002",
+      orderName: "Ada – Custom Dress",
+      email: "ada@example.com",
+      currentStage: "Sewing",
+      stages: ["Consultation", "Sewing", "Delivery"],
+      estimatedCompletion: "2026-09-01",
+    });
+  });
+
+  it("filters by the Order Number rich_text (not number) property", async () => {
+    const client = makeFakeClient((path) => {
+      if (isSchema(path)) return jsonResponse(databaseSchemaWithStages(["A"]));
+      return jsonResponse({
+        results: [orderPage({ orderNumber: "000002", currentStage: "A" })],
+      });
+    });
+
+    await repo.findOrderForStageNotification("000002", client);
+
+    const query = client.calls.find((c) => isQuery(c.path));
+    const body = JSON.parse(query!.init!.body as string);
+    expect(body.filter).toEqual({
+      property: "Order Number",
+      rich_text: { equals: "000002" },
+    });
+  });
+
+  it("omits estimatedCompletion when the order has no due date", async () => {
+    const client = makeFakeClient((path) => {
+      if (isSchema(path)) return jsonResponse(databaseSchemaWithStages(["A"]));
+      return jsonResponse({
+        results: [
+          orderPage({
+            orderNumber: "000002",
+            currentStage: "A",
+            dueDate: null,
+          }),
+        ],
+      });
+    });
+
+    const order = await repo.findOrderForStageNotification("000002", client);
+    expect(order).not.toHaveProperty("estimatedCompletion");
+  });
+
+  it("returns null when the query yields no results", async () => {
+    const client = makeFakeClient((path) => {
+      if (isSchema(path)) return jsonResponse(databaseSchemaWithStages([]));
+      return jsonResponse({ results: [] });
+    });
+    expect(
+      await repo.findOrderForStageNotification("ORD-NOPE", client),
+    ).toBeNull();
+  });
+});
+
 describe("findOrdersNeedingMilestones", () => {
   it("filters on due-date-set AND milestones-not-generated, and attaches the live stage list", async () => {
     const client = makeFakeClient((path) => {

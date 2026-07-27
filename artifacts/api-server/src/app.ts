@@ -12,6 +12,10 @@ import {
   generateLineItemsButtonHandler,
 } from "./routes/invoice-generator.js";
 import { uploadReferenceImageHandler } from "./routes/order-images.js";
+import {
+  notionStageChangeHandler,
+  notionStageChangeButtonHandler,
+} from "./routes/order-notification.js";
 import { errorHandler } from "./middlewares/error.js";
 import { logger } from "./lib/logger.js";
 
@@ -71,6 +75,17 @@ app.use("/api", router);
 // See routes/cron.ts.
 app.get("/api/cron/generate-milestones", generateMilestonesHandler);
 app.get("/api/cron/generate-milestones/run", generateMilestonesButtonHandler);
+
+// Order status-change notification, two triggers for the same customer email
+// (both outside the OpenAPI contract, mounted directly like the Stripe webhook):
+//   - a Notion database automation, on Stage change (POST, ?secret= token, JSON).
+//   - an on-demand link the atelier opens to send/test one order (GET, HTML).
+// See routes/order-notification.ts.
+app.post("/api/webhooks/notion-stage-change", notionStageChangeHandler);
+app.get(
+  "/api/webhooks/notion-stage-change/run",
+  notionStageChangeButtonHandler,
+);
 
 // Invoice line-item generation, on demand from Notion (outside the OpenAPI
 // contract, mounted directly like the milestone button). Takes ?order= and

@@ -70,6 +70,178 @@ export function orderConfirmationEmail(
   };
 }
 
+// ---------------------------------------------------------------------------
+// Order status-change email
+//
+// Sent to the customer when their custom order moves to a new production stage.
+// Unlike the confirmation above, its source isn't a `CreateXInput` — the stage
+// change happens inside Notion, so the caller (order-notification.service) reads
+// the order back and hands this builder an already-formatted, transport-agnostic
+// struct, the same precedent as `AppointmentEmailDetails` / `ShopOrderEmailDetails`.
+// The body embeds a simplified version of the on-site tracking timeline so the
+// customer sees where their piece is without opening the tracking page.
+// ---------------------------------------------------------------------------
+
+/** The details needed to render an order status-change email. */
+export interface OrderStageChangeEmailDetails {
+  email: string;
+  /** The order's name/title in Notion (customer or project name). */
+  orderName: string;
+  orderNumber: string;
+  /** The live ordered stage list (the pipeline), first stage to last. */
+  stages: string[];
+  /** The order's current stage — expected to be one of `stages`. */
+  currentStage: string;
+  /** The atelier's target completion date (ISO yyyy-mm-dd), when set. */
+  estimatedCompletion?: string;
+  /** Absolute URL to the tracking page, when PUBLIC_BASE_URL is configured. */
+  trackingUrl?: string;
+}
+
+// Cosmetic per-stage flavor for the active stage — a mirror of the frontend's
+// web-app/src/lib/stage-descriptions.ts. Presentation-only (the authoritative
+// stage list is live from Notion); unknown stages fall back to a generic line.
+const STAGE_BLURBS: Record<string, string> = {
+  Consultation:
+    "We're still discussing your vision, measurements, and stylistic desires.",
+  Sketching:
+    "We're translating your ideas into the preliminary designs and technical flats.",
+  Sourcing:
+    "We're curating fabrics, laces, and embellishments from our trusted suppliers.",
+  "Pattern Design":
+    "Drafting the precise pattern pieces that will shape your garment.",
+  "Cutting/Pinning":
+    "Cutting fabric to pattern and pinning the foundational silhouette.",
+  "Sewing/Construction":
+    "We're sewing and constructing the garment by hand and machine.",
+  Assembly: "We're assembling all the pieces of your final costume.",
+  Fitting: "We're in the process of scheduling your fitting(s)!",
+  "Rhinestoning/Deatiling":
+    "We're applying hand-beading, crystals, and all the artistic final touches.",
+  "Ready for delivery/pickup":
+    "Your garment is complete and awaiting delivery or pickup.",
+  Delivery: "Your costume is now delivered!",
+};
+
+function stageBlurb(stage: string): string {
+  return (
+    STAGE_BLURBS[stage] ||
+    "We're carefully working on this stage of your garment."
+  );
+}
+
+/** Render the pipeline as stacked, progressively-coloured stage rows. Table +
+ * inline styles (no flexbox/absolute positioning) so it renders in email clients. */
+function renderPipelineHtml(stages: string[], currentStage: string): string {
+  const currentIndex = stages.indexOf(currentStage);
+  return stages
+    .map((stage, index) => {
+      const state =
+        index < currentIndex
+          ? "done"
+          : index === currentIndex
+            ? "active"
+            : "future";
+      const dotColor =
+        state === "active"
+          ? "#2b2622"
+          : state === "done"
+            ? "#8a7f74"
+            : "#d8d0c6";
+      const dotSize = state === "active" ? 12 : 9;
+      const textColor =
+        state === "active"
+          ? "#2b2622"
+          : state === "done"
+            ? "#8a7f74"
+            : "#b8afa4";
+      const weight = state === "active" ? "bold" : "normal";
+      const suffix =
+        state === "done"
+          ? ' <span style="color:#8a7f74;">&#10003;</span>'
+          : state === "active"
+            ? ' <span style="font-size:12px;color:#8a7f74;font-weight:normal;">&mdash; in progress</span>'
+            : "";
+      return `<tr>
+         <td width="28" style="padding:5px 0;vertical-align:middle;">
+           <span style="display:inline-block;width:${dotSize}px;height:${dotSize}px;border-radius:50%;background:${dotColor};"></span>
+         </td>
+         <td style="padding:5px 0;vertical-align:middle;font-size:15px;color:${textColor};font-weight:${weight};">${escapeHtml(stage)}${suffix}</td>
+       </tr>`;
+    })
+    .join("\n       ");
+}
+
+/** The plaintext twin of the pipeline: [x] done, [>] current, [ ] upcoming. */
+function renderPipelineText(stages: string[], currentStage: string): string {
+  const currentIndex = stages.indexOf(currentStage);
+  return stages
+    .map((stage, index) => {
+      const marker =
+        index < currentIndex ? "[x]" : index === currentIndex ? "[>]" : "[ ]";
+      const suffix = index === currentIndex ? "  <- in progress" : "";
+      return `  ${marker} ${stage}${suffix}`;
+    })
+    .join("\n");
+}
+
+/** Sent to the customer when their custom order advances to a new stage. */
+export function orderStageChangeEmail(
+  details: OrderStageChangeEmailDetails,
+): EmailMessage {
+  const { stages, currentStage, orderNumber } = details;
+  const blurb = stageBlurb(currentStage);
+
+  const estimatedHtml = details.estimatedCompletion
+    ? `<p style="color:#8a7f74;margin:0 0 6px;">Estimated completion: <strong>${escapeHtml(details.estimatedCompletion)}</strong></p>`
+    : "";
+  const ctaHtml = details.trackingUrl
+    ? `<p style="margin:26px 0 0;"><a href="${encodeURI(details.trackingUrl)}" style="color:#2b2622;">Follow your order &rarr;</a> &mdash; enter order ${escapeHtml(orderNumber)}</p>`
+    : "";
+
+  const html = layout(
+    `Your order has moved to ${escapeHtml(currentStage)}`,
+    `<p>Good news &mdash; your custom piece has progressed to a new stage in our atelier.</p>
+     <p>${escapeHtml(blurb)}</p>
+     <table role="presentation" cellpadding="0" cellspacing="0" style="width:100%;border-collapse:collapse;margin:22px 0;">
+       ${renderPipelineHtml(stages, currentStage)}
+     </table>
+     ${estimatedHtml}
+     <p style="color:#8a7f74;margin:0;">Order number: <strong>${escapeHtml(orderNumber)}</strong></p>
+     ${ctaHtml}`,
+  );
+
+  const text = [
+    `Good news — your custom piece has progressed to a new stage in our atelier.`,
+    ``,
+    blurb,
+    ``,
+    `Where your order is:`,
+    renderPipelineText(stages, currentStage),
+    ``,
+    ...(details.estimatedCompletion
+      ? [`Estimated completion: ${details.estimatedCompletion}`, ``]
+      : []),
+    `Order number: ${orderNumber}`,
+    ...(details.trackingUrl
+      ? [
+          ``,
+          `Follow your order: ${details.trackingUrl} (enter order ${orderNumber})`,
+        ]
+      : []),
+    ``,
+    `Thank you,`,
+    `The ${ATELIER_NAME} team`,
+  ].join("\n");
+
+  return {
+    to: details.email,
+    subject: `Your order ${orderNumber} is now at ${currentStage}`,
+    html,
+    text,
+  };
+}
+
 /** Acknowledgement sent to the customer after a contact-form submission. */
 export function contactAckEmail(input: CreateContactInput): EmailMessage {
   const firstName = input.name.trim().split(/\s+/)[0] || "there";
