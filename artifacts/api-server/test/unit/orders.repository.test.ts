@@ -360,6 +360,81 @@ describe("findOrderForStageNotification", () => {
   });
 });
 
+describe("findOrderForStageNotificationByPageId", () => {
+  const isPageFetch = (path: string) => /\/v1\/pages\/[^/]+$/.test(path);
+
+  it("returns null for an empty/whitespace page id without calling Notion", async () => {
+    const client = makeFakeClient(() => {
+      throw new Error("should not fetch");
+    });
+    expect(
+      await repo.findOrderForStageNotificationByPageId("   ", client),
+    ).toBeNull();
+    expect(client.calls).toHaveLength(0);
+  });
+
+  it("fetches the page by id and maps it (email, stage, marker, live stages)", async () => {
+    const client = makeFakeClient((path) => {
+      if (isSchema(path)) {
+        return jsonResponse(
+          databaseSchemaWithStages(["Consultation", "Sewing", "Delivery"]),
+        );
+      }
+      if (path === "/v1/pages/page-xyz") {
+        return jsonResponse(
+          orderPage({
+            id: "page-xyz",
+            orderNumber: "000002",
+            orderName: "Ada – Custom Dress",
+            currentStage: "Sewing",
+            email: "ada@example.com",
+            lastNotifiedStage: "Consultation",
+          }),
+        );
+      }
+      throw new Error(`unexpected path ${path}`);
+    });
+
+    const order = await repo.findOrderForStageNotificationByPageId(
+      "page-xyz",
+      client,
+    );
+
+    expect(order).toEqual({
+      pageId: "page-xyz",
+      orderNumber: "000002",
+      orderName: "Ada – Custom Dress",
+      email: "ada@example.com",
+      currentStage: "Sewing",
+      stages: ["Consultation", "Sewing", "Delivery"],
+      lastNotifiedStage: "Consultation",
+    });
+    // It retrieves the page directly, not via a database query.
+    expect(client.calls.some((c) => isPageFetch(c.path))).toBe(true);
+    expect(client.calls.some((c) => isQuery(c.path))).toBe(false);
+  });
+
+  it("returns null when the page no longer exists (404)", async () => {
+    const client = makeFakeClient((path) => {
+      if (isSchema(path)) return jsonResponse(databaseSchemaWithStages(["A"]));
+      return errorResponse(404, "not found");
+    });
+    expect(
+      await repo.findOrderForStageNotificationByPageId("gone", client),
+    ).toBeNull();
+  });
+
+  it("throws on a non-ok, non-404 page fetch", async () => {
+    const client = makeFakeClient((path) => {
+      if (isSchema(path)) return jsonResponse(databaseSchemaWithStages(["A"]));
+      return errorResponse(500);
+    });
+    await expect(
+      repo.findOrderForStageNotificationByPageId("boom", client),
+    ).rejects.toThrow(/Notion page fetch failed with status 500/);
+  });
+});
+
 describe("updateLastNotifiedStage", () => {
   it("PATCHes the order page's Last Notified Stage rich_text with the given stage", async () => {
     const client = makeFakeClient((path) => {

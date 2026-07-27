@@ -40,7 +40,29 @@ describe("POST /api/webhooks/notion-stage-change (Notion automation)", () => {
       status: "sent",
       currentStage: "Sketching",
     });
-    expect(mockNotify).toHaveBeenCalledWith("000002");
+    expect(mockNotify).toHaveBeenCalledWith({ orderNumber: "000002" });
+  });
+
+  it("resolves by the page id in Notion's default payload (no authored body)", async () => {
+    mockNotify.mockResolvedValue({ orderNumber: "000002", status: "sent" });
+
+    const res = await request(app)
+      .post(`${WEBHOOK}?secret=s3cret`)
+      .send({ data: { object: "page", id: "page-xyz" } });
+
+    expect(res.status).toBe(200);
+    expect(mockNotify).toHaveBeenCalledWith({ pageId: "page-xyz" });
+  });
+
+  it("prefers an authored orderNumber body over the payload page id", async () => {
+    mockNotify.mockResolvedValue({ orderNumber: "000002", status: "sent" });
+
+    const res = await request(app)
+      .post(`${WEBHOOK}?secret=s3cret`)
+      .send({ orderNumber: "000002", data: { id: "page-xyz" } });
+
+    expect(res.status).toBe(200);
+    expect(mockNotify).toHaveBeenCalledWith({ orderNumber: "000002" });
   });
 
   it("also accepts the order number as an ?order= query param", async () => {
@@ -51,7 +73,7 @@ describe("POST /api/webhooks/notion-stage-change (Notion automation)", () => {
     );
 
     expect(res.status).toBe(200);
-    expect(mockNotify).toHaveBeenCalledWith("000002");
+    expect(mockNotify).toHaveBeenCalledWith({ orderNumber: "000002" });
   });
 
   it("authorizes via a Bearer header with no query secret", async () => {
@@ -63,7 +85,7 @@ describe("POST /api/webhooks/notion-stage-change (Notion automation)", () => {
       .send({ orderNumber: "000002" });
 
     expect(res.status).toBe(200);
-    expect(mockNotify).toHaveBeenCalledWith("000002");
+    expect(mockNotify).toHaveBeenCalledWith({ orderNumber: "000002" });
   });
 
   it("returns 401 for a wrong Bearer header and does not run", async () => {
@@ -128,7 +150,10 @@ describe("GET /api/webhooks/notion-stage-change/run (on-demand link)", () => {
     expect(res.headers["content-type"]).toMatch(/text\/html/);
     expect(res.text).toContain("000002");
     expect(res.text).toContain("Sketching");
-    expect(mockNotify).toHaveBeenCalledWith("000002", { force: false });
+    expect(mockNotify).toHaveBeenCalledWith(
+      { orderNumber: "000002" },
+      { force: false },
+    );
   });
 
   it("passes force through when ?force=1 is set (a manual resend)", async () => {
@@ -143,7 +168,10 @@ describe("GET /api/webhooks/notion-stage-change/run (on-demand link)", () => {
     );
 
     expect(res.status).toBe(200);
-    expect(mockNotify).toHaveBeenCalledWith("000002", { force: true });
+    expect(mockNotify).toHaveBeenCalledWith(
+      { orderNumber: "000002" },
+      { force: true },
+    );
   });
 
   it("reports a not-found order in the HTML", async () => {

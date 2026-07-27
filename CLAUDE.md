@@ -142,9 +142,10 @@ Express app (artifacts/api-server)  ──►  Notion REST API (orders database)
   ├─ POST /api/webhooks/notion-stage-change
   │                                → order status-change email. A Notion database
   │                                  automation ("when Stage changes, send webhook")
-  │                                  POSTs { orderNumber }; the server reads the
-  │                                  order back from Notion (never trusting the
-  │                                  payload's stage) and sends the customer a
+  │                                  POSTs its default payload (the page id in
+  │                                  data.id) or an authored { orderNumber }; the
+  │                                  server reads the order back from Notion (never
+  │                                  trusting the payload's stage) and sends the
   │                                  status-update email with a pipeline graphic
   │                                  (best-effort, from orders@) — but only on
   │                                  FORWARD movement, gated by a `Last Notified
@@ -672,22 +673,27 @@ happens **inside Notion**, and there's no Notion→app trigger, so this is drive
 
 1. **Trigger is a Notion automation, not a poll.** The atelier adds a database
    automation on the Order Tracking Pipeline — _when `Stage` changes_ → _send
-   webhook_ to `POST /api/webhooks/notion-stage-change` with a JSON body
-   `{ "orderNumber": <Order Number property> }`. Auth reuses `CRON_SECRET`, accepted
-   two ways: an **`Authorization: Bearer <CRON_SECRET>` header** (preferred — the
-   Notion automation supports custom headers, and it keeps the token out of the URL
-   and logs) **or** a `?secret=<CRON_SECRET>` query token (the fallback the browser
-   `/run` link uses, since a link can't send headers). Both this and the on-demand
-   `…/run` link are **outside the OpenAPI contract**, mounted directly in `app.ts`
-   like the Stripe webhook.
+   webhook_ to `POST /api/webhooks/notion-stage-change`. **No hand-authored body is
+   needed**: Notion's default "Send webhook" payload carries the triggering page
+   under `data.id`, and the route resolves the order off that page id (newer Notion
+   often exposes only headers + a fixed payload, no editable body). An authored body
+   `{ "orderNumber": … }` (or `?order=`) is still accepted and preferred when present.
+   Auth reuses `CRON_SECRET`, accepted two ways: an **`Authorization: Bearer
+<CRON_SECRET>` header** (preferred — the Notion automation supports custom headers,
+   and it keeps the token out of the URL and logs) **or** a `?secret=<CRON_SECRET>`
+   query token (the fallback the browser `/run` link uses, since a link can't send
+   headers). Both this and the on-demand `…/run` link are **outside the OpenAPI
+   contract**, mounted directly in `app.ts` like the Stripe webhook.
 
-2. **Re-fetch, don't trust the payload.** The webhook carries only the order number;
-   the server reads the order back from Notion (`findOrderForStageNotification` —
-   like `findOrderByNumber` but including the customer `Email`) and renders the email
-   from the live `Stage` + live stage list, never from the webhook's own copy. The
-   send is **best-effort** (from the **orders** sender, `orders@`): a Resend failure
-   is logged-and-swallowed and never turns the webhook into an error, same contract
-   as every other customer email. A missing email or unset stage is a graceful skip.
+2. **Re-fetch, don't trust the payload.** The webhook carries only an identifier (a
+   page id or order number); the server reads the order back from Notion —
+   `findOrderForStageNotification` (by number) or `findOrderForStageNotificationByPageId`
+   (by `data.id`), both like `findOrderByNumber` but including the customer `Email` —
+   and renders the email from the live `Stage` + live stage list, never from the
+   webhook's own copy. The send is **best-effort** (from the **orders** sender,
+   `orders@`): a Resend failure is logged-and-swallowed and never turns the webhook
+   into an error, same contract as every other customer email. A missing email or
+   unset stage is a graceful skip.
 
 3. **Forward-only, via a `Last Notified Stage` marker.** The email is sent only when
    the order has moved **forward** past the stage the customer was last emailed about.
@@ -721,7 +727,8 @@ description text in the email mirrors the frontend's
 `web-app/src/lib/stage-descriptions.ts` (cosmetic flavor, graceful fallback for
 unknown stages). Code: `orderStageChangeEmail` in `lib/resend/emails.ts` (the template
 
-- pipeline graphic), `findOrderForStageNotification` + `updateLastNotifiedStage` in
+- pipeline graphic), `findOrderForStageNotification` /
+  `findOrderForStageNotificationByPageId` + `updateLastNotifiedStage` in
   `lib/notion/orders.repository.ts`, `services/order-notification.service.ts`, and
   `routes/order-notification.ts`.
 

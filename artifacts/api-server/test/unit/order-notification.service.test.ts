@@ -7,6 +7,7 @@ import { describe, it, expect, vi, afterEach } from "vitest";
 // isolation.
 vi.mock("../../src/lib/notion/orders.repository.js", () => ({
   findOrderForStageNotification: vi.fn(),
+  findOrderForStageNotificationByPageId: vi.fn(),
   updateLastNotifiedStage: vi.fn(),
 }));
 vi.mock("../../src/lib/resend/send.js", () => ({
@@ -19,12 +20,14 @@ import {
 } from "../../src/services/order-notification.service.js";
 import {
   findOrderForStageNotification,
+  findOrderForStageNotificationByPageId,
   updateLastNotifiedStage,
 } from "../../src/lib/notion/orders.repository.js";
 import { sendEmailBestEffort } from "../../src/lib/resend/send.js";
 import type { OrderStageNotification } from "../../src/lib/notion/orders.repository.js";
 
 const mockFind = vi.mocked(findOrderForStageNotification);
+const mockFindByPageId = vi.mocked(findOrderForStageNotificationByPageId);
 const mockUpdateMarker = vi.mocked(updateLastNotifiedStage);
 const mockSend = vi.mocked(sendEmailBestEffort);
 
@@ -118,6 +121,37 @@ describe("notifyOrderStageChange", () => {
     expect(mockSend).toHaveBeenCalledOnce();
     expect(mockSend.mock.calls[0][0].to).toBe("ada@example.com");
     expect(mockUpdateMarker).toHaveBeenCalledWith("order-page-1", "Sketching");
+  });
+
+  it("locates the order by page id and sends (Notion default payload)", async () => {
+    mockFindByPageId.mockResolvedValue(
+      order({ currentStage: "Sketching", lastNotifiedStage: "Consultation" }),
+    );
+
+    const result = await notifyOrderStageChange({ pageId: "page-xyz" });
+
+    expect(mockFindByPageId).toHaveBeenCalledWith("page-xyz");
+    expect(mockFind).not.toHaveBeenCalled();
+    expect(result.status).toBe("sent");
+    expect(mockSend).toHaveBeenCalledOnce();
+  });
+
+  it("returns not_found (empty orderNumber) when a page-id lookup misses", async () => {
+    mockFindByPageId.mockResolvedValue(null);
+
+    const result = await notifyOrderStageChange({ pageId: "page-xyz" });
+
+    expect(result).toEqual({ orderNumber: "", status: "not_found" });
+    expect(mockSend).not.toHaveBeenCalled();
+  });
+
+  it("accepts an { orderNumber } locator object", async () => {
+    mockFind.mockResolvedValue(order());
+
+    const result = await notifyOrderStageChange({ orderNumber: "000002" });
+
+    expect(mockFind).toHaveBeenCalledWith("000002");
+    expect(result.status).toBe("sent");
   });
 
   it("sends on the first notification (empty marker)", async () => {

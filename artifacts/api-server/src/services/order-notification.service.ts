@@ -25,7 +25,9 @@
 
 import {
   findOrderForStageNotification,
+  findOrderForStageNotificationByPageId,
   updateLastNotifiedStage,
+  type OrderStageNotification,
 } from "../lib/notion/orders.repository.js";
 import { orderStageChangeEmail } from "../lib/resend/emails.js";
 import { sendEmailBestEffort } from "../lib/resend/send.js";
@@ -45,6 +47,32 @@ export interface StageChangeNotificationResult {
 export interface NotifyOptions {
   /** Bypass the forward-only gate (a manual resend from the on-demand link). */
   force?: boolean;
+}
+
+/** How to find the order: by its human order number, or by its Notion page id
+ * (what the Notion automation's default payload carries). A bare string is
+ * treated as an order number. */
+export type OrderLocator =
+  string | { orderNumber: string } | { pageId: string };
+
+/** The order number to echo back before the order is looked up (empty for a
+ * page-id locator, which has no human number until resolved). */
+function locatorLabel(locator: OrderLocator): string {
+  if (typeof locator === "string") return locator.trim();
+  if ("orderNumber" in locator) return locator.orderNumber.trim();
+  return "";
+}
+
+function resolveOrder(
+  locator: OrderLocator,
+): Promise<OrderStageNotification | null> {
+  if (typeof locator === "string") {
+    return findOrderForStageNotification(locator);
+  }
+  if ("orderNumber" in locator) {
+    return findOrderForStageNotification(locator.orderNumber);
+  }
+  return findOrderForStageNotificationByPageId(locator.pageId);
 }
 
 /**
@@ -75,20 +103,21 @@ function trackingUrl(): string | undefined {
 }
 
 /**
- * Send the customer a status-change email for the given order number, unless the
- * order hasn't moved forward. Reads the order (with its email + last-notified
- * marker) from Notion, skips gracefully when there's no recipient, no stage, or
- * the move isn't forward (unless `force`), and otherwise dispatches a best-effort
- * email from the orders sender (`orders@`) and advances the marker. Only Notion
- * read failures throw; the email and the marker write never do.
+ * Send the customer a status-change email for the given order (located by number
+ * or Notion page id), unless the order hasn't moved forward. Reads the order
+ * (with its email + last-notified marker) from Notion, skips gracefully when
+ * there's no recipient, no stage, or the move isn't forward (unless `force`), and
+ * otherwise dispatches a best-effort email from the orders sender (`orders@`) and
+ * advances the marker. Only Notion read failures throw; the email and the marker
+ * write never do.
  */
 export async function notifyOrderStageChange(
-  orderNumber: string,
+  locator: OrderLocator,
   options: NotifyOptions = {},
 ): Promise<StageChangeNotificationResult> {
-  const order = await findOrderForStageNotification(orderNumber);
+  const order = await resolveOrder(locator);
   if (!order) {
-    return { orderNumber: orderNumber.trim(), status: "not_found" };
+    return { orderNumber: locatorLabel(locator), status: "not_found" };
   }
   if (!order.email) {
     return {

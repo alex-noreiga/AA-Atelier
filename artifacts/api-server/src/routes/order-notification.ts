@@ -5,7 +5,9 @@
 //
 // Two triggers for the SAME send (`notifyOrderStageChange`):
 //   1. POST /api/webhooks/notion-stage-change — a Notion database automation
-//      ("when Stage changes, send webhook") POSTs `{ "orderNumber": "…" }`.
+//      ("when Stage changes, send webhook"). Notion's default payload carries the
+//      triggering page under `data.id`, so no hand-authored body is needed; if an
+//      authored body `{ "orderNumber": "…" }` is present it's preferred.
 //   2. GET  /api/webhooks/notion-stage-change/run?order=<n> — a link the atelier
 //      opens by hand to send an update on demand (and to test in production
 //      against one order without wiring up the automation). Returns a small HTML
@@ -20,7 +22,10 @@
 // query token isn't logged; it is still visible in the URL / browser history.
 
 import type { Request, Response } from "express";
-import { notifyOrderStageChange } from "../services/order-notification.service.js";
+import {
+  notifyOrderStageChange,
+  type OrderLocator,
+} from "../services/order-notification.service.js";
 import { logger } from "../lib/logger.js";
 
 /** Authorized when the Bearer header OR the ?secret= query matches CRON_SECRET.
@@ -35,13 +40,34 @@ function isAuthorized(req: Request): boolean {
   );
 }
 
-/** The order number, from the POST body (Notion automation) or ?order= (link). */
-function orderNumberFrom(req: Request): string {
-  const body = req.body as { orderNumber?: unknown } | undefined;
+/**
+ * Locate the order to notify. Prefers an explicit order number — an authored body
+ * `{ orderNumber }` or the `?order=` link/test param. Otherwise falls back to the
+ * Notion automation's default payload, which carries the triggering page under
+ * `data.id` (so the atelier doesn't have to hand-author a webhook body). Returns
+ * null when neither is present.
+ */
+function locatorFrom(req: Request): OrderLocator | null {
+  const body = req.body as
+    { orderNumber?: unknown; data?: { id?: unknown } } | undefined;
   const fromBody =
     typeof body?.orderNumber === "string" ? body.orderNumber : "";
   const fromQuery = typeof req.query.order === "string" ? req.query.order : "";
-  return (fromBody || fromQuery).trim();
+  const orderNumber = (fromBody || fromQuery).trim();
+  if (orderNumber) return { orderNumber };
+
+  const pageId = typeof body?.data?.id === "string" ? body.data.id.trim() : "";
+  if (pageId) return { pageId };
+
+  return null;
+}
+
+/** The human order number to show in the on-demand link's HTML, when we have one. */
+function shownOrder(locator: OrderLocator | null): string {
+  if (locator && typeof locator === "object" && "orderNumber" in locator) {
+    return locator.orderNumber;
+  }
+  return "";
 }
 
 /** Escape dynamic values before interpolating them into the HTML confirmation. */
@@ -68,18 +94,18 @@ export async function notionStageChangeHandler(
     return;
   }
 
-  const orderNumber = orderNumberFrom(req);
-  if (!orderNumber) {
-    res.status(400).json({ error: "Missing order number" });
+  const locator = locatorFrom(req);
+  if (!locator) {
+    res.status(400).json({ error: "Missing order number or page id" });
     return;
   }
 
   try {
-    const result = await notifyOrderStageChange(orderNumber);
+    const result = await notifyOrderStageChange(locator);
     logger.info(result, "Order status-change webhook processed");
     res.json(result);
   } catch (err) {
-    logger.error({ err, orderNumber }, "Order status-change webhook failed");
+    logger.error({ err, locator }, "Order status-change webhook failed");
     res.status(500).json({ error: "Internal error" });
   }
 }
@@ -102,8 +128,8 @@ export async function notionStageChangeButtonHandler(
     return;
   }
 
-  const orderNumber = orderNumberFrom(req);
-  if (!orderNumber) {
+  const locator = locatorFrom(req);
+  if (!locator) {
     res
       .status(400)
       .type("html")
@@ -120,17 +146,17 @@ export async function notionStageChangeButtonHandler(
   const force = req.query.force === "1" || req.query.force === "true";
 
   try {
-    const result = await notifyOrderStageChange(orderNumber, { force });
+    const result = await notifyOrderStageChange(locator, { force });
     logger.info(result, "Order status-change link processed");
     const message =
       result.status === "sent"
         ? `A status update for order ${escapeHtml(result.orderNumber)} (now at ${escapeHtml(result.currentStage ?? "")}) is on its way. You can close this tab.`
         : result.status === "not_found"
-          ? `No order found for "${escapeHtml(orderNumber)}". You can close this tab.`
+          ? `No order found for "${escapeHtml(shownOrder(locator))}". You can close this tab.`
           : `Nothing sent for order ${escapeHtml(result.orderNumber)} — ${escapeHtml(result.reason ?? "skipped")}. You can close this tab.`;
     res.status(200).type("html").send(htmlPage("Order update", message));
   } catch (err) {
-    logger.error({ err, orderNumber }, "Order status-change link failed");
+    logger.error({ err, locator }, "Order status-change link failed");
     res
       .status(500)
       .type("html")

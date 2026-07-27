@@ -23,6 +23,7 @@ import {
   extractLastNotifiedStage,
   type CreateOrderInput,
   type NotionDatabaseSchema,
+  type NotionOrderPage,
   type NotionQueryResponse,
   type OrderRecord,
 } from "./orders.schema.js";
@@ -284,6 +285,25 @@ export interface OrderStageNotification {
   estimatedCompletion?: string;
 }
 
+/** Map a Notion order page (+ the live stage list) to the notification view. */
+function buildStageNotification(
+  page: NotionOrderPage,
+  stages: string[],
+  fallbackNumber = "",
+): OrderStageNotification {
+  const estimatedCompletion = extractDueDate(page);
+  return {
+    pageId: page.id,
+    orderNumber: extractOrderNumber(page) || fallbackNumber,
+    orderName: extractOrderName(page),
+    email: extractOrderEmail(page),
+    currentStage: extractCurrentStage(page),
+    stages,
+    lastNotifiedStage: extractLastNotifiedStage(page),
+    ...(estimatedCompletion !== undefined ? { estimatedCompletion } : {}),
+  };
+}
+
 /**
  * Look up an order for a status-change email by its number, including the
  * customer email (which `findOrderByNumber` deliberately omits from the public
@@ -324,17 +344,41 @@ export async function findOrderForStageNotification(
     return null;
   }
 
-  const estimatedCompletion = extractDueDate(page);
-  return {
-    pageId: page.id,
-    orderNumber: extractOrderNumber(page) || trimmedOrderNumber,
-    orderName: extractOrderName(page),
-    email: extractOrderEmail(page),
-    currentStage: extractCurrentStage(page),
-    stages,
-    lastNotifiedStage: extractLastNotifiedStage(page),
-    ...(estimatedCompletion !== undefined ? { estimatedCompletion } : {}),
-  };
+  return buildStageNotification(page, stages, trimmedOrderNumber);
+}
+
+/**
+ * Look up an order for a status-change email by its Notion **page id**, for the
+ * Notion automation webhook — its default payload carries the triggering page's
+ * id (`data.id`) but no easily-authored body, so we resolve straight off that id.
+ * Re-reads the authoritative page (never trusts the payload's own copy). Returns
+ * null when the id is blank or the page no longer exists.
+ */
+export async function findOrderForStageNotificationByPageId(
+  pageId: string,
+  client: NotionClient = getNotionClient(),
+): Promise<OrderStageNotification | null> {
+  assertConfigured(client);
+
+  const trimmedPageId = pageId.trim();
+  if (!trimmedPageId) {
+    return null;
+  }
+
+  const [response, stages] = await Promise.all([
+    client.fetch(`/v1/pages/${trimmedPageId}`),
+    fetchLiveOrderStages(client),
+  ]);
+
+  if (response.status === 404) {
+    return null;
+  }
+  if (!response.ok) {
+    throw new Error(`Notion page fetch failed with status ${response.status}`);
+  }
+
+  const page = (await response.json()) as NotionOrderPage;
+  return buildStageNotification(page, stages);
 }
 
 /**
