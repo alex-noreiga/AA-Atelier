@@ -761,6 +761,14 @@ the existing lookups, not new order/invoice logic. Frontend: `pages/account-logi
    buttons), not in the `/api` router. An invalid/expired token bounces to
    `/account/login?error=expired`.
 
+   All four account auth routes (login, overview, logout, verify) carry a
+   **rate limiter** (`middlewares/rate-limit.ts`, `express-rate-limit` — the one
+   place a new runtime dep was justified, since CodeQL only recognises known
+   limiter libraries; default **in-memory** store, so it's per serverless
+   instance/best-effort, same caveat as the alert de-dupe). It brakes sign-in
+   email-spam + token guessing. `parseCookies` also guards `__proto__`/
+   `constructor`/`prototype` names (the cookie name is attacker-controlled).
+
 5. **New Notion queries: by email.** The existing order/shop-order lookups were
    keyed by order number; the portal adds `findOrdersByEmail` (orders) and
    `findShopOrdersByEmail` (shop orders) — filtered on the `Email` / `Customer

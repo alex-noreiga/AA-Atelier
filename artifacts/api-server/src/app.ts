@@ -13,6 +13,7 @@ import {
 } from "./routes/invoice-generator.js";
 import { uploadReferenceImageHandler } from "./routes/order-images.js";
 import { verifyMagicLinkHandler } from "./routes/account-verify.js";
+import { accountRateLimiter } from "./middlewares/rate-limit.js";
 import { errorHandler } from "./middlewares/error.js";
 import { logger } from "./lib/logger.js";
 
@@ -86,7 +87,7 @@ app.get(
 // contract / generated client, like the cron buttons above) because it's a
 // top-level browser navigation from the emailed link that sets a session cookie
 // and redirects, not a JSON API call. See routes/account-verify.ts.
-app.get("/api/account/verify", verifyMagicLinkHandler);
+app.get("/api/account/verify", accountRateLimiter, verifyMagicLinkHandler);
 
 // Central error handler — must be registered after the routes.
 app.use(errorHandler);

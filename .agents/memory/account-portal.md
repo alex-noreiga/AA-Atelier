@@ -21,6 +21,14 @@ exp }`; purposes `magic` (15 min) / `session` (30 days). `verifyToken` never
     `UnauthorizedError` (→ 401, added to `middlewares/error.ts`).
   - `custom-fetch.ts` now sends `credentials:"include"` (the intended web-app auth
     path — the bearer getter stays for the mobile bundle).
+  - **Rate limiting** (`middlewares/rate-limit.ts`, `express-rate-limit`) on all
+    four auth routes — the one justified new dep, because CodeQL's rate-limit query
+    only recognises known limiter libraries (a hand-rolled one wouldn't clear the
+    alert). Default in-memory store ⇒ per serverless instance/best-effort (same
+    caveat as the alert de-dupe); brakes sign-in email-spam + token guessing.
+  - `parseCookies` guards `__proto__`/`constructor`/`prototype` (attacker-controlled
+    cookie names) + uses a null-prototype object — fixes CodeQL remote-property-
+    injection.
 
 - **Flow.** `POST /account/login` (contract) emails a magic link →
   `GET /api/account/verify?token=` (**outside the contract**, hand-mounted in
