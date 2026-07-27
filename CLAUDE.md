@@ -678,6 +678,10 @@ happens **inside Notion**, and there's no Notion→app trigger, so this is drive
    under `data.id`, and the route resolves the order off that page id (newer Notion
    often exposes only headers + a fixed payload, no editable body). An authored body
    `{ "orderNumber": … }` (or `?order=`) is still accepted and preferred when present.
+   The POST is mounted with `express.raw` (before the JSON parser, like the Stripe
+   webhook) and JSON-parses the buffer itself, so the body is read regardless of the
+   Content-Type Notion sends — its webhook action sets the Content-Type and won't let
+   you override it, so we can't assume `application/json`.
    Auth reuses `CRON_SECRET`, accepted two ways: an **`Authorization: Bearer
 <CRON_SECRET>` header** (preferred — the Notion automation supports custom headers,
    and it keeps the token out of the URL and logs) **or** a `?secret=<CRON_SECRET>`

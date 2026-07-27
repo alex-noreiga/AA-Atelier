@@ -63,6 +63,19 @@ app.post(
   uploadReferenceImageHandler,
 );
 
+// Order status-change webhook (Notion automation, POST). Buffered as a raw body
+// BEFORE the JSON parser so it's read regardless of the Content-Type Notion
+// sends — its "Send webhook" action sets the Content-Type itself and won't let
+// you override it, so we can't rely on it being application/json. The handler
+// JSON-parses the buffer itself. Outside the OpenAPI contract, like the Stripe
+// webhook. The on-demand …/run link (GET, below) carries no body and stays after
+// the JSON parser. See routes/order-notification.ts.
+app.post(
+  "/api/webhooks/notion-stage-change",
+  express.raw({ type: () => true }),
+  notionStageChangeHandler,
+);
+
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 
@@ -76,12 +89,9 @@ app.use("/api", router);
 app.get("/api/cron/generate-milestones", generateMilestonesHandler);
 app.get("/api/cron/generate-milestones/run", generateMilestonesButtonHandler);
 
-// Order status-change notification, two triggers for the same customer email
-// (both outside the OpenAPI contract, mounted directly like the Stripe webhook):
-//   - a Notion database automation, on Stage change (POST, ?secret= token, JSON).
-//   - an on-demand link the atelier opens to send/test one order (GET, HTML).
-// See routes/order-notification.ts.
-app.post("/api/webhooks/notion-stage-change", notionStageChangeHandler);
+// Order status-change on-demand link (the POST automation webhook is mounted
+// above, before the JSON parser). A link the atelier opens to send/test one
+// order (GET, HTML). See routes/order-notification.ts.
 app.get(
   "/api/webhooks/notion-stage-change/run",
   notionStageChangeButtonHandler,

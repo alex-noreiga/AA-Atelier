@@ -20,6 +20,10 @@
 // `?secret=<CRON_SECRET>` query token (the fallback for the browser `/run` link,
 // which can't send headers). The request logger strips the query string, so the
 // query token isn't logged; it is still visible in the URL / browser history.
+//
+// The POST is mounted with `express.raw` (see app.ts), so its body arrives as a
+// Buffer we JSON-parse here — this way it's read regardless of the Content-Type
+// Notion sends (its webhook action won't let you set a Content-Type header).
 
 import type { Request, Response } from "express";
 import {
@@ -41,6 +45,36 @@ function isAuthorized(req: Request): boolean {
 }
 
 /**
+ * The request body as an object, tolerant of how it arrived: the POST route is
+ * mounted with `express.raw`, so `req.body` is a Buffer we JSON-parse here (this
+ * is what lets us read it whatever Content-Type Notion used); the GET route has
+ * no body, so `req.body` is already a (possibly empty) object. A non-JSON or
+ * empty body yields `{}` rather than throwing.
+ */
+function bodyObject(req: Request): {
+  orderNumber?: unknown;
+  data?: { id?: unknown };
+} {
+  const raw: unknown = req.body;
+  if (Buffer.isBuffer(raw)) {
+    const text = raw.toString("utf8").trim();
+    if (!text) return {};
+    try {
+      return JSON.parse(text) as {
+        orderNumber?: unknown;
+        data?: { id?: unknown };
+      };
+    } catch {
+      return {};
+    }
+  }
+  if (raw && typeof raw === "object") {
+    return raw as { orderNumber?: unknown; data?: { id?: unknown } };
+  }
+  return {};
+}
+
+/**
  * Locate the order to notify. Prefers an explicit order number — an authored body
  * `{ orderNumber }` or the `?order=` link/test param. Otherwise falls back to the
  * Notion automation's default payload, which carries the triggering page under
@@ -48,15 +82,13 @@ function isAuthorized(req: Request): boolean {
  * null when neither is present.
  */
 function locatorFrom(req: Request): OrderLocator | null {
-  const body = req.body as
-    { orderNumber?: unknown; data?: { id?: unknown } } | undefined;
-  const fromBody =
-    typeof body?.orderNumber === "string" ? body.orderNumber : "";
+  const body = bodyObject(req);
+  const fromBody = typeof body.orderNumber === "string" ? body.orderNumber : "";
   const fromQuery = typeof req.query.order === "string" ? req.query.order : "";
   const orderNumber = (fromBody || fromQuery).trim();
   if (orderNumber) return { orderNumber };
 
-  const pageId = typeof body?.data?.id === "string" ? body.data.id.trim() : "";
+  const pageId = typeof body.data?.id === "string" ? body.data.id.trim() : "";
   if (pageId) return { pageId };
 
   return null;

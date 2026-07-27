@@ -43,6 +43,19 @@ describe("POST /api/webhooks/notion-stage-change (Notion automation)", () => {
     expect(mockNotify).toHaveBeenCalledWith({ orderNumber: "000002" });
   });
 
+  it("parses the body regardless of Content-Type (Notion can't set it)", async () => {
+    mockNotify.mockResolvedValue({ orderNumber: "000002", status: "sent" });
+
+    // A JSON string sent as text/plain — the raw-body mount must still parse it.
+    const res = await request(app)
+      .post(`${WEBHOOK}?secret=s3cret`)
+      .set("Content-Type", "text/plain")
+      .send('{"orderNumber":"000002"}');
+
+    expect(res.status).toBe(200);
+    expect(mockNotify).toHaveBeenCalledWith({ orderNumber: "000002" });
+  });
+
   it("resolves by the page id in Notion's default payload (no authored body)", async () => {
     mockNotify.mockResolvedValue({ orderNumber: "000002", status: "sent" });
 
