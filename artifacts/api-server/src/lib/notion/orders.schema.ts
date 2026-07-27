@@ -66,6 +66,18 @@ export interface OrderRecord {
   costingItemIds?: string[];
 }
 
+/** A lightweight custom-order view for the account dashboard — the fields a
+ * summary card needs, with none of the per-order milestone/invoice fan-out
+ * `getOrderStatus` does. `stages` is the live ordered list so the card can show
+ * progress (e.g. "stage 3 of 6"). */
+export interface OrderSummary {
+  orderNumber: string;
+  orderName: string;
+  currentStage: string;
+  stages: string[];
+  estimatedCompletion?: string;
+}
+
 /** The status-lookup response: the raw record plus the derived production-lock
  * flag, the per-stage milestone dates the timeline renders, the staged deposits,
  * and (when ready) the customer-facing invoice — all sourced from the invoice. */

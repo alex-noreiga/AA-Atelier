@@ -21,6 +21,8 @@ import ShopSuccess from "@/pages/shop-success";
 import InvoicePage from "@/pages/invoice";
 import Contact from "@/pages/contact";
 import Appointments from "@/pages/appointments";
+import AccountLogin from "@/pages/account-login";
+import Account from "@/pages/account";
 import Privacy from "@/pages/privacy";
 import Terms from "@/pages/terms";
 import ShippingReturns from "@/pages/shipping-returns";
@@ -55,6 +57,10 @@ function Router() {
       <Route path="/invoice/:orderNumber" component={InvoicePage} />
       <Route path="/order" component={OrderForm} />
       <Route path="/appointments" component={Appointments} />
+      {/* Account portal. The login route must precede /account so it isn't
+          shadowed, and /account itself redirects to login when unauthenticated. */}
+      <Route path="/account/login" component={AccountLogin} />
+      <Route path="/account" component={Account} />
       <Route path="/contact" component={Contact} />
       <Route path="/privacy" component={Privacy} />
       <Route path="/terms" component={Terms} />

@@ -22,6 +22,8 @@ tags:
     description: Stripe checkout for ready-to-ship shop items
   - name: appointments
     description: Customer appointment scheduling with atelier staff
+  - name: account
+    description: Passwordless customer account portal (magic-link sign-in)
 paths:
   /health:
     get:
@@ -502,6 +504,84 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/ErrorEnvelope"
+  /account/login:
+    post:
+      operationId: requestMagicLink
+      tags: [account]
+      summary: Request a passwordless sign-in link
+      description: >-
+        Emails the customer a one-time magic link that signs them into the
+        account portal. Always responds 200 regardless of whether any orders
+        exist for the address — identity is the email itself, so there is no
+        account to enumerate. The email is sent best-effort; a mail outage never
+        fails the request.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/MagicLinkRequest"
+      responses:
+        "200":
+          description: Sign-in link sent (if the mailer is configured)
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MessageResponse"
+        "400":
+          description: Validation error
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorEnvelope"
+        "500":
+          description: Server error
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorEnvelope"
+  /account/overview:
+    get:
+      operationId: getAccountOverview
+      tags: [account]
+      summary: The signed-in customer's orders and shop orders
+      description: >-
+        Returns everything tied to the signed-in customer's email — their custom
+        orders and their ready-to-wear shop orders — for the account dashboard.
+        Requires a valid session cookie (set by the magic-link verify step);
+        responds 401 when the caller isn't signed in.
+      responses:
+        "200":
+          description: The customer's account overview
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AccountOverview"
+        "401":
+          description: Not signed in (missing or expired session)
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorEnvelope"
+        "500":
+          description: Server error
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorEnvelope"
+  /account/logout:
+    post:
+      operationId: logoutAccount
+      tags: [account]
+      summary: Sign out of the account portal
+      description: Clears the session cookie. Idempotent — safe to call when already signed out.
+      responses:
+        "200":
+          description: Signed out
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MessageResponse"
 components:
   schemas:
     HealthStatus:
@@ -1233,3 +1313,77 @@ components:
       properties:
         error:
           type: string
+    MessageResponse:
+      type: object
+      description: A generic human-readable acknowledgement.
+      required: [message]
+      properties:
+        message:
+          type: string
+    MagicLinkRequest:
+      type: object
+      required: [email]
+      properties:
+        email:
+          type: string
+          format: email
+          description: The email to send the one-time sign-in link to.
+    AccountOverview:
+      type: object
+      description: >-
+        Everything tied to the signed-in customer's email — the data the account
+        dashboard renders.
+      required: [email, customOrders, shopOrders]
+      properties:
+        email:
+          type: string
+          description: The signed-in customer's email.
+        customOrders:
+          type: array
+          description: >-
+            The customer's custom (bespoke) orders, newest-relevant first. Empty
+            when none match the signed-in email.
+          items:
+            $ref: "#/components/schemas/AccountOrderSummary"
+        shopOrders:
+          type: array
+          description: >-
+            The customer's ready-to-wear shop orders. Empty when none match the
+            signed-in email (older shop orders without an order number are omitted).
+          items:
+            $ref: "#/components/schemas/AccountShopOrderSummary"
+    AccountOrderSummary:
+      type: object
+      description: A custom order as shown on the account dashboard (links out to the full tracking + invoice views).
+      required: [orderNumber, orderName, currentStage, stages]
+      properties:
+        orderNumber:
+          type: string
+        orderName:
+          type: string
+        currentStage:
+          type: string
+        stages:
+          type: array
+          description: The live ordered stage list, so the dashboard can show progress (e.g. "3 of 6").
+          items:
+            type: string
+        estimatedCompletion:
+          type: string
+          description: >-
+            The order's target completion date (its Due Date) as an ISO date
+            (yyyy-mm-dd). A pass-through string (no format: date). Absent until
+            the atelier sets one.
+    AccountShopOrderSummary:
+      type: object
+      description: A ready-to-wear shop order as shown on the account dashboard.
+      required: [orderNumber, status]
+      properties:
+        orderNumber:
+          type: string
+        status:
+          type: string
+          description: The order's current fulfilment status.
+        total:
+          type: number
+          description: The order total in dollars, when recorded.

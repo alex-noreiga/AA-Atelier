@@ -10,6 +10,7 @@ import {
   buildShopOrderPageBlocks,
   SHOP_ORDER_NUMBER_PROPERTY,
   SHOP_ORDER_SESSION_PROPERTY,
+  SHOP_ORDER_EMAIL_PROPERTY,
   SHOP_ORDER_STATUS_PROPERTY,
   SHOP_ORDER_TOTAL_PROPERTY,
 } from "./shop-orders.blocks.js";
@@ -174,6 +175,68 @@ export async function findShopOrderByNumber(
     status: readStatus(page.properties[SHOP_ORDER_STATUS_PROPERTY]),
     ...(total !== null ? { total } : {}),
   };
+}
+
+/**
+ * Find every shop order placed under a customer's email, for the account portal.
+ * Filters on the `Customer Email` property and paginates the full result set.
+ * Orders with no `Order Number` (placed before that property shipped) are omitted
+ * — they can't be tracked, so there's nothing to link to. Same email-`equals`
+ * exactness caveat as the custom-order lookup.
+ */
+export async function findShopOrdersByEmail(
+  email: string,
+  client: NotionClient = getShopOrdersNotionClient(),
+): Promise<ShopOrderRecord[]> {
+  assertConfigured(client);
+
+  const trimmed = email.trim();
+  if (!trimmed) return [];
+
+  const orders: ShopOrderRecord[] = [];
+  let cursor: string | undefined;
+
+  do {
+    const response = await client.fetch(
+      `/v1/databases/${client.databaseId}/query`,
+      {
+        method: "POST",
+        body: JSON.stringify({
+          filter: {
+            property: SHOP_ORDER_EMAIL_PROPERTY,
+            email: { equals: trimmed },
+          },
+          ...(cursor ? { start_cursor: cursor } : {}),
+        }),
+      },
+    );
+
+    if (!response.ok) {
+      throw new Error(`Notion query failed with status ${response.status}`);
+    }
+
+    const data = (await response.json()) as NotionLookupResponse & {
+      has_more?: boolean;
+      next_cursor?: string | null;
+    };
+
+    for (const page of data.results) {
+      const orderNumber = readRichText(
+        page.properties[SHOP_ORDER_NUMBER_PROPERTY],
+      );
+      if (!orderNumber) continue;
+      const total = readNumber(page.properties[SHOP_ORDER_TOTAL_PROPERTY]);
+      orders.push({
+        orderNumber,
+        status: readStatus(page.properties[SHOP_ORDER_STATUS_PROPERTY]),
+        ...(total !== null ? { total } : {}),
+      });
+    }
+
+    cursor = data.has_more && data.next_cursor ? data.next_cursor : undefined;
+  } while (cursor);
+
+  return orders;
 }
 
 /**

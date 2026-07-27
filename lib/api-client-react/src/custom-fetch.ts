@@ -373,7 +373,17 @@ export async function customFetch<T = unknown>(
 
   const requestInfo = { method, url: resolveUrl(input) };
 
-  const response = await fetch(input, { ...init, method, headers });
+  // Send the httpOnly session cookie with API calls so the account portal's
+  // magic-link session is recognised. Same-origin in production (the SPA and
+  // /api share an origin) and through the Vite dev proxy locally; a caller can
+  // still override `credentials` via options. This is the intended web-app auth
+  // path — the bearer-token getter above is reserved for the mobile bundle.
+  const response = await fetch(input, {
+    credentials: "include",
+    ...init,
+    method,
+    headers,
+  });
 
   if (!response.ok) {
     const errorData = await parseErrorBody(response, method);

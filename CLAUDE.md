@@ -74,6 +74,17 @@ Express app (artifacts/api-server)  ──►  Notion REST API (orders database)
                                     └──►  Resend REST API (customer emails)
   │
   ├─ GET  /api/health              → { status: "ok" }
+  ├─ POST /api/account/login       → sends a passwordless magic-link sign-in
+  │                                  email (Resend). Always 200 (identity IS the
+  │                                  email — nothing to enumerate); best-effort send
+  ├─ GET  /api/account/overview    → the signed-in customer's custom orders +
+  │                                  shop orders, looked up by session email.
+  │                                  Session-cookie gated (401 when signed out)
+  ├─ POST /api/account/logout      → clears the session cookie
+  ├─ GET  /api/account/verify      → exchanges a valid magic-link token for a
+  │                                  session cookie + redirects to /account (a
+  │                                  browser navigation from the email, NOT JSON —
+  │                                  outside the OpenAPI contract, like the webhook)
   ├─ GET  /api/orders/:orderNumber → order status + stage list
   ├─ POST /api/orders              → creates a Notion page, returns order number
   │                                  + sends an order-confirmation email
@@ -706,6 +717,73 @@ Locations`. `lib/google/sheets.repository.ts` reads it (`APPOINTMENT_SHEET_ID`,
    itself. `google-auth-library` mints the tokens (impersonated for Calendar,
    plain for Sheets); the rest is raw `fetch`, mirroring the Notion adapter.
 
+## Customer account portal (passwordless magic-link)
+
+A signed-in **home base** that gathers a customer's custom orders and shop orders
+in one place, so they don't have to remember an order number per garment. It
+reuses the data the app already exposes — the portal is an identity layer over
+the existing lookups, not new order/invoice logic. Frontend: `pages/account-login.tsx`
+(request a link) + `pages/account.tsx` (dashboard). Backend: `services/account.service.ts`,
+`routes/account.ts` (+ `routes/account-verify.ts`), `middlewares/auth.ts`,
+`lib/auth/{tokens,cookies}.ts`. Load-bearing decisions:
+
+1. **Identity is the email; there is no user table.** Sign-in is passwordless:
+   the customer enters an email, receives a one-time **magic link**, and clicking
+   it sets a session cookie. A valid session is proof they control that inbox, so
+   the dashboard is just the existing order/shop-order lookups **re-keyed from
+   order number to email** — no accounts to store or enumerate.
+
+2. **Tokens are stateless HMAC blobs, not server sessions.** No DB + serverless ⇒
+   both the magic-link token and the session cookie are self-contained
+   `base64url(payload).base64url(HMAC-SHA256)` signed with `SESSION_SECRET`
+   (`lib/auth/tokens.ts`, Node `crypto`, **no new dependency**). Payload is
+   `{ email, purpose, exp }`; two purposes with different TTLs — `magic` (15 min)
+   and `session` (30 days). `verifyToken` never throws (bad sig / wrong purpose /
+   expiry ⇒ null). Unset `SESSION_SECRET` ⇒ the portal is inert (login 200s but
+   sends nothing) — same env-gated-degrade pattern as the optional integrations.
+
+3. **httpOnly session cookie, not a bearer token.** The session rides in an
+   httpOnly `aa_session` cookie (`lib/auth/cookies.ts`; `secure` outside dev,
+   `sameSite: "lax"` so it survives the top-level navigation from the emailed
+   link). Setting uses Express's native `res.cookie`; reading parses the header by
+   hand (no `cookie-parser` dep). The generated web client sends it because
+   `custom-fetch.ts` now sets `credentials: "include"` — the intended web-app auth
+   path the mutator's own comments point to (the bearer-token getter is reserved
+   for the mobile bundle). `requireCustomer` (`middlewares/auth.ts`) verifies the
+   cookie → `res.locals.customer = { email }` or throws `UnauthorizedError` (→ 401,
+   new case in `middlewares/error.ts`); the frontend redirects a 401 to sign-in.
+
+4. **`/api/account/verify` is outside the OpenAPI contract.** Login, overview, and
+   logout are ordinary contract endpoints (generated hooks `useRequestMagicLink`,
+   `useGetAccountOverview`, `useLogoutAccount`). But **verify** is a browser
+   navigation from the email that sets a cookie and 302-redirects — not a JSON/
+   fetch call — so it's hand-mounted in `app.ts` (like the Stripe webhook + cron
+   buttons), not in the `/api` router. An invalid/expired token bounces to
+   `/account/login?error=expired`.
+
+5. **New Notion queries: by email.** The existing order/shop-order lookups were
+   keyed by order number; the portal adds `findOrdersByEmail` (orders) and
+   `findShopOrdersByEmail` (shop orders) — filtered on the `Email` / `Customer
+   Email` property, paginated, returning lightweight summaries (no per-order
+   milestone/invoice fan-out; the cards link out to `/track` and `/invoice/:n`).
+   Caveat: Notion's email `equals` is **exact**, so an order stored under a
+   differently-cased address than the sign-in email won't match, and orders
+   predating the `Email` property are invisible here — the customer can still
+   track those by number.
+
+6. **Scope (v1).** Orders + shop orders + invoices (invoices ride along the order
+   detail pages). **Appointments and measurement history are deliberately deferred**
+   — appointments have no read-by-customer path (Google Calendar is write +
+   free/busy only; would need a net-new `events.list`-by-attendee), and
+   measurements live in order page *body blocks*, not readable properties (the
+   `TODO(measurements-b)` migration is a prerequisite). Both are fast-follows.
+
+The atelier must, one time: set `SESSION_SECRET` (a long random string) and
+`PUBLIC_BASE_URL` (already set for Stripe — the magic-link origin); mail needs
+`RESEND_API_KEY` + `RESEND_FROM_EMAIL`. **No new database.** The magic-link email
+copy lives in `lib/resend/emails.ts` (`magicLinkEmail`), sent from the `orders`
+category sender.
+
 ## Development workflow
 
 ### Prerequisites
@@ -975,7 +1053,12 @@ and in the maintainer's env without edits.
   default `A2:F`). Enable both the Calendar and Sheets APIs. Checkout also
   needs `STRIPE_SECRET_KEY`, `STRIPE_WEBHOOK_SECRET` (the signing secret of the
   Stripe webhook endpoint), and `PUBLIC_BASE_URL` (the site origin Stripe
-  redirects back to after payment). Optionally, `STRIPE_SHIPPING_RATE_IDS` — a
+  redirects back to after payment — also the origin the account-portal magic link
+  points back at). The **customer account portal** needs `SESSION_SECRET` (a long
+  random string that signs the magic-link + session cookie; unset ⇒ portal sign-in
+  is disabled, the login endpoint still 200s but sends nothing) plus
+  `PUBLIC_BASE_URL` and the Resend vars for the sign-in email — no new database.
+  Optionally, `STRIPE_SHIPPING_RATE_IDS` — a
   comma-separated list of Stripe Shipping Rate ids (`shr_…`) to offer at shop
   checkout (unset ⇒ no shipping charged, i.e. no shipping options appear at
   checkout at all). **Mode-scoped:** the ids must be created in the same Stripe
@@ -1036,6 +1119,7 @@ and in the maintainer's env without edits.
 | Change appointment types / routing rules           | `api-server/src/lib/appointments/catalog.ts` (targeted business rule — durations, which staff, which locations)                                                                                                                                                                                                                                                 |
 | Change staff working hours / calendars             | The working-hours **Google Sheet** (`APPOINTMENT_SHEET_ID`); read in `api-server/src/lib/google/sheets.repository.ts`, parsed by `lib/appointments/staff.ts`                                                                                                                                                                                                    |
 | Change appointment slot logic / policy             | `api-server/src/lib/appointments/availability.ts` (`computeSlots`) + `time.ts` + `settings.ts`; `services/appointments.service.ts` + `routes/appointments.ts` + `lib/google/*` (Calendar free/busy + event insert)                                                                                                                                              |
+| Change the customer account portal (magic-link)    | `artifacts/web-app/src/pages/account.tsx` + `pages/account-login.tsx` (frontend); `api-server/src/services/account.service.ts` + `routes/account.ts` + `routes/account-verify.ts` + `middlewares/auth.ts` + `lib/auth/{tokens,cookies}.ts`; queries `findOrdersByEmail` / `findShopOrdersByEmail`                                                                |
 | Add a page / route                                 | new `src/pages/*.tsx` + `<Route>` in `src/App.tsx`                                                                                                                                                                                                                                                                                                              |
 | Add or rename a nav link                           | `NAV_LINKS` in `artifacts/web-app/src/components/navbar.tsx`                                                                                                                                                                                                                                                                                                    |
 | Add a shared UI component                          | `artifacts/web-app/src/components/ui/`                                                                                                                                                                                                                                                                                                                          |

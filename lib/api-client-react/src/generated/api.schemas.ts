@@ -402,6 +402,54 @@ export interface ErrorEnvelope {
   error: string;
 }
 
+/**
+ * A generic human-readable acknowledgement.
+ */
+export interface MessageResponse {
+  message: string;
+}
+
+export interface MagicLinkRequest {
+  /** The email to send the one-time sign-in link to. */
+  email: string;
+}
+
+/**
+ * A custom order as shown on the account dashboard (links out to the full tracking + invoice views).
+ */
+export interface AccountOrderSummary {
+  orderNumber: string;
+  orderName: string;
+  currentStage: string;
+  /** The live ordered stage list, so the dashboard can show progress (e.g. "3 of 6"). */
+  stages: string[];
+  /** The order's target completion date (its Due Date) as an ISO date (yyyy-mm-dd). A pass-through string (no format: date). Absent until the atelier sets one. */
+  estimatedCompletion?: string;
+}
+
+/**
+ * A ready-to-wear shop order as shown on the account dashboard.
+ */
+export interface AccountShopOrderSummary {
+  orderNumber: string;
+  /** The order's current fulfilment status. */
+  status: string;
+  /** The order total in dollars, when recorded. */
+  total?: number;
+}
+
+/**
+ * Everything tied to the signed-in customer's email — the data the account dashboard renders.
+ */
+export interface AccountOverview {
+  /** The signed-in customer's email. */
+  email: string;
+  /** The customer's custom (bespoke) orders, newest-relevant first. Empty when none match the signed-in email. */
+  customOrders: AccountOrderSummary[];
+  /** The customer's ready-to-wear shop orders. Empty when none match the signed-in email (older shop orders without an order number are omitted). */
+  shopOrders: AccountShopOrderSummary[];
+}
+
 export type GetAppointmentAvailabilityParams = {
 typeId: string;
 location: GetAppointmentAvailabilityLocation;

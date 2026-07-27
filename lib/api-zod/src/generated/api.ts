@@ -356,3 +356,46 @@ export const CreateAppointmentResponse = zod.object({
 })
 
 
+/**
+ * Emails the customer a one-time magic link that signs them into the account portal. Always responds 200 regardless of whether any orders exist for the address — identity is the email itself, so there is no account to enumerate. The email is sent best-effort; a mail outage never fails the request.
+ * @summary Request a passwordless sign-in link
+ */
+export const RequestMagicLinkBody = zod.object({
+  "email": zod.string().email().describe('The email to send the one-time sign-in link to.')
+})
+
+export const RequestMagicLinkResponse = zod.object({
+  "message": zod.string()
+}).describe('A generic human-readable acknowledgement.')
+
+
+/**
+ * Returns everything tied to the signed-in customer's email — their custom orders and their ready-to-wear shop orders — for the account dashboard. Requires a valid session cookie (set by the magic-link verify step); responds 401 when the caller isn't signed in.
+ * @summary The signed-in customer's orders and shop orders
+ */
+export const GetAccountOverviewResponse = zod.object({
+  "email": zod.string().describe('The signed-in customer\'s email.'),
+  "customOrders": zod.array(zod.object({
+  "orderNumber": zod.string(),
+  "orderName": zod.string(),
+  "currentStage": zod.string(),
+  "stages": zod.array(zod.string()).describe('The live ordered stage list, so the dashboard can show progress (e.g. \"3 of 6\").'),
+  "estimatedCompletion": zod.string().optional().describe('The order\'s target completion date (its Due Date) as an ISO date (yyyy-mm-dd). A pass-through string (no format: date). Absent until the atelier sets one.')
+}).describe('A custom order as shown on the account dashboard (links out to the full tracking + invoice views).')).describe('The customer\'s custom (bespoke) orders, newest-relevant first. Empty when none match the signed-in email.'),
+  "shopOrders": zod.array(zod.object({
+  "orderNumber": zod.string(),
+  "status": zod.string().describe('The order\'s current fulfilment status.'),
+  "total": zod.number().optional().describe('The order total in dollars, when recorded.')
+}).describe('A ready-to-wear shop order as shown on the account dashboard.')).describe('The customer\'s ready-to-wear shop orders. Empty when none match the signed-in email (older shop orders without an order number are omitted).')
+}).describe('Everything tied to the signed-in customer\'s email — the data the account dashboard renders.')
+
+
+/**
+ * Clears the session cookie. Idempotent — safe to call when already signed out.
+ * @summary Sign out of the account portal
+ */
+export const LogoutAccountResponse = zod.object({
+  "message": zod.string()
+}).describe('A generic human-readable acknowledgement.')
+
+
