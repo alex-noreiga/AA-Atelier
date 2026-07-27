@@ -54,6 +54,28 @@ describe("POST /api/webhooks/notion-stage-change (Notion automation)", () => {
     expect(mockNotify).toHaveBeenCalledWith("000002");
   });
 
+  it("authorizes via a Bearer header with no query secret", async () => {
+    mockNotify.mockResolvedValue({ orderNumber: "000002", status: "sent" });
+
+    const res = await request(app)
+      .post(WEBHOOK)
+      .set("Authorization", "Bearer s3cret")
+      .send({ orderNumber: "000002" });
+
+    expect(res.status).toBe(200);
+    expect(mockNotify).toHaveBeenCalledWith("000002");
+  });
+
+  it("returns 401 for a wrong Bearer header and does not run", async () => {
+    const res = await request(app)
+      .post(WEBHOOK)
+      .set("Authorization", "Bearer nope")
+      .send({ orderNumber: "000002" });
+
+    expect(res.status).toBe(401);
+    expect(mockNotify).not.toHaveBeenCalled();
+  });
+
   it("returns 400 when no order number is supplied", async () => {
     const res = await request(app).post(`${WEBHOOK}?secret=s3cret`).send({});
 

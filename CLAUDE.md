@@ -149,8 +149,9 @@ Express app (artifacts/api-server)  ──►  Notion REST API (orders database)
   │                                  (best-effort, from orders@) — but only on
   │                                  FORWARD movement, gated by a `Last Notified
   │                                  Stage` marker so a backward edit / re-fire
-  │                                  doesn't email. Auth is a `?secret=<CRON_SECRET>`
-  │                                  query token. NOT part of the OpenAPI contract.
+  │                                  doesn't email. Auth is a Bearer CRON_SECRET
+  │                                  header (or a `?secret=` query token). NOT part
+  │                                  of the OpenAPI contract.
   ├─ GET  /api/webhooks/notion-stage-change/run
   │                                → the SAME send, on demand: a link the atelier
   │                                  opens (`?secret=<CRON_SECRET>&order=<ORD>`) to
@@ -671,12 +672,14 @@ happens **inside Notion**, and there's no Notion→app trigger, so this is drive
 
 1. **Trigger is a Notion automation, not a poll.** The atelier adds a database
    automation on the Order Tracking Pipeline — _when `Stage` changes_ → _send
-   webhook_ to `POST /api/webhooks/notion-stage-change?secret=<CRON_SECRET>` with a
-   JSON body `{ "orderNumber": <Order Number property> }`. Auth reuses `CRON_SECRET`
-   as a `?secret=` query token (a Notion "Send webhook" action can set the URL but
-   not custom headers — same tradeoff as the milestone button). Both this and the
-   on-demand `…/run` link are **outside the OpenAPI contract**, mounted directly in
-   `app.ts` like the Stripe webhook.
+   webhook_ to `POST /api/webhooks/notion-stage-change` with a JSON body
+   `{ "orderNumber": <Order Number property> }`. Auth reuses `CRON_SECRET`, accepted
+   two ways: an **`Authorization: Bearer <CRON_SECRET>` header** (preferred — the
+   Notion automation supports custom headers, and it keeps the token out of the URL
+   and logs) **or** a `?secret=<CRON_SECRET>` query token (the fallback the browser
+   `/run` link uses, since a link can't send headers). Both this and the on-demand
+   `…/run` link are **outside the OpenAPI contract**, mounted directly in `app.ts`
+   like the Stripe webhook.
 
 2. **Re-fetch, don't trust the payload.** The webhook carries only the order number;
    the server reads the order back from Notion (`findOrderForStageNotification` —

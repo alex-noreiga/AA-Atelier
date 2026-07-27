@@ -12,14 +12,28 @@
 //      confirmation page for the tab it opens. Add `&force=1` to resend even when
 //      the order hasn't moved forward (the automation never forces).
 //
-// Auth: both reuse `CRON_SECRET` as a `?secret=` query token — a Notion "Send
-// webhook" action can set the URL but not custom headers, same tradeoff as the
-// milestone button. The request logger strips the query string, so the token
-// isn't logged; it's still visible in the automation config + browser history.
+// Auth (both) reuses `CRON_SECRET`, accepted two ways: an `Authorization: Bearer
+// <CRON_SECRET>` header (preferred — keeps the token out of the URL, referrers,
+// and logs; use it on the Notion automation, which supports custom headers) OR a
+// `?secret=<CRON_SECRET>` query token (the fallback for the browser `/run` link,
+// which can't send headers). The request logger strips the query string, so the
+// query token isn't logged; it is still visible in the URL / browser history.
 
 import type { Request, Response } from "express";
 import { notifyOrderStageChange } from "../services/order-notification.service.js";
 import { logger } from "../lib/logger.js";
+
+/** Authorized when the Bearer header OR the ?secret= query matches CRON_SECRET.
+ * The header is preferred (token stays out of the URL); the query token is the
+ * fallback for the browser `/run` link, which can't set a custom header. */
+function isAuthorized(req: Request): boolean {
+  const secret = process.env.CRON_SECRET;
+  if (!secret) return false;
+  return (
+    req.headers.authorization === `Bearer ${secret}` ||
+    req.query.secret === secret
+  );
+}
 
 /** The order number, from the POST body (Notion automation) or ?order= (link). */
 function orderNumberFrom(req: Request): string {
@@ -49,8 +63,7 @@ export async function notionStageChangeHandler(
   req: Request,
   res: Response,
 ): Promise<void> {
-  const secret = process.env.CRON_SECRET;
-  if (!secret || req.query.secret !== secret) {
+  if (!isAuthorized(req)) {
     res.status(401).json({ error: "Unauthorized" });
     return;
   }
@@ -76,8 +89,7 @@ export async function notionStageChangeButtonHandler(
   req: Request,
   res: Response,
 ): Promise<void> {
-  const secret = process.env.CRON_SECRET;
-  if (!secret || req.query.secret !== secret) {
+  if (!isAuthorized(req)) {
     res
       .status(401)
       .type("html")
