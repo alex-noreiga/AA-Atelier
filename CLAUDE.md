@@ -764,7 +764,7 @@ the existing lookups, not new order/invoice logic. Frontend: `pages/account-logi
 5. **New Notion queries: by email.** The existing order/shop-order lookups were
    keyed by order number; the portal adds `findOrdersByEmail` (orders) and
    `findShopOrdersByEmail` (shop orders) — filtered on the `Email` / `Customer
-   Email` property, paginated, returning lightweight summaries (no per-order
+Email` property, paginated, returning lightweight summaries (no per-order
    milestone/invoice fan-out; the cards link out to `/track` and `/invoice/:n`).
    Caveat: Notion's email `equals` is **exact**, so an order stored under a
    differently-cased address than the sign-in email won't match, and orders
@@ -775,7 +775,7 @@ the existing lookups, not new order/invoice logic. Frontend: `pages/account-logi
    detail pages). **Appointments and measurement history are deliberately deferred**
    — appointments have no read-by-customer path (Google Calendar is write +
    free/busy only; would need a net-new `events.list`-by-attendee), and
-   measurements live in order page *body blocks*, not readable properties (the
+   measurements live in order page _body blocks_, not readable properties (the
    `TODO(measurements-b)` migration is a prerequisite). Both are fast-follows.
 
 The atelier must, one time: set `SESSION_SECRET` (a long random string) and
@@ -1119,7 +1119,7 @@ and in the maintainer's env without edits.
 | Change appointment types / routing rules           | `api-server/src/lib/appointments/catalog.ts` (targeted business rule — durations, which staff, which locations)                                                                                                                                                                                                                                                 |
 | Change staff working hours / calendars             | The working-hours **Google Sheet** (`APPOINTMENT_SHEET_ID`); read in `api-server/src/lib/google/sheets.repository.ts`, parsed by `lib/appointments/staff.ts`                                                                                                                                                                                                    |
 | Change appointment slot logic / policy             | `api-server/src/lib/appointments/availability.ts` (`computeSlots`) + `time.ts` + `settings.ts`; `services/appointments.service.ts` + `routes/appointments.ts` + `lib/google/*` (Calendar free/busy + event insert)                                                                                                                                              |
-| Change the customer account portal (magic-link)    | `artifacts/web-app/src/pages/account.tsx` + `pages/account-login.tsx` (frontend); `api-server/src/services/account.service.ts` + `routes/account.ts` + `routes/account-verify.ts` + `middlewares/auth.ts` + `lib/auth/{tokens,cookies}.ts`; queries `findOrdersByEmail` / `findShopOrdersByEmail`                                                                |
+| Change the customer account portal (magic-link)    | `artifacts/web-app/src/pages/account.tsx` + `pages/account-login.tsx` (frontend); `api-server/src/services/account.service.ts` + `routes/account.ts` + `routes/account-verify.ts` + `middlewares/auth.ts` + `lib/auth/{tokens,cookies}.ts`; queries `findOrdersByEmail` / `findShopOrdersByEmail`                                                               |
 | Add a page / route                                 | new `src/pages/*.tsx` + `<Route>` in `src/App.tsx`                                                                                                                                                                                                                                                                                                              |
 | Add or rename a nav link                           | `NAV_LINKS` in `artifacts/web-app/src/components/navbar.tsx`                                                                                                                                                                                                                                                                                                    |
 | Add a shared UI component                          | `artifacts/web-app/src/components/ui/`                                                                                                                                                                                                                                                                                                                          |

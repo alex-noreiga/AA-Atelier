@@ -12,7 +12,7 @@ Phase-1 roadmap item #2.
   **stateless signed tokens**, not server sessions:
   - `lib/auth/tokens.ts` — `base64url(payload).base64url(HMAC-SHA256)` signed with
     `SESSION_SECRET` (Node `crypto`, **no new dep**). Payload `{ email, purpose,
-    exp }`; purposes `magic` (15 min) / `session` (30 days). `verifyToken` never
+exp }`; purposes `magic` (15 min) / `session` (30 days). `verifyToken` never
     throws (bad sig / wrong purpose / expiry ⇒ null). Unset secret ⇒ portal inert.
   - `lib/auth/cookies.ts` — httpOnly `aa_session` cookie (`secure` outside dev,
     `sameSite:"lax"` so it survives the magic-link navigation). Set via Express's
@@ -41,6 +41,7 @@ Phase-1 roadmap item #2.
 
 Shipped: orders + shop orders + invoices (invoices ride the order detail pages).
 **Deferred** (each a fast-follow, not free):
+
 - **Appointments** — no read-by-customer path today (Google Calendar is write +
   free/busy only; needs a net-new `events.list`-by-attendee, or mirroring bookings
   to Notion at booking time).
