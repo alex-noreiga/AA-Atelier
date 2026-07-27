@@ -766,8 +766,9 @@ the existing lookups, not new order/invoice logic. Frontend: `pages/account-logi
    place a new runtime dep was justified, since CodeQL only recognises known
    limiter libraries; default **in-memory** store, so it's per serverless
    instance/best-effort, same caveat as the alert de-dupe). It brakes sign-in
-   email-spam + token guessing. `parseCookies` also guards `__proto__`/
-   `constructor`/`prototype` names (the cookie name is attacker-controlled).
+   email-spam + token guessing. `parseCookies` returns a **`Map`** (not a plain
+   object) so the attacker-controlled cookie name can't pollute a prototype or
+   clobber object properties (CodeQL remote-property-injection).
 
 5. **New Notion queries: by email.** The existing order/shop-order lookups were
    keyed by order number; the portal adds `findOrdersByEmail` (orders) and

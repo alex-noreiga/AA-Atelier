@@ -26,9 +26,10 @@ exp }`; purposes `magic` (15 min) / `session` (30 days). `verifyToken` never
     only recognises known limiter libraries (a hand-rolled one wouldn't clear the
     alert). Default in-memory store ⇒ per serverless instance/best-effort (same
     caveat as the alert de-dupe); brakes sign-in email-spam + token guessing.
-  - `parseCookies` guards `__proto__`/`constructor`/`prototype` (attacker-controlled
-    cookie names) + uses a null-prototype object — fixes CodeQL remote-property-
-    injection.
+  - `parseCookies` returns a **`Map`** (not a plain object) — the attacker-
+    controlled cookie name is a Map key, so it can't pollute a prototype or clobber
+    object properties. Fixes CodeQL remote-property-injection (a Set-based guard +
+    null-proto object did **not** satisfy the query; a Map does).
 
 - **Flow.** `POST /account/login` (contract) emails a magic link →
   `GET /api/account/verify?token=` (**outside the contract**, hand-mounted in

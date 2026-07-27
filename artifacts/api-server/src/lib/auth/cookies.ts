@@ -14,29 +14,27 @@ import { SESSION_TTL_SECONDS } from "./tokens.js";
 
 export const SESSION_COOKIE = "aa_session";
 
-// Cookie names that must never be used as a write key — they'd pollute the
-// object's prototype. The name comes straight from the request header, so a
-// malicious `Cookie: __proto__=…` must be dropped, not written.
-const UNSAFE_COOKIE_NAMES = new Set(["__proto__", "constructor", "prototype"]);
-
-/** Parse a raw `Cookie` header into a name→value map (values URL-decoded). */
-export function parseCookies(
-  header: string | undefined,
-): Record<string, string> {
-  // Null-prototype object so a dynamic write can't reach Object.prototype even
-  // if a guarded name slipped through — defense in depth alongside the guard.
-  const out: Record<string, string> = Object.create(null);
+/**
+ * Parse a raw `Cookie` header into a name→value map (values URL-decoded). The
+ * cookie name comes straight from the attacker-controllable request header and is
+ * used as the map key, so a **`Map`** is used rather than a plain object: dynamic
+ * `Map.set` can't reach `Object.prototype` (no prototype pollution) and can't
+ * clobber arbitrary object properties (no remote property injection) — a name
+ * like `__proto__` is just an ordinary, isolated entry.
+ */
+export function parseCookies(header: string | undefined): Map<string, string> {
+  const out = new Map<string, string>();
   if (!header) return out;
   for (const part of header.split(";")) {
     const eq = part.indexOf("=");
     if (eq < 0) continue;
     const name = part.slice(0, eq).trim();
-    if (!name || UNSAFE_COOKIE_NAMES.has(name)) continue;
+    if (!name) continue;
     const value = part.slice(eq + 1).trim();
     try {
-      out[name] = decodeURIComponent(value);
+      out.set(name, decodeURIComponent(value));
     } catch {
-      out[name] = value;
+      out.set(name, value);
     }
   }
   return out;
@@ -44,7 +42,7 @@ export function parseCookies(
 
 /** The session token from the request's cookies, or null when absent. */
 export function readSessionToken(req: Request): string | null {
-  return parseCookies(req.headers.cookie)[SESSION_COOKIE] ?? null;
+  return parseCookies(req.headers.cookie).get(SESSION_COOKIE) ?? null;
 }
 
 function isProduction(): boolean {
