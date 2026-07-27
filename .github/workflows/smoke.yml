@@ -3,8 +3,10 @@ name: Production smoke tests
 # Weekly synthetic monitor: drives the REAL deployed site through its standard,
 # read-only customer flows (see tests/smoke/) to catch production breakage a
 # mocked CI run can't — a bad deploy, a Notion/Google outage, an unshared
-# database. On failure it opens (or updates) a GitHub issue so a regression is
-# visible, not buried in an inbox.
+# database. After every scheduled run it emails a pass/fail report to the atelier
+# via Resend (scripts/email-smoke-report.mjs — needs the RESEND_API_KEY and
+# RESEND_FROM_EMAIL repo secrets; skipped if unset). On failure it ALSO opens (or
+# updates) a GitHub issue so a regression is visible, not buried in an inbox.
 on:
   schedule:
     # Mondays at 13:00 UTC (~7-8am US Central, the atelier's timezone).
@@ -79,6 +81,23 @@ jobs:
           name: smoke-report
           path: tests/smoke-report/
           retention-days: 30
+
+      # Email a pass/fail summary to the atelier via Resend (the same mailer the
+      # app uses) after every weekly run — a green "all clear" is as useful as a
+      # red alarm for a synthetic monitor. Runs on both pass and fail, and is
+      # itself best-effort: the script self-gates when Resend isn't configured and
+      # never exits non-zero, so a mail hiccup can't turn a green run red. Skipped
+      # for manual preview runs (those are exploratory). The failure GitHub issue
+      # below is unchanged.
+      - name: Email smoke report
+        if: ${{ !cancelled() && github.event_name == 'schedule' }}
+        working-directory: tests
+        env:
+          RESEND_API_KEY: ${{ secrets.RESEND_API_KEY }}
+          RESEND_FROM_EMAIL: ${{ secrets.RESEND_FROM_EMAIL }}
+          SMOKE_REPORT_TO: ${{ vars.SMOKE_REPORT_TO || 'alexandra@a3iceanddance.com' }}
+          SMOKE_JOB_STATUS: ${{ job.status }}
+        run: node scripts/email-smoke-report.mjs
 
       # On failure, open a fresh issue or comment on the existing open one so
       # repeated weekly failures collapse into a single thread instead of

@@ -849,8 +849,13 @@ so it's safe to run against production forever. The `.smoke.ts` extension +
 `testMatch` keep it out of the `e2e` run (and Vitest) and vice versa, same
 extension-tracks-the-runner convention as `.test.ts`/`.spec.ts`. It runs **weekly**
 (not on every push) via `.github/workflows/smoke.yml` (`schedule` cron +
-`workflow_dispatch`); on a scheduled failure the workflow opens or updates a single
-GitHub issue so a regression is visible rather than buried.
+`workflow_dispatch`); after every scheduled run it **emails a pass/fail report** to
+the atelier (`tests/scripts/email-smoke-report.mjs`, sent through the app's Resend
+mailer — needs the `RESEND_API_KEY` + `RESEND_FROM_EMAIL` repo secrets, recipient
+`SMOKE_REPORT_TO` defaulting to the atelier inbox; the script self-gates and never
+fails the job if Resend is unset), built from the run's `json` reporter output. On a
+scheduled failure the workflow **also** opens or updates a single GitHub issue so a
+regression is visible rather than buried.
 
 **CI.** `.github/workflows/ci.yml` runs on every pull request and push to `main`:
 install → `pnpm typecheck` → `pnpm test` (both Vitest suites) → `pnpm test:e2e`
