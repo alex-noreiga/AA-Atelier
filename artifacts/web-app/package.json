@@ -52,5 +52,8 @@
     "vitest": "^4.1.10",
     "wouter": "catalog:",
     "zod": "catalog:"
+  },
+  "dependencies": {
+    "@vercel/analytics": "^2.0.1"
   }
 }

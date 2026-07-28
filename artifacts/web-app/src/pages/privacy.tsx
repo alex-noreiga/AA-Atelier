@@ -1,6 +1,37 @@
 import { LegalPage, LegalSection } from "@/components/legal-page";
 import { ROUTE_SEO } from "@/lib/seo-routes";
 import { CONTACT_EMAIL } from "@/lib/contact-info";
+import { Button } from "@/components/ui/button";
+import { useConsent } from "@/lib/consent";
+
+const CONSENT_LABEL: Record<string, string> = {
+  granted: "Accepted — analytics is on",
+  denied: "Declined — analytics is off",
+  unset: "Not set yet",
+};
+
+// Lets a visitor revisit the analytics choice they made in the consent banner,
+// as easily as they gave it. `reset()` clears the stored choice, which brings
+// the banner back so they can decide again.
+function ManageCookiePreferences() {
+  const { status, reset } = useConsent();
+  return (
+    <div className="space-y-3">
+      <p>
+        Your current choice:{" "}
+        <strong className="text-foreground">{CONSENT_LABEL[status]}</strong>.
+      </p>
+      <Button
+        variant="outline"
+        size="sm"
+        onClick={reset}
+        data-testid="manage-cookie-preferences"
+      >
+        Change cookie preferences
+      </Button>
+    </div>
+  );
+}
 
 // NOTE: This is starter policy copy grounded in what the app actually does
 // (Stripe payments, Notion/Resend/Google as processors, measurement + CRM data).
@@ -62,6 +93,23 @@ export default function Privacy() {
             scheduling and booking.
           </li>
         </ul>
+      </LegalSection>
+
+      <LegalSection title="Cookies and analytics">
+        <p>
+          We keep cookies to a minimum. A strictly necessary cookie keeps you
+          signed in to your account when you use the customer portal — this is
+          always on, because the site can't work without it.
+        </p>
+        <p>
+          With your permission, we also use privacy-friendly web analytics to
+          understand how our site is used — which pages are visited and where
+          visitors drop off — so we can improve it. This analytics is
+          cookieless, does not track you across other websites, and is only
+          loaded once you accept it. You can accept or decline from the banner
+          shown on your first visit, and change your mind at any time below.
+        </p>
+        <ManageCookiePreferences />
       </LegalSection>
 
       <LegalSection title="Data retention">

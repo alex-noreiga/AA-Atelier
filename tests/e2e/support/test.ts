@@ -23,6 +23,19 @@ export const test = base.extend({
   page: async ({ page }, use) => {
     const unmocked: string[] = [];
 
+    // Pre-seed a cookie-consent choice so the opt-in banner (fixed to the
+    // bottom of the viewport) never shows during e2e. Left unset it would cover
+    // bottom-of-page controls and intercept clicks; "denied" also keeps the
+    // real analytics script from loading, matching the offline/deterministic
+    // contract. Specs that exercise the banner itself can override this.
+    await page.addInitScript(() => {
+      try {
+        window.localStorage.setItem("aa-cookie-consent", "denied");
+      } catch {
+        /* localStorage may be unavailable; the banner is non-blocking anyway */
+      }
+    });
+
     await page.route("**/api/**", (route) => {
       const req = route.request();
       unmocked.push(`${req.method()} ${new URL(req.url()).pathname}`);

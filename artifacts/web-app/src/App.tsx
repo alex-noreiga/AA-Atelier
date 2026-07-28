@@ -27,6 +27,9 @@ import Privacy from "@/pages/privacy";
 import Terms from "@/pages/terms";
 import ShippingReturns from "@/pages/shipping-returns";
 import { CartProvider } from "@/lib/cart";
+import { ConsentProvider } from "@/lib/consent";
+import CookieConsentBanner from "@/components/cookie-consent-banner";
+import ConsentedAnalytics from "@/components/analytics";
 
 const queryClient = new QueryClient();
 
@@ -74,13 +77,17 @@ function App() {
   return (
     <QueryClientProvider client={queryClient}>
       <TooltipProvider>
-        <CartProvider>
-          <WouterRouter base={import.meta.env.BASE_URL.replace(/\/$/, "")}>
-            <Navbar />
-            <Router />
-            <Footer />
-          </WouterRouter>
-        </CartProvider>
+        <ConsentProvider>
+          <CartProvider>
+            <WouterRouter base={import.meta.env.BASE_URL.replace(/\/$/, "")}>
+              <Navbar />
+              <Router />
+              <Footer />
+              <CookieConsentBanner />
+              <ConsentedAnalytics />
+            </WouterRouter>
+          </CartProvider>
+        </ConsentProvider>
         <Toaster />
       </TooltipProvider>
     </QueryClientProvider>
