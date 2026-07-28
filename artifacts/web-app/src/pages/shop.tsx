@@ -420,32 +420,88 @@ function metaDescription(product: Product): string {
   return base.length > 160 ? `${base.slice(0, 157)}…` : base;
 }
 
-/** schema.org Product + Offer(s) for a shop card, for search-result rich data. */
+const IN_STOCK = "https://schema.org/InStock";
+const OUT_OF_STOCK = "https://schema.org/OutOfStock";
+
+/**
+ * schema.org Product + Offer(s) for a shop card, for search-result rich data.
+ * Carries the fields Google recommends for Product rich results — `brand`,
+ * `sku`, `url`, and `image` — and collapses multiple priced variants into an
+ * `AggregateOffer` (a single variant stays a plain `Offer`).
+ */
 function productJsonLd(product: Product): Record<string, unknown> {
   const variant = product.variants[0];
   const url = `${SITE_ORIGIN}/shop/${product.id}`;
-  const offers = product.variants
-    .filter((v) => typeof v.price === "number")
-    .map((v) => ({
+  const pricedVariants = product.variants.filter(
+    (v) => typeof v.price === "number",
+  );
+  const prices = pricedVariants
+    .map((v) => v.price)
+    .filter((p): p is number => typeof p === "number");
+
+  let offers: Record<string, unknown> | undefined;
+  if (pricedVariants.length === 1) {
+    offers = {
       "@type": "Offer",
-      price: v.price,
+      price: pricedVariants[0].price,
       priceCurrency: "USD",
-      availability: v.available
-        ? "https://schema.org/InStock"
-        : "https://schema.org/OutOfStock",
+      availability: pricedVariants[0].available ? IN_STOCK : OUT_OF_STOCK,
       url,
-    }));
+    };
+  } else if (prices.length > 1) {
+    offers = {
+      "@type": "AggregateOffer",
+      lowPrice: Math.min(...prices),
+      highPrice: Math.max(...prices),
+      priceCurrency: "USD",
+      offerCount: prices.length,
+      // Available if any priced variant is in stock.
+      availability: pricedVariants.some((v) => v.available)
+        ? IN_STOCK
+        : OUT_OF_STOCK,
+      url,
+    };
+  }
 
   return {
     "@context": "https://schema.org",
     "@type": "Product",
     name: product.title,
     category: product.category,
+    brand: { "@type": "Brand", name: "A.A Atelier" },
+    sku: product.id,
+    url,
     ...(variant?.description ? { description: variant.description } : {}),
     ...(variant && variant.photos.length > 0 ? { image: variant.photos } : {}),
-    ...(offers.length > 0
-      ? { offers: offers.length === 1 ? offers[0] : offers }
-      : {}),
+    ...(offers ? { offers } : {}),
+  };
+}
+
+/** Home › Shop › Product breadcrumb trail, so search results show the path. */
+function breadcrumbJsonLd(product: Product): Record<string, unknown> {
+  return {
+    "@context": "https://schema.org",
+    "@type": "BreadcrumbList",
+    itemListElement: [
+      {
+        "@type": "ListItem",
+        position: 1,
+        name: "Home",
+        item: `${SITE_ORIGIN}/`,
+      },
+      {
+        "@type": "ListItem",
+        position: 2,
+        name: "Shop",
+        item: `${SITE_ORIGIN}/shop`,
+      },
+      {
+        "@type": "ListItem",
+        position: 3,
+        name: product.title,
+        item: `${SITE_ORIGIN}/shop/${product.id}`,
+      },
+    ],
   };
 }
 
@@ -461,6 +517,7 @@ function ProductSeo({ product }: { product: Product }) {
         {...(image ? { image } : {})}
       />
       <StructuredData data={productJsonLd(product)} />
+      <StructuredData data={breadcrumbJsonLd(product)} />
     </>
   );
 }

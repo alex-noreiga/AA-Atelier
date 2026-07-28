@@ -1033,6 +1033,47 @@ The atelier must, one time: set `SESSION_SECRET` (a long random string) and
 copy lives in `lib/resend/emails.ts` (`magicLinkEmail`), sent from the `orders`
 category sender.
 
+## Web analytics & cookie consent
+
+The site collects **privacy-friendly web analytics** (pageviews + client-side
+navigations) via **Vercel Web Analytics** (`@vercel/analytics/react`), gated
+behind an explicit **opt-in cookie-consent banner**. It's a purely client-side
+feature — **no backend, no data model, no new env var** — that builds on the
+existing Vercel deployment (enable _Web Analytics_ in the Vercel project
+dashboard for data to flow; nothing else deploy-side). Frontend only:
+`lib/consent.tsx` (the consent context), `components/analytics.tsx` (the gated
+`<Analytics />`), `components/cookie-consent-banner.tsx` (the banner), all wired
+in `App.tsx`, plus a "Cookies and analytics" section + "Manage cookie
+preferences" control on `pages/privacy.tsx`. Load-bearing decisions:
+
+1. **Consent is opt-IN, and analytics is the only thing it gates.**
+   `ConsentProvider` holds one status — `"granted" | "denied" | "unset"` —
+   persisted to `localStorage` under `aa-cookie-consent`. Until the visitor
+   chooses, status is `"unset"`, the banner shows, and **nothing non-essential
+   loads**. `ConsentedAnalytics` renders Vercel's `<Analytics />` (which injects
+   the insights script) **only** when status is `"granted"`, so no analytics
+   request is made otherwise. The banner and analytics are mounted once in
+   `App.tsx` inside the router.
+
+2. **Essential cookies are never gated here.** The account-portal session cookie
+   is strictly necessary and out of scope for the banner — there's deliberately
+   no "reject essential" path. Vercel Web Analytics is itself **cookieless** and
+   doesn't track across sites; the opt-in gate is kept anyway for compliance and
+   so the gate is already in place if analytics ever moves to a cookie-based
+   provider.
+
+3. **The choice is revisitable.** The privacy page's "Manage cookie
+   preferences" control (`ManageCookiePreferences`) calls the context's
+   `reset()`, which clears the stored choice so the banner reappears — letting a
+   visitor withdraw consent as easily as they gave it. This is why
+   `pages/privacy.tsx` now consumes `useConsent()` and its test wraps it in
+   `ConsentProvider`.
+
+Tests: `test/consent.test.tsx` (the context), `test/cookie-consent-banner.test.tsx`
+(banner show/hide + persistence), and `test/analytics.test.tsx` (the gate, with
+`@vercel/analytics/react` mocked). No E2E/smoke changes — the mocked e2e run
+never loads the real script, and the smoke suite is read-only.
+
 ## Development workflow
 
 ### Prerequisites
