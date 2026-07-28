@@ -37,6 +37,10 @@ export function PageShell({
 }: PageShellProps) {
   return (
     <main
+      id="main-content"
+      // Focus target for the skip link and route-change focus management
+      // (see components/skip-link.tsx and components/route-focus.tsx).
+      tabIndex={-1}
       className={cn(
         "min-h-[100dvh] w-full bg-background",
         align === "center" &&

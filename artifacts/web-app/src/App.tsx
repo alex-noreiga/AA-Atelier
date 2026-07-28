@@ -10,6 +10,8 @@ import { Toaster } from "@/components/ui/toaster";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import Navbar from "@/components/navbar";
 import Footer from "@/components/footer";
+import { SkipLink } from "@/components/skip-link";
+import { RouteFocus } from "@/components/route-focus";
 import NotFound from "@/pages/not-found";
 import Home from "@/pages/home";
 import Track from "@/pages/track";
@@ -76,6 +78,8 @@ function App() {
       <TooltipProvider>
         <CartProvider>
           <WouterRouter base={import.meta.env.BASE_URL.replace(/\/$/, "")}>
+            <SkipLink />
+            <RouteFocus />
             <Navbar />
             <Router />
             <Footer />
