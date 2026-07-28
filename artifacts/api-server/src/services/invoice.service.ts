@@ -175,6 +175,13 @@ export async function createPaymentCheckout(
         },
       },
     ],
+    // Let a customer redeem a promo code or gift card on Stripe's hosted page —
+    // for deposits and the balance alike — mirroring the shop cart. Stripe renders
+    // the redemption box and applies codes/gift cards created in the Stripe
+    // Dashboard, so the atelier can run returning-skater comps or honor a gift
+    // card with no code or contract change. On the taxed balance, Stripe recomputes
+    // tax on the post-discount amount.
+    allow_promotion_codes: true,
     // Tax on the final balance only (deposits are untaxed). Stripe Tax computes
     // it from the collected address; the invoice has no shipping step, so
     // collect a billing address for it.

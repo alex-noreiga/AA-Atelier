@@ -17,11 +17,11 @@ const STAGE_DESCRIPTIONS: Record<string, string> = {
     "We're currently sewing and constructing the garment by hand and machine.",
   Assembly: "We're now assembling all the pieces of your final costume.",
   Fitting: "We're currently in the process of scheduling your fitting(s)!",
-  "Rhinestoning/Deatiling":
+  "Rhinestoning/Detailing":
     "We're now applying hand-beading, crystals, and all the artistic final touches for your costume.",
   "Ready for delivery/pickup":
     "Your garment is complete and awaiting delivery or pickup.",
-  Delivery: "Your costume is now delivered!",
+  Delivered: "Your costume is now delivered!",
 };
 
 export function getStageDescription(stage: string): string {

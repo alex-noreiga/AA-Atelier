@@ -17,11 +17,18 @@ vi.mock("@workspace/api-client-react", () => ({
   getGetOrderStatusQueryKey: (n: string) => [n],
 }));
 
+// Stub the PDF builder so the download button can be exercised without pulling
+// jsPDF into jsdom (the page imports it dynamically on click).
+vi.mock("@/lib/pdf/invoice-pdf", () => ({ downloadInvoicePdf: vi.fn() }));
+
 import {
   useGetOrderStatus,
   useCreateOrderPayment,
 } from "@workspace/api-client-react";
+import { downloadInvoicePdf } from "@/lib/pdf/invoice-pdf";
 import InvoicePage from "@/pages/invoice";
+
+const mockDownload = vi.mocked(downloadInvoicePdf);
 
 const mockHook = vi.mocked(useGetOrderStatus);
 const mockPay = vi.mocked(useCreateOrderPayment);
@@ -112,5 +119,18 @@ describe("Invoice breakdown", () => {
 
     expect(screen.getByTestId("invoice-paid")).toBeInTheDocument();
     expect(screen.queryByTestId("button-pay-balance")).not.toBeInTheDocument();
+  });
+
+  it("downloads a PDF of the invoice for that order", async () => {
+    stubHook(mockHook, { data: orderRecord({ invoice, deposits }) });
+    render(<InvoicePage />);
+
+    await userEvent.click(screen.getByTestId("button-download-pdf"));
+    expect(mockDownload).toHaveBeenCalledWith({
+      orderNumber: "ORD-1",
+      orderName: "Ada – Custom Dress",
+      invoice,
+      deposits,
+    });
   });
 });

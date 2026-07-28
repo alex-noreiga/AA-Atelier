@@ -7,6 +7,7 @@ import {
 } from "@workspace/api-client-react";
 import { PageShell } from "@/components/page-shell";
 import { CtaLink } from "@/components/cta";
+import { DownloadPdfButton } from "@/components/download-pdf-button";
 import { Seo } from "@/components/seo";
 import { ROUTE_SEO } from "@/lib/seo-routes";
 import { ReceiptRow } from "@/components/receipt-row";
@@ -141,6 +142,18 @@ export default function ShopSuccess() {
                 </span>
               </div>
             </div>
+          </div>
+        )}
+
+        {data && lineItems.length > 0 && (
+          <div className="mt-6 flex justify-center">
+            <DownloadPdfButton
+              onDownload={async () => {
+                const { downloadReceiptPdf } =
+                  await import("@/lib/pdf/receipt-pdf");
+                downloadReceiptPdf(data);
+              }}
+            />
           </div>
         )}
 

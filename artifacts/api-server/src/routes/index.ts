@@ -7,6 +7,7 @@ import notifyRouter from "./notify.js";
 import checkoutRouter from "./checkout.js";
 import shopOrdersRouter from "./shop-orders.js";
 import appointmentsRouter from "./appointments.js";
+import accountRouter from "./account.js";
 
 const router = Router();
 
@@ -18,5 +19,6 @@ router.use(notifyRouter);
 router.use(checkoutRouter);
 router.use(shopOrdersRouter);
 router.use(appointmentsRouter);
+router.use(accountRouter);
 
 export default router;

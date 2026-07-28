@@ -10,6 +10,8 @@ import {
   findInvoice,
   listInvoiceLineItems,
   markInvoicePaid,
+  createInvoiceLineItem,
+  setInvoiceTitle,
 } from "../../src/lib/notion/invoice.repository.js";
 
 const isQuery = (path: string) => path.endsWith("/query");
@@ -159,5 +161,77 @@ describe("markInvoicePaid", () => {
     await expect(
       markInvoicePaid("inv-1", "second_deposit", "cs_1", client),
     ).rejects.toThrow(/status 400: bad/);
+  });
+});
+
+describe("createInvoiceLineItem", () => {
+  it("POSTs a new line item priced via Manual Unit Price, with no costing-item link", async () => {
+    const client = makeFakeClient((path) => {
+      if (path === "/v1/pages") return jsonResponse({ id: "new-line" });
+      throw new Error(`unexpected ${path}`);
+    });
+
+    await createInvoiceLineItem(
+      {
+        invoicePageId: "inv-1",
+        orderPageId: "ord-1",
+        name: "Red chiffon",
+        lineType: "Material",
+        unitPrice: 30,
+        materialUsageLineId: "u1",
+      },
+      client,
+    );
+
+    expect(client.calls[0].init?.method).toBe("POST");
+    const body = JSON.parse(client.calls[0].init!.body as string);
+    expect(body.parent).toEqual({ database_id: "test-db-id" });
+    expect(body.properties["Line Type"]).toEqual({
+      select: { name: "Material" },
+    });
+    expect(body.properties["Manual Unit Price"]).toEqual({ number: 30 });
+    expect(body.properties["Material Usage Line"]).toEqual({
+      relation: [{ id: "u1" }],
+    });
+    // Deliberately never links the costing item (would re-introduce the double charge).
+    expect(body.properties["Costing Item"]).toBeUndefined();
+  });
+
+  it("throws when creation fails", async () => {
+    const client = makeFakeClient(() => errorResponse(400, "bad"));
+    await expect(
+      createInvoiceLineItem(
+        {
+          invoicePageId: "inv-1",
+          orderPageId: "ord-1",
+          name: "Labor",
+          lineType: "Labor",
+          unitPrice: 40,
+        },
+        client,
+      ),
+    ).rejects.toThrow(/status 400: bad/);
+  });
+});
+
+describe("setInvoiceTitle", () => {
+  it("PATCHes the Invoice ID title", async () => {
+    const client = makeFakeClient((path) => {
+      if (path === "/v1/pages/inv-1") return jsonResponse({ id: "inv-1" });
+      throw new Error(`unexpected ${path}`);
+    });
+
+    await setInvoiceTitle("inv-1", "ORD-1", client);
+
+    expect(client.calls[0].init?.method).toBe("PATCH");
+    const body = JSON.parse(client.calls[0].init!.body as string);
+    expect(body.properties["Invoice ID"].title[0].text.content).toBe("ORD-1");
+  });
+
+  it("throws when the update fails", async () => {
+    const client = makeFakeClient(() => errorResponse(500, "boom"));
+    await expect(setInvoiceTitle("inv-1", "ORD-1", client)).rejects.toThrow(
+      /status 500: boom/,
+    );
   });
 });

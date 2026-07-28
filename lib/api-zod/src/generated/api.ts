@@ -151,6 +151,36 @@ export const CreateMeasurementChangeRequestResponse = zod.object({
 
 
 /**
+ * Captures a customer's review of a finished custom order — a star rating, a short testimonial, an optional display name and photos of the finished piece — once the order has reached its final (delivered) stage. The customer is verified against the email on the order. Accepted reviews land in the Notion reviews database for the atelier to curate (and later feature in the portfolio). Photos are uploaded ahead of time via POST /orders/reference-images; their file_upload ids are passed as photoIds.
+ * @summary Leave a post-delivery review for an order
+ */
+export const CreateOrderReviewParams = zod.object({
+  "orderNumber": zod.coerce.string()
+})
+
+export const createOrderReviewBodyRatingMax = 5;
+
+export const createOrderReviewBodyCommentMax = 2000;
+
+export const createOrderReviewBodyDisplayNameMax = 120;
+
+
+
+export const CreateOrderReviewBody = zod.object({
+  "email": zod.string().email().describe('The email to verify against the one on the order. A review whose email doesn\'t match the order is rejected.'),
+  "rating": zod.number().min(1).max(createOrderReviewBodyRatingMax).describe('The star rating, 1 (poor) to 5 (excellent).'),
+  "comment": zod.string().min(1).max(createOrderReviewBodyCommentMax).describe('The customer\'s testimonial about their finished piece.'),
+  "displayName": zod.string().max(createOrderReviewBodyDisplayNameMax).optional().describe('How the customer would like to be credited if the review is featured (e.g. \"Ada L.\" or \"Ada, Chicago\"). Optional.'),
+  "consentToPublish": zod.boolean().optional().describe('Whether the customer gives permission to feature this review (and any photos) publicly, e.g. on the site\'s testimonials\/portfolio. Defaults to false.'),
+  "photoIds": zod.array(zod.string()).optional().describe('Notion file_upload ids for photos of the finished piece, uploaded ahead of time via POST \/orders\/reference-images. Attached to the review\'s Notion page as image blocks.')
+}).describe('A post-delivery review of a finished custom order. The customer supplies a star rating and a short testimonial; a display name, publish consent, and photos of the finished piece are optional. The server verifies the email against the order and only accepts the review once the order has been delivered.')
+
+export const CreateOrderReviewResponse = zod.object({
+  "received": zod.boolean()
+})
+
+
+/**
  * Saves a customer inquiry to the Notion contact-messages database
  * @summary Submit a contact message
  */
@@ -354,5 +384,48 @@ export const CreateAppointmentResponse = zod.object({
   "meetingUrl": zod.string().optional().describe('The Google Meet link for a virtual appointment, when one was created.'),
   "calendarLink": zod.string().optional().describe('A link to the booking\'s Google Calendar event.')
 })
+
+
+/**
+ * Emails the customer a one-time magic link that signs them into the account portal. Always responds 200 regardless of whether any orders exist for the address — identity is the email itself, so there is no account to enumerate. The email is sent best-effort; a mail outage never fails the request.
+ * @summary Request a passwordless sign-in link
+ */
+export const RequestMagicLinkBody = zod.object({
+  "email": zod.string().email().describe('The email to send the one-time sign-in link to.')
+})
+
+export const RequestMagicLinkResponse = zod.object({
+  "message": zod.string()
+}).describe('A generic human-readable acknowledgement.')
+
+
+/**
+ * Returns everything tied to the signed-in customer's email — their custom orders and their ready-to-wear shop orders — for the account dashboard. Requires a valid session cookie (set by the magic-link verify step); responds 401 when the caller isn't signed in.
+ * @summary The signed-in customer's orders and shop orders
+ */
+export const GetAccountOverviewResponse = zod.object({
+  "email": zod.string().describe('The signed-in customer\'s email.'),
+  "customOrders": zod.array(zod.object({
+  "orderNumber": zod.string(),
+  "orderName": zod.string(),
+  "currentStage": zod.string(),
+  "stages": zod.array(zod.string()).describe('The live ordered stage list, so the dashboard can show progress (e.g. \"3 of 6\").'),
+  "estimatedCompletion": zod.string().optional().describe('The order\'s target completion date (its Due Date) as an ISO date (yyyy-mm-dd). A pass-through string (no format: date). Absent until the atelier sets one.')
+}).describe('A custom order as shown on the account dashboard (links out to the full tracking + invoice views).')).describe('The customer\'s custom (bespoke) orders, newest-relevant first. Empty when none match the signed-in email.'),
+  "shopOrders": zod.array(zod.object({
+  "orderNumber": zod.string(),
+  "status": zod.string().describe('The order\'s current fulfilment status.'),
+  "total": zod.number().optional().describe('The order total in dollars, when recorded.')
+}).describe('A ready-to-wear shop order as shown on the account dashboard.')).describe('The customer\'s ready-to-wear shop orders. Empty when none match the signed-in email (older shop orders without an order number are omitted).')
+}).describe('Everything tied to the signed-in customer\'s email — the data the account dashboard renders.')
+
+
+/**
+ * Clears the session cookie. Idempotent — safe to call when already signed out.
+ * @summary Sign out of the account portal
+ */
+export const LogoutAccountResponse = zod.object({
+  "message": zod.string()
+}).describe('A generic human-readable acknowledgement.')
 
 

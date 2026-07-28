@@ -183,6 +183,39 @@ export interface NewMeasurementChangeResponse {
   received: boolean;
 }
 
+/**
+ * A post-delivery review of a finished custom order. The customer supplies a star rating and a short testimonial; a display name, publish consent, and photos of the finished piece are optional. The server verifies the email against the order and only accepts the review once the order has been delivered.
+ */
+export interface NewReviewRequest {
+  /** The email to verify against the one on the order. A review whose email doesn't match the order is rejected. */
+  email: string;
+  /**
+     * The star rating, 1 (poor) to 5 (excellent).
+     * @minimum 1
+     * @maximum 5
+     */
+  rating: number;
+  /**
+     * The customer's testimonial about their finished piece.
+     * @minLength 1
+     * @maxLength 2000
+     */
+  comment: string;
+  /**
+     * How the customer would like to be credited if the review is featured (e.g. "Ada L." or "Ada, Chicago"). Optional.
+     * @maxLength 120
+     */
+  displayName?: string;
+  /** Whether the customer gives permission to feature this review (and any photos) publicly, e.g. on the site's testimonials/portfolio. Defaults to false. */
+  consentToPublish?: boolean;
+  /** Notion file_upload ids for photos of the finished piece, uploaded ahead of time via POST /orders/reference-images. Attached to the review's Notion page as image blocks. */
+  photoIds?: string[];
+}
+
+export interface NewReviewResponse {
+  received: boolean;
+}
+
 export interface NewContactRequest {
   /** @minLength 1 */
   name: string;
@@ -400,6 +433,54 @@ export interface NewAppointmentResponse {
 
 export interface ErrorEnvelope {
   error: string;
+}
+
+/**
+ * A generic human-readable acknowledgement.
+ */
+export interface MessageResponse {
+  message: string;
+}
+
+export interface MagicLinkRequest {
+  /** The email to send the one-time sign-in link to. */
+  email: string;
+}
+
+/**
+ * A custom order as shown on the account dashboard (links out to the full tracking + invoice views).
+ */
+export interface AccountOrderSummary {
+  orderNumber: string;
+  orderName: string;
+  currentStage: string;
+  /** The live ordered stage list, so the dashboard can show progress (e.g. "3 of 6"). */
+  stages: string[];
+  /** The order's target completion date (its Due Date) as an ISO date (yyyy-mm-dd). A pass-through string (no format: date). Absent until the atelier sets one. */
+  estimatedCompletion?: string;
+}
+
+/**
+ * A ready-to-wear shop order as shown on the account dashboard.
+ */
+export interface AccountShopOrderSummary {
+  orderNumber: string;
+  /** The order's current fulfilment status. */
+  status: string;
+  /** The order total in dollars, when recorded. */
+  total?: number;
+}
+
+/**
+ * Everything tied to the signed-in customer's email — the data the account dashboard renders.
+ */
+export interface AccountOverview {
+  /** The signed-in customer's email. */
+  email: string;
+  /** The customer's custom (bespoke) orders, newest-relevant first. Empty when none match the signed-in email. */
+  customOrders: AccountOrderSummary[];
+  /** The customer's ready-to-wear shop orders. Empty when none match the signed-in email (older shop orders without an order number are omitted). */
+  shopOrders: AccountShopOrderSummary[];
 }
 
 export type GetAppointmentAvailabilityParams = {

@@ -9,19 +9,25 @@ import { getNotionClient, type NotionClient } from "./client.js";
 import { buildOrderProperties, buildOrderPageBlocks } from "./orders.blocks.js";
 import {
   ORDER_NUMBER_PROPERTY,
+  ORDER_EMAIL_PROPERTY,
   ORDER_DUE_DATE_PROPERTY,
   ORDER_MILESTONES_GENERATED_PROPERTY,
+  ORDER_LAST_NOTIFIED_STAGE_PROPERTY,
   extractStageOptions,
   extractOrderNumber,
   extractOrderName,
   extractCurrentStage,
   extractInvoiceRelationId,
+  extractCostingItemIds,
   extractDueDate,
   extractOrderEmail,
+  extractLastNotifiedStage,
   type CreateOrderInput,
   type NotionDatabaseSchema,
+  type NotionOrderPage,
   type NotionQueryResponse,
   type OrderRecord,
+  type OrderSummary,
 } from "./orders.schema.js";
 
 const STAGE_CACHE_TTL_MS = 60_000;
@@ -133,6 +139,7 @@ export async function findOrderByNumber(
 
   const estimatedCompletion = extractDueDate(page);
   const invoicePageId = extractInvoiceRelationId(page);
+  const costingItemIds = extractCostingItemIds(page);
   return {
     orderNumber: trimmedOrderNumber,
     orderName: extractOrderName(page),
@@ -141,7 +148,77 @@ export async function findOrderByNumber(
     pageId: page.id,
     ...(estimatedCompletion !== undefined ? { estimatedCompletion } : {}),
     ...(invoicePageId !== undefined ? { invoicePageId } : {}),
+    ...(costingItemIds.length > 0 ? { costingItemIds } : {}),
   };
+}
+
+/**
+ * Find every custom order placed under a customer's email, for the account
+ * portal. Filters on the `Email` property (`email: { equals }`) and paginates the
+ * full result set (a customer may have several orders — unlike the single-order
+ * lookups). The live ordered stage list is fetched once and shared across the
+ * summaries so a card can show progress. Returns a lightweight {@link OrderSummary}
+ * per order (no milestone/invoice fan-out — those load on the detail pages).
+ *
+ * Note: Notion's email `equals` is exact, so an order stored under a differently-
+ * cased address than the sign-in email won't match. Orders created before the
+ * `Email` property existed have no address to match and are invisible here —
+ * the customer can still track those by number.
+ */
+export async function findOrdersByEmail(
+  email: string,
+  client: NotionClient = getNotionClient(),
+): Promise<OrderSummary[]> {
+  assertConfigured(client);
+
+  const trimmed = email.trim();
+  if (!trimmed) return [];
+
+  const stages = await fetchLiveOrderStages(client);
+  const summaries: OrderSummary[] = [];
+  let cursor: string | undefined;
+
+  do {
+    const response = await client.fetch(
+      `/v1/databases/${client.databaseId}/query`,
+      {
+        method: "POST",
+        body: JSON.stringify({
+          filter: {
+            property: ORDER_EMAIL_PROPERTY,
+            email: { equals: trimmed },
+          },
+          ...(cursor ? { start_cursor: cursor } : {}),
+        }),
+      },
+    );
+
+    if (!response.ok) {
+      throw new Error(`Notion query failed with status ${response.status}`);
+    }
+
+    const data = (await response.json()) as NotionQueryResponse & {
+      has_more?: boolean;
+      next_cursor?: string | null;
+    };
+
+    for (const page of data.results) {
+      const orderNumber = extractOrderNumber(page);
+      if (!orderNumber) continue;
+      const estimatedCompletion = extractDueDate(page);
+      summaries.push({
+        orderNumber,
+        orderName: extractOrderName(page),
+        currentStage: extractCurrentStage(page),
+        stages,
+        ...(estimatedCompletion !== undefined ? { estimatedCompletion } : {}),
+      });
+    }
+
+    cursor = data.has_more && data.next_cursor ? data.next_cursor : undefined;
+  } while (cursor);
+
+  return summaries;
 }
 
 /** An order that has a due date set but whose per-stage milestones haven't been
@@ -261,17 +338,166 @@ export async function markMilestonesGenerated(
   }
 }
 
-/** What the measurement-change gates need about an order: the email to verify
- * against, plus the current stage and the live ordered stage list to decide
- * whether measurements are still editable. Kept separate from `OrderRecord`
- * (the public status view) so the email is never returned by order lookup. */
+/** What the status-change notification needs about an order: the recipient email
+ * (never exposed by the public order lookup) and the order's page id (to write the
+ * marker back), plus the fields the email renders — the order name/number, the
+ * live pipeline, the current stage, the target completion date, and the
+ * last-notified stage marker that gates the send to forward movement. Kept
+ * separate from `OrderRecord` so email stays out of the public status view. */
+export interface OrderStageNotification {
+  pageId: string;
+  orderNumber: string;
+  orderName: string;
+  email: string;
+  currentStage: string;
+  stages: string[];
+  /** The furthest stage already emailed about; empty when never notified. */
+  lastNotifiedStage: string;
+  estimatedCompletion?: string;
+}
+
+/** Map a Notion order page (+ the live stage list) to the notification view. */
+function buildStageNotification(
+  page: NotionOrderPage,
+  stages: string[],
+  fallbackNumber = "",
+): OrderStageNotification {
+  const estimatedCompletion = extractDueDate(page);
+  return {
+    pageId: page.id,
+    orderNumber: extractOrderNumber(page) || fallbackNumber,
+    orderName: extractOrderName(page),
+    email: extractOrderEmail(page),
+    currentStage: extractCurrentStage(page),
+    stages,
+    lastNotifiedStage: extractLastNotifiedStage(page),
+    ...(estimatedCompletion !== undefined ? { estimatedCompletion } : {}),
+  };
+}
+
+/**
+ * Look up an order for a status-change email by its number, including the
+ * customer email (which `findOrderByNumber` deliberately omits from the public
+ * view). Returns null when the order number is blank or no order matches.
+ */
+export async function findOrderForStageNotification(
+  orderNumber: string,
+  client: NotionClient = getNotionClient(),
+): Promise<OrderStageNotification | null> {
+  assertConfigured(client);
+
+  const trimmedOrderNumber = orderNumber.trim();
+  if (!trimmedOrderNumber) {
+    return null;
+  }
+
+  const [response, stages] = await Promise.all([
+    client.fetch(`/v1/databases/${client.databaseId}/query`, {
+      method: "POST",
+      body: JSON.stringify({
+        filter: {
+          property: ORDER_NUMBER_PROPERTY,
+          rich_text: { equals: trimmedOrderNumber },
+        },
+        page_size: 1,
+      }),
+    }),
+    fetchLiveOrderStages(client),
+  ]);
+
+  if (!response.ok) {
+    throw new Error(`Notion query failed with status ${response.status}`);
+  }
+
+  const data = (await response.json()) as NotionQueryResponse;
+  const page = data.results[0];
+  if (!page) {
+    return null;
+  }
+
+  return buildStageNotification(page, stages, trimmedOrderNumber);
+}
+
+/**
+ * Look up an order for a status-change email by its Notion **page id**, for the
+ * Notion automation webhook — its default payload carries the triggering page's
+ * id (`data.id`) but no easily-authored body, so we resolve straight off that id.
+ * Re-reads the authoritative page (never trusts the payload's own copy). Returns
+ * null when the id is blank or the page no longer exists.
+ */
+export async function findOrderForStageNotificationByPageId(
+  pageId: string,
+  client: NotionClient = getNotionClient(),
+): Promise<OrderStageNotification | null> {
+  assertConfigured(client);
+
+  const trimmedPageId = pageId.trim();
+  if (!trimmedPageId) {
+    return null;
+  }
+
+  const [response, stages] = await Promise.all([
+    client.fetch(`/v1/pages/${trimmedPageId}`),
+    fetchLiveOrderStages(client),
+  ]);
+
+  if (response.status === 404) {
+    return null;
+  }
+  if (!response.ok) {
+    throw new Error(`Notion page fetch failed with status ${response.status}`);
+  }
+
+  const page = (await response.json()) as NotionOrderPage;
+  return buildStageNotification(page, stages);
+}
+
+/**
+ * Record the stage the customer was last emailed about (the marker the
+ * status-change webhook reads to notify only on forward movement). Written after
+ * a notification is sent; setting the same value again is harmless (idempotent).
+ */
+export async function updateLastNotifiedStage(
+  pageId: string,
+  stage: string,
+  client: NotionClient = getNotionClient(),
+): Promise<void> {
+  assertConfigured(client);
+
+  const response = await client.fetch(`/v1/pages/${pageId}`, {
+    method: "PATCH",
+    body: JSON.stringify({
+      properties: {
+        [ORDER_LAST_NOTIFIED_STAGE_PROPERTY]: {
+          rich_text: [{ text: { content: stage } }],
+        },
+      },
+    }),
+  });
+
+  if (!response.ok) {
+    const errorText = await response.text();
+    throw new Error(
+      `Notion last-notified-stage update failed with status ${response.status}: ${errorText}`,
+    );
+  }
+}
+
+/** What an order-scoped gate needs about an order: the email to verify against,
+ * plus the current stage and the live ordered stage list to decide whether an
+ * action is still allowed (measurements editable, order delivered, …). Kept
+ * separate from `OrderRecord` (the public status view) so the email is never
+ * returned by order lookup. */
 export interface OrderVerification {
   email: string;
   currentStage: string;
   stages: string[];
 }
 
-export async function findOrderForMeasurementChange(
+/** Look up an order for a gated, email-verified action (a measurement change or
+ * a post-delivery review). Returns the stored email + the live stage list, or
+ * null when the order number is blank or unknown. */
+export async function findOrderVerification(
   orderNumber: string,
   client: NotionClient = getNotionClient(),
 ): Promise<OrderVerification | null> {
@@ -314,3 +540,7 @@ export async function findOrderForMeasurementChange(
     stages,
   };
 }
+
+/** @deprecated Prefer {@link findOrderVerification}. Kept so the measurement-
+ * change flow's existing imports (and their tests) keep resolving. */
+export { findOrderVerification as findOrderForMeasurementChange };
