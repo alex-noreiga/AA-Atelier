@@ -8,8 +8,18 @@ import {
   ORDER_NUMBER_PROPERTY,
   ORDER_EMAIL_PROPERTY,
   ORDER_CLIENT_PROPERTY,
+  ORDER_DUE_DATE_PROPERTY,
   type CreateOrderInput,
 } from "./orders.schema.js";
+
+/** Format the customer's "needed by" value as a Notion date string
+ * (`YYYY-MM-DD`). The contract coerces it to a `Date`, but we defend against a
+ * raw string reaching the builder. */
+function formatNeededBy(neededBy: NonNullable<CreateOrderInput["neededBy"]>) {
+  return neededBy instanceof Date
+    ? neededBy.toISOString().split("T")[0]
+    : String(neededBy);
+}
 
 function textBlock(label: string, value: string) {
   return {
@@ -42,6 +52,16 @@ function dividerBlock() {
   return { object: "block", type: "divider", divider: {} };
 }
 
+/** An image block backed by an already-uploaded Notion `file_upload` id (see
+ * `file-uploads.repository.ts`). Notion renders it inline on the order page. */
+function imageBlock(fileUploadId: string) {
+  return {
+    object: "block",
+    type: "image",
+    image: { type: "file_upload", file_upload: { id: fileUploadId } },
+  };
+}
+
 /**
  * Notion page `properties` for a new order. When `clientPageId` is given (the
  * order flow upserted a Client CRM record for this customer), the order is
@@ -54,7 +74,7 @@ export function buildOrderProperties(
 ): Record<string, unknown> {
   const properties: Record<string, unknown> = {
     [ORDER_NAME_PROPERTY]: {
-      title: [{ text: { content: `${data.fullName} – Custom Dress` } }],
+      title: [{ text: { content: `${data.fullName} – Custom Costume` } }],
     },
     [ORDER_NUMBER_PROPERTY]: {
       rich_text: [{ text: { content: orderNumber } }],
@@ -65,6 +85,15 @@ export function buildOrderProperties(
       email: data.email,
     },
   };
+  // The customer's "needed by" date is the atelier's target completion date, so
+  // seed the `Due Date` property from it directly at intake. The atelier can
+  // still adjust it in Notion; the milestone-reconciliation cron then picks the
+  // order up (see schedule.service.ts).
+  if (data.neededBy) {
+    properties[ORDER_DUE_DATE_PROPERTY] = {
+      date: { start: formatNeededBy(data.neededBy) },
+    };
+  }
   if (clientPageId) {
     properties[ORDER_CLIENT_PROPERTY] = {
       relation: [{ id: clientPageId }],
@@ -96,7 +125,7 @@ export function buildOrderPageBlocks(data: CreateOrderInput): unknown[] {
     ? [
         headingBlock(`Measurements (${data.measurementUnit})`),
         textBlock("Waist", String(data.waist)),
-        textBlock("Bust", String(data.bust)),
+        textBlock("Chest", String(data.bust)),
         textBlock("Hips", String(data.hips)),
         textBlock("Height", String(data.height)),
         textBlock("Body Girth", String(data.bodyGirth)),
@@ -111,18 +140,31 @@ export function buildOrderPageBlocks(data: CreateOrderInput): unknown[] {
         dividerBlock(),
       ];
 
-  const dressSection: unknown[] = [headingBlock("Dress Details")];
+  const costumeSection: unknown[] = [headingBlock("Costume Details")];
   if (data.description) {
-    dressSection.push(textBlock("Description", data.description));
+    costumeSection.push(textBlock("Description", data.description));
   }
   if (data.neededBy) {
-    const dateStr =
-      data.neededBy instanceof Date
-        ? data.neededBy.toISOString().split("T")[0]
-        : String(data.neededBy);
-    dressSection.push(textBlock("Needed By", dateStr));
+    costumeSection.push(textBlock("Needed By", formatNeededBy(data.neededBy)));
   }
-  dressSection.push(dividerBlock());
+  costumeSection.push(dividerBlock());
 
-  return [...contactSection, ...measurementSection, ...dressSection];
+  // Customer-uploaded reference / inspiration images, attached as inline image
+  // blocks by their Notion file_upload id (uploaded ahead of order-create via
+  // POST /orders/reference-images). Omitted entirely when none were uploaded.
+  const referenceSection: unknown[] =
+    data.referenceImageIds && data.referenceImageIds.length > 0
+      ? [
+          headingBlock("Reference Images"),
+          ...data.referenceImageIds.map(imageBlock),
+          dividerBlock(),
+        ]
+      : [];
+
+  return [
+    ...contactSection,
+    ...measurementSection,
+    ...costumeSection,
+    ...referenceSection,
+  ];
 }

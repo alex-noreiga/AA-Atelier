@@ -42,7 +42,14 @@ export default defineConfig({
   // Real backends (Notion, Google free/busy) are slower than a local mock.
   timeout: 60_000,
   reporter: process.env.CI
-    ? [["list"], ["html", { outputFolder: "smoke-report", open: "never" }]]
+    ? [
+        ["list"],
+        ["html", { outputFolder: "smoke-report", open: "never" }],
+        // Machine-readable results the weekly workflow turns into an emailed
+        // report (scripts/email-smoke-report.mjs). Written alongside the HTML
+        // report so both ship in the uploaded artifact.
+        ["json", { outputFile: "smoke-report/results.json" }],
+      ]
     : "list",
   use: {
     baseURL: BASE_URL,

@@ -15,7 +15,7 @@ const FAQS: { question: string; answer: string }[] = [
   {
     question: "How long does a custom costume take?",
     answer:
-      "Most commissions take six to eight weeks from consultation to final fitting. Competition season fills quickly, so we recommend booking a few months ahead of the date you need the costume in hand to account for any supply chain issues along the way.",
+      "Most commissions take between four to eight weeks from consultation to final fitting, depending on the complexity of the piece. Competition season fills quickly, so we recommend booking a few months ahead of the date you need the costume in hand to account for any supply chain issues along the way.",
   },
   {
     question: "How do I get measured?",
@@ -25,7 +25,12 @@ const FAQS: { question: string; answer: string }[] = [
   {
     question: "What does a commission cost?",
     answer:
-      "Price depends on the fabric, the amount of embellishment, and the complexity of the design. We quote each piece after the consultation, once we know what your commission calls for.",
+      "Every piece is priced individually — the final cost depends on the fabric, the amount of embellishment, and the complexity of the design. We quote each commission after your consultation, once we know what it calls for. As a starting point, commissions begin with a $100 deposit, and standalone services like fittings, alterations, rhinestoning, and repairs start at $50.",
+  },
+  {
+    question: "How do deposits and payment work?",
+    answer:
+      "Commissions are paid in stages, not all at once. You begin with a $100 deposit to reserve your place and start your design, followed by a second deposit of $50 to $100 at your first fitting depending on the detailing your piece calls for. The final balance — your materials and labor, itemized on an invoice — is due when the finished costume is ready. Each stage can be paid securely online from your order's tracking page.",
   },
   {
     question: "Can you rush an order?",
@@ -98,7 +103,7 @@ export default function About() {
               A.A. Atelier is a local, women owned business founded by figure
               skaters. We understand performative ice and dance attire can be
               expensive or not quite what you envisioned. That's why our mission
-              is to bring your ideas to life by creating custom dresses and
+              is to bring your ideas to life by creating custom costumes and
               accessories that are as unique as you are.
             </p>
             <p>

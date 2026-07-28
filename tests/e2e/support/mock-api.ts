@@ -46,6 +46,27 @@ export async function mockOrderStatus(
   return { requestedOrderNumbers };
 }
 
+/**
+ * Mock `GET /api/shop-orders/:orderNumber` (ready-to-wear order tracking).
+ * Mirrors {@link mockOrderStatus}: records the requested order numbers so a test
+ * can assert the `?orderNumber=` prefill flowed through to the query.
+ */
+export async function mockShopOrderStatus(
+  page: Page,
+  opts: { status?: number; body: unknown },
+): Promise<{ requestedOrderNumbers: string[] }> {
+  const requestedOrderNumbers: string[] = [];
+  await page.route("**/api/shop-orders/*", async (route) => {
+    if (route.request().method() !== "GET") return route.fallback();
+    const url = new URL(route.request().url());
+    requestedOrderNumbers.push(
+      decodeURIComponent(url.pathname.split("/").pop() ?? ""),
+    );
+    await json(route, opts.status ?? 200, opts.body);
+  });
+  return { requestedOrderNumbers };
+}
+
 /** Mock `POST /api/orders`. */
 export async function mockCreateOrder(
   page: Page,

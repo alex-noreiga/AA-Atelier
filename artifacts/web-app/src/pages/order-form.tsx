@@ -10,6 +10,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { PageShell } from "@/components/page-shell";
+import { ReferenceImageUpload } from "@/components/reference-image-upload";
 import { SuccessScreen } from "@/components/success-screen";
 import { Seo } from "@/components/seo";
 import { ROUTE_SEO } from "@/lib/seo-routes";
@@ -18,7 +19,8 @@ import { ArrowLeft, CalendarCheck, CheckCircle, Loader2 } from "lucide-react";
 
 const MEASUREMENT_FIELDS = [
   { key: "waist", label: "Waist" },
-  { key: "bust", label: "Bust" },
+  // The contract field stays `bust`; only the visible label is neutral.
+  { key: "bust", label: "Chest" },
   { key: "hips", label: "Hips" },
   { key: "height", label: "Height" },
   { key: "bodyGirth", label: "Body Girth" },
@@ -84,13 +86,17 @@ const formSchema = z
     }
   });
 
-type FormValues = z.infer<typeof formSchema>;
+type FormInput = z.input<typeof formSchema>;
+type FormValues = z.output<typeof formSchema>;
 
 export default function OrderForm() {
   const [success, setSuccess] = useState<{
     orderNumber: string;
     appointment: boolean;
   } | null>(null);
+  // Notion file_upload ids for reference images the customer uploaded (managed
+  // by <ReferenceImageUpload/>, which uploads each as it's chosen).
+  const [referenceImageIds, setReferenceImageIds] = useState<string[]>([]);
   const { toast } = useToast();
 
   const createOrder = useCreateOrder({
@@ -120,7 +126,7 @@ export default function OrderForm() {
     watch,
     setValue,
     formState: { errors },
-  } = useForm<FormValues>({
+  } = useForm<FormInput, any, FormValues>({
     resolver: zodResolver(formSchema),
     defaultValues: {
       measurementMode: "self",
@@ -173,6 +179,7 @@ export default function OrderForm() {
         ...measurements,
         ...(description ? { description } : {}),
         ...(neededBy ? { neededBy } : {}),
+        ...(referenceImageIds.length ? { referenceImageIds } : {}),
       },
     });
   };
@@ -200,7 +207,7 @@ export default function OrderForm() {
               </CtaLink>
             )}
             <Link
-              to="/shop/status"
+              to="/track"
               className="inline-flex items-center gap-2 text-sm tracking-widest uppercase text-muted-foreground hover:text-primary transition-colors"
               data-testid="link-track-order"
             >
@@ -235,7 +242,7 @@ export default function OrderForm() {
       <div className="max-w-2xl mx-auto px-6 pt-24 pb-20">
         <div className="mb-10">
           <Link
-            to="/shop/status"
+            to="/track"
             className="inline-flex items-center gap-2 text-sm text-muted-foreground hover:text-primary transition-colors tracking-widest uppercase mb-8 group"
             data-testid="link-track-my-order"
           >
@@ -246,7 +253,7 @@ export default function OrderForm() {
             Place an Order
           </h1>
           <p className="text-muted-foreground font-light text-lg">
-            Tell us about your dream dress and we'll bring it to life.
+            Tell us about your dream costume and we'll bring it to life.
           </p>
         </div>
 
@@ -464,7 +471,7 @@ export default function OrderForm() {
 
           <section>
             <h2 className="text-xs tracking-[0.2em] uppercase text-muted-foreground mb-6 pb-2 border-b border-border">
-              Dress Details
+              Costume Details
             </h2>
             <div className="space-y-6">
               <div>
@@ -509,10 +516,25 @@ export default function OrderForm() {
                   </p>
                 ) : (
                   <p className="text-muted-foreground/60 text-xs mt-1.5">
-                    Custom pieces typically take 8–12 weeks. If you have an
-                    event date, let us know and we'll advise on timing.
+                    Custom pieces typically take 4-8 weeks. If you have an event
+                    date, let us know and we'll advise on timing.
                   </p>
                 )}
+              </div>
+
+              <div>
+                <Label className="text-sm font-light tracking-wide">
+                  Reference Images
+                  <span className="text-muted-foreground/60 ml-1 text-xs">
+                    (optional)
+                  </span>
+                </Label>
+                <div className="mt-2">
+                  <ReferenceImageUpload
+                    onChange={setReferenceImageIds}
+                    disabled={submitting}
+                  />
+                </div>
               </div>
             </div>
           </section>

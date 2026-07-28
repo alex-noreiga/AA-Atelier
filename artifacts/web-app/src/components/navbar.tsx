@@ -31,17 +31,17 @@ const NAV_LINKS: readonly NavLink[] = [
       { to: "/services", label: "Overview" },
       { to: "/order", label: "Place an Order" },
       { to: "/appointments", label: "Book an Appointment" },
-      { to: "/shop/status", label: "Track Your Order" },
-      { to: "/shop/order-status", label: "Track a Shop Order" },
+      { to: "/track", label: "Track Your Order" },
     ],
   },
   { to: "/shop", label: "Shop" },
+  { to: "/account", label: "Account" },
   { to: "/contact", label: "Contact" },
 ];
 
 const testId = (label: string) => label.toLowerCase().replace(/\s+/g, "-");
 
-// Exact match only: /shop/status belongs to the Services group, so a prefix
+// Exact match only: /track belongs to the Services group, so a prefix
 // match on /shop would light up the wrong link.
 function isActive(current: string, link: NavLink) {
   return (

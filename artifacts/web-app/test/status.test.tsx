@@ -11,9 +11,22 @@ import { stubHook } from "./support/mock-hook.js";
 // create mutation hook — stub it so the page renders without the network.
 vi.mock("@workspace/api-client-react", () => ({
   useGetOrderStatus: vi.fn(),
+  // Track calls the shop hook too (Rules of Hooks); a numeric/ORD-* order number
+  // routes to the custom hook, so the shop one just needs a benign idle return.
+  useGetShopOrderStatus: vi.fn(() => ({
+    data: undefined,
+    isLoading: false,
+    error: null,
+  })),
   useCreateOrderPayment: vi.fn(),
   getGetOrderStatusQueryKey: (n: string) => [n],
+  getGetShopOrderStatusQueryKey: (n: string) => [n],
   useCreateMeasurementChangeRequest: () => ({
+    mutate: vi.fn(),
+    isPending: false,
+  }),
+  // A delivered order renders the review dialog, which uses this hook.
+  useCreateOrderReview: () => ({
     mutate: vi.fn(),
     isPending: false,
   }),
@@ -23,7 +36,7 @@ import {
   useGetOrderStatus,
   useCreateOrderPayment,
 } from "@workspace/api-client-react";
-import Status from "@/pages/status";
+import Track from "@/pages/track";
 
 const mockHook = vi.mocked(useGetOrderStatus);
 const mockPayment = vi.mocked(useCreateOrderPayment);
@@ -46,7 +59,7 @@ function setHook(state: {
 }
 
 async function submitLookup(orderNumber = "ORD-1") {
-  render(<Status />);
+  render(<Track />);
   await userEvent.type(screen.getByTestId("input-order-number"), orderNumber);
   await userEvent.click(screen.getByTestId("button-lookup"));
 }
@@ -108,7 +121,12 @@ describe("Status timeline completed/active/future computation", () => {
   });
 
   it("marks every earlier stage completed when the current stage is the last", async () => {
-    setHook({ data: orderRecord({ currentStage: "Delivery" }) });
+    setHook({
+      data: orderRecord({
+        currentStage: "Delivered",
+        stages: ["Consultation", "Sewing/Construction", "Delivered"],
+      }),
+    });
     await submitLookup();
     expect(screen.getByTestId("row-stage-0")).toHaveTextContent("Completed");
     expect(screen.getByTestId("row-stage-1")).toHaveTextContent("Completed");

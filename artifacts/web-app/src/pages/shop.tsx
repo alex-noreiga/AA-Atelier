@@ -259,7 +259,7 @@ function ProductCard({
   const variant = product.variants[selected] ?? product.variants[0];
   const selectable = variant.available && typeof variant.price === "number";
   // Matching add-ons follow the selected variant (color/style-specific), so a
-  // pink soaker offers its pink cloth. Recomputed per render — cheap map lookups.
+  // pink soaker offers its pink towel. Recomputed per render — cheap map lookups.
   const addOns = resolveAddOns(variant, variantsById);
 
   // A size stocked in one variant may be absent in another, so clear the
@@ -594,7 +594,7 @@ export default function Shop() {
               <ArrowRight className="w-4 h-4 group-hover:translate-x-1 transition-transform" />
             </CtaLink>
             <CtaLink
-              to="/shop/status"
+              to="/track"
               variant="outline"
               data-testid="link-order-status"
             >

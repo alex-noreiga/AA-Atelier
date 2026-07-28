@@ -4,49 +4,16 @@ import {
   useCreateOrderPayment,
   getGetOrderStatusQueryKey,
 } from "@workspace/api-client-react";
-import type {
-  Invoice,
-  InvoiceDeposit,
-  InvoiceLineItem,
-} from "@workspace/api-client-react";
+import type { Invoice, InvoiceDeposit } from "@workspace/api-client-react";
 import { Button } from "@/components/ui/button";
+import { DownloadPdfButton } from "@/components/download-pdf-button";
 import { PageShell } from "@/components/page-shell";
 import { ReceiptRow } from "@/components/receipt-row";
 import { Seo } from "@/components/seo";
 import { formatPrice } from "@/lib/format";
+import { groupLineItems } from "@/lib/invoice-format";
 import { useToast } from "@/hooks/use-toast";
 import { Loader2, ArrowLeft, Check, CreditCard } from "lucide-react";
-
-// Line types in the order they read on the invoice, with their display heading.
-// Unknown types (should the atelier add one) fall through under their raw name.
-const TYPE_HEADINGS: Record<string, string> = {
-  Garment: "Garment",
-  Material: "Materials",
-  Labor: "Labor",
-  Adjustment: "Adjustments",
-};
-const TYPE_ORDER = ["Garment", "Material", "Labor", "Adjustment"];
-
-/** Group line items by type, preferred types first, preserving item order. */
-function groupLineItems(
-  lineItems: InvoiceLineItem[],
-): Array<{ type: string; heading: string; items: InvoiceLineItem[] }> {
-  const byType = new Map<string, InvoiceLineItem[]>();
-  for (const item of lineItems) {
-    const bucket = byType.get(item.type) ?? [];
-    bucket.push(item);
-    byType.set(item.type, bucket);
-  }
-  const orderedTypes = [
-    ...TYPE_ORDER.filter((t) => byType.has(t)),
-    ...[...byType.keys()].filter((t) => !TYPE_ORDER.includes(t)),
-  ];
-  return orderedTypes.map((type) => ({
-    type,
-    heading: TYPE_HEADINGS[type] ?? type,
-    items: byType.get(type) ?? [],
-  }));
-}
 
 function InvoiceBreakdown({
   orderNumber,
@@ -187,9 +154,19 @@ function InvoiceBreakdown({
         </div>
       ) : null}
 
+      <div className="mt-8 text-center">
+        <DownloadPdfButton
+          onDownload={async () => {
+            const { downloadInvoicePdf } =
+              await import("@/lib/pdf/invoice-pdf");
+            downloadInvoicePdf({ orderNumber, orderName, invoice, deposits });
+          }}
+        />
+      </div>
+
       <div className="mt-12 text-center">
         <Link
-          href="/shop/status"
+          href="/track"
           className="group inline-flex items-center gap-2 text-muted-foreground hover:text-primary transition-colors text-sm tracking-widest uppercase"
           data-testid="link-back-to-status"
         >
@@ -245,7 +222,7 @@ export default function InvoicePage() {
             We couldn&apos;t find an order with that number.
           </p>
           <Link
-            href="/shop/status"
+            href="/track"
             className="mt-8 inline-flex items-center gap-2 text-muted-foreground hover:text-primary transition-colors text-sm tracking-widest uppercase"
             data-testid="link-back-to-status"
           >
@@ -261,7 +238,7 @@ export default function InvoicePage() {
             is.
           </p>
           <Link
-            href="/shop/status"
+            href="/track"
             className="mt-8 inline-flex items-center gap-2 text-muted-foreground hover:text-primary transition-colors text-sm tracking-widest uppercase"
             data-testid="link-back-to-status"
           >

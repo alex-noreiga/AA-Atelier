@@ -134,7 +134,7 @@ const SOAKER_SIZE_CHART: SoakerSizeRow[] = [
   {
     band: "Large",
     blade: { in: '9½" and up', mm: "241 +" },
-    skate: "Larger adult / men’s",
+    skate: "Larger adult",
   },
 ];
 
@@ -196,7 +196,7 @@ function ChartTable({ title, rows }: { title: string; rows: SizeRow[] }) {
         <TableHeader>
           <TableRow className="hover:bg-transparent border-border/60">
             <TableHead className="text-foreground">Size</TableHead>
-            <TableHead className="text-foreground">Bust</TableHead>
+            <TableHead className="text-foreground">Chest</TableHead>
             <TableHead className="text-foreground">Waist</TableHead>
             <TableHead className="text-foreground">Hip</TableHead>
           </TableRow>
@@ -289,7 +289,7 @@ export function SizeChartDialog({
                 Our ready-to-wear garments follow{" "}
                 <span className="italic text-primary">Jalie pattern</span>{" "}
                 sizing. Measure your body and choose the band closest to your
-                bust, waist, and hip.
+                chest, waist, and hip.
               </DialogDescription>
             </DialogHeader>
 

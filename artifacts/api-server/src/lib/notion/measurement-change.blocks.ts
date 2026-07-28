@@ -49,7 +49,7 @@ function buildMessageBody(row: MeasurementChangeRow): string {
     : [
         `Requested measurements (${request.measurementUnit}):`,
         `Waist: ${request.waist}`,
-        `Bust: ${request.bust}`,
+        `Chest: ${request.bust}`,
         `Hips: ${request.hips}`,
         `Height: ${request.height}`,
         `Body Girth: ${request.bodyGirth}`,

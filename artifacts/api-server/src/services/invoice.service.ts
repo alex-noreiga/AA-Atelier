@@ -7,10 +7,11 @@
 // and, on payment, records the paid stage back on the invoice.
 //
 // All amounts are priced server-side (never trusting the client): deposits from
-// the invoice's deposit-amount fields, and the balance as the sum of the
-// non-deposit line items minus the deposits already paid — deposits are credits,
-// not charges, so a "Deposit" line is excluded from the subtotal to avoid
-// double-counting. Only the balance is taxed (Stripe Tax); deposits are untaxed.
+// the invoice's deposit-amount fields, and the balance as the sum of the line
+// items minus the deposits already paid — deposits are credits, not charges, and
+// live on the invoice head rather than as line items ("Deposit" is no longer a
+// `Line Type` option; the filter in `buildInvoiceView` is a guard against it
+// coming back). Only the balance is taxed (Stripe Tax); deposits are untaxed.
 
 import type Stripe from "stripe";
 import { findOrderByNumber } from "../lib/notion/orders.repository.js";
@@ -60,6 +61,10 @@ export function buildInvoiceView(
   invoice: InvoiceRecord,
   lineItems: InvoiceLineItemRecord[],
 ): InvoiceView {
+  // "Deposit" is no longer an option on the live `Line Type` select, so this is
+  // a guard rather than an active filter — see `LINE_TYPE_DEPOSIT`. Keep it:
+  // without it, re-adding that option in Notion would bill a customer for their
+  // own deposit.
   const charged = lineItems.filter((li) => li.type !== LINE_TYPE_DEPOSIT);
 
   const subtotal = roundCents(charged.reduce((sum, li) => sum + li.amount, 0));
@@ -170,6 +175,13 @@ export async function createPaymentCheckout(
         },
       },
     ],
+    // Let a customer redeem a promo code or gift card on Stripe's hosted page —
+    // for deposits and the balance alike — mirroring the shop cart. Stripe renders
+    // the redemption box and applies codes/gift cards created in the Stripe
+    // Dashboard, so the atelier can run returning-skater comps or honor a gift
+    // card with no code or contract change. On the taxed balance, Stripe recomputes
+    // tax on the post-discount amount.
+    allow_promotion_codes: true,
     // Tax on the final balance only (deposits are untaxed). Stripe Tax computes
     // it from the collected address; the invoice has no shipping step, so
     // collect a billing address for it.
@@ -180,7 +192,7 @@ export async function createPaymentCheckout(
         }
       : {}),
     success_url: `${base}/shop/success?session_id={CHECKOUT_SESSION_ID}`,
-    cancel_url: `${base}/shop/status`,
+    cancel_url: `${base}/track`,
     // The webhook reads these to mark the right invoice stage paid.
     metadata: {
       kind: CUSTOM_PAYMENT_KIND,

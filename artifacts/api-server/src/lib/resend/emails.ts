@@ -11,6 +11,7 @@ import type { CreateOrderInput } from "../notion/orders.schema.js";
 import type { CreateContactInput } from "../notion/contact.blocks.js";
 import type { CreateNotifyInput } from "../notion/notify.blocks.js";
 import type { CreateMeasurementChangeInput } from "../notion/measurement-change.blocks.js";
+import type { CreateReviewInput } from "../notion/reviews.blocks.js";
 import type { EmailMessage } from "./client.js";
 
 const ATELIER_NAME = "A.A Atelier";
@@ -65,6 +66,173 @@ export function orderConfirmationEmail(
   return {
     to: input.email,
     subject: `We've received your order (${orderNumber})`,
+    html,
+    text,
+  };
+}
+
+// ---------------------------------------------------------------------------
+// Order status-change email
+//
+// Sent to the customer when their custom order moves to a new production stage.
+// Unlike the confirmation above, its source isn't a `CreateXInput` — the stage
+// change happens inside Notion, so the caller (order-notification.service) reads
+// the order back and hands this builder an already-formatted, transport-agnostic
+// struct, the same precedent as `AppointmentEmailDetails` / `ShopOrderEmailDetails`.
+// The body embeds a simplified version of the on-site tracking timeline so the
+// customer sees where their piece is without opening the tracking page.
+// ---------------------------------------------------------------------------
+
+/** The details needed to render an order status-change email. */
+export interface OrderStageChangeEmailDetails {
+  email: string;
+  /** The order's name/title in Notion (customer or project name). */
+  orderName: string;
+  orderNumber: string;
+  /** The live ordered stage list (the pipeline), first stage to last. */
+  stages: string[];
+  /** The order's current stage — expected to be one of `stages`. */
+  currentStage: string;
+  /** The atelier's target completion date (ISO yyyy-mm-dd), when set. */
+  estimatedCompletion?: string;
+  /** Absolute URL to the tracking page, when PUBLIC_BASE_URL is configured. */
+  trackingUrl?: string;
+}
+
+// Per-stage flavor for the active stage, written as a fragment that follows
+// "We're now …" in the email body. Presentation-only (the authoritative stage
+// list is live from Notion); unknown stages fall back to a generic fragment.
+// (Distinct from the frontend's web-app/src/lib/stage-descriptions.ts, which are
+// full sentences for the on-site timeline — these are phrased for the email.)
+const STAGE_FLAVORS: Record<string, string> = {
+  Consultation: "discussing your vision, measurements, and design direction.",
+  Sketching:
+    "translating your ideas into the first designs and technical sketches.",
+  Sourcing: "curating the fabrics, laces, and embellishments for your piece.",
+  "Pattern Design":
+    "drafting the precise pattern pieces that shape your garment.",
+  "Cutting/Pinning":
+    "cutting the fabric to pattern and pinning the foundational silhouette.",
+  "Sewing/Construction":
+    "sewing and constructing your garment by hand and machine.",
+  Assembly: "bringing all the pieces of your costume together.",
+  Fitting: "arranging your fitting to perfect the shape.",
+  "Rhinestoning/Detailing":
+    "adding the hand-beading, crystals, and final artistic touches.",
+  "Ready for delivery/pickup":
+    "wrapping up — your garment is complete and ready for delivery or pickup.",
+  Delivered:
+    "all finished — your costume has been delivered. We hope you love it!",
+};
+
+function stageFlavor(stage: string): string {
+  return (
+    STAGE_FLAVORS[stage] || "carefully working on this stage of your garment."
+  );
+}
+
+/** Render the pipeline as stacked, progressively-coloured stage rows. Table +
+ * inline styles (no flexbox/absolute positioning) so it renders in email clients. */
+function renderPipelineHtml(stages: string[], currentStage: string): string {
+  const currentIndex = stages.indexOf(currentStage);
+  return stages
+    .map((stage, index) => {
+      const state =
+        index < currentIndex
+          ? "done"
+          : index === currentIndex
+            ? "active"
+            : "future";
+      const dotColor =
+        state === "active"
+          ? "#2b2622"
+          : state === "done"
+            ? "#8a7f74"
+            : "#d8d0c6";
+      const dotSize = state === "active" ? 12 : 9;
+      const textColor =
+        state === "active"
+          ? "#2b2622"
+          : state === "done"
+            ? "#8a7f74"
+            : "#b8afa4";
+      const weight = state === "active" ? "bold" : "normal";
+      const suffix =
+        state === "done"
+          ? ' <span style="color:#8a7f74;">&#10003;</span>'
+          : state === "active"
+            ? ' <span style="font-size:12px;color:#8a7f74;font-weight:normal;">&mdash; in progress</span>'
+            : "";
+      return `<tr>
+         <td width="28" style="padding:5px 0;vertical-align:middle;">
+           <span style="display:inline-block;width:${dotSize}px;height:${dotSize}px;border-radius:50%;background:${dotColor};"></span>
+         </td>
+         <td style="padding:5px 0;vertical-align:middle;font-size:15px;color:${textColor};font-weight:${weight};">${escapeHtml(stage)}${suffix}</td>
+       </tr>`;
+    })
+    .join("\n       ");
+}
+
+/** The plaintext twin of the pipeline: [x] done, [>] current, [ ] upcoming. */
+function renderPipelineText(stages: string[], currentStage: string): string {
+  const currentIndex = stages.indexOf(currentStage);
+  return stages
+    .map((stage, index) => {
+      const marker =
+        index < currentIndex ? "[x]" : index === currentIndex ? "[>]" : "[ ]";
+      const suffix = index === currentIndex ? "  <- in progress" : "";
+      return `  ${marker} ${stage}${suffix}`;
+    })
+    .join("\n");
+}
+
+/** Sent to the customer when their custom order advances to a new stage. */
+export function orderStageChangeEmail(
+  details: OrderStageChangeEmailDetails,
+): EmailMessage {
+  const { stages, currentStage, orderNumber } = details;
+  const flavor = stageFlavor(currentStage);
+
+  const estimatedHtml = details.estimatedCompletion
+    ? `<p style="color:#8a7f74;margin:0 0 6px;">Estimated completion: <strong>${escapeHtml(details.estimatedCompletion)}</strong></p>`
+    : "";
+  const ctaHtml = details.trackingUrl
+    ? `<p style="margin:26px 0 0;"><a href="${encodeURI(details.trackingUrl)}" style="color:#2b2622;font-weight:bold;">View your order&rsquo;s tracking page &rarr;</a></p>`
+    : "";
+
+  const html = layout(
+    "Good news!",
+    `<p>We&rsquo;re now ${escapeHtml(flavor)}</p>
+     <table role="presentation" cellpadding="0" cellspacing="0" style="width:100%;border-collapse:collapse;margin:22px 0;">
+       ${renderPipelineHtml(stages, currentStage)}
+     </table>
+     ${estimatedHtml}
+     <p style="color:#8a7f74;margin:0;">Order number: <strong>${escapeHtml(orderNumber)}</strong></p>
+     ${ctaHtml}`,
+  );
+
+  const text = [
+    `We're now ${flavor}`,
+    ``,
+    `Where your order is:`,
+    renderPipelineText(stages, currentStage),
+    ``,
+    ...(details.estimatedCompletion
+      ? [`Estimated completion: ${details.estimatedCompletion}`, ``]
+      : []),
+    `Order number: ${orderNumber}`,
+    ...(details.trackingUrl
+      ? [``, `View your order's tracking page: ${details.trackingUrl}`]
+      : []),
+    ``,
+    `Thank you,`,
+    `The ${ATELIER_NAME} team`,
+  ].join("\n");
+
+  return {
+    to: details.email,
+    subject:
+      "Good news! Your custom piece has progressed to a new stage in our atelier.",
     html,
     text,
   };
@@ -126,6 +294,52 @@ export function backInStockConfirmationEmail(
   return {
     to: input.email,
     subject: `You're on the list for ${input.item}`,
+    html,
+    text,
+  };
+}
+
+/**
+ * The passwordless sign-in link for the account portal. The customer requested
+ * it, so this is a transactional email, not marketing. `url` is app-generated
+ * (a signed token appended to our own origin), so it's trusted — the only
+ * customer-derived value is the recipient address, which is used solely in `to`.
+ */
+export function magicLinkEmail(email: string, url: string): EmailMessage {
+  const html = layout(
+    "Your sign-in link",
+    `<p>Hi there,</p>
+     <p>Use the button below to sign in to your A.A Atelier account, where you can
+        see your orders and invoices in one place.</p>
+     <p style="margin:28px 0;">
+       <a href="${url}" style="display:inline-block;background:#2b2622;color:#faf8f5;
+          text-decoration:none;padding:12px 24px;border-radius:2px;font-size:15px;">Sign in</a>
+     </p>
+     <p style="font-size:14px;color:#8a7f74;">This link expires in 15 minutes and can
+        only be used once. If you didn't request it, you can safely ignore this email —
+        no one can sign in without it.</p>
+     <p style="font-size:13px;color:#8a7f74;word-break:break-all;">Or paste this link
+        into your browser:<br/>${url}</p>`,
+  );
+
+  const text = [
+    `Hi there,`,
+    ``,
+    `Use the link below to sign in to your A.A Atelier account, where you can see`,
+    `your orders and invoices in one place:`,
+    ``,
+    url,
+    ``,
+    `This link expires in 15 minutes and can only be used once. If you didn't`,
+    `request it, you can safely ignore this email — no one can sign in without it.`,
+    ``,
+    `Thank you,`,
+    `The ${ATELIER_NAME} team`,
+  ].join("\n");
+
+  return {
+    to: email,
+    subject: `Your A.A Atelier sign-in link`,
     html,
     text,
   };
@@ -213,7 +427,7 @@ export function orderNotificationEmail(
   to: string,
 ): EmailMessage {
   const measurements =
-    `waist ${input.waist}, bust ${input.bust}, hips ${input.hips}, ` +
+    `waist ${input.waist}, chest ${input.bust}, hips ${input.hips}, ` +
     `height ${input.height}, girth ${input.bodyGirth} (${input.measurementUnit})`;
 
   const fields: Field[] = [
@@ -227,6 +441,14 @@ export function orderNotificationEmail(
       ? [["Needed by", input.neededBy.toISOString().slice(0, 10)] as Field]
       : []),
     ...(input.description ? [["Notes", input.description] as Field] : []),
+    ...(input.referenceImageIds && input.referenceImageIds.length > 0
+      ? [
+          [
+            "Reference images",
+            `${input.referenceImageIds.length} attached — see the order page in Notion`,
+          ] as Field,
+        ]
+      : []),
   ];
 
   return {
@@ -295,6 +517,79 @@ export function measurementChangeConfirmationEmail(
     subject: `We've received your measurement change (${orderNumber})`,
     html,
     text,
+  };
+}
+
+/** Render a 1–5 rating as filled/empty stars for email copy. */
+function ratingStars(rating: number): string {
+  const filled = Math.max(0, Math.min(5, Math.round(rating)));
+  return "★".repeat(filled) + "☆".repeat(5 - filled);
+}
+
+/** Thank-you sent to the customer after they leave a post-delivery review. */
+export function reviewConfirmationEmail(
+  input: CreateReviewInput,
+  orderNumber: string,
+): EmailMessage {
+  const html = layout(
+    "Thank you for your review",
+    `<p>Hi there,</p>
+     <p>Thank you for taking a moment to share your thoughts on order
+        <strong>${orderNumber}</strong> — it means the world to a small atelier.</p>
+     <p>We've passed your words to the team, and we hope your piece brings you
+        confidence every time you wear it.</p>`,
+  );
+
+  const text = [
+    `Hi there,`,
+    ``,
+    `Thank you for taking a moment to share your thoughts on order ${orderNumber} —`,
+    `it means the world to a small atelier.`,
+    ``,
+    `We've passed your words to the team, and we hope your piece brings you`,
+    `confidence every time you wear it.`,
+    ``,
+    `Thank you,`,
+    `The ${ATELIER_NAME} team`,
+  ].join("\n");
+
+  return {
+    to: input.email,
+    subject: `Thank you for your review (${orderNumber})`,
+    html,
+    text,
+  };
+}
+
+/** Notify the atelier of a new post-delivery review. */
+export function reviewNotificationEmail(
+  input: CreateReviewInput,
+  orderNumber: string,
+  to: string,
+): EmailMessage {
+  const fields: Field[] = [
+    ["Order number", orderNumber],
+    ["Rating", `${ratingStars(input.rating)} (${input.rating}/5)`],
+    ...(input.displayName ? [["Credit as", input.displayName] as Field] : []),
+    ["Email", input.email],
+    ["May publish", input.consentToPublish ? "Yes" : "No"],
+    ...(input.photoIds && input.photoIds.length > 0
+      ? [
+          [
+            "Photos",
+            `${input.photoIds.length} attached — see the review page in Notion`,
+          ] as Field,
+        ]
+      : []),
+    ["Review", input.comment],
+  ];
+
+  return {
+    to,
+    replyTo: input.email,
+    subject: `New review (${input.rating}/5) — order ${orderNumber}`,
+    html: internalLayout("New review", renderRowsHtml(fields)),
+    text: renderRowsText(fields),
   };
 }
 
@@ -405,7 +700,7 @@ export function measurementChangeNotificationEmail(
     ? ["Requested", "Re-measurement at a fitting/consultation"]
     : [
         "Measurements",
-        `waist ${input.waist}, bust ${input.bust}, hips ${input.hips}, ` +
+        `waist ${input.waist}, chest ${input.bust}, hips ${input.hips}, ` +
           `height ${input.height}, girth ${input.bodyGirth} (${input.measurementUnit})`,
       ];
 

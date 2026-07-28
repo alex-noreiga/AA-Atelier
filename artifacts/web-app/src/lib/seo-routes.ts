@@ -66,7 +66,7 @@ export const ROUTE_SEO: Record<string, RouteSeo> = {
     path: "/shop",
     title: "Shop — Ready-to-Wear Skating & Dance | A.A Atelier",
     description:
-      "Browse ready-to-wear figure skating and dance pieces from A.A Atelier. In-stock dresses and accessories, with restock notifications on sold-out sizes.",
+      "Browse ready-to-wear figure skating and dance pieces from A.A Atelier. In-stock costumes and accessories, with restock notifications on sold-out sizes.",
     changefreq: "weekly",
     priority: 0.9,
   },
@@ -121,11 +121,11 @@ export const ROUTE_SEO: Record<string, RouteSeo> = {
 
   // ── Noindex routes — carry per-route titles but are kept out of the sitemap
   //    and out of prerendering (they render behind dynamic, per-visitor state).
-  "/shop/status": {
-    path: "/shop/status",
+  "/track": {
+    path: "/track",
     title: "Track Your Order | A.A Atelier",
     description:
-      "Look up your A.A Atelier commission by order number and follow its progress through each stage of the atelier.",
+      "Look up any A.A Atelier order — a custom commission or a shop purchase — by its order number and follow its progress.",
     noindex: true,
   },
   "/shop/success": {
@@ -135,11 +135,18 @@ export const ROUTE_SEO: Record<string, RouteSeo> = {
       "Your A.A Atelier order is confirmed. Thank you for your purchase.",
     noindex: true,
   },
-  "/shop/order-status": {
-    path: "/shop/order-status",
-    title: "Track Your Shop Order | A.A Atelier",
+  "/account/login": {
+    path: "/account/login",
+    title: "Sign In | A.A Atelier",
     description:
-      "Look up your A.A Atelier shop order by its order number and follow its progress toward delivery.",
+      "Sign in to your A.A Atelier account with a secure email link to see your orders and invoices in one place.",
+    noindex: true,
+  },
+  "/account": {
+    path: "/account",
+    title: "Your Account | A.A Atelier",
+    description:
+      "Your A.A Atelier account — custom orders, shop orders, and invoices gathered in one place.",
     noindex: true,
   },
 };

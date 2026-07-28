@@ -7,6 +7,17 @@ import {
   generateMilestonesHandler,
   generateMilestonesButtonHandler,
 } from "./routes/cron.js";
+import {
+  generateLineItemsHandler,
+  generateLineItemsButtonHandler,
+} from "./routes/invoice-generator.js";
+import { uploadReferenceImageHandler } from "./routes/order-images.js";
+import { verifyMagicLinkHandler } from "./routes/account-verify.js";
+import { accountRateLimiter } from "./middlewares/rate-limit.js";
+import {
+  notionStageChangeHandler,
+  notionStageChangeButtonHandler,
+} from "./routes/order-notification.js";
 import { errorHandler } from "./middlewares/error.js";
 import { logger } from "./lib/logger.js";
 
@@ -43,6 +54,30 @@ app.post(
   stripeWebhookHandler,
 );
 
+// Order reference-image upload. Like the Stripe webhook, this reads a raw body
+// (the image bytes) and so is mounted BEFORE the JSON parser and directly on the
+// app (not the /api router) — it's a binary endpoint outside the OpenAPI
+// contract. `type: () => true` buffers whatever content type the browser sends;
+// the handler validates it's an accepted image and enforces the size cap.
+app.post(
+  "/api/orders/reference-images",
+  express.raw({ type: () => true, limit: "4.5mb" }),
+  uploadReferenceImageHandler,
+);
+
+// Order status-change webhook (Notion automation, POST). Buffered as a raw body
+// BEFORE the JSON parser so it's read regardless of the Content-Type Notion
+// sends — its "Send webhook" action sets the Content-Type itself and won't let
+// you override it, so we can't rely on it being application/json. The handler
+// JSON-parses the buffer itself. Outside the OpenAPI contract, like the Stripe
+// webhook. The on-demand …/run link (GET, below) carries no body and stays after
+// the JSON parser. See routes/order-notification.ts.
+app.post(
+  "/api/webhooks/notion-stage-change",
+  express.raw({ type: () => true }),
+  notionStageChangeHandler,
+);
+
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 
@@ -55,6 +90,29 @@ app.use("/api", router);
 // See routes/cron.ts.
 app.get("/api/cron/generate-milestones", generateMilestonesHandler);
 app.get("/api/cron/generate-milestones/run", generateMilestonesButtonHandler);
+
+// Order status-change on-demand link (the POST automation webhook is mounted
+// above, before the JSON parser). A link the atelier opens to send/test one
+// order (GET, HTML). See routes/order-notification.ts.
+app.get(
+  "/api/webhooks/notion-stage-change/run",
+  notionStageChangeButtonHandler,
+);
+
+// Invoice line-item generation, on demand from Notion (outside the OpenAPI
+// contract, mounted directly like the milestone button). Takes ?order= and
+// reuses CRON_SECRET as its token. See routes/invoice-generator.ts.
+app.get("/api/invoices/generate-line-items", generateLineItemsHandler);
+app.get(
+  "/api/invoices/generate-line-items/run",
+  generateLineItemsButtonHandler,
+);
+
+// Account-portal magic-link verification. Mounted directly (outside the OpenAPI
+// contract / generated client, like the cron buttons above) because it's a
+// top-level browser navigation from the emailed link that sets a session cookie
+// and redirects, not a JSON API call. See routes/account-verify.ts.
+app.get("/api/account/verify", accountRateLimiter, verifyMagicLinkHandler);
 
 // Central error handler — must be registered after the routes.
 app.use(errorHandler);

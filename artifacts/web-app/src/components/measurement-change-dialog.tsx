@@ -20,7 +20,8 @@ import { useToast } from "@/hooks/use-toast";
 
 const MEASUREMENT_FIELDS = [
   { key: "waist", label: "Waist" },
-  { key: "bust", label: "Bust" },
+  // The contract field stays `bust`; only the visible label is neutral.
+  { key: "bust", label: "Chest" },
   { key: "hips", label: "Hips" },
   { key: "height", label: "Height" },
   { key: "bodyGirth", label: "Body Girth" },
@@ -63,7 +64,8 @@ const formSchema = z
     }
   });
 
-type FormValues = z.infer<typeof formSchema>;
+type FormInput = z.input<typeof formSchema>;
+type FormValues = z.output<typeof formSchema>;
 
 interface MeasurementChangeDialogProps {
   orderNumber: string;
@@ -125,7 +127,7 @@ export function MeasurementChangeDialog({
     setValue,
     reset,
     formState: { errors },
-  } = useForm<FormValues>({
+  } = useForm<FormInput, any, FormValues>({
     resolver: zodResolver(formSchema),
     defaultValues: { measurementMode: "self", measurementUnit: "inches" },
   });

@@ -20,6 +20,7 @@ import type {
 } from '@tanstack/react-query';
 
 import type {
+  AccountOverview,
   AppointmentAvailability,
   AppointmentOptions,
   CheckoutSessionResponse,
@@ -28,6 +29,8 @@ import type {
   ErrorEnvelope,
   GetAppointmentAvailabilityParams,
   HealthStatus,
+  MagicLinkRequest,
+  MessageResponse,
   NewAppointmentRequest,
   NewAppointmentResponse,
   NewContactRequest,
@@ -38,6 +41,8 @@ import type {
   NewNotifyResponse,
   NewOrderRequest,
   NewOrderResponse,
+  NewReviewRequest,
+  NewReviewResponse,
   OrderNotFound,
   OrderStatus,
   PaymentSessionResponse,
@@ -445,6 +450,79 @@ export const useCreateMeasurementChangeRequest = <TError = ErrorType<ErrorEnvelo
         TContext
       > => {
       return useMutation(getCreateMeasurementChangeRequestMutationOptions(options));
+    }
+
+export const getCreateOrderReviewUrl = (orderNumber: string,) => {
+
+
+
+
+  return `/api/orders/${orderNumber}/reviews`
+}
+
+/**
+ * Captures a customer's review of a finished custom order — a star rating, a short testimonial, an optional display name and photos of the finished piece — once the order has reached its final (delivered) stage. The customer is verified against the email on the order. Accepted reviews land in the Notion reviews database for the atelier to curate (and later feature in the portfolio). Photos are uploaded ahead of time via POST /orders/reference-images; their file_upload ids are passed as photoIds.
+ * @summary Leave a post-delivery review for an order
+ */
+export const createOrderReview = async (orderNumber: string,
+    newReviewRequest: NewReviewRequest, options?: RequestInit): Promise<NewReviewResponse> => {
+
+  return customFetch<NewReviewResponse>(getCreateOrderReviewUrl(orderNumber),
+  {
+    ...options,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    body: JSON.stringify(newReviewRequest)
+  }
+);}
+
+
+
+
+
+export const getCreateOrderReviewMutationOptions = <TError = ErrorType<ErrorEnvelope | OrderNotFound>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof createOrderReview>>, TError,{orderNumber: string;data: BodyType<NewReviewRequest>}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof createOrderReview>>, TError,{orderNumber: string;data: BodyType<NewReviewRequest>}, TContext> => {
+
+const mutationKey = ['createOrderReview'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof createOrderReview>>, {orderNumber: string;data: BodyType<NewReviewRequest>}> = (props) => {
+          const {orderNumber,data} = props ?? {};
+
+          return  createOrderReview(orderNumber,data,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type CreateOrderReviewMutationResult = NonNullable<Awaited<ReturnType<typeof createOrderReview>>>
+    export type CreateOrderReviewMutationBody = BodyType<NewReviewRequest>
+    export type CreateOrderReviewMutationError = ErrorType<ErrorEnvelope | OrderNotFound>
+
+    /**
+ * @summary Leave a post-delivery review for an order
+ */
+export const useCreateOrderReview = <TError = ErrorType<ErrorEnvelope | OrderNotFound>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof createOrderReview>>, TError,{orderNumber: string;data: BodyType<NewReviewRequest>}, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof createOrderReview>>,
+        TError,
+        {orderNumber: string;data: BodyType<NewReviewRequest>},
+        TContext
+      > => {
+      return useMutation(getCreateOrderReviewMutationOptions(options));
     }
 
 export const getCreateContactMessageUrl = () => {
@@ -1130,5 +1208,227 @@ export const useCreateAppointment = <TError = ErrorType<ErrorEnvelope>,
         TContext
       > => {
       return useMutation(getCreateAppointmentMutationOptions(options));
+    }
+
+export const getRequestMagicLinkUrl = () => {
+
+
+
+
+  return `/api/account/login`
+}
+
+/**
+ * Emails the customer a one-time magic link that signs them into the account portal. Always responds 200 regardless of whether any orders exist for the address — identity is the email itself, so there is no account to enumerate. The email is sent best-effort; a mail outage never fails the request.
+ * @summary Request a passwordless sign-in link
+ */
+export const requestMagicLink = async (magicLinkRequest: MagicLinkRequest, options?: RequestInit): Promise<MessageResponse> => {
+
+  return customFetch<MessageResponse>(getRequestMagicLinkUrl(),
+  {
+    ...options,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    body: JSON.stringify(magicLinkRequest)
+  }
+);}
+
+
+
+
+
+export const getRequestMagicLinkMutationOptions = <TError = ErrorType<ErrorEnvelope>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof requestMagicLink>>, TError,{data: BodyType<MagicLinkRequest>}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof requestMagicLink>>, TError,{data: BodyType<MagicLinkRequest>}, TContext> => {
+
+const mutationKey = ['requestMagicLink'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof requestMagicLink>>, {data: BodyType<MagicLinkRequest>}> = (props) => {
+          const {data} = props ?? {};
+
+          return  requestMagicLink(data,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type RequestMagicLinkMutationResult = NonNullable<Awaited<ReturnType<typeof requestMagicLink>>>
+    export type RequestMagicLinkMutationBody = BodyType<MagicLinkRequest>
+    export type RequestMagicLinkMutationError = ErrorType<ErrorEnvelope>
+
+    /**
+ * @summary Request a passwordless sign-in link
+ */
+export const useRequestMagicLink = <TError = ErrorType<ErrorEnvelope>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof requestMagicLink>>, TError,{data: BodyType<MagicLinkRequest>}, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof requestMagicLink>>,
+        TError,
+        {data: BodyType<MagicLinkRequest>},
+        TContext
+      > => {
+      return useMutation(getRequestMagicLinkMutationOptions(options));
+    }
+
+export const getGetAccountOverviewUrl = () => {
+
+
+
+
+  return `/api/account/overview`
+}
+
+/**
+ * Returns everything tied to the signed-in customer's email — their custom orders and their ready-to-wear shop orders — for the account dashboard. Requires a valid session cookie (set by the magic-link verify step); responds 401 when the caller isn't signed in.
+ * @summary The signed-in customer's orders and shop orders
+ */
+export const getAccountOverview = async ( options?: RequestInit): Promise<AccountOverview> => {
+
+  return customFetch<AccountOverview>(getGetAccountOverviewUrl(),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
+
+
+
+
+export const getGetAccountOverviewQueryKey = () => {
+    return [
+    `/api/account/overview`
+    ] as const;
+    }
+
+
+export const getGetAccountOverviewQueryOptions = <TData = Awaited<ReturnType<typeof getAccountOverview>>, TError = ErrorType<ErrorEnvelope>>( options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getAccountOverview>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getGetAccountOverviewQueryKey();
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof getAccountOverview>>> = ({ signal }) => getAccountOverview({ signal, ...requestOptions });
+
+
+
+
+
+   return  { queryKey, queryFn, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof getAccountOverview>>, TError, TData> & { queryKey: QueryKey }
+}
+
+export type GetAccountOverviewQueryResult = NonNullable<Awaited<ReturnType<typeof getAccountOverview>>>
+export type GetAccountOverviewQueryError = ErrorType<ErrorEnvelope>
+
+
+/**
+ * @summary The signed-in customer's orders and shop orders
+ */
+
+export function useGetAccountOverview<TData = Awaited<ReturnType<typeof getAccountOverview>>, TError = ErrorType<ErrorEnvelope>>(
+  options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getAccountOverview>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+
+ ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+
+  const queryOptions = getGetAccountOverviewQueryOptions(options)
+
+  const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
+
+  return withQueryKey(query, queryOptions.queryKey);
+}
+
+
+
+
+
+
+
+export const getLogoutAccountUrl = () => {
+
+
+
+
+  return `/api/account/logout`
+}
+
+/**
+ * Clears the session cookie. Idempotent — safe to call when already signed out.
+ * @summary Sign out of the account portal
+ */
+export const logoutAccount = async ( options?: RequestInit): Promise<MessageResponse> => {
+
+  return customFetch<MessageResponse>(getLogoutAccountUrl(),
+  {
+    ...options,
+    method: 'POST'
+
+
+  }
+);}
+
+
+
+
+
+export const getLogoutAccountMutationOptions = <TError = ErrorType<unknown>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof logoutAccount>>, TError,void, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof logoutAccount>>, TError,void, TContext> => {
+
+const mutationKey = ['logoutAccount'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof logoutAccount>>, void> = () => {
+
+
+          return  logoutAccount(requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type LogoutAccountMutationResult = NonNullable<Awaited<ReturnType<typeof logoutAccount>>>
+
+    export type LogoutAccountMutationError = ErrorType<unknown>
+
+    /**
+ * @summary Sign out of the account portal
+ */
+export const useLogoutAccount = <TError = ErrorType<unknown>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof logoutAccount>>, TError,void, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof logoutAccount>>,
+        TError,
+        void,
+        TContext
+      > => {
+      return useMutation(getLogoutAccountMutationOptions(options));
     }
 

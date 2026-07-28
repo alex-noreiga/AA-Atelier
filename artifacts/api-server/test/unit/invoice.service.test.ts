@@ -63,6 +63,9 @@ function invoice(overrides: Partial<InvoiceRecord> = {}): InvoiceRecord {
   };
 }
 
+// The "Deposit" line is deliberately not a live `Line Type` option any more —
+// it's here to pin the guard in `buildInvoiceView`, so that re-adding that
+// option in Notion can never bill a customer for their own deposit.
 const LINES: InvoiceLineItemRecord[] = [
   { name: "Main fabric", type: "Material", amount: 40 },
   { name: "Rhinestones", type: "Material", amount: 55.5 },
@@ -171,6 +174,9 @@ describe("createPaymentCheckout", () => {
       name: "First deposit — Ada – Custom Dress",
     });
     expect(params.automatic_tax).toBeUndefined();
+    // A promo code or gift card can be redeemed against a deposit on Stripe's
+    // hosted page (same box as the shop cart).
+    expect(params.allow_promotion_codes).toBe(true);
     expect(params.metadata).toEqual({
       kind: "custom_payment",
       stage: "first_deposit",
@@ -198,6 +204,9 @@ describe("createPaymentCheckout", () => {
     });
     expect(params.automatic_tax).toEqual({ enabled: true });
     expect(params.billing_address_collection).toBe("required");
+    // Promo codes / gift cards are redeemable on the balance too; Stripe
+    // recomputes tax on the discounted amount.
+    expect(params.allow_promotion_codes).toBe(true);
     expect(params.metadata.stage).toBe("balance");
   });
 

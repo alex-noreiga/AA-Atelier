@@ -1,6 +1,6 @@
 import { test, expect } from "./support/test";
 import { orderRecord } from "@workspace/test-fixtures";
-import { mockOrderStatus } from "./support/mock-api";
+import { mockOrderStatus, mockShopOrderStatus } from "./support/mock-api";
 
 test.describe("Order status lookup", () => {
   test("renders the timeline with the active stage highlighted", async ({
@@ -14,7 +14,7 @@ test.describe("Order status lookup", () => {
       }),
     });
 
-    await page.goto("/shop/status");
+    await page.goto("/track");
     await page.getByTestId("input-order-number").fill("ORD-ABC-1");
     await page.getByTestId("button-lookup").click();
 
@@ -56,7 +56,7 @@ test.describe("Order status lookup", () => {
       body: { message: "We couldn't find an order with that number." },
     });
 
-    await page.goto("/shop/status");
+    await page.goto("/track");
     await page.getByTestId("input-order-number").fill("ORD-NOPE");
     await page.getByTestId("button-lookup").click();
 
@@ -80,11 +80,40 @@ test.describe("Order status lookup", () => {
       }),
     });
 
-    await page.goto("/shop/status");
+    await page.goto("/track");
     await page.getByTestId("input-order-number").fill("  ord-abc-1  ");
     await page.getByTestId("button-lookup").click();
 
     await expect(page.getByTestId("status-success")).toBeVisible();
     expect(requestedOrderNumbers).toContain("ORD-ABC-1");
+  });
+
+  // The two tracking flows were consolidated onto /track; the old split URLs
+  // (bookmarks, the Stripe cancel_url, the shop-success deep link) must keep
+  // working by redirecting there, preserving any ?orderNumber= prefill.
+  test("redirects the legacy /shop/status URL to /track", async ({ page }) => {
+    await page.goto("/shop/status");
+
+    await expect(page).toHaveURL(/\/track$/);
+    await expect(page.getByTestId("input-order-number")).toBeVisible();
+  });
+
+  test("redirects the legacy shop-order URL to /track and looks up the prefilled number", async ({
+    page,
+  }) => {
+    const { requestedOrderNumbers } = await mockShopOrderStatus(page, {
+      body: {
+        orderNumber: "SHP-ABC-1234",
+        status: "Processing",
+        statuses: ["Payment Confirmed", "Processing", "Shipped"],
+        total: 44,
+      },
+    });
+
+    await page.goto("/shop/order-status?orderNumber=SHP-ABC-1234");
+
+    await expect(page).toHaveURL(/\/track\?orderNumber=SHP-ABC-1234$/);
+    await expect(page.getByTestId("status-success")).toBeVisible();
+    expect(requestedOrderNumbers).toContain("SHP-ABC-1234");
   });
 });
