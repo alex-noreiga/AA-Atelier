@@ -26,6 +26,13 @@ function headings(blocks: unknown[]): string[] {
     .map((b) => b.heading_2.rich_text[0].text.content);
 }
 
+/** The file_upload ids of any image blocks, in order. */
+function imageUploadIds(blocks: unknown[]): string[] {
+  return (blocks as any[])
+    .filter((b) => b.type === "image")
+    .map((b) => b.image.file_upload.id);
+}
+
 describe("buildOrderProperties", () => {
   it("maps to the live Notion property types (title + rich_text, not number)", () => {
     const props = buildOrderProperties(baseOrder, "ORD-ABC-123") as any;
@@ -51,6 +58,19 @@ describe("buildOrderProperties", () => {
       "client-9",
     ) as any;
     expect(props["Client"].relation).toEqual([{ id: "client-9" }]);
+  });
+
+  it("seeds the Due Date property from the customer's neededBy date", () => {
+    const props = buildOrderProperties(
+      { ...baseOrder, neededBy: new Date("2026-09-01T12:34:56Z") },
+      "ORD-ABC-123",
+    ) as any;
+    expect(props["Due Date"].date.start).toBe("2026-09-01");
+  });
+
+  it("omits the Due Date property when no neededBy date is provided", () => {
+    const props = buildOrderProperties(baseOrder, "ORD-ABC-123") as any;
+    expect(props).not.toHaveProperty("Due Date");
   });
 });
 
@@ -120,6 +140,26 @@ describe("buildOrderPageBlocks", () => {
     expect(pairs).not.toHaveProperty("Waist");
     expect(pairs).not.toHaveProperty("Body Girth");
     expect(pairs.Status).toMatch(/fitting or consultation/i);
+  });
+
+  it("omits the Reference Images section when no image ids are provided", () => {
+    const blocks = buildOrderPageBlocks(baseOrder);
+    expect(headings(blocks)).not.toContain("Reference Images");
+    expect(imageUploadIds(blocks)).toEqual([]);
+  });
+
+  it("appends a Reference Images section of image blocks by file_upload id", () => {
+    const blocks = buildOrderPageBlocks({
+      ...baseOrder,
+      referenceImageIds: ["upload-1", "upload-2"],
+    });
+    expect(headings(blocks)).toEqual([
+      "Contact Information",
+      "Measurements (inches)",
+      "Costume Details",
+      "Reference Images",
+    ]);
+    expect(imageUploadIds(blocks)).toEqual(["upload-1", "upload-2"]);
   });
 
   it("formats a Date neededBy as an ISO date (YYYY-MM-DD)", () => {

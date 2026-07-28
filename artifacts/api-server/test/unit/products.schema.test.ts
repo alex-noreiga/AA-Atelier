@@ -106,7 +106,7 @@ describe("extractVariant mapping", () => {
     const withoutAddOns = {
       id: "cloth",
       properties: {
-        "Item Name": { type: "title", title: [{ plain_text: "Blade Cloth" }] },
+        "Item Name": { type: "title", title: [{ plain_text: "Blade Towel" }] },
       },
     } as unknown as NotionInventoryPage;
     expect(extractVariant(withoutAddOns).addOnIds).toEqual([]);

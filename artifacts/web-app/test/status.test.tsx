@@ -25,6 +25,11 @@ vi.mock("@workspace/api-client-react", () => ({
     mutate: vi.fn(),
     isPending: false,
   }),
+  // A delivered order renders the review dialog, which uses this hook.
+  useCreateOrderReview: () => ({
+    mutate: vi.fn(),
+    isPending: false,
+  }),
 }));
 
 import {
@@ -116,7 +121,12 @@ describe("Status timeline completed/active/future computation", () => {
   });
 
   it("marks every earlier stage completed when the current stage is the last", async () => {
-    setHook({ data: orderRecord({ currentStage: "Delivery" }) });
+    setHook({
+      data: orderRecord({
+        currentStage: "Delivered",
+        stages: ["Consultation", "Sewing/Construction", "Delivered"],
+      }),
+    });
     await submitLookup();
     expect(screen.getByTestId("row-stage-0")).toHaveTextContent("Completed");
     expect(screen.getByTestId("row-stage-1")).toHaveTextContent("Completed");

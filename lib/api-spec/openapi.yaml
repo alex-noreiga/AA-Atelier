@@ -22,6 +22,8 @@ tags:
     description: Stripe checkout for ready-to-ship shop items
   - name: appointments
     description: Customer appointment scheduling with atelier staff
+  - name: account
+    description: Passwordless customer account portal (magic-link sign-in)
 paths:
   /health:
     get:
@@ -193,6 +195,69 @@ paths:
                 $ref: "#/components/schemas/OrderNotFound"
         "409":
           description: Measurements are locked because the order is in production
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorEnvelope"
+        "500":
+          description: Server error
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorEnvelope"
+  /orders/{orderNumber}/reviews:
+    post:
+      operationId: createOrderReview
+      tags: [orders]
+      summary: Leave a post-delivery review for an order
+      description: >-
+        Captures a customer's review of a finished custom order — a star
+        rating, a short testimonial, an optional display name and photos of the
+        finished piece — once the order has reached its final (delivered) stage.
+        The customer is verified against the email on the order. Accepted
+        reviews land in the Notion reviews database for the atelier to curate
+        (and later feature in the portfolio). Photos are uploaded ahead of time
+        via POST /orders/reference-images; their file_upload ids are passed as
+        photoIds.
+      parameters:
+        - name: orderNumber
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/NewReviewRequest"
+      responses:
+        "201":
+          description: Review received
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/NewReviewResponse"
+        "400":
+          description: Validation error
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorEnvelope"
+        "403":
+          description: The email does not match the one on the order
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorEnvelope"
+        "404":
+          description: Order not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/OrderNotFound"
+        "409":
+          description: The order has not been delivered yet, so it can't be reviewed
           content:
             application/json:
               schema:
@@ -502,6 +567,84 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/ErrorEnvelope"
+  /account/login:
+    post:
+      operationId: requestMagicLink
+      tags: [account]
+      summary: Request a passwordless sign-in link
+      description: >-
+        Emails the customer a one-time magic link that signs them into the
+        account portal. Always responds 200 regardless of whether any orders
+        exist for the address — identity is the email itself, so there is no
+        account to enumerate. The email is sent best-effort; a mail outage never
+        fails the request.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/MagicLinkRequest"
+      responses:
+        "200":
+          description: Sign-in link sent (if the mailer is configured)
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MessageResponse"
+        "400":
+          description: Validation error
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorEnvelope"
+        "500":
+          description: Server error
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorEnvelope"
+  /account/overview:
+    get:
+      operationId: getAccountOverview
+      tags: [account]
+      summary: The signed-in customer's orders and shop orders
+      description: >-
+        Returns everything tied to the signed-in customer's email — their custom
+        orders and their ready-to-wear shop orders — for the account dashboard.
+        Requires a valid session cookie (set by the magic-link verify step);
+        responds 401 when the caller isn't signed in.
+      responses:
+        "200":
+          description: The customer's account overview
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AccountOverview"
+        "401":
+          description: Not signed in (missing or expired session)
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorEnvelope"
+        "500":
+          description: Server error
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorEnvelope"
+  /account/logout:
+    post:
+      operationId: logoutAccount
+      tags: [account]
+      summary: Sign out of the account portal
+      description: Clears the session cookie. Idempotent — safe to call when already signed out.
+      responses:
+        "200":
+          description: Signed out
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MessageResponse"
 components:
   schemas:
     HealthStatus:
@@ -742,6 +885,17 @@ components:
         neededBy:
           type: string
           format: date
+        referenceImageIds:
+          type: array
+          items:
+            type: string
+          description: >-
+            Notion file_upload ids for customer-supplied reference / inspiration
+            images, each obtained by first POSTing the image bytes to
+            POST /orders/reference-images (a binary endpoint outside this
+            contract, mounted like the Stripe webhook). They are attached to the
+            order's Notion page as image blocks. Optional; omitted when the
+            customer uploaded none.
     NewOrderResponse:
       type: object
       required:
@@ -794,6 +948,62 @@ components:
           type: string
           description: Optional free-text note explaining the requested change.
     NewMeasurementChangeResponse:
+      type: object
+      required:
+        - received
+      properties:
+        received:
+          type: boolean
+    NewReviewRequest:
+      type: object
+      required:
+        - email
+        - rating
+        - comment
+      description: >-
+        A post-delivery review of a finished custom order. The customer supplies
+        a star rating and a short testimonial; a display name, publish consent,
+        and photos of the finished piece are optional. The server verifies the
+        email against the order and only accepts the review once the order has
+        been delivered.
+      properties:
+        email:
+          type: string
+          format: email
+          description: >-
+            The email to verify against the one on the order. A review whose
+            email doesn't match the order is rejected.
+        rating:
+          type: integer
+          minimum: 1
+          maximum: 5
+          description: The star rating, 1 (poor) to 5 (excellent).
+        comment:
+          type: string
+          minLength: 1
+          maxLength: 2000
+          description: The customer's testimonial about their finished piece.
+        displayName:
+          type: string
+          maxLength: 120
+          description: >-
+            How the customer would like to be credited if the review is
+            featured (e.g. "Ada L." or "Ada, Chicago"). Optional.
+        consentToPublish:
+          type: boolean
+          description: >-
+            Whether the customer gives permission to feature this review (and
+            any photos) publicly, e.g. on the site's testimonials/portfolio.
+            Defaults to false.
+        photoIds:
+          type: array
+          description: >-
+            Notion file_upload ids for photos of the finished piece, uploaded
+            ahead of time via POST /orders/reference-images. Attached to the
+            review's Notion page as image blocks.
+          items:
+            type: string
+    NewReviewResponse:
       type: object
       required:
         - received
@@ -891,7 +1101,7 @@ components:
             Ids of other ProductVariants offered as matching add-ons for this
             variant (the "Matching Add-ons" self-relation in the Notion
             inventory database) — e.g. a skate soaker points at its matching
-            blade cloth. Each id is the `id` of a ProductVariant that also
+            blade towel. Each id is the `id` of a ProductVariant that also
             appears in this same product list, so clients resolve the add-on's
             name/price/availability locally rather than the payload carrying it
             twice. Empty or absent when the variant has no add-ons.
@@ -1222,3 +1432,77 @@ components:
       properties:
         error:
           type: string
+    MessageResponse:
+      type: object
+      description: A generic human-readable acknowledgement.
+      required: [message]
+      properties:
+        message:
+          type: string
+    MagicLinkRequest:
+      type: object
+      required: [email]
+      properties:
+        email:
+          type: string
+          format: email
+          description: The email to send the one-time sign-in link to.
+    AccountOverview:
+      type: object
+      description: >-
+        Everything tied to the signed-in customer's email — the data the account
+        dashboard renders.
+      required: [email, customOrders, shopOrders]
+      properties:
+        email:
+          type: string
+          description: The signed-in customer's email.
+        customOrders:
+          type: array
+          description: >-
+            The customer's custom (bespoke) orders, newest-relevant first. Empty
+            when none match the signed-in email.
+          items:
+            $ref: "#/components/schemas/AccountOrderSummary"
+        shopOrders:
+          type: array
+          description: >-
+            The customer's ready-to-wear shop orders. Empty when none match the
+            signed-in email (older shop orders without an order number are omitted).
+          items:
+            $ref: "#/components/schemas/AccountShopOrderSummary"
+    AccountOrderSummary:
+      type: object
+      description: A custom order as shown on the account dashboard (links out to the full tracking + invoice views).
+      required: [orderNumber, orderName, currentStage, stages]
+      properties:
+        orderNumber:
+          type: string
+        orderName:
+          type: string
+        currentStage:
+          type: string
+        stages:
+          type: array
+          description: The live ordered stage list, so the dashboard can show progress (e.g. "3 of 6").
+          items:
+            type: string
+        estimatedCompletion:
+          type: string
+          description: >-
+            The order's target completion date (its Due Date) as an ISO date
+            (yyyy-mm-dd). A pass-through string (no format: date). Absent until
+            the atelier sets one.
+    AccountShopOrderSummary:
+      type: object
+      description: A ready-to-wear shop order as shown on the account dashboard.
+      required: [orderNumber, status]
+      properties:
+        orderNumber:
+          type: string
+        status:
+          type: string
+          description: The order's current fulfilment status.
+        total:
+          type: number
+          description: The order total in dollars, when recorded.

@@ -6,6 +6,9 @@
  * OpenAPI spec version: 0.1.0
  */
 
+export * from './accountOrderSummary';
+export * from './accountOverview';
+export * from './accountShopOrderSummary';
 export * from './appointmentAvailability';
 export * from './appointmentOptions';
 export * from './appointmentType';
@@ -23,6 +26,8 @@ export * from './invoice';
 export * from './invoiceDeposit';
 export * from './invoiceDepositStage';
 export * from './invoiceLineItem';
+export * from './magicLinkRequest';
+export * from './messageResponse';
 export * from './newAppointmentRequest';
 export * from './newAppointmentRequestLocation';
 export * from './newAppointmentRequestPreferredContact';
@@ -38,6 +43,8 @@ export * from './newOrderRequest';
 export * from './newOrderRequestMeasurementUnit';
 export * from './newOrderRequestPreferredContact';
 export * from './newOrderResponse';
+export * from './newReviewRequest';
+export * from './newReviewResponse';
 export * from './orderNotFound';
 export * from './orderStatus';
 export * from './orderStatusMilestonesItem';

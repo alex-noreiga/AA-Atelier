@@ -64,7 +64,8 @@ const formSchema = z
     }
   });
 
-type FormValues = z.infer<typeof formSchema>;
+type FormInput = z.input<typeof formSchema>;
+type FormValues = z.output<typeof formSchema>;
 
 interface MeasurementChangeDialogProps {
   orderNumber: string;
@@ -126,7 +127,7 @@ export function MeasurementChangeDialog({
     setValue,
     reset,
     formState: { errors },
-  } = useForm<FormValues>({
+  } = useForm<FormInput, any, FormValues>({
     resolver: zodResolver(formSchema),
     defaultValues: { measurementMode: "self", measurementUnit: "inches" },
   });

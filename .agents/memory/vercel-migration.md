@@ -16,9 +16,11 @@ description: Key decisions made when migrating this project from Replit deployme
 
 **How to apply:** On Vercel (and any non-Replit environment), set `NOTION_API_KEY` as an environment variable. `createNotionClient` in `artifacts/api-server/src/lib/notion/client.ts` reads it directly (at first use, not module load).
 
-## Image upload removed
+## Image upload removed — then reintroduced via Notion (no object storage)
 
 Object storage (GCS) also used the Replit sidecar for credentials and signed URLs. Since that sidecar is gone, all image upload code was removed: `objectStorage.ts`, `objectAcl.ts`, `storage.ts` routes, and the image upload UI in `order-form.tsx`.
+
+**Update:** the order form's optional **reference / inspiration images** were later reintroduced — but on top of **Notion's File Upload API**, not a revived object store. Rationale: everything else in this app lives in Notion and the atelier manages it there, so images attach as inline blocks on the order's own Notion page. No new service, no new env var — it reuses `NOTION_API_KEY`. Flow: the browser downscales each image on a canvas (`web-app/src/lib/reference-images.ts`) and POSTs the bytes one at a time to `POST /api/orders/reference-images` (a **raw-bytes route outside the OpenAPI contract**, mounted like the Stripe webhook); the server relays each to Notion (`api-server/src/routes/order-images.ts` → `lib/notion/file-uploads.repository.ts`, two calls: create + send) and returns a `file_upload` id; the order body carries the ids as `referenceImageIds`, attached as image blocks in `orders.blocks.ts`. Client-side downscaling + a 4 MB cap keep each request under Vercel's ~4.5 MB serverless body limit. See the "Order reference-image upload" bullet in `CLAUDE.md`.
 
 ## Required env vars on Vercel
 

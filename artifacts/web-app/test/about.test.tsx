@@ -24,7 +24,7 @@ describe("About", () => {
       screen.getByRole("heading", { name: "Frequently asked" }),
     ).toBeInTheDocument();
     const faq = within(screen.getByTestId("faq-section"));
-    expect(faq.getAllByRole("button")).toHaveLength(7);
+    expect(faq.getAllByRole("button")).toHaveLength(8);
     expect(faq.getByRole("button", { name: FIRST_QUESTION })).toBeVisible();
     expect(faq.getByRole("button", { name: SECOND_QUESTION })).toBeVisible();
   });
@@ -37,7 +37,7 @@ describe("About", () => {
     await userEvent.click(question(FIRST_QUESTION));
 
     expect(answerFor(FIRST_QUESTION)).toBeVisible();
-    expect(answerFor(FIRST_QUESTION)).toHaveTextContent(/six to eight weeks/i);
+    expect(answerFor(FIRST_QUESTION)).toHaveTextContent(/four to eight weeks/i);
   });
 
   it("closes the open answer when another question is opened", async () => {

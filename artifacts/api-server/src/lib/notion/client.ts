@@ -49,6 +49,9 @@ let productionScheduleClient: NotionClient | null = null;
 let clientCrmClient: NotionClient | null = null;
 let invoicesClient: NotionClient | null = null;
 let invoiceLineItemsClient: NotionClient | null = null;
+let costingClient: NotionClient | null = null;
+let materialUsageClient: NotionClient | null = null;
+let reviewsClient: NotionClient | null = null;
 
 /**
  * Lazily-constructed client reading credentials from the environment. Deferring
@@ -185,4 +188,51 @@ export function getInvoiceLineItemsNotionClient(): NotionClient {
     });
   }
   return invoiceLineItemsClient;
+}
+
+/**
+ * Client for the "costing (custom orders)" database — one costing item per
+ * garment/component, holding the labor + margin-loaded suggested price the
+ * invoice generator reads to itemize an order. Same lazy construction, reads
+ * `NOTION_COSTING_DATABASE_ID`.
+ */
+export function getCostingNotionClient(): NotionClient {
+  if (!costingClient) {
+    costingClient = createNotionClient({
+      apiKey: process.env.NOTION_API_KEY ?? "",
+      databaseId: process.env.NOTION_COSTING_DATABASE_ID ?? "",
+    });
+  }
+  return costingClient;
+}
+
+/**
+ * Client for the "material usage database" — the per-material usage lines under
+ * a costing item, each with its own material cost. The invoice generator reads
+ * these to write one Material invoice line per usage line. Same lazy
+ * construction, reads `NOTION_MATERIAL_USAGE_DATABASE_ID`.
+ */
+export function getMaterialUsageNotionClient(): NotionClient {
+  if (!materialUsageClient) {
+    materialUsageClient = createNotionClient({
+      apiKey: process.env.NOTION_API_KEY ?? "",
+      databaseId: process.env.NOTION_MATERIAL_USAGE_DATABASE_ID ?? "",
+    });
+  }
+  return materialUsageClient;
+}
+
+/**
+ * Client for the "Reviews" database that holds customers' post-delivery reviews
+ * (rating + testimonial + photos), the raw material for testimonials and the
+ * portfolio. Same lazy construction, reads `NOTION_REVIEWS_DATABASE_ID`.
+ */
+export function getReviewsNotionClient(): NotionClient {
+  if (!reviewsClient) {
+    reviewsClient = createNotionClient({
+      apiKey: process.env.NOTION_API_KEY ?? "",
+      databaseId: process.env.NOTION_REVIEWS_DATABASE_ID ?? "",
+    });
+  }
+  return reviewsClient;
 }

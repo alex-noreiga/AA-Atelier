@@ -135,6 +135,20 @@ export const ROUTE_SEO: Record<string, RouteSeo> = {
       "Your A.A Atelier order is confirmed. Thank you for your purchase.",
     noindex: true,
   },
+  "/account/login": {
+    path: "/account/login",
+    title: "Sign In | A.A Atelier",
+    description:
+      "Sign in to your A.A Atelier account with a secure email link to see your orders and invoices in one place.",
+    noindex: true,
+  },
+  "/account": {
+    path: "/account",
+    title: "Your Account | A.A Atelier",
+    description:
+      "Your A.A Atelier account — custom orders, shop orders, and invoices gathered in one place.",
+    noindex: true,
+  },
 };
 
 /** Indexable routes, in declaration order — drives prerendering + the sitemap. */

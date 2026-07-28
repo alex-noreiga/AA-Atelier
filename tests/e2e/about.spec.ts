@@ -19,7 +19,7 @@ test.describe("About FAQ", () => {
     await page.getByRole("button", { name: FIRST_QUESTION }).click();
 
     await expect(answer).toBeVisible();
-    await expect(answer).toContainText(/six to eight weeks/i);
+    await expect(answer).toContainText(/four to eight weeks/i);
   });
 
   test("keeps only one answer open at a time", async ({ page }) => {
