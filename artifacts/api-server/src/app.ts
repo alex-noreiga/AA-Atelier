@@ -23,6 +23,15 @@ import { logger } from "./lib/logger.js";
 
 const app = express();
 
+// Behind Vercel's proxy, the socket peer is always the platform's internal IP,
+// so `req.ip` (and the account rate limiter that keys on it) would collapse to a
+// single value for every visitor — turning a per-IP brake into a global one.
+// Trust one proxy hop so `req.ip` is derived from X-Forwarded-For (the client IP
+// Vercel records). A numeric hop count is deliberate: `true` would trust a
+// client-spoofed X-Forwarded-For (and express-rate-limit rejects it as
+// permissive). Adjust the count if the deployment ever sits behind more hops.
+app.set("trust proxy", 1);
+
 app.use(
   (pinoHttp as any)({
     logger,
