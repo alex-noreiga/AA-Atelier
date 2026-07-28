@@ -98,35 +98,35 @@ export interface OrderStageChangeEmailDetails {
   trackingUrl?: string;
 }
 
-// Cosmetic per-stage flavor for the active stage — a mirror of the frontend's
-// web-app/src/lib/stage-descriptions.ts. Presentation-only (the authoritative
-// stage list is live from Notion); unknown stages fall back to a generic line.
-const STAGE_BLURBS: Record<string, string> = {
-  Consultation:
-    "We're still discussing your vision, measurements, and stylistic desires.",
+// Per-stage flavor for the active stage, written as a fragment that follows
+// "We're now …" in the email body. Presentation-only (the authoritative stage
+// list is live from Notion); unknown stages fall back to a generic fragment.
+// (Distinct from the frontend's web-app/src/lib/stage-descriptions.ts, which are
+// full sentences for the on-site timeline — these are phrased for the email.)
+const STAGE_FLAVORS: Record<string, string> = {
+  Consultation: "discussing your vision, measurements, and design direction.",
   Sketching:
-    "We're translating your ideas into the preliminary designs and technical flats.",
-  Sourcing:
-    "We're curating fabrics, laces, and embellishments from our trusted suppliers.",
+    "translating your ideas into the first designs and technical sketches.",
+  Sourcing: "curating the fabrics, laces, and embellishments for your piece.",
   "Pattern Design":
-    "Drafting the precise pattern pieces that will shape your garment.",
+    "drafting the precise pattern pieces that shape your garment.",
   "Cutting/Pinning":
-    "Cutting fabric to pattern and pinning the foundational silhouette.",
+    "cutting the fabric to pattern and pinning the foundational silhouette.",
   "Sewing/Construction":
-    "We're sewing and constructing the garment by hand and machine.",
-  Assembly: "We're assembling all the pieces of your final costume.",
-  Fitting: "We're in the process of scheduling your fitting(s)!",
+    "sewing and constructing your garment by hand and machine.",
+  Assembly: "bringing all the pieces of your costume together.",
+  Fitting: "arranging your fitting to perfect the shape.",
   "Rhinestoning/Detailing":
-    "We're applying hand-beading, crystals, and all the artistic final touches.",
+    "adding the hand-beading, crystals, and final artistic touches.",
   "Ready for delivery/pickup":
-    "Your garment is complete and awaiting delivery or pickup.",
-  Delivered: "Your costume is now delivered!",
+    "wrapping up — your garment is complete and ready for delivery or pickup.",
+  Delivered:
+    "all finished — your costume has been delivered. We hope you love it!",
 };
 
-function stageBlurb(stage: string): string {
+function stageFlavor(stage: string): string {
   return (
-    STAGE_BLURBS[stage] ||
-    "We're carefully working on this stage of your garment."
+    STAGE_FLAVORS[stage] || "carefully working on this stage of your garment."
   );
 }
 
@@ -190,19 +190,18 @@ export function orderStageChangeEmail(
   details: OrderStageChangeEmailDetails,
 ): EmailMessage {
   const { stages, currentStage, orderNumber } = details;
-  const blurb = stageBlurb(currentStage);
+  const flavor = stageFlavor(currentStage);
 
   const estimatedHtml = details.estimatedCompletion
     ? `<p style="color:#8a7f74;margin:0 0 6px;">Estimated completion: <strong>${escapeHtml(details.estimatedCompletion)}</strong></p>`
     : "";
   const ctaHtml = details.trackingUrl
-    ? `<p style="margin:26px 0 0;"><a href="${encodeURI(details.trackingUrl)}" style="color:#2b2622;">Follow your order &rarr;</a> &mdash; enter order ${escapeHtml(orderNumber)}</p>`
+    ? `<p style="margin:26px 0 0;"><a href="${encodeURI(details.trackingUrl)}" style="color:#2b2622;font-weight:bold;">View your order&rsquo;s tracking page &rarr;</a></p>`
     : "";
 
   const html = layout(
-    `Your order has moved to ${escapeHtml(currentStage)}`,
-    `<p>Good news &mdash; your custom piece has progressed to a new stage in our atelier.</p>
-     <p>${escapeHtml(blurb)}</p>
+    "Good news!",
+    `<p>We&rsquo;re now ${escapeHtml(flavor)}</p>
      <table role="presentation" cellpadding="0" cellspacing="0" style="width:100%;border-collapse:collapse;margin:22px 0;">
        ${renderPipelineHtml(stages, currentStage)}
      </table>
@@ -212,9 +211,7 @@ export function orderStageChangeEmail(
   );
 
   const text = [
-    `Good news — your custom piece has progressed to a new stage in our atelier.`,
-    ``,
-    blurb,
+    `We're now ${flavor}`,
     ``,
     `Where your order is:`,
     renderPipelineText(stages, currentStage),
@@ -224,10 +221,7 @@ export function orderStageChangeEmail(
       : []),
     `Order number: ${orderNumber}`,
     ...(details.trackingUrl
-      ? [
-          ``,
-          `Follow your order: ${details.trackingUrl} (enter order ${orderNumber})`,
-        ]
+      ? [``, `View your order's tracking page: ${details.trackingUrl}`]
       : []),
     ``,
     `Thank you,`,
@@ -236,7 +230,8 @@ export function orderStageChangeEmail(
 
   return {
     to: details.email,
-    subject: `Your order ${orderNumber} is now at ${currentStage}`,
+    subject:
+      "Good news! Your custom piece has progressed to a new stage in our atelier.",
     html,
     text,
   };
