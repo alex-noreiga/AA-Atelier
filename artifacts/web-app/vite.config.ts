@@ -150,7 +150,25 @@ export default defineConfig({
         // main app chunk stays small and browsers can cache vendors across
         // deploys. Keeps the build under the 500 kB per-chunk warning.
         manualChunks(id) {
+          // Vite's dynamic-import preload helper and Rollup's CommonJS-interop
+          // helpers are imported by both eager and async code. Pin them to the
+          // eager `vendor` chunk so they never anchor an otherwise-async chunk
+          // (pdf-vendor) into the initial load — the entry statically imports
+          // the preload helper for every code-split page.
+          if (id.includes("preload-helper") || id.includes("commonjsHelpers"))
+            return "vendor";
           if (!id.includes("node_modules")) return;
+          // The PDF export path (jsPDF + its transitive deps — core-js is the
+          // heavy one) is only ever reached through a dynamic import on the
+          // invoice / shop-success pages. Give it its own chunk so it stays
+          // async and never weighs down the initial load: left to fall through
+          // to `vendor` (which eager code needs) it would be pulled in eagerly.
+          if (
+            /[\\/]node_modules[\\/](jspdf|canvg|core-js|fflate|fast-png|rgbcolor|stackblur-canvas|raphael|@babel[\\/]runtime)[\\/]/.test(
+              id,
+            )
+          )
+            return "pdf-vendor";
           if (/[\\/]node_modules[\\/](react|react-dom|scheduler)[\\/]/.test(id))
             return "react-vendor";
           if (id.includes("@radix-ui")) return "radix-vendor";

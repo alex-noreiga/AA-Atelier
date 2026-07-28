@@ -203,6 +203,69 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/ErrorEnvelope"
+  /orders/{orderNumber}/reviews:
+    post:
+      operationId: createOrderReview
+      tags: [orders]
+      summary: Leave a post-delivery review for an order
+      description: >-
+        Captures a customer's review of a finished custom order — a star
+        rating, a short testimonial, an optional display name and photos of the
+        finished piece — once the order has reached its final (delivered) stage.
+        The customer is verified against the email on the order. Accepted
+        reviews land in the Notion reviews database for the atelier to curate
+        (and later feature in the portfolio). Photos are uploaded ahead of time
+        via POST /orders/reference-images; their file_upload ids are passed as
+        photoIds.
+      parameters:
+        - name: orderNumber
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/NewReviewRequest"
+      responses:
+        "201":
+          description: Review received
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/NewReviewResponse"
+        "400":
+          description: Validation error
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorEnvelope"
+        "403":
+          description: The email does not match the one on the order
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorEnvelope"
+        "404":
+          description: Order not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/OrderNotFound"
+        "409":
+          description: The order has not been delivered yet, so it can't be reviewed
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorEnvelope"
+        "500":
+          description: Server error
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorEnvelope"
   /contact:
     post:
       operationId: createContactMessage
@@ -742,6 +805,17 @@ components:
         neededBy:
           type: string
           format: date
+        referenceImageIds:
+          type: array
+          items:
+            type: string
+          description: >-
+            Notion file_upload ids for customer-supplied reference / inspiration
+            images, each obtained by first POSTing the image bytes to
+            POST /orders/reference-images (a binary endpoint outside this
+            contract, mounted like the Stripe webhook). They are attached to the
+            order's Notion page as image blocks. Optional; omitted when the
+            customer uploaded none.
     NewOrderResponse:
       type: object
       required:
@@ -794,6 +868,62 @@ components:
           type: string
           description: Optional free-text note explaining the requested change.
     NewMeasurementChangeResponse:
+      type: object
+      required:
+        - received
+      properties:
+        received:
+          type: boolean
+    NewReviewRequest:
+      type: object
+      required:
+        - email
+        - rating
+        - comment
+      description: >-
+        A post-delivery review of a finished custom order. The customer supplies
+        a star rating and a short testimonial; a display name, publish consent,
+        and photos of the finished piece are optional. The server verifies the
+        email against the order and only accepts the review once the order has
+        been delivered.
+      properties:
+        email:
+          type: string
+          format: email
+          description: >-
+            The email to verify against the one on the order. A review whose
+            email doesn't match the order is rejected.
+        rating:
+          type: integer
+          minimum: 1
+          maximum: 5
+          description: The star rating, 1 (poor) to 5 (excellent).
+        comment:
+          type: string
+          minLength: 1
+          maxLength: 2000
+          description: The customer's testimonial about their finished piece.
+        displayName:
+          type: string
+          maxLength: 120
+          description: >-
+            How the customer would like to be credited if the review is
+            featured (e.g. "Ada L." or "Ada, Chicago"). Optional.
+        consentToPublish:
+          type: boolean
+          description: >-
+            Whether the customer gives permission to feature this review (and
+            any photos) publicly, e.g. on the site's testimonials/portfolio.
+            Defaults to false.
+        photoIds:
+          type: array
+          description: >-
+            Notion file_upload ids for photos of the finished piece, uploaded
+            ahead of time via POST /orders/reference-images. Attached to the
+            review's Notion page as image blocks.
+          items:
+            type: string
+    NewReviewResponse:
       type: object
       required:
         - received
@@ -891,7 +1021,7 @@ components:
             Ids of other ProductVariants offered as matching add-ons for this
             variant (the "Matching Add-ons" self-relation in the Notion
             inventory database) — e.g. a skate soaker points at its matching
-            blade cloth. Each id is the `id` of a ProductVariant that also
+            blade towel. Each id is the `id` of a ProductVariant that also
             appears in this same product list, so clients resolve the add-on's
             name/price/availability locally rather than the payload carrying it
             twice. Empty or absent when the variant has no add-ons.

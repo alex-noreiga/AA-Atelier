@@ -214,7 +214,7 @@ describe("Add to cart", () => {
 });
 
 describe("Matching add-on option", () => {
-  const cloth = variant({ id: "cloth1", name: "Blade Cloth", price: 12 });
+  const cloth = variant({ id: "cloth1", name: "Blade Towel", price: 12 });
 
   it("renders a checkbox per add-on but adds only the main item when unchecked", async () => {
     render(

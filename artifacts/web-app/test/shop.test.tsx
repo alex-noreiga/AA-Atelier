@@ -171,8 +171,8 @@ describe("Shop matching add-ons", () => {
       }),
       product({
         id: "cloth",
-        title: "Blade Cloth",
-        variants: [variant({ id: "cloth", name: "Blade Cloth", price: 12 })],
+        title: "Blade Towel",
+        variants: [variant({ id: "cloth", name: "Blade Towel", price: 12 })],
       }),
     ];
   }
@@ -183,7 +183,7 @@ describe("Shop matching add-ons", () => {
     // the quick-view, so a deep-linked open dialog would duplicate the testid.
     renderShop(<Shop />);
     expect(screen.getByTestId("add-on-checkbox-cloth")).toBeInTheDocument();
-    expect(screen.getByTestId("add-on-cloth")).toHaveTextContent("Blade Cloth");
+    expect(screen.getByTestId("add-on-cloth")).toHaveTextContent("Blade Towel");
   });
 
   it("does not offer an add-on that is sold out", () => {
@@ -193,11 +193,11 @@ describe("Shop matching add-ons", () => {
         soaker,
         product({
           id: "cloth",
-          title: "Blade Cloth",
+          title: "Blade Towel",
           variants: [
             variant({
               id: "cloth",
-              name: "Blade Cloth",
+              name: "Blade Towel",
               price: 12,
               available: false,
             }),
@@ -546,7 +546,7 @@ describe("resolveAddOns", () => {
   });
 
   it("resolves add-on ids to their full, buyable variant records", () => {
-    const cloth = v({ id: "cloth", name: "Blade Cloth", price: 12 });
+    const cloth = v({ id: "cloth", name: "Blade Towel", price: 12 });
     const byId = new Map([["cloth", cloth]]);
     const soaker = v({ id: "soaker", addOnIds: ["cloth"] });
     expect(resolveAddOns(soaker, byId)).toEqual([cloth]);

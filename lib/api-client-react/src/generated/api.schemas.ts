@@ -140,6 +140,8 @@ export interface NewOrderRequest {
   measurementAppointment?: boolean;
   description?: string;
   neededBy?: string;
+  /** Notion file_upload ids for customer-supplied reference / inspiration images, each obtained by first POSTing the image bytes to POST /orders/reference-images (a binary endpoint outside this contract, mounted like the Stripe webhook). They are attached to the order's Notion page as image blocks. Optional; omitted when the customer uploaded none. */
+  referenceImageIds?: string[];
 }
 
 export interface NewOrderResponse {
@@ -178,6 +180,39 @@ export interface NewMeasurementChangeRequest {
 }
 
 export interface NewMeasurementChangeResponse {
+  received: boolean;
+}
+
+/**
+ * A post-delivery review of a finished custom order. The customer supplies a star rating and a short testimonial; a display name, publish consent, and photos of the finished piece are optional. The server verifies the email against the order and only accepts the review once the order has been delivered.
+ */
+export interface NewReviewRequest {
+  /** The email to verify against the one on the order. A review whose email doesn't match the order is rejected. */
+  email: string;
+  /**
+     * The star rating, 1 (poor) to 5 (excellent).
+     * @minimum 1
+     * @maximum 5
+     */
+  rating: number;
+  /**
+     * The customer's testimonial about their finished piece.
+     * @minLength 1
+     * @maxLength 2000
+     */
+  comment: string;
+  /**
+     * How the customer would like to be credited if the review is featured (e.g. "Ada L." or "Ada, Chicago"). Optional.
+     * @maxLength 120
+     */
+  displayName?: string;
+  /** Whether the customer gives permission to feature this review (and any photos) publicly, e.g. on the site's testimonials/portfolio. Defaults to false. */
+  consentToPublish?: boolean;
+  /** Notion file_upload ids for photos of the finished piece, uploaded ahead of time via POST /orders/reference-images. Attached to the review's Notion page as image blocks. */
+  photoIds?: string[];
+}
+
+export interface NewReviewResponse {
   received: boolean;
 }
 
@@ -226,7 +261,7 @@ export interface ProductVariant {
   /** Every size band this item is offered in ("Sizes Offered" in Notion), each flagged with whether it is currently in stock ("Sizes Available"). A size that is offered but not available is sold out, and the shop offers a per-size back-in-stock request. Empty for one-size items (soakers, cloths). */
   sizes: SizeOption[];
   quantityAvailable?: number;
-  /** Ids of other ProductVariants offered as matching add-ons for this variant (the "Matching Add-ons" self-relation in the Notion inventory database) — e.g. a skate soaker points at its matching blade cloth. Each id is the `id` of a ProductVariant that also appears in this same product list, so clients resolve the add-on's name/price/availability locally rather than the payload carrying it twice. Empty or absent when the variant has no add-ons. */
+  /** Ids of other ProductVariants offered as matching add-ons for this variant (the "Matching Add-ons" self-relation in the Notion inventory database) — e.g. a skate soaker points at its matching blade towel. Each id is the `id` of a ProductVariant that also appears in this same product list, so clients resolve the add-on's name/price/availability locally rather than the payload carrying it twice. Empty or absent when the variant has no add-ons. */
   addOnIds?: string[];
 }
 

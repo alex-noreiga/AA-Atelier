@@ -38,6 +38,8 @@ export * from './newOrderRequest';
 export * from './newOrderRequestMeasurementUnit';
 export * from './newOrderRequestPreferredContact';
 export * from './newOrderResponse';
+export * from './newReviewRequest';
+export * from './newReviewResponse';
 export * from './orderNotFound';
 export * from './orderStatus';
 export * from './orderStatusMilestonesItem';

@@ -94,6 +94,76 @@ describe("reportError", () => {
   });
 });
 
+describe("reportError edge cases", () => {
+  it("alerts on a non-Error thrown value, carrying its string form", async () => {
+    vi.spyOn(logger, "error").mockImplementation(() => logger);
+
+    await reportError(
+      { err: "plain string boom" },
+      "case: non-error thrown value",
+    );
+
+    expect(mockSendEmail).toHaveBeenCalledOnce();
+    expect(mockSendEmail.mock.calls[0][0].text).toContain("plain string boom");
+  });
+
+  it("still alerts when there is no error object at all", async () => {
+    vi.spyOn(logger, "error").mockImplementation(() => logger);
+
+    await reportError({ path: "/api/health" }, "case: no error field");
+
+    // No err in context ⇒ describeError yields nothing, but the alert still goes.
+    expect(mockSendEmail).toHaveBeenCalledOnce();
+    expect(mockSendEmail.mock.calls[0][0].subject).toContain(
+      "case: no error field",
+    );
+  });
+
+  it("times out (and only warns) when the send hangs past the deadline", async () => {
+    vi.useFakeTimers();
+    try {
+      vi.spyOn(logger, "error").mockImplementation(() => logger);
+      const warn = vi.spyOn(logger, "warn").mockImplementation(() => logger);
+      // A send that never settles — the internal timeout must reject the race.
+      mockSendEmail.mockReturnValueOnce(new Promise<void>(() => {}));
+
+      const pending = reportError(
+        { err: new Error("slow resend") },
+        "case: send timeout",
+      );
+      // Drive past the 3s SEND_TIMEOUT_MS so the timeout fires.
+      await vi.advanceTimersByTimeAsync(3000);
+
+      await expect(pending).resolves.toBeUndefined();
+      expect(warn).toHaveBeenCalledOnce();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("prunes stale signatures once the dedupe map grows large", async () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date("2026-01-01T00:00:00Z"));
+    try {
+      vi.spyOn(logger, "error").mockImplementation(() => logger);
+
+      // Fill the map past its 200-entry cleanup threshold with distinct alerts.
+      for (let i = 0; i < 200; i++) {
+        await reportError({ err: new Error(`bulk ${i}`) }, `bulk case ${i}`);
+      }
+      // Let every entry age out of the dedupe window, then trip one more alert:
+      // the >200 insert runs the opportunistic prune over the now-stale entries.
+      vi.advanceTimersByTime(6 * 60 * 1000);
+      await reportError({ err: new Error("bulk final") }, "bulk case final");
+
+      // 200 + 1 sends, and the process stayed healthy through the cleanup.
+      expect(mockSendEmail).toHaveBeenCalledTimes(201);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+});
+
 describe("reportEmailFailure", () => {
   it("alerts with the failed email's subject and does not re-log at error", async () => {
     const error = vi.spyOn(logger, "error").mockImplementation(() => logger);

@@ -27,12 +27,23 @@ const STAGE_PROPERTY_NAME = "Stage";
 // the customer pays online (both deposits + the balance); the invoice flow
 // follows this relation to read/write it. See `invoice.service.ts`.
 export const ORDER_INVOICES_RELATION_PROPERTY = "Invoices"; // relation → invoices
+// Relation to the order's costing items ("costing (custom orders)" database).
+// The invoice generator follows this to itemize the order — each costing item
+// contributes its material usage lines + labor + margin. See
+// `services/invoice-generator.service.ts`.
+export const ORDER_COSTING_ITEMS_RELATION_PROPERTY = "Costing Items"; // relation → costing
 // The delivery/competition target the atelier sets on a custom order once it's
 // quoted and scheduled. Drives the per-stage production milestones (see
 // schedule.service.ts). `Milestones Generated` is the idempotency marker the
 // reconciliation cron flips once an order's milestones exist.
 export const ORDER_DUE_DATE_PROPERTY = "Due Date"; // date
 export const ORDER_MILESTONES_GENERATED_PROPERTY = "Milestones Generated"; // checkbox
+// The furthest stage the customer has been emailed about, stored as a rich_text
+// marker so the status-change webhook only notifies on FORWARD movement — a
+// backward stage edit (a correction/rework) or a re-fire must not email. Empty
+// for orders that predate this or haven't been notified yet. Written after a
+// notification is sent. See `services/order-notification.service.ts`.
+export const ORDER_LAST_NOTIFIED_STAGE_PROPERTY = "Last Notified Stage"; // rich_text
 // Relation to the Client CRM database (the synced end of the CRM's "Orders"
 // dual relation). Set on order create when a client record was upserted, so the
 // order lands against a durable customer record. See `clients.repository.ts`.
@@ -55,6 +66,10 @@ export interface OrderRecord {
   pageId?: string;
   /** The linked invoice's Notion page id, or undefined when no invoice exists. */
   invoicePageId?: string;
+  /** Page ids of the order's costing items (`Costing Items` relation) — the
+   * invoice generator itemizes from these. Empty when none are linked.
+   * Stripped from the HTTP response by the `GetOrderStatusResponse` zod parse. */
+  costingItemIds?: string[];
 }
 
 /** The status-lookup response: the raw record plus the derived production-lock
@@ -101,11 +116,16 @@ export interface NotionOrderPage {
     // can read them back and `PATCH /v1/pages/{id}` can update them in place.
     Stage?: { type: "status"; status: { name: string } | null };
     Invoices?: { type: "relation"; relation: Array<{ id: string }> };
+    "Costing Items"?: { type: "relation"; relation: Array<{ id: string }> };
     "Due Date"?: {
       type: "date";
       date: { start: string; end: string | null } | null;
     };
     "Milestones Generated"?: { type: "checkbox"; checkbox: boolean };
+    "Last Notified Stage"?: {
+      type: "rich_text";
+      rich_text: Array<{ plain_text: string }>;
+    };
   };
 }
 
@@ -152,6 +172,14 @@ export function extractInvoiceRelationId(
   return property.relation[0]?.id;
 }
 
+/** The page ids of the order's costing items (`Costing Items` relation), or an
+ * empty array when none are linked. */
+export function extractCostingItemIds(page: NotionOrderPage): string[] {
+  const property = page.properties[ORDER_COSTING_ITEMS_RELATION_PROPERTY];
+  if (property?.type !== "relation") return [];
+  return property.relation.map((r) => r.id);
+}
+
 /** Read the customer email off an order page (empty for pre-Email orders). */
 export function extractOrderEmail(page: NotionOrderPage): string {
   return page.properties[ORDER_EMAIL_PROPERTY]?.email ?? "";
@@ -170,4 +198,15 @@ export function extractDueDate(page: NotionOrderPage): string | undefined {
 export function extractMilestonesGenerated(page: NotionOrderPage): boolean {
   const property = page.properties[ORDER_MILESTONES_GENERATED_PROPERTY];
   return property?.type === "checkbox" ? property.checkbox : false;
+}
+
+/** The furthest stage the customer has been emailed about (empty when never
+ * notified / the property doesn't exist), used to gate status-change emails to
+ * forward movement only. */
+export function extractLastNotifiedStage(page: NotionOrderPage): string {
+  return (
+    page.properties[ORDER_LAST_NOTIFIED_STAGE_PROPERTY]?.rich_text
+      ?.map((t) => t.plain_text)
+      .join("") ?? ""
+  );
 }

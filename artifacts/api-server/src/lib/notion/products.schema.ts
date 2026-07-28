@@ -46,7 +46,7 @@ export interface VariantRecord {
   sizes: SizeOptionRecord[];
   quantityAvailable?: number;
   /** Ids of inventory rows offered as matching add-ons for this variant (the
-   * `Matching Add-ons` self-relation) — e.g. a soaker points at its blade cloth.
+   * `Matching Add-ons` self-relation) — e.g. a soaker points at its blade towel.
    * Empty when the row has no add-ons. */
   addOnIds: string[];
   /** The card's category name. Resolved from the `Category` relation in the
