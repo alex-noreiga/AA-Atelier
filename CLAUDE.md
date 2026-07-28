@@ -983,7 +983,7 @@ The site collects **privacy-friendly web analytics** (pageviews + client-side
 navigations) via **Vercel Web Analytics** (`@vercel/analytics/react`), gated
 behind an explicit **opt-in cookie-consent banner**. It's a purely client-side
 feature — **no backend, no data model, no new env var** — that builds on the
-existing Vercel deployment (enable *Web Analytics* in the Vercel project
+existing Vercel deployment (enable _Web Analytics_ in the Vercel project
 dashboard for data to flow; nothing else deploy-side). Frontend only:
 `lib/consent.tsx` (the consent context), `components/analytics.tsx` (the gated
 `<Analytics />`), `components/cookie-consent-banner.tsx` (the banner), all wired

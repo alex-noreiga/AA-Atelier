@@ -49,11 +49,7 @@ export default function CookieConsentBanner() {
           >
             Decline
           </Button>
-          <Button
-            size="sm"
-            onClick={grant}
-            data-testid="cookie-consent-accept"
-          >
+          <Button size="sm" onClick={grant} data-testid="cookie-consent-accept">
             Accept
           </Button>
         </div>

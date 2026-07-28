@@ -17,7 +17,9 @@ function renderServices() {
 describe("Services", () => {
   it("renders the service cards", () => {
     renderServices();
-    expect(screen.getByTestId("service-bespoke-commissions")).toBeInTheDocument();
+    expect(
+      screen.getByTestId("service-bespoke-commissions"),
+    ).toBeInTheDocument();
     expect(
       screen.getByTestId("service-rhinestoning-embellishment"),
     ).toBeInTheDocument();
@@ -26,9 +28,7 @@ describe("Services", () => {
   it("emits an ItemList of Service structured data built from the cards", () => {
     renderServices();
 
-    const script = document.querySelector(
-      'script[type="application/ld+json"]',
-    );
+    const script = document.querySelector('script[type="application/ld+json"]');
     expect(script).not.toBeNull();
     const data = JSON.parse(script?.textContent ?? "{}");
 

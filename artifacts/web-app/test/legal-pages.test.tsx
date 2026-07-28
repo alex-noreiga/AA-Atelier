@@ -34,9 +34,7 @@ describe("Privacy", () => {
     expect(
       screen.getByRole("heading", { name: "Cookies and analytics" }),
     ).toBeInTheDocument();
-    expect(
-      screen.getByTestId("manage-cookie-preferences"),
-    ).toBeInTheDocument();
+    expect(screen.getByTestId("manage-cookie-preferences")).toBeInTheDocument();
   });
 });
 
