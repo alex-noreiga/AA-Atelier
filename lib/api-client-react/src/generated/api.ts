@@ -41,6 +41,8 @@ import type {
   NewNotifyResponse,
   NewOrderRequest,
   NewOrderResponse,
+  NewReviewRequest,
+  NewReviewResponse,
   OrderNotFound,
   OrderStatus,
   PaymentSessionResponse,
@@ -448,6 +450,79 @@ export const useCreateMeasurementChangeRequest = <TError = ErrorType<ErrorEnvelo
         TContext
       > => {
       return useMutation(getCreateMeasurementChangeRequestMutationOptions(options));
+    }
+
+export const getCreateOrderReviewUrl = (orderNumber: string,) => {
+
+
+
+
+  return `/api/orders/${orderNumber}/reviews`
+}
+
+/**
+ * Captures a customer's review of a finished custom order — a star rating, a short testimonial, an optional display name and photos of the finished piece — once the order has reached its final (delivered) stage. The customer is verified against the email on the order. Accepted reviews land in the Notion reviews database for the atelier to curate (and later feature in the portfolio). Photos are uploaded ahead of time via POST /orders/reference-images; their file_upload ids are passed as photoIds.
+ * @summary Leave a post-delivery review for an order
+ */
+export const createOrderReview = async (orderNumber: string,
+    newReviewRequest: NewReviewRequest, options?: RequestInit): Promise<NewReviewResponse> => {
+
+  return customFetch<NewReviewResponse>(getCreateOrderReviewUrl(orderNumber),
+  {
+    ...options,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    body: JSON.stringify(newReviewRequest)
+  }
+);}
+
+
+
+
+
+export const getCreateOrderReviewMutationOptions = <TError = ErrorType<ErrorEnvelope | OrderNotFound>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof createOrderReview>>, TError,{orderNumber: string;data: BodyType<NewReviewRequest>}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof createOrderReview>>, TError,{orderNumber: string;data: BodyType<NewReviewRequest>}, TContext> => {
+
+const mutationKey = ['createOrderReview'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof createOrderReview>>, {orderNumber: string;data: BodyType<NewReviewRequest>}> = (props) => {
+          const {orderNumber,data} = props ?? {};
+
+          return  createOrderReview(orderNumber,data,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type CreateOrderReviewMutationResult = NonNullable<Awaited<ReturnType<typeof createOrderReview>>>
+    export type CreateOrderReviewMutationBody = BodyType<NewReviewRequest>
+    export type CreateOrderReviewMutationError = ErrorType<ErrorEnvelope | OrderNotFound>
+
+    /**
+ * @summary Leave a post-delivery review for an order
+ */
+export const useCreateOrderReview = <TError = ErrorType<ErrorEnvelope | OrderNotFound>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof createOrderReview>>, TError,{orderNumber: string;data: BodyType<NewReviewRequest>}, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof createOrderReview>>,
+        TError,
+        {orderNumber: string;data: BodyType<NewReviewRequest>},
+        TContext
+      > => {
+      return useMutation(getCreateOrderReviewMutationOptions(options));
     }
 
 export const getCreateContactMessageUrl = () => {

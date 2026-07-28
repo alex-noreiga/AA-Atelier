@@ -16,6 +16,7 @@ import {
   BadRequestError,
   ForbiddenError,
   MeasurementsLockedError,
+  ConflictError,
 } from "../../src/lib/errors.js";
 
 const mockReportError = vi.mocked(reportError);
@@ -125,6 +126,22 @@ describe("errorHandler", () => {
     expect(res.statusCode).toBe(409);
     expect(res.body).toEqual({
       error: "This order is already in production; measurements are locked.",
+    });
+  });
+
+  it("maps a ConflictError to a 409 error envelope with its message", () => {
+    const res = makeRes();
+    errorHandler(
+      new ConflictError(
+        "You can leave a review once your order has been delivered.",
+      ),
+      req,
+      res,
+      vi.fn(),
+    );
+    expect(res.statusCode).toBe(409);
+    expect(res.body).toEqual({
+      error: "You can leave a review once your order has been delivered.",
     });
   });
 

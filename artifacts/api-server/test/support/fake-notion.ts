@@ -183,6 +183,7 @@ export function orderPage(opts: {
   email?: string | null;
   dueDate?: string | null;
   milestonesGenerated?: boolean;
+  lastNotifiedStage?: string;
 }) {
   return {
     id: opts.id ?? "page-id",
@@ -224,6 +225,12 @@ export function orderPage(opts: {
       "Milestones Generated": {
         type: "checkbox",
         checkbox: opts.milestonesGenerated ?? false,
+      },
+      "Last Notified Stage": {
+        type: "rich_text",
+        rich_text: opts.lastNotifiedStage
+          ? [{ plain_text: opts.lastNotifiedStage }]
+          : [],
       },
     },
   };

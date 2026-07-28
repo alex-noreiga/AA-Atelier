@@ -36,19 +36,29 @@ interface ReferenceImageUploadProps {
   /** Called with the successfully-uploaded file_upload ids whenever they change. */
   onChange: (ids: string[]) => void;
   disabled?: boolean;
+  /** Text on the picker button. Defaults to "Add images". */
+  label?: string;
+  /** Helper line under the picker. Defaults to the order-form copy. */
+  helpText?: string;
+  /** Maximum images. Defaults to `MAX_REFERENCE_IMAGES`. */
+  max?: number;
 }
 
 /**
- * Optional reference / inspiration image picker for the order form. Each chosen
- * image is downscaled and uploaded immediately (see `lib/reference-images.ts`),
- * shown as a filename row with live per-image status. The parent form receives
- * just the uploaded ids via `onChange` and sends them as the order's
- * `referenceImageIds`; the atelier sees the images themselves on the order's
- * Notion page.
+ * Optional image picker built on the reference-image upload pipeline. Each
+ * chosen image is downscaled and uploaded immediately (see
+ * `lib/reference-images.ts`), shown as a filename row with live per-image
+ * status; the parent receives just the uploaded Notion file_upload ids via
+ * `onChange`. Used by the order form (reference / inspiration images) and the
+ * review dialog (photos of the finished piece) — the copy and cap are
+ * overridable so it fits either.
  */
 export function ReferenceImageUpload({
   onChange,
   disabled,
+  label = "Add images",
+  helpText,
+  max = MAX_REFERENCE_IMAGES,
 }: ReferenceImageUploadProps) {
   const [items, setItems] = useState<ReferenceImageItem[]>([]);
   const inputRef = useRef<HTMLInputElement>(null);
@@ -87,7 +97,7 @@ export function ReferenceImageUpload({
 
   function addFiles(fileList: FileList | null) {
     if (!fileList || fileList.length === 0) return;
-    const remaining = MAX_REFERENCE_IMAGES - items.length;
+    const remaining = max - items.length;
     const files = Array.from(fileList).slice(0, Math.max(0, remaining));
 
     for (const file of files) {
@@ -104,7 +114,7 @@ export function ReferenceImageUpload({
     setItems((current) => current.filter((item) => item.key !== key));
   }
 
-  const atLimit = items.length >= MAX_REFERENCE_IMAGES;
+  const atLimit = items.length >= max;
 
   return (
     <div>
@@ -164,7 +174,7 @@ export function ReferenceImageUpload({
           data-testid="add-reference-image"
         >
           <ImagePlus className="w-4 h-4" />
-          Add images
+          {label}
         </button>
       )}
 
@@ -183,8 +193,8 @@ export function ReferenceImageUpload({
       />
 
       <p className="text-muted-foreground/60 text-xs mt-2">
-        Up to {MAX_REFERENCE_IMAGES} images (JPEG, PNG, WEBP, or GIF). Sketches,
-        photos, or anything that captures the look you're after.
+        {helpText ??
+          `Up to ${max} images (JPEG, PNG, WEBP, or GIF). Sketches, photos, or anything that captures the look you're after.`}
       </p>
     </div>
   );

@@ -4,6 +4,7 @@ import {
   contactInput,
   notifyInput,
   measurementChangeInput,
+  reviewInput,
 } from "@workspace/test-fixtures";
 import {
   orderConfirmationEmail,
@@ -14,14 +15,33 @@ import {
   backInStockNotificationEmail,
   measurementChangeConfirmationEmail,
   measurementChangeNotificationEmail,
+  reviewConfirmationEmail,
+  reviewNotificationEmail,
   shopOrderConfirmationEmail,
   shopOrderNotificationEmail,
   errorAlertEmail,
+  orderStageChangeEmail,
   type ShopOrderEmailDetails,
   type ErrorAlertDetails,
+  type OrderStageChangeEmailDetails,
 } from "../../src/lib/resend/emails.js";
 
 const INBOX = "orders@a3iceanddance.com";
+
+// A status-change email's source isn't a CreateXInput — the caller pre-formats
+// the order it read back from Notion into this struct, so the fixture is inline.
+function stageChangeDetails(
+  overrides: Partial<OrderStageChangeEmailDetails> = {},
+): OrderStageChangeEmailDetails {
+  return {
+    email: "ada@example.com",
+    orderName: "Ada's Competition Dress",
+    orderNumber: "000002",
+    stages: ["Consultation", "Sketching", "Sewing/Construction", "Delivery"],
+    currentStage: "Sketching",
+    ...overrides,
+  };
+}
 
 // Shop orders have no CreateXInput domain type; the caller pre-formats the paid
 // Stripe session into this struct (dollars), so the fixture is built inline.
@@ -224,6 +244,55 @@ describe("measurementChangeNotificationEmail", () => {
   });
 });
 
+describe("reviewConfirmationEmail", () => {
+  it("thanks the customer and carries the order number", () => {
+    const email = reviewConfirmationEmail(
+      reviewInput({ email: "ada@example.com" }),
+      "000002",
+    );
+
+    expect(email.to).toBe("ada@example.com");
+    expect(email.subject).toContain("000002");
+    expect(email.html).toContain("000002");
+    expect(email.html).toContain("A.A Atelier");
+    expect(email.text).toContain("Thank you");
+  });
+});
+
+describe("reviewNotificationEmail", () => {
+  it("goes to the inbox with the rating and review, and replies to the customer", () => {
+    const email = reviewNotificationEmail(
+      reviewInput({ email: "ada@example.com", rating: 5 }),
+      "000002",
+      INBOX,
+    );
+
+    expect(email.to).toBe(INBOX);
+    expect(email.replyTo).toBe("ada@example.com");
+    expect(email.subject).toContain("000002");
+    expect(email.subject).toContain("5/5");
+    expect(email.text).toContain("Order number: 000002");
+    expect(email.text).toContain("Rating:");
+    expect(email.text).toContain("stunning craftsmanship");
+  });
+
+  it("records the publish consent and the credit name when given", () => {
+    const email = reviewNotificationEmail(
+      reviewInput({ displayName: "Ada L.", consentToPublish: true }),
+      "000002",
+      INBOX,
+    );
+
+    expect(email.text).toContain("Credit as: Ada L.");
+    expect(email.text).toContain("May publish: Yes");
+  });
+
+  it("marks non-consented reviews as not publishable", () => {
+    const email = reviewNotificationEmail(reviewInput(), "000002", INBOX);
+    expect(email.text).toContain("May publish: No");
+  });
+});
+
 describe("shopOrderConfirmationEmail", () => {
   it("addresses the customer by first name and itemizes the receipt", () => {
     const email = shopOrderConfirmationEmail(shopOrderDetails());
@@ -371,5 +440,122 @@ describe("errorAlertEmail", () => {
     expect(email.text).not.toContain("Request:");
     expect(email.text).not.toContain("Status:");
     expect(email.text).not.toContain("Stack:");
+  });
+});
+
+describe("orderStageChangeEmail", () => {
+  it("uses the good-news subject + heading and leads with the stage flavor", () => {
+    const email = orderStageChangeEmail(
+      stageChangeDetails({
+        email: "ada@example.com",
+        currentStage: "Sketching",
+      }),
+    );
+
+    expect(email.to).toBe("ada@example.com");
+    expect(email.subject).toBe(
+      "Good news! Your custom piece has progressed to a new stage in our atelier.",
+    );
+    expect(email.html).toContain("Good news!");
+    // Body leads with "We're now <flavor>" (HTML uses a typographic apostrophe).
+    expect(email.html).toContain(
+      "re now translating your ideas into the first designs",
+    );
+    expect(email.text).toContain(
+      "We're now translating your ideas into the first designs",
+    );
+    expect(email.html).toContain("000002");
+    expect(email.html).toContain("A.A Atelier");
+  });
+
+  it("renders the whole pipeline, marking done/current/upcoming stages", () => {
+    const email = orderStageChangeEmail(
+      stageChangeDetails({
+        stages: [
+          "Consultation",
+          "Sketching",
+          "Sewing/Construction",
+          "Delivery",
+        ],
+        currentStage: "Sketching",
+      }),
+    );
+
+    // Every stage appears in the graphic.
+    for (const stage of [
+      "Consultation",
+      "Sketching",
+      "Sewing/Construction",
+      "Delivery",
+    ]) {
+      expect(email.html).toContain(stage);
+    }
+    // The current stage is flagged in progress (HTML) and marked in plaintext.
+    expect(email.html).toContain("in progress");
+    expect(email.text).toContain("[x] Consultation");
+    expect(email.text).toContain("[>] Sketching  <- in progress");
+    expect(email.text).toContain("[ ] Delivery");
+  });
+
+  it("shows the active stage's flavor after \"We're now\"", () => {
+    const email = orderStageChangeEmail(
+      stageChangeDetails({ currentStage: "Cutting/Pinning" }),
+    );
+    expect(email.html).toContain("cutting the fabric to pattern");
+    expect(email.text).toContain("We're now cutting the fabric to pattern");
+  });
+
+  it("falls back to a generic flavor for an unknown stage", () => {
+    const email = orderStageChangeEmail(
+      stageChangeDetails({
+        stages: ["Consultation", "Bespoke Beading"],
+        currentStage: "Bespoke Beading",
+      }),
+    );
+    expect(email.html).toContain("carefully working on this stage");
+    expect(email.text).toContain("We're now carefully working on this stage");
+  });
+
+  it("includes the estimated completion date when provided, omits it otherwise", () => {
+    const withDate = orderStageChangeEmail(
+      stageChangeDetails({ estimatedCompletion: "2026-09-01" }),
+    );
+    expect(withDate.html).toContain("Estimated completion");
+    expect(withDate.html).toContain("2026-09-01");
+    expect(withDate.text).toContain("Estimated completion: 2026-09-01");
+
+    const withoutDate = orderStageChangeEmail(stageChangeDetails());
+    expect(withoutDate.html).not.toContain("Estimated completion");
+  });
+
+  it("includes a direct tracking link only when a trackingUrl is provided", () => {
+    const withLink = orderStageChangeEmail(
+      stageChangeDetails({
+        trackingUrl: "https://a3iceanddance.com/track?orderNumber=000002",
+      }),
+    );
+    expect(withLink.html).toContain(
+      "https://a3iceanddance.com/track?orderNumber=000002",
+    );
+    expect(withLink.html).toContain("View your order");
+    expect(withLink.text).toContain(
+      "https://a3iceanddance.com/track?orderNumber=000002",
+    );
+
+    const withoutLink = orderStageChangeEmail(stageChangeDetails());
+    expect(withoutLink.html).not.toContain("tracking page");
+  });
+
+  it("HTML-escapes dynamic values from Notion (stage names, order name)", () => {
+    const email = orderStageChangeEmail(
+      stageChangeDetails({
+        stages: ["Consultation", "<b>Fitting</b>"],
+        currentStage: "<b>Fitting</b>",
+        orderNumber: "A&B-1",
+      }),
+    );
+    expect(email.html).toContain("&lt;b&gt;Fitting&lt;/b&gt;");
+    expect(email.html).not.toContain("<b>Fitting</b>");
+    expect(email.html).toContain("A&amp;B-1");
   });
 });

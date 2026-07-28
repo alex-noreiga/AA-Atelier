@@ -7,6 +7,7 @@
 //   - ForbiddenError                   -> 403 ErrorEnvelope  { error }
 //   - MeasurementsLockedError          -> 409 ErrorEnvelope  { error }
 //   - UnauthorizedError                -> 401 ErrorEnvelope  { error }
+//   - ConflictError                    -> 409 ErrorEnvelope  { error }
 //   - anything else                    -> 500 ErrorEnvelope  { error }
 
 import type { ErrorRequestHandler } from "express";
@@ -19,6 +20,7 @@ import {
   ForbiddenError,
   MeasurementsLockedError,
   UnauthorizedError,
+  ConflictError,
 } from "../lib/errors.js";
 import { logger } from "../lib/logger.js";
 import { reportError } from "../services/alert.service.js";
@@ -73,6 +75,12 @@ export const errorHandler: ErrorRequestHandler = async (
   }
 
   if (err instanceof MeasurementsLockedError) {
+    const body: ErrorEnvelope = { error: err.message };
+    res.status(409).json(body);
+    return;
+  }
+
+  if (err instanceof ConflictError) {
     const body: ErrorEnvelope = { error: err.message };
     res.status(409).json(body);
     return;

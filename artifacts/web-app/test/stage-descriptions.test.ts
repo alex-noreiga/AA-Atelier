@@ -6,7 +6,7 @@ describe("getStageDescription", () => {
     expect(getStageDescription("Sewing/Construction")).toMatch(
       /sewing and constructing/i,
     );
-    expect(getStageDescription("Delivery")).toMatch(/delivered/i);
+    expect(getStageDescription("Delivered")).toMatch(/delivered/i);
   });
 
   it("falls back to a generic line for an unknown stage", () => {
