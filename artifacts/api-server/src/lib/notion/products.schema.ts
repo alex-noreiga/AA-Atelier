@@ -25,8 +25,7 @@ const PRODUCT_ADDONS_RELATION_PROPERTY = "Matching Add-ons"; // relation → inv
 // The single status value that counts as sellable. This is an intentional,
 // targeted business rule (not a hardcoded copy of the full option list, which
 // the atelier edits live) — a row must be "In Stock" to be marked available.
-// Exported so the config-drift check (config-audit.ts) can verify it still
-// exists among the live Status options.
+// If the atelier renames that Status option in Notion, update this literal.
 export const STATUS_IN_STOCK = "In Stock";
 
 /** One size band the item is offered in, and whether it's currently in stock. */
