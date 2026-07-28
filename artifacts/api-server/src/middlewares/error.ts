@@ -6,6 +6,7 @@
 //   - NotFoundError                    -> 404 OrderNotFound  { message }
 //   - ForbiddenError                   -> 403 ErrorEnvelope  { error }
 //   - MeasurementsLockedError          -> 409 ErrorEnvelope  { error }
+//   - UnauthorizedError                -> 401 ErrorEnvelope  { error }
 //   - ConflictError                    -> 409 ErrorEnvelope  { error }
 //   - anything else                    -> 500 ErrorEnvelope  { error }
 
@@ -18,6 +19,7 @@ import {
   ValidationError,
   ForbiddenError,
   MeasurementsLockedError,
+  UnauthorizedError,
   ConflictError,
 } from "../lib/errors.js";
 import { logger } from "../lib/logger.js";
@@ -63,6 +65,12 @@ export const errorHandler: ErrorRequestHandler = async (
   if (err instanceof ForbiddenError) {
     const body: ErrorEnvelope = { error: err.message };
     res.status(403).json(body);
+    return;
+  }
+
+  if (err instanceof UnauthorizedError) {
+    const body: ErrorEnvelope = { error: err.message };
+    res.status(401).json(body);
     return;
   }
 
