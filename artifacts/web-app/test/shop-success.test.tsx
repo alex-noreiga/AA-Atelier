@@ -1,5 +1,6 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import { render, screen, within } from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
 import { Router } from "wouter";
 import { memoryLocation } from "wouter/memory-location";
 import type { ReactElement } from "react";
@@ -9,11 +10,17 @@ vi.mock("@workspace/api-client-react", () => ({
   getGetCheckoutSessionQueryKey: (n: string) => [n],
 }));
 
+// Stub the PDF builder so the download button works without loading jsPDF in
+// jsdom (the page imports it dynamically on click).
+vi.mock("@/lib/pdf/receipt-pdf", () => ({ downloadReceiptPdf: vi.fn() }));
+
 import { useGetCheckoutSession } from "@workspace/api-client-react";
+import { downloadReceiptPdf } from "@/lib/pdf/receipt-pdf";
 import ShopSuccess from "@/pages/shop-success";
 import { CartProvider, useCart } from "@/lib/cart";
 
 const mock = vi.mocked(useGetCheckoutSession);
+const mockDownload = vi.mocked(downloadReceiptPdf);
 
 function setData(data: unknown) {
   mock.mockReturnValue({ data } as never);
@@ -97,6 +104,28 @@ describe("Shop success receipt", () => {
 
     expect(screen.getByTestId("shop-success")).toBeInTheDocument();
     expect(screen.queryByTestId("receipt")).not.toBeInTheDocument();
+  });
+
+  it("downloads a PDF receipt from the session", async () => {
+    const session = {
+      status: "paid",
+      orderNumber: "SHP-1",
+      lineItems: [{ description: "Cloth", quantity: 1, amount: 8 }],
+      amountSubtotal: 8,
+      amountTotal: 8,
+    };
+    setData(session);
+    renderPage();
+
+    await userEvent.click(screen.getByTestId("button-download-pdf"));
+    expect(mockDownload).toHaveBeenCalledWith(session);
+  });
+
+  it("offers no PDF download when there's no receipt detail", () => {
+    setData({ status: "paid" });
+    renderPage();
+
+    expect(screen.queryByTestId("button-download-pdf")).not.toBeInTheDocument();
   });
 });
 
