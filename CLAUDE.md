@@ -416,8 +416,34 @@ two hard-won lessons captured in `.agents/memory/`:
    best-effort `useSubscribeNewsletter` call, so the order contract is untouched).
    Code: `services/newsletter.service.ts`, `routes/newsletter.ts`,
    `lib/notion/newsletter.{blocks,repository}.ts`, `newsletterWelcomeEmail` in
-   `lib/resend/emails.ts`. **No new env var or database** — it reuses the contact
-   database + the Resend contact sender + the optional Client CRM.
+   `lib/resend/emails.ts`. The Notion capture needs **no new database** — it reuses
+   the contact database + the Resend contact sender + the optional Client CRM.
+
+   **The mailing list is managed in Resend, not Notion — Notion is the record,
+   not the list manager.** A list also needs one-click unsubscribe (a Gmail/Yahoo
+   bulk-sender requirement), a way to actually send a campaign, and reputation
+   isolation from the transactional order/appointment mail — none of which Notion
+   can do. So on opt-in the subscriber is **also** best-effort synced into a
+   **Resend Marketing Audience** (`services/newsletter.service.ts` →
+   `upsertAudienceContactBestEffort` in `lib/resend/audience.ts`), which becomes
+   the sending list and the **subscription authority** (it owns
+   subscribed/unsubscribed). Campaigns are composed and sent as Resend
+   **Broadcasts from the dashboard** — there is deliberately **no** in-app campaign
+   sender or scheduled-send cron (sized for occasional studio updates; a dedicated
+   ESP like Beehiiv/MailerLite is the path if marketing becomes a growth channel).
+   Resend attaches the one-click unsubscribe + `List-Unsubscribe` header to every
+   Broadcast, which is what makes the "unsubscribe anytime" copy on `order-form.tsx`
+   and the **Marketing emails** section of `pages/privacy.tsx` actually true. Load-
+   bearing: the audience module is the **only** place the app uses Resend's Contacts
+   API (everything else in `lib/resend/` is transactional `send`); it **self-gates**
+   on `RESEND_AUDIENCE_ID` (optional — unset ⇒ the sync is skipped and the opt-in is
+   still captured in Notion, same degrade-when-unconfigured contract as the CRM) and
+   is **best-effort** (a Resend hiccup never fails the opt-in — the Notion row is the
+   record). The upsert re-subscribes a previously-unsubscribed email that re-opts-in
+   (create with `unsubscribed:false`, else PATCH by email). One-time atelier setup:
+   create an Audience in Resend → **Audiences** and set `RESEND_AUDIENCE_ID`; send
+   via Resend → **Broadcasts** (free ≤1,000 contacts, Marketing track billed apart
+   from transactional above that).
 
 Auth: the server reads `NOTION_API_KEY` and `NOTION_ORDERS_DATABASE_ID` from
 environment variables (via `createNotionClient` in `notion/client.ts`, read at
@@ -1312,6 +1338,12 @@ and in the maintainer's env without edits.
   `RESEND_FROM_EMAIL` / `ATELIER_INBOX_EMAIL` when unset (same verified domain, no
   extra Resend setup). Appointment mail has the same optional overrides
   (`RESEND_APPOINTMENTS_FROM_EMAIL` / `ATELIER_APPOINTMENTS_INBOX_EMAIL`).
+  Optionally `RESEND_AUDIENCE_ID` (a Resend **Marketing** Audience id): when set,
+  each newsletter opt-in is also synced into that Resend Audience — the mailing
+  list + unsubscribe authority campaigns (Resend **Broadcasts**, sent from the
+  dashboard) go out against; unset ⇒ the sync is skipped and the opt-in is still
+  captured in Notion. Free up to 1,000 contacts (the Marketing track bills apart
+  from transactional above that).
 - **Optional appointment-booking policy env vars:** `APPOINTMENT_TIMEZONE`
   (IANA zone for working hours/slots, default `America/Chicago`),
   `APPOINTMENT_MIN_LEAD_HOURS` (24), `APPOINTMENT_MAX_ADVANCE_DAYS` (45), and
@@ -1354,6 +1386,7 @@ and in the maintainer's env without edits.
 | Change appointment slot logic / policy                 | `api-server/src/lib/appointments/availability.ts` (`computeSlots`) + `time.ts` + `settings.ts`; `services/appointments.service.ts` + `routes/appointments.ts` + `lib/google/*` (Calendar free/busy + event insert)                                                                                                                                              |
 | Change the customer account portal (magic-link)        | `artifacts/web-app/src/pages/account.tsx` + `pages/account-login.tsx` (frontend); `api-server/src/services/account.service.ts` + `routes/account.ts` + `routes/account-verify.ts` + `middlewares/auth.ts` + `lib/auth/{tokens,cookies}.ts`; queries `findOrdersByEmail` / `findShopOrdersByEmail`                                                               |
 | Change the newsletter opt-in                           | `artifacts/web-app/src/components/newsletter-signup.tsx` (footer field, in `footer.tsx`) + the intake checkbox in `pages/order-form.tsx`; `api-server/src/services/newsletter.service.ts` + `routes/newsletter.ts` + `lib/notion/newsletter.{blocks,repository}.ts` (writes to the **contact** database) + `newsletterWelcomeEmail` in `lib/resend/emails.ts` |
+| Change the mailing-list / Resend audience sync         | `api-server/src/lib/resend/audience.ts` (`upsertAudienceContact` → Resend Contacts API) + `audienceId()` in `lib/resend/config.ts`; wired best-effort from `services/newsletter.service.ts`. Campaigns are sent as Resend **Broadcasts** from the dashboard (no in-app sender). Marketing-email disclosure in `pages/privacy.tsx` |
 | Add a page / route                                     | new `src/pages/*.tsx` + `<Route>` in `src/App.tsx`                                                                                                                                                                                                                                                                                                              |
 | Add or rename a nav link                               | `NAV_LINKS` in `artifacts/web-app/src/components/navbar.tsx`                                                                                                                                                                                                                                                                                                    |
 | Add a shared UI component                              | `artifacts/web-app/src/components/ui/`                                                                                                                                                                                                                                                                                                                          |

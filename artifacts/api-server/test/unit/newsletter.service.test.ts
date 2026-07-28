@@ -10,15 +10,20 @@ vi.mock("../../src/lib/notion/clients.repository.js", () => ({
 vi.mock("../../src/lib/resend/send.js", () => ({
   sendEmailBestEffort: vi.fn(),
 }));
+vi.mock("../../src/lib/resend/audience.js", () => ({
+  upsertAudienceContactBestEffort: vi.fn(),
+}));
 
 import { subscribeToNewsletter } from "../../src/services/newsletter.service.js";
 import { createNewsletterSubscription } from "../../src/lib/notion/newsletter.repository.js";
 import { upsertClientByEmail } from "../../src/lib/notion/clients.repository.js";
 import { sendEmailBestEffort } from "../../src/lib/resend/send.js";
+import { upsertAudienceContactBestEffort } from "../../src/lib/resend/audience.js";
 
 const mockCreate = vi.mocked(createNewsletterSubscription);
 const mockUpsertClient = vi.mocked(upsertClientByEmail);
 const mockSend = vi.mocked(sendEmailBestEffort);
+const mockAudience = vi.mocked(upsertAudienceContactBestEffort);
 
 afterEach(() => {
   delete process.env.ATELIER_INBOX_EMAIL;
@@ -39,6 +44,19 @@ describe("subscribeToNewsletter", () => {
     expect(mockCreate).toHaveBeenCalledOnce();
     expect(mockSend).toHaveBeenCalledOnce();
     expect(mockSend.mock.calls[0][0].to).toBe("grace@example.com");
+  });
+
+  it("syncs the subscriber into the Resend audience (best-effort wrapper)", async () => {
+    mockCreate.mockResolvedValue(undefined);
+
+    await subscribeToNewsletter(
+      newsletterInput({ email: "grace@example.com" }),
+    );
+
+    // The service goes through the best-effort wrapper (whose never-throws
+    // guarantee is covered in audience.test.ts), keyed to the opt-in email.
+    expect(mockAudience).toHaveBeenCalledOnce();
+    expect(mockAudience).toHaveBeenCalledWith("grace@example.com");
   });
 
   it("upserts a Client CRM record (Lead, named by email) and links the opt-in", async () => {

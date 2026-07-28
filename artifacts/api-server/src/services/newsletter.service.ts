@@ -15,6 +15,7 @@ import type { CreateNewsletterInput } from "../lib/notion/newsletter.blocks.js";
 import { upsertClientByEmail } from "../lib/notion/clients.repository.js";
 import { newsletterWelcomeEmail } from "../lib/resend/emails.js";
 import { sendEmailBestEffort } from "../lib/resend/send.js";
+import { upsertAudienceContactBestEffort } from "../lib/resend/audience.js";
 import { fromAddress } from "../lib/resend/config.js";
 import { logger } from "../lib/logger.js";
 
@@ -50,6 +51,12 @@ export async function subscribeToNewsletter(
     ...newsletterWelcomeEmail(input),
     from: fromAddress("contact"),
   });
+
+  // Best-effort: mirror the subscriber into the Resend Audience — the sending
+  // list + unsubscribe authority that campaigns (Resend Broadcasts) go out
+  // against. Self-gates off when RESEND_AUDIENCE_ID is unset, and never fails the
+  // opt-in (the Notion row is the record either way).
+  await upsertAudienceContactBestEffort(input.email);
 
   return { success: true };
 }
