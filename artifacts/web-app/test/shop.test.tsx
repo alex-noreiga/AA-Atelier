@@ -229,15 +229,58 @@ describe("Shop product deep links", () => {
     expect(screen.getByRole("dialog")).toBeInTheDocument();
 
     // Product structured data is injected for search indexing.
-    const jsonLd = document.querySelector('script[type="application/ld+json"]');
-    expect(jsonLd).not.toBeNull();
-    const data = JSON.parse(jsonLd?.textContent ?? "{}");
-    expect(data["@type"]).toBe("Product");
+    const scripts = Array.from(
+      document.querySelectorAll('script[type="application/ld+json"]'),
+    ).map((s) => JSON.parse(s.textContent ?? "{}"));
+    const data = scripts.find((s) => s["@type"] === "Product");
+    expect(data).toBeDefined();
     expect(data.name).toBe("Bow Fleece Soaker");
+    expect(data.sku).toBe("p1");
+    expect(data.url).toBe("https://a3iceanddance.com/shop/p1");
+    expect(data.brand).toMatchObject({ "@type": "Brand", name: "A.A Atelier" });
     expect(data.offers).toMatchObject({
       price: 22,
       priceCurrency: "USD",
       availability: "https://schema.org/InStock",
+    });
+
+    // A Home › Shop › Product breadcrumb trail rides alongside it.
+    const crumb = scripts.find((s) => s["@type"] === "BreadcrumbList");
+    expect(crumb).toBeDefined();
+    expect(crumb.itemListElement).toHaveLength(3);
+    expect(crumb.itemListElement[2]).toMatchObject({
+      position: 3,
+      name: "Bow Fleece Soaker",
+      item: "https://a3iceanddance.com/shop/p1",
+    });
+  });
+
+  it("aggregates multiple priced variants into an AggregateOffer", () => {
+    setHook({
+      products: [
+        product({
+          id: "p2",
+          title: "Crystal Dress",
+          variants: [
+            variant({ id: "v1", price: 120 }),
+            variant({ id: "v2", price: 180 }),
+          ],
+        }),
+      ],
+    });
+    renderShopAt("/shop/p2");
+
+    const data = Array.from(
+      document.querySelectorAll('script[type="application/ld+json"]'),
+    )
+      .map((s) => JSON.parse(s.textContent ?? "{}"))
+      .find((s) => s["@type"] === "Product");
+    expect(data.offers).toMatchObject({
+      "@type": "AggregateOffer",
+      lowPrice: 120,
+      highPrice: 180,
+      offerCount: 2,
+      priceCurrency: "USD",
     });
   });
 

@@ -10,7 +10,7 @@ import {
 import { PageShell } from "@/components/page-shell";
 import { CtaLink } from "@/components/cta";
 import { SectionHeader } from "@/components/section-header";
-import { Seo } from "@/components/seo";
+import { Seo, StructuredData, SITE_ORIGIN } from "@/components/seo";
 import { ROUTE_SEO } from "@/lib/seo-routes";
 
 interface Service {
@@ -108,10 +108,37 @@ const PROCESS: { step: string; title: string; description: string }[] = [
   },
 ];
 
+// schema.org structured data for the studio's offerings, built from the same
+// SERVICES array the page renders so the two can't drift (mirrors the About
+// page's FAQPage). Communicates to search engines that A.A Atelier offers these
+// services, provided by the atelier and served in the US.
+const SERVICES_JSON_LD: Record<string, unknown> = {
+  "@context": "https://schema.org",
+  "@type": "ItemList",
+  name: "A.A Atelier Services",
+  itemListElement: SERVICES.map((service, index) => ({
+    "@type": "ListItem",
+    position: index + 1,
+    item: {
+      "@type": "Service",
+      name: service.title,
+      description: service.description,
+      serviceType: service.title,
+      provider: {
+        "@type": "Organization",
+        name: "A.A Atelier",
+        url: SITE_ORIGIN,
+      },
+      areaServed: "US",
+    },
+  })),
+};
+
 export default function Services() {
   return (
     <PageShell align="top">
       <Seo {...ROUTE_SEO["/services"]} />
+      <StructuredData data={SERVICES_JSON_LD} />
       <div className="w-full max-w-3xl z-10 mx-auto px-6 pt-24 pb-20 animate-in fade-in zoom-in-95 duration-1000">
         {/* Header */}
         <div className="text-center">

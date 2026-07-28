@@ -29,8 +29,13 @@ export const test = base.extend({
     // real analytics script from loading, matching the offline/deterministic
     // contract. Specs that exercise the banner itself can override this.
     await page.addInitScript(() => {
+      // Runs in the browser; cast around the Node-only types in this package.
       try {
-        window.localStorage.setItem("aa-cookie-consent", "denied");
+        (
+          globalThis as {
+            localStorage: { setItem(key: string, value: string): void };
+          }
+        ).localStorage.setItem("aa-cookie-consent", "denied");
       } catch {
         /* localStorage may be unavailable; the banner is non-blocking anyway */
       }
