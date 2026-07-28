@@ -86,7 +86,8 @@ const formSchema = z
     }
   });
 
-type FormValues = z.infer<typeof formSchema>;
+type FormInput = z.input<typeof formSchema>;
+type FormValues = z.output<typeof formSchema>;
 
 export default function OrderForm() {
   const [success, setSuccess] = useState<{
@@ -125,7 +126,7 @@ export default function OrderForm() {
     watch,
     setValue,
     formState: { errors },
-  } = useForm<FormValues>({
+  } = useForm<FormInput, any, FormValues>({
     resolver: zodResolver(formSchema),
     defaultValues: {
       measurementMode: "self",
