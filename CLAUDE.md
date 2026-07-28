@@ -139,6 +139,13 @@ Express app (artifacts/api-server)  ──►  Notion REST API (orders database)
   │                                  + optional size) in that SAME contact
   │                                  database, tagged Request type = "Back in
   │                                  stock" + sends a request-confirmation email
+  ├─ POST /api/newsletter          → files a marketing newsletter opt-in (email +
+  │                                  optional source) in that SAME contact
+  │                                  database, tagged Request type = "Newsletter"
+  │                                  + sends a best-effort welcome email (from the
+  │                                  contact/hello@ sender). Marketing consent,
+  │                                  separate from the transactional captures; no
+  │                                  atelier notification (a list needs no triage)
   ├─ POST /api/checkout            → prices the requested in-stock items from
   │                                  live Notion inventory and creates a Stripe
   │                                  Checkout session; returns the hosted-
@@ -223,8 +230,8 @@ Express app (artifacts/api-server)  ──►  Notion REST API (orders database)
 ```
 
 The customer-notification POST endpoints (`/api/orders`, `/api/contact`,
-`/api/notify`, `/api/appointments`, `/api/orders/:n/measurement-change-requests`,
-`/api/orders/:n/reviews`)
+`/api/notify`, `/api/newsletter`, `/api/appointments`,
+`/api/orders/:n/measurement-change-requests`, `/api/orders/:n/reviews`)
 each send a customer email via **Resend** as
 a **best-effort** side effect after the Notion write: the send is logged-and-swallowed
 on failure and never changes the response status (see the Resend adapter in
@@ -245,10 +252,12 @@ Each of those also sends an **internal atelier notification** to
 env var is set; unset means the notification is skipped and only the customer email
 goes out. So the atelier gets an email nudge on top of the Notion row. The
 customer-facing and atelier-facing builders live side by side in
-`lib/resend/emails.ts`.
+`lib/resend/emails.ts`. (The one exception is `/api/newsletter`: it sends the
+customer welcome but deliberately **no** atelier notification — a mailing-list
+opt-in needs no triage, so a per-signup studio email would just be noise.)
 
 Emails are grouped into three **categories** (`lib/resend/config.ts`): **orders**
-(order + back-in-stock mail), **contact** (contact-form mail), and
+(order + back-in-stock mail), **contact** (contact-form + newsletter mail), and
 **appointments** (booking mail). Each category resolves a **sender** and a
 **notification inbox** from env, with the per-category overrides falling back to
 the base vars when unset (so unset ⇒ identical to a single-address setup): sender
@@ -373,21 +382,42 @@ two hard-won lessons captured in `.agents/memory/`:
    rule — `SIZED_CATEGORIES` — but it is now Notion-driven via the Product
    Categories relation, so no name is left to drift.)
 
-3. **The contact database has three writers.** "Website Contact Messages" holds
+3. **The contact database has four writers.** "Website Contact Messages" holds
    contact-form messages (`contact.blocks.ts`), the shop's back-in-stock requests
-   (`notify.blocks.ts`), and order measurement-change requests
-   (`measurement-change.blocks.ts`), separated by the **Request type** select
-   (`Inquiry` / `Back in stock` / `Measurement update`). A restock request carries
-   **Item** and **Size** as real properties, and a measurement-change request
-   carries the order number + requested measurements, so the atelier can filter the
-   inbox by request type rather than reading it out of free text. The property names
-   these writers share are exported from `contact.blocks.ts` and imported by
-   `notify.blocks.ts` / `measurement-change.blocks.ts` — keep it that way so they
-   can't drift. All three also best-effort **link to the Client CRM** (the shared
+   (`notify.blocks.ts`), order measurement-change requests
+   (`measurement-change.blocks.ts`), and marketing newsletter opt-ins
+   (`newsletter.blocks.ts`), separated by the **Request type** select
+   (`Inquiry` / `Back in stock` / `Measurement update` / `Newsletter`). A restock
+   request carries **Item** and **Size** as real properties, and a measurement-change
+   request carries the order number + requested measurements, so the atelier can
+   filter the inbox by request type rather than reading it out of free text. A
+   newsletter opt-in needs no property of its own — email + the shared
+   Subject/Stage/Request type carry it, with its `source` (footer / order form)
+   folded into the subject, the way notify folds item/size — so the database needs
+   nothing added for it. The property names these writers share are exported from
+   `contact.blocks.ts` and imported by `notify.blocks.ts` /
+   `measurement-change.blocks.ts` / `newsletter.blocks.ts` — keep it that way so they
+   can't drift. All four also best-effort **link to the Client CRM** (the shared
    `Client` relation — `CONTACT_CLIENT_PROPERTY`), via the same `upsertClientByEmail`
-   the order flow uses: a contact inquiry / back-in-stock request creates a `Lead`,
-   a measurement change reuses the order's existing (`Active`) client. See
-   `.agents/memory/notion-p2-duplicates.md`.
+   the order flow uses: a contact inquiry / back-in-stock request / newsletter opt-in
+   creates a `Lead`, a measurement change reuses the order's existing (`Active`)
+   client. See `.agents/memory/notion-p2-duplicates.md`.
+
+   The newsletter opt-in is the marketing counterpart to those transactional
+   captures (roadmap "Newsletter & mailing-list opt-in"): `POST /api/newsletter`
+   (contract-first — in `openapi.yaml` + the generated client) records explicit
+   marketing consent and sends a best-effort **welcome** email from the
+   **contact** sender (hello@), keeping it off transactional orders@. Unlike the
+   other three flows it sends **no** internal atelier notification — a mailing-list
+   opt-in needs no triage, and a per-signup studio email would be noise as the list
+   grows; the Notion row (+ CRM Lead) is the record. Two capture surfaces feed it:
+   a footer field (`components/newsletter-signup.tsx`, rendered by `footer.tsx`) and
+   an intake checkbox on the order form (`pages/order-form.tsx` fires a separate
+   best-effort `useSubscribeNewsletter` call, so the order contract is untouched).
+   Code: `services/newsletter.service.ts`, `routes/newsletter.ts`,
+   `lib/notion/newsletter.{blocks,repository}.ts`, `newsletterWelcomeEmail` in
+   `lib/resend/emails.ts`. **No new env var or database** — it reuses the contact
+   database + the Resend contact sender + the optional Client CRM.
 
 Auth: the server reads `NOTION_API_KEY` and `NOTION_ORDERS_DATABASE_ID` from
 environment variables (via `createNotionClient` in `notion/client.ts`, read at
@@ -1323,6 +1353,7 @@ and in the maintainer's env without edits.
 | Change staff working hours / calendars                 | The working-hours **Google Sheet** (`APPOINTMENT_SHEET_ID`); read in `api-server/src/lib/google/sheets.repository.ts`, parsed by `lib/appointments/staff.ts`                                                                                                                                                                                                    |
 | Change appointment slot logic / policy                 | `api-server/src/lib/appointments/availability.ts` (`computeSlots`) + `time.ts` + `settings.ts`; `services/appointments.service.ts` + `routes/appointments.ts` + `lib/google/*` (Calendar free/busy + event insert)                                                                                                                                              |
 | Change the customer account portal (magic-link)        | `artifacts/web-app/src/pages/account.tsx` + `pages/account-login.tsx` (frontend); `api-server/src/services/account.service.ts` + `routes/account.ts` + `routes/account-verify.ts` + `middlewares/auth.ts` + `lib/auth/{tokens,cookies}.ts`; queries `findOrdersByEmail` / `findShopOrdersByEmail`                                                               |
+| Change the newsletter opt-in                           | `artifacts/web-app/src/components/newsletter-signup.tsx` (footer field, in `footer.tsx`) + the intake checkbox in `pages/order-form.tsx`; `api-server/src/services/newsletter.service.ts` + `routes/newsletter.ts` + `lib/notion/newsletter.{blocks,repository}.ts` (writes to the **contact** database) + `newsletterWelcomeEmail` in `lib/resend/emails.ts` |
 | Add a page / route                                     | new `src/pages/*.tsx` + `<Route>` in `src/App.tsx`                                                                                                                                                                                                                                                                                                              |
 | Add or rename a nav link                               | `NAV_LINKS` in `artifacts/web-app/src/components/navbar.tsx`                                                                                                                                                                                                                                                                                                    |
 | Add a shared UI component                              | `artifacts/web-app/src/components/ui/`                                                                                                                                                                                                                                                                                                                          |

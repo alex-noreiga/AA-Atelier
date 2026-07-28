@@ -23,6 +23,7 @@ import type {
   CheckoutSessionStatus,
   NewContactRequest,
   NewMeasurementChangeRequest,
+  NewNewsletterRequest,
   NewNotifyRequest,
   NewOrderRequest,
   NewReviewRequest,
@@ -121,6 +122,18 @@ export function notifyInput(
   return {
     email: "grace@example.com",
     item: "Bow Fleece Soaker — Black",
+    ...overrides,
+  };
+}
+
+/** A valid newsletter opt-in. Carries a `source` by default; override or drop it
+ *  to exercise the source-less path. */
+export function newsletterInput(
+  overrides: Partial<NewNewsletterRequest> = {},
+): NewNewsletterRequest {
+  return {
+    email: "grace@example.com",
+    source: "footer",
     ...overrides,
   };
 }

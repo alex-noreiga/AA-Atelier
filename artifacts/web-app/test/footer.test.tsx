@@ -1,7 +1,19 @@
-import { describe, it, expect } from "vitest";
+import { describe, it, expect, vi } from "vitest";
 import { render, screen } from "@testing-library/react";
 import { Router } from "wouter";
 import { memoryLocation } from "wouter/memory-location";
+
+// The footer embeds the newsletter signup, which consumes the generated
+// mutation hook. Stub it so the footer renders without a QueryClientProvider —
+// the newsletter form has its own test.
+vi.mock("@workspace/api-client-react", () => ({
+  useSubscribeNewsletter: () => ({
+    mutate: vi.fn(),
+    isPending: false,
+    isSuccess: false,
+  }),
+}));
+
 import Footer from "@/components/footer";
 
 // Footer fetches nothing, but it renders wouter <Link>s, so it needs a Router.

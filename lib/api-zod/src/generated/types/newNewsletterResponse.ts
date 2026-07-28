@@ -6,6 +6,6 @@
  * OpenAPI spec version: 0.1.0
  */
 
-export interface NewReviewResponse {
-  received: boolean;
+export interface NewNewsletterResponse {
+  success: boolean;
 }
