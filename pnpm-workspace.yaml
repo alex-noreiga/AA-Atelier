@@ -26,6 +26,13 @@ catalog:
   wouter: ^3.3.5
   zod: ^3.25.76
 
+# Force a single Vite version across the workspace. vitest pulls Vite in as a
+# peer, and with autoInstallPeers off that resolved to a second (v7) copy
+# alongside the app's catalog v8 — two Vite instances break the shared Plugin
+# type and the React JSX transform under Vitest. Pin every consumer to v8.
+overrides:
+  vite: "^8.1.5"
+
 minimumReleaseAge: 1440
 
 onlyBuiltDependencies:
