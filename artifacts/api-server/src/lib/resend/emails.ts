@@ -299,6 +299,52 @@ export function backInStockConfirmationEmail(
   };
 }
 
+/**
+ * The passwordless sign-in link for the account portal. The customer requested
+ * it, so this is a transactional email, not marketing. `url` is app-generated
+ * (a signed token appended to our own origin), so it's trusted — the only
+ * customer-derived value is the recipient address, which is used solely in `to`.
+ */
+export function magicLinkEmail(email: string, url: string): EmailMessage {
+  const html = layout(
+    "Your sign-in link",
+    `<p>Hi there,</p>
+     <p>Use the button below to sign in to your A.A Atelier account, where you can
+        see your orders and invoices in one place.</p>
+     <p style="margin:28px 0;">
+       <a href="${url}" style="display:inline-block;background:#2b2622;color:#faf8f5;
+          text-decoration:none;padding:12px 24px;border-radius:2px;font-size:15px;">Sign in</a>
+     </p>
+     <p style="font-size:14px;color:#8a7f74;">This link expires in 15 minutes and can
+        only be used once. If you didn't request it, you can safely ignore this email —
+        no one can sign in without it.</p>
+     <p style="font-size:13px;color:#8a7f74;word-break:break-all;">Or paste this link
+        into your browser:<br/>${url}</p>`,
+  );
+
+  const text = [
+    `Hi there,`,
+    ``,
+    `Use the link below to sign in to your A.A Atelier account, where you can see`,
+    `your orders and invoices in one place:`,
+    ``,
+    url,
+    ``,
+    `This link expires in 15 minutes and can only be used once. If you didn't`,
+    `request it, you can safely ignore this email — no one can sign in without it.`,
+    ``,
+    `Thank you,`,
+    `The ${ATELIER_NAME} team`,
+  ].join("\n");
+
+  return {
+    to: email,
+    subject: `Your A.A Atelier sign-in link`,
+    html,
+    text,
+  };
+}
+
 // ---------------------------------------------------------------------------
 // Atelier-facing notifications
 //

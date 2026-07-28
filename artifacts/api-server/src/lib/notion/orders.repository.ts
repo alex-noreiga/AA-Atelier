@@ -9,6 +9,7 @@ import { getNotionClient, type NotionClient } from "./client.js";
 import { buildOrderProperties, buildOrderPageBlocks } from "./orders.blocks.js";
 import {
   ORDER_NUMBER_PROPERTY,
+  ORDER_EMAIL_PROPERTY,
   ORDER_DUE_DATE_PROPERTY,
   ORDER_MILESTONES_GENERATED_PROPERTY,
   ORDER_LAST_NOTIFIED_STAGE_PROPERTY,
@@ -26,6 +27,7 @@ import {
   type NotionOrderPage,
   type NotionQueryResponse,
   type OrderRecord,
+  type OrderSummary,
 } from "./orders.schema.js";
 
 const STAGE_CACHE_TTL_MS = 60_000;
@@ -148,6 +150,75 @@ export async function findOrderByNumber(
     ...(invoicePageId !== undefined ? { invoicePageId } : {}),
     ...(costingItemIds.length > 0 ? { costingItemIds } : {}),
   };
+}
+
+/**
+ * Find every custom order placed under a customer's email, for the account
+ * portal. Filters on the `Email` property (`email: { equals }`) and paginates the
+ * full result set (a customer may have several orders — unlike the single-order
+ * lookups). The live ordered stage list is fetched once and shared across the
+ * summaries so a card can show progress. Returns a lightweight {@link OrderSummary}
+ * per order (no milestone/invoice fan-out — those load on the detail pages).
+ *
+ * Note: Notion's email `equals` is exact, so an order stored under a differently-
+ * cased address than the sign-in email won't match. Orders created before the
+ * `Email` property existed have no address to match and are invisible here —
+ * the customer can still track those by number.
+ */
+export async function findOrdersByEmail(
+  email: string,
+  client: NotionClient = getNotionClient(),
+): Promise<OrderSummary[]> {
+  assertConfigured(client);
+
+  const trimmed = email.trim();
+  if (!trimmed) return [];
+
+  const stages = await fetchLiveOrderStages(client);
+  const summaries: OrderSummary[] = [];
+  let cursor: string | undefined;
+
+  do {
+    const response = await client.fetch(
+      `/v1/databases/${client.databaseId}/query`,
+      {
+        method: "POST",
+        body: JSON.stringify({
+          filter: {
+            property: ORDER_EMAIL_PROPERTY,
+            email: { equals: trimmed },
+          },
+          ...(cursor ? { start_cursor: cursor } : {}),
+        }),
+      },
+    );
+
+    if (!response.ok) {
+      throw new Error(`Notion query failed with status ${response.status}`);
+    }
+
+    const data = (await response.json()) as NotionQueryResponse & {
+      has_more?: boolean;
+      next_cursor?: string | null;
+    };
+
+    for (const page of data.results) {
+      const orderNumber = extractOrderNumber(page);
+      if (!orderNumber) continue;
+      const estimatedCompletion = extractDueDate(page);
+      summaries.push({
+        orderNumber,
+        orderName: extractOrderName(page),
+        currentStage: extractCurrentStage(page),
+        stages,
+        ...(estimatedCompletion !== undefined ? { estimatedCompletion } : {}),
+      });
+    }
+
+    cursor = data.has_more && data.next_cursor ? data.next_cursor : undefined;
+  } while (cursor);
+
+  return summaries;
 }
 
 /** An order that has a due date set but whose per-stage milestones haven't been

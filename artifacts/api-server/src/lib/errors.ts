@@ -53,6 +53,16 @@ export class MeasurementsLockedError extends Error {
   }
 }
 
+/** The caller isn't authenticated — the account portal was reached without a
+ * valid session cookie. Maps to a 401 response; the frontend redirects to the
+ * sign-in page. */
+export class UnauthorizedError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = "UnauthorizedError";
+  }
+}
+
 /** The request conflicts with the resource's current state in a general way —
  * e.g. an order can't be reviewed until it has been delivered. Maps to a 409
  * response, carrying a customer-safe message. */
