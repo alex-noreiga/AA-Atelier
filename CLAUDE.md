@@ -722,6 +722,18 @@ Stage` **rich_text** property on the order: it reads the marker, sends only when
    append **`&force=1`** to resend even when the order hasn't moved forward (a forced
    resend never rewinds the high-water marker). The automation itself never forces.
 
+5. **Per-order button (fallback to the automation).** The `…/run` link doubles as a
+   one-click **per-order button**: a `Send Status Update` **formula property** on the
+   Order Tracking Pipeline builds the clickable URL
+   `"https://<PUBLIC_BASE_URL>/api/webhooks/notion-stage-change/run?secret=<CRON_SECRET>&order=" + prop("Order Number")`
+   (a formula returning a URL renders as a link — same pattern as the invoice-generator
+   button). The atelier advances the `Stage`, then clicks the link to email the
+   customer — no automation needed. It's forward-only like everything else (clicking
+   again at the same stage is a no-op), so it's a reliable alternative when the Notion
+   `Stage`-change automation can't be used (e.g. a Notion plan without webhook actions).
+   Reuses `CRON_SECRET`; the token sits in the formula + browser history (low-stakes,
+   same tradeoff as the milestone/invoice buttons).
+
 There are **no new env vars** (it reuses `CRON_SECRET` for auth, `RESEND_FROM_EMAIL`
 for the `orders@` sender via `fromAddress("orders")`, and `PUBLIC_BASE_URL` for the
 tracking link, omitted when unset). The atelier's one-time setup is the Notion
