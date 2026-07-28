@@ -10,7 +10,7 @@
     "typecheck": "tsc -p tsconfig.json"
   },
   "devDependencies": {
-    "@playwright/test": "^1.53.0",
+    "@playwright/test": "^1.62.0",
     "@workspace/test-fixtures": "workspace:*",
     "typescript": "~5.9.3"
   }
