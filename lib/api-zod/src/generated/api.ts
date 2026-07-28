@@ -151,6 +151,36 @@ export const CreateMeasurementChangeRequestResponse = zod.object({
 
 
 /**
+ * Captures a customer's review of a finished custom order — a star rating, a short testimonial, an optional display name and photos of the finished piece — once the order has reached its final (delivered) stage. The customer is verified against the email on the order. Accepted reviews land in the Notion reviews database for the atelier to curate (and later feature in the portfolio). Photos are uploaded ahead of time via POST /orders/reference-images; their file_upload ids are passed as photoIds.
+ * @summary Leave a post-delivery review for an order
+ */
+export const CreateOrderReviewParams = zod.object({
+  "orderNumber": zod.coerce.string()
+})
+
+export const createOrderReviewBodyRatingMax = 5;
+
+export const createOrderReviewBodyCommentMax = 2000;
+
+export const createOrderReviewBodyDisplayNameMax = 120;
+
+
+
+export const CreateOrderReviewBody = zod.object({
+  "email": zod.string().email().describe('The email to verify against the one on the order. A review whose email doesn\'t match the order is rejected.'),
+  "rating": zod.number().min(1).max(createOrderReviewBodyRatingMax).describe('The star rating, 1 (poor) to 5 (excellent).'),
+  "comment": zod.string().min(1).max(createOrderReviewBodyCommentMax).describe('The customer\'s testimonial about their finished piece.'),
+  "displayName": zod.string().max(createOrderReviewBodyDisplayNameMax).optional().describe('How the customer would like to be credited if the review is featured (e.g. \"Ada L.\" or \"Ada, Chicago\"). Optional.'),
+  "consentToPublish": zod.boolean().optional().describe('Whether the customer gives permission to feature this review (and any photos) publicly, e.g. on the site\'s testimonials\/portfolio. Defaults to false.'),
+  "photoIds": zod.array(zod.string()).optional().describe('Notion file_upload ids for photos of the finished piece, uploaded ahead of time via POST \/orders\/reference-images. Attached to the review\'s Notion page as image blocks.')
+}).describe('A post-delivery review of a finished custom order. The customer supplies a star rating and a short testimonial; a display name, publish consent, and photos of the finished piece are optional. The server verifies the email against the order and only accepts the review once the order has been delivered.')
+
+export const CreateOrderReviewResponse = zod.object({
+  "received": zod.boolean()
+})
+
+
+/**
  * Saves a customer inquiry to the Notion contact-messages database
  * @summary Submit a contact message
  */

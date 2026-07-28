@@ -103,6 +103,17 @@ Express app (artifacts/api-server)  ──►  Notion REST API (orders database)
   │                                  (MEASUREMENT_LOCK_FROM_STAGE). Never edits the
   │                                  order — the atelier applies the change by hand
   │                                  (Approach A) + sends a confirmation email
+  ├─ POST /api/orders/:n/reviews    → files a customer's post-delivery review of
+  │                                  order :n (star rating + testimonial + optional
+  │                                  credit name, publish consent, and photos of the
+  │                                  finished piece) into a dedicated Notion
+  │                                  "Reviews" database. Gated: the order must be at
+  │                                  its final (delivered) stage and the email must
+  │                                  match the order. Photos reuse the reference-
+  │                                  image upload (attached as image blocks) + sends
+  │                                  a customer thank-you email. Curated by the
+  │                                  atelier (Status defaults to "New") to feed
+  │                                  testimonials + the portfolio
   ├─ POST /api/contact             → saves a contact message to the Notion
   │                                  "Website Contact Messages" database
   │                                  + sends an acknowledgement email
@@ -201,7 +212,8 @@ Express app (artifacts/api-server)  ──►  Notion REST API (orders database)
 ```
 
 The customer-notification POST endpoints (`/api/orders`, `/api/contact`,
-`/api/notify`, `/api/appointments`, `/api/orders/:n/measurement-change-requests`)
+`/api/notify`, `/api/appointments`, `/api/orders/:n/measurement-change-requests`,
+`/api/orders/:n/reviews`)
 each send a customer email via **Resend** as
 a **best-effort** side effect after the Notion write: the send is logged-and-swallowed
 on failure and never changes the response status (see the Resend adapter in
@@ -662,6 +674,64 @@ Notion **Button** → "Open link" →
 on a dashboard page to generate milestones on demand. Property names live in
 `orders.schema.ts` (orders) and `production-schedule.blocks.ts` (schedule).
 
+## Post-delivery review capture
+
+Once a custom order reaches its **final (delivered) stage**, the tracking page
+invites the customer to leave a review — a star rating, a short testimonial, an
+optional credit name + publish consent, and photos of the finished piece. This
+is the "delight is highest at delivery" moment, and the raw material for future
+testimonials and the portfolio. `POST /api/orders/:n/reviews` (contract-first,
+in the OpenAPI spec + generated client, unlike the raw upload/cron routes). Code:
+`services/review.service.ts`, `routes/orders.ts`, `services/delivery.ts`,
+`lib/notion/reviews.{blocks,repository}.ts`, and on the frontend
+`components/review-dialog.tsx` (rendered by `components/custom-order-result.tsx`
+only for delivered orders). Load-bearing decisions:
+
+1. **"Delivered" is positional, not a flag — don't hardcode a stage.** There is
+   no "delivered" field on an order; the review gate (`orderDelivered` in
+   `services/delivery.ts`) treats the **last** stage in the live
+   `fetchLiveOrderStages` list as delivered, exactly as `schedule.service.ts`
+   does. The frontend recomputes the same test to decide whether to show the
+   review affordance, so the two can't disagree. It **fails closed** (no review)
+   when the stage is unknown or the list is empty — a review is a one-way action
+   we'd rather withhold on a stale read. This is the mirror of
+   `measurement-lock.ts` (which fails **open**), and the trade-off is deliberate.
+
+2. **Two gates, same identity model as measurement-change.** The order must be
+   delivered (else `ConflictError` → 409) and the supplied email must match the
+   one on the order (`ForbiddenError` → 403); a legacy order with no stored email
+   is accepted but flagged **`Email Verified = false`** for the atelier to vet
+   before featuring it. The lookup reuses `findOrderVerification` (the renamed,
+   generalized `findOrderForMeasurementChange`, kept as an alias).
+
+3. **Reviews get their own database + the atelier curates.** Unlike the three
+   contact-inbox writers, reviews land in a dedicated **"Reviews"** database
+   (`NOTION_REVIEWS_DATABASE_ID`, required for the feature; the repository throws
+   if unset). Each row carries `Rating` (number), `Review` (rich_text),
+   `Customer Name`, `Order Number`, `Email`, `Consent to Publish` (checkbox),
+   `Email Verified` (checkbox), a `Status` **select** defaulting to **"New"**
+   (the atelier moves it to "Published" to feature it), and an optional
+   best-effort `Client` relation to the CRM. Property names live in
+   `reviews.blocks.ts`.
+
+4. **Photos reuse the reference-image upload — no new service.** The browser
+   uploads each finished-piece photo through the same
+   `POST /api/orders/reference-images` raw-bytes endpoint the order form uses
+   (via the shared `ReferenceImageUpload` component + `lib/reference-images.ts`),
+   collects the returned `file_upload` ids, and sends them as the review body's
+   `photoIds`; `reviews.blocks.ts` attaches them as image blocks on the review
+   page (like `orders.blocks.ts` does for reference images).
+
+5. **Best-effort email + CRM, like every submission flow.** A customer thank-you
+   (and an atelier notification when `ATELIER_INBOX_EMAIL` is set) go out via
+   Resend under the **"orders"** category; the Client CRM upsert links the review
+   to the customer. Both are best-effort — a failure never fails the request, the
+   Notion row is the source of truth.
+
+The atelier must, one time: create the "Reviews" database with the properties
+above, share the Notion integration with it, set `NOTION_REVIEWS_DATABASE_ID`,
+and (optionally) add a `Client` relation to Client CRM.
+
 ## Order status-change emails (Notion automation → webhook)
 
 When a custom order advances to a new production stage, the customer gets an email
@@ -1068,7 +1138,10 @@ and in the maintainer's env without edits.
   the two the custom-order invoice flow reads to show a customer their balance —
   plus `NOTION_COSTING_DATABASE_ID` (the "costing (custom orders)" database) and
   `NOTION_MATERIAL_USAGE_DATABASE_ID` (the "material usage database") — the two
-  the invoice line-item generator reads to itemize an order from its costing.
+  the invoice line-item generator reads to itemize an order from its costing —
+  and `NOTION_REVIEWS_DATABASE_ID` (the "Reviews" database the post-delivery
+  review capture writes customer reviews to; required for that feature — the
+  review endpoint errors if unset).
   The Notion integration must be shared with each database or queries 404. The
   production-schedule cron also needs `CRON_SECRET` (the bearer token Vercel Cron
   sends to `GET /api/cron/generate-milestones`; unset ⇒ that endpoint 401s). The
@@ -1142,6 +1215,7 @@ and in the maintainer's env without edits.
 | Change the order-tracking UI (custom + shop)           | `artifacts/web-app/src/pages/track.tsx` (unified lookup) + `components/custom-order-result.tsx` + `components/shop-order-result.tsx`                                                                                                                                                                                                                            |
 | Change the order intake form                           | `artifacts/web-app/src/pages/order-form.tsx`                                                                                                                                                                                                                                                                                                                    |
 | Change the measurement-change request                  | `artifacts/web-app/src/components/measurement-change-dialog.tsx` (opened from `components/custom-order-result.tsx`); `api-server/src/services/measurement-change.service.ts` + `routes/orders.ts` + `lib/notion/measurement-change.{blocks,repository}.ts` (writes to the **contact** database)                                                                 |
+| Change post-delivery review capture                    | `artifacts/web-app/src/components/review-dialog.tsx` (opened from `components/custom-order-result.tsx` for delivered orders); `api-server/src/services/review.service.ts` + `services/delivery.ts` + `routes/orders.ts` + `lib/notion/reviews.{blocks,repository}.ts` (writes to the **Reviews** database)                                                      |
 | Change the landing page                                | `artifacts/web-app/src/pages/home.tsx`                                                                                                                                                                                                                                                                                                                          |
 | Change the shop (live Notion inventory)                | `artifacts/web-app/src/pages/shop.tsx` + `services/products.service.ts` + `lib/notion/products.*`                                                                                                                                                                                                                                                               |
 | Change the back-in-stock notify dialog                 | `artifacts/web-app/src/components/notify-dialog.tsx` + `services/notify.service.ts` + `lib/notion/notify.*` (writes to the **contact** database — see below)                                                                                                                                                                                                    |

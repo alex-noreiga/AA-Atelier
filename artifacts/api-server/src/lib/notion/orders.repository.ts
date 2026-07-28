@@ -412,17 +412,21 @@ export async function updateLastNotifiedStage(
   }
 }
 
-/** What the measurement-change gates need about an order: the email to verify
- * against, plus the current stage and the live ordered stage list to decide
- * whether measurements are still editable. Kept separate from `OrderRecord`
- * (the public status view) so the email is never returned by order lookup. */
+/** What an order-scoped gate needs about an order: the email to verify against,
+ * plus the current stage and the live ordered stage list to decide whether an
+ * action is still allowed (measurements editable, order delivered, …). Kept
+ * separate from `OrderRecord` (the public status view) so the email is never
+ * returned by order lookup. */
 export interface OrderVerification {
   email: string;
   currentStage: string;
   stages: string[];
 }
 
-export async function findOrderForMeasurementChange(
+/** Look up an order for a gated, email-verified action (a measurement change or
+ * a post-delivery review). Returns the stored email + the live stage list, or
+ * null when the order number is blank or unknown. */
+export async function findOrderVerification(
   orderNumber: string,
   client: NotionClient = getNotionClient(),
 ): Promise<OrderVerification | null> {
@@ -465,3 +469,7 @@ export async function findOrderForMeasurementChange(
     stages,
   };
 }
+
+/** @deprecated Prefer {@link findOrderVerification}. Kept so the measurement-
+ * change flow's existing imports (and their tests) keep resolving. */
+export { findOrderVerification as findOrderForMeasurementChange };
