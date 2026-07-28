@@ -16,6 +16,11 @@ describe("Privacy", () => {
     expect(
       screen.getByRole("heading", { name: "Service providers" }),
     ).toBeInTheDocument();
+    // The marketing-email / unsubscribe disclosure must be present now that the
+    // app collects newsletter opt-ins and sends campaigns.
+    expect(
+      screen.getByRole("heading", { name: "Marketing emails" }),
+    ).toBeInTheDocument();
   });
 });
 

@@ -5,9 +5,13 @@ import { createOrderInput } from "@workspace/test-fixtures";
 
 // Capture what the create-order mutation is called with, without hitting the
 // network. `vi.hoisted` makes the spy available inside the hoisted vi.mock.
-const { mutate } = vi.hoisted(() => ({ mutate: vi.fn() }));
+const { mutate, subscribeMutate } = vi.hoisted(() => ({
+  mutate: vi.fn(),
+  subscribeMutate: vi.fn(),
+}));
 vi.mock("@workspace/api-client-react", () => ({
   useCreateOrder: () => ({ mutate, isPending: false }),
+  useSubscribeNewsletter: () => ({ mutate: subscribeMutate, isPending: false }),
 }));
 
 import OrderForm from "@/pages/order-form";
@@ -109,6 +113,31 @@ describe("OrderForm submission mapping", () => {
     const { data } = mutate.mock.calls[0][0];
     expect(data.description).toBe("Ivory chiffon, A-line");
     expect(data.neededBy).toBe("2026-09-01");
+  });
+});
+
+describe("OrderForm newsletter opt-in", () => {
+  it("does not subscribe when the box is left unticked", async () => {
+    const user = userEvent.setup();
+    render(<OrderForm />);
+    await fillRequired(user);
+    await user.click(screen.getByRole("button", { name: "Submit Order" }));
+
+    await waitFor(() => expect(mutate).toHaveBeenCalledTimes(1));
+    expect(subscribeMutate).not.toHaveBeenCalled();
+  });
+
+  it("subscribes with the order email and 'order form' source when ticked", async () => {
+    const user = userEvent.setup();
+    render(<OrderForm />);
+    await fillRequired(user);
+    await user.click(screen.getByTestId("subscribe-newsletter"));
+    await user.click(screen.getByRole("button", { name: "Submit Order" }));
+
+    await waitFor(() => expect(mutate).toHaveBeenCalledTimes(1));
+    expect(subscribeMutate).toHaveBeenCalledWith({
+      data: { email: "ada@example.com", source: "order form" },
+    });
   });
 });
 

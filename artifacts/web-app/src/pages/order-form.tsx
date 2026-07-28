@@ -3,7 +3,10 @@ import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
 import { Link } from "wouter";
-import { useCreateOrder } from "@workspace/api-client-react";
+import {
+  useCreateOrder,
+  useSubscribeNewsletter,
+} from "@workspace/api-client-react";
 import { Button } from "@/components/ui/button";
 import { ctaVariants, CtaLink } from "@/components/cta";
 import { Input } from "@/components/ui/input";
@@ -52,6 +55,9 @@ const formSchema = z
     bodyGirth: z.string().optional(),
     description: z.string().optional(),
     neededBy: z.string().optional(),
+    // Marketing opt-in, separate from the transactional order. Off by default —
+    // consent must be a deliberate tick.
+    subscribeNewsletter: z.boolean().default(false),
   })
   .superRefine((values, ctx) => {
     // "Needed by", when supplied, must be in the future — it feeds the atelier's
@@ -120,6 +126,11 @@ export default function OrderForm() {
     },
   });
 
+  // Best-effort marketing opt-in, fired alongside the order when the customer
+  // ticks the box. Independent of the order write: a failure here is swallowed
+  // (the server flow is best-effort too) and never blocks the order confirmation.
+  const subscribeNewsletter = useSubscribeNewsletter();
+
   const {
     register,
     handleSubmit,
@@ -148,6 +159,7 @@ export default function OrderForm() {
       neededBy,
       measurementMode,
       measurementUnit,
+      subscribeNewsletter: optIn,
       waist,
       bust,
       hips,
@@ -155,6 +167,15 @@ export default function OrderForm() {
       bodyGirth,
       ...contact
     } = values;
+
+    // Opt-in rides alongside the order rather than through it: a separate,
+    // best-effort call keyed to the same email, so the order contract stays
+    // unchanged and the marketing capture lives in one place.
+    if (optIn) {
+      subscribeNewsletter.mutate({
+        data: { email: contact.email, source: "order form" },
+      });
+    }
 
     // Either supply the measurements, or flag that they'll be taken at an
     // appointment — never both. (The superRefine above guarantees the "self"
@@ -551,6 +572,23 @@ export default function OrderForm() {
               </div>
             </div>
           </section>
+
+          <label
+            htmlFor="subscribeNewsletter"
+            className="flex items-start gap-3 max-w-md mx-auto cursor-pointer group"
+          >
+            <input
+              id="subscribeNewsletter"
+              type="checkbox"
+              {...register("subscribeNewsletter")}
+              data-testid="subscribe-newsletter"
+              className="mt-1 h-4 w-4 shrink-0 rounded-sm border-border text-primary accent-primary focus-visible:ring-primary"
+            />
+            <span className="text-sm font-light text-muted-foreground group-hover:text-foreground transition-colors">
+              Keep me posted with new collections and studio notes. No noise,
+              and you can unsubscribe anytime.
+            </span>
+          </label>
 
           <p
             className="text-center text-xs font-light text-muted-foreground/70 max-w-md mx-auto"

@@ -18,6 +18,8 @@ tags:
     description: Shop inventory (ready-to-ship items)
   - name: notify
     description: Back-in-stock notification requests
+  - name: newsletter
+    description: Marketing newsletter / mailing-list opt-in
   - name: checkout
     description: Stripe checkout for ready-to-ship shop items
   - name: appointments
@@ -320,6 +322,41 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/NewNotifyResponse"
+        "400":
+          description: Validation error
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorEnvelope"
+        "500":
+          description: Server error
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorEnvelope"
+  /newsletter:
+    post:
+      operationId: subscribeNewsletter
+      tags: [newsletter]
+      summary: Opt in to the marketing newsletter
+      description: >-
+        Records a customer's opt-in to the studio's marketing mailing list as a
+        tagged row in the Notion contact-messages inbox (and a best-effort Client
+        CRM lead), and sends a best-effort welcome email. Separate from the
+        transactional-only capture: this is explicit marketing consent.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/NewNewsletterRequest"
+      responses:
+        "201":
+          description: Subscription received
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/NewNewsletterResponse"
         "400":
           description: Validation error
           content:
@@ -1054,6 +1091,26 @@ components:
             Set only when the customer asked about one specific sold-out size
             band; absent when the whole variant is sold out.
     NewNotifyResponse:
+      type: object
+      required:
+        - success
+      properties:
+        success:
+          type: boolean
+    NewNewsletterRequest:
+      type: object
+      required:
+        - email
+      properties:
+        email:
+          type: string
+          format: email
+        source:
+          type: string
+          description: >-
+            Where the opt-in came from, e.g. "footer" or "order form". Recorded
+            for the atelier's own segmentation; the customer never sees it.
+    NewNewsletterResponse:
       type: object
       required:
         - success

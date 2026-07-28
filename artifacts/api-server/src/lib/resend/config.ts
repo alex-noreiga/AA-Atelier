@@ -49,3 +49,14 @@ export function atelierInbox(category: EmailCategory): string {
   }
   return base;
 }
+
+/**
+ * The Resend **Marketing** Audience id newsletter opt-ins are synced into
+ * (`RESEND_AUDIENCE_ID`), or empty string when unset. Read fresh from
+ * `process.env`, same as the address resolvers above. Empty ⇒ the audience sync
+ * self-gates off and the opt-in is still captured in Notion — the same
+ * degrade-when-unconfigured contract as the optional integrations elsewhere.
+ */
+export function audienceId(): string {
+  return process.env.RESEND_AUDIENCE_ID ?? "";
+}

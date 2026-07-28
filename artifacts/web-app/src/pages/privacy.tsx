@@ -13,7 +13,7 @@ export default function Privacy() {
       seo={ROUTE_SEO["/privacy"]}
       heading="Privacy Policy"
       intro="This policy explains what personal information A.A Atelier collects, how we use it, and the choices you have."
-      lastUpdated="July 16, 2026"
+      lastUpdated="July 28, 2026"
     >
       <LegalSection title="Information we collect">
         <p>
@@ -39,6 +39,23 @@ export default function Privacy() {
         </p>
       </LegalSection>
 
+      <LegalSection title="Marketing emails">
+        <p>
+          If you join our mailing list — from the footer sign-up or by ticking
+          the box when you place an order — we use your email address to send
+          occasional studio news, such as new collections and behind-the-scenes
+          notes. This is separate from the order, appointment, and enquiry
+          confirmations above, and we only send it if you opt in.
+        </p>
+        <p>
+          Every marketing email includes a one-click unsubscribe link, and you
+          can opt out at any time — you will still receive the transactional
+          emails about any active order or booking. Our email provider,
+          <strong> Resend</strong>, manages the mailing list and honours
+          unsubscribes on our behalf.
+        </p>
+      </LegalSection>
+
       <LegalSection title="Service providers">
         <p>
           We rely on trusted third parties to run the atelier, and share only
@@ -55,7 +72,8 @@ export default function Privacy() {
           </li>
           <li>
             <strong>Resend</strong> delivers the confirmation and notification
-            emails we send you.
+            emails we send you, and manages our marketing mailing list
+            (including unsubscribes).
           </li>
           <li>
             <strong>Google</strong> (Calendar and Sheets) powers appointment
@@ -76,8 +94,9 @@ export default function Privacy() {
       <LegalSection title="Your choices">
         <p>
           You can ask us what information we hold about you, correct it, or
-          request its deletion. You can opt out of non-essential emails at any
-          time. To make a request, email us at{" "}
+          request its deletion. You can opt out of marketing emails at any time
+          using the unsubscribe link in any such email, or by emailing us. To
+          make a request, email us at{" "}
           <a
             href={`mailto:${CONTACT_EMAIL}`}
             className="text-primary hover:underline"

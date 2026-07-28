@@ -10,6 +10,7 @@
 import type { CreateOrderInput } from "../notion/orders.schema.js";
 import type { CreateContactInput } from "../notion/contact.blocks.js";
 import type { CreateNotifyInput } from "../notion/notify.blocks.js";
+import type { CreateNewsletterInput } from "../notion/newsletter.blocks.js";
 import type { CreateMeasurementChangeInput } from "../notion/measurement-change.blocks.js";
 import type { CreateReviewInput } from "../notion/reviews.blocks.js";
 import type { EmailMessage } from "./client.js";
@@ -294,6 +295,45 @@ export function backInStockConfirmationEmail(
   return {
     to: input.email,
     subject: `You're on the list for ${input.item}`,
+    html,
+    text,
+  };
+}
+
+/**
+ * Welcome sent when a customer opts in to the marketing newsletter. Unlike the
+ * back-in-stock note there's nothing to "wait" on — it just confirms the opt-in
+ * warmly. Marketing mail, so the service sends it from the contact (hello@)
+ * sender rather than the transactional orders@ address.
+ */
+export function newsletterWelcomeEmail(
+  input: CreateNewsletterInput,
+): EmailMessage {
+  const html = layout(
+    "Welcome to the atelier",
+    `<p>Hi there,</p>
+     <p>Thank you for joining our mailing list. From time to time we'll share new
+        collections, behind-the-scenes glimpses of pieces in progress, and the
+        occasional studio note — nothing more.</p>
+     <p>We're glad to have you with us.</p>`,
+  );
+
+  const text = [
+    `Hi there,`,
+    ``,
+    `Thank you for joining our mailing list. From time to time we'll share new`,
+    `collections, behind-the-scenes glimpses of pieces in progress, and the`,
+    `occasional studio note — nothing more.`,
+    ``,
+    `We're glad to have you with us.`,
+    ``,
+    `Thank you,`,
+    `The ${ATELIER_NAME} team`,
+  ].join("\n");
+
+  return {
+    to: input.email,
+    subject: `Welcome to ${ATELIER_NAME}`,
     html,
     text,
   };

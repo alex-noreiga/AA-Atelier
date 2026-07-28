@@ -1,5 +1,6 @@
 import { Link } from "wouter";
 import { AtSign, Mail, MapPin } from "lucide-react";
+import { NewsletterSignup } from "@/components/newsletter-signup";
 import {
   CONTACT_EMAIL,
   CONTACT_LOCATION,
@@ -66,6 +67,24 @@ export default function Footer() {
   return (
     <footer className="relative z-10 border-t border-border/60 bg-background">
       <div className="max-w-6xl mx-auto px-6 py-16">
+        {/* Mailing-list opt-in — a marketing capture, separate from the site's
+            transactional forms. Sits above the link columns as a stay-in-touch
+            band. */}
+        <div className="grid gap-8 sm:grid-cols-2 lg:grid-cols-3 items-start pb-14 mb-14 border-b border-border/60">
+          <div className="flex flex-col gap-4 lg:col-span-2">
+            <h2 className="font-serif text-2xl text-foreground">
+              Stay in touch
+            </h2>
+            <p className="text-sm text-muted-foreground font-light leading-relaxed max-w-md">
+              Join our mailing list for new collections, glimpses of pieces in
+              progress, and the occasional studio note.
+            </p>
+          </div>
+          <div className="w-full max-w-sm">
+            <NewsletterSignup source="footer" />
+          </div>
+        </div>
+
         <div className="grid gap-12 sm:grid-cols-2 lg:grid-cols-4">
           {/* Brand */}
           <div className="flex flex-col gap-4">
