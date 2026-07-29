@@ -83,23 +83,6 @@ const PROCESS: { step: string; title: string; description: string }[] = [
   },
 ];
 
-// Curated customer testimonials. Reviews are captured post-delivery into Notion
-// for the atelier to curate; there is no public read endpoint, so these are
-// hand-picked, approved quotes rather than a live feed. Swap in real approved
-// quotes + names as they come in.
-const TESTIMONIALS: { quote: string; attribution: string }[] = [
-  {
-    quote:
-      "She brought my competition dress to life exactly as I imagined — the fit was flawless and the crystals were stunning under the lights.",
-    attribution: "Competitive figure skater",
-  },
-  {
-    quote:
-      "The whole process felt personal from the first sketch to the final fitting. I've never felt more confident stepping onto the ice.",
-    attribution: "Ice dance competitor",
-  },
-];
-
 export default function Home() {
   return (
     <PageShell align="top">
@@ -143,18 +126,23 @@ export default function Home() {
           </div>
         </div>
 
-        {/* Trust strip — pure-type credibility points */}
+        {/* Trust strip — pure-type credibility points. Stacks vertically on
+            mobile; inline with dot separators from sm up so the dividers never
+            wrap to the start of a line. */}
         <ul
           data-testid="trust-strip"
-          className="mt-16 flex flex-wrap items-center justify-center gap-x-6 gap-y-3 text-center"
+          className="mt-16 flex flex-col sm:flex-row sm:flex-wrap items-center justify-center gap-y-2 sm:gap-x-4 text-center"
         >
           {TRUST_POINTS.map((point, i) => (
             <li
               key={point}
-              className="flex items-center gap-6 text-muted-foreground text-xs tracking-[0.2em] uppercase font-light"
+              className="flex items-center gap-4 text-muted-foreground text-xs tracking-[0.2em] uppercase font-light"
             >
               {i > 0 && (
-                <span className="text-primary/40" aria-hidden="true">
+                <span
+                  className="hidden sm:inline text-primary/40"
+                  aria-hidden="true"
+                >
                   ·
                 </span>
               )}
@@ -256,26 +244,6 @@ export default function Home() {
               Visit the Shop
               <ArrowRight className="w-4 h-4 group-hover:translate-x-1 transition-transform" />
             </CtaLink>
-          </div>
-        </div>
-
-        {/* Testimonials — curated social proof */}
-        <div className="mt-24" data-testid="testimonials">
-          <SectionHeader eyebrow="In Their Words" title="Loved on the ice" />
-          <div className="grid gap-8 md:grid-cols-2">
-            {TESTIMONIALS.map(({ quote, attribution }) => (
-              <figure
-                key={attribution}
-                className="border border-border/60 rounded-2xl p-8"
-              >
-                <blockquote className="font-serif italic text-xl md:text-2xl text-primary leading-relaxed">
-                  “{quote}”
-                </blockquote>
-                <figcaption className="mt-6 text-muted-foreground text-xs tracking-[0.2em] uppercase font-light">
-                  {attribution}
-                </figcaption>
-              </figure>
-            ))}
           </div>
         </div>
 
