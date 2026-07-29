@@ -13,6 +13,7 @@ import {
   ORDER_DUE_DATE_PROPERTY,
   ORDER_MILESTONES_GENERATED_PROPERTY,
   ORDER_LAST_NOTIFIED_STAGE_PROPERTY,
+  ORDER_CANCELLED_PROPERTY,
   extractStageOptions,
   extractOrderNumber,
   extractOrderName,
@@ -21,6 +22,7 @@ import {
   extractCostingItemIds,
   extractDueDate,
   extractRush,
+  extractCancelled,
   extractOrderEmail,
   extractLastNotifiedStage,
   type CreateOrderInput,
@@ -151,6 +153,7 @@ export async function findOrderByNumber(
     ...(invoicePageId !== undefined ? { invoicePageId } : {}),
     ...(costingItemIds.length > 0 ? { costingItemIds } : {}),
     ...(extractRush(page) ? { rush: true } : {}),
+    ...(extractCancelled(page) ? { cancelled: true } : {}),
   };
 }
 
@@ -546,3 +549,92 @@ export async function findOrderVerification(
 /** @deprecated Prefer {@link findOrderVerification}. Kept so the measurement-
  * change flow's existing imports (and their tests) keep resolving. */
 export { findOrderVerification as findOrderForMeasurementChange };
+
+/** What the atelier cancellation-refund flow needs about a custom order: the
+ * page id (to mark it cancelled), the order name + email (for the confirmation
+ * email), and the linked invoice page id (to find the paid Stripe sessions to
+ * refund). Kept apart from the public status view so the email is never returned
+ * by order lookup. */
+export interface OrderCancellationTarget {
+  pageId: string;
+  orderNumber: string;
+  orderName: string;
+  email: string;
+  invoicePageId?: string;
+  /** Whether the order is already marked cancelled (a re-press no-ops). */
+  cancelled: boolean;
+}
+
+/** Look up a custom order for the atelier's cancellation-refund action. Returns
+ * null when the order number is blank or unknown. */
+export async function findOrderForCancellation(
+  orderNumber: string,
+  client: NotionClient = getNotionClient(),
+): Promise<OrderCancellationTarget | null> {
+  assertConfigured(client);
+
+  const trimmedOrderNumber = orderNumber.trim();
+  if (!trimmedOrderNumber) {
+    return null;
+  }
+
+  const response = await client.fetch(
+    `/v1/databases/${client.databaseId}/query`,
+    {
+      method: "POST",
+      body: JSON.stringify({
+        filter: {
+          property: ORDER_NUMBER_PROPERTY,
+          rich_text: { equals: trimmedOrderNumber },
+        },
+        page_size: 1,
+      }),
+    },
+  );
+
+  if (!response.ok) {
+    throw new Error(`Notion query failed with status ${response.status}`);
+  }
+
+  const data = (await response.json()) as NotionQueryResponse;
+  const page = data.results[0];
+  if (!page) {
+    return null;
+  }
+
+  const invoicePageId = extractInvoiceRelationId(page);
+  return {
+    pageId: page.id,
+    orderNumber: extractOrderNumber(page) || trimmedOrderNumber,
+    orderName: extractOrderName(page),
+    email: extractOrderEmail(page),
+    cancelled: extractCancelled(page),
+    ...(invoicePageId !== undefined ? { invoicePageId } : {}),
+  };
+}
+
+/** Mark a custom order cancelled by setting its `Cancelled` checkbox. Written by
+ * the cancellation-refund flow after the refunds succeed; setting the same value
+ * again is harmless (idempotent), like {@link markMilestonesGenerated}. */
+export async function setOrderCancelled(
+  pageId: string,
+  client: NotionClient = getNotionClient(),
+): Promise<void> {
+  assertConfigured(client);
+
+  const response = await client.fetch(`/v1/pages/${pageId}`, {
+    method: "PATCH",
+    body: JSON.stringify({
+      properties: {
+        [ORDER_CANCELLED_PROPERTY]: { checkbox: true },
+      },
+    }),
+  });
+
+  if (!response.ok) {
+    const errorText = await response.text();
+    throw new Error(
+      `Notion order cancelled update failed with status ${response.status}: ${errorText}`,
+    );
+  }
+}

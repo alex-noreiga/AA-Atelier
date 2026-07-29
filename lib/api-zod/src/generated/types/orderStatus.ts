@@ -23,4 +23,6 @@ export interface OrderStatus {
   /** Per-stage target completion dates from the Production Schedule, present once the order's milestones have been generated. One entry per remaining (current + upcoming) stage; completed stages have none. Order is not significant — match by stage name. */
   milestones?: OrderStatusMilestonesItem[];
   invoice?: Invoice;
+  /** True once the atelier has cancelled the order (the `Cancelled` marker on the Notion order). When true the tracking page shows a cancelled banner and suppresses the deposit / invoice / request affordances. Absent/false for an active order. */
+  cancelled?: boolean;
 }

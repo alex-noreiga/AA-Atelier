@@ -82,6 +82,8 @@ export interface OrderStatus {
   /** Per-stage target completion dates from the Production Schedule, present once the order's milestones have been generated. One entry per remaining (current + upcoming) stage; completed stages have none. Order is not significant — match by stage name. */
   milestones?: OrderStatusMilestonesItem[];
   invoice?: Invoice;
+  /** True once the atelier has cancelled the order (the `Cancelled` marker on the Notion order). When true the tracking page shows a cancelled banner and suppresses the deposit / invoice / request affordances. Absent/false for an active order. */
+  cancelled?: boolean;
 }
 
 export interface OrderNotFound {
@@ -96,6 +98,8 @@ export interface ShopOrderStatus {
   statuses: string[];
   /** The order total in dollars. */
   total?: number;
+  /** True once the atelier has cancelled the shop order (the `Cancelled` marker on the Notion order). When true the tracking page shows a cancelled banner and suppresses the request affordance. Absent/false for an active order. */
+  cancelled?: boolean;
 }
 
 export type NewOrderRequestPreferredContact = typeof NewOrderRequestPreferredContact[keyof typeof NewOrderRequestPreferredContact];
@@ -182,6 +186,23 @@ export interface NewMeasurementChangeRequest {
 }
 
 export interface NewMeasurementChangeResponse {
+  received: boolean;
+}
+
+/**
+ * A request to cancel an order. The email is verified against the one on the order; a request whose email doesn't match is rejected. An optional reason is passed through to the atelier for context.
+ */
+export interface NewCancellationRequest {
+  /** The email to verify against the one on the order. A request whose email doesn't match the order is rejected. */
+  email: string;
+  /**
+     * Optional free-text reason for the cancellation.
+     * @maxLength 2000
+     */
+  reason?: string;
+}
+
+export interface NewCancellationResponse {
   received: boolean;
 }
 

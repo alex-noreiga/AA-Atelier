@@ -36,6 +36,8 @@ import type {
   MessageResponse,
   NewAppointmentRequest,
   NewAppointmentResponse,
+  NewCancellationRequest,
+  NewCancellationResponse,
   NewContactRequest,
   NewContactResponse,
   NewMeasurementChangeRequest,
@@ -531,6 +533,79 @@ export const useCreateOrderReview = <TError = ErrorType<ErrorEnvelope | OrderNot
         TContext
       > => {
       return useMutation(getCreateOrderReviewMutationOptions(options));
+    }
+
+export const getCreateOrderCancellationRequestUrl = (orderNumber: string,) => {
+
+
+
+
+  return `/api/orders/${orderNumber}/cancellation-requests`
+}
+
+/**
+ * Files a customer's request to cancel a custom order. The customer is verified against the email on the order, and the request is rejected once the order has already been delivered (a delivered order is a return, not a cancellation). Accepted requests land as a tagged row in the Notion contact-messages inbox for the atelier to review — this endpoint does not itself refund or change the order; the atelier processes the refund.
+ * @summary Request cancellation of a custom order
+ */
+export const createOrderCancellationRequest = async (orderNumber: string,
+    newCancellationRequest: NewCancellationRequest, options?: Parameters<typeof customFetch>[1]): Promise<NewCancellationResponse> => {
+
+  return customFetch<NewCancellationResponse>(getCreateOrderCancellationRequestUrl(orderNumber),
+  {
+    ...options,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    body: JSON.stringify(newCancellationRequest)
+  }
+);}
+
+
+
+
+
+export const getCreateOrderCancellationRequestMutationOptions = <TError = ErrorType<ErrorEnvelope | OrderNotFound>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof createOrderCancellationRequest>>, TError,{orderNumber: string;data: BodyType<NewCancellationRequest>}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof createOrderCancellationRequest>>, TError,{orderNumber: string;data: BodyType<NewCancellationRequest>}, TContext> => {
+
+const mutationKey = ['createOrderCancellationRequest'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof createOrderCancellationRequest>>, {orderNumber: string;data: BodyType<NewCancellationRequest>}> = (props) => {
+          const {orderNumber,data} = props ?? {};
+
+          return  createOrderCancellationRequest(orderNumber,data,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type CreateOrderCancellationRequestMutationResult = NonNullable<Awaited<ReturnType<typeof createOrderCancellationRequest>>>
+    export type CreateOrderCancellationRequestMutationBody = BodyType<NewCancellationRequest>
+    export type CreateOrderCancellationRequestMutationError = ErrorType<ErrorEnvelope | OrderNotFound>
+
+    /**
+ * @summary Request cancellation of a custom order
+ */
+export const useCreateOrderCancellationRequest = <TError = ErrorType<ErrorEnvelope | OrderNotFound>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof createOrderCancellationRequest>>, TError,{orderNumber: string;data: BodyType<NewCancellationRequest>}, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof createOrderCancellationRequest>>,
+        TError,
+        {orderNumber: string;data: BodyType<NewCancellationRequest>},
+        TContext
+      > => {
+      return useMutation(getCreateOrderCancellationRequestMutationOptions(options));
     }
 
 export const getCreateContactMessageUrl = () => {
@@ -1054,6 +1129,79 @@ export function useGetShopOrderStatus<TData = Awaited<ReturnType<typeof getShopO
 
 
 
+
+export const getCreateShopOrderCancellationRequestUrl = (orderNumber: string,) => {
+
+
+
+
+  return `/api/shop-orders/${orderNumber}/cancellation-requests`
+}
+
+/**
+ * Files a customer's request to cancel a ready-to-wear shop order. The customer is verified against the email on the order. Accepted requests land as a tagged row in the Notion contact-messages inbox for the atelier to review — this endpoint does not itself refund or change the order; the atelier processes the refund.
+ * @summary Request cancellation of a shop order
+ */
+export const createShopOrderCancellationRequest = async (orderNumber: string,
+    newCancellationRequest: NewCancellationRequest, options?: Parameters<typeof customFetch>[1]): Promise<NewCancellationResponse> => {
+
+  return customFetch<NewCancellationResponse>(getCreateShopOrderCancellationRequestUrl(orderNumber),
+  {
+    ...options,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    body: JSON.stringify(newCancellationRequest)
+  }
+);}
+
+
+
+
+
+export const getCreateShopOrderCancellationRequestMutationOptions = <TError = ErrorType<ErrorEnvelope | OrderNotFound>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof createShopOrderCancellationRequest>>, TError,{orderNumber: string;data: BodyType<NewCancellationRequest>}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof createShopOrderCancellationRequest>>, TError,{orderNumber: string;data: BodyType<NewCancellationRequest>}, TContext> => {
+
+const mutationKey = ['createShopOrderCancellationRequest'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof createShopOrderCancellationRequest>>, {orderNumber: string;data: BodyType<NewCancellationRequest>}> = (props) => {
+          const {orderNumber,data} = props ?? {};
+
+          return  createShopOrderCancellationRequest(orderNumber,data,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type CreateShopOrderCancellationRequestMutationResult = NonNullable<Awaited<ReturnType<typeof createShopOrderCancellationRequest>>>
+    export type CreateShopOrderCancellationRequestMutationBody = BodyType<NewCancellationRequest>
+    export type CreateShopOrderCancellationRequestMutationError = ErrorType<ErrorEnvelope | OrderNotFound>
+
+    /**
+ * @summary Request cancellation of a shop order
+ */
+export const useCreateShopOrderCancellationRequest = <TError = ErrorType<ErrorEnvelope | OrderNotFound>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof createShopOrderCancellationRequest>>, TError,{orderNumber: string;data: BodyType<NewCancellationRequest>}, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof createShopOrderCancellationRequest>>,
+        TError,
+        {orderNumber: string;data: BodyType<NewCancellationRequest>},
+        TContext
+      > => {
+      return useMutation(getCreateShopOrderCancellationRequestMutationOptions(options));
+    }
 
 export const getCreateReturnRequestUrl = (orderNumber: string,) => {
 

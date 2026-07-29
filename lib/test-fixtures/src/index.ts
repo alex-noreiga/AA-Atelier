@@ -21,6 +21,7 @@
 
 import type {
   CheckoutSessionStatus,
+  NewCancellationRequest,
   NewContactRequest,
   NewMeasurementChangeRequest,
   NewNewsletterRequest,
@@ -112,6 +113,19 @@ export function reviewInput(
     email: "ada@example.com",
     rating: 5,
     comment: "Absolutely stunning craftsmanship — it fit like a dream.",
+    ...overrides,
+  };
+}
+
+/** A valid cancellation request. Email matches `createOrderInput` by default so
+ * the identity gate passes; override it to exercise a mismatch. Carries a reason
+ * by default; drop it to exercise the reason-less path. */
+export function cancellationInput(
+  overrides: Partial<NewCancellationRequest> = {},
+): NewCancellationRequest {
+  return {
+    email: "ada@example.com",
+    reason: "My competition schedule changed.",
     ...overrides,
   };
 }

@@ -46,6 +46,19 @@ describe("extractInvoice", () => {
     });
   });
 
+  it("reads the balance session id only when the balance was paid through one", () => {
+    const paid = invoicePage({
+      id: "inv-4",
+      balancePaid: true,
+      balanceSessionId: "cs_bal",
+    }) as NotionInvoicePage;
+    expect(extractInvoice(paid).balanceSessionId).toBe("cs_bal");
+
+    // No session id recorded ⇒ the field is omitted (undefined).
+    const noSession = invoicePage({ id: "inv-5" }) as NotionInvoicePage;
+    expect(extractInvoice(noSession)).not.toHaveProperty("balanceSessionId");
+  });
+
   it("maps staged deposits with an amount set, skipping unset ones", () => {
     const page = invoicePage({
       id: "inv-3",

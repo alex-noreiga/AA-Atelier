@@ -14,4 +14,6 @@ export interface ShopOrderStatus {
   statuses: string[];
   /** The order total in dollars. */
   total?: number;
+  /** True once the atelier has cancelled the shop order (the `Cancelled` marker on the Notion order). When true the tracking page shows a cancelled banner and suppresses the request affordance. Absent/false for an active order. */
+  cancelled?: boolean;
 }

@@ -250,6 +250,68 @@ describe("findOrderForMeasurementChange", () => {
   });
 });
 
+describe("findOrderForCancellation", () => {
+  it("returns null for an empty/whitespace number without calling Notion", async () => {
+    const client = makeFakeClient(() => {
+      throw new Error("should not fetch");
+    });
+    expect(await repo.findOrderForCancellation("   ", client)).toBeNull();
+    expect(client.calls).toHaveLength(0);
+  });
+
+  it("reads the page id, name, email, invoice relation, and cancelled flag", async () => {
+    const client = makeFakeClient((path) => {
+      if (isQuery(path)) {
+        return jsonResponse({
+          results: [
+            orderPage({
+              id: "order-page",
+              orderNumber: "ORD-1",
+              orderName: "Ada – Custom Dress",
+              email: "ada@example.com",
+              invoicePageId: "inv-1",
+              cancelled: true,
+            }),
+          ],
+        });
+      }
+      throw new Error(`unexpected path ${path}`);
+    });
+
+    const target = await repo.findOrderForCancellation("ORD-1", client);
+    expect(target).toEqual({
+      pageId: "order-page",
+      orderNumber: "ORD-1",
+      orderName: "Ada – Custom Dress",
+      email: "ada@example.com",
+      invoicePageId: "inv-1",
+      cancelled: true,
+    });
+  });
+
+  it("returns null when no order matches", async () => {
+    const client = makeFakeClient(() => jsonResponse({ results: [] }));
+    expect(await repo.findOrderForCancellation("ORD-NOPE", client)).toBeNull();
+  });
+});
+
+describe("setOrderCancelled", () => {
+  it("PATCHes the page with the Cancelled checkbox set", async () => {
+    const client = makeFakeClient((path) => {
+      if (path === "/v1/pages/order-page") return jsonResponse({}, 200);
+      throw new Error(`unexpected path ${path}`);
+    });
+
+    await repo.setOrderCancelled("order-page", client);
+
+    const call = client.calls[0];
+    expect(call.path).toBe("/v1/pages/order-page");
+    expect(call.init?.method).toBe("PATCH");
+    const body = JSON.parse(call.init!.body as string);
+    expect(body.properties.Cancelled).toEqual({ checkbox: true });
+  });
+});
+
 describe("findOrderForStageNotification", () => {
   it("returns null for an empty/whitespace number without calling Notion", async () => {
     const client = makeFakeClient(() => {

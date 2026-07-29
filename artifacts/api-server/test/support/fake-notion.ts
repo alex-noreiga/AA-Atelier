@@ -184,6 +184,7 @@ export function orderPage(opts: {
   dueDate?: string | null;
   milestonesGenerated?: boolean;
   lastNotifiedStage?: string;
+  cancelled?: boolean;
 }) {
   return {
     id: opts.id ?? "page-id",
@@ -232,6 +233,10 @@ export function orderPage(opts: {
           ? [{ plain_text: opts.lastNotifiedStage }]
           : [],
       },
+      Cancelled: {
+        type: "checkbox",
+        checkbox: opts.cancelled ?? false,
+      },
     },
   };
 }
@@ -243,6 +248,7 @@ export function invoicePage(opts: {
   invoiceId?: string;
   ready?: boolean;
   balancePaid?: boolean;
+  balanceSessionId?: string;
   finalBalance?: number | null;
   paymentDeadline?: string | null;
   firstDepositAmount?: number | null;
@@ -266,6 +272,12 @@ export function invoicePage(opts: {
       "Balance Paid": {
         type: "checkbox",
         checkbox: opts.balancePaid ?? false,
+      },
+      "Balance Payment Session Id": {
+        type: "rich_text",
+        rich_text: opts.balanceSessionId
+          ? [{ plain_text: opts.balanceSessionId }]
+          : [],
       },
       "Final Balance": {
         type: "rollup",

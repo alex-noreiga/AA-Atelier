@@ -55,7 +55,8 @@ export const GetOrderStatusResponse = zod.object({
   "depositsCreditedTotal": zod.number().describe('Sum of the deposits already paid, in dollars.'),
   "balanceDue": zod.number().describe('subtotal − depositsCreditedTotal, floored at 0, in dollars.'),
   "paymentDeadline": zod.string().optional().describe('The invoice\'s payment-due date (ISO), if the atelier set one.')
-}).optional().describe('The customer\'s invoice for a custom order, present only once the atelier has itemized it and flipped the \"Invoice Ready\" gate. Line items and deposits are dollars; balanceDue is what\'s charged online.')
+}).optional().describe('The customer\'s invoice for a custom order, present only once the atelier has itemized it and flipped the \"Invoice Ready\" gate. Line items and deposits are dollars; balanceDue is what\'s charged online.'),
+  "cancelled": zod.boolean().optional().describe('True once the atelier has cancelled the order (the `Cancelled` marker on the Notion order). When true the tracking page shows a cancelled banner and suppresses the deposit \/ invoice \/ request affordances. Absent\/false for an active order.')
 })
 
 
@@ -177,6 +178,28 @@ export const CreateOrderReviewBody = zod.object({
 }).describe('A post-delivery review of a finished custom order. The customer supplies a star rating and a short testimonial; a display name, publish consent, and photos of the finished piece are optional. The server verifies the email against the order and only accepts the review once the order has been delivered.')
 
 export const CreateOrderReviewResponse = zod.object({
+  "received": zod.boolean()
+})
+
+
+/**
+ * Files a customer's request to cancel a custom order. The customer is verified against the email on the order, and the request is rejected once the order has already been delivered (a delivered order is a return, not a cancellation). Accepted requests land as a tagged row in the Notion contact-messages inbox for the atelier to review — this endpoint does not itself refund or change the order; the atelier processes the refund.
+ * @summary Request cancellation of a custom order
+ */
+export const CreateOrderCancellationRequestParams = zod.object({
+  "orderNumber": zod.coerce.string()
+})
+
+export const createOrderCancellationRequestBodyReasonMax = 2000;
+
+
+
+export const CreateOrderCancellationRequestBody = zod.object({
+  "email": zod.string().email().describe('The email to verify against the one on the order. A request whose email doesn\'t match the order is rejected.'),
+  "reason": zod.string().max(createOrderCancellationRequestBodyReasonMax).optional().describe('Optional free-text reason for the cancellation.')
+}).describe('A request to cancel an order. The email is verified against the one on the order; a request whose email doesn\'t match is rejected. An optional reason is passed through to the atelier for context.')
+
+export const CreateOrderCancellationRequestResponse = zod.object({
   "received": zod.boolean()
 })
 
@@ -322,7 +345,30 @@ export const GetShopOrderStatusResponse = zod.object({
   "orderNumber": zod.string(),
   "status": zod.string().describe('The order\'s current fulfilment status.'),
   "statuses": zod.array(zod.string()).describe('The live ordered list of possible fulfilment statuses (read from the Notion \"Status\" workflow options), so the client can render a progress timeline. Never hardcode this list.'),
-  "total": zod.number().optional().describe('The order total in dollars.')
+  "total": zod.number().optional().describe('The order total in dollars.'),
+  "cancelled": zod.boolean().optional().describe('True once the atelier has cancelled the shop order (the `Cancelled` marker on the Notion order). When true the tracking page shows a cancelled banner and suppresses the request affordance. Absent\/false for an active order.')
+})
+
+
+/**
+ * Files a customer's request to cancel a ready-to-wear shop order. The customer is verified against the email on the order. Accepted requests land as a tagged row in the Notion contact-messages inbox for the atelier to review — this endpoint does not itself refund or change the order; the atelier processes the refund.
+ * @summary Request cancellation of a shop order
+ */
+export const CreateShopOrderCancellationRequestParams = zod.object({
+  "orderNumber": zod.coerce.string()
+})
+
+export const createShopOrderCancellationRequestBodyReasonMax = 2000;
+
+
+
+export const CreateShopOrderCancellationRequestBody = zod.object({
+  "email": zod.string().email().describe('The email to verify against the one on the order. A request whose email doesn\'t match the order is rejected.'),
+  "reason": zod.string().max(createShopOrderCancellationRequestBodyReasonMax).optional().describe('Optional free-text reason for the cancellation.')
+}).describe('A request to cancel an order. The email is verified against the one on the order; a request whose email doesn\'t match is rejected. An optional reason is passed through to the atelier for context.')
+
+export const CreateShopOrderCancellationRequestResponse = zod.object({
+  "received": zod.boolean()
 })
 
 
