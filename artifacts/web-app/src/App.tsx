@@ -23,6 +23,7 @@ import ShopSuccess from "@/pages/shop-success";
 import InvoicePage from "@/pages/invoice";
 import Contact from "@/pages/contact";
 import Appointments from "@/pages/appointments";
+import AppointmentManage from "@/pages/appointment-manage";
 import AccountLogin from "@/pages/account-login";
 import Account from "@/pages/account";
 import Privacy from "@/pages/privacy";
@@ -61,6 +62,9 @@ function Router() {
       <Route path="/shop/:productId" component={Shop} />
       <Route path="/invoice/:orderNumber" component={InvoicePage} />
       <Route path="/order" component={OrderForm} />
+      {/* Self-service reschedule/cancel from the confirmation-email link. Placed
+          before /appointments (wouter matches exact paths, but keep it explicit). */}
+      <Route path="/appointments/manage" component={AppointmentManage} />
       <Route path="/appointments" component={Appointments} />
       {/* Account portal. The login route must precede /account so it isn't
           shadowed, and /account itself redirects to login when unauthenticated. */}

@@ -22,66 +22,18 @@ import { SuccessScreen } from "@/components/success-screen";
 import { Seo } from "@/components/seo";
 import { ROUTE_SEO } from "@/lib/seo-routes";
 import { useToast } from "@/hooks/use-toast";
+import {
+  NO_PREFERENCE,
+  WINDOW_DAYS,
+  LOCATION_LABELS,
+  fmtDayLabel,
+  fmtTime,
+  fmtWhen,
+  groupSlotsByDate,
+} from "@/lib/appointment-format";
 import { ArrowLeft, CalendarCheck, Check, Clock, Loader2 } from "lucide-react";
 
-// "No preference" is a sentinel staff choice; it maps to omitting `staff` on the
-// request so the server assigns whoever's free.
-const NO_PREFERENCE = "__any__";
-const WINDOW_DAYS = 21;
-
-const LOCATION_LABELS: Record<string, string> = {
-  "in-person": "In person",
-  virtual: "Virtual",
-};
-
 const STEPS = ["Purpose", "Format", "Time", "Your details"] as const;
-
-// --- timezone-aware formatting (the atelier zone comes from the API) ---------
-
-function fmtDateKey(iso: string, tz: string): string {
-  return new Intl.DateTimeFormat("en-CA", {
-    timeZone: tz,
-    year: "numeric",
-    month: "2-digit",
-    day: "2-digit",
-  }).format(new Date(iso));
-}
-
-function fmtDayLabel(
-  iso: string,
-  tz: string,
-): { weekday: string; date: string } {
-  const weekday = new Intl.DateTimeFormat("en-US", {
-    timeZone: tz,
-    weekday: "short",
-  }).format(new Date(iso));
-  const date = new Intl.DateTimeFormat("en-US", {
-    timeZone: tz,
-    month: "short",
-    day: "numeric",
-  }).format(new Date(iso));
-  return { weekday, date };
-}
-
-function fmtTime(iso: string, tz: string): string {
-  return new Intl.DateTimeFormat("en-US", {
-    timeZone: tz,
-    hour: "numeric",
-    minute: "2-digit",
-  }).format(new Date(iso));
-}
-
-function fmtWhen(iso: string, tz: string): string {
-  return new Intl.DateTimeFormat("en-US", {
-    timeZone: tz,
-    weekday: "long",
-    month: "long",
-    day: "numeric",
-    hour: "numeric",
-    minute: "2-digit",
-    timeZoneName: "short",
-  }).format(new Date(iso));
-}
 
 const detailsSchema = z.object({
   fullName: z.string().min(1, "Your name is required"),
@@ -154,16 +106,10 @@ export default function Appointments() {
   });
 
   // Group slots by local calendar date (in the atelier timezone).
-  const slotsByDate = useMemo(() => {
-    const groups = new Map<string, string[]>();
-    for (const slot of availabilityQuery.data?.slots ?? []) {
-      const key = fmtDateKey(slot.start, timezone);
-      const list = groups.get(key) ?? [];
-      list.push(slot.start);
-      groups.set(key, list);
-    }
-    return groups;
-  }, [availabilityQuery.data, timezone]);
+  const slotsByDate = useMemo(
+    () => groupSlotsByDate(availabilityQuery.data?.slots ?? [], timezone),
+    [availabilityQuery.data, timezone],
+  );
   const availableDates = useMemo(() => [...slotsByDate.keys()], [slotsByDate]);
 
   // Default the selected date to the first one with openings.
@@ -305,8 +251,9 @@ export default function Appointments() {
           </p>
         </div>
         <p className="text-sm text-muted-foreground">
-          We've sent a calendar invitation to your email. Need to change or
-          cancel? Just reply to it.
+          We've sent a calendar invitation and a confirmation email. Need to
+          reschedule or cancel? Use the link in that email — you can manage your
+          appointment any time.
         </p>
       </SuccessScreen>
     );

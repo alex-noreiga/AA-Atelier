@@ -163,7 +163,20 @@ Express app (artifacts/api-server)  ──►  Notion REST API (orders database)
   ├─ POST /api/appointments        → books an open slot (re-checked server-side),
   │                                  writes it as a Google Calendar event that
   │                                  invites the customer (+ Meet for virtual) +
-  │                                  emails a confirmation
+  │                                  emails a confirmation (with a signed
+  │                                  "manage your appointment" link)
+  ├─ GET  /api/appointments/manage → the current details of a booked appointment,
+  │                                  identified by the signed token in the manage
+  │                                  link (read live from Google Calendar). Drives
+  │                                  the self-service reschedule/cancel page
+  ├─ POST /api/appointments/reschedule
+  │                                → moves the appointment (by its signed token) to
+  │                                  a new open slot — re-checks availability for the
+  │                                  SAME staff/type/location, PATCHes the calendar
+  │                                  event (re-notifying), emails a confirmation
+  ├─ POST /api/appointments/cancel → cancels the appointment (by its signed token):
+  │                                  deletes the calendar event (frees the slot +
+  │                                  notifies), emails a confirmation. Idempotent
   ├─ POST /api/webhooks/stripe     → Stripe → server webhook (raw body, signed).
   │                                  On checkout.session.completed, records the
   │                                  paid order in the Notion "Shop Orders"
@@ -234,6 +247,7 @@ Express app (artifacts/api-server)  ──►  Notion REST API (orders database)
 
 The customer-notification POST endpoints (`/api/orders`, `/api/contact`,
 `/api/notify`, `/api/newsletter`, `/api/appointments`,
+`/api/appointments/reschedule`, `/api/appointments/cancel`,
 `/api/orders/:n/measurement-change-requests`, `/api/orders/:n/reviews`)
 each send a customer email via **Resend** as
 a **best-effort** side effect after the Notion write: the send is logged-and-swallowed
@@ -1117,6 +1131,55 @@ Locations`. `lib/google/sheets.repository.ts` reads it (`APPOINTMENT_SHEET_ID`,
    itself. `google-auth-library` mints the tokens (impersonated for Calendar,
    plain for Sheets); the rest is raw `fetch`, mirroring the Notion adapter.
 
+### Self-service reschedule & cancel (signed manage link)
+
+A customer can **reschedule or cancel** their own booking from a link in the
+confirmation email — no sign-in — freeing the slot automatically. Because there is
+**no appointments database** (the booking is only a Google Calendar event) and the
+booking flow used to discard the event id, the durable handle is a **signed HMAC
+token** (the same `lib/auth/tokens.ts` the account portal uses, with a new
+`"appointment"` purpose carrying `{ email, eventId, staff }`, 60-day TTL). Load-
+bearing decisions:
+
+1. **The token is the authorization**, like the magic link — possession of the
+   `${PUBLIC_BASE_URL}/appointments/manage?token=…` link is proof, no cookie/account.
+   `bookAppointment` mints it after the event is created and embeds it in the
+   confirmation email (`manageUrl` on `AppointmentEmailDetails`). Gated on
+   `authConfigured()` + `PUBLIC_BASE_URL` (`buildManageUrl`); unset ⇒ the link is
+   omitted and the email falls back to "reply to us" — inert-safe like the portal.
+   **No new env var / no atelier setup.**
+
+2. **The calendar event is the record — read live, never trust the token's copy.**
+   `createCalendarEvent` now returns the event `id` and stamps private
+   `extendedProperties` (`EVENT_PROP_*`: type, location, confirmation, email, name)
+   so the event is self-describing. `lib/google/calendar.repository.ts` gained
+   `getCalendarEvent` (404/410 ⇒ null), `updateCalendarEvent` (PATCH = a merge, so
+   attendees/Meet/props survive), and `cancelCalendarEvent` (DELETE, 404/410 ⇒
+   idempotent success), all `sendUpdates=all` so Google re-notifies and the slot
+   frees.
+
+3. **Reschedule re-runs the same `computeSlots`** as booking, **locked to the same
+   staff/type/location** (a move, not a rebooking — PATCH can't change calendars).
+   Known limit: the current booking counts as busy, so a new time overlapping the
+   old one isn't offered. 404 if gone, 409 if already started/cancelled, 400 if the
+   slot isn't open.
+
+4. **Contract-first** (unlike the webhook/cron routes): `GET /appointments/manage`,
+   `POST /appointments/reschedule`, `POST /appointments/cancel` are in
+   `openapi.yaml` with generated hooks — ordinary SPA JSON calls.
+   `AppointmentDetails` carries `timezone` so the manage page renders times without
+   a second options fetch. Emails (reschedule/cancel confirmations + an atelier
+   change notice) are best-effort from the appointments sender, same contract as
+   every appointment mail. Code: `services/appointment-manage.service.ts`,
+   `routes/appointments.ts`, `lib/resend/emails.ts` (`appointmentRescheduledEmail`/
+   `appointmentCancelledEmail`/`appointmentChangeNotificationEmail`),
+   `web-app/src/pages/appointment-manage.tsx` (+ shared `lib/appointment-format.ts`).
+
+The roadmap card's **day-before reminder** is a deliberate fast-follow (not built
+here): it needs a new cron doing a net-new `events.list`-by-window plus a per-event
+`aptReminded` marker — the extended-property model above is the groundwork. See
+`.agents/memory/appointment-reschedule-cancel.md`.
+
 ## Customer account portal (passwordless magic-link)
 
 A signed-in **home base** that gathers a customer's custom orders and shop orders
@@ -1615,6 +1678,7 @@ and in the maintainer's env without edits.
 | Change order status-change emails (+ pipeline graphic) | `api-server/src/lib/resend/emails.ts` (`orderStageChangeEmail`) + `services/order-notification.service.ts` + `routes/order-notification.ts` + `lib/notion/orders.repository.ts` (`findOrderForStageNotification`); Notion automation → `POST /api/webhooks/notion-stage-change`                                                                                                     |
 | Change automated fitting reminders                     | `api-server/src/services/schedule.service.ts` (`sendDueFittingReminders`) + `services/fitting-reminder.ts` (env business rule) + `lib/notion/production-schedule.{blocks,repository}.ts` (`findMilestonesNeedingFittingReminder`/`markFittingReminderSent`, `Reminder Sent` prop) + `fittingReminderEmail` in `lib/resend/emails.ts`; runs in the milestone cron                    |
 | Change appointment booking (UI)                        | `artifacts/web-app/src/pages/appointments.tsx`                                                                                                                                                                                                                                                                                                                                      |
+| Change appointment reschedule / cancel                 | `artifacts/web-app/src/pages/appointment-manage.tsx` (+ shared `lib/appointment-format.ts`); `api-server/src/services/appointment-manage.service.ts` + `routes/appointments.ts` (`/appointments/manage`, `/reschedule`, `/cancel`) + `lib/google/calendar.repository.ts` (`getCalendarEvent`/`updateCalendarEvent`/`cancelCalendarEvent`) + the reschedule/cancel builders in `lib/resend/emails.ts`; token `"appointment"` purpose in `lib/auth/tokens.ts` |
 | Change appointment types / routing rules               | `api-server/src/lib/appointments/catalog.ts` (targeted business rule — durations, which staff, which locations)                                                                                                                                                                                                                                                                     |
 | Change staff working hours / calendars                 | The working-hours **Google Sheet** (`APPOINTMENT_SHEET_ID`); read in `api-server/src/lib/google/sheets.repository.ts`, parsed by `lib/appointments/staff.ts`                                                                                                                                                                                                                        |
 | Change appointment slot logic / policy                 | `api-server/src/lib/appointments/availability.ts` (`computeSlots`) + `time.ts` + `settings.ts`; `services/appointments.service.ts` + `routes/appointments.ts` + `lib/google/*` (Calendar free/busy + event insert)                                                                                                                                                                  |

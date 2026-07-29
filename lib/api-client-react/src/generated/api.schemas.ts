@@ -443,6 +443,60 @@ export interface NewAppointmentResponse {
   calendarLink?: string;
 }
 
+/**
+ * Whether the appointment is still on the calendar or was cancelled.
+ */
+export type AppointmentDetailsStatus = typeof AppointmentDetailsStatus[keyof typeof AppointmentDetailsStatus];
+
+
+export const AppointmentDetailsStatus = {
+  confirmed: 'confirmed',
+  cancelled: 'cancelled',
+} as const;
+
+export type AppointmentDetailsLocation = typeof AppointmentDetailsLocation[keyof typeof AppointmentDetailsLocation];
+
+
+export const AppointmentDetailsLocation = {
+  'in-person': 'in-person',
+  virtual: 'virtual',
+} as const;
+
+/**
+ * A booked appointment's current state, read live from Google Calendar for the self-service reschedule / cancel page.
+ */
+export interface AppointmentDetails {
+  /** Whether the appointment is still on the calendar or was cancelled. */
+  status: AppointmentDetailsStatus;
+  /** IANA timezone the atelier's hours and slot times are expressed in, for the client to render the appointment's times. */
+  timezone: string;
+  confirmationCode: string;
+  /** The appointment type's id, so the reschedule flow can re-query availability for the same type. */
+  typeId: string;
+  typeName: string;
+  staff: string;
+  location: AppointmentDetailsLocation;
+  locationLabel: string;
+  start: string;
+  end: string;
+  /** The Google Meet link for a virtual appointment, when one exists. */
+  meetingUrl?: string;
+  /** Whether the appointment can still be rescheduled or cancelled — false once it has started or been cancelled. */
+  canModify: boolean;
+}
+
+export interface RescheduleAppointmentRequest {
+  /** The signed token from the manage link. */
+  token: string;
+  /** The new slot's start instant, as returned by the availability endpoint. */
+  start: string;
+}
+
+export interface CancelAppointmentRequest {
+  /** The signed token from the manage link. */
+  token: string;
+}
+
 export interface ErrorEnvelope {
   error: string;
 }
@@ -522,4 +576,11 @@ export const GetAppointmentAvailabilityLocation = {
   'in-person': 'in-person',
   virtual: 'virtual',
 } as const;
+
+export type GetAppointmentParams = {
+/**
+ * The signed token from the manage link.
+ */
+token: string;
+};
 

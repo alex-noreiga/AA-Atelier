@@ -22,9 +22,14 @@ import {
   errorAlertEmail,
   orderStageChangeEmail,
   fittingReminderEmail,
+  appointmentConfirmationEmail,
+  appointmentRescheduledEmail,
+  appointmentCancelledEmail,
+  appointmentChangeNotificationEmail,
   type ShopOrderEmailDetails,
   type ErrorAlertDetails,
   type OrderStageChangeEmailDetails,
+  type AppointmentEmailDetails,
 } from "../../src/lib/resend/emails.js";
 
 const INBOX = "orders@a3iceanddance.com";
@@ -623,5 +628,89 @@ describe("fittingReminderEmail", () => {
     expect(email.html).toContain("A&amp;B-1");
     expect(email.html).toContain("&lt;b&gt;soon&lt;/b&gt;");
     expect(email.html).not.toContain("<b>soon</b>");
+  });
+});
+
+const appointmentDetails = (
+  overrides: Partial<AppointmentEmailDetails> = {},
+): AppointmentEmailDetails => ({
+  customerName: "Ada Lovelace",
+  email: "ada@example.com",
+  typeName: "Consultation",
+  staff: "Alayna",
+  locationLabel: "In person",
+  when: "Monday, July 20 at 10:00 AM EDT",
+  confirmationCode: "APT-XYZ",
+  ...overrides,
+});
+
+describe("appointmentConfirmationEmail", () => {
+  it("links to the manage page when a manageUrl is present", () => {
+    const email = appointmentConfirmationEmail(
+      appointmentDetails({
+        manageUrl: "https://example.test/appointments/manage?token=abc",
+      }),
+    );
+    expect(email.html).toContain(
+      "https://example.test/appointments/manage?token=abc",
+    );
+    expect(email.html).toContain("Reschedule or cancel");
+    expect(email.text).toContain(
+      "https://example.test/appointments/manage?token=abc",
+    );
+    // The old "reply to this email" fallback is gone when we have a link.
+    expect(email.html).not.toContain("reply to this email");
+  });
+
+  it("falls back to 'reply to us' copy when no manageUrl is configured", () => {
+    const email = appointmentConfirmationEmail(appointmentDetails());
+    expect(email.html).toContain("reply to this email");
+    expect(email.html).not.toContain("/appointments/manage");
+  });
+});
+
+describe("appointmentRescheduledEmail", () => {
+  it("announces the new time and keeps the confirmation code", () => {
+    const email = appointmentRescheduledEmail(
+      appointmentDetails({
+        when: "Tuesday, July 21 at 3:00 PM EDT",
+        manageUrl: "https://example.test/appointments/manage?token=abc",
+      }),
+    );
+    expect(email.subject).toMatch(/rescheduled/i);
+    expect(email.html).toContain("Tuesday, July 21 at 3:00 PM EDT");
+    expect(email.html).toContain("APT-XYZ");
+    expect(email.html).toContain(
+      "https://example.test/appointments/manage?token=abc",
+    );
+  });
+});
+
+describe("appointmentCancelledEmail", () => {
+  it("confirms the cancellation and invites re-booking", () => {
+    const email = appointmentCancelledEmail(appointmentDetails());
+    expect(email.subject).toMatch(/cancelled/i);
+    expect(email.html).toContain("cancelled");
+    expect(email.to).toBe("ada@example.com");
+  });
+});
+
+describe("appointmentChangeNotificationEmail", () => {
+  it("labels the atelier notice by action and replies to the customer", () => {
+    const rescheduled = appointmentChangeNotificationEmail(
+      appointmentDetails(),
+      INBOX,
+      "rescheduled",
+    );
+    expect(rescheduled.to).toBe(INBOX);
+    expect(rescheduled.replyTo).toBe("ada@example.com");
+    expect(rescheduled.subject).toMatch(/rescheduled/i);
+
+    const cancelled = appointmentChangeNotificationEmail(
+      appointmentDetails(),
+      INBOX,
+      "cancelled",
+    );
+    expect(cancelled.subject).toMatch(/cancelled/i);
   });
 });
