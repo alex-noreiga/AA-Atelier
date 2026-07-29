@@ -18,6 +18,7 @@
 // Reusing the Resend adapter keeps this vendor-free.
 
 import { logger } from "../lib/logger.js";
+import { settingValue } from "../lib/settings/store.js";
 import { sendEmail } from "../lib/resend/send.js";
 import {
   errorAlertEmail,
@@ -37,7 +38,10 @@ const SEND_TIMEOUT_MS = 3000;
 const recentAlerts = new Map<string, number>();
 
 function alertInbox(): string {
-  return process.env.ALERT_INBOX_EMAIL || DEFAULT_ALERT_INBOX;
+  return (
+    (settingValue("ALERT_INBOX_EMAIL") ?? process.env.ALERT_INBOX_EMAIL) ||
+    DEFAULT_ALERT_INBOX
+  );
 }
 
 /** True (and records it) when this signature hasn't alerted within the window. */

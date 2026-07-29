@@ -1,20 +1,27 @@
-import { describe, it, expect, beforeEach } from "vitest";
+import { describe, it, expect, beforeEach, afterEach } from "vitest";
 import {
   appointmentTimezone,
   minLeadMinutes,
   maxAdvanceDays,
   slotStepMinutes,
 } from "../../src/lib/appointments/settings.js";
+import {
+  __setSettingsSnapshot,
+  __resetSettings,
+} from "../../src/lib/settings/store.js";
 
-// Booking policy is read from the environment at call time. These guard the
-// fallback-to-default and invalid-value branches, which decide what customers
-// can actually book — an out-of-range env var must degrade to the default, not
-// leak through.
+// Booking policy is resolved at call time from the live Studio Settings, then the
+// environment, then the default. These guard the fallback-to-default and
+// invalid-value branches, which decide what customers can actually book — an
+// out-of-range value must degrade to the default, not leak through.
 beforeEach(() => {
   delete process.env.APPOINTMENT_TIMEZONE;
   delete process.env.APPOINTMENT_MIN_LEAD_HOURS;
   delete process.env.APPOINTMENT_MAX_ADVANCE_DAYS;
   delete process.env.APPOINTMENT_SLOT_STEP_MINUTES;
+});
+afterEach(() => {
+  __resetSettings();
 });
 
 describe("appointmentTimezone", () => {
@@ -25,6 +32,12 @@ describe("appointmentTimezone", () => {
   it("uses the configured zone", () => {
     process.env.APPOINTMENT_TIMEZONE = "Europe/London";
     expect(appointmentTimezone()).toBe("Europe/London");
+  });
+
+  it("prefers the live Studio Settings value over the env var", () => {
+    process.env.APPOINTMENT_TIMEZONE = "Europe/London";
+    __setSettingsSnapshot({ APPOINTMENT_TIMEZONE: "Asia/Tokyo" });
+    expect(appointmentTimezone()).toBe("Asia/Tokyo");
   });
 });
 
@@ -51,6 +64,12 @@ describe("minLeadMinutes", () => {
   it("converts a configured hour count to minutes", () => {
     process.env.APPOINTMENT_MIN_LEAD_HOURS = "48";
     expect(minLeadMinutes()).toBe(48 * 60);
+  });
+
+  it("prefers the live Studio Settings value over the env var", () => {
+    process.env.APPOINTMENT_MIN_LEAD_HOURS = "48";
+    __setSettingsSnapshot({ APPOINTMENT_MIN_LEAD_HOURS: "12" });
+    expect(minLeadMinutes()).toBe(12 * 60);
   });
 });
 

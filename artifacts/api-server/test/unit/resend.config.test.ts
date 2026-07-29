@@ -1,5 +1,9 @@
 import { describe, it, expect, afterEach } from "vitest";
 import { fromAddress, atelierInbox } from "../../src/lib/resend/config.js";
+import {
+  __setSettingsSnapshot,
+  __resetSettings,
+} from "../../src/lib/settings/store.js";
 
 const VARS = [
   "RESEND_FROM_EMAIL",
@@ -10,6 +14,7 @@ const VARS = [
 
 afterEach(() => {
   for (const v of VARS) delete process.env[v];
+  __resetSettings();
 });
 
 describe("fromAddress", () => {
@@ -65,5 +70,11 @@ describe("atelierInbox", () => {
   it("is empty when nothing is configured (callers skip the notification)", () => {
     expect(atelierInbox("orders")).toBe("");
     expect(atelierInbox("contact")).toBe("");
+  });
+
+  it("prefers the live Studio Settings inbox over the env var", () => {
+    process.env.ATELIER_INBOX_EMAIL = "orders@a3iceanddance.com";
+    __setSettingsSnapshot({ ATELIER_INBOX_EMAIL: "studio@a3iceanddance.com" });
+    expect(atelierInbox("orders")).toBe("studio@a3iceanddance.com");
   });
 });

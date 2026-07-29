@@ -8,11 +8,15 @@
 // names a value, not the stage list (which stays live-read from Notion), so it
 // is the same kind of deliberate exception as `STATUS_IN_STOCK`: if the atelier
 // renames this stage in Notion, update it here (or set the env override).
+import { settingValue } from "../lib/settings/store.js";
+
 const DEFAULT_LOCK_FROM_STAGE = "Cutting/Pinning";
 
 export function lockFromStage(): string {
   return (
-    process.env.MEASUREMENT_LOCK_FROM_STAGE?.trim() || DEFAULT_LOCK_FROM_STAGE
+    (settingValue("MEASUREMENT_LOCK_FROM_STAGE") ??
+      process.env.MEASUREMENT_LOCK_FROM_STAGE?.trim()) ||
+    DEFAULT_LOCK_FROM_STAGE
   );
 }
 

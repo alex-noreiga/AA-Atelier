@@ -19,6 +19,7 @@ import {
   notionStageChangeButtonHandler,
 } from "./routes/order-notification.js";
 import { errorHandler } from "./middlewares/error.js";
+import { primeSettings } from "./lib/settings/store.js";
 import { logger } from "./lib/logger.js";
 
 const app = express();
@@ -52,6 +53,24 @@ app.use(
   }),
 );
 app.use(cors());
+
+// Refresh the live "Studio Settings" snapshot (Notion, 60s-cached) at the start
+// of every request, so the sync config getters — rush rate, measurement-lock
+// stage, appointment policy, atelier inboxes — can read the atelier's live values
+// with an env-var fallback. Body-agnostic, so it sits ahead of the raw-body
+// webhook routes safely. Best-effort: a settings hiccup never blocks a request
+// (the getters just fall back to env/defaults). See lib/settings/store.ts.
+app.use(async (_req, _res, next) => {
+  try {
+    await primeSettings();
+  } catch (err) {
+    logger.warn(
+      { err },
+      "Failed to refresh studio settings; using env/default fallback",
+    );
+  }
+  next();
+});
 
 // Stripe verifies the webhook signature against the exact raw bytes, so this
 // route must read the body as a Buffer BEFORE the global JSON parser consumes

@@ -3,11 +3,16 @@ import {
   rushSurchargeRate,
   rushSurchargeLineName,
 } from "../../src/services/rush.js";
+import {
+  __setSettingsSnapshot,
+  __resetSettings,
+} from "../../src/lib/settings/store.js";
 
 const prev = process.env.RUSH_SURCHARGE_RATE;
 afterEach(() => {
   if (prev === undefined) delete process.env.RUSH_SURCHARGE_RATE;
   else process.env.RUSH_SURCHARGE_RATE = prev;
+  __resetSettings();
 });
 
 describe("rushSurchargeRate", () => {
@@ -31,6 +36,12 @@ describe("rushSurchargeRate", () => {
     expect(rushSurchargeRate()).toBe(0.15);
     process.env.RUSH_SURCHARGE_RATE = "-0.1";
     expect(rushSurchargeRate()).toBe(0.15);
+  });
+
+  it("prefers the live Studio Settings value over the env var", () => {
+    process.env.RUSH_SURCHARGE_RATE = "0.1";
+    __setSettingsSnapshot({ RUSH_SURCHARGE_RATE: "0.25" });
+    expect(rushSurchargeRate()).toBe(0.25);
   });
 });
 

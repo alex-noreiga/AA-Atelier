@@ -8,15 +8,19 @@
 // Final Balance). The rate is a targeted business rule, env-overridable and read
 // at call time (like `measurementsLocked()` / the appointment settings).
 
+import { settingValue } from "../lib/settings/store.js";
+
 const DEFAULT_RUSH_SURCHARGE_RATE = 0.15;
 
 /**
  * The rush surcharge as a fraction of the itemized subtotal (default `0.15` =
- * 15%). Overridable with `RUSH_SURCHARGE_RATE` (e.g. `0.2`); a missing, unparse-
- * able, or negative value falls back to the default. `0` disables the surcharge.
+ * 15%). Overridable via the "Studio Settings" Notion row `RUSH_SURCHARGE_RATE`,
+ * then the env var of the same name (e.g. `0.2`); a missing, unparseable, or
+ * negative value falls back to the default. `0` disables the surcharge.
  */
 export function rushSurchargeRate(): number {
-  const raw = process.env.RUSH_SURCHARGE_RATE;
+  const raw =
+    settingValue("RUSH_SURCHARGE_RATE") ?? process.env.RUSH_SURCHARGE_RATE;
   if (raw === undefined || raw === "") return DEFAULT_RUSH_SURCHARGE_RATE;
   const parsed = Number(raw);
   return Number.isFinite(parsed) && parsed >= 0
