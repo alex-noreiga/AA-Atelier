@@ -48,7 +48,7 @@ function hasSizeChart(product: Product): boolean {
   return product.sized;
 }
 
-/** An in-stock item invites an enquiry; a sold-out one opens the notify dialog. */
+/** An in-stock item invites an inquiry; a sold-out one opens the notify dialog. */
 function contactHref(variant: ProductVariant): string {
   return `/contact?item=${encodeURIComponent(variant.name)}`;
 }
@@ -205,7 +205,7 @@ function VariantCta({
 }) {
   if (variant.available) {
     // A priced, in-stock item can be bought; an unpriced one ("inquire for
-    // price") still routes to an enquiry, since we can't charge for it.
+    // price") still routes to an inquiry, since we can't charge for it.
     if (typeof variant.price === "number") {
       return <AddToCartButton variant={variant} size={size} addOns={addOns} />;
     }

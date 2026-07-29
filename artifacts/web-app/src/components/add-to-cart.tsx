@@ -25,7 +25,7 @@ function toCartLine(variant: ProductVariant): Omit<CartItem, "quantity"> {
  * Adds an in-stock, priced variant to the cart. For a sized item (a dress) the
  * size is chosen upstream in `SizeSelector` and passed in as `size`; the button
  * stays disabled until one is picked. A one-size item (a soaker) adds directly.
- * Unpriced items never reach here — the shop routes those to an enquiry instead
+ * Unpriced items never reach here — the shop routes those to an inquiry instead
  * (see `CtaLink`).
  *
  * `addOns` are matching companion products (a soaker's blade towel) resolved by
@@ -50,7 +50,7 @@ export function AddToCartButton({
   const availableSizes = variant.sizes.filter((s) => s.available);
   const isSized = variant.sizes.length > 0;
 
-  // A sized item with nothing in stock can't be bought — fall back to enquiry.
+  // A sized item with nothing in stock can't be bought — fall back to inquiry.
   if (isSized && availableSizes.length === 0) {
     return (
       <Link
