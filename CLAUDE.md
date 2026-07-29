@@ -199,6 +199,9 @@ Express app (artifacts/api-server)  ──►  Notion REST API (orders database)
   │                                  every existing milestone's Status from its
   │                                  order's live stage (so the calendar reflects
   │                                  real progress, not a frozen "Not Started").
+  │                                  Also emails a best-effort fitting reminder for
+  │                                  any "Fitting" milestone due within the lead
+  │                                  window (see "Automated fitting reminders").
   │                                  NOT part of the OpenAPI contract.
   ├─ GET  /api/cron/generate-milestones/run
   │                                → the SAME reconciliation, on demand: a Notion
@@ -791,6 +794,62 @@ Notion **Button** → "Open link" →
 on a dashboard page to generate milestones on demand. Property names live in
 `orders.schema.ts` (orders) and `production-schedule.blocks.ts` (schedule).
 
+## Automated fitting reminders
+
+When a custom order's **"Fitting"** production milestone is approaching, the app emails
+the customer a best-effort nudge to book (or confirm) their fitting, with a deep link
+straight into the booking flow (`/appointments?type=fitting`). It **wires two existing
+systems together** — the milestone reconciliation and the Resend mailer — with no new
+endpoint, no new cron, and no frontend change (the booking page already preselects a type
+from `?type=`). Load-bearing points:
+
+1. **It rides the nightly reconciliation, not a new trigger.** `reconcileMilestones`
+   (the Vercel cron + the on-demand button) runs a third pass, `sendDueFittingReminders`,
+   after generation + status-sync. It finds Production Schedule milestones whose
+   `Production Stage` is a configured fitting stage, aren't `Completed`, haven't been
+   reminded yet, and are **either** due on/before `today + FITTING_REMINDER_LEAD_DAYS`
+   **or** already at the fitting stage (`Status = In Progress`) — then emails the order's
+   customer. The In-Progress clause is what catches an order running **ahead of
+   schedule**: it reaches Fitting before the target date, so a date-only filter would
+   never fire before the stage advances to `Completed` and the reminder would be missed
+   entirely. (The pass runs after `syncMilestoneStatuses`, so the status reflects the
+   order's live stage.) Code: `services/schedule.service.ts` (`sendDueFittingReminders`) →
+   `services/fitting-reminder.ts` (the business-rule config) +
+   `lib/notion/production-schedule.repository.ts`
+   (`findMilestonesNeedingFittingReminder` / `markFittingReminderSent`) +
+   `fittingReminderEmail` in `lib/resend/emails.ts`.
+
+2. **"Fitting" is a targeted business rule, not hardcoded logic.** `fittingReminderStages()`
+   reads `FITTING_REMINDER_STAGES` (comma-separated live Stage option names; default
+   `Fitting`) and `fittingReminderLeadDays()` reads `FITTING_REMINDER_LEAD_DAYS` (default
+   `10`) — the same deliberate exception as `STATUS_IN_STOCK` /
+   `MEASUREMENT_LOCK_FROM_STAGE`. Rename the Fitting stage in Notion and set the override
+   (or list a first/second fitting). The email's booking link uses `PUBLIC_BASE_URL` and
+   is omitted when unset (graceful, like the stage-change email's tracking link).
+
+3. **Idempotent via a per-milestone `Reminder Sent` checkbox.** The reminder is de-duped
+   with a `Reminder Sent` checkbox on the Production Schedule row (the analogue of the
+   order's `Milestones Generated` / `Last Notified Stage` markers): a due milestone is
+   emailed once, then marked, so the nightly cron never re-sends. An absent/unchecked box
+   reads as `false`, so new milestones need nothing set. A milestone is marked reminded
+   **even when the order carries no email** (a legacy order can't be reached — marking it
+   stops a nightly re-check); if the order lookup itself throws, the row is left unmarked
+   so the next run retries it, with per-milestone failures logged and skipped like the
+   other passes.
+
+4. **Customer email only + best-effort, like the newsletter.** The reminder sends from the
+   **appointments** sender (`fromAddress("appointments")`) and is best-effort (a Resend
+   failure is logged-and-swallowed, never fails the cron). There is deliberately **no**
+   internal atelier notification — the atelier already sees the schedule/calendar, so a
+   per-reminder studio email would be noise (same rationale as the newsletter opt-in). The
+   milestone rows don't carry the customer email, so each order is resolved back from its
+   `Order` relation via `findOrderForStageNotificationByPageId`.
+
+There are **no new env vars required** (it reuses `CRON_SECRET`, `PUBLIC_BASE_URL`, the
+Resend vars, and `NOTION_PRODUCTION_SCHEDULE_DATABASE_ID`); the two optional knobs above
+tune it. The atelier's one-time setup is adding a **`Reminder Sent`** (checkbox) property
+to the "📅 Production Schedule" database (the app writes it; leave it unchecked).
+
 ## Post-delivery review capture
 
 Once a custom order reaches its **final (delivered) stage**, the tracking page
@@ -1335,6 +1394,11 @@ and in the maintainer's env without edits.
 
 ## Conventions & gotchas
 
+- **Surface customer-facing copy for review.** When adding or changing any text a
+  customer will see — email subjects/bodies (`lib/resend/emails.ts`), on-site strings,
+  confirmation pages, SMS, etc. — show the exact copy in the reply so the atelier can
+  approve the wording before it ships. Don't quietly bury new customer-visible wording
+  in a diff.
 - **ESM only.** Server-side relative imports use explicit `.js` extensions
   (e.g. `import router from "./routes/index.js"`) even though the source is
   `.ts` — this is required so `@vercel/node`/Node ESM can resolve the compiled
@@ -1514,6 +1578,14 @@ and in the maintainer's env without edits.
   Vercel; each still falls back to its env var, then the built-in default. Unset ⇒
   env-only, exactly as before. Secrets, database ids, and email **senders** stay in
   Vercel by design (see "Studio Settings").
+- **Optional fitting-reminder env vars:** `FITTING_REMINDER_STAGES` (default
+  `Fitting`) — the live **Stage** option name(s), comma-separated, that trigger an
+  automated fitting reminder; and `FITTING_REMINDER_LEAD_DAYS` (default `10`) — how
+  many days ahead of a fitting milestone's target date to email. Both are targeted
+  business rules like `MEASUREMENT_LOCK_FROM_STAGE`; read in
+  `services/fitting-reminder.ts`, consumed by `sendDueFittingReminders` in
+  `services/schedule.service.ts`. One-time: add a `Reminder Sent` checkbox to the
+  Production Schedule database. See "Automated fitting reminders" above.
 
 ## Quick reference — where things live
 
@@ -1541,6 +1613,7 @@ and in the maintainer's env without edits.
 | Change invoice line-item generation (from costing)     | `api-server/src/services/invoice-generator.service.ts` + `routes/invoice-generator.ts` (button, `?order=`) + `lib/notion/costing.{schema,repository}.ts` + `lib/notion/invoice-line-items.blocks.ts` + `createInvoiceLineItem`/`setInvoiceTitle` in `lib/notion/invoice.repository.ts`                                                                                              |
 | Change production-schedule milestones                  | `api-server/src/services/schedule.service.ts` + `routes/cron.ts` + `lib/notion/production-schedule.{blocks,repository}.ts` + `lib/notion/orders.repository.ts` (`findOrdersNeedingMilestones`/`markMilestonesGenerated`); cron in `vercel.json`                                                                                                                                     |
 | Change order status-change emails (+ pipeline graphic) | `api-server/src/lib/resend/emails.ts` (`orderStageChangeEmail`) + `services/order-notification.service.ts` + `routes/order-notification.ts` + `lib/notion/orders.repository.ts` (`findOrderForStageNotification`); Notion automation → `POST /api/webhooks/notion-stage-change`                                                                                                     |
+| Change automated fitting reminders                     | `api-server/src/services/schedule.service.ts` (`sendDueFittingReminders`) + `services/fitting-reminder.ts` (env business rule) + `lib/notion/production-schedule.{blocks,repository}.ts` (`findMilestonesNeedingFittingReminder`/`markFittingReminderSent`, `Reminder Sent` prop) + `fittingReminderEmail` in `lib/resend/emails.ts`; runs in the milestone cron                    |
 | Change appointment booking (UI)                        | `artifacts/web-app/src/pages/appointments.tsx`                                                                                                                                                                                                                                                                                                                                      |
 | Change appointment types / routing rules               | `api-server/src/lib/appointments/catalog.ts` (targeted business rule — durations, which staff, which locations)                                                                                                                                                                                                                                                                     |
 | Change staff working hours / calendars                 | The working-hours **Google Sheet** (`APPOINTMENT_SHEET_ID`); read in `api-server/src/lib/google/sheets.repository.ts`, parsed by `lib/appointments/staff.ts`                                                                                                                                                                                                                        |

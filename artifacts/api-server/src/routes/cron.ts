@@ -63,15 +63,24 @@ export async function generateMilestonesButtonHandler(
   try {
     const result = await reconcileMilestones();
     logger.info(result, "Milestone reconciliation complete (button)");
-    const { ordersProcessed, milestonesCreated, milestonesUpdated } = result;
+    const {
+      ordersProcessed,
+      milestonesCreated,
+      milestonesUpdated,
+      remindersSent,
+    } = result;
     const updatedNote =
       milestonesUpdated === 0
         ? ""
         : ` Refreshed the status of ${milestonesUpdated} existing milestone${milestonesUpdated === 1 ? "" : "s"}.`;
+    const reminderNote =
+      remindersSent === 0
+        ? ""
+        : ` Sent ${remindersSent} fitting reminder${remindersSent === 1 ? "" : "s"}.`;
     const summary =
       milestonesCreated === 0
-        ? `Everything was already up to date — no new milestones were needed.${updatedNote}`
-        : `Generated ${milestonesCreated} milestone${milestonesCreated === 1 ? "" : "s"} across ${ordersProcessed} order${ordersProcessed === 1 ? "" : "s"}.${updatedNote}`;
+        ? `Everything was already up to date — no new milestones were needed.${updatedNote}${reminderNote}`
+        : `Generated ${milestonesCreated} milestone${milestonesCreated === 1 ? "" : "s"} across ${ordersProcessed} order${ordersProcessed === 1 ? "" : "s"}.${updatedNote}${reminderNote}`;
     res
       .status(200)
       .type("html")

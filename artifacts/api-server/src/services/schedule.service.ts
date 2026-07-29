@@ -9,6 +9,12 @@
 
 import { reportError } from "./alert.service.js";
 import {
+  fittingReminderLeadDays,
+  fittingReminderStages,
+  reminderCutoffDate,
+} from "./fitting-reminder.js";
+import {
+  findOrderForStageNotificationByPageId,
   findOrdersNeedingMilestones,
   findOrdersWithMilestones,
   markMilestonesGenerated,
@@ -16,7 +22,9 @@ import {
 } from "../lib/notion/orders.repository.js";
 import {
   createMilestone,
+  findMilestonesNeedingFittingReminder,
   listOrderMilestonePages,
+  markFittingReminderSent,
   orderHasMilestones,
   updateMilestoneStatus,
 } from "../lib/notion/production-schedule.repository.js";
@@ -27,6 +35,9 @@ import {
   type MilestoneStatus,
   type StageMilestone,
 } from "../lib/notion/production-schedule.blocks.js";
+import { fittingReminderEmail } from "../lib/resend/emails.js";
+import { sendEmailBestEffort } from "../lib/resend/send.js";
+import { fromAddress } from "../lib/resend/config.js";
 
 // StageMilestone now lives with the other Production Schedule domain types in
 // production-schedule.blocks.ts (so the milestone reader and writer share it);
@@ -38,10 +49,11 @@ export interface MilestoneGenerationResult {
   milestonesCreated: number;
 }
 
-/** The full reconciliation result: generation counts plus how many existing
- * milestones the status sync advanced. */
+/** The full reconciliation result: generation counts, how many existing
+ * milestones the status sync advanced, and how many fitting reminders were sent. */
 export interface MilestoneReconcileResult extends MilestoneGenerationResult {
   milestonesUpdated: number;
+  remindersSent: number;
 }
 
 /** Format a Date as an ISO calendar date (`yyyy-mm-dd`), in UTC. */
@@ -220,17 +232,96 @@ export async function syncMilestoneStatuses(): Promise<number> {
   return milestonesUpdated;
 }
 
+/** The booking-page deep link that preselects the fitting flow, when
+ * PUBLIC_BASE_URL is configured (omitted otherwise, so the email still sends
+ * without a broken link). Mirrors `trackingUrl` in order-notification.service.
+ * `fitting` is the appointment type id in lib/appointments/catalog.ts. */
+function bookingUrl(): string | undefined {
+  const base = process.env.PUBLIC_BASE_URL?.trim();
+  if (!base) return undefined;
+  return `${base.replace(/\/+$/, "")}/appointments?type=fitting`;
+}
+
+/**
+ * Email customers whose fitting milestone is approaching, nudging them to book (or
+ * confirm) their fitting. Finds milestones whose `Production Stage` is a configured
+ * fitting stage, aren't completed, are due within the lead window, and haven't been
+ * reminded yet (services/fitting-reminder.ts + the `Reminder Sent` marker). The
+ * milestone rows don't carry the customer email, so each order is resolved back
+ * from its `Order` relation. Each reminder is best-effort mail (a Resend failure is
+ * logged-and-swallowed, like every other customer email) and the milestone is
+ * marked reminded whether or not a mail actually went out — a legacy order with no
+ * email can't be reached, and marking it stops the nightly cron from re-checking it
+ * forever. If the order lookup itself throws, the milestone is left unmarked so the
+ * next run retries it; per-milestone failures are logged and skipped, mirroring the
+ * generation/sync passes. Returns the number of reminder emails sent.
+ */
+export async function sendDueFittingReminders(
+  now: Date = new Date(),
+): Promise<number> {
+  const stages = fittingReminderStages();
+  const onOrBefore = reminderCutoffDate(now, fittingReminderLeadDays());
+
+  let milestones;
+  try {
+    milestones = await findMilestonesNeedingFittingReminder({
+      stages,
+      onOrBefore,
+    });
+  } catch (err) {
+    await reportError(
+      { err },
+      "Failed to query fitting-reminder milestones; will retry next run",
+    );
+    return 0;
+  }
+
+  const link = bookingUrl();
+  let remindersSent = 0;
+  for (const milestone of milestones) {
+    try {
+      const order = await findOrderForStageNotificationByPageId(
+        milestone.orderPageId,
+      );
+      if (order?.email) {
+        await sendEmailBestEffort({
+          ...fittingReminderEmail({
+            email: order.email,
+            orderNumber: order.orderNumber,
+            targetDate: milestone.targetDate,
+            ...(link ? { bookingUrl: link } : {}),
+          }),
+          from: fromAddress("appointments"),
+        });
+        remindersSent += 1;
+      }
+      // Mark handled even when there was no email to send, so an unreachable
+      // (legacy, email-less) order isn't re-checked every night.
+      await markFittingReminderSent(milestone.pageId);
+    } catch (err) {
+      await reportError(
+        { err },
+        "Failed to send fitting reminder for milestone; will retry next run",
+      );
+    }
+  }
+
+  return remindersSent;
+}
+
 /**
  * The full nightly reconciliation the cron and on-demand button run: generate
- * milestones for orders that just got a due date, then re-sync the status of
- * every existing milestone so the "Coming Up" calendar reflects real progress.
- * Generation runs first, so a just-generated order is picked up by the sync in
- * the same pass (its current stage becomes In Progress immediately).
+ * milestones for orders that just got a due date, re-sync the status of every
+ * existing milestone so the "Coming Up" calendar reflects real progress, then
+ * email customers whose fitting is approaching. Generation runs first, so a
+ * just-generated order is picked up by the sync in the same pass (its current
+ * stage becomes In Progress immediately).
  */
 export async function reconcileMilestones(
   now: Date = new Date(),
 ): Promise<MilestoneReconcileResult> {
   const generation = await generatePendingMilestones(now);
   const milestonesUpdated = await syncMilestoneStatuses();
-  return { ...generation, milestonesUpdated };
+  const remindersSent = await sendDueFittingReminders(now);
+  return { ...generation, milestonesUpdated, remindersSent };
 }

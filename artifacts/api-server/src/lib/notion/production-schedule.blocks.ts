@@ -18,6 +18,10 @@ export const PS_STATUS_PROPERTY = "Status"; // status (completion)
 export const PS_STAGE_PROPERTY = "Production Stage"; // select — the stage label
 export const PS_TARGET_DATE_PROPERTY = "Target Completion Date"; // date
 export const PS_ORDER_RELATION_PROPERTY = "Order"; // relation -> orders (new)
+// checkbox — the fitting-reminder de-dupe marker (the atelier adds this once; the
+// app flips it once a fitting reminder has been emailed, so the nightly cron never
+// re-sends). An absent/unchecked box reads as false, which the query matches.
+export const PS_REMINDER_SENT_PROPERTY = "Reminder Sent";
 
 /**
  * The three live options on the Production Schedule "Status" property, in
@@ -51,6 +55,18 @@ export interface StageMilestone {
   stage: string;
   /** ISO `yyyy-mm-dd`. */
   targetDate: string;
+}
+
+/** A milestone that's due for a fitting reminder — the fields the reminder pass
+ * needs: the page (to mark reminded), its stage + target date (for the email),
+ * and the linked order's page id (to resolve the customer email). */
+export interface FittingReminderMilestone {
+  pageId: string;
+  stage: string;
+  /** ISO `yyyy-mm-dd`. */
+  targetDate: string;
+  /** Notion page id of the linked order (the `Order` relation). */
+  orderPageId: string;
 }
 
 /** Everything needed to write one milestone row. */
@@ -101,5 +117,13 @@ export function buildMilestoneStatusUpdate(
 ): Record<string, unknown> {
   return {
     [PS_STATUS_PROPERTY]: { status: { name: status } },
+  };
+}
+
+/** The `properties` patch that marks a milestone's fitting reminder as sent, so
+ * the nightly reconciliation doesn't email the customer about it again. */
+export function buildReminderSentUpdate(): Record<string, unknown> {
+  return {
+    [PS_REMINDER_SENT_PROPERTY]: { checkbox: true },
   };
 }
