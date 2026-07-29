@@ -46,6 +46,8 @@ import type {
   NewNotifyResponse,
   NewOrderRequest,
   NewOrderResponse,
+  NewReturnRequest,
+  NewReturnResponse,
   NewReviewRequest,
   NewReviewResponse,
   OrderNotFound,
@@ -1052,6 +1054,79 @@ export function useGetShopOrderStatus<TData = Awaited<ReturnType<typeof getShopO
 
 
 
+
+export const getCreateReturnRequestUrl = (orderNumber: string,) => {
+
+
+
+
+  return `/api/shop-orders/${orderNumber}/return-requests`
+}
+
+/**
+ * Files a customer's request to return or exchange a ready-to-wear shop order. The customer is verified against the email on the order. Accepted requests land as a tagged row in the Notion contact-messages inbox for the atelier to review and action — this endpoint does not itself refund or edit the order.
+ * @summary Request a return or exchange for a shop order
+ */
+export const createReturnRequest = async (orderNumber: string,
+    newReturnRequest: NewReturnRequest, options?: Parameters<typeof customFetch>[1]): Promise<NewReturnResponse> => {
+
+  return customFetch<NewReturnResponse>(getCreateReturnRequestUrl(orderNumber),
+  {
+    ...options,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    body: JSON.stringify(newReturnRequest)
+  }
+);}
+
+
+
+
+
+export const getCreateReturnRequestMutationOptions = <TError = ErrorType<ErrorEnvelope | OrderNotFound>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof createReturnRequest>>, TError,{orderNumber: string;data: BodyType<NewReturnRequest>}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof createReturnRequest>>, TError,{orderNumber: string;data: BodyType<NewReturnRequest>}, TContext> => {
+
+const mutationKey = ['createReturnRequest'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof createReturnRequest>>, {orderNumber: string;data: BodyType<NewReturnRequest>}> = (props) => {
+          const {orderNumber,data} = props ?? {};
+
+          return  createReturnRequest(orderNumber,data,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type CreateReturnRequestMutationResult = NonNullable<Awaited<ReturnType<typeof createReturnRequest>>>
+    export type CreateReturnRequestMutationBody = BodyType<NewReturnRequest>
+    export type CreateReturnRequestMutationError = ErrorType<ErrorEnvelope | OrderNotFound>
+
+    /**
+ * @summary Request a return or exchange for a shop order
+ */
+export const useCreateReturnRequest = <TError = ErrorType<ErrorEnvelope | OrderNotFound>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof createReturnRequest>>, TError,{orderNumber: string;data: BodyType<NewReturnRequest>}, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof createReturnRequest>>,
+        TError,
+        {orderNumber: string;data: BodyType<NewReturnRequest>},
+        TContext
+      > => {
+      return useMutation(getCreateReturnRequestMutationOptions(options));
+    }
 
 export const getGetAppointmentOptionsUrl = () => {
 

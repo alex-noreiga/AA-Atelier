@@ -5,10 +5,10 @@ import Privacy from "@/pages/privacy";
 import Terms from "@/pages/terms";
 import ShippingReturns from "@/pages/shipping-returns";
 
-// The legal pages are static — they fetch nothing and render no wouter <Link>s
-// in their body (only plain <a> anchors). Terms and Shipping render bare;
-// Privacy carries the "Manage cookie preferences" control, so it needs the
-// ConsentProvider the app wraps it in.
+// The legal pages are static — they fetch nothing. Terms renders bare; Shipping
+// carries wouter <Link>s into /track (wouter's default router needs no provider
+// in jsdom); Privacy carries the "Manage cookie preferences" control, so it
+// needs the ConsentProvider the app wraps it in.
 
 describe("Privacy", () => {
   it("renders the heading and the service-providers section", () => {

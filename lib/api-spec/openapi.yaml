@@ -480,6 +480,60 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/OrderNotFound"
+  /shop-orders/{orderNumber}/return-requests:
+    post:
+      operationId: createReturnRequest
+      tags: [checkout]
+      summary: Request a return or exchange for a shop order
+      description: >-
+        Files a customer's request to return or exchange a ready-to-wear shop
+        order. The customer is verified against the email on the order. Accepted
+        requests land as a tagged row in the Notion contact-messages inbox for
+        the atelier to review and action — this endpoint does not itself refund
+        or edit the order.
+      parameters:
+        - name: orderNumber
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/NewReturnRequest"
+      responses:
+        "201":
+          description: Return/exchange request received
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/NewReturnResponse"
+        "400":
+          description: Validation error
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorEnvelope"
+        "403":
+          description: The email does not match the one on the order
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorEnvelope"
+        "404":
+          description: No shop order with that number
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/OrderNotFound"
+        "500":
+          description: Server error
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorEnvelope"
   /appointments/options:
     get:
       operationId: getAppointmentOptions
@@ -1251,6 +1305,52 @@ components:
         - success
       properties:
         success:
+          type: boolean
+    NewReturnRequest:
+      type: object
+      required:
+        - email
+        - kind
+        - reason
+      description: >-
+        A request to return or exchange a ready-to-wear shop order. The server
+        verifies the email against the one on the order; the atelier reviews and
+        actions accepted requests by hand (this endpoint never refunds or edits
+        the order).
+      properties:
+        email:
+          type: string
+          format: email
+          description: >-
+            The email to verify against the one on the order. A request whose
+            email doesn't match the order is rejected.
+        kind:
+          type: string
+          enum: [return, exchange]
+          description: Whether the customer wants a refund (return) or a swap (exchange).
+        reason:
+          type: string
+          enum: [wrong_size, damaged, not_as_expected, changed_mind, other]
+          description: Why the customer is returning or exchanging the item.
+        items:
+          type: string
+          description: >-
+            Which piece(s) the request covers, in the customer's own words.
+            Optional — the atelier can also read the order in Notion.
+        exchangeFor:
+          type: string
+          description: >-
+            For an exchange, the size/colour/piece the customer wants instead.
+            Ignored for a return.
+        note:
+          type: string
+          description: Optional free-text note with anything else the atelier should know.
+    NewReturnResponse:
+      type: object
+      required:
+        - received
+      properties:
+        received:
           type: boolean
     ProductVariant:
       type: object

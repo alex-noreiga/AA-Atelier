@@ -26,6 +26,7 @@ import type {
   NewNewsletterRequest,
   NewNotifyRequest,
   NewOrderRequest,
+  NewReturnRequest,
   NewReviewRequest,
   OrderStatus,
   ProductList,
@@ -134,6 +135,20 @@ export function newsletterInput(
   return {
     email: "grace@example.com",
     source: "footer",
+    ...overrides,
+  };
+}
+
+/** A valid return/exchange request. A plain return by default; email matches the
+ * shop order in the tests so the identity gate passes — override it to exercise
+ * a mismatch, or set `kind: "exchange"` for the exchange path. */
+export function returnRequestInput(
+  overrides: Partial<NewReturnRequest> = {},
+): NewReturnRequest {
+  return {
+    email: "grace@example.com",
+    kind: "return",
+    reason: "wrong_size",
     ...overrides,
   };
 }
