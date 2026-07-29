@@ -16,7 +16,7 @@ These sit inside a small marketing site: a landing page (`pages/home.tsx`) and
 informational pages — **Services, About, Shop, Contact** — reachable from a
 global navbar. These are fully built out: Services lists offerings + the
 process, About carries the studio story + an FAQ accordion, Shop is a live
-Notion-backed product grid, and Contact is a working enquiry form.
+Notion-backed product grid, and Contact is a working inquiry form.
 
 There is **no traditional database for orders**. Orders live in a **Notion
 database**, which the team manages directly through the Notion UI. The

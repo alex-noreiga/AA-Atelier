@@ -63,9 +63,9 @@ export default function Privacy() {
 
       <LegalSection title="How we use your information">
         <p>
-          We use your information to create and fulfil your order, communicate
+          We use your information to create and fulfill your order, communicate
           with you about your commission or purchase, schedule and confirm
-          appointments, send order and enquiry confirmations, and improve our
+          appointments, send order and inquiry confirmations, and improve our
           service. We do not sell your personal information.
         </p>
       </LegalSection>
@@ -75,14 +75,14 @@ export default function Privacy() {
           If you join our mailing list — from the footer sign-up or by ticking
           the box when you place an order — we use your email address to send
           occasional studio news, such as new collections and behind-the-scenes
-          notes. This is separate from the order, appointment, and enquiry
+          notes. This is separate from the order, appointment, and inquiry
           confirmations above, and we only send it if you opt in.
         </p>
         <p>
           Every marketing email includes a one-click unsubscribe link, and you
           can opt out at any time — you will still receive the transactional
           emails about any active order or booking. Our email provider,
-          <strong> Resend</strong>, manages the mailing list and honours
+          <strong> Resend</strong>, manages the mailing list and honors
           unsubscribes on our behalf.
         </p>
       </LegalSection>
@@ -98,7 +98,7 @@ export default function Privacy() {
             store your full card details on our own systems.
           </li>
           <li>
-            <strong>Notion</strong> stores your order, enquiry, and client
+            <strong>Notion</strong> stores your order, inquiry, and client
             records so we can manage your commission.
           </li>
           <li>
@@ -132,7 +132,7 @@ export default function Privacy() {
 
       <LegalSection title="Data retention">
         <p>
-          We keep your information for as long as needed to fulfil your order
+          We keep your information for as long as needed to fulfill your order
           and maintain our business records, after which we remove or anonymise
           it. You may ask us to update or delete your information at any time,
           subject to records we are required to keep.

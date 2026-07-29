@@ -88,7 +88,7 @@ Messages re-typed name/email as free text with no CRM link.
   the `Client` relation on every customer touchpoint, mirroring the existing order
   flow:
   - Shop orders: `checkout.service.ts` `recordPaidOrder` (buyer → **Active**).
-  - Contact form: `contact.service.ts` (enquirer → **Lead**).
+  - Contact form: `contact.service.ts` (inquirer → **Lead**).
   - Back-in-stock: `notify.service.ts` (→ **Lead**, CRM row named by email).
   - Measurement change: `measurement-change.service.ts` (→ **Active**; usually an
     existing client).

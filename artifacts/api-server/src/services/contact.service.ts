@@ -16,7 +16,7 @@ import { logger } from "../lib/logger.js";
 export async function submitContactMessage(
   input: CreateContactInput,
 ): Promise<{ success: true }> {
-  // Best-effort: mirror the enquirer into the Client CRM (dedupe by email) and
+  // Best-effort: mirror the inquirer into the Client CRM (dedupe by email) and
   // link the message to that record, so the CRM is the single customer store
   // rather than name/email re-typed here. A new contact is a cold "Lead". A CRM
   // failure must never fail the submit — swallow and log, like the mailers below
