@@ -4,12 +4,16 @@ import {
   findOrderBySessionId,
   createShopOrder,
   findShopOrderByNumber,
+  findShopOrderForCancellation,
+  setShopOrderCancelled,
 } from "../../src/lib/notion/shop-orders.repository.js";
 import {
   SHOP_ORDER_SESSION_PROPERTY,
   SHOP_ORDER_NUMBER_PROPERTY,
   SHOP_ORDER_STATUS_PROPERTY,
   SHOP_ORDER_TOTAL_PROPERTY,
+  SHOP_ORDER_EMAIL_PROPERTY,
+  SHOP_ORDER_CANCELLED_PROPERTY,
 } from "../../src/lib/notion/shop-orders.blocks.js";
 import {
   makeFakeClient,
@@ -22,6 +26,9 @@ function shopOrderResultPage(opts: {
   orderNumber?: string;
   status?: string;
   total?: number | null;
+  email?: string;
+  sessionId?: string;
+  cancelled?: boolean;
 }) {
   return {
     id: "so-page",
@@ -37,6 +44,18 @@ function shopOrderResultPage(opts: {
       [SHOP_ORDER_TOTAL_PROPERTY]: {
         type: "number",
         number: opts.total ?? null,
+      },
+      [SHOP_ORDER_EMAIL_PROPERTY]: {
+        type: "email",
+        email: opts.email ?? null,
+      },
+      [SHOP_ORDER_SESSION_PROPERTY]: {
+        type: "rich_text",
+        rich_text: opts.sessionId ? [{ plain_text: opts.sessionId }] : [],
+      },
+      [SHOP_ORDER_CANCELLED_PROPERTY]: {
+        type: "checkbox",
+        checkbox: opts.cancelled ?? false,
       },
     },
   };
@@ -187,6 +206,89 @@ describe("findShopOrderByNumber", () => {
   it("returns null when no order matches", async () => {
     const client = makeFakeClient(() => jsonResponse({ results: [] }));
     expect(await findShopOrderByNumber("SHP-NONE", client)).toBeNull();
+  });
+
+  it("surfaces the cancelled flag when the order is cancelled", async () => {
+    const client = makeFakeClient(() =>
+      jsonResponse({
+        results: [
+          shopOrderResultPage({
+            orderNumber: "SHP-1",
+            status: "Cancelled",
+            cancelled: true,
+          }),
+        ],
+      }),
+    );
+    const order = await findShopOrderByNumber("SHP-1", client);
+    expect(order?.cancelled).toBe(true);
+  });
+});
+
+describe("findShopOrderForCancellation", () => {
+  it("returns null for a blank order number without querying", async () => {
+    const client = makeFakeClient(() => jsonResponse({ results: [] }));
+    expect(await findShopOrderForCancellation("  ", client)).toBeNull();
+    expect(client.calls).toHaveLength(0);
+  });
+
+  it("returns the page id, email, session id, status, and cancelled flag", async () => {
+    const client = makeFakeClient((path) => {
+      if (isQuery(path)) {
+        return jsonResponse({
+          results: [
+            shopOrderResultPage({
+              orderNumber: "SHP-1",
+              status: "Payment Confirmed",
+              email: "ada@example.com",
+              sessionId: "cs_1",
+            }),
+          ],
+        });
+      }
+      throw new Error(`unexpected path ${path}`);
+    });
+
+    const order = await findShopOrderForCancellation("SHP-1", client);
+    expect(order).toEqual({
+      pageId: "so-page",
+      orderNumber: "SHP-1",
+      email: "ada@example.com",
+      sessionId: "cs_1",
+      status: "Payment Confirmed",
+      cancelled: false,
+    });
+  });
+
+  it("returns null when no order matches", async () => {
+    const client = makeFakeClient(() => jsonResponse({ results: [] }));
+    expect(await findShopOrderForCancellation("SHP-NONE", client)).toBeNull();
+  });
+});
+
+describe("setShopOrderCancelled", () => {
+  it("PATCHes the page with the Cancelled checkbox set", async () => {
+    const client = makeFakeClient((path) => {
+      if (path === "/v1/pages/so-page") return jsonResponse({}, 200);
+      throw new Error(`unexpected path ${path}`);
+    });
+
+    await setShopOrderCancelled("so-page", client);
+
+    const call = client.calls[0];
+    expect(call.path).toBe("/v1/pages/so-page");
+    expect(call.init?.method).toBe("PATCH");
+    const body = JSON.parse(call.init!.body as string);
+    expect(body.properties[SHOP_ORDER_CANCELLED_PROPERTY]).toEqual({
+      checkbox: true,
+    });
+  });
+
+  it("throws with the status on a non-ok response", async () => {
+    const client = makeFakeClient(() => errorResponse(400, "bad"));
+    await expect(setShopOrderCancelled("so-page", client)).rejects.toThrow(
+      /status 400/,
+    );
   });
 });
 

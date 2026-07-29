@@ -37,6 +37,8 @@ export * from './newAppointmentRequest';
 export * from './newAppointmentRequestLocation';
 export * from './newAppointmentRequestPreferredContact';
 export * from './newAppointmentResponse';
+export * from './newCancellationRequest';
+export * from './newCancellationResponse';
 export * from './newContactRequest';
 export * from './newContactResponse';
 export * from './newMeasurementChangeRequest';

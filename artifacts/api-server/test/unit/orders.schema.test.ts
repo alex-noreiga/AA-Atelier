@@ -7,6 +7,7 @@ import {
   extractInvoiceRelationId,
   extractDueDate,
   extractMilestonesGenerated,
+  extractCancelled,
   type NotionDatabaseSchema,
   type NotionOrderPage,
 } from "../../src/lib/notion/orders.schema.js";
@@ -167,6 +168,20 @@ describe("extractMilestonesGenerated", () => {
         id: "p",
         properties: {},
       } as NotionOrderPage),
+    ).toBe(false);
+  });
+});
+
+describe("extractCancelled", () => {
+  it("reflects the checkbox, defaulting to false when the property is missing", () => {
+    expect(
+      extractCancelled({
+        id: "p",
+        properties: { Cancelled: { type: "checkbox", checkbox: true } },
+      }),
+    ).toBe(true);
+    expect(
+      extractCancelled({ id: "p", properties: {} } as NotionOrderPage),
     ).toBe(false);
   });
 });

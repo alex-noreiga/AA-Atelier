@@ -11,6 +11,10 @@ import {
   generateLineItemsHandler,
   generateLineItemsButtonHandler,
 } from "./routes/invoice-generator.js";
+import {
+  processCancellationHandler,
+  processCancellationButtonHandler,
+} from "./routes/order-cancellation.js";
 import { uploadReferenceImageHandler } from "./routes/order-images.js";
 import { verifyMagicLinkHandler } from "./routes/account-verify.js";
 import { accountRateLimiter } from "./middlewares/rate-limit.js";
@@ -108,6 +112,19 @@ app.post(
 
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
+
+// Order cancellation + Stripe refund, on demand from Notion (outside the OpenAPI
+// contract, mounted directly like the invoice-generator button). Takes ?order=
+// (custom ORD-… or shop SHP-…) and reuses CRON_SECRET as its token. The atelier
+// reviews the customer's cancellation request, then clicks this to refund the
+// order's paid payments and mark it cancelled. Registered BEFORE the /api router
+// so `/api/orders/process-cancellation` isn't captured by its `/orders/:orderNumber`
+// status-lookup route. See routes/order-cancellation.ts.
+app.get("/api/orders/process-cancellation", processCancellationHandler);
+app.get(
+  "/api/orders/process-cancellation/run",
+  processCancellationButtonHandler,
+);
 
 app.use("/api", router);
 

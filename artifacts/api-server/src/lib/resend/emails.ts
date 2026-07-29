@@ -638,6 +638,86 @@ export function measurementChangeConfirmationEmail(
   };
 }
 
+/** Confirmation sent to the customer when they request an order cancellation.
+ * The atelier reviews and processes the refund; this just acknowledges the ask. */
+export function cancellationRequestConfirmationEmail(
+  email: string,
+  orderNumber: string,
+): EmailMessage {
+  const html = layout(
+    "We've received your cancellation request",
+    `<p>Hi there,</p>
+     <p>Thank you — we've received your request to cancel order
+        <strong>${orderNumber}</strong>. Our team will review it and be in touch
+        shortly to confirm the next steps.</p>
+     <p>If a refund applies, we'll process it to your original payment method.</p>`,
+  );
+
+  const text = [
+    `Hi there,`,
+    ``,
+    `Thank you — we've received your request to cancel order ${orderNumber}. Our team will review it and be in touch shortly to confirm the next steps.`,
+    ``,
+    `If a refund applies, we'll process it to your original payment method.`,
+    ``,
+    `Thank you,`,
+    `The ${ATELIER_NAME} team`,
+  ].join("\n");
+
+  return {
+    to: email,
+    subject: `We've received your cancellation request (${orderNumber})`,
+    html,
+    text,
+  };
+}
+
+/** Confirmation sent to the customer once the atelier has processed a
+ * cancellation. `refundedAmount` is the total refunded in dollars (0 when
+ * nothing was charged online, so there's nothing to refund). */
+export function cancellationRefundEmail(
+  email: string,
+  orderNumber: string,
+  refundedAmount: number,
+): EmailMessage {
+  const refundHtml =
+    refundedAmount > 0
+      ? `<p>We've refunded <strong>${formatUsd(refundedAmount)}</strong> to your original payment method. Refunds typically take 5–10 business days to appear, depending on your bank.</p>`
+      : `<p>There were no online payments on this order, so there's nothing to refund.</p>`;
+  const refundText =
+    refundedAmount > 0
+      ? `We've refunded ${formatUsd(refundedAmount)} to your original payment method. Refunds typically take 5–10 business days to appear, depending on your bank.`
+      : `There were no online payments on this order, so there's nothing to refund.`;
+
+  const html = layout(
+    "Your order has been cancelled",
+    `<p>Hi there,</p>
+     <p>Your order <strong>${orderNumber}</strong> has been cancelled.</p>
+     ${refundHtml}
+     <p>We're sorry to see this one go, and hope to work with you again.</p>`,
+  );
+
+  const text = [
+    `Hi there,`,
+    ``,
+    `Your order ${orderNumber} has been cancelled.`,
+    ``,
+    refundText,
+    ``,
+    `We're sorry to see this one go, and hope to work with you again.`,
+    ``,
+    `Thank you,`,
+    `The ${ATELIER_NAME} team`,
+  ].join("\n");
+
+  return {
+    to: email,
+    subject: `Your order has been cancelled (${orderNumber})`,
+    html,
+    text,
+  };
+}
+
 /** Render a 1–5 rating as filled/empty stars for email copy. */
 function ratingStars(rating: number): string {
   const filled = Math.max(0, Math.min(5, Math.round(rating)));
@@ -993,6 +1073,40 @@ export function measurementChangeNotificationEmail(
     replyTo: input.email,
     subject: `Measurement change request — order ${orderNumber}`,
     html: internalLayout("Measurement change request", renderRowsHtml(fields)),
+    text: renderRowsText(fields),
+  };
+}
+
+/** Internal atelier notification when a customer requests a cancellation. */
+export function cancellationRequestNotificationEmail(
+  details: {
+    orderNumber: string;
+    orderType: "custom" | "shop";
+    email: string;
+    emailVerified: boolean;
+    reason?: string;
+  },
+  to: string,
+): EmailMessage {
+  const fields: Field[] = [
+    ["Order number", details.orderNumber],
+    [
+      "Order type",
+      details.orderType === "shop" ? "Shop order" : "Custom order",
+    ],
+    ["Email", details.email],
+    [
+      "Email verified",
+      details.emailVerified ? "Yes" : "No — confirm requester",
+    ],
+    ...(details.reason ? [["Reason", details.reason] as Field] : []),
+  ];
+
+  return {
+    to,
+    replyTo: details.email,
+    subject: `Cancellation requested — order ${details.orderNumber}`,
+    html: internalLayout("Cancellation request", renderRowsHtml(fields)),
     text: renderRowsText(fields),
   };
 }

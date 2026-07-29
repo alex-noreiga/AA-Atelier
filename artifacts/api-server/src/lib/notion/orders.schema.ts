@@ -53,6 +53,12 @@ export const ORDER_LAST_NOTIFIED_STAGE_PROPERTY = "Last Notified Stage"; // rich
 // dual relation). Set on order create when a client record was upserted, so the
 // order lands against a durable customer record. See `clients.repository.ts`.
 export const ORDER_CLIENT_PROPERTY = "Client"; // relation → Client CRM
+// Set by the cancellation-refund flow when the atelier processes a cancellation
+// (`setOrderCancelled`). An additive marker (absent ⇒ false), like `Rush Order`
+// / `Milestones Generated`: the app reads it back to surface a cancelled state
+// on the tracking page and suppress payment CTAs. See
+// `services/order-cancellation.service.ts`.
+export const ORDER_CANCELLED_PROPERTY = "Cancelled"; // checkbox
 
 /** Validated new-order payload, derived from the OpenAPI contract. */
 export type CreateOrderInput = z.infer<typeof CreateOrderBody>;
@@ -79,6 +85,10 @@ export interface OrderRecord {
    * checkbox). The invoice generator adds a priced rush surcharge line for these.
    * Stripped from the HTTP response by the `GetOrderStatusResponse` zod parse. */
   rush?: boolean;
+  /** True once the atelier has cancelled the order (the `Cancelled` checkbox).
+   * Surfaced in the status response so the tracking page shows a cancelled
+   * banner and suppresses the payment/request affordances. */
+  cancelled?: boolean;
 }
 
 /** A lightweight custom-order view for the account dashboard — the fields a
@@ -144,6 +154,7 @@ export interface NotionOrderPage {
     };
     "Milestones Generated"?: { type: "checkbox"; checkbox: boolean };
     "Rush Order"?: { type: "checkbox"; checkbox: boolean };
+    Cancelled?: { type: "checkbox"; checkbox: boolean };
     "Last Notified Stage"?: {
       type: "rich_text";
       rich_text: Array<{ plain_text: string }>;
@@ -225,6 +236,12 @@ export function extractMilestonesGenerated(page: NotionOrderPage): boolean {
 /** Whether the order was flagged as a rush order at intake. */
 export function extractRush(page: NotionOrderPage): boolean {
   const property = page.properties[ORDER_RUSH_PROPERTY];
+  return property?.type === "checkbox" ? property.checkbox : false;
+}
+
+/** Whether the atelier has cancelled the order (the `Cancelled` checkbox). */
+export function extractCancelled(page: NotionOrderPage): boolean {
+  const property = page.properties[ORDER_CANCELLED_PROPERTY];
   return property?.type === "checkbox" ? property.checkbox : false;
 }
 

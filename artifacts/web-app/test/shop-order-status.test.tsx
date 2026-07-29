@@ -20,6 +20,16 @@ vi.mock("@workspace/api-client-react", () => ({
     mutate: vi.fn(),
     isPending: false,
   }),
+  // The shop result renders the cancellation-request dialog, which calls both
+  // cancellation hooks (Rules of Hooks) — stub them.
+  useCreateOrderCancellationRequest: () => ({
+    mutate: vi.fn(),
+    isPending: false,
+  }),
+  useCreateShopOrderCancellationRequest: () => ({
+    mutate: vi.fn(),
+    isPending: false,
+  }),
 }));
 
 import { useGetShopOrderStatus } from "@workspace/api-client-react";
@@ -76,6 +86,37 @@ describe("ShopOrderStatus render states", () => {
     expect(within(success).getByText("Shipped")).toBeInTheDocument();
     // The completed (earlier) status shows a "Completed" label.
     expect(within(success).getByText(/Completed/i)).toBeInTheDocument();
+  });
+
+  it("offers the cancellation request for an active shop order", async () => {
+    setHook({
+      data: {
+        orderNumber: "SHP-1",
+        status: "Payment Confirmed",
+        statuses: ["Payment Confirmed", "Processing", "Shipped"],
+      },
+    });
+    await submitLookup("SHP-1");
+    expect(
+      screen.getByTestId("button-request-cancellation"),
+    ).toBeInTheDocument();
+    expect(screen.queryByTestId("cancelled-banner")).not.toBeInTheDocument();
+  });
+
+  it("shows a cancelled banner and hides the request CTA when cancelled", async () => {
+    setHook({
+      data: {
+        orderNumber: "SHP-1",
+        status: "Cancelled",
+        statuses: ["Payment Confirmed", "Processing", "Shipped"],
+        cancelled: true,
+      },
+    });
+    await submitLookup("SHP-1");
+    expect(screen.getByTestId("cancelled-banner")).toBeInTheDocument();
+    expect(
+      screen.queryByTestId("button-request-cancellation"),
+    ).not.toBeInTheDocument();
   });
 
   it("lets the customer reset and look up another order", async () => {

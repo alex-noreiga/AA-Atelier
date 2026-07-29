@@ -25,6 +25,16 @@ vi.mock("@workspace/api-client-react", () => ({
     mutate: vi.fn(),
     isPending: false,
   }),
+  // The success view also renders the cancellation-request dialog, which calls
+  // both cancellation hooks (Rules of Hooks) — stub them.
+  useCreateOrderCancellationRequest: () => ({
+    mutate: vi.fn(),
+    isPending: false,
+  }),
+  useCreateShopOrderCancellationRequest: () => ({
+    mutate: vi.fn(),
+    isPending: false,
+  }),
   // A delivered order renders the review dialog, which uses this hook.
   useCreateOrderReview: () => ({
     mutate: vi.fn(),
@@ -211,6 +221,53 @@ describe("Status deposits", () => {
     await submitLookup();
     expect(
       screen.queryByTestId("link-deposit-receipt-first_deposit"),
+    ).not.toBeInTheDocument();
+  });
+});
+
+describe("Status cancellation", () => {
+  it("offers the cancellation request for an active, undelivered order", async () => {
+    setHook({ data: orderRecord({ currentStage: "Consultation" }) });
+    await submitLookup();
+    expect(
+      screen.getByTestId("button-request-cancellation"),
+    ).toBeInTheDocument();
+    expect(screen.queryByTestId("cancelled-banner")).not.toBeInTheDocument();
+  });
+
+  it("shows a cancelled banner and suppresses payment + request CTAs when cancelled", async () => {
+    setHook({
+      data: orderRecord({
+        currentStage: "Sewing/Construction",
+        cancelled: true,
+        deposits: [
+          {
+            stage: "first_deposit",
+            label: "First deposit",
+            amount: 150,
+            paid: false,
+          },
+        ],
+        invoice: {
+          invoiceId: "Toothless",
+          paid: false,
+          lineItems: [],
+          subtotal: 150,
+          depositsCreditedTotal: 0,
+          balanceDue: 150,
+        },
+      }),
+    });
+    await submitLookup();
+
+    expect(screen.getByTestId("cancelled-banner")).toBeInTheDocument();
+    expect(screen.queryByTestId("deposits")).not.toBeInTheDocument();
+    expect(screen.queryByTestId("invoice-callout")).not.toBeInTheDocument();
+    expect(
+      screen.queryByTestId("button-request-cancellation"),
+    ).not.toBeInTheDocument();
+    expect(
+      screen.queryByTestId("button-request-measurement-change"),
     ).not.toBeInTheDocument();
   });
 });

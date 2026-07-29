@@ -13,6 +13,7 @@ export interface ShopOrderStatusView {
   status: string;
   statuses: string[];
   total?: number;
+  cancelled?: boolean;
 }
 
 export async function getShopOrderStatus(
@@ -39,5 +40,6 @@ export async function getShopOrderStatus(
     status: order.status,
     statuses: timeline,
     ...(order.total !== undefined ? { total: order.total } : {}),
+    ...(order.cancelled ? { cancelled: true } : {}),
   };
 }

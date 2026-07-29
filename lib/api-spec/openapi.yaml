@@ -270,6 +270,67 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/ErrorEnvelope"
+  /orders/{orderNumber}/cancellation-requests:
+    post:
+      operationId: createOrderCancellationRequest
+      tags: [orders]
+      summary: Request cancellation of a custom order
+      description: >-
+        Files a customer's request to cancel a custom order. The customer is
+        verified against the email on the order, and the request is rejected
+        once the order has already been delivered (a delivered order is a return,
+        not a cancellation). Accepted requests land as a tagged row in the Notion
+        contact-messages inbox for the atelier to review — this endpoint does not
+        itself refund or change the order; the atelier processes the refund.
+      parameters:
+        - name: orderNumber
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/NewCancellationRequest"
+      responses:
+        "201":
+          description: Cancellation request received
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/NewCancellationResponse"
+        "400":
+          description: Validation error
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorEnvelope"
+        "403":
+          description: The email does not match the one on the order
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorEnvelope"
+        "404":
+          description: Order not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/OrderNotFound"
+        "409":
+          description: The order has already been delivered, so it can't be cancelled
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorEnvelope"
+        "500":
+          description: Server error
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorEnvelope"
   /contact:
     post:
       operationId: createContactMessage
@@ -480,6 +541,60 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/OrderNotFound"
+  /shop-orders/{orderNumber}/cancellation-requests:
+    post:
+      operationId: createShopOrderCancellationRequest
+      tags: [checkout]
+      summary: Request cancellation of a shop order
+      description: >-
+        Files a customer's request to cancel a ready-to-wear shop order. The
+        customer is verified against the email on the order. Accepted requests
+        land as a tagged row in the Notion contact-messages inbox for the atelier
+        to review — this endpoint does not itself refund or change the order; the
+        atelier processes the refund.
+      parameters:
+        - name: orderNumber
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/NewCancellationRequest"
+      responses:
+        "201":
+          description: Cancellation request received
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/NewCancellationResponse"
+        "400":
+          description: Validation error
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorEnvelope"
+        "403":
+          description: The email does not match the one on the order
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorEnvelope"
+        "404":
+          description: No shop order with that number
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/OrderNotFound"
+        "500":
+          description: Server error
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorEnvelope"
   /appointments/options:
     get:
       operationId: getAppointmentOptions
@@ -876,6 +991,13 @@ components:
                   same as estimatedCompletion.
         invoice:
           $ref: "#/components/schemas/Invoice"
+        cancelled:
+          type: boolean
+          description: >-
+            True once the atelier has cancelled the order (the `Cancelled`
+            marker on the Notion order). When true the tracking page shows a
+            cancelled banner and suppresses the deposit / invoice / request
+            affordances. Absent/false for an active order.
       required:
         - orderNumber
         - orderName
@@ -990,6 +1112,13 @@ components:
         total:
           type: number
           description: The order total in dollars.
+        cancelled:
+          type: boolean
+          description: >-
+            True once the atelier has cancelled the shop order (the `Cancelled`
+            marker on the Notion order). When true the tracking page shows a
+            cancelled banner and suppresses the request affordance. Absent/false
+            for an active order.
       required:
         - orderNumber
         - status
@@ -1120,6 +1249,32 @@ components:
           type: string
           description: Optional free-text note explaining the requested change.
     NewMeasurementChangeResponse:
+      type: object
+      required:
+        - received
+      properties:
+        received:
+          type: boolean
+    NewCancellationRequest:
+      type: object
+      required:
+        - email
+      description: >-
+        A request to cancel an order. The email is verified against the one on
+        the order; a request whose email doesn't match is rejected. An optional
+        reason is passed through to the atelier for context.
+      properties:
+        email:
+          type: string
+          format: email
+          description: >-
+            The email to verify against the one on the order. A request whose
+            email doesn't match the order is rejected.
+        reason:
+          type: string
+          maxLength: 2000
+          description: Optional free-text reason for the cancellation.
+    NewCancellationResponse:
       type: object
       required:
         - received

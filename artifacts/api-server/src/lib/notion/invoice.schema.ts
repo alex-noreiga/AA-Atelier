@@ -137,6 +137,11 @@ export interface InvoiceRecord {
   ready: boolean;
   /** Whether the final balance has already been paid. */
   balancePaid: boolean;
+  /** The Stripe Checkout session id of the paid balance (`Balance Payment
+   * Session Id`), when the balance has been paid — used to issue a refund on
+   * cancellation. Undefined when the balance is unpaid or was recorded without
+   * a session id (e.g. paid offline). */
+  balanceSessionId?: string;
   /** The `Final Balance` rollup (dollars), if present. Informational only — the
    * charge is computed from the non-deposit line items, not this. */
   finalBalance?: number;
@@ -287,6 +292,10 @@ export function extractInvoice(page: NotionInvoicePage): InvoiceRecord {
     page,
     INVOICE_PAYMENT_DEADLINE_PROPERTY,
   );
+  const balanceSessionId = extractRichText(
+    page,
+    INVOICE_BALANCE_SESSION_PROPERTY,
+  );
   return {
     pageId: page.id,
     invoiceId: extractTitle(page, INVOICE_ID_PROPERTY),
@@ -294,6 +303,7 @@ export function extractInvoice(page: NotionInvoicePage): InvoiceRecord {
     balancePaid: extractCheckbox(page, INVOICE_BALANCE_PAID_PROPERTY),
     ...(finalBalance !== undefined ? { finalBalance } : {}),
     ...(paymentDeadline !== undefined ? { paymentDeadline } : {}),
+    ...(balanceSessionId !== undefined ? { balanceSessionId } : {}),
     deposits: extractInvoiceDeposits(page),
   };
 }

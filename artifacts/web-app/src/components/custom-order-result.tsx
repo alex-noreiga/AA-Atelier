@@ -3,6 +3,7 @@ import { useCreateOrderPayment } from "@workspace/api-client-react";
 import type { OrderStatus, InvoiceDeposit } from "@workspace/api-client-react";
 import { Button } from "@/components/ui/button";
 import { MeasurementChangeDialog } from "@/components/measurement-change-dialog";
+import { CancellationRequestDialog } from "@/components/cancellation-request-dialog";
 import { ReviewDialog } from "@/components/review-dialog";
 import { CtaLink } from "@/components/cta";
 import { getStageDescription } from "@/lib/stage-descriptions";
@@ -158,6 +159,10 @@ export function CustomOrderResult({
     orderStatus.currentStage ===
       orderStatus.stages[orderStatus.stages.length - 1];
 
+  // Once the atelier has cancelled the order, suppress the payment / invoice /
+  // review / measurement + cancellation affordances and show a cancelled banner.
+  const isCancelled = orderStatus.cancelled === true;
+
   return (
     <div
       className="animate-in slide-in-from-bottom-8 fade-in duration-1000"
@@ -182,12 +187,29 @@ export function CustomOrderResult({
         )}
       </div>
 
-      <DepositsSection
-        orderNumber={orderStatus.orderNumber}
-        deposits={orderStatus.deposits}
-      />
+      {isCancelled && (
+        <div
+          className="mb-12 rounded-2xl border border-border/60 p-6 text-center"
+          data-testid="cancelled-banner"
+        >
+          <p className="text-xs uppercase tracking-widest text-muted-foreground">
+            This order has been cancelled
+          </p>
+          <p className="mt-1 font-serif text-2xl">
+            Any refund has been processed to your original payment method
+          </p>
+        </div>
+      )}
 
-      {orderStatus.invoice &&
+      {!isCancelled && (
+        <DepositsSection
+          orderNumber={orderStatus.orderNumber}
+          deposits={orderStatus.deposits}
+        />
+      )}
+
+      {!isCancelled &&
+        orderStatus.invoice &&
         (orderStatus.invoice.paid || orderStatus.invoice.balanceDue > 0) && (
           <div
             className="mb-12 rounded-2xl border border-border/60 p-6 text-center"
@@ -212,7 +234,7 @@ export function CustomOrderResult({
           </div>
         )}
 
-      {isDelivered && (
+      {!isCancelled && isDelivered && (
         <div
           className="mb-12 rounded-2xl border border-border/60 p-6 text-center"
           data-testid="review-invite"
@@ -308,8 +330,10 @@ export function CustomOrderResult({
       <div className="mt-16 flex flex-col items-center gap-6">
         {/* A delivered order shows the review invite above; here it needs no
             measurement affordance. Otherwise: the change dialog until the
-            garment is in production, then a locked notice. */}
-        {!isDelivered &&
+            garment is in production, then a locked notice. A cancelled order
+            shows neither. */}
+        {!isCancelled &&
+          !isDelivered &&
           (orderStatus.measurementsLocked ? (
             <p
               className="text-sm font-light text-muted-foreground/70 text-center max-w-sm"
@@ -321,6 +345,14 @@ export function CustomOrderResult({
           ) : (
             <MeasurementChangeDialog orderNumber={orderStatus.orderNumber} />
           ))}
+        {/* Cancellation can be requested up until delivery (the server rejects a
+            delivered order as a return); a cancelled order shows nothing. */}
+        {!isCancelled && !isDelivered && (
+          <CancellationRequestDialog
+            orderNumber={orderStatus.orderNumber}
+            variant="custom"
+          />
+        )}
         <button
           onClick={onReset}
           className="text-muted-foreground hover:text-primary transition-colors flex items-center gap-2 text-sm tracking-widest uppercase group"

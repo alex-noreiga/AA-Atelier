@@ -12,16 +12,21 @@ import {
   CreateOrderReviewParams,
   CreateOrderReviewBody,
   CreateOrderReviewResponse,
+  CreateOrderCancellationRequestParams,
+  CreateOrderCancellationRequestBody,
+  CreateOrderCancellationRequestResponse,
 } from "@workspace/api-zod";
 import { validate } from "../middlewares/validate.js";
 import { getOrderStatus, submitOrder } from "../services/orders.service.js";
 import { createPaymentCheckout } from "../services/invoice.service.js";
 import { submitMeasurementChangeRequest } from "../services/measurement-change.service.js";
 import { submitOrderReview } from "../services/review.service.js";
+import { submitOrderCancellationRequest } from "../services/cancellation.service.js";
 import type { CreateOrderInput } from "../lib/notion/orders.schema.js";
 import type { PaymentStage } from "../lib/notion/invoice.schema.js";
 import type { CreateMeasurementChangeInput } from "../lib/notion/measurement-change.blocks.js";
 import type { CreateReviewInput } from "../lib/notion/reviews.blocks.js";
+import type { CreateCancellationInput } from "../services/cancellation.service.js";
 
 const router = Router();
 
@@ -83,6 +88,20 @@ router.post(
     const body = res.locals.body as CreateReviewInput;
     const result = await submitOrderReview(orderNumber, body);
     res.status(201).json(CreateOrderReviewResponse.parse(result));
+  },
+);
+
+router.post(
+  "/orders/:orderNumber/cancellation-requests",
+  validate({
+    params: CreateOrderCancellationRequestParams,
+    body: CreateOrderCancellationRequestBody,
+  }),
+  async (_req, res) => {
+    const { orderNumber } = res.locals.params as { orderNumber: string };
+    const body = res.locals.body as CreateCancellationInput;
+    const result = await submitOrderCancellationRequest(orderNumber, body);
+    res.status(201).json(CreateOrderCancellationRequestResponse.parse(result));
   },
 );
 
