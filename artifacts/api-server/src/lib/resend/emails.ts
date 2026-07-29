@@ -285,7 +285,7 @@ export function fittingReminderEmail(
      ${timingHtml}
      <p>A fitting lets us perfect the shape and fit of your garment before the final
         finishing touches. Please book — or confirm — your fitting appointment at your
-        earliest convenience so we can keep your piece on schedule.</p>
+        earliest convenience so we can keep your custom item on schedule.</p>
      ${ctaHtml}
      <p style="color:#8a7f74;margin:0;">Order number: <strong>${escapeHtml(orderNumber)}</strong></p>`,
   );
@@ -299,7 +299,7 @@ export function fittingReminderEmail(
     ``,
     `A fitting lets us perfect the shape and fit of your garment before the final`,
     `finishing touches. Please book — or confirm — your fitting appointment at your`,
-    `earliest convenience so we can keep your piece on schedule.`,
+    `earliest convenience so we can keep your custom item on schedule.`,
     ...(bookingUrl ? [``, `Book your fitting: ${bookingUrl}`] : []),
     ``,
     `Order number: ${orderNumber}`,
