@@ -134,6 +134,8 @@ export async function generateLineItemsButtonHandler(
     );
     if (result.laborLineCreated) parts.push("a labor line");
     if (result.adjustmentLineCreated) parts.push("a design & finishing line");
+    if (result.rushSurcharge > 0)
+      parts.push(`a rush surcharge of $${result.rushSurcharge.toFixed(2)}`);
     const lines =
       parts.length === 1
         ? parts[0]

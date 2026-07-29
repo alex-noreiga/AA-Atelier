@@ -23,12 +23,12 @@ export const RUSH_WINDOW_DAYS = (() => {
     : DEFAULT_RUSH_WINDOW_DAYS;
 })();
 
-// The customer-facing surcharge disclosure. Fee-agnostic by default (the atelier
-// quotes the real amount); override with the actual policy, e.g. "a 15% rush
-// surcharge".
+// The customer-facing surcharge disclosure. Defaults to the studio's 15% policy
+// (the server prices the same fee onto the invoice — `RUSH_SURCHARGE_RATE`, also
+// 15% by default); override with `VITE_RUSH_SURCHARGE_NOTE` if the rate changes,
+// e.g. "a 20% rush surcharge". Keep the two in step.
 export const RUSH_SURCHARGE_NOTE: string =
-  import.meta.env.VITE_RUSH_SURCHARGE_NOTE ||
-  "an additional rush surcharge, which we'll confirm with your quote";
+  import.meta.env.VITE_RUSH_SURCHARGE_NOTE || "a 15% rush surcharge";
 
 /**
  * True when a needed-by date (ISO `yyyy-mm-dd`) falls within the rush window

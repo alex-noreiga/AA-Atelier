@@ -22,6 +22,7 @@ const okResult = {
   materialLinesCreated: 2,
   laborLineCreated: true,
   adjustmentLineCreated: true,
+  rushSurcharge: 0,
   invoiceTotal: 140,
 };
 
@@ -97,6 +98,20 @@ describe("GET /api/invoices/generate-line-items/run (Notion link)", () => {
     expect(res.text).toContain("Invoice itemized");
     expect(res.text).toContain("2 material lines");
     expect(res.text).toContain("$140.00");
+  });
+
+  it("mentions the rush surcharge in the HTML confirmation when one was added", async () => {
+    mockGenerate.mockResolvedValue({
+      ...okResult,
+      rushSurcharge: 21,
+      invoiceTotal: 161,
+    });
+
+    const res = await request(app).get(`${RUN}?secret=s3cret&order=ORD-1`);
+
+    expect(res.status).toBe(200);
+    expect(res.text).toContain("rush surcharge of $21.00");
+    expect(res.text).toContain("$161.00");
   });
 
   it("escapes dynamic values in the HTML confirmation (no reflected XSS)", async () => {

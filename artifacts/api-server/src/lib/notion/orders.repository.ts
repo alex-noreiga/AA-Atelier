@@ -20,6 +20,7 @@ import {
   extractInvoiceRelationId,
   extractCostingItemIds,
   extractDueDate,
+  extractRush,
   extractOrderEmail,
   extractLastNotifiedStage,
   type CreateOrderInput,
@@ -149,6 +150,7 @@ export async function findOrderByNumber(
     ...(estimatedCompletion !== undefined ? { estimatedCompletion } : {}),
     ...(invoicePageId !== undefined ? { invoicePageId } : {}),
     ...(costingItemIds.length > 0 ? { costingItemIds } : {}),
+    ...(extractRush(page) ? { rush: true } : {}),
   };
 }
 

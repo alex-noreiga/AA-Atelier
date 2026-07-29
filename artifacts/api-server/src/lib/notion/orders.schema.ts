@@ -75,6 +75,10 @@ export interface OrderRecord {
    * invoice generator itemizes from these. Empty when none are linked.
    * Stripped from the HTTP response by the `GetOrderStatusResponse` zod parse. */
   costingItemIds?: string[];
+  /** True when the customer confirmed a rush order at intake (the `Rush Order`
+   * checkbox). The invoice generator adds a priced rush surcharge line for these.
+   * Stripped from the HTTP response by the `GetOrderStatusResponse` zod parse. */
+  rush?: boolean;
 }
 
 /** A lightweight custom-order view for the account dashboard — the fields a
@@ -215,6 +219,12 @@ export function extractDueDate(page: NotionOrderPage): string | undefined {
 /** Whether an order's milestones have already been generated. */
 export function extractMilestonesGenerated(page: NotionOrderPage): boolean {
   const property = page.properties[ORDER_MILESTONES_GENERATED_PROPERTY];
+  return property?.type === "checkbox" ? property.checkbox : false;
+}
+
+/** Whether the order was flagged as a rush order at intake. */
+export function extractRush(page: NotionOrderPage): boolean {
+  const property = page.properties[ORDER_RUSH_PROPERTY];
   return property?.type === "checkbox" ? property.checkbox : false;
 }
 
