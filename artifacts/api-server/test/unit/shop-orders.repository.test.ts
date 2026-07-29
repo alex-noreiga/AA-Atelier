@@ -4,12 +4,14 @@ import {
   findOrderBySessionId,
   createShopOrder,
   findShopOrderByNumber,
+  findShopOrderVerification,
 } from "../../src/lib/notion/shop-orders.repository.js";
 import {
   SHOP_ORDER_SESSION_PROPERTY,
   SHOP_ORDER_NUMBER_PROPERTY,
   SHOP_ORDER_STATUS_PROPERTY,
   SHOP_ORDER_TOTAL_PROPERTY,
+  SHOP_ORDER_EMAIL_PROPERTY,
 } from "../../src/lib/notion/shop-orders.blocks.js";
 import {
   makeFakeClient,
@@ -187,6 +189,55 @@ describe("findShopOrderByNumber", () => {
   it("returns null when no order matches", async () => {
     const client = makeFakeClient(() => jsonResponse({ results: [] }));
     expect(await findShopOrderByNumber("SHP-NONE", client)).toBeNull();
+  });
+});
+
+describe("findShopOrderVerification", () => {
+  /** A result page that also carries the Customer Email property. */
+  function pageWithEmail(orderNumber: string, email: string | null) {
+    const page = shopOrderResultPage({ orderNumber }) as any;
+    page.properties[SHOP_ORDER_EMAIL_PROPERTY] = { type: "email", email };
+    return page;
+  }
+
+  it("returns null for a blank order number without querying", async () => {
+    const client = makeFakeClient(() => jsonResponse({ results: [] }));
+    expect(await findShopOrderVerification("  ", client)).toBeNull();
+    expect(client.calls).toHaveLength(0);
+  });
+
+  it("filters by the order number as a rich_text equals and returns the email", async () => {
+    const client = makeFakeClient((path) => {
+      if (isQuery(path)) {
+        return jsonResponse({
+          results: [pageWithEmail("SHP-ABC-1234", "grace@example.com")],
+        });
+      }
+      throw new Error(`unexpected path ${path}`);
+    });
+
+    const result = await findShopOrderVerification("shp-abc-1234", client);
+
+    const body = JSON.parse(client.calls[0].init!.body as string);
+    expect(body.filter).toEqual({
+      property: SHOP_ORDER_NUMBER_PROPERTY,
+      rich_text: { equals: "shp-abc-1234" },
+    });
+    expect(result).toEqual({ email: "grace@example.com" });
+  });
+
+  it("returns an empty email for a legacy order with none stored", async () => {
+    const client = makeFakeClient(() =>
+      jsonResponse({ results: [pageWithEmail("SHP-OLD", null)] }),
+    );
+    expect(await findShopOrderVerification("SHP-OLD", client)).toEqual({
+      email: "",
+    });
+  });
+
+  it("returns null when no order matches", async () => {
+    const client = makeFakeClient(() => jsonResponse({ results: [] }));
+    expect(await findShopOrderVerification("SHP-NONE", client)).toBeNull();
   });
 });
 

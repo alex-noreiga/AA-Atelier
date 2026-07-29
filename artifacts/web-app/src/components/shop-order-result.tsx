@@ -1,6 +1,7 @@
 import type { ShopOrderStatus } from "@workspace/api-client-react";
 import { formatPrice } from "@/lib/format";
 import { ArrowRight } from "lucide-react";
+import { ReturnExchangeDialog } from "@/components/return-exchange-dialog";
 
 /**
  * The "order found" body for a ready-to-wear shop order: header plus the
@@ -86,6 +87,7 @@ export function ShopOrderResult({
       </div>
 
       <div className="mt-16 flex flex-col items-center gap-6">
+        <ReturnExchangeDialog orderNumber={order.orderNumber} />
         <button
           onClick={onReset}
           className="text-muted-foreground hover:text-primary transition-colors flex items-center gap-2 text-sm tracking-widest uppercase group"

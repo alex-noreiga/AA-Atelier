@@ -20,6 +20,11 @@ vi.mock("@workspace/api-client-react", () => ({
     mutate: vi.fn(),
     isPending: false,
   }),
+  // The shop-order result now offers a return/exchange dialog.
+  useCreateReturnRequest: () => ({
+    mutate: vi.fn(),
+    isPending: false,
+  }),
 }));
 
 import { useGetShopOrderStatus } from "@workspace/api-client-react";
