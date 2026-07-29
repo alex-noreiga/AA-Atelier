@@ -38,6 +38,11 @@ export const ORDER_COSTING_ITEMS_RELATION_PROPERTY = "Costing Items"; // relatio
 // reconciliation cron flips once an order's milestones exist.
 export const ORDER_DUE_DATE_PROPERTY = "Due Date"; // date
 export const ORDER_MILESTONES_GENERATED_PROPERTY = "Milestones Generated"; // checkbox
+// Set when the customer confirmed a rush order at intake (a neededBy date inside
+// the studio's rush window, acknowledged with the disclosed surcharge). It's a
+// flag for the atelier — the app never prices the fee; the atelier adds a
+// "Surcharge" invoice line, which flows into the balance. See `orders.blocks.ts`.
+export const ORDER_RUSH_PROPERTY = "Rush Order"; // checkbox
 // The furthest stage the customer has been emailed about, stored as a rich_text
 // marker so the status-change webhook only notifies on FORWARD movement — a
 // backward stage edit (a correction/rework) or a re-fire must not email. Empty
@@ -70,6 +75,10 @@ export interface OrderRecord {
    * invoice generator itemizes from these. Empty when none are linked.
    * Stripped from the HTTP response by the `GetOrderStatusResponse` zod parse. */
   costingItemIds?: string[];
+  /** True when the customer confirmed a rush order at intake (the `Rush Order`
+   * checkbox). The invoice generator adds a priced rush surcharge line for these.
+   * Stripped from the HTTP response by the `GetOrderStatusResponse` zod parse. */
+  rush?: boolean;
 }
 
 /** A lightweight custom-order view for the account dashboard — the fields a
@@ -134,6 +143,7 @@ export interface NotionOrderPage {
       date: { start: string; end: string | null } | null;
     };
     "Milestones Generated"?: { type: "checkbox"; checkbox: boolean };
+    "Rush Order"?: { type: "checkbox"; checkbox: boolean };
     "Last Notified Stage"?: {
       type: "rich_text";
       rich_text: Array<{ plain_text: string }>;
@@ -209,6 +219,12 @@ export function extractDueDate(page: NotionOrderPage): string | undefined {
 /** Whether an order's milestones have already been generated. */
 export function extractMilestonesGenerated(page: NotionOrderPage): boolean {
   const property = page.properties[ORDER_MILESTONES_GENERATED_PROPERTY];
+  return property?.type === "checkbox" ? property.checkbox : false;
+}
+
+/** Whether the order was flagged as a rush order at intake. */
+export function extractRush(page: NotionOrderPage): boolean {
+  const property = page.properties[ORDER_RUSH_PROPERTY];
   return property?.type === "checkbox" ? property.checkbox : false;
 }
 

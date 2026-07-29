@@ -33,8 +33,10 @@ import {
   LINE_TYPE_MATERIAL,
   LINE_TYPE_LABOR,
   LINE_TYPE_ADJUSTMENT,
+  LINE_TYPE_SURCHARGE,
   RECONCILING_LINE_NAME,
 } from "../lib/notion/invoice-line-items.blocks.js";
+import { rushSurchargeRate, rushSurchargeLineName } from "./rush.js";
 import { BadRequestError, NotFoundError } from "../lib/errors.js";
 
 /** Round a dollar amount to whole cents, killing float-sum noise. */
@@ -54,8 +56,11 @@ export interface LineItemGenerationResult {
   materialLinesCreated: number;
   laborLineCreated: boolean;
   adjustmentLineCreated: boolean;
-  /** The itemized total in dollars (materials + labor + adjustment) — equals the
-   * costing's summed Suggested Price when an adjustment was written. */
+  /** The rush surcharge in dollars, when the order is a rush and a line was
+   * written (0 otherwise). */
+  rushSurcharge: number;
+  /** The itemized total in dollars (materials + labor + adjustment + rush
+   * surcharge) — equals the costing's summed Suggested Price plus any surcharge. */
   invoiceTotal: number;
 }
 
@@ -95,6 +100,7 @@ export async function generateInvoiceLineItems(
       materialLinesCreated: 0,
       laborLineCreated: false,
       adjustmentLineCreated: false,
+      rushSurcharge: 0,
       invoiceTotal: 0,
     };
   }
@@ -161,14 +167,40 @@ export async function generateInvoiceLineItems(
     adjustmentLineCreated = true;
   }
 
+  // The itemized garment subtotal so far (materials + labor + adjustment). When
+  // an adjustment was written this equals the costing's Suggested Price; the rush
+  // surcharge is priced off it so the fee scales with the order.
+  const garmentSubtotal = roundCents(
+    materialTotal + laborTotal + (adjustmentLineCreated ? adjustment : 0),
+  );
+
+  // For a rush order, add ONE more priced line — the rush surcharge, a percentage
+  // of the garment subtotal computed server-side (see `services/rush.ts`). Written
+  // to Notion like every other line, so the invoice stays the source of truth.
+  const rushRate = rushSurchargeRate();
+  let rushSurcharge = 0;
+  if (order.rush && rushRate > 0) {
+    rushSurcharge = roundCents(garmentSubtotal * rushRate);
+    if (rushSurcharge >= ADJUSTMENT_EPSILON) {
+      await createInvoiceLineItem({
+        invoicePageId,
+        orderPageId,
+        name: rushSurchargeLineName(rushRate),
+        lineType: LINE_TYPE_SURCHARGE,
+        unitPrice: rushSurcharge,
+      });
+    } else {
+      rushSurcharge = 0;
+    }
+  }
+
   return {
     orderNumber: order.orderNumber,
     alreadyPresent: false,
     materialLinesCreated,
     laborLineCreated,
     adjustmentLineCreated,
-    invoiceTotal: roundCents(
-      materialTotal + laborTotal + (adjustmentLineCreated ? adjustment : 0),
-    ),
+    rushSurcharge,
+    invoiceTotal: roundCents(garmentSubtotal + rushSurcharge),
   };
 }

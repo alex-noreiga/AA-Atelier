@@ -118,8 +118,102 @@ describe("generateInvoiceLineItems", () => {
       materialLinesCreated: 2,
       laborLineCreated: true,
       adjustmentLineCreated: true,
+      rushSurcharge: 0,
       invoiceTotal: 140,
     });
+    // A standard-timeline order gets no surcharge line.
+    expect(lineOfType("Surcharge")).toBeUndefined();
+  });
+
+  it("adds a rush surcharge line at 15% of the itemized subtotal for a rush order", async () => {
+    mockFindOrder.mockResolvedValue(order({ rush: true }));
+    mockGetCosting.mockResolvedValue({
+      pageId: "costing-1",
+      laborCost: 40,
+      suggestedPrice: 140,
+      usageLineIds: ["u1"],
+    });
+    mockGetUsage.mockResolvedValue({
+      pageId: "u1",
+      name: "Fabric",
+      materialCost: 30,
+      usageType: "Material",
+    });
+
+    const result = await generateInvoiceLineItems("ORD-1");
+
+    // Subtotal lands on Suggested Price (140); surcharge = 15% = 21.
+    expect(lineOfType("Surcharge")).toMatchObject({
+      name: "Rush surcharge (15%)",
+      lineType: "Surcharge",
+      unitPrice: 21,
+      invoicePageId: "invoice-1",
+      orderPageId: "order-1",
+    });
+    // The surcharge line never links a costing item (same rule as every line).
+    expect(lineOfType("Surcharge")).not.toHaveProperty("materialUsageLineId");
+    expect(result.rushSurcharge).toBe(21);
+    expect(result.invoiceTotal).toBe(161);
+  });
+
+  it("prices the rush surcharge from RUSH_SURCHARGE_RATE when overridden", async () => {
+    const prev = process.env.RUSH_SURCHARGE_RATE;
+    process.env.RUSH_SURCHARGE_RATE = "0.2";
+    try {
+      mockFindOrder.mockResolvedValue(order({ rush: true }));
+      mockGetCosting.mockResolvedValue({
+        pageId: "costing-1",
+        laborCost: 0,
+        suggestedPrice: 100,
+        usageLineIds: ["u1"],
+      });
+      mockGetUsage.mockResolvedValue({
+        pageId: "u1",
+        name: "Fabric",
+        materialCost: 100,
+        usageType: "Material",
+      });
+
+      const result = await generateInvoiceLineItems("ORD-1");
+
+      expect(lineOfType("Surcharge")).toMatchObject({
+        name: "Rush surcharge (20%)",
+        unitPrice: 20,
+      });
+      expect(result.rushSurcharge).toBe(20);
+    } finally {
+      if (prev === undefined) delete process.env.RUSH_SURCHARGE_RATE;
+      else process.env.RUSH_SURCHARGE_RATE = prev;
+    }
+  });
+
+  it("adds no surcharge line when RUSH_SURCHARGE_RATE is 0, even for a rush order", async () => {
+    const prev = process.env.RUSH_SURCHARGE_RATE;
+    process.env.RUSH_SURCHARGE_RATE = "0";
+    try {
+      mockFindOrder.mockResolvedValue(order({ rush: true }));
+      mockGetCosting.mockResolvedValue({
+        pageId: "costing-1",
+        laborCost: 0,
+        suggestedPrice: 40,
+        usageLineIds: ["u1"],
+      });
+      mockGetUsage.mockResolvedValue({
+        pageId: "u1",
+        name: "Fabric",
+        materialCost: 40,
+        usageType: "Material",
+      });
+
+      const result = await generateInvoiceLineItems("ORD-1");
+
+      expect(lineOfType("Surcharge")).toBeUndefined();
+      expect(result.rushSurcharge).toBe(0);
+      expect(result.invoiceTotal).toBe(40);
+    } finally {
+      if (prev === undefined) delete process.env.RUSH_SURCHARGE_RATE;
+      else process.env.RUSH_SURCHARGE_RATE = prev;
+    }
   });
 
   it("skips packaging usage lines", async () => {

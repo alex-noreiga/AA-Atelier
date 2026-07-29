@@ -13,6 +13,14 @@
 //
 // Read `process.env` fresh each call (no memoization) so values can't be pinned
 // by first-use ordering — the same rationale as the previous `getAtelierInbox`.
+//
+// The atelier notification INBOXES additionally resolve from the live "Studio
+// Settings" Notion rows first (so the atelier can change where notifications land
+// without a redeploy — see lib/settings/store.ts); the SENDER addresses stay
+// env-only, because they're coupled to Resend domain verification and a wrong
+// value would silently break delivery.
+
+import { settingValue } from "../settings/store.js";
 
 export type EmailCategory = "orders" | "contact" | "appointments";
 
@@ -40,12 +48,21 @@ export function fromAddress(category: EmailCategory): string {
  * callers skip the notification rather than send to nobody.
  */
 export function atelierInbox(category: EmailCategory): string {
-  const base = process.env.ATELIER_INBOX_EMAIL ?? "";
+  const base =
+    settingValue("ATELIER_INBOX_EMAIL") ??
+    process.env.ATELIER_INBOX_EMAIL ??
+    "";
   if (category === "contact") {
-    return process.env.ATELIER_CONTACT_INBOX_EMAIL || base;
+    const override =
+      settingValue("ATELIER_CONTACT_INBOX_EMAIL") ??
+      process.env.ATELIER_CONTACT_INBOX_EMAIL;
+    return override || base;
   }
   if (category === "appointments") {
-    return process.env.ATELIER_APPOINTMENTS_INBOX_EMAIL || base;
+    const override =
+      settingValue("ATELIER_APPOINTMENTS_INBOX_EMAIL") ??
+      process.env.ATELIER_APPOINTMENTS_INBOX_EMAIL;
+    return override || base;
   }
   return base;
 }

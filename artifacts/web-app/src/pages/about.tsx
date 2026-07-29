@@ -35,7 +35,7 @@ const FAQS: { question: string; answer: string }[] = [
   {
     question: "Can you rush an order?",
     answer:
-      "Sometimes, depending on where the calendar stands. Rush work carries an additional fee — reach out before placing your order and we'll tell you honestly whether we can meet your date.",
+      "Sometimes, depending on where the calendar stands. Rush work carries an additional surcharge. Just set your date on the order form — if it's sooner than our standard timeline we'll flag it as a rush, and we'll confirm we can meet your date before any work begins.",
   },
   {
     question: "Do you ship?",

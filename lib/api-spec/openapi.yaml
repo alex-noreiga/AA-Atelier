@@ -922,6 +922,15 @@ components:
         neededBy:
           type: string
           format: date
+        rush:
+          type: boolean
+          description: >-
+            True when the customer confirmed a rush order — a neededBy date
+            inside the studio's rush window, acknowledged with the disclosed
+            surcharge. Recorded on the Notion order (a "Rush Order" checkbox +
+            a page note) so the atelier prices the rush surcharge into the
+            invoice; the app does not compute the fee itself. Optional; omitted
+            for standard-timeline orders.
         referenceImageIds:
           type: array
           items:

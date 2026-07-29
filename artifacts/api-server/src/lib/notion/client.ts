@@ -52,6 +52,7 @@ let invoiceLineItemsClient: NotionClient | null = null;
 let costingClient: NotionClient | null = null;
 let materialUsageClient: NotionClient | null = null;
 let reviewsClient: NotionClient | null = null;
+let settingsClient: NotionClient | null = null;
 
 /**
  * Lazily-constructed client reading credentials from the environment. Deferring
@@ -235,4 +236,21 @@ export function getReviewsNotionClient(): NotionClient {
     });
   }
   return reviewsClient;
+}
+
+/**
+ * Client for the optional "Studio Settings" database — the atelier-editable
+ * key/value store of runtime business tunables (see `settings.repository.ts`).
+ * Same lazy construction, reads `NOTION_SETTINGS_DATABASE_ID`. Optional: when the
+ * env var is unset the client's `databaseId` is empty, and the repository treats
+ * that as "not configured" so every setting falls back to its env var / default.
+ */
+export function getSettingsNotionClient(): NotionClient {
+  if (!settingsClient) {
+    settingsClient = createNotionClient({
+      apiKey: process.env.NOTION_API_KEY ?? "",
+      databaseId: process.env.NOTION_SETTINGS_DATABASE_ID ?? "",
+    });
+  }
+  return settingsClient;
 }

@@ -31,6 +31,11 @@ export const LINE_ITEM_MATERIAL_USAGE_RELATION_PROPERTY = "Material Usage Line";
 export const LINE_TYPE_MATERIAL = "Material";
 export const LINE_TYPE_LABOR = "Labor";
 export const LINE_TYPE_ADJUSTMENT = "Adjustment";
+// The rush surcharge line the generator adds for a rush order — priced as a
+// percentage of the itemized subtotal (see `services/rush.ts`). Named apart from
+// the others so the invoice display can group and order it (last, after
+// Adjustments — mirrors `TYPE_ORDER` in the web app's `invoice-format.ts`).
+export const LINE_TYPE_SURCHARGE = "Surcharge";
 
 /** The customer-facing title for the reconciling margin/adjustment line — the
  * single line that folds the costing item's margin into the itemized total so it

@@ -9,6 +9,7 @@ import {
   ORDER_EMAIL_PROPERTY,
   ORDER_CLIENT_PROPERTY,
   ORDER_DUE_DATE_PROPERTY,
+  ORDER_RUSH_PROPERTY,
   type CreateOrderInput,
 } from "./orders.schema.js";
 
@@ -94,6 +95,11 @@ export function buildOrderProperties(
       date: { start: formatNeededBy(data.neededBy) },
     };
   }
+  // A confirmed rush order — flag it so the atelier prices the surcharge into
+  // the invoice. Only written when true (Notion leaves an unset checkbox false).
+  if (data.rush) {
+    properties[ORDER_RUSH_PROPERTY] = { checkbox: true };
+  }
   if (clientPageId) {
     properties[ORDER_CLIENT_PROPERTY] = {
       relation: [{ id: clientPageId }],
@@ -146,6 +152,13 @@ export function buildOrderPageBlocks(data: CreateOrderInput): unknown[] {
   }
   if (data.neededBy) {
     costumeSection.push(textBlock("Needed By", formatNeededBy(data.neededBy)));
+  }
+  // Surface a confirmed rush order in the page body too, so the atelier sees it
+  // at a glance alongside the due date and knows to add the rush surcharge.
+  if (data.rush) {
+    costumeSection.push(
+      textBlock("Rush Order", "Yes — rush surcharge applies"),
+    );
   }
   costumeSection.push(dividerBlock());
 
