@@ -756,9 +756,14 @@ from `?type=`). Load-bearing points:
 1. **It rides the nightly reconciliation, not a new trigger.** `reconcileMilestones`
    (the Vercel cron + the on-demand button) runs a third pass, `sendDueFittingReminders`,
    after generation + status-sync. It finds Production Schedule milestones whose
-   `Production Stage` is a configured fitting stage, aren't `Completed`, are due on/before
-   `today + FITTING_REMINDER_LEAD_DAYS`, and haven't been reminded yet — then emails the
-   order's customer. Code: `services/schedule.service.ts` (`sendDueFittingReminders`) →
+   `Production Stage` is a configured fitting stage, aren't `Completed`, haven't been
+   reminded yet, and are **either** due on/before `today + FITTING_REMINDER_LEAD_DAYS`
+   **or** already at the fitting stage (`Status = In Progress`) — then emails the order's
+   customer. The In-Progress clause is what catches an order running **ahead of
+   schedule**: it reaches Fitting before the target date, so a date-only filter would
+   never fire before the stage advances to `Completed` and the reminder would be missed
+   entirely. (The pass runs after `syncMilestoneStatuses`, so the status reflects the
+   order's live stage.) Code: `services/schedule.service.ts` (`sendDueFittingReminders`) →
    `services/fitting-reminder.ts` (the business-rule config) +
    `lib/notion/production-schedule.repository.ts`
    (`findMilestonesNeedingFittingReminder` / `markFittingReminderSent`) +

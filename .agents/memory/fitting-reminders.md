@@ -17,9 +17,19 @@ new cron, and no frontend change** (the booking page already preselects a type f
 - **One Notion query finds the work.** `findMilestonesNeedingFittingReminder`
   (`lib/notion/production-schedule.repository.ts`) filters the Production Schedule DB
   on `and`[ `or`(Production Stage = each fitting stage), Status ≠ Completed,
-  Target Completion Date `on_or_before` cutoff, `Reminder Sent` = false ]. The
-  milestone rows don't carry the customer email, so each order is resolved back from
-  its `Order` relation via `findOrderForStageNotificationByPageId`.
+  `or`(Target Completion Date `on_or_before` cutoff, Status = In Progress),
+  `Reminder Sent` = false ]. The milestone rows don't carry the customer email, so each
+  order is resolved back from its `Order` relation via
+  `findOrderForStageNotificationByPageId`.
+- **The reminder fires on date OR stage-arrival, whichever comes first** — not date
+  only. If production runs **ahead of schedule** the order reaches Fitting before the
+  target date; `syncMilestoneStatuses` flips that milestone's Status to `In Progress`,
+  but a date-only filter (`on_or_before now+lead`) would still fail, and once the order
+  advances past Fitting the Status → `Completed` and it's excluded — so the whole fitting
+  window could pass with **no reminder ever sent**. The `Status = In Progress` clause
+  closes that miss. **Load-bearing ordering:** `reconcileMilestones` runs
+  `syncMilestoneStatuses()` before `sendDueFittingReminders()`, so In-Progress reflects
+  the order's live stage when the query runs.
 - **"Fitting" + lead window are targeted business rules** (`services/fitting-reminder.ts`),
   the same kind of exception as `STATUS_IN_STOCK` / `MEASUREMENT_LOCK_FROM_STAGE`:
   `FITTING_REMINDER_STAGES` (comma-separated live Stage names, default `Fitting`) and

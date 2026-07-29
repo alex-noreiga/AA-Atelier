@@ -13,6 +13,7 @@ import {
   buildMilestoneStatusUpdate,
   buildReminderSentUpdate,
   MILESTONE_STATUS_COMPLETED,
+  MILESTONE_STATUS_IN_PROGRESS,
   PS_ORDER_RELATION_PROPERTY,
   PS_REMINDER_SENT_PROPERTY,
   PS_STAGE_PROPERTY,
@@ -229,11 +230,17 @@ interface FittingReminderQueryResponse {
 
 /**
  * Find fitting milestones that are due for a reminder: their `Production Stage` is
- * one of the configured fitting stages, they aren't completed, their target date
- * is on or before the cutoff (the reminder window), and no reminder has been sent
- * yet. Rows missing a stage or an order relation are skipped (nothing to email
- * about). Fail-soft on an unconfigured database (returns `[]`), but a query error
- * throws so the caller logs and retries next run — mirroring `listOrderMilestonePages`.
+ * one of the configured fitting stages, they aren't completed, no reminder has been
+ * sent yet, and *either* the target date is on or before the cutoff (the reminder
+ * window) *or* the order has already reached the fitting stage (`Status = In
+ * Progress`). The second clause is what catches an order running ahead of schedule —
+ * it reaches Fitting before the target date, so a date-only filter would never fire
+ * before the stage advances to Completed and the reminder is missed entirely.
+ * (`syncMilestoneStatuses` runs before this in `reconcileMilestones`, so the status
+ * reflects the order's live stage.) Rows missing a stage or an order relation are
+ * skipped (nothing to email about). Fail-soft on an unconfigured database (returns
+ * `[]`), but a query error throws so the caller logs and retries next run —
+ * mirroring `listOrderMilestonePages`.
  */
 export async function findMilestonesNeedingFittingReminder(
   params: { stages: string[]; onOrBefore: string },
@@ -264,8 +271,18 @@ export async function findMilestonesNeedingFittingReminder(
               status: { does_not_equal: MILESTONE_STATUS_COMPLETED },
             },
             {
-              property: PS_TARGET_DATE_PROPERTY,
-              date: { on_or_before: params.onOrBefore },
+              // Due by the cutoff (the scheduled heads-up) OR the order is already
+              // at the fitting stage (the "you're here now, book it" trigger).
+              or: [
+                {
+                  property: PS_TARGET_DATE_PROPERTY,
+                  date: { on_or_before: params.onOrBefore },
+                },
+                {
+                  property: PS_STATUS_PROPERTY,
+                  status: { equals: MILESTONE_STATUS_IN_PROGRESS },
+                },
+              ],
             },
             {
               property: PS_REMINDER_SENT_PROPERTY,

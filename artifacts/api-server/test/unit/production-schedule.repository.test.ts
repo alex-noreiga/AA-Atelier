@@ -10,6 +10,7 @@ import {
 } from "../../src/lib/notion/production-schedule.repository.js";
 import {
   MILESTONE_STATUS_COMPLETED,
+  MILESTONE_STATUS_IN_PROGRESS,
   PS_ORDER_RELATION_PROPERTY,
   PS_REMINDER_SENT_PROPERTY,
   PS_STAGE_PROPERTY,
@@ -286,7 +287,7 @@ describe("findMilestonesNeedingFittingReminder", () => {
     expect(client.calls).toHaveLength(0);
   });
 
-  it("filters on stage(s), not-completed, due-by-cutoff, and not-yet-reminded", async () => {
+  it("filters on stage(s), not-completed, (due-by-cutoff OR in-progress), and not-yet-reminded", async () => {
     const client = makeFakeClient((path) => {
       if (isQuery(path)) return jsonResponse({ results: [] });
       throw new Error(`unexpected path ${path}`);
@@ -312,8 +313,18 @@ describe("findMilestonesNeedingFittingReminder", () => {
         status: { does_not_equal: MILESTONE_STATUS_COMPLETED },
       },
       {
-        property: PS_TARGET_DATE_PROPERTY,
-        date: { on_or_before: "2026-08-11" },
+        // Reminder is due if the target date is near OR the order already reached
+        // the fitting stage — so an ahead-of-schedule order isn't missed.
+        or: [
+          {
+            property: PS_TARGET_DATE_PROPERTY,
+            date: { on_or_before: "2026-08-11" },
+          },
+          {
+            property: PS_STATUS_PROPERTY,
+            status: { equals: MILESTONE_STATUS_IN_PROGRESS },
+          },
+        ],
       },
       { property: PS_REMINDER_SENT_PROPERTY, checkbox: { equals: false } },
     ]);
