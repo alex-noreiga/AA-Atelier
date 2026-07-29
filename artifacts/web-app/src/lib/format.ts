@@ -1,6 +1,6 @@
 /**
  * Format a shop price. Notion's "Listed Price" is optional — an unpriced item
- * can't be bought online and instead invites an enquiry. Whole dollars stay
+ * can't be bought online and instead invites an inquiry. Whole dollars stay
  * clean ("$22"); anything with cents shows both ("$22.50").
  */
 export function formatPrice(price?: number): string {
