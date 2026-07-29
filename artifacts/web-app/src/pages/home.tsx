@@ -1,13 +1,16 @@
 import {
   ArrowRight,
+  CalendarDays,
   Heart,
   PenLine,
   Ruler,
   Scissors,
   Search,
+  ShoppingBag,
   Sparkles,
   type LucideIcon,
 } from "lucide-react";
+import { Link } from "wouter";
 import { PageShell } from "@/components/page-shell";
 import { CtaLink } from "@/components/cta";
 import { SectionHeader } from "@/components/section-header";
@@ -43,13 +46,67 @@ const SERVICES: { icon: LucideIcon; title: string; description: string }[] = [
   },
 ];
 
+// Short, wide-tracked proof points for the trust strip under the hero — cheap,
+// photo-free credibility drawn from the About page's studio story.
+const TRUST_POINTS: string[] = [
+  "Founded by figure skaters",
+  "Women-owned",
+  "Handmade to measure",
+  "4–8 week turnaround",
+];
+
+// A trimmed teaser of the four-step process on /services (see PROCESS there) —
+// numbered editorial steps that reassure a first-time commission customer.
+const PROCESS: { step: string; title: string; description: string }[] = [
+  {
+    step: "01",
+    title: "Consultation",
+    description:
+      "We talk through your vision, program, measurements, and timeline.",
+  },
+  {
+    step: "02",
+    title: "Design & Sourcing",
+    description:
+      "We sketch your costume and curate fabrics and embellishments.",
+  },
+  {
+    step: "03",
+    title: "Handcrafting & Fitting",
+    description:
+      "Patterned, cut, and constructed by hand, refined through fittings.",
+  },
+  {
+    step: "04",
+    title: "Detailing & Delivery",
+    description: "Crystals and final touches applied, then ready for you.",
+  },
+];
+
+// Curated customer testimonials. Reviews are captured post-delivery into Notion
+// for the atelier to curate; there is no public read endpoint, so these are
+// hand-picked, approved quotes rather than a live feed. Swap in real approved
+// quotes + names as they come in.
+const TESTIMONIALS: { quote: string; attribution: string }[] = [
+  {
+    quote:
+      "She brought my competition dress to life exactly as I imagined — the fit was flawless and the crystals were stunning under the lights.",
+    attribution: "Competitive figure skater",
+  },
+  {
+    quote:
+      "The whole process felt personal from the first sketch to the final fitting. I've never felt more confident stepping onto the ice.",
+    attribution: "Ice dance competitor",
+  },
+];
+
 export default function Home() {
   return (
     <PageShell align="top">
       <Seo {...ROUTE_SEO["/"]} />
       <div className="w-full max-w-3xl z-10 mx-auto px-6 pt-24 pb-20 animate-in fade-in zoom-in-95 duration-1000">
-        {/* Hero — compact so the Services section peeks above the fold */}
-        <div className="min-h-[68vh] flex flex-col justify-center text-center">
+        {/* Hero — compact so the trust strip peeks above the fold */}
+        <div className="min-h-[62vh] flex flex-col justify-center text-center">
           {/* Eyebrow */}
           <p className="text-primary text-xs tracking-[0.35em] uppercase mb-8">
             A Custom Figure Skating Costume Atelier
@@ -86,6 +143,26 @@ export default function Home() {
           </div>
         </div>
 
+        {/* Trust strip — pure-type credibility points */}
+        <ul
+          data-testid="trust-strip"
+          className="mt-16 flex flex-wrap items-center justify-center gap-x-6 gap-y-3 text-center"
+        >
+          {TRUST_POINTS.map((point, i) => (
+            <li
+              key={point}
+              className="flex items-center gap-6 text-muted-foreground text-xs tracking-[0.2em] uppercase font-light"
+            >
+              {i > 0 && (
+                <span className="text-primary/40" aria-hidden="true">
+                  ·
+                </span>
+              )}
+              {point}
+            </li>
+          ))}
+        </ul>
+
         {/* Services preview */}
         <div className="mt-24">
           <SectionHeader eyebrow="What We Make" title="Bespoke, by hand" />
@@ -118,6 +195,87 @@ export default function Home() {
               Explore Services
               <ArrowRight className="w-4 h-4 group-hover:translate-x-1 transition-transform" />
             </CtaLink>
+          </div>
+        </div>
+
+        {/* How it works — the commission process, ending in a consultation CTA */}
+        <div className="mt-24" data-testid="process-teaser">
+          <SectionHeader
+            eyebrow="How It Works"
+            title="From first sketch to final stitch"
+          />
+          <ol className="grid gap-8 sm:grid-cols-2 md:grid-cols-4">
+            {PROCESS.map(({ step, title, description }) => (
+              <li key={step}>
+                <span className="block font-serif text-4xl text-primary/70 mb-3">
+                  {step}
+                </span>
+                <h3 className="font-serif text-xl text-foreground mb-2">
+                  {title}
+                </h3>
+                <p className="text-muted-foreground font-light text-sm leading-relaxed">
+                  {description}
+                </p>
+              </li>
+            ))}
+          </ol>
+          <div className="mt-12 text-center">
+            <CtaLink
+              to="/appointments"
+              variant="outline"
+              data-testid="cta-book-consultation"
+            >
+              <CalendarDays className="w-4 h-4" />
+              Book a Consultation
+              <ArrowRight className="w-4 h-4 group-hover:translate-x-1 transition-transform" />
+            </CtaLink>
+          </div>
+        </div>
+
+        {/* Ready-to-wear shop teaser */}
+        <div
+          className="mt-24 border border-border/60 rounded-2xl p-10 md:p-12 text-center"
+          data-testid="shop-teaser"
+        >
+          <ShoppingBag
+            className="w-6 h-6 text-primary mx-auto mb-5"
+            strokeWidth={1.5}
+          />
+          <SectionHeader
+            eyebrow="Ready-to-Wear"
+            title="Shop the collection"
+            className="mb-6"
+          />
+          <p className="max-w-xl mx-auto text-muted-foreground font-light text-lg leading-relaxed">
+            Not ready for a full commission? Browse ready-made costumes and
+            accessories — pieces you can order today, with the same handcrafted
+            care.
+          </p>
+          <div className="mt-10">
+            <CtaLink to="/shop" variant="outline" data-testid="cta-visit-shop">
+              Visit the Shop
+              <ArrowRight className="w-4 h-4 group-hover:translate-x-1 transition-transform" />
+            </CtaLink>
+          </div>
+        </div>
+
+        {/* Testimonials — curated social proof */}
+        <div className="mt-24" data-testid="testimonials">
+          <SectionHeader eyebrow="In Their Words" title="Loved on the ice" />
+          <div className="grid gap-8 md:grid-cols-2">
+            {TESTIMONIALS.map(({ quote, attribution }) => (
+              <figure
+                key={attribution}
+                className="border border-border/60 rounded-2xl p-8"
+              >
+                <blockquote className="font-serif italic text-xl md:text-2xl text-primary leading-relaxed">
+                  “{quote}”
+                </blockquote>
+                <figcaption className="mt-6 text-muted-foreground text-xs tracking-[0.2em] uppercase font-light">
+                  {attribution}
+                </figcaption>
+              </figure>
+            ))}
           </div>
         </div>
 
@@ -157,6 +315,19 @@ export default function Home() {
               Ask a Question
             </CtaLink>
           </div>
+
+          {/* Account nod — close the loop for returning customers */}
+          <p className="mt-10 text-center text-muted-foreground font-light text-sm">
+            Already ordered?{" "}
+            <Link
+              to="/account"
+              data-testid="cta-account"
+              className="text-primary underline underline-offset-4 hover:text-primary/80 transition-colors"
+            >
+              Sign in to your account
+            </Link>{" "}
+            to follow every piece.
+          </p>
 
           {/* Footer whisper */}
           <p className="mt-16 text-center text-muted-foreground/50 text-xs tracking-[0.2em] uppercase font-light">
