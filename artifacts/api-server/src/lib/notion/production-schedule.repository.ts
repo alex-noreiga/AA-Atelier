@@ -11,10 +11,14 @@ import {
 import {
   buildMilestoneProperties,
   buildMilestoneStatusUpdate,
+  buildReminderSentUpdate,
+  MILESTONE_STATUS_COMPLETED,
   PS_ORDER_RELATION_PROPERTY,
+  PS_REMINDER_SENT_PROPERTY,
   PS_STAGE_PROPERTY,
   PS_STATUS_PROPERTY,
   PS_TARGET_DATE_PROPERTY,
+  type FittingReminderMilestone,
   type MilestoneInput,
   type MilestoneStatus,
   type StageMilestone,
@@ -203,6 +207,111 @@ export async function updateMilestoneStatus(
     const errorText = await response.text();
     throw new Error(
       `Notion milestone status update failed with status ${response.status}: ${errorText}`,
+    );
+  }
+}
+
+// A milestone row as the fitting-reminder pass reads it: the page id, its stage +
+// target date (for the email), and the linked order's page id (to resolve the
+// customer email). `Order` is a relation; the reminder needs the first linked id.
+interface FittingReminderRow {
+  id: string;
+  properties?: {
+    [PS_STAGE_PROPERTY]?: { select?: { name?: string } | null };
+    [PS_TARGET_DATE_PROPERTY]?: { date?: { start?: string } | null };
+    [PS_ORDER_RELATION_PROPERTY]?: { relation?: Array<{ id: string }> | null };
+  };
+}
+
+interface FittingReminderQueryResponse {
+  results: FittingReminderRow[];
+}
+
+/**
+ * Find fitting milestones that are due for a reminder: their `Production Stage` is
+ * one of the configured fitting stages, they aren't completed, their target date
+ * is on or before the cutoff (the reminder window), and no reminder has been sent
+ * yet. Rows missing a stage or an order relation are skipped (nothing to email
+ * about). Fail-soft on an unconfigured database (returns `[]`), but a query error
+ * throws so the caller logs and retries next run — mirroring `listOrderMilestonePages`.
+ */
+export async function findMilestonesNeedingFittingReminder(
+  params: { stages: string[]; onOrBefore: string },
+  client: NotionClient = getProductionScheduleNotionClient(),
+): Promise<FittingReminderMilestone[]> {
+  if (!client.databaseId) {
+    return [];
+  }
+  if (params.stages.length === 0) {
+    return [];
+  }
+
+  const response = await client.fetch(
+    `/v1/databases/${client.databaseId}/query`,
+    {
+      method: "POST",
+      body: JSON.stringify({
+        filter: {
+          and: [
+            {
+              or: params.stages.map((stage) => ({
+                property: PS_STAGE_PROPERTY,
+                select: { equals: stage },
+              })),
+            },
+            {
+              property: PS_STATUS_PROPERTY,
+              status: { does_not_equal: MILESTONE_STATUS_COMPLETED },
+            },
+            {
+              property: PS_TARGET_DATE_PROPERTY,
+              date: { on_or_before: params.onOrBefore },
+            },
+            {
+              property: PS_REMINDER_SENT_PROPERTY,
+              checkbox: { equals: false },
+            },
+          ],
+        },
+      }),
+    },
+  );
+
+  if (!response.ok) {
+    throw new Error(`Notion query failed with status ${response.status}`);
+  }
+
+  const data = (await response.json()) as FittingReminderQueryResponse;
+  const milestones: FittingReminderMilestone[] = [];
+  for (const row of data.results) {
+    const stage = row.properties?.[PS_STAGE_PROPERTY]?.select?.name;
+    const targetDate = row.properties?.[PS_TARGET_DATE_PROPERTY]?.date?.start;
+    const orderPageId =
+      row.properties?.[PS_ORDER_RELATION_PROPERTY]?.relation?.[0]?.id;
+    if (stage && targetDate && orderPageId) {
+      milestones.push({ pageId: row.id, stage, targetDate, orderPageId });
+    }
+  }
+  return milestones;
+}
+
+/** Mark a milestone's fitting reminder as sent (flips the `Reminder Sent`
+ * checkbox), so the nightly reconciliation doesn't re-send it. */
+export async function markFittingReminderSent(
+  pageId: string,
+  client: NotionClient = getProductionScheduleNotionClient(),
+): Promise<void> {
+  assertConfigured(client);
+
+  const response = await client.fetch(`/v1/pages/${pageId}`, {
+    method: "PATCH",
+    body: JSON.stringify({ properties: buildReminderSentUpdate() }),
+  });
+
+  if (!response.ok) {
+    const errorText = await response.text();
+    throw new Error(
+      `Notion fitting-reminder marker update failed with status ${response.status}: ${errorText}`,
     );
   }
 }

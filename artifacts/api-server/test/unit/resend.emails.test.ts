@@ -21,6 +21,7 @@ import {
   shopOrderNotificationEmail,
   errorAlertEmail,
   orderStageChangeEmail,
+  fittingReminderEmail,
   type ShopOrderEmailDetails,
   type ErrorAlertDetails,
   type OrderStageChangeEmailDetails,
@@ -557,5 +558,70 @@ describe("orderStageChangeEmail", () => {
     expect(email.html).toContain("&lt;b&gt;Fitting&lt;/b&gt;");
     expect(email.html).not.toContain("<b>Fitting</b>");
     expect(email.html).toContain("A&amp;B-1");
+  });
+});
+
+describe("fittingReminderEmail", () => {
+  it("uses the fitting subject + heading and carries the order number", () => {
+    const email = fittingReminderEmail({
+      email: "ada@example.com",
+      orderNumber: "000002",
+    });
+
+    expect(email.to).toBe("ada@example.com");
+    expect(email.subject).toBe("Let's schedule your fitting (000002)");
+    expect(email.html).toContain("Time to book your fitting");
+    expect(email.html).toContain("000002");
+    expect(email.text).toContain("Order number: 000002");
+    expect(email.html).toContain("A.A Atelier");
+  });
+
+  it("mentions the target date when provided, omits it otherwise", () => {
+    const withDate = fittingReminderEmail({
+      email: "ada@example.com",
+      orderNumber: "000002",
+      targetDate: "2026-08-15",
+    });
+    expect(withDate.html).toContain("2026-08-15");
+    expect(withDate.text).toContain("2026-08-15");
+
+    const withoutDate = fittingReminderEmail({
+      email: "ada@example.com",
+      orderNumber: "000002",
+    });
+    expect(withoutDate.html).not.toContain("2026-08-15");
+    expect(withoutDate.html).toContain("approaching its fitting stage");
+  });
+
+  it("includes the booking CTA only when a bookingUrl is provided", () => {
+    const withLink = fittingReminderEmail({
+      email: "ada@example.com",
+      orderNumber: "000002",
+      bookingUrl: "https://a3iceanddance.com/appointments?type=fitting",
+    });
+    expect(withLink.html).toContain(
+      "https://a3iceanddance.com/appointments?type=fitting",
+    );
+    expect(withLink.html).toContain("Book your fitting");
+    expect(withLink.text).toContain(
+      "Book your fitting: https://a3iceanddance.com/appointments?type=fitting",
+    );
+
+    const withoutLink = fittingReminderEmail({
+      email: "ada@example.com",
+      orderNumber: "000002",
+    });
+    expect(withoutLink.html).not.toContain("Book your fitting");
+  });
+
+  it("HTML-escapes dynamic values from Notion (order number, target date)", () => {
+    const email = fittingReminderEmail({
+      email: "ada@example.com",
+      orderNumber: "A&B-1",
+      targetDate: "<b>soon</b>",
+    });
+    expect(email.html).toContain("A&amp;B-1");
+    expect(email.html).toContain("&lt;b&gt;soon&lt;/b&gt;");
+    expect(email.html).not.toContain("<b>soon</b>");
   });
 });
