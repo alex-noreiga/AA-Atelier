@@ -1293,6 +1293,11 @@ and in the maintainer's env without edits.
 
 ## Conventions & gotchas
 
+- **Surface customer-facing copy for review.** When adding or changing any text a
+  customer will see — email subjects/bodies (`lib/resend/emails.ts`), on-site strings,
+  confirmation pages, SMS, etc. — show the exact copy in the reply so the atelier can
+  approve the wording before it ships. Don't quietly bury new customer-visible wording
+  in a diff.
 - **ESM only.** Server-side relative imports use explicit `.js` extensions
   (e.g. `import router from "./routes/index.js"`) even though the source is
   `.ts` — this is required so `@vercel/node`/Node ESM can resolve the compiled

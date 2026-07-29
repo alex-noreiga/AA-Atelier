@@ -268,8 +268,8 @@ export function fittingReminderEmail(
   const { orderNumber, targetDate, bookingUrl } = details;
 
   const timingHtml = targetDate
-    ? `<p>Your piece is on track for its fitting around <strong>${escapeHtml(targetDate)}</strong>.</p>`
-    : `<p>Your piece is approaching its fitting stage.</p>`;
+    ? `<p>Your custom item is on track for its fitting around <strong>${escapeHtml(targetDate)}</strong>.</p>`
+    : `<p>Your custom item is approaching its fitting stage.</p>`;
   const ctaHtml = bookingUrl
     ? `<p style="margin:28px 0;">
          <a href="${encodeURI(bookingUrl)}" style="display:inline-block;background:#2b2622;color:#faf8f5;
@@ -294,8 +294,8 @@ export function fittingReminderEmail(
     `Hi there,`,
     ``,
     targetDate
-      ? `Your piece is on track for its fitting around ${targetDate}.`
-      : `Your piece is approaching its fitting stage.`,
+      ? `Your custom item is on track for its fitting around ${targetDate}.`
+      : `Your custom item is approaching its fitting stage.`,
     ``,
     `A fitting lets us perfect the shape and fit of your garment before the final`,
     `finishing touches. Please book — or confirm — your fitting appointment at your`,
