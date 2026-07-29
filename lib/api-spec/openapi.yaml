@@ -604,6 +604,132 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/ErrorEnvelope"
+  /appointments/manage:
+    get:
+      operationId: getAppointment
+      tags: [appointments]
+      summary: Look up a booked appointment for self-service management
+      description: >-
+        Returns the current details of a booked appointment, identified by the
+        signed token embedded in the "manage your appointment" link the
+        confirmation email carries. Read live from Google Calendar, so it
+        reflects the latest state (including a cancellation). Drives the
+        reschedule / cancel page.
+      parameters:
+        - name: token
+          in: query
+          required: true
+          description: The signed token from the manage link.
+          schema:
+            type: string
+      responses:
+        "200":
+          description: The appointment's current details
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AppointmentDetails"
+        "400":
+          description: The token is missing, invalid, or expired
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorEnvelope"
+        "404":
+          description: No such appointment — it may have been cancelled
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorEnvelope"
+        "500":
+          description: Server error
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorEnvelope"
+  /appointments/reschedule:
+    post:
+      operationId: rescheduleAppointment
+      tags: [appointments]
+      summary: Reschedule a booked appointment to a new open slot
+      description: >-
+        Moves the appointment identified by the signed token to a new start
+        time. The server re-checks the slot is still free for the same staff
+        member, type, and location (never trusting the client), updates the
+        Google Calendar event (re-notifying the customer), and emails a
+        confirmation. Fails if the slot is no longer available.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/RescheduleAppointmentRequest"
+      responses:
+        "200":
+          description: The appointment's new details
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AppointmentDetails"
+        "400":
+          description: Invalid token, or the slot is no longer available
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorEnvelope"
+        "404":
+          description: No such appointment — it may have been cancelled
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorEnvelope"
+        "409":
+          description: The appointment has already started or been cancelled
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorEnvelope"
+        "500":
+          description: Server error
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorEnvelope"
+  /appointments/cancel:
+    post:
+      operationId: cancelAppointment
+      tags: [appointments]
+      summary: Cancel a booked appointment
+      description: >-
+        Cancels the appointment identified by the signed token, deleting the
+        Google Calendar event (which frees the slot and notifies the customer)
+        and emailing a confirmation. Idempotent — cancelling an
+        already-cancelled appointment still succeeds.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CancelAppointmentRequest"
+      responses:
+        "200":
+          description: The appointment was cancelled
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MessageResponse"
+        "400":
+          description: The token is missing, invalid, or expired
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorEnvelope"
+        "500":
+          description: Server error
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorEnvelope"
   /account/login:
     post:
       operationId: requestMagicLink
@@ -1492,6 +1618,86 @@ components:
         calendarLink:
           type: string
           description: A link to the booking's Google Calendar event.
+    AppointmentDetails:
+      type: object
+      description: >-
+        A booked appointment's current state, read live from Google Calendar for
+        the self-service reschedule / cancel page.
+      required:
+        - status
+        - confirmationCode
+        - typeId
+        - typeName
+        - staff
+        - location
+        - locationLabel
+        - start
+        - end
+        - timezone
+        - canModify
+      properties:
+        status:
+          type: string
+          enum: [confirmed, cancelled]
+          description: Whether the appointment is still on the calendar or was cancelled.
+        timezone:
+          type: string
+          description: >-
+            IANA timezone the atelier's hours and slot times are expressed in,
+            for the client to render the appointment's times.
+        confirmationCode:
+          type: string
+        typeId:
+          type: string
+          description: >-
+            The appointment type's id, so the reschedule flow can re-query
+            availability for the same type.
+        typeName:
+          type: string
+        staff:
+          type: string
+        location:
+          type: string
+          enum: [in-person, virtual]
+        locationLabel:
+          type: string
+        start:
+          type: string
+          format: date-time
+        end:
+          type: string
+          format: date-time
+        meetingUrl:
+          type: string
+          description: The Google Meet link for a virtual appointment, when one exists.
+        canModify:
+          type: boolean
+          description: >-
+            Whether the appointment can still be rescheduled or cancelled — false
+            once it has started or been cancelled.
+    RescheduleAppointmentRequest:
+      type: object
+      required:
+        - token
+        - start
+      properties:
+        token:
+          type: string
+          description: The signed token from the manage link.
+        start:
+          type: string
+          format: date-time
+          description: >-
+            The new slot's start instant, as returned by the availability
+            endpoint.
+    CancelAppointmentRequest:
+      type: object
+      required:
+        - token
+      properties:
+        token:
+          type: string
+          description: The signed token from the manage link.
     ErrorEnvelope:
       type: object
       required: [error]

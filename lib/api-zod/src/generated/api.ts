@@ -402,6 +402,68 @@ export const CreateAppointmentResponse = zod.object({
 
 
 /**
+ * Returns the current details of a booked appointment, identified by the signed token embedded in the "manage your appointment" link the confirmation email carries. Read live from Google Calendar, so it reflects the latest state (including a cancellation). Drives the reschedule / cancel page.
+ * @summary Look up a booked appointment for self-service management
+ */
+export const GetAppointmentQueryParams = zod.object({
+  "token": zod.coerce.string().describe('The signed token from the manage link.')
+})
+
+export const GetAppointmentResponse = zod.object({
+  "status": zod.enum(['confirmed', 'cancelled']).describe('Whether the appointment is still on the calendar or was cancelled.'),
+  "timezone": zod.string().describe('IANA timezone the atelier\'s hours and slot times are expressed in, for the client to render the appointment\'s times.'),
+  "confirmationCode": zod.string(),
+  "typeId": zod.string().describe('The appointment type\'s id, so the reschedule flow can re-query availability for the same type.'),
+  "typeName": zod.string(),
+  "staff": zod.string(),
+  "location": zod.enum(['in-person', 'virtual']),
+  "locationLabel": zod.string(),
+  "start": zod.coerce.date(),
+  "end": zod.coerce.date(),
+  "meetingUrl": zod.string().optional().describe('The Google Meet link for a virtual appointment, when one exists.'),
+  "canModify": zod.boolean().describe('Whether the appointment can still be rescheduled or cancelled — false once it has started or been cancelled.')
+}).describe('A booked appointment\'s current state, read live from Google Calendar for the self-service reschedule \/ cancel page.')
+
+
+/**
+ * Moves the appointment identified by the signed token to a new start time. The server re-checks the slot is still free for the same staff member, type, and location (never trusting the client), updates the Google Calendar event (re-notifying the customer), and emails a confirmation. Fails if the slot is no longer available.
+ * @summary Reschedule a booked appointment to a new open slot
+ */
+export const RescheduleAppointmentBody = zod.object({
+  "token": zod.string().describe('The signed token from the manage link.'),
+  "start": zod.coerce.date().describe('The new slot\'s start instant, as returned by the availability endpoint.')
+})
+
+export const RescheduleAppointmentResponse = zod.object({
+  "status": zod.enum(['confirmed', 'cancelled']).describe('Whether the appointment is still on the calendar or was cancelled.'),
+  "timezone": zod.string().describe('IANA timezone the atelier\'s hours and slot times are expressed in, for the client to render the appointment\'s times.'),
+  "confirmationCode": zod.string(),
+  "typeId": zod.string().describe('The appointment type\'s id, so the reschedule flow can re-query availability for the same type.'),
+  "typeName": zod.string(),
+  "staff": zod.string(),
+  "location": zod.enum(['in-person', 'virtual']),
+  "locationLabel": zod.string(),
+  "start": zod.coerce.date(),
+  "end": zod.coerce.date(),
+  "meetingUrl": zod.string().optional().describe('The Google Meet link for a virtual appointment, when one exists.'),
+  "canModify": zod.boolean().describe('Whether the appointment can still be rescheduled or cancelled — false once it has started or been cancelled.')
+}).describe('A booked appointment\'s current state, read live from Google Calendar for the self-service reschedule \/ cancel page.')
+
+
+/**
+ * Cancels the appointment identified by the signed token, deleting the Google Calendar event (which frees the slot and notifies the customer) and emailing a confirmation. Idempotent — cancelling an already-cancelled appointment still succeeds.
+ * @summary Cancel a booked appointment
+ */
+export const CancelAppointmentBody = zod.object({
+  "token": zod.string().describe('The signed token from the manage link.')
+})
+
+export const CancelAppointmentResponse = zod.object({
+  "message": zod.string()
+}).describe('A generic human-readable acknowledgement.')
+
+
+/**
  * Emails the customer a one-time magic link that signs them into the account portal. Always responds 200 regardless of whether any orders exist for the address — identity is the email itself, so there is no account to enumerate. The email is sent best-effort; a mail outage never fails the request.
  * @summary Request a passwordless sign-in link
  */

@@ -729,6 +729,45 @@ export interface AppointmentEmailDetails {
   notes?: string;
   /** The Google Meet link for a virtual appointment, when one was created. */
   meetingUrl?: string;
+  /** Self-service reschedule/cancel link (present when the portal secret +
+   * PUBLIC_BASE_URL are configured); falls back to "reply to us" copy when
+   * absent. */
+  manageUrl?: string;
+}
+
+/** A styled "Manage your appointment" button, matching the sign-in link's look. */
+function manageButtonHtml(url: string): string {
+  return `<p style="margin:28px 0;">
+       <a href="${url}" style="display:inline-block;background:#2b2622;color:#faf8f5;
+          text-decoration:none;padding:12px 24px;border-radius:2px;font-size:15px;">Reschedule or cancel</a>
+     </p>
+     <p style="font-size:13px;color:#8a7f74;word-break:break-all;">Or paste this link
+        into your browser:<br/>${url}</p>`;
+}
+
+/** The change/cancel guidance for the customer — a self-service link when we can
+ * build one, otherwise the previous "reply to this email" fallback. */
+function manageHtml(details: AppointmentEmailDetails): string {
+  return details.manageUrl
+    ? `<p>Need to change your plans? You can reschedule or cancel any time before
+          your appointment:</p>
+       ${manageButtonHtml(details.manageUrl)}`
+    : `<p>If you need to change or cancel, just reply to this email and we'll take
+          care of it.</p>`;
+}
+
+function manageText(details: AppointmentEmailDetails): string[] {
+  return details.manageUrl
+    ? [
+        `Need to change your plans? Reschedule or cancel any time before your`,
+        `appointment here:`,
+        ``,
+        details.manageUrl,
+      ]
+    : [
+        `If you need to change or cancel, just reply to this email and we'll take`,
+        `care of it.`,
+      ];
 }
 
 /** Confirmation sent to the customer when they book an appointment. */
@@ -750,8 +789,8 @@ export function appointmentConfirmationEmail(
         <strong>Where:</strong> ${details.locationLabel}</p>
      ${meetHtml}
      <p>A calendar invitation is on its way to your inbox. Your confirmation code
-        is <strong>${details.confirmationCode}</strong>. If you need to change or
-        cancel, just reply to this email and we'll take care of it.</p>
+        is <strong>${details.confirmationCode}</strong>.</p>
+     ${manageHtml(details)}
      <p>We look forward to seeing you.</p>`,
   );
 
@@ -765,8 +804,9 @@ export function appointmentConfirmationEmail(
     ...(details.meetingUrl ? [`Join link: ${details.meetingUrl}`] : []),
     ``,
     `A calendar invitation is on its way to your inbox. Your confirmation code is`,
-    `${details.confirmationCode}. If you need to change or cancel, just reply to`,
-    `this email and we'll take care of it.`,
+    `${details.confirmationCode}.`,
+    ``,
+    ...manageText(details),
     ``,
     `We look forward to seeing you.`,
     ``,
@@ -777,6 +817,94 @@ export function appointmentConfirmationEmail(
   return {
     to: details.email,
     subject: `Your ${details.typeName} is booked (${details.confirmationCode})`,
+    html,
+    text,
+  };
+}
+
+/** Confirmation sent to the customer when they reschedule an appointment. */
+export function appointmentRescheduledEmail(
+  details: AppointmentEmailDetails,
+): EmailMessage {
+  const firstName = details.customerName.trim().split(/\s+/)[0] || "there";
+
+  const meetHtml = details.meetingUrl
+    ? `<p><strong>Join link:</strong> <a href="${details.meetingUrl}">${details.meetingUrl}</a></p>`
+    : "";
+
+  const html = layout(
+    "Your appointment has been rescheduled",
+    `<p>Hi ${firstName},</p>
+     <p>Your <strong>${details.typeName}</strong> with <strong>${details.staff}</strong>
+        has been moved to a new time.</p>
+     <p><strong>New time:</strong> ${details.when}<br/>
+        <strong>Where:</strong> ${details.locationLabel}</p>
+     ${meetHtml}
+     <p>An updated calendar invitation is on its way to your inbox. Your
+        confirmation code is unchanged: <strong>${details.confirmationCode}</strong>.</p>
+     ${manageHtml(details)}
+     <p>We look forward to seeing you.</p>`,
+  );
+
+  const text = [
+    `Hi ${firstName},`,
+    ``,
+    `Your ${details.typeName} with ${details.staff} has been moved to a new time.`,
+    ``,
+    `New time: ${details.when}`,
+    `Where: ${details.locationLabel}`,
+    ...(details.meetingUrl ? [`Join link: ${details.meetingUrl}`] : []),
+    ``,
+    `An updated calendar invitation is on its way to your inbox. Your confirmation`,
+    `code is unchanged: ${details.confirmationCode}.`,
+    ``,
+    ...manageText(details),
+    ``,
+    `We look forward to seeing you.`,
+    ``,
+    `Thank you,`,
+    `The ${ATELIER_NAME} team`,
+  ].join("\n");
+
+  return {
+    to: details.email,
+    subject: `Your ${details.typeName} has been rescheduled (${details.confirmationCode})`,
+    html,
+    text,
+  };
+}
+
+/** Confirmation sent to the customer when they cancel an appointment. */
+export function appointmentCancelledEmail(
+  details: AppointmentEmailDetails,
+): EmailMessage {
+  const firstName = details.customerName.trim().split(/\s+/)[0] || "there";
+
+  const html = layout(
+    "Your appointment has been cancelled",
+    `<p>Hi ${firstName},</p>
+     <p>Your <strong>${details.typeName}</strong> with <strong>${details.staff}</strong>
+        on ${details.when} has been cancelled, and the time released.</p>
+     <p>We're sorry to miss you this time. Whenever you're ready, you can book a
+        new time on our appointments page — we'd love to see you.</p>`,
+  );
+
+  const text = [
+    `Hi ${firstName},`,
+    ``,
+    `Your ${details.typeName} with ${details.staff} on ${details.when} has been`,
+    `cancelled, and the time released.`,
+    ``,
+    `We're sorry to miss you this time. Whenever you're ready, you can book a new`,
+    `time on our appointments page — we'd love to see you.`,
+    ``,
+    `Thank you,`,
+    `The ${ATELIER_NAME} team`,
+  ].join("\n");
+
+  return {
+    to: details.email,
+    subject: `Your ${details.typeName} has been cancelled (${details.confirmationCode})`,
     html,
     text,
   };
@@ -804,6 +932,37 @@ export function appointmentNotificationEmail(
     replyTo: details.email,
     subject: `New ${details.typeName} — ${details.customerName} (${details.when})`,
     html: internalLayout("New appointment booked", renderRowsHtml(fields)),
+    text: renderRowsText(fields),
+  };
+}
+
+/** Notify the atelier when a customer reschedules or cancels an appointment. */
+export function appointmentChangeNotificationEmail(
+  details: AppointmentEmailDetails,
+  to: string,
+  action: "rescheduled" | "cancelled",
+): EmailMessage {
+  const heading =
+    action === "cancelled"
+      ? "Appointment cancelled"
+      : "Appointment rescheduled";
+  const whenLabel = action === "rescheduled" ? "New time" : "When";
+  const fields: Field[] = [
+    ["Type", details.typeName],
+    ["Staff", details.staff],
+    [whenLabel, details.when],
+    ["Location", details.locationLabel],
+    ["Name", details.customerName],
+    ["Email", details.email],
+    ...(details.phone ? [["Phone", details.phone] as Field] : []),
+    ["Confirmation", details.confirmationCode],
+  ];
+
+  return {
+    to,
+    replyTo: details.email,
+    subject: `Appointment ${action} — ${details.customerName} (${details.typeName})`,
+    html: internalLayout(heading, renderRowsHtml(fields)),
     text: renderRowsText(fields),
   };
 }

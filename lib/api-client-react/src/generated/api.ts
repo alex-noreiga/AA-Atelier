@@ -22,12 +22,15 @@ import type {
 import type {
   AccountOverview,
   AppointmentAvailability,
+  AppointmentDetails,
   AppointmentOptions,
+  CancelAppointmentRequest,
   CheckoutSessionResponse,
   CheckoutSessionStatus,
   CreateCheckoutSessionRequest,
   ErrorEnvelope,
   GetAppointmentAvailabilityParams,
+  GetAppointmentParams,
   HealthStatus,
   MagicLinkRequest,
   MessageResponse,
@@ -49,6 +52,7 @@ import type {
   OrderStatus,
   PaymentSessionResponse,
   ProductList,
+  RescheduleAppointmentRequest,
   ShopOrderStatus
 } from './api.schemas';
 
@@ -1282,6 +1286,235 @@ export const useCreateAppointment = <TError = ErrorType<ErrorEnvelope>,
         TContext
       > => {
       return useMutation(getCreateAppointmentMutationOptions(options));
+    }
+
+export const getGetAppointmentUrl = (params: GetAppointmentParams,) => {
+  const normalizedParams = new URLSearchParams();
+
+  Object.entries(params || {}).forEach(([key, value]) => {
+
+    if (value !== undefined) {
+      normalizedParams.append(key, value === null ? 'null' : String(value))
+    }
+  });
+
+  const stringifiedParams = normalizedParams.toString();
+
+  return stringifiedParams.length > 0 ? `/api/appointments/manage?${stringifiedParams}` : `/api/appointments/manage`
+}
+
+/**
+ * Returns the current details of a booked appointment, identified by the signed token embedded in the "manage your appointment" link the confirmation email carries. Read live from Google Calendar, so it reflects the latest state (including a cancellation). Drives the reschedule / cancel page.
+ * @summary Look up a booked appointment for self-service management
+ */
+export const getAppointment = async (params: GetAppointmentParams, options?: Parameters<typeof customFetch>[1]): Promise<AppointmentDetails> => {
+
+  return customFetch<AppointmentDetails>(getGetAppointmentUrl(params),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
+
+
+
+
+export const getGetAppointmentQueryKey = (params?: GetAppointmentParams,) => {
+    return [
+    `/api/appointments/manage`, ...(params ? [params] : [])
+    ] as const;
+    }
+
+
+export const getGetAppointmentQueryOptions = <TData = Awaited<ReturnType<typeof getAppointment>>, TError = ErrorType<ErrorEnvelope>>(params: GetAppointmentParams, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getAppointment>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getGetAppointmentQueryKey(params);
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof getAppointment>>> = ({ signal }) => getAppointment(params, { signal, ...requestOptions });
+
+
+
+
+
+   return  { queryKey, queryFn, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof getAppointment>>, TError, TData> & { queryKey: QueryKey }
+}
+
+export type GetAppointmentQueryResult = NonNullable<Awaited<ReturnType<typeof getAppointment>>>
+export type GetAppointmentQueryError = ErrorType<ErrorEnvelope>
+
+
+/**
+ * @summary Look up a booked appointment for self-service management
+ */
+
+export function useGetAppointment<TData = Awaited<ReturnType<typeof getAppointment>>, TError = ErrorType<ErrorEnvelope>>(
+ params: GetAppointmentParams, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getAppointment>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+
+ ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+
+  const queryOptions = getGetAppointmentQueryOptions(params,options)
+
+  const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
+
+  return withQueryKey(query, queryOptions.queryKey);
+}
+
+
+
+
+
+
+
+export const getRescheduleAppointmentUrl = () => {
+
+
+
+
+  return `/api/appointments/reschedule`
+}
+
+/**
+ * Moves the appointment identified by the signed token to a new start time. The server re-checks the slot is still free for the same staff member, type, and location (never trusting the client), updates the Google Calendar event (re-notifying the customer), and emails a confirmation. Fails if the slot is no longer available.
+ * @summary Reschedule a booked appointment to a new open slot
+ */
+export const rescheduleAppointment = async (rescheduleAppointmentRequest: RescheduleAppointmentRequest, options?: Parameters<typeof customFetch>[1]): Promise<AppointmentDetails> => {
+
+  return customFetch<AppointmentDetails>(getRescheduleAppointmentUrl(),
+  {
+    ...options,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    body: JSON.stringify(rescheduleAppointmentRequest)
+  }
+);}
+
+
+
+
+
+export const getRescheduleAppointmentMutationOptions = <TError = ErrorType<ErrorEnvelope>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof rescheduleAppointment>>, TError,{data: BodyType<RescheduleAppointmentRequest>}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof rescheduleAppointment>>, TError,{data: BodyType<RescheduleAppointmentRequest>}, TContext> => {
+
+const mutationKey = ['rescheduleAppointment'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof rescheduleAppointment>>, {data: BodyType<RescheduleAppointmentRequest>}> = (props) => {
+          const {data} = props ?? {};
+
+          return  rescheduleAppointment(data,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type RescheduleAppointmentMutationResult = NonNullable<Awaited<ReturnType<typeof rescheduleAppointment>>>
+    export type RescheduleAppointmentMutationBody = BodyType<RescheduleAppointmentRequest>
+    export type RescheduleAppointmentMutationError = ErrorType<ErrorEnvelope>
+
+    /**
+ * @summary Reschedule a booked appointment to a new open slot
+ */
+export const useRescheduleAppointment = <TError = ErrorType<ErrorEnvelope>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof rescheduleAppointment>>, TError,{data: BodyType<RescheduleAppointmentRequest>}, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof rescheduleAppointment>>,
+        TError,
+        {data: BodyType<RescheduleAppointmentRequest>},
+        TContext
+      > => {
+      return useMutation(getRescheduleAppointmentMutationOptions(options));
+    }
+
+export const getCancelAppointmentUrl = () => {
+
+
+
+
+  return `/api/appointments/cancel`
+}
+
+/**
+ * Cancels the appointment identified by the signed token, deleting the Google Calendar event (which frees the slot and notifies the customer) and emailing a confirmation. Idempotent — cancelling an already-cancelled appointment still succeeds.
+ * @summary Cancel a booked appointment
+ */
+export const cancelAppointment = async (cancelAppointmentRequest: CancelAppointmentRequest, options?: Parameters<typeof customFetch>[1]): Promise<MessageResponse> => {
+
+  return customFetch<MessageResponse>(getCancelAppointmentUrl(),
+  {
+    ...options,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    body: JSON.stringify(cancelAppointmentRequest)
+  }
+);}
+
+
+
+
+
+export const getCancelAppointmentMutationOptions = <TError = ErrorType<ErrorEnvelope>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof cancelAppointment>>, TError,{data: BodyType<CancelAppointmentRequest>}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof cancelAppointment>>, TError,{data: BodyType<CancelAppointmentRequest>}, TContext> => {
+
+const mutationKey = ['cancelAppointment'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof cancelAppointment>>, {data: BodyType<CancelAppointmentRequest>}> = (props) => {
+          const {data} = props ?? {};
+
+          return  cancelAppointment(data,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type CancelAppointmentMutationResult = NonNullable<Awaited<ReturnType<typeof cancelAppointment>>>
+    export type CancelAppointmentMutationBody = BodyType<CancelAppointmentRequest>
+    export type CancelAppointmentMutationError = ErrorType<ErrorEnvelope>
+
+    /**
+ * @summary Cancel a booked appointment
+ */
+export const useCancelAppointment = <TError = ErrorType<ErrorEnvelope>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof cancelAppointment>>, TError,{data: BodyType<CancelAppointmentRequest>}, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof cancelAppointment>>,
+        TError,
+        {data: BodyType<CancelAppointmentRequest>},
+        TContext
+      > => {
+      return useMutation(getCancelAppointmentMutationOptions(options));
     }
 
 export const getRequestMagicLinkUrl = () => {
