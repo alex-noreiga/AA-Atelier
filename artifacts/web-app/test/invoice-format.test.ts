@@ -45,11 +45,25 @@ describe("groupLineItems", () => {
 
   it("keeps an unknown type under its raw name, after the known ones", () => {
     const groups = groupLineItems([
-      line("Rush surcharge", "Surcharge"),
+      line("Gift discount", "Discount"),
       line("Main fabric", "Material"),
     ]);
-    expect(groups.map((g) => g.type)).toEqual(["Material", "Surcharge"]);
-    expect(groups[1].heading).toBe("Surcharge");
+    expect(groups.map((g) => g.type)).toEqual(["Material", "Discount"]);
+    expect(groups[1].heading).toBe("Discount");
+  });
+
+  it("orders a Surcharge line last, after the other known types", () => {
+    const groups = groupLineItems([
+      line("Rush surcharge", "Surcharge"),
+      line("Construction", "Labor"),
+      line("Main fabric", "Material"),
+    ]);
+    expect(groups.map((g) => g.type)).toEqual([
+      "Material",
+      "Labor",
+      "Surcharge",
+    ]);
+    expect(groups[2].heading).toBe("Surcharge");
   });
 
   it("returns nothing for an empty list", () => {

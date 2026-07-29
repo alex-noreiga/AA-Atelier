@@ -72,6 +72,19 @@ describe("buildOrderProperties", () => {
     const props = buildOrderProperties(baseOrder, "ORD-ABC-123") as any;
     expect(props).not.toHaveProperty("Due Date");
   });
+
+  it("sets the Rush Order checkbox when the order is a rush", () => {
+    const props = buildOrderProperties(
+      { ...baseOrder, rush: true },
+      "ORD-ABC-123",
+    ) as any;
+    expect(props["Rush Order"].checkbox).toBe(true);
+  });
+
+  it("omits the Rush Order checkbox for a standard-timeline order", () => {
+    const props = buildOrderProperties(baseOrder, "ORD-ABC-123") as any;
+    expect(props).not.toHaveProperty("Rush Order");
+  });
 });
 
 describe("buildOrderPageBlocks", () => {
@@ -113,6 +126,16 @@ describe("buildOrderPageBlocks", () => {
       buildOrderPageBlocks({ ...baseOrder, description: "Ivory chiffon" }),
     );
     expect(pairs.Description).toBe("Ivory chiffon");
+  });
+
+  it("notes a rush order in the body, and omits it otherwise", () => {
+    const rushPairs = textPairs(
+      buildOrderPageBlocks({ ...baseOrder, rush: true }),
+    );
+    expect(rushPairs["Rush Order"]).toMatch(/surcharge applies/i);
+
+    const standardPairs = textPairs(buildOrderPageBlocks(baseOrder));
+    expect(standardPairs).not.toHaveProperty("Rush Order");
   });
 
   it("renders an appointment note instead of values when measurements are omitted", () => {

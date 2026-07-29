@@ -799,6 +799,48 @@ The atelier must, one time: create the "Reviews" database with the properties
 above, share the Notion integration with it, set `NOTION_REVIEWS_DATABASE_ID`,
 and (optionally) add a `Client` relation to Client CRM.
 
+## Rush order surcharge
+
+A custom order whose **needed-by date is sooner than the studio's standard lead
+time** is a **rush order** and carries a surcharge. The intake form
+(`pages/order-form.tsx`) detects this off the existing "Needed By" date, discloses
+the surcharge, and requires the customer to **acknowledge** it before the order can
+be placed; the order is recorded with a rush flag so the atelier prices the fee in.
+Load-bearing decisions:
+
+1. **The app never computes the fee — it flags + discloses.** Consistent with the
+   "Notion/invoice is the source of truth for money" rule, the app does **not**
+   calculate a surcharge amount (custom pricing is quoted offline). It records that
+   the order is a rush; the atelier adds a **"Surcharge"** line to the order's
+   invoice (`Line Type = "Surcharge"`), which flows into the balance like any other
+   line (`buildInvoiceView` sums all non-`Deposit` lines) and renders on the invoice
+   under its own "Surcharge" heading (`lib/invoice-format.ts` — "Surcharge" is a
+   known type ordered last, after Adjustments).
+
+2. **Rush is derived from the date + an explicit acknowledgement.** `isRushNeededBy`
+   (`web-app/src/lib/rush.ts`) is true when the needed-by date falls within
+   `RUSH_WINDOW_DAYS` of today. When true, the form shows the surcharge notice and a
+   required acknowledgement checkbox (a `superRefine` blocks submit until it's
+   ticked), and sends `rush: true` on the order. A standard-timeline date sends no
+   `rush` field. The `rush` boolean is part of the OpenAPI contract
+   (`NewOrderRequest.rush`, contract-first + generated client).
+
+3. **Recorded as a flag, two ways.** `buildOrderProperties` sets a **`Rush Order`
+   checkbox** (property, filterable in Notion) and `buildOrderPageBlocks` adds a
+   "Rush Order: Yes — rush surcharge applies" body note, both only when `rush` is
+   true (`ORDER_RUSH_PROPERTY` in `orders.schema.ts`). The app reads neither back —
+   they're an atelier signal, like the Due Date.
+
+The window + disclosure copy are **build-time overridable** (Vite env, defaults
+apply when unset): `VITE_RUSH_WINDOW_DAYS` (default `21`) and
+`VITE_RUSH_SURCHARGE_NOTE` (default fee-agnostic copy — set it to the real policy,
+e.g. `"a 15% rush surcharge"`). The atelier's one-time setup: add a **`Rush Order`
+checkbox** to the Custom Orders database (done), and add a **`Surcharge`** option to
+the invoice line-items `Line Type` select the first time a rush surcharge is billed
+(Notion auto-creates the option when the atelier sets it). Code:
+`web-app/src/lib/rush.ts` + `pages/order-form.tsx` (frontend); `orders.blocks.ts` +
+`orders.schema.ts` (backend record); `web-app/src/lib/invoice-format.ts` (display).
+
 ## Order status-change emails (Notion automation → webhook)
 
 When a custom order advances to a new production stage, the customer gets an email
@@ -1396,6 +1438,13 @@ and in the maintainer's env without edits.
   business rule), so if the atelier renames that stage in Notion, set this override.
   Read in `services/measurement-lock.ts` (`measurementsLocked()`), enforced by
   `services/measurement-change.service.ts`.
+- **Optional rush-surcharge env vars (build-time, frontend):**
+  `VITE_RUSH_WINDOW_DAYS` (default `21`) — a needed-by date within this many days
+  of today marks a custom order as a rush; and `VITE_RUSH_SURCHARGE_NOTE` — the
+  disclosure copy shown on the order form (default is fee-agnostic; set it to the
+  real policy, e.g. `"a 15% rush surcharge"`). Both are read in
+  `web-app/src/lib/rush.ts`. There is no server-side rush env var — the app records
+  the flag, the atelier prices the fee (see "Rush order surcharge").
 
 ## Quick reference — where things live
 
@@ -1409,6 +1458,7 @@ and in the maintainer's env without edits.
 | Add request validation / error mapping                 | `artifacts/api-server/src/middlewares/*`                                                                                                                                                                                                                                                                                                                        |
 | Change the order-tracking UI (custom + shop)           | `artifacts/web-app/src/pages/track.tsx` (unified lookup) + `components/custom-order-result.tsx` + `components/shop-order-result.tsx`                                                                                                                                                                                                                            |
 | Change the order intake form                           | `artifacts/web-app/src/pages/order-form.tsx`                                                                                                                                                                                                                                                                                                                    |
+| Change the rush order surcharge                        | `artifacts/web-app/src/lib/rush.ts` (window + disclosure) + `pages/order-form.tsx` (detect/acknowledge/send); `api-server/src/lib/notion/orders.blocks.ts` + `orders.schema.ts` (`Rush Order` record); `web-app/src/lib/invoice-format.ts` ("Surcharge" line display)                                                                                              |
 | Change the measurement-change request                  | `artifacts/web-app/src/components/measurement-change-dialog.tsx` (opened from `components/custom-order-result.tsx`); `api-server/src/services/measurement-change.service.ts` + `routes/orders.ts` + `lib/notion/measurement-change.{blocks,repository}.ts` (writes to the **contact** database)                                                                 |
 | Change post-delivery review capture                    | `artifacts/web-app/src/components/review-dialog.tsx` (opened from `components/custom-order-result.tsx` for delivered orders); `api-server/src/services/review.service.ts` + `services/delivery.ts` + `routes/orders.ts` + `lib/notion/reviews.{blocks,repository}.ts` (writes to the **Reviews** database)                                                      |
 | Change the landing page                                | `artifacts/web-app/src/pages/home.tsx`                                                                                                                                                                                                                                                                                                                          |

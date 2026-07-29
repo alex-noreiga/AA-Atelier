@@ -33,6 +33,8 @@ export interface NewOrderRequest {
   measurementAppointment?: boolean;
   description?: string;
   neededBy?: Date;
+  /** True when the customer confirmed a rush order — a neededBy date inside the studio's rush window, acknowledged with the disclosed surcharge. Recorded on the Notion order (a "Rush Order" checkbox + a page note) so the atelier prices the rush surcharge into the invoice; the app does not compute the fee itself. Optional; omitted for standard-timeline orders. */
+  rush?: boolean;
   /** Notion file_upload ids for customer-supplied reference / inspiration images, each obtained by first POSTing the image bytes to POST /orders/reference-images (a binary endpoint outside this contract, mounted like the Stripe webhook). They are attached to the order's Notion page as image blocks. Optional; omitted when the customer uploaded none. */
   referenceImageIds?: string[];
 }

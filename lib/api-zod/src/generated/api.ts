@@ -91,6 +91,7 @@ export const CreateOrderBody = zod.object({
   "measurementAppointment": zod.boolean().optional().describe('True when the customer opted to have their measurements taken at a scheduled fitting or consultation instead of entering them now. When true the measurement fields are omitted.'),
   "description": zod.string().optional(),
   "neededBy": zod.coerce.date().optional(),
+  "rush": zod.boolean().optional().describe('True when the customer confirmed a rush order — a neededBy date inside the studio\'s rush window, acknowledged with the disclosed surcharge. Recorded on the Notion order (a \"Rush Order\" checkbox + a page note) so the atelier prices the rush surcharge into the invoice; the app does not compute the fee itself. Optional; omitted for standard-timeline orders.'),
   "referenceImageIds": zod.array(zod.string()).optional().describe('Notion file_upload ids for customer-supplied reference \/ inspiration images, each obtained by first POSTing the image bytes to POST \/orders\/reference-images (a binary endpoint outside this contract, mounted like the Stripe webhook). They are attached to the order\'s Notion page as image blocks. Optional; omitted when the customer uploaded none.')
 }).describe('A new custom-dress order. Measurements are optional: the customer either supplies all five now (with a measurementUnit), or sets measurementAppointment=true to have them taken at a scheduled fitting or consultation. The server rejects a body with neither.')
 

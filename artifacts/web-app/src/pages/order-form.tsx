@@ -17,8 +17,15 @@ import { ReferenceImageUpload } from "@/components/reference-image-upload";
 import { SuccessScreen } from "@/components/success-screen";
 import { Seo } from "@/components/seo";
 import { ROUTE_SEO } from "@/lib/seo-routes";
+import { isRushNeededBy, RUSH_SURCHARGE_NOTE } from "@/lib/rush";
 import { useToast } from "@/hooks/use-toast";
-import { ArrowLeft, CalendarCheck, CheckCircle, Loader2 } from "lucide-react";
+import {
+  ArrowLeft,
+  CalendarCheck,
+  CheckCircle,
+  Loader2,
+  Zap,
+} from "lucide-react";
 
 const MEASUREMENT_FIELDS = [
   { key: "waist", label: "Waist" },
@@ -55,6 +62,9 @@ const formSchema = z
     bodyGirth: z.string().optional(),
     description: z.string().optional(),
     neededBy: z.string().optional(),
+    // Set when the customer acknowledges the rush surcharge. Only *required*
+    // when the needed-by date lands inside the rush window (see superRefine).
+    rushAcknowledged: z.boolean().default(false),
     // Marketing opt-in, separate from the transactional order. Off by default —
     // consent must be a deliberate tick.
     subscribeNewsletter: z.boolean().default(false),
@@ -73,6 +83,16 @@ const formSchema = z
           message: "Please choose a date in the future",
         });
       }
+    }
+
+    // A needed-by date inside the rush window carries a surcharge; the customer
+    // must acknowledge it before the order can be placed.
+    if (isRushNeededBy(values.neededBy) && !values.rushAcknowledged) {
+      ctx.addIssue({
+        path: ["rushAcknowledged"],
+        code: z.ZodIssueCode.custom,
+        message: "Please acknowledge the rush surcharge to continue",
+      });
     }
 
     if (values.measurementMode !== "self") return;
@@ -150,6 +170,10 @@ export default function OrderForm() {
   const measurementMode = watch("measurementMode");
   const measurementUnit = watch("measurementUnit");
   const preferredContact = watch("preferredContact");
+  // A needed-by date inside the rush window surfaces the surcharge disclosure
+  // and requires an acknowledgement before the order can be placed.
+  const neededByValue = watch("neededBy");
+  const isRush = isRushNeededBy(neededByValue);
   // Floor the "needed by" picker at today, so a past date can't be picked.
   const todayIso = new Date().toISOString().split("T")[0];
 
@@ -159,6 +183,7 @@ export default function OrderForm() {
       neededBy,
       measurementMode,
       measurementUnit,
+      rushAcknowledged: _rushAcknowledged,
       subscribeNewsletter: optIn,
       waist,
       bust,
@@ -167,6 +192,10 @@ export default function OrderForm() {
       bodyGirth,
       ...contact
     } = values;
+
+    // A rush order is derived from the needed-by date (the superRefine above
+    // guarantees the surcharge was acknowledged when this is true).
+    const rush = isRushNeededBy(neededBy);
 
     // Opt-in rides alongside the order rather than through it: a separate,
     // best-effort call keyed to the same email, so the order contract stays
@@ -200,6 +229,7 @@ export default function OrderForm() {
         ...measurements,
         ...(description ? { description } : {}),
         ...(neededBy ? { neededBy } : {}),
+        ...(rush ? { rush: true } : {}),
         ...(referenceImageIds.length ? { referenceImageIds } : {}),
       },
     });
@@ -555,6 +585,45 @@ export default function OrderForm() {
                   </p>
                 )}
               </div>
+
+              {isRush && (
+                <div
+                  className="border border-primary/40 bg-primary/5 rounded-lg p-5"
+                  data-testid="rush-notice"
+                >
+                  <div className="flex items-center gap-2 mb-2">
+                    <Zap className="w-4 h-4 text-primary" />
+                    <p className="text-sm tracking-wide text-foreground font-medium">
+                      Rush order
+                    </p>
+                  </div>
+                  <p className="text-sm font-light text-muted-foreground leading-relaxed mb-4">
+                    Your date is sooner than our standard timeline, so this is a
+                    rush order. Rush pieces carry {RUSH_SURCHARGE_NOTE}. We'll
+                    confirm we can meet your date before any work begins.
+                  </p>
+                  <label
+                    htmlFor="rushAcknowledged"
+                    className="flex items-start gap-3 cursor-pointer group"
+                  >
+                    <input
+                      id="rushAcknowledged"
+                      type="checkbox"
+                      {...register("rushAcknowledged")}
+                      data-testid="rush-acknowledge"
+                      className="mt-1 h-4 w-4 shrink-0 rounded-sm border-border text-primary accent-primary focus-visible:ring-primary"
+                    />
+                    <span className="text-sm font-light text-foreground/90 group-hover:text-foreground transition-colors">
+                      I understand a rush surcharge applies to my order.
+                    </span>
+                  </label>
+                  {errors.rushAcknowledged && (
+                    <p className="text-destructive text-xs mt-2">
+                      {errors.rushAcknowledged.message}
+                    </p>
+                  )}
+                </div>
+              )}
 
               <div>
                 <Label className="text-sm font-light tracking-wide">

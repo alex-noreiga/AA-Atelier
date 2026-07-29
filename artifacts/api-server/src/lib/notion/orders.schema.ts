@@ -38,6 +38,11 @@ export const ORDER_COSTING_ITEMS_RELATION_PROPERTY = "Costing Items"; // relatio
 // reconciliation cron flips once an order's milestones exist.
 export const ORDER_DUE_DATE_PROPERTY = "Due Date"; // date
 export const ORDER_MILESTONES_GENERATED_PROPERTY = "Milestones Generated"; // checkbox
+// Set when the customer confirmed a rush order at intake (a neededBy date inside
+// the studio's rush window, acknowledged with the disclosed surcharge). It's a
+// flag for the atelier — the app never prices the fee; the atelier adds a
+// "Surcharge" invoice line, which flows into the balance. See `orders.blocks.ts`.
+export const ORDER_RUSH_PROPERTY = "Rush Order"; // checkbox
 // The furthest stage the customer has been emailed about, stored as a rich_text
 // marker so the status-change webhook only notifies on FORWARD movement — a
 // backward stage edit (a correction/rework) or a re-fire must not email. Empty
@@ -134,6 +139,7 @@ export interface NotionOrderPage {
       date: { start: string; end: string | null } | null;
     };
     "Milestones Generated"?: { type: "checkbox"; checkbox: boolean };
+    "Rush Order"?: { type: "checkbox"; checkbox: boolean };
     "Last Notified Stage"?: {
       type: "rich_text";
       rich_text: Array<{ plain_text: string }>;

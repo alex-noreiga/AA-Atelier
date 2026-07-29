@@ -9,8 +9,18 @@ export const TYPE_HEADINGS: Record<string, string> = {
   Material: "Materials",
   Labor: "Labor",
   Adjustment: "Adjustments",
+  // A rush order's surcharge (or any atelier-added surcharge), shown last so it
+  // reads as an addition on top of the itemized garment. The atelier adds it as
+  // a "Surcharge" line on the invoice; it flows into the balance like any line.
+  Surcharge: "Surcharge",
 };
-export const TYPE_ORDER = ["Garment", "Material", "Labor", "Adjustment"];
+export const TYPE_ORDER = [
+  "Garment",
+  "Material",
+  "Labor",
+  "Adjustment",
+  "Surcharge",
+];
 
 export interface LineItemGroup {
   type: string;

@@ -116,6 +116,67 @@ describe("OrderForm submission mapping", () => {
   });
 });
 
+/** An ISO yyyy-mm-dd date `days` from now, for exercising the rush window. */
+function isoDaysFromNow(days: number): string {
+  const d = new Date();
+  d.setDate(d.getDate() + days);
+  return d.toISOString().split("T")[0];
+}
+
+describe("OrderForm rush order", () => {
+  it("shows the rush notice and blocks submission until the surcharge is acknowledged", async () => {
+    const user = userEvent.setup();
+    render(<OrderForm />);
+    await fillRequired(user);
+    // A date well inside the rush window (5 days out).
+    fireEvent.change(byId("neededBy"), {
+      target: { value: isoDaysFromNow(5) },
+    });
+
+    expect(screen.getByTestId("rush-notice")).toBeInTheDocument();
+
+    await user.click(screen.getByRole("button", { name: "Submit Order" }));
+
+    expect(
+      await screen.findByText(/acknowledge the rush surcharge/i),
+    ).toBeInTheDocument();
+    expect(mutate).not.toHaveBeenCalled();
+  });
+
+  it("sends rush: true once the surcharge is acknowledged", async () => {
+    const user = userEvent.setup();
+    render(<OrderForm />);
+    await fillRequired(user);
+    fireEvent.change(byId("neededBy"), {
+      target: { value: isoDaysFromNow(5) },
+    });
+    await user.click(screen.getByTestId("rush-acknowledge"));
+    await user.click(screen.getByRole("button", { name: "Submit Order" }));
+
+    await waitFor(() => expect(mutate).toHaveBeenCalledTimes(1));
+    const { data } = mutate.mock.calls[0][0];
+    expect(data.rush).toBe(true);
+  });
+
+  it("does not flag a standard-timeline date as a rush order", async () => {
+    const user = userEvent.setup();
+    render(<OrderForm />);
+    await fillRequired(user);
+    // Comfortably outside the rush window.
+    fireEvent.change(byId("neededBy"), {
+      target: { value: isoDaysFromNow(90) },
+    });
+
+    expect(screen.queryByTestId("rush-notice")).not.toBeInTheDocument();
+
+    await user.click(screen.getByRole("button", { name: "Submit Order" }));
+
+    await waitFor(() => expect(mutate).toHaveBeenCalledTimes(1));
+    const { data } = mutate.mock.calls[0][0];
+    expect(data).not.toHaveProperty("rush");
+  });
+});
+
 describe("OrderForm newsletter opt-in", () => {
   it("does not subscribe when the box is left unticked", async () => {
     const user = userEvent.setup();
