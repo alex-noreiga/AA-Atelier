@@ -1,13 +1,18 @@
 import { describe, it, expect } from "vitest";
 import {
   createMilestone,
+  findMilestonesNeedingFittingReminder,
   listOrderMilestones,
   listOrderMilestonePages,
+  markFittingReminderSent,
   orderHasMilestones,
   updateMilestoneStatus,
 } from "../../src/lib/notion/production-schedule.repository.js";
 import {
+  MILESTONE_STATUS_COMPLETED,
+  MILESTONE_STATUS_IN_PROGRESS,
   PS_ORDER_RELATION_PROPERTY,
+  PS_REMINDER_SENT_PROPERTY,
   PS_STAGE_PROPERTY,
   PS_STATUS_PROPERTY,
   PS_TARGET_DATE_PROPERTY,
@@ -238,6 +243,186 @@ describe("updateMilestoneStatus", () => {
     await expect(
       updateMilestoneStatus("m-1", "Completed", client),
     ).rejects.toThrow(/status 400: validation_error: bad status/);
+  });
+});
+
+describe("findMilestonesNeedingFittingReminder", () => {
+  const reminderRow = (
+    id: string,
+    stage: string | null,
+    targetDate: string | null,
+    orderId: string | null,
+  ) => ({
+    id,
+    properties: {
+      [PS_STAGE_PROPERTY]: { select: stage === null ? null : { name: stage } },
+      [PS_TARGET_DATE_PROPERTY]: {
+        date: targetDate === null ? null : { start: targetDate },
+      },
+      [PS_ORDER_RELATION_PROPERTY]: {
+        relation: orderId === null ? [] : [{ id: orderId }],
+      },
+    },
+  });
+
+  it("returns [] without querying when the database id is not configured", async () => {
+    const client = makeFakeClient(() => jsonResponse({ results: [] }), "");
+    expect(
+      await findMilestonesNeedingFittingReminder(
+        { stages: ["Fitting"], onOrBefore: "2026-08-11" },
+        client,
+      ),
+    ).toEqual([]);
+    expect(client.calls).toHaveLength(0);
+  });
+
+  it("returns [] without querying when no stages are configured", async () => {
+    const client = makeFakeClient(() => jsonResponse({ results: [] }));
+    expect(
+      await findMilestonesNeedingFittingReminder(
+        { stages: [], onOrBefore: "2026-08-11" },
+        client,
+      ),
+    ).toEqual([]);
+    expect(client.calls).toHaveLength(0);
+  });
+
+  it("filters on stage(s), not-completed, (due-by-cutoff OR in-progress), and not-yet-reminded", async () => {
+    const client = makeFakeClient((path) => {
+      if (isQuery(path)) return jsonResponse({ results: [] });
+      throw new Error(`unexpected path ${path}`);
+    });
+
+    await findMilestonesNeedingFittingReminder(
+      { stages: ["First Fitting", "Second Fitting"], onOrBefore: "2026-08-11" },
+      client,
+    );
+
+    const call = client.calls.find((c) => isQuery(c.path))!;
+    expect(call.path).toBe("/v1/databases/test-db-id/query");
+    const body = JSON.parse(call.init!.body as string);
+    expect(body.filter.and).toEqual([
+      {
+        or: [
+          { property: PS_STAGE_PROPERTY, select: { equals: "First Fitting" } },
+          { property: PS_STAGE_PROPERTY, select: { equals: "Second Fitting" } },
+        ],
+      },
+      {
+        property: PS_STATUS_PROPERTY,
+        status: { does_not_equal: MILESTONE_STATUS_COMPLETED },
+      },
+      {
+        // Reminder is due if the target date is near OR the order already reached
+        // the fitting stage — so an ahead-of-schedule order isn't missed.
+        or: [
+          {
+            property: PS_TARGET_DATE_PROPERTY,
+            date: { on_or_before: "2026-08-11" },
+          },
+          {
+            property: PS_STATUS_PROPERTY,
+            status: { equals: MILESTONE_STATUS_IN_PROGRESS },
+          },
+        ],
+      },
+      { property: PS_REMINDER_SENT_PROPERTY, checkbox: { equals: false } },
+    ]);
+  });
+
+  it("maps each row to page id, stage, target date, and linked order page id", async () => {
+    const client = makeFakeClient(() =>
+      jsonResponse({
+        results: [reminderRow("m-1", "Fitting", "2026-08-08", "order-1")],
+      }),
+    );
+
+    expect(
+      await findMilestonesNeedingFittingReminder(
+        { stages: ["Fitting"], onOrBefore: "2026-08-11" },
+        client,
+      ),
+    ).toEqual([
+      {
+        pageId: "m-1",
+        stage: "Fitting",
+        targetDate: "2026-08-08",
+        orderPageId: "order-1",
+      },
+    ]);
+  });
+
+  it("skips rows missing a stage, target date, or order relation", async () => {
+    const client = makeFakeClient(() =>
+      jsonResponse({
+        results: [
+          reminderRow("m-1", "Fitting", "2026-08-08", "order-1"),
+          reminderRow("m-2", null, "2026-08-08", "order-2"),
+          reminderRow("m-3", "Fitting", null, "order-3"),
+          reminderRow("m-4", "Fitting", "2026-08-08", null),
+        ],
+      }),
+    );
+
+    expect(
+      await findMilestonesNeedingFittingReminder(
+        { stages: ["Fitting"], onOrBefore: "2026-08-11" },
+        client,
+      ),
+    ).toEqual([
+      {
+        pageId: "m-1",
+        stage: "Fitting",
+        targetDate: "2026-08-08",
+        orderPageId: "order-1",
+      },
+    ]);
+  });
+
+  it("throws with the status when the query response is not ok", async () => {
+    const client = makeFakeClient(() => errorResponse(500));
+    await expect(
+      findMilestonesNeedingFittingReminder(
+        { stages: ["Fitting"], onOrBefore: "2026-08-11" },
+        client,
+      ),
+    ).rejects.toThrow(/Notion query failed with status 500/);
+  });
+});
+
+describe("markFittingReminderSent", () => {
+  it("throws when the production-schedule database id is not configured", async () => {
+    const client = makeFakeClient(() => jsonResponse({}), "");
+    await expect(markFittingReminderSent("m-1", client)).rejects.toThrow(
+      /NOTION_PRODUCTION_SCHEDULE_DATABASE_ID is not configured/,
+    );
+  });
+
+  it("PATCHes the milestone page with only the Reminder Sent checkbox", async () => {
+    const client = makeFakeClient((path) => {
+      if (path === "/v1/pages/m-1") return jsonResponse({ id: "m-1" });
+      throw new Error(`unexpected path ${path}`);
+    });
+
+    await markFittingReminderSent("m-1", client);
+
+    expect(client.calls).toHaveLength(1);
+    const call = client.calls[0];
+    expect(call.path).toBe("/v1/pages/m-1");
+    expect(call.init?.method).toBe("PATCH");
+    const body = JSON.parse(call.init!.body as string);
+    expect(body.properties).toEqual({
+      [PS_REMINDER_SENT_PROPERTY]: { checkbox: true },
+    });
+  });
+
+  it("throws with the status and Notion error text on a non-ok response", async () => {
+    const client = makeFakeClient(() =>
+      errorResponse(400, "validation_error: bad property"),
+    );
+    await expect(markFittingReminderSent("m-1", client)).rejects.toThrow(
+      /status 400: validation_error: bad property/,
+    );
   });
 });
 

@@ -6,12 +6,18 @@ vi.mock("../../src/lib/notion/orders.repository.js", () => ({
   findOrdersNeedingMilestones: vi.fn(),
   findOrdersWithMilestones: vi.fn(),
   markMilestonesGenerated: vi.fn(),
+  findOrderForStageNotificationByPageId: vi.fn(),
 }));
 vi.mock("../../src/lib/notion/production-schedule.repository.js", () => ({
   createMilestone: vi.fn(),
   orderHasMilestones: vi.fn(),
   listOrderMilestonePages: vi.fn(),
   updateMilestoneStatus: vi.fn(),
+  findMilestonesNeedingFittingReminder: vi.fn(),
+  markFittingReminderSent: vi.fn(),
+}));
+vi.mock("../../src/lib/resend/send.js", () => ({
+  sendEmailBestEffort: vi.fn(),
 }));
 vi.mock("../../src/lib/logger.js", () => ({
   logger: { info: vi.fn(), error: vi.fn(), warn: vi.fn() },
@@ -23,12 +29,14 @@ import {
   generatePendingMilestones,
   milestoneStatusFor,
   syncMilestoneStatuses,
+  sendDueFittingReminders,
   reconcileMilestones,
 } from "../../src/services/schedule.service.js";
 import {
   findOrdersNeedingMilestones,
   findOrdersWithMilestones,
   markMilestonesGenerated,
+  findOrderForStageNotificationByPageId,
   type PendingMilestoneOrder,
 } from "../../src/lib/notion/orders.repository.js";
 import {
@@ -36,16 +44,23 @@ import {
   orderHasMilestones,
   listOrderMilestonePages,
   updateMilestoneStatus,
+  findMilestonesNeedingFittingReminder,
+  markFittingReminderSent,
 } from "../../src/lib/notion/production-schedule.repository.js";
+import { sendEmailBestEffort } from "../../src/lib/resend/send.js";
 import { logger } from "../../src/lib/logger.js";
 
 const mockFind = vi.mocked(findOrdersNeedingMilestones);
 const mockFindWith = vi.mocked(findOrdersWithMilestones);
 const mockMark = vi.mocked(markMilestonesGenerated);
+const mockFindOrderByPage = vi.mocked(findOrderForStageNotificationByPageId);
 const mockCreate = vi.mocked(createMilestone);
 const mockHas = vi.mocked(orderHasMilestones);
 const mockListPages = vi.mocked(listOrderMilestonePages);
 const mockUpdateStatus = vi.mocked(updateMilestoneStatus);
+const mockFindReminders = vi.mocked(findMilestonesNeedingFittingReminder);
+const mockMarkReminded = vi.mocked(markFittingReminderSent);
+const mockSend = vi.mocked(sendEmailBestEffort);
 
 const from = new Date("2026-01-01T00:00:00Z");
 
@@ -292,12 +307,115 @@ describe("syncMilestoneStatuses", () => {
   });
 });
 
+describe("sendDueFittingReminders", () => {
+  function milestone(overrides = {}) {
+    return {
+      pageId: "m-fitting",
+      stage: "Fitting",
+      targetDate: "2026-01-08",
+      orderPageId: "order-1",
+      ...overrides,
+    };
+  }
+
+  // The service only reads `email` + `orderNumber` off the resolved order.
+  function orderNotification(overrides = {}) {
+    return {
+      pageId: "order-1",
+      orderNumber: "000002",
+      orderName: "Ada – Custom Dress",
+      email: "ada@example.com",
+      currentStage: "Sewing/Construction",
+      stages: ["Consultation", "Fitting", "Delivered"],
+      lastNotifiedStage: "",
+      ...overrides,
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    } as any;
+  }
+
+  beforeEach(() => {
+    mockMarkReminded.mockResolvedValue();
+    mockSend.mockResolvedValue();
+    delete process.env.PUBLIC_BASE_URL;
+  });
+
+  it("emails the customer for a due fitting milestone and marks it reminded", async () => {
+    process.env.PUBLIC_BASE_URL = "https://a3iceanddance.com/";
+    mockFindReminders.mockResolvedValue([milestone()]);
+    mockFindOrderByPage.mockResolvedValue(orderNotification());
+
+    const sent = await sendDueFittingReminders(from);
+
+    expect(sent).toBe(1);
+    expect(mockFindOrderByPage).toHaveBeenCalledWith("order-1");
+    expect(mockSend).toHaveBeenCalledTimes(1);
+    const message = mockSend.mock.calls[0][0];
+    expect(message.to).toBe("ada@example.com");
+    // Booking deep link (trailing slash stripped) points at the fitting flow.
+    expect(message.html).toContain(
+      "https://a3iceanddance.com/appointments?type=fitting",
+    );
+    expect(mockMarkReminded).toHaveBeenCalledWith("m-fitting");
+    delete process.env.PUBLIC_BASE_URL;
+  });
+
+  it("marks the milestone reminded without sending when the order has no email", async () => {
+    mockFindReminders.mockResolvedValue([milestone()]);
+    mockFindOrderByPage.mockResolvedValue(orderNotification({ email: "" }));
+
+    const sent = await sendDueFittingReminders(from);
+
+    expect(sent).toBe(0);
+    expect(mockSend).not.toHaveBeenCalled();
+    // Still marked, so an unreachable order isn't re-checked every night.
+    expect(mockMarkReminded).toHaveBeenCalledWith("m-fitting");
+  });
+
+  it("skips (and does not mark) a milestone whose order lookup throws, and isolates it", async () => {
+    mockFindReminders.mockResolvedValue([
+      milestone({ pageId: "bad", orderPageId: "bad-order" }),
+      milestone({ pageId: "good", orderPageId: "good-order" }),
+    ]);
+    mockFindOrderByPage.mockImplementation(async (pageId: string) => {
+      if (pageId === "bad-order") throw new Error("Notion 500");
+      return orderNotification({ pageId: "good-order" });
+    });
+
+    const sent = await sendDueFittingReminders(from);
+
+    expect(sent).toBe(1);
+    expect(logger.error).toHaveBeenCalledTimes(1);
+    expect(mockMarkReminded).toHaveBeenCalledWith("good");
+    expect(mockMarkReminded).not.toHaveBeenCalledWith("bad");
+  });
+
+  it("returns 0 (and logs) when the reminder query itself fails", async () => {
+    mockFindReminders.mockRejectedValue(new Error("Notion down"));
+
+    const sent = await sendDueFittingReminders(from);
+
+    expect(sent).toBe(0);
+    expect(mockSend).not.toHaveBeenCalled();
+    expect(mockMarkReminded).not.toHaveBeenCalled();
+    expect(logger.error).toHaveBeenCalledTimes(1);
+  });
+
+  it("does nothing when no fitting milestones are due", async () => {
+    mockFindReminders.mockResolvedValue([]);
+    expect(await sendDueFittingReminders(from)).toBe(0);
+    expect(mockSend).not.toHaveBeenCalled();
+  });
+});
+
 describe("reconcileMilestones", () => {
   beforeEach(() => {
     mockHas.mockResolvedValue(false);
     mockCreate.mockResolvedValue();
     mockMark.mockResolvedValue();
     mockUpdateStatus.mockResolvedValue();
+    mockFindReminders.mockResolvedValue([]);
+    mockMarkReminded.mockResolvedValue();
+    mockSend.mockResolvedValue();
   });
 
   it("runs generation then the status sync and combines their counts", async () => {
@@ -325,13 +443,34 @@ describe("reconcileMilestones", () => {
       { pageId: "m-1", stage: "Fitting", status: "Not Started" },
     ]);
 
+    mockFindReminders.mockResolvedValue([
+      {
+        pageId: "m-fitting",
+        stage: "Fitting",
+        targetDate: "2026-01-08",
+        orderPageId: "page-1",
+      },
+    ]);
+    mockFindOrderByPage.mockResolvedValue({
+      pageId: "page-1",
+      orderNumber: "000002",
+      orderName: "Ada – Custom Dress",
+      email: "ada@example.com",
+      currentStage: "Fitting",
+      stages: ["Consultation", "Fitting", "Delivered"],
+      lastNotifiedStage: "",
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    } as any);
+
     const result = await reconcileMilestones(from);
 
-    // Generation created 2 (Fitting, Delivered) for page-1; sync advanced 1.
+    // Generation created 2 (Fitting, Delivered) for page-1; sync advanced 1;
+    // one fitting reminder went out.
     expect(result).toEqual({
       ordersProcessed: 1,
       milestonesCreated: 2,
       milestonesUpdated: 1,
+      remindersSent: 1,
     });
   });
 });

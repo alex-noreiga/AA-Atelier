@@ -239,6 +239,83 @@ export function orderStageChangeEmail(
   };
 }
 
+// ---------------------------------------------------------------------------
+// Fitting reminder
+//
+// Sent to the customer when their order's auto-generated "Fitting" production
+// milestone is approaching (see services/fitting-reminder.ts + schedule.service).
+// Like the stage-change email its source isn't a `CreateXInput` — the reminder is
+// driven off the production schedule, so the caller hands this builder an
+// already-formatted struct. The CTA deep-links to the booking page's fitting flow.
+// ---------------------------------------------------------------------------
+
+/** The details needed to render a fitting-reminder email. */
+export interface FittingReminderEmailDetails {
+  email: string;
+  orderNumber: string;
+  /** The fitting milestone's target date (ISO yyyy-mm-dd), when known. */
+  targetDate?: string;
+  /** Absolute URL to the booking page's fitting flow
+   * (`/appointments?type=fitting`), when PUBLIC_BASE_URL is configured. */
+  bookingUrl?: string;
+}
+
+/** Sent to the customer when their order is nearing its fitting stage, nudging
+ * them to book (or confirm) their fitting appointment. */
+export function fittingReminderEmail(
+  details: FittingReminderEmailDetails,
+): EmailMessage {
+  const { orderNumber, targetDate, bookingUrl } = details;
+
+  const timingHtml = targetDate
+    ? `<p>Your custom item is on track for its fitting around <strong>${escapeHtml(targetDate)}</strong>.</p>`
+    : `<p>Your custom item is approaching its fitting stage.</p>`;
+  const ctaHtml = bookingUrl
+    ? `<p style="margin:28px 0;">
+         <a href="${encodeURI(bookingUrl)}" style="display:inline-block;background:#2b2622;color:#faf8f5;
+            text-decoration:none;padding:12px 24px;border-radius:2px;font-size:15px;">Book your fitting</a>
+       </p>
+       <p style="font-size:13px;color:#8a7f74;word-break:break-all;">Or paste this link
+          into your browser:<br/>${escapeHtml(bookingUrl)}</p>`
+    : "";
+
+  const html = layout(
+    "Time to book your fitting",
+    `<p>Hi there,</p>
+     ${timingHtml}
+     <p>A fitting lets us perfect the shape and fit of your garment before the final
+        finishing touches. Please book — or confirm — your fitting appointment at your
+        earliest convenience so we can keep your custom item on schedule.</p>
+     ${ctaHtml}
+     <p style="color:#8a7f74;margin:0;">Order number: <strong>${escapeHtml(orderNumber)}</strong></p>`,
+  );
+
+  const text = [
+    `Hi there,`,
+    ``,
+    targetDate
+      ? `Your custom item is on track for its fitting around ${targetDate}.`
+      : `Your custom item is approaching its fitting stage.`,
+    ``,
+    `A fitting lets us perfect the shape and fit of your garment before the final`,
+    `finishing touches. Please book — or confirm — your fitting appointment at your`,
+    `earliest convenience so we can keep your custom item on schedule.`,
+    ...(bookingUrl ? [``, `Book your fitting: ${bookingUrl}`] : []),
+    ``,
+    `Order number: ${orderNumber}`,
+    ``,
+    `Thank you,`,
+    `The ${ATELIER_NAME} team`,
+  ].join("\n");
+
+  return {
+    to: details.email,
+    subject: `Let's schedule your fitting (${orderNumber})`,
+    html,
+    text,
+  };
+}
+
 /** Acknowledgement sent to the customer after a contact-form submission. */
 export function contactAckEmail(input: CreateContactInput): EmailMessage {
   const firstName = input.name.trim().split(/\s+/)[0] || "there";

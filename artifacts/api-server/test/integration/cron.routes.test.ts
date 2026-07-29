@@ -27,6 +27,7 @@ describe("GET /api/cron/generate-milestones", () => {
       ordersProcessed: 2,
       milestonesCreated: 7,
       milestonesUpdated: 3,
+      remindersSent: 1,
     });
 
     const res = await request(app)
@@ -38,6 +39,7 @@ describe("GET /api/cron/generate-milestones", () => {
       ordersProcessed: 2,
       milestonesCreated: 7,
       milestonesUpdated: 3,
+      remindersSent: 1,
     });
     expect(mockGenerate).toHaveBeenCalledTimes(1);
   });
@@ -85,6 +87,7 @@ describe("GET /api/cron/generate-milestones/run (Notion button)", () => {
       ordersProcessed: 2,
       milestonesCreated: 7,
       milestonesUpdated: 0,
+      remindersSent: 0,
     });
 
     const res = await request(app).get(`${RUN}?secret=s3cret`);
@@ -101,6 +104,7 @@ describe("GET /api/cron/generate-milestones/run (Notion button)", () => {
       ordersProcessed: 0,
       milestonesCreated: 0,
       milestonesUpdated: 0,
+      remindersSent: 0,
     });
 
     const res = await request(app).get(`${RUN}?secret=s3cret`);
@@ -114,12 +118,27 @@ describe("GET /api/cron/generate-milestones/run (Notion button)", () => {
       ordersProcessed: 0,
       milestonesCreated: 0,
       milestonesUpdated: 4,
+      remindersSent: 0,
     });
 
     const res = await request(app).get(`${RUN}?secret=s3cret`);
 
     expect(res.status).toBe(200);
     expect(res.text).toContain("Refreshed the status of 4 existing milestones");
+  });
+
+  it("notes fitting reminders sent", async () => {
+    mockGenerate.mockResolvedValue({
+      ordersProcessed: 0,
+      milestonesCreated: 0,
+      milestonesUpdated: 0,
+      remindersSent: 2,
+    });
+
+    const res = await request(app).get(`${RUN}?secret=s3cret`);
+
+    expect(res.status).toBe(200);
+    expect(res.text).toContain("Sent 2 fitting reminders");
   });
 
   it("returns 401 (HTML) for a wrong secret and does not run", async () => {
