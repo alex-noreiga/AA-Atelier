@@ -5,14 +5,26 @@ const PORT = process.env.PORT ?? "3001";
 const BASE_URL = process.env.PLAYWRIGHT_BASE_URL ?? `http://localhost:${PORT}`;
 
 // Prefer an explicitly-provided browser, then the NixOS system Chromium (the
-// maintainer's local/remote env), and otherwise fall back to Playwright's own
-// managed browser (e.g. `playwright install chromium` in CI) by leaving it
-// unset. Forcing a nonexistent path would break every environment but the one
-// it was hardcoded for.
+// maintainer's local/remote env), then the Chromium a sandbox pre-installs
+// under PLAYWRIGHT_BROWSERS_PATH (e.g. Claude Code on the web), and otherwise
+// fall back to Playwright's own managed browser (e.g. `playwright install
+// chromium` in CI) by leaving it unset. Forcing a nonexistent path would break
+// every environment but the one it was hardcoded for.
 const NIX_CHROMIUM = "/run/current-system/sw/bin/chromium";
+// The `chromium` symlink under PLAYWRIGHT_BROWSERS_PATH is a stable alias to
+// whatever build the sandbox installed, so pointing at it sidesteps the
+// version-specific managed-browser lookup — which misses when the pre-installed
+// build doesn't match the pinned @playwright/test version. (A value of "0" is
+// Playwright's "store in node_modules" sentinel, not a directory, so skip it.)
+const browsersPath = process.env.PLAYWRIGHT_BROWSERS_PATH;
+const PREINSTALLED_CHROMIUM =
+  browsersPath && browsersPath !== "0" ? `${browsersPath}/chromium` : undefined;
 const chromiumPath =
   process.env.PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH ??
-  (existsSync(NIX_CHROMIUM) ? NIX_CHROMIUM : undefined);
+  (existsSync(NIX_CHROMIUM) ? NIX_CHROMIUM : undefined) ??
+  (PREINSTALLED_CHROMIUM && existsSync(PREINSTALLED_CHROMIUM)
+    ? PREINSTALLED_CHROMIUM
+    : undefined);
 
 // When PLAYWRIGHT_BASE_URL is set we assume the app is already being served
 // (CI against a deployment, or a manually-run `pnpm dev`). Otherwise Playwright
