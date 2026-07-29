@@ -12,6 +12,10 @@ import type { CreateContactInput } from "../notion/contact.blocks.js";
 import type { CreateNotifyInput } from "../notion/notify.blocks.js";
 import type { CreateNewsletterInput } from "../notion/newsletter.blocks.js";
 import type { CreateMeasurementChangeInput } from "../notion/measurement-change.blocks.js";
+import {
+  RETURN_REASON_LABELS,
+  type CreateReturnInput,
+} from "../notion/return-request.blocks.js";
 import type { CreateReviewInput } from "../notion/reviews.blocks.js";
 import type { EmailMessage } from "./client.js";
 
@@ -1107,6 +1111,69 @@ export function cancellationRequestNotificationEmail(
     replyTo: details.email,
     subject: `Cancellation requested — order ${details.orderNumber}`,
     html: internalLayout("Cancellation request", renderRowsHtml(fields)),
+    text: renderRowsText(fields),
+  };
+}
+
+/** Confirmation that a return/exchange request has been filed for the customer. */
+export function returnRequestConfirmationEmail(
+  input: CreateReturnInput,
+  orderNumber: string,
+): EmailMessage {
+  const kindWord = input.kind === "exchange" ? "exchange" : "return";
+
+  const html = layout(
+    `We've received your ${kindWord} request`,
+    `<p>Hi there,</p>
+     <p>Thank you — we've received your request to ${kindWord} order
+        <strong>${escapeHtml(orderNumber)}</strong>. Our team will review it and
+        be in touch with the next steps, including any return-shipping details.</p>`,
+  );
+
+  const text = [
+    `Hi there,`,
+    ``,
+    `Thank you — we've received your request to ${kindWord} order ${orderNumber}.`,
+    `Our team will review it and be in touch with the next steps, including any`,
+    `return-shipping details.`,
+    ``,
+    `Thank you,`,
+    `The ${ATELIER_NAME} team`,
+  ].join("\n");
+
+  return {
+    to: input.email,
+    subject: `We've received your ${kindWord} request (${orderNumber})`,
+    html,
+    text,
+  };
+}
+
+/** Notify the atelier of a new return/exchange request. */
+export function returnRequestNotificationEmail(
+  input: CreateReturnInput,
+  orderNumber: string,
+  to: string,
+): EmailMessage {
+  const kindLabel = input.kind === "exchange" ? "Exchange" : "Return";
+
+  const fields: Field[] = [
+    ["Order number", orderNumber],
+    ["Type", kindLabel],
+    ["Reason", RETURN_REASON_LABELS[input.reason]],
+    ...(input.items ? [["Item(s)", input.items] as Field] : []),
+    ...(input.kind === "exchange" && input.exchangeFor
+      ? [["Exchange for", input.exchangeFor] as Field]
+      : []),
+    ...(input.note ? [["Note", input.note] as Field] : []),
+    ["Email", input.email],
+  ];
+
+  return {
+    to,
+    replyTo: input.email,
+    subject: `${kindLabel} request — order ${orderNumber}`,
+    html: internalLayout(`${kindLabel} request`, renderRowsHtml(fields)),
     text: renderRowsText(fields),
   };
 }

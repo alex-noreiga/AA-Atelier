@@ -277,6 +277,53 @@ export interface NewNewsletterResponse {
   success: boolean;
 }
 
+/**
+ * Whether the customer wants a refund (return) or a swap (exchange).
+ */
+export type NewReturnRequestKind = typeof NewReturnRequestKind[keyof typeof NewReturnRequestKind];
+
+
+export const NewReturnRequestKind = {
+  return: 'return',
+  exchange: 'exchange',
+} as const;
+
+/**
+ * Why the customer is returning or exchanging the item.
+ */
+export type NewReturnRequestReason = typeof NewReturnRequestReason[keyof typeof NewReturnRequestReason];
+
+
+export const NewReturnRequestReason = {
+  wrong_size: 'wrong_size',
+  damaged: 'damaged',
+  not_as_expected: 'not_as_expected',
+  changed_mind: 'changed_mind',
+  other: 'other',
+} as const;
+
+/**
+ * A request to return or exchange a ready-to-wear shop order. The server verifies the email against the one on the order; the atelier reviews and actions accepted requests by hand (this endpoint never refunds or edits the order).
+ */
+export interface NewReturnRequest {
+  /** The email to verify against the one on the order. A request whose email doesn't match the order is rejected. */
+  email: string;
+  /** Whether the customer wants a refund (return) or a swap (exchange). */
+  kind: NewReturnRequestKind;
+  /** Why the customer is returning or exchanging the item. */
+  reason: NewReturnRequestReason;
+  /** Which piece(s) the request covers, in the customer's own words. Optional — the atelier can also read the order in Notion. */
+  items?: string;
+  /** For an exchange, the size/colour/piece the customer wants instead. Ignored for a return. */
+  exchangeFor?: string;
+  /** Optional free-text note with anything else the atelier should know. */
+  note?: string;
+}
+
+export interface NewReturnResponse {
+  received: boolean;
+}
+
 export interface SizeOption {
   /** A size band, e.g. "Adult M". */
   name: string;

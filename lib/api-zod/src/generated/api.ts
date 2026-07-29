@@ -373,6 +373,28 @@ export const CreateShopOrderCancellationRequestResponse = zod.object({
 
 
 /**
+ * Files a customer's request to return or exchange a ready-to-wear shop order. The customer is verified against the email on the order. Accepted requests land as a tagged row in the Notion contact-messages inbox for the atelier to review and action — this endpoint does not itself refund or edit the order.
+ * @summary Request a return or exchange for a shop order
+ */
+export const CreateReturnRequestParams = zod.object({
+  "orderNumber": zod.coerce.string()
+})
+
+export const CreateReturnRequestBody = zod.object({
+  "email": zod.string().email().describe('The email to verify against the one on the order. A request whose email doesn\'t match the order is rejected.'),
+  "kind": zod.enum(['return', 'exchange']).describe('Whether the customer wants a refund (return) or a swap (exchange).'),
+  "reason": zod.enum(['wrong_size', 'damaged', 'not_as_expected', 'changed_mind', 'other']).describe('Why the customer is returning or exchanging the item.'),
+  "items": zod.string().optional().describe('Which piece(s) the request covers, in the customer\'s own words. Optional — the atelier can also read the order in Notion.'),
+  "exchangeFor": zod.string().optional().describe('For an exchange, the size\/colour\/piece the customer wants instead. Ignored for a return.'),
+  "note": zod.string().optional().describe('Optional free-text note with anything else the atelier should know.')
+}).describe('A request to return or exchange a ready-to-wear shop order. The server verifies the email against the one on the order; the atelier reviews and actions accepted requests by hand (this endpoint never refunds or edits the order).')
+
+export const CreateReturnRequestResponse = zod.object({
+  "received": zod.boolean()
+})
+
+
+/**
  * Returns the appointment types a customer can book — each with its duration, the staff who offer it, and the locations it's available in — plus the atelier's booking timezone. Drives the booking form's pickers.
  * @summary List bookable appointment types
  */

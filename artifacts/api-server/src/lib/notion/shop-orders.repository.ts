@@ -82,12 +82,62 @@ function readNumber(prop: NotionReadProperty | undefined): number | null {
 
 function readEmail(prop: NotionReadProperty | undefined): string {
   if (prop?.type !== "email") return "";
-  return prop.email ?? "";
+  return (prop.email ?? "").trim();
 }
 
 function readCheckbox(prop: NotionReadProperty | undefined): boolean {
   if (prop?.type !== "checkbox") return false;
   return prop.checkbox;
+}
+
+/** What a shop-order-scoped gate needs: the email to verify the requester
+ * against. Kept separate from {@link ShopOrderRecord} (the public tracking view)
+ * so the email is never returned by the status lookup — the shop-order analogue
+ * of the custom order's {@link findOrderVerification}. */
+export interface ShopOrderVerification {
+  email: string;
+}
+
+/**
+ * Look up a shop order for a gated, email-verified action (a return/exchange
+ * request). Filters on the `Order Number` rich_text property (same `rich_text:
+ * { equals }` gotcha as the tracking lookup) and returns the stored
+ * `Customer Email`, or null when the number is blank or unknown. A legacy order
+ * with no stored email returns an empty string, which the caller treats as
+ * "unverifiable" rather than a mismatch.
+ */
+export async function findShopOrderVerification(
+  orderNumber: string,
+  client: NotionClient = getShopOrdersNotionClient(),
+): Promise<ShopOrderVerification | null> {
+  assertConfigured(client);
+
+  const trimmed = orderNumber.trim();
+  if (!trimmed) return null;
+
+  const response = await client.fetch(
+    `/v1/databases/${client.databaseId}/query`,
+    {
+      method: "POST",
+      body: JSON.stringify({
+        filter: {
+          property: SHOP_ORDER_NUMBER_PROPERTY,
+          rich_text: { equals: trimmed },
+        },
+        page_size: 1,
+      }),
+    },
+  );
+
+  if (!response.ok) {
+    throw new Error(`Notion query failed with status ${response.status}`);
+  }
+
+  const data = (await response.json()) as NotionLookupResponse;
+  const page = data.results[0];
+  if (!page) return null;
+
+  return { email: readEmail(page.properties[SHOP_ORDER_EMAIL_PROPERTY]) };
 }
 
 /** Whether an order has already been recorded for this Stripe session. */

@@ -2,6 +2,7 @@ import type { ShopOrderStatus } from "@workspace/api-client-react";
 import { formatPrice } from "@/lib/format";
 import { CancellationRequestDialog } from "@/components/cancellation-request-dialog";
 import { ArrowRight } from "lucide-react";
+import { ReturnExchangeDialog } from "@/components/return-exchange-dialog";
 
 /**
  * The "order found" body for a ready-to-wear shop order: header plus the
@@ -104,10 +105,13 @@ export function ShopOrderResult({
 
       <div className="mt-16 flex flex-col items-center gap-6">
         {!isCancelled && (
-          <CancellationRequestDialog
-            orderNumber={order.orderNumber}
-            variant="shop"
-          />
+          <>
+            <CancellationRequestDialog
+              orderNumber={order.orderNumber}
+              variant="shop"
+            />
+            <ReturnExchangeDialog orderNumber={order.orderNumber} />
+          </>
         )}
         <button
           onClick={onReset}

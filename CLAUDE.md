@@ -150,6 +150,17 @@ Express app (artifacts/api-server)  ──►  Notion REST API (orders database)
   │                                  tagged Request type = "Cancellation". Gated
   │                                  on email match only (no delivered gate); the
   │                                  atelier reviews + refunds via the button below
+  ├─ POST /api/shop-orders/:orderNumber/return-requests
+  │                                → files a customer's return/exchange request
+  │                                  for a shop order in the SAME "Website Contact
+  │                                  Messages" database, tagged Request type =
+  │                                  "Return / exchange" (kind + reason + item(s)
+  │                                  + optional exchange-for + note). Gated: the
+  │                                  email must match the shop order (403), legacy
+  │                                  orders with no stored email are accepted but
+  │                                  flagged unverified. Never refunds/edits the
+  │                                  order — the atelier reviews + actions it by
+  │                                  hand (Approach A) + sends a confirmation email
   ├─ POST /api/notify              → files a back-in-stock request (email + item
   │                                  + optional size) in that SAME contact
   │                                  database, tagged Request type = "Back in
@@ -282,7 +293,8 @@ The customer-notification POST endpoints (`/api/orders`, `/api/contact`,
 `/api/notify`, `/api/newsletter`, `/api/appointments`,
 `/api/appointments/reschedule`, `/api/appointments/cancel`,
 `/api/orders/:n/measurement-change-requests`, `/api/orders/:n/reviews`,
-`/api/orders/:n/cancellation-requests`, `/api/shop-orders/:n/cancellation-requests`)
+`/api/orders/:n/cancellation-requests`, `/api/shop-orders/:n/cancellation-requests`,
+`/api/shop-orders/:n/return-requests`)
 each send a customer email via **Resend** as
 a **best-effort** side effect after the Notion write: the send is logged-and-swallowed
 on failure and never changes the response status (see the Resend adapter in
@@ -433,28 +445,33 @@ two hard-won lessons captured in `.agents/memory/`:
    rule — `SIZED_CATEGORIES` — but it is now Notion-driven via the Product
    Categories relation, so no name is left to drift.)
 
-3. **The contact database has five writers.** "Website Contact Messages" holds
+3. **The contact database has six writers.** "Website Contact Messages" holds
    contact-form messages (`contact.blocks.ts`), the shop's back-in-stock requests
    (`notify.blocks.ts`), order measurement-change requests
    (`measurement-change.blocks.ts`), marketing newsletter opt-ins
-   (`newsletter.blocks.ts`), and order cancellation requests
-   (`cancellation.blocks.ts`), separated by the **Request type** select
+   (`newsletter.blocks.ts`), order cancellation requests
+   (`cancellation.blocks.ts`), and shop-order return/exchange requests
+   (`return-request.blocks.ts`), separated by the **Request type** select
    (`Inquiry` / `Back in stock` / `Measurement update` / `Newsletter` /
-   `Cancellation`). A restock
-   request carries **Item** and **Size** as real properties, and a measurement-change
-   request carries the order number + requested measurements, so the atelier can
-   filter the inbox by request type rather than reading it out of free text. A
-   newsletter opt-in needs no property of its own — email + the shared
-   Subject/Stage/Request type carry it, with its `source` (footer / order form)
-   folded into the subject, the way notify folds item/size — so the database needs
-   nothing added for it. The property names these writers share are exported from
-   `contact.blocks.ts` and imported by `notify.blocks.ts` /
-   `measurement-change.blocks.ts` / `newsletter.blocks.ts` — keep it that way so they
-   can't drift. All four also best-effort **link to the Client CRM** (the shared
-   `Client` relation — `CONTACT_CLIENT_PROPERTY`), via the same `upsertClientByEmail`
-   the order flow uses: a contact inquiry / back-in-stock request / newsletter opt-in
-   creates a `Lead`, a measurement change reuses the order's existing (`Active`)
-   client. See `.agents/memory/notion-p2-duplicates.md`.
+   `Cancellation` / `Return / exchange`). A restock request carries **Item** and
+   **Size** as real properties, a measurement-change request carries the order
+   number + requested measurements, and a return/exchange request carries the shop
+   order number + kind + reason (and reuses the shared **Item** property for the
+   piece), so the atelier can filter the inbox by request type rather than reading
+   it out of free text. A newsletter opt-in needs no property of its own — email +
+   the shared Subject/Stage/Request type carry it, with its `source` (footer /
+   order form) folded into the subject, the way notify folds item/size — so the
+   database needs nothing added for it. The property names these writers share are
+   exported from `contact.blocks.ts` and imported by `notify.blocks.ts` /
+   `measurement-change.blocks.ts` / `newsletter.blocks.ts` /
+   `cancellation.blocks.ts` / `return-request.blocks.ts` — keep it that way so they
+   can't drift (the return writer also reuses `NOTIFY_ITEM_PROPERTY` from
+   `notify.blocks.ts`). All six also best-effort **link to the Client CRM** (the
+   shared `Client` relation — `CONTACT_CLIENT_PROPERTY`), via the same
+   `upsertClientByEmail` the order flow uses: a contact inquiry / back-in-stock
+   request / newsletter opt-in creates a `Lead`, a measurement change / cancellation
+   / return reuses the order's existing (`Active`) client. See
+   `.agents/memory/notion-p2-duplicates.md`.
 
    The newsletter opt-in is the marketing counterpart to those transactional
    captures (roadmap "Newsletter & mailing-list opt-in"): `POST /api/newsletter`
@@ -1765,6 +1782,7 @@ and in the maintainer's env without edits.
 | Change the back-in-stock notify dialog                 | `artifacts/web-app/src/components/notify-dialog.tsx` + `services/notify.service.ts` + `lib/notion/notify.*` (writes to the **contact** database — see below)                                                                                                                                                                                                                                                                                                                                                                                         |
 | Change shop checkout / payments                        | `artifacts/web-app/src/lib/cart.tsx` + `components/cart-drawer.tsx` + `components/add-to-cart.tsx` (frontend); `api-server/src/services/checkout.service.ts` + `routes/checkout.ts` + `routes/stripe-webhook.ts` + `lib/stripe/*` + `lib/notion/shop-orders.*` (backend)                                                                                                                                                                                                                                                                             |
 | Change shop-order tracking                             | `artifacts/web-app/src/components/shop-order-result.tsx` (rendered by `pages/track.tsx`; + order number on `pages/shop-success.tsx`); `api-server/src/services/shop-orders.service.ts` + `routes/shop-orders.ts` + `lib/notion/shop-orders.{blocks,repository}.ts` + `services/checkout.service.ts` (mints the number)                                                                                                                                                                                                                               |
+| Change the return / exchange request                   | `artifacts/web-app/src/components/return-exchange-dialog.tsx` (opened from `components/shop-order-result.tsx`); `api-server/src/services/return-request.service.ts` + `routes/shop-orders.ts` (`POST /shop-orders/:n/return-requests`) + `lib/notion/return-request.{blocks,repository}.ts` (writes to the **contact** database) + `findShopOrderVerification` in `lib/notion/shop-orders.repository.ts`; policy copy in `pages/shipping-returns.tsx`                                                                                                |
 | Change the footer / legal pages                        | `artifacts/web-app/src/components/footer.tsx` (global, in `App.tsx`) + `pages/{privacy,terms,shipping-returns}.tsx` + `components/legal-page.tsx`; shared studio contact details in `lib/contact-info.ts`                                                                                                                                                                                                                                                                                                                                            |
 | Change custom-order payments (deposits + balance)      | `artifacts/web-app/src/components/custom-order-result.tsx` (`DepositsSection`, rendered by `pages/track.tsx`) + `pages/invoice.tsx`; `api-server/src/services/invoice.service.ts` (`createPaymentCheckout`/`recordPayment`) + `routes/orders.ts` (`POST /orders/:n/payments/:stage`) + `lib/notion/invoice.{schema,repository}.ts` + `routes/stripe-webhook.ts`                                                                                                                                                                                      |
 | Change invoice line-item generation (from costing)     | `api-server/src/services/invoice-generator.service.ts` + `routes/invoice-generator.ts` (button, `?order=`) + `lib/notion/costing.{schema,repository}.ts` + `lib/notion/invoice-line-items.blocks.ts` + `createInvoiceLineItem`/`setInvoiceTitle` in `lib/notion/invoice.repository.ts`                                                                                                                                                                                                                                                               |
