@@ -5,6 +5,7 @@
 
 import type Stripe from "stripe";
 import { getShopOrdersNotionClient, type NotionClient } from "./client.js";
+import { normalizeEmail } from "../email.js";
 import {
   buildShopOrderProperties,
   buildShopOrderPageBlocks,
@@ -190,7 +191,7 @@ export async function findShopOrdersByEmail(
 ): Promise<ShopOrderRecord[]> {
   assertConfigured(client);
 
-  const trimmed = email.trim();
+  const trimmed = normalizeEmail(email);
   if (!trimmed) return [];
 
   const orders: ShopOrderRecord[] = [];

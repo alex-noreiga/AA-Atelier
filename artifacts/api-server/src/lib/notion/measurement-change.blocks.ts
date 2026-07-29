@@ -23,6 +23,7 @@ import {
   CONTACT_TYPE_PROPERTY,
   contactClientRelation,
 } from "./contact.blocks.js";
+import { normalizeEmail } from "../email.js";
 
 /** The "Request type" value that marks a row as a measurement-change request. */
 export const MEASUREMENT_CHANGE_REQUEST_TYPE = "Measurement update";
@@ -81,7 +82,7 @@ export function buildMeasurementChangeProperties(
       title: [{ text: { content: `Measurement update: ${row.orderNumber}` } }],
     },
     [CONTACT_EMAIL_PROPERTY]: {
-      email: row.request.email,
+      email: normalizeEmail(row.request.email),
     },
     [CONTACT_STAGE_PROPERTY]: {
       select: { name: CONTACT_DEFAULT_STAGE },

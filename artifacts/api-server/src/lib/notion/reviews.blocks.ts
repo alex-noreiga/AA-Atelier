@@ -11,6 +11,7 @@
 
 import type { z } from "zod";
 import type { CreateOrderReviewBody } from "@workspace/api-zod";
+import { normalizeEmail } from "../email.js";
 
 // Live-schema property names (a Notion rename is a one-line change here).
 export const REVIEW_TITLE_PROPERTY = "Title"; // title
@@ -89,7 +90,7 @@ export function buildReviewProperties(
       rich_text: [{ text: { content: orderNumber } }],
     },
     [REVIEW_EMAIL_PROPERTY]: {
-      email: request.email,
+      email: normalizeEmail(request.email),
     },
     [REVIEW_CONSENT_PROPERTY]: {
       checkbox: request.consentToPublish ?? false,

@@ -7,6 +7,7 @@
 
 import { getNotionClient, type NotionClient } from "./client.js";
 import { buildOrderProperties, buildOrderPageBlocks } from "./orders.blocks.js";
+import { normalizeEmail } from "../email.js";
 import {
   ORDER_NUMBER_PROPERTY,
   ORDER_EMAIL_PROPERTY,
@@ -173,7 +174,7 @@ export async function findOrdersByEmail(
 ): Promise<OrderSummary[]> {
   assertConfigured(client);
 
-  const trimmed = email.trim();
+  const trimmed = normalizeEmail(email);
   if (!trimmed) return [];
 
   const stages = await fetchLiveOrderStages(client);
