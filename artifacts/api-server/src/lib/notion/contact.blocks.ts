@@ -6,6 +6,7 @@
 
 import type { z } from "zod";
 import type { CreateContactMessageBody } from "@workspace/api-zod";
+import { normalizeEmail } from "../email.js";
 
 // Live-schema property names (a Notion rename is a one-line change here). The
 // exported ones are shared with `notify.blocks.ts`: the shop's back-in-stock
@@ -58,7 +59,7 @@ export function buildContactProperties(
       rich_text: [{ text: { content: data.name } }],
     },
     [CONTACT_EMAIL_PROPERTY]: {
-      email: data.email,
+      email: normalizeEmail(data.email),
     },
     [CONTACT_MESSAGE_PROPERTY]: {
       rich_text: [{ text: { content: data.message } }],

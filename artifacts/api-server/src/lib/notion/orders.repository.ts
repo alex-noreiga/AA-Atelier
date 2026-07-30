@@ -7,6 +7,7 @@
 
 import { getNotionClient, type NotionClient } from "./client.js";
 import { buildOrderProperties, buildOrderPageBlocks } from "./orders.blocks.js";
+import { normalizeEmail } from "../email.js";
 import {
   ORDER_NUMBER_PROPERTY,
   ORDER_EMAIL_PROPERTY,
@@ -24,6 +25,7 @@ import {
   extractRush,
   extractCancelled,
   extractOrderEmail,
+  extractMeasurements,
   extractLastNotifiedStage,
   type CreateOrderInput,
   type NotionDatabaseSchema,
@@ -176,7 +178,7 @@ export async function findOrdersByEmail(
 ): Promise<OrderSummary[]> {
   assertConfigured(client);
 
-  const trimmed = email.trim();
+  const trimmed = normalizeEmail(email);
   if (!trimmed) return [];
 
   const stages = await fetchLiveOrderStages(client);
@@ -211,12 +213,14 @@ export async function findOrdersByEmail(
       const orderNumber = extractOrderNumber(page);
       if (!orderNumber) continue;
       const estimatedCompletion = extractDueDate(page);
+      const measurements = extractMeasurements(page);
       summaries.push({
         orderNumber,
         orderName: extractOrderName(page),
         currentStage: extractCurrentStage(page),
         stages,
         ...(estimatedCompletion !== undefined ? { estimatedCompletion } : {}),
+        ...(measurements !== undefined ? { measurements } : {}),
       });
     }
 

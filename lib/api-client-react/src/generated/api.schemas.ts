@@ -582,6 +582,30 @@ export interface MagicLinkRequest {
 }
 
 /**
+ * The unit the measurement values are expressed in.
+ */
+export type AccountMeasurementsUnit = typeof AccountMeasurementsUnit[keyof typeof AccountMeasurementsUnit];
+
+
+export const AccountMeasurementsUnit = {
+  inches: 'inches',
+  cm: 'cm',
+} as const;
+
+/**
+ * The measurements on file for a custom order, read from the order's Notion properties. Absent when the customer chose to have measurements taken at a fitting, or for orders placed before measurements were stored as readable properties (those values remain only in the order's page body). Individual values may be absent for a partially-filled order.
+ */
+export interface AccountMeasurements {
+  /** The unit the measurement values are expressed in. */
+  unit: AccountMeasurementsUnit;
+  waist?: number;
+  bust?: number;
+  hips?: number;
+  height?: number;
+  bodyGirth?: number;
+}
+
+/**
  * A custom order as shown on the account dashboard (links out to the full tracking + invoice views).
  */
 export interface AccountOrderSummary {
@@ -592,6 +616,7 @@ export interface AccountOrderSummary {
   stages: string[];
   /** The order's target completion date (its Due Date) as an ISO date (yyyy-mm-dd). A pass-through string (no format: date). Absent until the atelier sets one. */
   estimatedCompletion?: string;
+  measurements?: AccountMeasurements;
 }
 
 /**
@@ -605,6 +630,45 @@ export interface AccountShopOrderSummary {
   total?: number;
 }
 
+export type AccountAppointmentSummaryStatus = typeof AccountAppointmentSummaryStatus[keyof typeof AccountAppointmentSummaryStatus];
+
+
+export const AccountAppointmentSummaryStatus = {
+  confirmed: 'confirmed',
+  cancelled: 'cancelled',
+} as const;
+
+export type AccountAppointmentSummaryLocation = typeof AccountAppointmentSummaryLocation[keyof typeof AccountAppointmentSummaryLocation];
+
+
+export const AccountAppointmentSummaryLocation = {
+  'in-person': 'in-person',
+  virtual: 'virtual',
+} as const;
+
+/**
+ * An upcoming appointment as shown on the account dashboard. Mirrors AppointmentDetails and additionally carries a signed manage token so the dashboard can reschedule or cancel it in place through the existing appointment-manage endpoints (no separate manage-link navigation needed).
+ */
+export interface AccountAppointmentSummary {
+  status: AccountAppointmentSummaryStatus;
+  /** IANA timezone the appointment's times are expressed in. */
+  timezone: string;
+  confirmationCode: string;
+  typeId: string;
+  typeName: string;
+  staff: string;
+  location: AccountAppointmentSummaryLocation;
+  locationLabel: string;
+  start: string;
+  end: string;
+  /** The Google Meet link for a virtual appointment, when one exists. */
+  meetingUrl?: string;
+  /** Whether the appointment can still be rescheduled or cancelled — false once it has started or been cancelled. */
+  canModify: boolean;
+  /** A signed token (the same one the confirmation email's manage link carries) authorizing reschedule/cancel of this specific appointment via the appointment-manage endpoints. */
+  manageToken: string;
+}
+
 /**
  * Everything tied to the signed-in customer's email — the data the account dashboard renders.
  */
@@ -615,6 +679,8 @@ export interface AccountOverview {
   customOrders: AccountOrderSummary[];
   /** The customer's ready-to-wear shop orders. Empty when none match the signed-in email (older shop orders without an order number are omitted). */
   shopOrders: AccountShopOrderSummary[];
+  /** The customer's upcoming appointments, read live from Google Calendar by the email stamped on each booking, soonest first. Empty when none are upcoming, when the calendar integration isn't configured, or (a best-effort read) when the calendar can't be reached. Bookings made before the customer email was stamped on the event are not listed. */
+  appointments: AccountAppointmentSummary[];
 }
 
 export type GetAppointmentAvailabilityParams = {

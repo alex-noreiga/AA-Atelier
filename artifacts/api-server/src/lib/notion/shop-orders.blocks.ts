@@ -10,6 +10,8 @@
 
 import type Stripe from "stripe";
 
+import { normalizeEmail } from "../email.js";
+
 // Live-schema property names (a Notion rename is a one-line change here).
 export const SHOP_ORDER_TITLE_PROPERTY = "Order Name"; // title
 export const SHOP_ORDER_NUMBER_PROPERTY = "Order Number"; // rich_text
@@ -136,7 +138,7 @@ export function buildShopOrderProperties(
     };
   }
   if (email) {
-    properties[SHOP_ORDER_EMAIL_PROPERTY] = { email };
+    properties[SHOP_ORDER_EMAIL_PROPERTY] = { email: normalizeEmail(email) };
   }
   if (name) {
     properties[SHOP_ORDER_NAME_PROPERTY] = {

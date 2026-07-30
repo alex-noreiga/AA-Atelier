@@ -21,6 +21,7 @@ import {
   CONTACT_SUBJECT_PROPERTY,
   contactClientRelation,
 } from "./contact.blocks.js";
+import { normalizeEmail } from "../email.js";
 
 // Shared with the other writers to this database (imported from contact.blocks
 // so they can't drift). "Request type" is what separates them in the inbox.
@@ -52,7 +53,7 @@ export function buildNewsletterProperties(
       title: [{ text: { content: subject } }],
     },
     [CONTACT_EMAIL_PROPERTY]: {
-      email: data.email,
+      email: normalizeEmail(data.email),
     },
     [CONTACT_STAGE_PROPERTY]: {
       select: { name: CONTACT_DEFAULT_STAGE },

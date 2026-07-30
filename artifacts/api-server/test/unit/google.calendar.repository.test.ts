@@ -15,6 +15,7 @@ import {
   cancelCalendarEvent,
   getScheduleConfig,
   listBusyInRange,
+  listUpcomingAppointmentsByEmail,
   type BookedAppointment,
 } from "../../src/lib/google/calendar.repository.js";
 import {
@@ -300,5 +301,72 @@ describe("cancelCalendarEvent", () => {
     await expect(
       cancelCalendarEvent("Alexandra", "gone", client),
     ).resolves.toBeUndefined();
+  });
+});
+
+describe("listUpcomingAppointmentsByEmail", () => {
+  it("queries each staff calendar by the aptEmail property, merging + sorting by start", async () => {
+    mockSchedule.mockResolvedValue({
+      weeklyHours: [],
+      calendars: new Map([
+        ["Alexandra", "alexandra@atelier.test"],
+        ["Alayna", "alayna@atelier.test"],
+      ]),
+    });
+    const client = fakeClient((subject) =>
+      subject === "alexandra@atelier.test"
+        ? jsonResponse({
+            items: [
+              {
+                id: "evt-late",
+                status: "confirmed",
+                start: { dateTime: "2026-07-25T14:00:00Z" },
+                end: { dateTime: "2026-07-25T15:00:00Z" },
+                extendedProperties: {
+                  private: { aptType: "fitting", aptEmail: "ada@example.com" },
+                },
+              },
+            ],
+          })
+        : jsonResponse({
+            items: [
+              {
+                id: "evt-early",
+                status: "confirmed",
+                start: { dateTime: "2026-07-20T09:00:00Z" },
+                end: { dateTime: "2026-07-20T09:30:00Z" },
+                extendedProperties: {
+                  private: {
+                    aptType: "consultation",
+                    aptEmail: "ada@example.com",
+                  },
+                },
+              },
+            ],
+          }),
+    );
+
+    const result = await listUpcomingAppointmentsByEmail(
+      "ada@example.com",
+      client,
+    );
+
+    // Merged across both calendars and sorted by start (early before late).
+    expect(result.map((r) => r.event.id)).toEqual(["evt-early", "evt-late"]);
+    expect(result.map((r) => r.staff)).toEqual(["Alayna", "Alexandra"]);
+    // The list is filtered server-side by our aptEmail private property.
+    const firstPath = client.calls[0].path;
+    expect(firstPath).toContain("/calendars/alexandra%40atelier.test/events?");
+    expect(firstPath).toContain(
+      "privateExtendedProperty=aptEmail%3Dada%40example.com",
+    );
+    expect(firstPath).toContain("singleEvents=true");
+    expect(firstPath).toContain("timeMin=");
+  });
+
+  it("returns [] for a blank email without touching the calendar", async () => {
+    const client = fakeClient(() => jsonResponse({ items: [] }));
+    expect(await listUpcomingAppointmentsByEmail("  ", client)).toEqual([]);
+    expect(client.calls).toHaveLength(0);
   });
 });

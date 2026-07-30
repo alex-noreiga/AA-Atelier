@@ -5,6 +5,7 @@
  * API specification
  * OpenAPI spec version: 0.1.0
  */
+import type { AccountAppointmentSummary } from './accountAppointmentSummary';
 import type { AccountOrderSummary } from './accountOrderSummary';
 import type { AccountShopOrderSummary } from './accountShopOrderSummary';
 
@@ -18,4 +19,6 @@ export interface AccountOverview {
   customOrders: AccountOrderSummary[];
   /** The customer's ready-to-wear shop orders. Empty when none match the signed-in email (older shop orders without an order number are omitted). */
   shopOrders: AccountShopOrderSummary[];
+  /** The customer's upcoming appointments, read live from Google Calendar by the email stamped on each booking, soonest first. Empty when none are upcoming, when the calendar integration isn't configured, or (a best-effort read) when the calendar can't be reached. Bookings made before the customer email was stamped on the event are not listed. */
+  appointments: AccountAppointmentSummary[];
 }
