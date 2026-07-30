@@ -177,8 +177,8 @@ What was applied here:
 - **#8 supplier — FINISHED.** `materials inventory` was already relation-only (no
   free-text `Supplier`), and `Supplier directory.Materials tracked` was already a
   rollup. Remaining work was on **`material intake`**: linked the 6 rows that had a
-  typed `Supplier` but no relation (5 → *Fabric Wholesale Direct*, 1 → a new
-  *Hobby Lobby* directory row), verified zero rows had text-without-relation, then
+  typed `Supplier` but no relation (5 → _Fabric Wholesale Direct_, 1 → a new
+  _Hobby Lobby_ directory row), verified zero rows had text-without-relation, then
   **dropped the free-text `Supplier` column**. `material intake` now carries only
   the `Supplier Directory` relation.
 - **Payment Status formula — FIXED.** The `invoices & payments."Payment Status"`
@@ -191,7 +191,7 @@ What was applied here:
   Added `lib/email.ts` `normalizeEmail` (trim + lowercase), applied at every Notion
   email **write** (orders, shop orders, reviews, and the four contact-DB writers)
   and every email **lookup** (`findOrdersByEmail`, `findShopOrdersByEmail`, CRM
-  upsert). Identity gates already compared case-insensitively. Canonicalizes *new*
+  upsert). Identity gates already compared case-insensitively. Canonicalizes _new_
   data; existing mixed-case rows would need a one-time backfill.
 - **Stage vs Fulfilment (#—, Custom Orders):** decided "keep both, redefine the
   boundary." No code change — see `order-stage-vs-fulfilment.md`.
