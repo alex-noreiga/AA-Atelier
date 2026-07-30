@@ -17,13 +17,13 @@ import {
   authConfigured,
   APPOINTMENT_MANAGE_TTL_SECONDS,
 } from "../lib/auth/tokens.js";
+import type { AppointmentTypeDef } from "../lib/appointments/catalog.js";
 import {
-  getAppointmentType,
-  isAppointmentLocation,
-  LOCATION_LABELS,
-  type AppointmentLocation,
-  type AppointmentTypeDef,
-} from "../lib/appointments/catalog.js";
+  mapEventToDetails,
+  resolveEventType,
+  locationFromEvent,
+  type AppointmentManageDetails,
+} from "../lib/appointments/event-details.js";
 import { computeSlots } from "../lib/appointments/availability.js";
 import {
   addCalendarDays,
@@ -42,9 +42,6 @@ import {
   getCalendarEvent,
   updateCalendarEvent,
   cancelCalendarEvent,
-  EVENT_PROP_TYPE,
-  EVENT_PROP_LOCATION,
-  EVENT_PROP_CONFIRMATION,
   EVENT_PROP_EMAIL,
   EVENT_PROP_NAME,
   type CalendarEventDetails,
@@ -96,22 +93,6 @@ export function buildManageUrl(
   return `${base}/appointments/manage?token=${encodeURIComponent(token)}`;
 }
 
-/** The appointment's current state, shaped for the `AppointmentDetails` contract. */
-export interface AppointmentManageDetails {
-  status: "confirmed" | "cancelled";
-  confirmationCode: string;
-  typeId: string;
-  typeName: string;
-  staff: string;
-  location: AppointmentLocation;
-  locationLabel: string;
-  start: Date;
-  end: Date;
-  timezone: string;
-  meetingUrl?: string;
-  canModify: boolean;
-}
-
 /** Resolved handle from a valid manage token. */
 interface ManageHandle {
   email: string;
@@ -135,46 +116,16 @@ function resolveToken(token: string): ManageHandle {
 }
 
 /** The catalog type an event was booked as, or a 400 if it's unrecognizable
- * (e.g. a legacy event missing our extended properties). */
+ * (e.g. a legacy event missing our extended properties). The list view tolerates
+ * such events (skips them); a specific manage action can't, so it errors. */
 function typeFromEvent(event: CalendarEventDetails): AppointmentTypeDef {
-  const typeId = event.extended[EVENT_PROP_TYPE];
-  const type = typeId ? getAppointmentType(typeId) : undefined;
+  const type = resolveEventType(event);
   if (!type) {
     throw new BadRequestError(
       "This appointment can't be changed online. Please contact us.",
     );
   }
   return type;
-}
-
-function locationFromEvent(event: CalendarEventDetails): AppointmentLocation {
-  const location = event.extended[EVENT_PROP_LOCATION];
-  return location && isAppointmentLocation(location) ? location : "in-person";
-}
-
-/** Map a live calendar event to the manage DTO. */
-function toDetails(
-  event: CalendarEventDetails,
-  staff: string,
-  type: AppointmentTypeDef,
-  location: AppointmentLocation,
-): AppointmentManageDetails {
-  const cancelled = event.status === "cancelled";
-  const inFuture = event.start.getTime() > Date.now();
-  return {
-    status: cancelled ? "cancelled" : "confirmed",
-    confirmationCode: event.extended[EVENT_PROP_CONFIRMATION] ?? "",
-    typeId: type.id,
-    typeName: type.name,
-    staff,
-    location,
-    locationLabel: LOCATION_LABELS[location],
-    start: event.start,
-    end: event.end,
-    timezone: appointmentTimezone(),
-    ...(event.meetingUrl ? { meetingUrl: event.meetingUrl } : {}),
-    canModify: !cancelled && inFuture,
-  };
 }
 
 /** Email/notification details reconstructed from the event (phone/notes aren't
@@ -212,7 +163,7 @@ export async function getAppointmentForManage(
   }
   const type = typeFromEvent(event);
   const location = locationFromEvent(event);
-  return toDetails(event, handle.staff, type, location);
+  return mapEventToDetails(event, handle.staff, type, location);
 }
 
 /**
@@ -298,7 +249,7 @@ export async function rescheduleAppointment(
     start: match.start,
     end: match.end,
   };
-  const details = toDetails(updated, handle.staff, type, location);
+  const details = mapEventToDetails(updated, handle.staff, type, location);
 
   const from = fromAddress("appointments");
   const manageUrl = buildManageUrl(handle.email, handle.eventId, handle.staff);
@@ -330,7 +281,7 @@ export async function cancelAppointment(token: string): Promise<void> {
   const type = typeFromEvent(event);
   const location = locationFromEvent(event);
   const timeZone = appointmentTimezone();
-  const details = toDetails(event, handle.staff, type, location);
+  const details = mapEventToDetails(event, handle.staff, type, location);
 
   await cancelCalendarEvent(handle.staff, handle.eventId);
 

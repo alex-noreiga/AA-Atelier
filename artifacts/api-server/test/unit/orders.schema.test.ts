@@ -8,6 +8,7 @@ import {
   extractDueDate,
   extractMilestonesGenerated,
   extractCancelled,
+  extractMeasurements,
   type NotionDatabaseSchema,
   type NotionOrderPage,
 } from "../../src/lib/notion/orders.schema.js";
@@ -208,5 +209,44 @@ describe("extractInvoiceRelationId", () => {
     expect(
       extractInvoiceRelationId({ id: "p", properties: {} } as NotionOrderPage),
     ).toBeUndefined();
+  });
+});
+
+describe("extractMeasurements", () => {
+  it("reads the five values + unit off the order properties (Chest → bust)", () => {
+    const page: NotionOrderPage = {
+      id: "p",
+      properties: {
+        Waist: { type: "number", number: 28 },
+        Chest: { type: "number", number: 36 },
+        Hips: { type: "number", number: 38 },
+        Height: { type: "number", number: 65 },
+        "Body Girth": { type: "number", number: 32 },
+        "Measurement Unit": { type: "select", select: { name: "cm" } },
+      },
+    };
+    expect(extractMeasurements(page)).toEqual({
+      unit: "cm",
+      waist: 28,
+      bust: 36,
+      hips: 38,
+      height: 65,
+      bodyGirth: 32,
+    });
+  });
+
+  it("returns undefined when no measurement value is set (measure-at-fitting / legacy)", () => {
+    expect(extractMeasurements({ id: "p", properties: {} })).toBeUndefined();
+  });
+
+  it("returns the present values (unit defaults to inches) for a partial order", () => {
+    const page: NotionOrderPage = {
+      id: "p",
+      properties: {
+        Waist: { type: "number", number: 28 },
+        Chest: { type: "number", number: null },
+      },
+    };
+    expect(extractMeasurements(page)).toEqual({ unit: "inches", waist: 28 });
   });
 });

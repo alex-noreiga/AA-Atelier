@@ -9,6 +9,17 @@ vi.mock("../../src/lib/notion/shop-orders.repository.js", () => ({
 vi.mock("../../src/lib/resend/send.js", () => ({
   sendEmailBestEffort: vi.fn().mockResolvedValue(undefined),
 }));
+// Partial mock: keep the real EVENT_PROP_* constants (event-details.ts reads them)
+// and only stub the calendar list so no Google I/O happens.
+vi.mock(
+  "../../src/lib/google/calendar.repository.js",
+  async (importOriginal) => ({
+    ...(await importOriginal<
+      typeof import("../../src/lib/google/calendar.repository.js")
+    >()),
+    listUpcomingAppointmentsByEmail: vi.fn(),
+  }),
+);
 
 import {
   requestMagicLink,
@@ -16,16 +27,19 @@ import {
 } from "../../src/services/account.service.js";
 import { findOrdersByEmail } from "../../src/lib/notion/orders.repository.js";
 import { findShopOrdersByEmail } from "../../src/lib/notion/shop-orders.repository.js";
+import { listUpcomingAppointmentsByEmail } from "../../src/lib/google/calendar.repository.js";
 import { sendEmailBestEffort } from "../../src/lib/resend/send.js";
 
 const mockOrders = vi.mocked(findOrdersByEmail);
 const mockShop = vi.mocked(findShopOrdersByEmail);
+const mockAppts = vi.mocked(listUpcomingAppointmentsByEmail);
 const mockSend = vi.mocked(sendEmailBestEffort);
 
 const BASE_ENV = { ...process.env };
 beforeEach(() => {
   process.env.SESSION_SECRET = "test-session-secret";
   process.env.PUBLIC_BASE_URL = "https://atelier.test";
+  mockAppts.mockResolvedValue([]);
 });
 afterEach(() => {
   process.env = { ...BASE_ENV };
@@ -60,9 +74,74 @@ describe("getAccountOverview", () => {
       shopOrders: [
         { orderNumber: "SHP-ABC-1234", status: "Payment Confirmed", total: 42 },
       ],
+      appointments: [],
     });
     expect(mockOrders).toHaveBeenCalledWith("skater@example.com");
     expect(mockShop).toHaveBeenCalledWith("skater@example.com");
+  });
+
+  it("maps upcoming appointments and tags each with a signed manage token", async () => {
+    mockOrders.mockResolvedValue([]);
+    mockShop.mockResolvedValue([]);
+    const start = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000);
+    mockAppts.mockResolvedValue([
+      {
+        staff: "Alayna",
+        event: {
+          id: "evt-1",
+          status: "confirmed",
+          start,
+          end: new Date(start.getTime() + 30 * 60 * 1000),
+          extended: {
+            aptType: "consultation",
+            aptLocation: "in-person",
+            aptConfirmation: "APT-1",
+          },
+        },
+      },
+    ]);
+
+    const result = await getAccountOverview("skater@example.com");
+
+    expect(result.appointments).toHaveLength(1);
+    expect(result.appointments[0]).toMatchObject({
+      typeId: "consultation",
+      typeName: "Consultation",
+      staff: "Alayna",
+      status: "confirmed",
+      canModify: true,
+    });
+    expect(typeof result.appointments[0].manageToken).toBe("string");
+    expect(result.appointments[0].manageToken.length).toBeGreaterThan(0);
+  });
+
+  it("skips a cancelled appointment", async () => {
+    mockOrders.mockResolvedValue([]);
+    mockShop.mockResolvedValue([]);
+    mockAppts.mockResolvedValue([
+      {
+        staff: "Alayna",
+        event: {
+          id: "evt-x",
+          status: "cancelled",
+          start: new Date(Date.now() + 60 * 60 * 1000),
+          end: new Date(Date.now() + 90 * 60 * 1000),
+          extended: { aptType: "consultation" },
+        },
+      },
+    ]);
+    const result = await getAccountOverview("skater@example.com");
+    expect(result.appointments).toEqual([]);
+  });
+
+  it("degrades to no appointments when the calendar can't be reached", async () => {
+    mockOrders.mockResolvedValue([]);
+    mockShop.mockResolvedValue([]);
+    mockAppts.mockRejectedValue(new Error("google down"));
+    const result = await getAccountOverview("skater@example.com");
+    expect(result.appointments).toEqual([]);
+    // The orders view is unaffected — the failure is swallowed.
+    expect(mockOrders).toHaveBeenCalled();
   });
 });
 

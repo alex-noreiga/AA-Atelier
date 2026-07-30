@@ -246,6 +246,29 @@ interface CalendarEventGetResponse extends CalendarEventResponse {
   extendedProperties?: { private?: Record<string, string> };
 }
 
+interface CalendarEventsListResponse {
+  items?: CalendarEventGetResponse[];
+}
+
+/** Map a raw Google event to our `CalendarEventDetails` (shared by the single-get
+ * and the list-by-email paths). */
+function parseCalendarEvent(
+  event: CalendarEventGetResponse,
+  fallbackId = "",
+): CalendarEventDetails {
+  const startIso = event.start?.dateTime ?? event.start?.date;
+  const endIso = event.end?.dateTime ?? event.end?.date;
+  return {
+    id: event.id ?? fallbackId,
+    status: event.status ?? "confirmed",
+    start: startIso ? new Date(startIso) : new Date(NaN),
+    end: endIso ? new Date(endIso) : new Date(NaN),
+    ...(event.hangoutLink ? { meetingUrl: event.hangoutLink } : {}),
+    ...(event.htmlLink ? { calendarLink: event.htmlLink } : {}),
+    extended: event.extendedProperties?.private ?? {},
+  };
+}
+
 /**
  * Read one appointment event back from the staff member's calendar. Returns null
  * when the event no longer exists (deleted → 404/410, e.g. cancelled via the
@@ -275,17 +298,62 @@ export async function getCalendarEvent(
   }
 
   const event = (await response.json()) as CalendarEventGetResponse;
-  const startIso = event.start?.dateTime ?? event.start?.date;
-  const endIso = event.end?.dateTime ?? event.end?.date;
-  return {
-    id: event.id ?? eventId,
-    status: event.status ?? "confirmed",
-    start: startIso ? new Date(startIso) : new Date(NaN),
-    end: endIso ? new Date(endIso) : new Date(NaN),
-    ...(event.hangoutLink ? { meetingUrl: event.hangoutLink } : {}),
-    ...(event.htmlLink ? { calendarLink: event.htmlLink } : {}),
-    extended: event.extendedProperties?.private ?? {},
-  };
+  return parseCalendarEvent(event, eventId);
+}
+
+/** A booked appointment read off a staff calendar, paired with whose calendar it
+ * lives on (the durable `staff` handle a reschedule/cancel needs). */
+export interface StaffCalendarEvent {
+  staff: string;
+  event: CalendarEventDetails;
+}
+
+/**
+ * List a customer's upcoming appointment events across every staff calendar,
+ * found by the `aptEmail` private extended property stamped on each booking at
+ * creation. One `events.list` per staff calendar (impersonating that calendar,
+ * same model as `listBusyInRange`), filtered server-side to our events for this
+ * email from now forward and expanded to single instances. Bookings made before
+ * the `aptEmail` stamp existed won't match (the account portal notes this). The
+ * caller maps each event to a DTO and skips any whose type is unrecognizable.
+ */
+export async function listUpcomingAppointmentsByEmail(
+  email: string,
+  client: GoogleCalendarClient = getGoogleCalendarClient(),
+): Promise<StaffCalendarEvent[]> {
+  const trimmed = email.trim();
+  if (!trimmed) return [];
+
+  const { calendars } = await getStaffSchedule();
+  const timeMin = new Date().toISOString();
+  const found: StaffCalendarEvent[] = [];
+
+  for (const [staff, calendarEmail] of calendars) {
+    const query = new URLSearchParams({
+      privateExtendedProperty: `${EVENT_PROP_EMAIL}=${trimmed}`,
+      timeMin,
+      singleEvents: "true",
+      orderBy: "startTime",
+      showDeleted: "false",
+    });
+    const response = await client.fetch(
+      calendarEmail,
+      `/calendars/${encodeURIComponent(calendarEmail)}/events?${query}`,
+      { method: "GET" },
+    );
+    if (!response.ok) {
+      throw new Error(
+        `Google Calendar events list failed with status ${response.status}`,
+      );
+    }
+    const data = (await response.json()) as CalendarEventsListResponse;
+    for (const item of data.items ?? []) {
+      found.push({ staff, event: parseCalendarEvent(item) });
+    }
+  }
+
+  found.sort((a, b) => a.event.start.getTime() - b.event.start.getTime());
+  return found;
 }
 
 /**

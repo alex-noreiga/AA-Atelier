@@ -104,6 +104,9 @@ describe("GET /api/account/overview", () => {
       shopOrders: [
         { orderNumber: "SHP-ABC-1234", status: "Payment Confirmed", total: 42 },
       ],
+      // Google Calendar isn't configured in the test env, so the best-effort
+      // appointments lookup degrades to an empty list (never failing the route).
+      appointments: [],
     });
     expect(mockOrders).toHaveBeenCalledWith("skater@example.com");
   });

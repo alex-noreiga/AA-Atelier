@@ -85,6 +85,38 @@ describe("buildOrderProperties", () => {
     const props = buildOrderProperties(baseOrder, "ORD-ABC-123") as any;
     expect(props).not.toHaveProperty("Rush Order");
   });
+
+  it("writes the measurement values as typed properties (bust → Chest) + unit select", () => {
+    const props = buildOrderProperties(
+      { ...baseOrder, measurementUnit: "cm" },
+      "ORD-ABC-123",
+    ) as any;
+    expect(props["Waist"].number).toBe(28);
+    expect(props["Chest"].number).toBe(36); // the contract's `bust`
+    expect(props["Hips"].number).toBe(38);
+    expect(props["Height"].number).toBe(65);
+    expect(props["Body Girth"].number).toBe(32);
+    expect(props["Measurement Unit"].select.name).toBe("cm");
+  });
+
+  it("omits the measurement properties for a measure-at-fitting order", () => {
+    const {
+      waist,
+      bust,
+      hips,
+      height,
+      bodyGirth,
+      measurementUnit,
+      ...contact
+    } = baseOrder;
+    const props = buildOrderProperties(
+      { ...contact, measurementAppointment: true },
+      "ORD-ABC-123",
+    ) as any;
+    expect(props).not.toHaveProperty("Waist");
+    expect(props).not.toHaveProperty("Chest");
+    expect(props).not.toHaveProperty("Measurement Unit");
+  });
 });
 
 describe("buildOrderPageBlocks", () => {
