@@ -17,6 +17,7 @@ import {
   CONTACT_SUBJECT_PROPERTY,
   contactClientRelation,
 } from "./contact.blocks.js";
+import { normalizeEmail } from "../email.js";
 
 // Live-schema property names (a Notion rename is a one-line change here). The
 // shared ones are imported from contact.blocks so the two writers to this
@@ -50,7 +51,7 @@ export function buildNotifyProperties(
       title: [{ text: { content: subject } }],
     },
     [CONTACT_EMAIL_PROPERTY]: {
-      email: data.email,
+      email: normalizeEmail(data.email),
     },
     [CONTACT_STAGE_PROPERTY]: {
       select: { name: CONTACT_DEFAULT_STAGE },

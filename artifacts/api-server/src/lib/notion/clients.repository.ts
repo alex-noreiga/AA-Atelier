@@ -14,6 +14,7 @@
 // flow is unchanged until the env var is configured.
 
 import { getClientCrmNotionClient, type NotionClient } from "./client.js";
+import { normalizeEmail } from "../email.js";
 
 export const CLIENT_NAME_PROPERTY = "Client Name"; // title
 export const CLIENT_EMAIL_PROPERTY = "Email"; // email
@@ -55,7 +56,7 @@ export async function upsertClientByEmail(
   input: ClientUpsertInput,
   client: NotionClient = getClientCrmNotionClient(),
 ): Promise<string | null> {
-  const email = input.email.trim();
+  const email = normalizeEmail(input.email);
   if (!client.databaseId || !email) {
     return null;
   }
