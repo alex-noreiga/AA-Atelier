@@ -6,6 +6,11 @@
  * OpenAPI spec version: 0.1.0
  */
 
+export * from './accountAppointmentSummary';
+export * from './accountAppointmentSummaryLocation';
+export * from './accountAppointmentSummaryStatus';
+export * from './accountMeasurements';
+export * from './accountMeasurementsUnit';
 export * from './accountOrderSummary';
 export * from './accountOverview';
 export * from './accountShopOrderSummary';

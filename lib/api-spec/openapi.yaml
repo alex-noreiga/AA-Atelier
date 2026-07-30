@@ -1979,7 +1979,7 @@ components:
       description: >-
         Everything tied to the signed-in customer's email — the data the account
         dashboard renders.
-      required: [email, customOrders, shopOrders]
+      required: [email, customOrders, shopOrders, appointments]
       properties:
         email:
           type: string
@@ -1998,6 +1998,16 @@ components:
             signed-in email (older shop orders without an order number are omitted).
           items:
             $ref: "#/components/schemas/AccountShopOrderSummary"
+        appointments:
+          type: array
+          description: >-
+            The customer's upcoming appointments, read live from Google Calendar
+            by the email stamped on each booking, soonest first. Empty when none
+            are upcoming, when the calendar integration isn't configured, or (a
+            best-effort read) when the calendar can't be reached. Bookings made
+            before the customer email was stamped on the event are not listed.
+          items:
+            $ref: "#/components/schemas/AccountAppointmentSummary"
     AccountOrderSummary:
       type: object
       description: A custom order as shown on the account dashboard (links out to the full tracking + invoice views).
@@ -2020,6 +2030,8 @@ components:
             The order's target completion date (its Due Date) as an ISO date
             (yyyy-mm-dd). A pass-through string (no format: date). Absent until
             the atelier sets one.
+        measurements:
+          $ref: "#/components/schemas/AccountMeasurements"
     AccountShopOrderSummary:
       type: object
       description: A ready-to-wear shop order as shown on the account dashboard.
@@ -2033,3 +2045,87 @@ components:
         total:
           type: number
           description: The order total in dollars, when recorded.
+    AccountMeasurements:
+      type: object
+      description: >-
+        The measurements on file for a custom order, read from the order's Notion
+        properties. Absent when the customer chose to have measurements taken at a
+        fitting, or for orders placed before measurements were stored as readable
+        properties (those values remain only in the order's page body). Individual
+        values may be absent for a partially-filled order.
+      required: [unit]
+      properties:
+        unit:
+          type: string
+          enum: [inches, cm]
+          description: The unit the measurement values are expressed in.
+        waist:
+          type: number
+        bust:
+          type: number
+        hips:
+          type: number
+        height:
+          type: number
+        bodyGirth:
+          type: number
+    AccountAppointmentSummary:
+      type: object
+      description: >-
+        An upcoming appointment as shown on the account dashboard. Mirrors
+        AppointmentDetails and additionally carries a signed manage token so the
+        dashboard can reschedule or cancel it in place through the existing
+        appointment-manage endpoints (no separate manage-link navigation needed).
+      required:
+        - status
+        - confirmationCode
+        - typeId
+        - typeName
+        - staff
+        - location
+        - locationLabel
+        - start
+        - end
+        - timezone
+        - canModify
+        - manageToken
+      properties:
+        status:
+          type: string
+          enum: [confirmed, cancelled]
+        timezone:
+          type: string
+          description: IANA timezone the appointment's times are expressed in.
+        confirmationCode:
+          type: string
+        typeId:
+          type: string
+        typeName:
+          type: string
+        staff:
+          type: string
+        location:
+          type: string
+          enum: [in-person, virtual]
+        locationLabel:
+          type: string
+        start:
+          type: string
+          format: date-time
+        end:
+          type: string
+          format: date-time
+        meetingUrl:
+          type: string
+          description: The Google Meet link for a virtual appointment, when one exists.
+        canModify:
+          type: boolean
+          description: >-
+            Whether the appointment can still be rescheduled or cancelled — false
+            once it has started or been cancelled.
+        manageToken:
+          type: string
+          description: >-
+            A signed token (the same one the confirmation email's manage link
+            carries) authorizing reschedule/cancel of this specific appointment
+            via the appointment-manage endpoints.

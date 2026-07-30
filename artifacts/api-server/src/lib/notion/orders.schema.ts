@@ -59,6 +59,20 @@ export const ORDER_CLIENT_PROPERTY = "Client"; // relation → Client CRM
 // on the tracking page and suppress payment CTAs. See
 // `services/order-cancellation.service.ts`.
 export const ORDER_CANCELLED_PROPERTY = "Cancelled"; // checkbox
+// The customer's measurements, stored as typed properties (five `number`s + a
+// unit `select`) so they can be read back for the account portal — the resolution
+// of the old `TODO(measurements-b)`. They're ALSO rendered as page-body blocks
+// (see `orders.blocks.ts`) for the atelier's at-a-glance page view; both are
+// written once from the same intake data, so they don't drift. `Chest` maps to the
+// contract's `bust` field (the intake label was neutralized to "Chest"). Orders
+// placed before these properties existed have their measurements only in the body
+// blocks, so they read back empty here.
+export const ORDER_WAIST_PROPERTY = "Waist"; // number
+export const ORDER_BUST_PROPERTY = "Chest"; // number (contract field: bust)
+export const ORDER_HIPS_PROPERTY = "Hips"; // number
+export const ORDER_HEIGHT_PROPERTY = "Height"; // number
+export const ORDER_BODY_GIRTH_PROPERTY = "Body Girth"; // number
+export const ORDER_MEASUREMENT_UNIT_PROPERTY = "Measurement Unit"; // select (inches | cm)
 
 /** Validated new-order payload, derived from the OpenAPI contract. */
 export type CreateOrderInput = z.infer<typeof CreateOrderBody>;
@@ -91,6 +105,20 @@ export interface OrderRecord {
   cancelled?: boolean;
 }
 
+/** The measurements on file for an order, read from its Notion properties.
+ * Individual values are optional so a partially-filled order still maps; the
+ * whole object is absent when the customer chose to be measured at a fitting (or
+ * for an order predating the measurement properties). Matches the contract's
+ * `AccountMeasurements`. */
+export interface OrderMeasurements {
+  unit: "inches" | "cm";
+  waist?: number;
+  bust?: number;
+  hips?: number;
+  height?: number;
+  bodyGirth?: number;
+}
+
 /** A lightweight custom-order view for the account dashboard — the fields a
  * summary card needs, with none of the per-order milestone/invoice fan-out
  * `getOrderStatus` does. `stages` is the live ordered list so the card can show
@@ -101,6 +129,9 @@ export interface OrderSummary {
   currentStage: string;
   stages: string[];
   estimatedCompletion?: string;
+  /** The customer's measurements, when stored as readable properties. Absent for
+   * measure-at-fitting orders and orders that predate the measurement properties. */
+  measurements?: OrderMeasurements;
 }
 
 /** The status-lookup response: the raw record plus the derived production-lock
@@ -142,9 +173,14 @@ export interface NotionOrderPage {
     };
     "Order Name"?: { type: "title"; title: Array<{ plain_text: string }> };
     Email?: { type: "email"; email: string | null };
-    // TODO(measurements-b): add the five measurement `number` properties + a
-    // unit `select` here once they migrate off body blocks, so a direct edit
-    // can read them back and `PATCH /v1/pages/{id}` can update them in place.
+    // The five measurement values + unit, stored as typed properties so the
+    // account portal can read them back (the old TODO(measurements-b), now done).
+    Waist?: { type: "number"; number: number | null };
+    Chest?: { type: "number"; number: number | null };
+    Hips?: { type: "number"; number: number | null };
+    Height?: { type: "number"; number: number | null };
+    "Body Girth"?: { type: "number"; number: number | null };
+    "Measurement Unit"?: { type: "select"; select: { name: string } | null };
     Stage?: { type: "status"; status: { name: string } | null };
     Invoices?: { type: "relation"; relation: Array<{ id: string }> };
     "Costing Items"?: { type: "relation"; relation: Array<{ id: string }> };
@@ -216,6 +252,55 @@ export function extractCostingItemIds(page: NotionOrderPage): string[] {
 /** Read the customer email off an order page (empty for pre-Email orders). */
 export function extractOrderEmail(page: NotionOrderPage): string {
   return page.properties[ORDER_EMAIL_PROPERTY]?.email ?? "";
+}
+
+/** A Notion `number` property's value, or undefined when unset/blank. */
+function readNumberProp(
+  property: { type: "number"; number: number | null } | undefined,
+): number | undefined {
+  return property?.type === "number" && property.number !== null
+    ? property.number
+    : undefined;
+}
+
+/**
+ * Read the customer's measurements off an order page. Returns undefined when no
+ * measurement value is set — a measure-at-fitting order, or one that predates the
+ * measurement properties (whose values live only in the page body). Unit defaults
+ * to inches when values are present but the unit select is somehow blank.
+ */
+export function extractMeasurements(
+  page: NotionOrderPage,
+): OrderMeasurements | undefined {
+  const waist = readNumberProp(page.properties[ORDER_WAIST_PROPERTY]);
+  const bust = readNumberProp(page.properties[ORDER_BUST_PROPERTY]);
+  const hips = readNumberProp(page.properties[ORDER_HIPS_PROPERTY]);
+  const height = readNumberProp(page.properties[ORDER_HEIGHT_PROPERTY]);
+  const bodyGirth = readNumberProp(page.properties[ORDER_BODY_GIRTH_PROPERTY]);
+
+  if (
+    waist === undefined &&
+    bust === undefined &&
+    hips === undefined &&
+    height === undefined &&
+    bodyGirth === undefined
+  ) {
+    return undefined;
+  }
+
+  const unitProperty = page.properties[ORDER_MEASUREMENT_UNIT_PROPERTY];
+  const unitName =
+    unitProperty?.type === "select" ? unitProperty.select?.name : undefined;
+  const unit: OrderMeasurements["unit"] = unitName === "cm" ? "cm" : "inches";
+
+  return {
+    unit,
+    ...(waist !== undefined ? { waist } : {}),
+    ...(bust !== undefined ? { bust } : {}),
+    ...(hips !== undefined ? { hips } : {}),
+    ...(height !== undefined ? { height } : {}),
+    ...(bodyGirth !== undefined ? { bodyGirth } : {}),
+  };
 }
 
 /** The order's due date (ISO `start`), or undefined when the atelier hasn't set one. */

@@ -46,18 +46,44 @@ exp }`; purposes `magic` (15 min) / `session` (30 days). `verifyToken` never
   `equals` is case-exact, and orders predating the `Email`/`Customer Email`
   property are invisible — those are still trackable by number.
 
-## Scope (v1) and deferred
+## Scope and follow-ons
 
-Shipped: orders + shop orders + invoices (invoices ride the order detail pages).
-**Deferred** (each a fast-follow, not free):
+Shipped (v1): orders + shop orders + invoices (invoices ride the order detail
+pages).
 
-- **Appointments** — no read-by-customer path today (Google Calendar is write +
-  free/busy only; needs a net-new `events.list`-by-attendee, or mirroring bookings
-  to Notion at booking time).
-- **Measurement history** — measurements live in the order page's **body blocks**,
-  not readable properties. The `TODO(measurements-b)` migration (five `number`
-  props + a unit `select` on the order) is the prerequisite; once done, they're
-  readable/PATCHable and can be shown/edited in the portal.
+**Phase 2 — appointments + measurements (shipped).** Both deferred fast-follows
+now land in the overview:
+
+- **Upcoming appointments.** `getAccountOverview` also runs
+  `listUpcomingAppointmentsByEmail` (`lib/google/calendar.repository.ts`): one
+  `events.list` per staff calendar (from `getStaffSchedule().calendars`,
+  impersonated) filtered by the **`aptEmail` private extended property** stamped on
+  every booking — the read-by-customer path that didn't exist before (there's still
+  no appointments DB; the calendar event is the record). The event→DTO mapping is
+  the shared `lib/appointments/event-details.ts` (`eventToDetailsOrNull` /
+  `mapEventToDetails`), reused by the manage service so the two can't drift. Each
+  summary carries a freshly-signed **`manageToken`** (the same `appointment`-purpose
+  token the confirmation email uses), so the portal's inline reschedule/cancel drive
+  the **existing** `/appointments/reschedule|cancel` endpoints — **no new mutation
+  routes**. The frontend controls are the shared
+  `components/appointment-manage-panel.tsx`, mounted by both `pages/appointment-manage.tsx`
+  and the portal's `AppointmentCard`; a reschedule/cancel invalidates the overview
+  query to refresh in place. **Best-effort:** any calendar failure (unconfigured,
+  outage) degrades to `appointments: []` and never fails the orders view. **Caveat:**
+  bookings made before the `aptEmail` stamp existed won't list.
+- **Measurement history (display-only).** Resolved the `TODO(measurements-b)`
+  migration: measurements are now written as typed Notion **properties** (five
+  `number`s + a `Measurement Unit` select) in `buildOrderProperties`, ALSO kept as
+  the page-body blocks for the atelier's view (both from the one intake payload, so
+  no drift). `extractMeasurements` (`orders.schema.ts`) reads them back into
+  `OrderSummary.measurements`, surfaced on `AccountOrderSummary.measurements` and
+  rendered read-only under each custom order (`MeasurementsBlock`). Editing still
+  goes through the measurement-change request (Approach A). **Caveat:** only orders
+  placed **after** the migration have readable measurements — earlier orders' values
+  remain only in the (unread) body blocks, so they show none.
+
+**Still deferred:** in-place measurement _editing_ (Approach B PATCH), and any
+appointment history beyond the upcoming window.
 
 ## One-time setup
 
@@ -66,13 +92,26 @@ the magic-link origin) + the Resend vars for the sign-in email. **No new databas
 Magic-link copy: `lib/resend/emails.ts` `magicLinkEmail`, sent from the `orders`
 sender.
 
+For Phase 2, no new env var. Appointments reuse the existing Google Calendar
+integration (`GOOGLE_SERVICE_ACCOUNT_KEY` + `APPOINTMENT_SHEET_ID`) — unset ⇒
+appointments just don't appear. Measurements need five `number` properties (`Waist`,
+`Chest`, `Hips`, `Height`, `Body Girth`) + a `Measurement Unit` `select`
+(`inches`/`cm`) added to the Order Tracking Pipeline database (property-name
+constants in `orders.schema.ts`); until added, new orders simply won't have
+readable measurements.
+
 ## Files
 
-Frontend: `pages/account-login.tsx`, `pages/account.tsx`, route in `App.tsx`,
-`Account` in `navbar.tsx` `NAV_LINKS`, noindex entries in `lib/seo-routes.ts`.
-Backend: `services/account.service.ts`, `routes/account.ts`,
+Frontend: `pages/account-login.tsx`, `pages/account.tsx` (with `AppointmentCard` +
+`MeasurementsBlock`), `components/appointment-manage-panel.tsx` (shared with
+`pages/appointment-manage.tsx`), route in `App.tsx`, `Account` in `navbar.tsx`
+`NAV_LINKS`, noindex entries in `lib/seo-routes.ts`.
+Backend: `services/account.service.ts` (`upcomingAppointments`), `routes/account.ts`,
 `routes/account-verify.ts`, `middlewares/auth.ts`, `lib/auth/*`,
 `findOrdersByEmail` / `findShopOrdersByEmail` in the order/shop-order repos,
-`OrderSummary` in `orders.schema.ts`. Contract: three ops + `MagicLinkRequest` /
-`AccountOverview` / `AccountOrderSummary` / `AccountShopOrderSummary` /
-`MessageResponse` schemas in `lib/api-spec/openapi.yaml`.
+`extractMeasurements` + `OrderSummary` in `orders.schema.ts`,
+`listUpcomingAppointmentsByEmail` in `lib/google/calendar.repository.ts`, the shared
+`lib/appointments/event-details.ts`. Contract: three ops + `MagicLinkRequest` /
+`AccountOverview` (now with `appointments`) / `AccountOrderSummary` (now with
+`measurements`) / `AccountShopOrderSummary` / `AccountAppointmentSummary` /
+`AccountMeasurements` / `MessageResponse` schemas in `lib/api-spec/openapi.yaml`.

@@ -24,6 +24,7 @@ import {
   extractRush,
   extractCancelled,
   extractOrderEmail,
+  extractMeasurements,
   extractLastNotifiedStage,
   type CreateOrderInput,
   type NotionDatabaseSchema,
@@ -211,12 +212,14 @@ export async function findOrdersByEmail(
       const orderNumber = extractOrderNumber(page);
       if (!orderNumber) continue;
       const estimatedCompletion = extractDueDate(page);
+      const measurements = extractMeasurements(page);
       summaries.push({
         orderNumber,
         orderName: extractOrderName(page),
         currentStage: extractCurrentStage(page),
         stages,
         ...(estimatedCompletion !== undefined ? { estimatedCompletion } : {}),
+        ...(measurements !== undefined ? { measurements } : {}),
       });
     }
 
