@@ -65,6 +65,28 @@ describe("upsertClientByEmail", () => {
     expect(client.calls.some((c) => c.path === "/v1/pages")).toBe(false);
   });
 
+  it("lowercases a mixed-case email so dedupe and storage stay case-insensitive", async () => {
+    const client = makeFakeClient((path) => {
+      if (isQuery(path)) return jsonResponse({ results: [] });
+      if (path === "/v1/pages") return jsonResponse({ id: "client-new" });
+      throw new Error(`unexpected ${path}`);
+    });
+
+    await upsertClientByEmail(
+      { fullName: "Ada", email: "  Ada@Example.COM " },
+      client,
+    );
+
+    const queryCall = client.calls.find((c) => isQuery(c.path))!;
+    expect(JSON.parse(queryCall.init!.body as string).filter.email).toEqual({
+      equals: "ada@example.com",
+    });
+    const create = client.calls.find((c) => c.path === "/v1/pages")!;
+    expect(
+      JSON.parse(create.init!.body as string).properties["Email"].email,
+    ).toBe("ada@example.com");
+  });
+
   it("creates a new Active client with name/email/phone when none matches", async () => {
     const client = makeFakeClient((path) => {
       if (isQuery(path)) return jsonResponse({ results: [] });

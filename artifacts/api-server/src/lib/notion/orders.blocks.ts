@@ -18,6 +18,7 @@ import {
   ORDER_MEASUREMENT_UNIT_PROPERTY,
   type CreateOrderInput,
 } from "./orders.schema.js";
+import { normalizeEmail } from "../email.js";
 
 /** Format the customer's "needed by" value as a Notion date string
  * (`YYYY-MM-DD`). The contract coerces it to a `Date`, but we defend against a
@@ -89,7 +90,7 @@ export function buildOrderProperties(
     // Also written as a property (not only in the Contact body block) so a
     // later measurement-change request can be verified against it server-side.
     [ORDER_EMAIL_PROPERTY]: {
-      email: data.email,
+      email: normalizeEmail(data.email),
     },
   };
   // The customer's "needed by" date is the atelier's target completion date, so

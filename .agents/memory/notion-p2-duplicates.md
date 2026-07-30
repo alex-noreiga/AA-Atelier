@@ -161,3 +161,37 @@ schema API, so:
   migrations + type conversions + field deletions (#8, #10), the orphan-price delete
   (#6), the costing unify (#4), the size-field descriptions (#11), and — for #9 —
   nothing but this note.
+
+## Phase-1 housekeeping follow-through (later pass, via the Notion API + code)
+
+Picking up the "left for the atelier" items above. By this pass the workspace had
+already moved on: the three costing engines (#4) were **unified** into a single
+`costing` DB with a `Channel` select (Custom/Production/Rhinestone), and the
+separate `production items` / `production pay tracker` databases were **gone** —
+so #6's `Etsy Listing Price`, #10's `Sale price` copies, and the 8 `<Stage> %
+override` fields no longer exist (nothing to delete; those items are obsolete, not
+skipped).
+
+What was applied here:
+
+- **#8 supplier — FINISHED.** `materials inventory` was already relation-only (no
+  free-text `Supplier`), and `Supplier directory.Materials tracked` was already a
+  rollup. Remaining work was on **`material intake`**: linked the 6 rows that had a
+  typed `Supplier` but no relation (5 → _Fabric Wholesale Direct_, 1 → a new
+  _Hobby Lobby_ directory row), verified zero rows had text-without-relation, then
+  **dropped the free-text `Supplier` column**. `material intake` now carries only
+  the `Supplier Directory` relation.
+- **Payment Status formula — FIXED.** The `invoices & payments."Payment Status"`
+  formula referenced a nonexistent function (errored to blank). Rewrote it with
+  nested `if()` (the API rejects `ifs()`): `✅ Paid in full` when `Balance Paid`,
+  else `⚠️ Overdue` when any of the three due dates is past with its stage unpaid,
+  else `On track`. Applied via `ALTER COLUMN … SET FORMULA(...)`.
+- **Email casing — FIXED (code).** Notion's email `equals` is exact and the CRM /
+  account portal treat the address as identity, so mixed case split a customer.
+  Added `lib/email.ts` `normalizeEmail` (trim + lowercase), applied at every Notion
+  email **write** (orders, shop orders, reviews, and the four contact-DB writers)
+  and every email **lookup** (`findOrdersByEmail`, `findShopOrdersByEmail`, CRM
+  upsert). Identity gates already compared case-insensitively. Canonicalizes _new_
+  data; existing mixed-case rows would need a one-time backfill.
+- **Stage vs Fulfilment (#—, Custom Orders):** decided "keep both, redefine the
+  boundary." No code change — see `order-stage-vs-fulfilment.md`.
