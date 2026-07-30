@@ -1,0 +1,66 @@
+name: Heal Dependabot lockfile
+
+# Dependabot doesn't understand pnpm catalogs (pnpm-workspace.yaml `catalog:`).
+# When it bumps a catalog-managed dependency (e.g. @types/node, react, vite,
+# zod) it rewrites the lockfile's importer specifier to a concrete version while
+# leaving the package.json as `catalog:`, so the two disagree. Vercel and CI run
+# `pnpm install` with a frozen lockfile, which rejects the mismatch
+# (ERR_PNPM_OUTDATED_LOCKFILE) before anything compiles — every such PR fails to
+# build. This workflow regenerates the lockfile so its specifiers match the
+# manifests again and pushes the fix back onto the Dependabot branch.
+
+on:
+  pull_request_target:
+    branches: [main]
+
+# pull_request_target runs with the base repo's token, which we need to push the
+# healed lockfile back to the PR branch. This is only safe because:
+#   * the job is gated to the trusted `dependabot[bot]` actor (an external PR
+#     can't spoof it), and Dependabot only edits dependency manifests;
+#   * `pnpm install --lockfile-only` resolves metadata and rewrites the lockfile
+#     WITHOUT running any lifecycle/install scripts, so no PR-controlled code
+#     executes with the write token.
+permissions:
+  contents: write
+
+concurrency:
+  group: dependabot-lockfile-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  heal:
+    if: github.actor == 'dependabot[bot]'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      # Dependabot pushes its branches to this repo (not a fork), so checking
+      # out the head ref and pushing back both work with the base-repo token.
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ github.event.pull_request.head.ref }}
+
+      # No explicit version: pnpm/action-setup reads `packageManager` in
+      # package.json, matching CI's single source of truth.
+      - uses: pnpm/action-setup@v6
+
+      - uses: actions/setup-node@v7
+        with:
+          node-version-file: .nvmrc
+          cache: pnpm
+
+      # Reconcile the lockfile with the manifests + catalog. --lockfile-only
+      # updates pnpm-lock.yaml without installing or running scripts.
+      - name: Reconcile lockfile with manifests
+        run: pnpm install --lockfile-only --no-frozen-lockfile
+
+      - name: Commit and push if the lockfile changed
+        run: |
+          if git diff --quiet -- pnpm-lock.yaml; then
+            echo "Lockfile already consistent with the manifests; nothing to heal."
+            exit 0
+          fi
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add pnpm-lock.yaml
+          git commit -m "chore: reconcile pnpm lockfile after Dependabot catalog bump"
+          git push
