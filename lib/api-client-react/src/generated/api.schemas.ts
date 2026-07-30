@@ -82,6 +82,8 @@ export interface OrderStatus {
   /** Per-stage target completion dates from the Production Schedule, present once the order's milestones have been generated. One entry per remaining (current + upcoming) stage; completed stages have none. Order is not significant — match by stage name. */
   milestones?: OrderStatusMilestonesItem[];
   invoice?: Invoice;
+  /** True once the atelier has cancelled the order (the `Cancelled` marker on the Notion order). When true the tracking page shows a cancelled banner and suppresses the deposit / invoice / request affordances. Absent/false for an active order. */
+  cancelled?: boolean;
 }
 
 export interface OrderNotFound {
@@ -96,6 +98,8 @@ export interface ShopOrderStatus {
   statuses: string[];
   /** The order total in dollars. */
   total?: number;
+  /** True once the atelier has cancelled the shop order (the `Cancelled` marker on the Notion order). When true the tracking page shows a cancelled banner and suppresses the request affordance. Absent/false for an active order. */
+  cancelled?: boolean;
 }
 
 export type NewOrderRequestPreferredContact = typeof NewOrderRequestPreferredContact[keyof typeof NewOrderRequestPreferredContact];
@@ -186,6 +190,23 @@ export interface NewMeasurementChangeResponse {
 }
 
 /**
+ * A request to cancel an order. The email is verified against the one on the order; a request whose email doesn't match is rejected. An optional reason is passed through to the atelier for context.
+ */
+export interface NewCancellationRequest {
+  /** The email to verify against the one on the order. A request whose email doesn't match the order is rejected. */
+  email: string;
+  /**
+     * Optional free-text reason for the cancellation.
+     * @maxLength 2000
+     */
+  reason?: string;
+}
+
+export interface NewCancellationResponse {
+  received: boolean;
+}
+
+/**
  * A post-delivery review of a finished custom order. The customer supplies a star rating and a short testimonial; a display name, publish consent, and photos of the finished piece are optional. The server verifies the email against the order and only accepts the review once the order has been delivered.
  */
 export interface NewReviewRequest {
@@ -254,6 +275,53 @@ export interface NewNewsletterRequest {
 
 export interface NewNewsletterResponse {
   success: boolean;
+}
+
+/**
+ * Whether the customer wants a refund (return) or a swap (exchange).
+ */
+export type NewReturnRequestKind = typeof NewReturnRequestKind[keyof typeof NewReturnRequestKind];
+
+
+export const NewReturnRequestKind = {
+  return: 'return',
+  exchange: 'exchange',
+} as const;
+
+/**
+ * Why the customer is returning or exchanging the item.
+ */
+export type NewReturnRequestReason = typeof NewReturnRequestReason[keyof typeof NewReturnRequestReason];
+
+
+export const NewReturnRequestReason = {
+  wrong_size: 'wrong_size',
+  damaged: 'damaged',
+  not_as_expected: 'not_as_expected',
+  changed_mind: 'changed_mind',
+  other: 'other',
+} as const;
+
+/**
+ * A request to return or exchange a ready-to-wear shop order. The server verifies the email against the one on the order; the atelier reviews and actions accepted requests by hand (this endpoint never refunds or edits the order).
+ */
+export interface NewReturnRequest {
+  /** The email to verify against the one on the order. A request whose email doesn't match the order is rejected. */
+  email: string;
+  /** Whether the customer wants a refund (return) or a swap (exchange). */
+  kind: NewReturnRequestKind;
+  /** Why the customer is returning or exchanging the item. */
+  reason: NewReturnRequestReason;
+  /** Which piece(s) the request covers, in the customer's own words. Optional — the atelier can also read the order in Notion. */
+  items?: string;
+  /** For an exchange, the size/colour/piece the customer wants instead. Ignored for a return. */
+  exchangeFor?: string;
+  /** Optional free-text note with anything else the atelier should know. */
+  note?: string;
+}
+
+export interface NewReturnResponse {
+  received: boolean;
 }
 
 export interface SizeOption {
@@ -443,6 +511,60 @@ export interface NewAppointmentResponse {
   calendarLink?: string;
 }
 
+/**
+ * Whether the appointment is still on the calendar or was cancelled.
+ */
+export type AppointmentDetailsStatus = typeof AppointmentDetailsStatus[keyof typeof AppointmentDetailsStatus];
+
+
+export const AppointmentDetailsStatus = {
+  confirmed: 'confirmed',
+  cancelled: 'cancelled',
+} as const;
+
+export type AppointmentDetailsLocation = typeof AppointmentDetailsLocation[keyof typeof AppointmentDetailsLocation];
+
+
+export const AppointmentDetailsLocation = {
+  'in-person': 'in-person',
+  virtual: 'virtual',
+} as const;
+
+/**
+ * A booked appointment's current state, read live from Google Calendar for the self-service reschedule / cancel page.
+ */
+export interface AppointmentDetails {
+  /** Whether the appointment is still on the calendar or was cancelled. */
+  status: AppointmentDetailsStatus;
+  /** IANA timezone the atelier's hours and slot times are expressed in, for the client to render the appointment's times. */
+  timezone: string;
+  confirmationCode: string;
+  /** The appointment type's id, so the reschedule flow can re-query availability for the same type. */
+  typeId: string;
+  typeName: string;
+  staff: string;
+  location: AppointmentDetailsLocation;
+  locationLabel: string;
+  start: string;
+  end: string;
+  /** The Google Meet link for a virtual appointment, when one exists. */
+  meetingUrl?: string;
+  /** Whether the appointment can still be rescheduled or cancelled — false once it has started or been cancelled. */
+  canModify: boolean;
+}
+
+export interface RescheduleAppointmentRequest {
+  /** The signed token from the manage link. */
+  token: string;
+  /** The new slot's start instant, as returned by the availability endpoint. */
+  start: string;
+}
+
+export interface CancelAppointmentRequest {
+  /** The signed token from the manage link. */
+  token: string;
+}
+
 export interface ErrorEnvelope {
   error: string;
 }
@@ -460,6 +582,30 @@ export interface MagicLinkRequest {
 }
 
 /**
+ * The unit the measurement values are expressed in.
+ */
+export type AccountMeasurementsUnit = typeof AccountMeasurementsUnit[keyof typeof AccountMeasurementsUnit];
+
+
+export const AccountMeasurementsUnit = {
+  inches: 'inches',
+  cm: 'cm',
+} as const;
+
+/**
+ * The measurements on file for a custom order, read from the order's Notion properties. Absent when the customer chose to have measurements taken at a fitting, or for orders placed before measurements were stored as readable properties (those values remain only in the order's page body). Individual values may be absent for a partially-filled order.
+ */
+export interface AccountMeasurements {
+  /** The unit the measurement values are expressed in. */
+  unit: AccountMeasurementsUnit;
+  waist?: number;
+  bust?: number;
+  hips?: number;
+  height?: number;
+  bodyGirth?: number;
+}
+
+/**
  * A custom order as shown on the account dashboard (links out to the full tracking + invoice views).
  */
 export interface AccountOrderSummary {
@@ -470,6 +616,7 @@ export interface AccountOrderSummary {
   stages: string[];
   /** The order's target completion date (its Due Date) as an ISO date (yyyy-mm-dd). A pass-through string (no format: date). Absent until the atelier sets one. */
   estimatedCompletion?: string;
+  measurements?: AccountMeasurements;
 }
 
 /**
@@ -483,6 +630,45 @@ export interface AccountShopOrderSummary {
   total?: number;
 }
 
+export type AccountAppointmentSummaryStatus = typeof AccountAppointmentSummaryStatus[keyof typeof AccountAppointmentSummaryStatus];
+
+
+export const AccountAppointmentSummaryStatus = {
+  confirmed: 'confirmed',
+  cancelled: 'cancelled',
+} as const;
+
+export type AccountAppointmentSummaryLocation = typeof AccountAppointmentSummaryLocation[keyof typeof AccountAppointmentSummaryLocation];
+
+
+export const AccountAppointmentSummaryLocation = {
+  'in-person': 'in-person',
+  virtual: 'virtual',
+} as const;
+
+/**
+ * An upcoming appointment as shown on the account dashboard. Mirrors AppointmentDetails and additionally carries a signed manage token so the dashboard can reschedule or cancel it in place through the existing appointment-manage endpoints (no separate manage-link navigation needed).
+ */
+export interface AccountAppointmentSummary {
+  status: AccountAppointmentSummaryStatus;
+  /** IANA timezone the appointment's times are expressed in. */
+  timezone: string;
+  confirmationCode: string;
+  typeId: string;
+  typeName: string;
+  staff: string;
+  location: AccountAppointmentSummaryLocation;
+  locationLabel: string;
+  start: string;
+  end: string;
+  /** The Google Meet link for a virtual appointment, when one exists. */
+  meetingUrl?: string;
+  /** Whether the appointment can still be rescheduled or cancelled — false once it has started or been cancelled. */
+  canModify: boolean;
+  /** A signed token (the same one the confirmation email's manage link carries) authorizing reschedule/cancel of this specific appointment via the appointment-manage endpoints. */
+  manageToken: string;
+}
+
 /**
  * Everything tied to the signed-in customer's email — the data the account dashboard renders.
  */
@@ -493,6 +679,8 @@ export interface AccountOverview {
   customOrders: AccountOrderSummary[];
   /** The customer's ready-to-wear shop orders. Empty when none match the signed-in email (older shop orders without an order number are omitted). */
   shopOrders: AccountShopOrderSummary[];
+  /** The customer's upcoming appointments, read live from Google Calendar by the email stamped on each booking, soonest first. Empty when none are upcoming, when the calendar integration isn't configured, or (a best-effort read) when the calendar can't be reached. Bookings made before the customer email was stamped on the event are not listed. */
+  appointments: AccountAppointmentSummary[];
 }
 
 export type GetAppointmentAvailabilityParams = {
@@ -522,4 +710,11 @@ export const GetAppointmentAvailabilityLocation = {
   'in-person': 'in-person',
   virtual: 'virtual',
 } as const;
+
+export type GetAppointmentParams = {
+/**
+ * The signed token from the manage link.
+ */
+token: string;
+};
 

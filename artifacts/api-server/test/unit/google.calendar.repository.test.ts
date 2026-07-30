@@ -10,8 +10,12 @@ vi.mock("../../src/lib/google/sheets.repository.js", () => ({
 
 import {
   createCalendarEvent,
+  getCalendarEvent,
+  updateCalendarEvent,
+  cancelCalendarEvent,
   getScheduleConfig,
   listBusyInRange,
+  listUpcomingAppointmentsByEmail,
   type BookedAppointment,
 } from "../../src/lib/google/calendar.repository.js";
 import {
@@ -119,6 +123,7 @@ describe("createCalendarEvent", () => {
   const base: BookedAppointment = {
     customerName: "Ada Lovelace",
     email: "ada@example.com",
+    typeId: "consultation",
     typeName: "Consultation",
     staff: "Alexandra",
     location: "in-person",
@@ -129,9 +134,9 @@ describe("createCalendarEvent", () => {
     confirmationCode: "APT-AB12CD",
   };
 
-  it("inserts an event with the customer as an attendee and returns the links", async () => {
+  it("inserts an event with the customer as an attendee and returns the id + links", async () => {
     const client = fakeClient(() =>
-      jsonResponse({ htmlLink: "https://cal/evt" }),
+      jsonResponse({ id: "evt-1", htmlLink: "https://cal/evt" }),
     );
 
     const result = await createCalendarEvent(
@@ -141,6 +146,7 @@ describe("createCalendarEvent", () => {
     );
 
     expect(result).toEqual({
+      eventId: "evt-1",
       meetingUrl: undefined,
       calendarLink: "https://cal/evt",
     });
@@ -156,6 +162,14 @@ describe("createCalendarEvent", () => {
     expect(body.start).toEqual({
       dateTime: "2026-07-20T14:00:00.000Z",
       timeZone: "America/New_York",
+    });
+    // The event is self-describing for later reschedule/cancel.
+    expect(body.extendedProperties.private).toMatchObject({
+      aptType: "consultation",
+      aptLocation: "in-person",
+      aptConfirmation: "APT-AB12CD",
+      aptEmail: "ada@example.com",
+      aptName: "Ada Lovelace",
     });
     expect(body.conferenceData).toBeUndefined();
   });
@@ -187,5 +201,172 @@ describe("createCalendarEvent", () => {
     await expect(
       createCalendarEvent({ ...base, staff: "Ghost" }, "t", client),
     ).rejects.toThrow(/No calendar/);
+  });
+});
+
+describe("getCalendarEvent", () => {
+  it("reads back the event, its status, times, and private properties", async () => {
+    const client = fakeClient(() =>
+      jsonResponse({
+        id: "evt-1",
+        status: "confirmed",
+        htmlLink: "https://cal/evt",
+        hangoutLink: "https://meet.google.com/abc",
+        start: { dateTime: "2026-07-20T14:00:00Z" },
+        end: { dateTime: "2026-07-20T14:30:00Z" },
+        extendedProperties: {
+          private: { aptType: "consultation", aptLocation: "virtual" },
+        },
+      }),
+    );
+
+    const result = await getCalendarEvent("Alexandra", "evt-1", client);
+
+    expect(result).toEqual({
+      id: "evt-1",
+      status: "confirmed",
+      start: new Date("2026-07-20T14:00:00Z"),
+      end: new Date("2026-07-20T14:30:00Z"),
+      meetingUrl: "https://meet.google.com/abc",
+      calendarLink: "https://cal/evt",
+      extended: { aptType: "consultation", aptLocation: "virtual" },
+    });
+    const call = client.calls[0];
+    expect(call.subject).toBe("alexandra@atelier.test");
+    expect(call.path).toBe("/calendars/alexandra%40atelier.test/events/evt-1");
+    expect(call.init!.method).toBe("GET");
+  });
+
+  it("returns null when the event no longer exists (404)", async () => {
+    const client = fakeClient(() => jsonResponse({}, 404));
+    expect(await getCalendarEvent("Alexandra", "gone", client)).toBeNull();
+  });
+});
+
+describe("updateCalendarEvent", () => {
+  it("PATCHes the new times with sendUpdates=all and returns the links", async () => {
+    const client = fakeClient(() =>
+      jsonResponse({ htmlLink: "https://cal/evt" }),
+    );
+
+    const result = await updateCalendarEvent(
+      "Alexandra",
+      "evt-1",
+      {
+        start: new Date("2026-07-21T15:00:00.000Z"),
+        end: new Date("2026-07-21T15:30:00.000Z"),
+        timeZone: "America/New_York",
+      },
+      client,
+    );
+
+    expect(result).toEqual({
+      meetingUrl: undefined,
+      calendarLink: "https://cal/evt",
+    });
+    const call = client.calls[0];
+    expect(call.init!.method).toBe("PATCH");
+    expect(call.path).toContain(
+      "/calendars/alexandra%40atelier.test/events/evt-1",
+    );
+    expect(call.path).toContain("sendUpdates=all");
+    const body = JSON.parse(call.init!.body as string);
+    expect(body).toEqual({
+      start: {
+        dateTime: "2026-07-21T15:00:00.000Z",
+        timeZone: "America/New_York",
+      },
+      end: {
+        dateTime: "2026-07-21T15:30:00.000Z",
+        timeZone: "America/New_York",
+      },
+    });
+  });
+});
+
+describe("cancelCalendarEvent", () => {
+  it("DELETEs the event with sendUpdates=all", async () => {
+    const client = fakeClient(() => new Response(null, { status: 204 }));
+    await cancelCalendarEvent("Alexandra", "evt-1", client);
+    const call = client.calls[0];
+    expect(call.init!.method).toBe("DELETE");
+    expect(call.path).toContain(
+      "/calendars/alexandra%40atelier.test/events/evt-1",
+    );
+    expect(call.path).toContain("sendUpdates=all");
+  });
+
+  it("treats an already-gone event (410) as success", async () => {
+    const client = fakeClient(() => new Response(null, { status: 410 }));
+    await expect(
+      cancelCalendarEvent("Alexandra", "gone", client),
+    ).resolves.toBeUndefined();
+  });
+});
+
+describe("listUpcomingAppointmentsByEmail", () => {
+  it("queries each staff calendar by the aptEmail property, merging + sorting by start", async () => {
+    mockSchedule.mockResolvedValue({
+      weeklyHours: [],
+      calendars: new Map([
+        ["Alexandra", "alexandra@atelier.test"],
+        ["Alayna", "alayna@atelier.test"],
+      ]),
+    });
+    const client = fakeClient((subject) =>
+      subject === "alexandra@atelier.test"
+        ? jsonResponse({
+            items: [
+              {
+                id: "evt-late",
+                status: "confirmed",
+                start: { dateTime: "2026-07-25T14:00:00Z" },
+                end: { dateTime: "2026-07-25T15:00:00Z" },
+                extendedProperties: {
+                  private: { aptType: "fitting", aptEmail: "ada@example.com" },
+                },
+              },
+            ],
+          })
+        : jsonResponse({
+            items: [
+              {
+                id: "evt-early",
+                status: "confirmed",
+                start: { dateTime: "2026-07-20T09:00:00Z" },
+                end: { dateTime: "2026-07-20T09:30:00Z" },
+                extendedProperties: {
+                  private: {
+                    aptType: "consultation",
+                    aptEmail: "ada@example.com",
+                  },
+                },
+              },
+            ],
+          }),
+    );
+
+    const result = await listUpcomingAppointmentsByEmail(
+      "ada@example.com",
+      client,
+    );
+
+    // Merged across both calendars and sorted by start (early before late).
+    expect(result.map((r) => r.event.id)).toEqual(["evt-early", "evt-late"]);
+    expect(result.map((r) => r.staff)).toEqual(["Alayna", "Alexandra"]);
+    // The list is filtered server-side by our aptEmail private property.
+    const firstPath = client.calls[0].path;
+    expect(firstPath).toContain("/calendars/alexandra%40atelier.test/events?");
+    expect(firstPath).toContain(
+      "privateExtendedProperty=aptEmail%3Dada%40example.com",
+    );
+    expect(firstPath).toContain("singleEvents=true");
+    expect(firstPath).toContain("timeMin=");
+  });
+
+  it("returns [] for a blank email without touching the calendar", async () => {
+    const client = fakeClient(() => jsonResponse({ items: [] }));
+    expect(await listUpcomingAppointmentsByEmail("  ", client)).toEqual([]);
+    expect(client.calls).toHaveLength(0);
   });
 });

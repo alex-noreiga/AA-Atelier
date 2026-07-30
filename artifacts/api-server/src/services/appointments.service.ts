@@ -45,6 +45,7 @@ import {
 } from "../lib/resend/emails.js";
 import { sendEmailBestEffort } from "../lib/resend/send.js";
 import { fromAddress, atelierInbox } from "../lib/resend/config.js";
+import { buildManageUrl } from "./appointment-manage.service.js";
 import { BadRequestError } from "../lib/errors.js";
 
 const DEFAULT_WINDOW_DAYS = 14;
@@ -240,6 +241,7 @@ export async function bookAppointment(input: BookInput): Promise<BookResult> {
     customerName: input.fullName,
     email: input.email,
     phone: input.phone,
+    typeId: type.id,
     typeName: type.name,
     staff,
     location,
@@ -251,10 +253,17 @@ export async function bookAppointment(input: BookInput): Promise<BookResult> {
     notes: input.notes,
     preferredContact: input.preferredContact,
   };
-  const { meetingUrl, calendarLink } = await createCalendarEvent(
+  const { eventId, meetingUrl, calendarLink } = await createCalendarEvent(
     appointment,
     title,
   );
+
+  // A signed self-service reschedule/cancel link for the confirmation email —
+  // built only when the event id came back and the portal secret + base URL are
+  // configured; otherwise the email falls back to its "reply to us" copy.
+  const manageUrl = eventId
+    ? buildManageUrl(input.email, eventId, staff)
+    : undefined;
 
   // Best-effort emails; a mail failure must not fail the booking.
   const details: AppointmentEmailDetails = {
@@ -268,6 +277,7 @@ export async function bookAppointment(input: BookInput): Promise<BookResult> {
     confirmationCode,
     notes: input.notes,
     meetingUrl,
+    ...(manageUrl ? { manageUrl } : {}),
   };
   const from = fromAddress("appointments");
   await sendEmailBestEffort({ ...appointmentConfirmationEmail(details), from });

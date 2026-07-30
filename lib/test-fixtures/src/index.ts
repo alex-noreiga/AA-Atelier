@@ -21,11 +21,13 @@
 
 import type {
   CheckoutSessionStatus,
+  NewCancellationRequest,
   NewContactRequest,
   NewMeasurementChangeRequest,
   NewNewsletterRequest,
   NewNotifyRequest,
   NewOrderRequest,
+  NewReturnRequest,
   NewReviewRequest,
   OrderStatus,
   ProductList,
@@ -115,6 +117,19 @@ export function reviewInput(
   };
 }
 
+/** A valid cancellation request. Email matches `createOrderInput` by default so
+ * the identity gate passes; override it to exercise a mismatch. Carries a reason
+ * by default; drop it to exercise the reason-less path. */
+export function cancellationInput(
+  overrides: Partial<NewCancellationRequest> = {},
+): NewCancellationRequest {
+  return {
+    email: "ada@example.com",
+    reason: "My competition schedule changed.",
+    ...overrides,
+  };
+}
+
 /** A valid back-in-stock request. Whole-variant by default; pass `size` for one band. */
 export function notifyInput(
   overrides: Partial<NewNotifyRequest> = {},
@@ -134,6 +149,20 @@ export function newsletterInput(
   return {
     email: "grace@example.com",
     source: "footer",
+    ...overrides,
+  };
+}
+
+/** A valid return/exchange request. A plain return by default; email matches the
+ * shop order in the tests so the identity gate passes — override it to exercise
+ * a mismatch, or set `kind: "exchange"` for the exchange path. */
+export function returnRequestInput(
+  overrides: Partial<NewReturnRequest> = {},
+): NewReturnRequest {
+  return {
+    email: "grace@example.com",
+    kind: "return",
+    reason: "wrong_size",
     ...overrides,
   };
 }

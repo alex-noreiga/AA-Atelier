@@ -24,6 +24,27 @@ describe("auth tokens", () => {
     });
   });
 
+  it("carries appointment claims (eventId + staff) through sign/verify", () => {
+    const token = signToken("skater@example.com", "appointment", 3600, {
+      eventId: "evt-123",
+      staff: "Alayna",
+    });
+    expect(verifyToken(token, "appointment")).toEqual({
+      email: "skater@example.com",
+      eventId: "evt-123",
+      staff: "Alayna",
+    });
+  });
+
+  it("won't verify an appointment token as a magic/session token", () => {
+    const token = signToken("a@b.com", "appointment", 3600, {
+      eventId: "e",
+      staff: "Alayna",
+    });
+    expect(verifyToken(token, "magic")).toBeNull();
+    expect(verifyToken(token, "session")).toBeNull();
+  });
+
   it("rejects a token verified against the wrong purpose", () => {
     const token = signToken("a@b.com", "magic", MAGIC_LINK_TTL_SECONDS);
     expect(verifyToken(token, "session")).toBeNull();

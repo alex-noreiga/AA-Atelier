@@ -12,6 +12,10 @@ import type { CreateContactInput } from "../notion/contact.blocks.js";
 import type { CreateNotifyInput } from "../notion/notify.blocks.js";
 import type { CreateNewsletterInput } from "../notion/newsletter.blocks.js";
 import type { CreateMeasurementChangeInput } from "../notion/measurement-change.blocks.js";
+import {
+  RETURN_REASON_LABELS,
+  type CreateReturnInput,
+} from "../notion/return-request.blocks.js";
 import type { CreateReviewInput } from "../notion/reviews.blocks.js";
 import type { EmailMessage } from "./client.js";
 
@@ -638,6 +642,86 @@ export function measurementChangeConfirmationEmail(
   };
 }
 
+/** Confirmation sent to the customer when they request an order cancellation.
+ * The atelier reviews and processes the refund; this just acknowledges the ask. */
+export function cancellationRequestConfirmationEmail(
+  email: string,
+  orderNumber: string,
+): EmailMessage {
+  const html = layout(
+    "We've received your cancellation request",
+    `<p>Hi there,</p>
+     <p>Thank you — we've received your request to cancel order
+        <strong>${orderNumber}</strong>. Our team will review it and be in touch
+        shortly to confirm the next steps.</p>
+     <p>If a refund applies, we'll process it to your original payment method.</p>`,
+  );
+
+  const text = [
+    `Hi there,`,
+    ``,
+    `Thank you — we've received your request to cancel order ${orderNumber}. Our team will review it and be in touch shortly to confirm the next steps.`,
+    ``,
+    `If a refund applies, we'll process it to your original payment method.`,
+    ``,
+    `Thank you,`,
+    `The ${ATELIER_NAME} team`,
+  ].join("\n");
+
+  return {
+    to: email,
+    subject: `We've received your cancellation request (${orderNumber})`,
+    html,
+    text,
+  };
+}
+
+/** Confirmation sent to the customer once the atelier has processed a
+ * cancellation. `refundedAmount` is the total refunded in dollars (0 when
+ * nothing was charged online, so there's nothing to refund). */
+export function cancellationRefundEmail(
+  email: string,
+  orderNumber: string,
+  refundedAmount: number,
+): EmailMessage {
+  const refundHtml =
+    refundedAmount > 0
+      ? `<p>We've refunded <strong>${formatUsd(refundedAmount)}</strong> to your original payment method. Refunds typically take 5–10 business days to appear, depending on your bank.</p>`
+      : `<p>There were no online payments on this order, so there's nothing to refund.</p>`;
+  const refundText =
+    refundedAmount > 0
+      ? `We've refunded ${formatUsd(refundedAmount)} to your original payment method. Refunds typically take 5–10 business days to appear, depending on your bank.`
+      : `There were no online payments on this order, so there's nothing to refund.`;
+
+  const html = layout(
+    "Your order has been cancelled",
+    `<p>Hi there,</p>
+     <p>Your order <strong>${orderNumber}</strong> has been cancelled.</p>
+     ${refundHtml}
+     <p>We're sorry to see this one go, and hope to work with you again.</p>`,
+  );
+
+  const text = [
+    `Hi there,`,
+    ``,
+    `Your order ${orderNumber} has been cancelled.`,
+    ``,
+    refundText,
+    ``,
+    `We're sorry to see this one go, and hope to work with you again.`,
+    ``,
+    `Thank you,`,
+    `The ${ATELIER_NAME} team`,
+  ].join("\n");
+
+  return {
+    to: email,
+    subject: `Your order has been cancelled (${orderNumber})`,
+    html,
+    text,
+  };
+}
+
 /** Render a 1–5 rating as filled/empty stars for email copy. */
 function ratingStars(rating: number): string {
   const filled = Math.max(0, Math.min(5, Math.round(rating)));
@@ -729,6 +813,45 @@ export interface AppointmentEmailDetails {
   notes?: string;
   /** The Google Meet link for a virtual appointment, when one was created. */
   meetingUrl?: string;
+  /** Self-service reschedule/cancel link (present when the portal secret +
+   * PUBLIC_BASE_URL are configured); falls back to "reply to us" copy when
+   * absent. */
+  manageUrl?: string;
+}
+
+/** A styled "Manage your appointment" button, matching the sign-in link's look. */
+function manageButtonHtml(url: string): string {
+  return `<p style="margin:28px 0;">
+       <a href="${url}" style="display:inline-block;background:#2b2622;color:#faf8f5;
+          text-decoration:none;padding:12px 24px;border-radius:2px;font-size:15px;">Reschedule or cancel</a>
+     </p>
+     <p style="font-size:13px;color:#8a7f74;word-break:break-all;">Or paste this link
+        into your browser:<br/>${url}</p>`;
+}
+
+/** The change/cancel guidance for the customer — a self-service link when we can
+ * build one, otherwise the previous "reply to this email" fallback. */
+function manageHtml(details: AppointmentEmailDetails): string {
+  return details.manageUrl
+    ? `<p>Need to change your plans? You can reschedule or cancel any time before
+          your appointment:</p>
+       ${manageButtonHtml(details.manageUrl)}`
+    : `<p>If you need to change or cancel, just reply to this email and we'll take
+          care of it.</p>`;
+}
+
+function manageText(details: AppointmentEmailDetails): string[] {
+  return details.manageUrl
+    ? [
+        `Need to change your plans? Reschedule or cancel any time before your`,
+        `appointment here:`,
+        ``,
+        details.manageUrl,
+      ]
+    : [
+        `If you need to change or cancel, just reply to this email and we'll take`,
+        `care of it.`,
+      ];
 }
 
 /** Confirmation sent to the customer when they book an appointment. */
@@ -750,8 +873,8 @@ export function appointmentConfirmationEmail(
         <strong>Where:</strong> ${details.locationLabel}</p>
      ${meetHtml}
      <p>A calendar invitation is on its way to your inbox. Your confirmation code
-        is <strong>${details.confirmationCode}</strong>. If you need to change or
-        cancel, just reply to this email and we'll take care of it.</p>
+        is <strong>${details.confirmationCode}</strong>.</p>
+     ${manageHtml(details)}
      <p>We look forward to seeing you.</p>`,
   );
 
@@ -765,8 +888,9 @@ export function appointmentConfirmationEmail(
     ...(details.meetingUrl ? [`Join link: ${details.meetingUrl}`] : []),
     ``,
     `A calendar invitation is on its way to your inbox. Your confirmation code is`,
-    `${details.confirmationCode}. If you need to change or cancel, just reply to`,
-    `this email and we'll take care of it.`,
+    `${details.confirmationCode}.`,
+    ``,
+    ...manageText(details),
     ``,
     `We look forward to seeing you.`,
     ``,
@@ -777,6 +901,94 @@ export function appointmentConfirmationEmail(
   return {
     to: details.email,
     subject: `Your ${details.typeName} is booked (${details.confirmationCode})`,
+    html,
+    text,
+  };
+}
+
+/** Confirmation sent to the customer when they reschedule an appointment. */
+export function appointmentRescheduledEmail(
+  details: AppointmentEmailDetails,
+): EmailMessage {
+  const firstName = details.customerName.trim().split(/\s+/)[0] || "there";
+
+  const meetHtml = details.meetingUrl
+    ? `<p><strong>Join link:</strong> <a href="${details.meetingUrl}">${details.meetingUrl}</a></p>`
+    : "";
+
+  const html = layout(
+    "Your appointment has been rescheduled",
+    `<p>Hi ${firstName},</p>
+     <p>Your <strong>${details.typeName}</strong> with <strong>${details.staff}</strong>
+        has been moved to a new time.</p>
+     <p><strong>New time:</strong> ${details.when}<br/>
+        <strong>Where:</strong> ${details.locationLabel}</p>
+     ${meetHtml}
+     <p>An updated calendar invitation is on its way to your inbox. Your
+        confirmation code is unchanged: <strong>${details.confirmationCode}</strong>.</p>
+     ${manageHtml(details)}
+     <p>We look forward to seeing you.</p>`,
+  );
+
+  const text = [
+    `Hi ${firstName},`,
+    ``,
+    `Your ${details.typeName} with ${details.staff} has been moved to a new time.`,
+    ``,
+    `New time: ${details.when}`,
+    `Where: ${details.locationLabel}`,
+    ...(details.meetingUrl ? [`Join link: ${details.meetingUrl}`] : []),
+    ``,
+    `An updated calendar invitation is on its way to your inbox. Your confirmation`,
+    `code is unchanged: ${details.confirmationCode}.`,
+    ``,
+    ...manageText(details),
+    ``,
+    `We look forward to seeing you.`,
+    ``,
+    `Thank you,`,
+    `The ${ATELIER_NAME} team`,
+  ].join("\n");
+
+  return {
+    to: details.email,
+    subject: `Your ${details.typeName} has been rescheduled (${details.confirmationCode})`,
+    html,
+    text,
+  };
+}
+
+/** Confirmation sent to the customer when they cancel an appointment. */
+export function appointmentCancelledEmail(
+  details: AppointmentEmailDetails,
+): EmailMessage {
+  const firstName = details.customerName.trim().split(/\s+/)[0] || "there";
+
+  const html = layout(
+    "Your appointment has been cancelled",
+    `<p>Hi ${firstName},</p>
+     <p>Your <strong>${details.typeName}</strong> with <strong>${details.staff}</strong>
+        on ${details.when} has been cancelled, and the time released.</p>
+     <p>We're sorry to miss you this time. Whenever you're ready, you can book a
+        new time on our appointments page — we'd love to see you.</p>`,
+  );
+
+  const text = [
+    `Hi ${firstName},`,
+    ``,
+    `Your ${details.typeName} with ${details.staff} on ${details.when} has been`,
+    `cancelled, and the time released.`,
+    ``,
+    `We're sorry to miss you this time. Whenever you're ready, you can book a new`,
+    `time on our appointments page — we'd love to see you.`,
+    ``,
+    `Thank you,`,
+    `The ${ATELIER_NAME} team`,
+  ].join("\n");
+
+  return {
+    to: details.email,
+    subject: `Your ${details.typeName} has been cancelled (${details.confirmationCode})`,
     html,
     text,
   };
@@ -808,6 +1020,37 @@ export function appointmentNotificationEmail(
   };
 }
 
+/** Notify the atelier when a customer reschedules or cancels an appointment. */
+export function appointmentChangeNotificationEmail(
+  details: AppointmentEmailDetails,
+  to: string,
+  action: "rescheduled" | "cancelled",
+): EmailMessage {
+  const heading =
+    action === "cancelled"
+      ? "Appointment cancelled"
+      : "Appointment rescheduled";
+  const whenLabel = action === "rescheduled" ? "New time" : "When";
+  const fields: Field[] = [
+    ["Type", details.typeName],
+    ["Staff", details.staff],
+    [whenLabel, details.when],
+    ["Location", details.locationLabel],
+    ["Name", details.customerName],
+    ["Email", details.email],
+    ...(details.phone ? [["Phone", details.phone] as Field] : []),
+    ["Confirmation", details.confirmationCode],
+  ];
+
+  return {
+    to,
+    replyTo: details.email,
+    subject: `Appointment ${action} — ${details.customerName} (${details.typeName})`,
+    html: internalLayout(heading, renderRowsHtml(fields)),
+    text: renderRowsText(fields),
+  };
+}
+
 /** Notify the atelier of a new measurement-change request. */
 export function measurementChangeNotificationEmail(
   input: CreateMeasurementChangeInput,
@@ -834,6 +1077,103 @@ export function measurementChangeNotificationEmail(
     replyTo: input.email,
     subject: `Measurement change request — order ${orderNumber}`,
     html: internalLayout("Measurement change request", renderRowsHtml(fields)),
+    text: renderRowsText(fields),
+  };
+}
+
+/** Internal atelier notification when a customer requests a cancellation. */
+export function cancellationRequestNotificationEmail(
+  details: {
+    orderNumber: string;
+    orderType: "custom" | "shop";
+    email: string;
+    emailVerified: boolean;
+    reason?: string;
+  },
+  to: string,
+): EmailMessage {
+  const fields: Field[] = [
+    ["Order number", details.orderNumber],
+    [
+      "Order type",
+      details.orderType === "shop" ? "Shop order" : "Custom order",
+    ],
+    ["Email", details.email],
+    [
+      "Email verified",
+      details.emailVerified ? "Yes" : "No — confirm requester",
+    ],
+    ...(details.reason ? [["Reason", details.reason] as Field] : []),
+  ];
+
+  return {
+    to,
+    replyTo: details.email,
+    subject: `Cancellation requested — order ${details.orderNumber}`,
+    html: internalLayout("Cancellation request", renderRowsHtml(fields)),
+    text: renderRowsText(fields),
+  };
+}
+
+/** Confirmation that a return/exchange request has been filed for the customer. */
+export function returnRequestConfirmationEmail(
+  input: CreateReturnInput,
+  orderNumber: string,
+): EmailMessage {
+  const kindWord = input.kind === "exchange" ? "exchange" : "return";
+
+  const html = layout(
+    `We've received your ${kindWord} request`,
+    `<p>Hi there,</p>
+     <p>Thank you — we've received your request to ${kindWord} order
+        <strong>${escapeHtml(orderNumber)}</strong>. Our team will review it and
+        be in touch with the next steps, including any return-shipping details.</p>`,
+  );
+
+  const text = [
+    `Hi there,`,
+    ``,
+    `Thank you — we've received your request to ${kindWord} order ${orderNumber}.`,
+    `Our team will review it and be in touch with the next steps, including any`,
+    `return-shipping details.`,
+    ``,
+    `Thank you,`,
+    `The ${ATELIER_NAME} team`,
+  ].join("\n");
+
+  return {
+    to: input.email,
+    subject: `We've received your ${kindWord} request (${orderNumber})`,
+    html,
+    text,
+  };
+}
+
+/** Notify the atelier of a new return/exchange request. */
+export function returnRequestNotificationEmail(
+  input: CreateReturnInput,
+  orderNumber: string,
+  to: string,
+): EmailMessage {
+  const kindLabel = input.kind === "exchange" ? "Exchange" : "Return";
+
+  const fields: Field[] = [
+    ["Order number", orderNumber],
+    ["Type", kindLabel],
+    ["Reason", RETURN_REASON_LABELS[input.reason]],
+    ...(input.items ? [["Item(s)", input.items] as Field] : []),
+    ...(input.kind === "exchange" && input.exchangeFor
+      ? [["Exchange for", input.exchangeFor] as Field]
+      : []),
+    ...(input.note ? [["Note", input.note] as Field] : []),
+    ["Email", input.email],
+  ];
+
+  return {
+    to,
+    replyTo: input.email,
+    subject: `${kindLabel} request — order ${orderNumber}`,
+    html: internalLayout(`${kindLabel} request`, renderRowsHtml(fields)),
     text: renderRowsText(fields),
   };
 }

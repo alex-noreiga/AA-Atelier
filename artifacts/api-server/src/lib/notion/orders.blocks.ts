@@ -10,6 +10,12 @@ import {
   ORDER_CLIENT_PROPERTY,
   ORDER_DUE_DATE_PROPERTY,
   ORDER_RUSH_PROPERTY,
+  ORDER_WAIST_PROPERTY,
+  ORDER_BUST_PROPERTY,
+  ORDER_HIPS_PROPERTY,
+  ORDER_HEIGHT_PROPERTY,
+  ORDER_BODY_GIRTH_PROPERTY,
+  ORDER_MEASUREMENT_UNIT_PROPERTY,
   type CreateOrderInput,
 } from "./orders.schema.js";
 import { normalizeEmail } from "../email.js";
@@ -101,6 +107,21 @@ export function buildOrderProperties(
   if (data.rush) {
     properties[ORDER_RUSH_PROPERTY] = { checkbox: true };
   }
+  // Measurements as typed properties (mirrors the page-body block section below),
+  // so the account portal can read them back — the resolution of the old
+  // TODO(measurements-b). Written only when the customer supplied values now (the
+  // intake requires all five together); a measure-at-fitting order leaves them
+  // unset. `bust` maps to the "Chest" property.
+  if (data.waist !== undefined) {
+    properties[ORDER_WAIST_PROPERTY] = { number: data.waist };
+    properties[ORDER_BUST_PROPERTY] = { number: data.bust };
+    properties[ORDER_HIPS_PROPERTY] = { number: data.hips };
+    properties[ORDER_HEIGHT_PROPERTY] = { number: data.height };
+    properties[ORDER_BODY_GIRTH_PROPERTY] = { number: data.bodyGirth };
+    properties[ORDER_MEASUREMENT_UNIT_PROPERTY] = {
+      select: { name: data.measurementUnit },
+    };
+  }
   if (clientPageId) {
     properties[ORDER_CLIENT_PROPERTY] = {
       relation: [{ id: clientPageId }],
@@ -122,11 +143,11 @@ export function buildOrderPageBlocks(data: CreateOrderInput): unknown[] {
 
   // Measurements are optional: the customer either provided them, or asked to
   // have them taken at a fitting/consultation. Render whichever applies so the
-  // atelier can tell the two apart at a glance.
-  // TODO(measurements-b): to support self-service in-place editing, measurements
-  // need to move from these body blocks to typed Notion page properties (number
-  // + a unit select) so they can be read back and PATCHed. Approach A (the
-  // change-request flow) leaves them here and lets the atelier apply changes.
+  // atelier can tell the two apart at a glance. These body blocks are the
+  // atelier's readable page view; the same values are also written as typed
+  // properties in `buildOrderProperties` (the read source for the account portal),
+  // both from this one intake payload so they can't drift. In-place editing still
+  // goes through the measurement-change request flow (Approach A) for now.
   const providedMeasurements = data.waist !== undefined;
   const measurementSection = providedMeasurements
     ? [

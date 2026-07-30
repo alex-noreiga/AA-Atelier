@@ -14,6 +14,7 @@ import {
   SHOP_ORDER_EMAIL_PROPERTY,
   SHOP_ORDER_STATUS_PROPERTY,
   SHOP_ORDER_TOTAL_PROPERTY,
+  SHOP_ORDER_CANCELLED_PROPERTY,
 } from "./shop-orders.blocks.js";
 
 interface NotionQueryResponse {
@@ -25,13 +26,17 @@ export interface ShopOrderRecord {
   orderNumber: string;
   status: string;
   total?: number;
+  /** True once the atelier has cancelled the order (`Cancelled` checkbox). */
+  cancelled?: boolean;
 }
 
 // Raw Notion property shapes we read back (only the types we touch).
 type NotionReadProperty =
   | { type: "rich_text"; rich_text: Array<{ plain_text: string }> }
   | { type: "status"; status: { name: string } | null }
-  | { type: "number"; number: number | null };
+  | { type: "number"; number: number | null }
+  | { type: "email"; email: string | null }
+  | { type: "checkbox"; checkbox: boolean };
 
 interface NotionLookupResponse {
   results: Array<{
@@ -74,6 +79,66 @@ function readStatus(prop: NotionReadProperty | undefined): string {
 function readNumber(prop: NotionReadProperty | undefined): number | null {
   if (prop?.type !== "number") return null;
   return prop.number;
+}
+
+function readEmail(prop: NotionReadProperty | undefined): string {
+  if (prop?.type !== "email") return "";
+  return (prop.email ?? "").trim();
+}
+
+function readCheckbox(prop: NotionReadProperty | undefined): boolean {
+  if (prop?.type !== "checkbox") return false;
+  return prop.checkbox;
+}
+
+/** What a shop-order-scoped gate needs: the email to verify the requester
+ * against. Kept separate from {@link ShopOrderRecord} (the public tracking view)
+ * so the email is never returned by the status lookup — the shop-order analogue
+ * of the custom order's {@link findOrderVerification}. */
+export interface ShopOrderVerification {
+  email: string;
+}
+
+/**
+ * Look up a shop order for a gated, email-verified action (a return/exchange
+ * request). Filters on the `Order Number` rich_text property (same `rich_text:
+ * { equals }` gotcha as the tracking lookup) and returns the stored
+ * `Customer Email`, or null when the number is blank or unknown. A legacy order
+ * with no stored email returns an empty string, which the caller treats as
+ * "unverifiable" rather than a mismatch.
+ */
+export async function findShopOrderVerification(
+  orderNumber: string,
+  client: NotionClient = getShopOrdersNotionClient(),
+): Promise<ShopOrderVerification | null> {
+  assertConfigured(client);
+
+  const trimmed = orderNumber.trim();
+  if (!trimmed) return null;
+
+  const response = await client.fetch(
+    `/v1/databases/${client.databaseId}/query`,
+    {
+      method: "POST",
+      body: JSON.stringify({
+        filter: {
+          property: SHOP_ORDER_NUMBER_PROPERTY,
+          rich_text: { equals: trimmed },
+        },
+        page_size: 1,
+      }),
+    },
+  );
+
+  if (!response.ok) {
+    throw new Error(`Notion query failed with status ${response.status}`);
+  }
+
+  const data = (await response.json()) as NotionLookupResponse;
+  const page = data.results[0];
+  if (!page) return null;
+
+  return { email: readEmail(page.properties[SHOP_ORDER_EMAIL_PROPERTY]) };
 }
 
 /** Whether an order has already been recorded for this Stripe session. */
@@ -175,7 +240,90 @@ export async function findShopOrderByNumber(
       readRichText(page.properties[SHOP_ORDER_NUMBER_PROPERTY]) || trimmed,
     status: readStatus(page.properties[SHOP_ORDER_STATUS_PROPERTY]),
     ...(total !== null ? { total } : {}),
+    ...(readCheckbox(page.properties[SHOP_ORDER_CANCELLED_PROPERTY])
+      ? { cancelled: true }
+      : {}),
   };
+}
+
+/** What the atelier cancellation-refund flow needs about a shop order: the page
+ * id (to mark it cancelled), the stored email (to verify a request + address the
+ * confirmation email), and the Stripe session id (to issue the refund). Returns
+ * null when the order number is blank or unknown. */
+export interface ShopOrderCancellationTarget {
+  pageId: string;
+  orderNumber: string;
+  email: string;
+  sessionId: string;
+  status: string;
+  cancelled: boolean;
+}
+
+export async function findShopOrderForCancellation(
+  orderNumber: string,
+  client: NotionClient = getShopOrdersNotionClient(),
+): Promise<ShopOrderCancellationTarget | null> {
+  assertConfigured(client);
+
+  const trimmed = orderNumber.trim();
+  if (!trimmed) return null;
+
+  const response = await client.fetch(
+    `/v1/databases/${client.databaseId}/query`,
+    {
+      method: "POST",
+      body: JSON.stringify({
+        filter: {
+          property: SHOP_ORDER_NUMBER_PROPERTY,
+          rich_text: { equals: trimmed },
+        },
+        page_size: 1,
+      }),
+    },
+  );
+
+  if (!response.ok) {
+    throw new Error(`Notion query failed with status ${response.status}`);
+  }
+
+  const data = (await response.json()) as NotionLookupResponse;
+  const page = data.results[0];
+  if (!page) return null;
+
+  return {
+    pageId: page.id,
+    orderNumber:
+      readRichText(page.properties[SHOP_ORDER_NUMBER_PROPERTY]) || trimmed,
+    email: readEmail(page.properties[SHOP_ORDER_EMAIL_PROPERTY]),
+    sessionId: readRichText(page.properties[SHOP_ORDER_SESSION_PROPERTY]),
+    status: readStatus(page.properties[SHOP_ORDER_STATUS_PROPERTY]),
+    cancelled: readCheckbox(page.properties[SHOP_ORDER_CANCELLED_PROPERTY]),
+  };
+}
+
+/** Mark a shop order cancelled by setting its `Cancelled` checkbox. Idempotent,
+ * like the custom order's {@link setOrderCancelled}. */
+export async function setShopOrderCancelled(
+  pageId: string,
+  client: NotionClient = getShopOrdersNotionClient(),
+): Promise<void> {
+  assertConfigured(client);
+
+  const response = await client.fetch(`/v1/pages/${pageId}`, {
+    method: "PATCH",
+    body: JSON.stringify({
+      properties: {
+        [SHOP_ORDER_CANCELLED_PROPERTY]: { checkbox: true },
+      },
+    }),
+  });
+
+  if (!response.ok) {
+    const errorText = await response.text();
+    throw new Error(
+      `Notion shop-order cancelled update failed with status ${response.status}: ${errorText}`,
+    );
+  }
 }
 
 /**

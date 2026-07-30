@@ -1,3 +1,4 @@
+import { Link } from "wouter";
 import { LegalPage, LegalSection } from "@/components/legal-page";
 import { ROUTE_SEO } from "@/lib/seo-routes";
 import { CONTACT_EMAIL } from "@/lib/contact-info";
@@ -42,20 +43,37 @@ export default function ShippingReturns() {
         </p>
       </LegalSection>
 
-      <LegalSection title="Ready-to-wear returns">
+      <LegalSection title="Ready-to-wear returns & exchanges">
         <p>
-          Unworn ready-to-wear items with tags attached may be returned within
-          30 days of delivery for a refund of the item price. To start a return,
-          email us with your order number. Return shipping is the customer's
-          responsibility unless the item arrived damaged or incorrect.
+          Unworn ready-to-wear items with tags attached may be returned or
+          exchanged within 30 days of delivery for a refund of the item price.
+          To start a return or exchange, look up your order on the{" "}
+          <Link href="/track" className="text-primary hover:underline">
+            order tracking page
+          </Link>{" "}
+          and choose “Request a return or exchange” — you'll confirm the email
+          on your order and tell us what you'd like to do, and we'll follow up.
+          Return shipping is the customer's responsibility unless the item
+          arrived damaged or incorrect.
         </p>
       </LegalSection>
 
       <LegalSection title="Damaged or incorrect items">
         <p>
-          If your order arrives damaged or we sent the wrong item, email us
-          within 7 days of delivery with a photo and your order number and we'll
-          arrange a replacement or refund.
+          If your order arrives damaged or we sent the wrong item, start a
+          request from the{" "}
+          <Link href="/track" className="text-primary hover:underline">
+            order tracking page
+          </Link>{" "}
+          within 7 days of delivery — choose “Arrived damaged or defective” as
+          your reason — and we'll arrange a replacement or refund. You can also{" "}
+          <a
+            href={`mailto:${CONTACT_EMAIL}`}
+            className="text-primary hover:underline"
+          >
+            email us
+          </a>{" "}
+          a photo with your order number.
         </p>
       </LegalSection>
 

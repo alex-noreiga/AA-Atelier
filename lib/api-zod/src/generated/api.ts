@@ -55,7 +55,8 @@ export const GetOrderStatusResponse = zod.object({
   "depositsCreditedTotal": zod.number().describe('Sum of the deposits already paid, in dollars.'),
   "balanceDue": zod.number().describe('subtotal − depositsCreditedTotal, floored at 0, in dollars.'),
   "paymentDeadline": zod.string().optional().describe('The invoice\'s payment-due date (ISO), if the atelier set one.')
-}).optional().describe('The customer\'s invoice for a custom order, present only once the atelier has itemized it and flipped the \"Invoice Ready\" gate. Line items and deposits are dollars; balanceDue is what\'s charged online.')
+}).optional().describe('The customer\'s invoice for a custom order, present only once the atelier has itemized it and flipped the \"Invoice Ready\" gate. Line items and deposits are dollars; balanceDue is what\'s charged online.'),
+  "cancelled": zod.boolean().optional().describe('True once the atelier has cancelled the order (the `Cancelled` marker on the Notion order). When true the tracking page shows a cancelled banner and suppresses the deposit \/ invoice \/ request affordances. Absent\/false for an active order.')
 })
 
 
@@ -177,6 +178,28 @@ export const CreateOrderReviewBody = zod.object({
 }).describe('A post-delivery review of a finished custom order. The customer supplies a star rating and a short testimonial; a display name, publish consent, and photos of the finished piece are optional. The server verifies the email against the order and only accepts the review once the order has been delivered.')
 
 export const CreateOrderReviewResponse = zod.object({
+  "received": zod.boolean()
+})
+
+
+/**
+ * Files a customer's request to cancel a custom order. The customer is verified against the email on the order, and the request is rejected once the order has already been delivered (a delivered order is a return, not a cancellation). Accepted requests land as a tagged row in the Notion contact-messages inbox for the atelier to review — this endpoint does not itself refund or change the order; the atelier processes the refund.
+ * @summary Request cancellation of a custom order
+ */
+export const CreateOrderCancellationRequestParams = zod.object({
+  "orderNumber": zod.coerce.string()
+})
+
+export const createOrderCancellationRequestBodyReasonMax = 2000;
+
+
+
+export const CreateOrderCancellationRequestBody = zod.object({
+  "email": zod.string().email().describe('The email to verify against the one on the order. A request whose email doesn\'t match the order is rejected.'),
+  "reason": zod.string().max(createOrderCancellationRequestBodyReasonMax).optional().describe('Optional free-text reason for the cancellation.')
+}).describe('A request to cancel an order. The email is verified against the one on the order; a request whose email doesn\'t match is rejected. An optional reason is passed through to the atelier for context.')
+
+export const CreateOrderCancellationRequestResponse = zod.object({
   "received": zod.boolean()
 })
 
@@ -322,7 +345,52 @@ export const GetShopOrderStatusResponse = zod.object({
   "orderNumber": zod.string(),
   "status": zod.string().describe('The order\'s current fulfilment status.'),
   "statuses": zod.array(zod.string()).describe('The live ordered list of possible fulfilment statuses (read from the Notion \"Status\" workflow options), so the client can render a progress timeline. Never hardcode this list.'),
-  "total": zod.number().optional().describe('The order total in dollars.')
+  "total": zod.number().optional().describe('The order total in dollars.'),
+  "cancelled": zod.boolean().optional().describe('True once the atelier has cancelled the shop order (the `Cancelled` marker on the Notion order). When true the tracking page shows a cancelled banner and suppresses the request affordance. Absent\/false for an active order.')
+})
+
+
+/**
+ * Files a customer's request to cancel a ready-to-wear shop order. The customer is verified against the email on the order. Accepted requests land as a tagged row in the Notion contact-messages inbox for the atelier to review — this endpoint does not itself refund or change the order; the atelier processes the refund.
+ * @summary Request cancellation of a shop order
+ */
+export const CreateShopOrderCancellationRequestParams = zod.object({
+  "orderNumber": zod.coerce.string()
+})
+
+export const createShopOrderCancellationRequestBodyReasonMax = 2000;
+
+
+
+export const CreateShopOrderCancellationRequestBody = zod.object({
+  "email": zod.string().email().describe('The email to verify against the one on the order. A request whose email doesn\'t match the order is rejected.'),
+  "reason": zod.string().max(createShopOrderCancellationRequestBodyReasonMax).optional().describe('Optional free-text reason for the cancellation.')
+}).describe('A request to cancel an order. The email is verified against the one on the order; a request whose email doesn\'t match is rejected. An optional reason is passed through to the atelier for context.')
+
+export const CreateShopOrderCancellationRequestResponse = zod.object({
+  "received": zod.boolean()
+})
+
+
+/**
+ * Files a customer's request to return or exchange a ready-to-wear shop order. The customer is verified against the email on the order. Accepted requests land as a tagged row in the Notion contact-messages inbox for the atelier to review and action — this endpoint does not itself refund or edit the order.
+ * @summary Request a return or exchange for a shop order
+ */
+export const CreateReturnRequestParams = zod.object({
+  "orderNumber": zod.coerce.string()
+})
+
+export const CreateReturnRequestBody = zod.object({
+  "email": zod.string().email().describe('The email to verify against the one on the order. A request whose email doesn\'t match the order is rejected.'),
+  "kind": zod.enum(['return', 'exchange']).describe('Whether the customer wants a refund (return) or a swap (exchange).'),
+  "reason": zod.enum(['wrong_size', 'damaged', 'not_as_expected', 'changed_mind', 'other']).describe('Why the customer is returning or exchanging the item.'),
+  "items": zod.string().optional().describe('Which piece(s) the request covers, in the customer\'s own words. Optional — the atelier can also read the order in Notion.'),
+  "exchangeFor": zod.string().optional().describe('For an exchange, the size\/colour\/piece the customer wants instead. Ignored for a return.'),
+  "note": zod.string().optional().describe('Optional free-text note with anything else the atelier should know.')
+}).describe('A request to return or exchange a ready-to-wear shop order. The server verifies the email against the one on the order; the atelier reviews and actions accepted requests by hand (this endpoint never refunds or edits the order).')
+
+export const CreateReturnRequestResponse = zod.object({
+  "received": zod.boolean()
 })
 
 
@@ -402,6 +470,68 @@ export const CreateAppointmentResponse = zod.object({
 
 
 /**
+ * Returns the current details of a booked appointment, identified by the signed token embedded in the "manage your appointment" link the confirmation email carries. Read live from Google Calendar, so it reflects the latest state (including a cancellation). Drives the reschedule / cancel page.
+ * @summary Look up a booked appointment for self-service management
+ */
+export const GetAppointmentQueryParams = zod.object({
+  "token": zod.coerce.string().describe('The signed token from the manage link.')
+})
+
+export const GetAppointmentResponse = zod.object({
+  "status": zod.enum(['confirmed', 'cancelled']).describe('Whether the appointment is still on the calendar or was cancelled.'),
+  "timezone": zod.string().describe('IANA timezone the atelier\'s hours and slot times are expressed in, for the client to render the appointment\'s times.'),
+  "confirmationCode": zod.string(),
+  "typeId": zod.string().describe('The appointment type\'s id, so the reschedule flow can re-query availability for the same type.'),
+  "typeName": zod.string(),
+  "staff": zod.string(),
+  "location": zod.enum(['in-person', 'virtual']),
+  "locationLabel": zod.string(),
+  "start": zod.coerce.date(),
+  "end": zod.coerce.date(),
+  "meetingUrl": zod.string().optional().describe('The Google Meet link for a virtual appointment, when one exists.'),
+  "canModify": zod.boolean().describe('Whether the appointment can still be rescheduled or cancelled — false once it has started or been cancelled.')
+}).describe('A booked appointment\'s current state, read live from Google Calendar for the self-service reschedule \/ cancel page.')
+
+
+/**
+ * Moves the appointment identified by the signed token to a new start time. The server re-checks the slot is still free for the same staff member, type, and location (never trusting the client), updates the Google Calendar event (re-notifying the customer), and emails a confirmation. Fails if the slot is no longer available.
+ * @summary Reschedule a booked appointment to a new open slot
+ */
+export const RescheduleAppointmentBody = zod.object({
+  "token": zod.string().describe('The signed token from the manage link.'),
+  "start": zod.coerce.date().describe('The new slot\'s start instant, as returned by the availability endpoint.')
+})
+
+export const RescheduleAppointmentResponse = zod.object({
+  "status": zod.enum(['confirmed', 'cancelled']).describe('Whether the appointment is still on the calendar or was cancelled.'),
+  "timezone": zod.string().describe('IANA timezone the atelier\'s hours and slot times are expressed in, for the client to render the appointment\'s times.'),
+  "confirmationCode": zod.string(),
+  "typeId": zod.string().describe('The appointment type\'s id, so the reschedule flow can re-query availability for the same type.'),
+  "typeName": zod.string(),
+  "staff": zod.string(),
+  "location": zod.enum(['in-person', 'virtual']),
+  "locationLabel": zod.string(),
+  "start": zod.coerce.date(),
+  "end": zod.coerce.date(),
+  "meetingUrl": zod.string().optional().describe('The Google Meet link for a virtual appointment, when one exists.'),
+  "canModify": zod.boolean().describe('Whether the appointment can still be rescheduled or cancelled — false once it has started or been cancelled.')
+}).describe('A booked appointment\'s current state, read live from Google Calendar for the self-service reschedule \/ cancel page.')
+
+
+/**
+ * Cancels the appointment identified by the signed token, deleting the Google Calendar event (which frees the slot and notifies the customer) and emailing a confirmation. Idempotent — cancelling an already-cancelled appointment still succeeds.
+ * @summary Cancel a booked appointment
+ */
+export const CancelAppointmentBody = zod.object({
+  "token": zod.string().describe('The signed token from the manage link.')
+})
+
+export const CancelAppointmentResponse = zod.object({
+  "message": zod.string()
+}).describe('A generic human-readable acknowledgement.')
+
+
+/**
  * Emails the customer a one-time magic link that signs them into the account portal. Always responds 200 regardless of whether any orders exist for the address — identity is the email itself, so there is no account to enumerate. The email is sent best-effort; a mail outage never fails the request.
  * @summary Request a passwordless sign-in link
  */
@@ -425,13 +555,36 @@ export const GetAccountOverviewResponse = zod.object({
   "orderName": zod.string(),
   "currentStage": zod.string(),
   "stages": zod.array(zod.string()).describe('The live ordered stage list, so the dashboard can show progress (e.g. \"3 of 6\").'),
-  "estimatedCompletion": zod.string().optional().describe('The order\'s target completion date (its Due Date) as an ISO date (yyyy-mm-dd). A pass-through string (no format: date). Absent until the atelier sets one.')
+  "estimatedCompletion": zod.string().optional().describe('The order\'s target completion date (its Due Date) as an ISO date (yyyy-mm-dd). A pass-through string (no format: date). Absent until the atelier sets one.'),
+  "measurements": zod.object({
+  "unit": zod.enum(['inches', 'cm']).describe('The unit the measurement values are expressed in.'),
+  "waist": zod.number().optional(),
+  "bust": zod.number().optional(),
+  "hips": zod.number().optional(),
+  "height": zod.number().optional(),
+  "bodyGirth": zod.number().optional()
+}).optional().describe('The measurements on file for a custom order, read from the order\'s Notion properties. Absent when the customer chose to have measurements taken at a fitting, or for orders placed before measurements were stored as readable properties (those values remain only in the order\'s page body). Individual values may be absent for a partially-filled order.')
 }).describe('A custom order as shown on the account dashboard (links out to the full tracking + invoice views).')).describe('The customer\'s custom (bespoke) orders, newest-relevant first. Empty when none match the signed-in email.'),
   "shopOrders": zod.array(zod.object({
   "orderNumber": zod.string(),
   "status": zod.string().describe('The order\'s current fulfilment status.'),
   "total": zod.number().optional().describe('The order total in dollars, when recorded.')
-}).describe('A ready-to-wear shop order as shown on the account dashboard.')).describe('The customer\'s ready-to-wear shop orders. Empty when none match the signed-in email (older shop orders without an order number are omitted).')
+}).describe('A ready-to-wear shop order as shown on the account dashboard.')).describe('The customer\'s ready-to-wear shop orders. Empty when none match the signed-in email (older shop orders without an order number are omitted).'),
+  "appointments": zod.array(zod.object({
+  "status": zod.enum(['confirmed', 'cancelled']),
+  "timezone": zod.string().describe('IANA timezone the appointment\'s times are expressed in.'),
+  "confirmationCode": zod.string(),
+  "typeId": zod.string(),
+  "typeName": zod.string(),
+  "staff": zod.string(),
+  "location": zod.enum(['in-person', 'virtual']),
+  "locationLabel": zod.string(),
+  "start": zod.coerce.date(),
+  "end": zod.coerce.date(),
+  "meetingUrl": zod.string().optional().describe('The Google Meet link for a virtual appointment, when one exists.'),
+  "canModify": zod.boolean().describe('Whether the appointment can still be rescheduled or cancelled — false once it has started or been cancelled.'),
+  "manageToken": zod.string().describe('A signed token (the same one the confirmation email\'s manage link carries) authorizing reschedule\/cancel of this specific appointment via the appointment-manage endpoints.')
+}).describe('An upcoming appointment as shown on the account dashboard. Mirrors AppointmentDetails and additionally carries a signed manage token so the dashboard can reschedule or cancel it in place through the existing appointment-manage endpoints (no separate manage-link navigation needed).')).describe('The customer\'s upcoming appointments, read live from Google Calendar by the email stamped on each booking, soonest first. Empty when none are upcoming, when the calendar integration isn\'t configured, or (a best-effort read) when the calendar can\'t be reached. Bookings made before the customer email was stamped on the event are not listed.')
 }).describe('Everything tied to the signed-in customer\'s email — the data the account dashboard renders.')
 
 

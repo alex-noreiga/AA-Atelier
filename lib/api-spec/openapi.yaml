@@ -270,6 +270,67 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/ErrorEnvelope"
+  /orders/{orderNumber}/cancellation-requests:
+    post:
+      operationId: createOrderCancellationRequest
+      tags: [orders]
+      summary: Request cancellation of a custom order
+      description: >-
+        Files a customer's request to cancel a custom order. The customer is
+        verified against the email on the order, and the request is rejected
+        once the order has already been delivered (a delivered order is a return,
+        not a cancellation). Accepted requests land as a tagged row in the Notion
+        contact-messages inbox for the atelier to review — this endpoint does not
+        itself refund or change the order; the atelier processes the refund.
+      parameters:
+        - name: orderNumber
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/NewCancellationRequest"
+      responses:
+        "201":
+          description: Cancellation request received
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/NewCancellationResponse"
+        "400":
+          description: Validation error
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorEnvelope"
+        "403":
+          description: The email does not match the one on the order
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorEnvelope"
+        "404":
+          description: Order not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/OrderNotFound"
+        "409":
+          description: The order has already been delivered, so it can't be cancelled
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorEnvelope"
+        "500":
+          description: Server error
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorEnvelope"
   /contact:
     post:
       operationId: createContactMessage
@@ -480,6 +541,114 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/OrderNotFound"
+  /shop-orders/{orderNumber}/cancellation-requests:
+    post:
+      operationId: createShopOrderCancellationRequest
+      tags: [checkout]
+      summary: Request cancellation of a shop order
+      description: >-
+        Files a customer's request to cancel a ready-to-wear shop order. The
+        customer is verified against the email on the order. Accepted requests
+        land as a tagged row in the Notion contact-messages inbox for the atelier
+        to review — this endpoint does not itself refund or change the order; the
+        atelier processes the refund.
+      parameters:
+        - name: orderNumber
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/NewCancellationRequest"
+      responses:
+        "201":
+          description: Cancellation request received
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/NewCancellationResponse"
+        "400":
+          description: Validation error
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorEnvelope"
+        "403":
+          description: The email does not match the one on the order
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorEnvelope"
+        "404":
+          description: No shop order with that number
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/OrderNotFound"
+        "500":
+          description: Server error
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorEnvelope"
+  /shop-orders/{orderNumber}/return-requests:
+    post:
+      operationId: createReturnRequest
+      tags: [checkout]
+      summary: Request a return or exchange for a shop order
+      description: >-
+        Files a customer's request to return or exchange a ready-to-wear shop
+        order. The customer is verified against the email on the order. Accepted
+        requests land as a tagged row in the Notion contact-messages inbox for
+        the atelier to review and action — this endpoint does not itself refund
+        or edit the order.
+      parameters:
+        - name: orderNumber
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/NewReturnRequest"
+      responses:
+        "201":
+          description: Return/exchange request received
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/NewReturnResponse"
+        "400":
+          description: Validation error
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorEnvelope"
+        "403":
+          description: The email does not match the one on the order
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorEnvelope"
+        "404":
+          description: No shop order with that number
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/OrderNotFound"
+        "500":
+          description: Server error
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorEnvelope"
   /appointments/options:
     get:
       operationId: getAppointmentOptions
@@ -594,6 +763,132 @@ paths:
                 $ref: "#/components/schemas/NewAppointmentResponse"
         "400":
           description: Validation error or the slot is no longer available
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorEnvelope"
+        "500":
+          description: Server error
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorEnvelope"
+  /appointments/manage:
+    get:
+      operationId: getAppointment
+      tags: [appointments]
+      summary: Look up a booked appointment for self-service management
+      description: >-
+        Returns the current details of a booked appointment, identified by the
+        signed token embedded in the "manage your appointment" link the
+        confirmation email carries. Read live from Google Calendar, so it
+        reflects the latest state (including a cancellation). Drives the
+        reschedule / cancel page.
+      parameters:
+        - name: token
+          in: query
+          required: true
+          description: The signed token from the manage link.
+          schema:
+            type: string
+      responses:
+        "200":
+          description: The appointment's current details
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AppointmentDetails"
+        "400":
+          description: The token is missing, invalid, or expired
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorEnvelope"
+        "404":
+          description: No such appointment — it may have been cancelled
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorEnvelope"
+        "500":
+          description: Server error
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorEnvelope"
+  /appointments/reschedule:
+    post:
+      operationId: rescheduleAppointment
+      tags: [appointments]
+      summary: Reschedule a booked appointment to a new open slot
+      description: >-
+        Moves the appointment identified by the signed token to a new start
+        time. The server re-checks the slot is still free for the same staff
+        member, type, and location (never trusting the client), updates the
+        Google Calendar event (re-notifying the customer), and emails a
+        confirmation. Fails if the slot is no longer available.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/RescheduleAppointmentRequest"
+      responses:
+        "200":
+          description: The appointment's new details
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AppointmentDetails"
+        "400":
+          description: Invalid token, or the slot is no longer available
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorEnvelope"
+        "404":
+          description: No such appointment — it may have been cancelled
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorEnvelope"
+        "409":
+          description: The appointment has already started or been cancelled
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorEnvelope"
+        "500":
+          description: Server error
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorEnvelope"
+  /appointments/cancel:
+    post:
+      operationId: cancelAppointment
+      tags: [appointments]
+      summary: Cancel a booked appointment
+      description: >-
+        Cancels the appointment identified by the signed token, deleting the
+        Google Calendar event (which frees the slot and notifies the customer)
+        and emailing a confirmation. Idempotent — cancelling an
+        already-cancelled appointment still succeeds.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CancelAppointmentRequest"
+      responses:
+        "200":
+          description: The appointment was cancelled
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MessageResponse"
+        "400":
+          description: The token is missing, invalid, or expired
           content:
             application/json:
               schema:
@@ -750,6 +1045,13 @@ components:
                   same as estimatedCompletion.
         invoice:
           $ref: "#/components/schemas/Invoice"
+        cancelled:
+          type: boolean
+          description: >-
+            True once the atelier has cancelled the order (the `Cancelled`
+            marker on the Notion order). When true the tracking page shows a
+            cancelled banner and suppresses the deposit / invoice / request
+            affordances. Absent/false for an active order.
       required:
         - orderNumber
         - orderName
@@ -864,6 +1166,13 @@ components:
         total:
           type: number
           description: The order total in dollars.
+        cancelled:
+          type: boolean
+          description: >-
+            True once the atelier has cancelled the shop order (the `Cancelled`
+            marker on the Notion order). When true the tracking page shows a
+            cancelled banner and suppresses the request affordance. Absent/false
+            for an active order.
       required:
         - orderNumber
         - status
@@ -1000,6 +1309,32 @@ components:
       properties:
         received:
           type: boolean
+    NewCancellationRequest:
+      type: object
+      required:
+        - email
+      description: >-
+        A request to cancel an order. The email is verified against the one on
+        the order; a request whose email doesn't match is rejected. An optional
+        reason is passed through to the atelier for context.
+      properties:
+        email:
+          type: string
+          format: email
+          description: >-
+            The email to verify against the one on the order. A request whose
+            email doesn't match the order is rejected.
+        reason:
+          type: string
+          maxLength: 2000
+          description: Optional free-text reason for the cancellation.
+    NewCancellationResponse:
+      type: object
+      required:
+        - received
+      properties:
+        received:
+          type: boolean
     NewReviewRequest:
       type: object
       required:
@@ -1125,6 +1460,52 @@ components:
         - success
       properties:
         success:
+          type: boolean
+    NewReturnRequest:
+      type: object
+      required:
+        - email
+        - kind
+        - reason
+      description: >-
+        A request to return or exchange a ready-to-wear shop order. The server
+        verifies the email against the one on the order; the atelier reviews and
+        actions accepted requests by hand (this endpoint never refunds or edits
+        the order).
+      properties:
+        email:
+          type: string
+          format: email
+          description: >-
+            The email to verify against the one on the order. A request whose
+            email doesn't match the order is rejected.
+        kind:
+          type: string
+          enum: [return, exchange]
+          description: Whether the customer wants a refund (return) or a swap (exchange).
+        reason:
+          type: string
+          enum: [wrong_size, damaged, not_as_expected, changed_mind, other]
+          description: Why the customer is returning or exchanging the item.
+        items:
+          type: string
+          description: >-
+            Which piece(s) the request covers, in the customer's own words.
+            Optional — the atelier can also read the order in Notion.
+        exchangeFor:
+          type: string
+          description: >-
+            For an exchange, the size/colour/piece the customer wants instead.
+            Ignored for a return.
+        note:
+          type: string
+          description: Optional free-text note with anything else the atelier should know.
+    NewReturnResponse:
+      type: object
+      required:
+        - received
+      properties:
+        received:
           type: boolean
     ProductVariant:
       type: object
@@ -1492,6 +1873,86 @@ components:
         calendarLink:
           type: string
           description: A link to the booking's Google Calendar event.
+    AppointmentDetails:
+      type: object
+      description: >-
+        A booked appointment's current state, read live from Google Calendar for
+        the self-service reschedule / cancel page.
+      required:
+        - status
+        - confirmationCode
+        - typeId
+        - typeName
+        - staff
+        - location
+        - locationLabel
+        - start
+        - end
+        - timezone
+        - canModify
+      properties:
+        status:
+          type: string
+          enum: [confirmed, cancelled]
+          description: Whether the appointment is still on the calendar or was cancelled.
+        timezone:
+          type: string
+          description: >-
+            IANA timezone the atelier's hours and slot times are expressed in,
+            for the client to render the appointment's times.
+        confirmationCode:
+          type: string
+        typeId:
+          type: string
+          description: >-
+            The appointment type's id, so the reschedule flow can re-query
+            availability for the same type.
+        typeName:
+          type: string
+        staff:
+          type: string
+        location:
+          type: string
+          enum: [in-person, virtual]
+        locationLabel:
+          type: string
+        start:
+          type: string
+          format: date-time
+        end:
+          type: string
+          format: date-time
+        meetingUrl:
+          type: string
+          description: The Google Meet link for a virtual appointment, when one exists.
+        canModify:
+          type: boolean
+          description: >-
+            Whether the appointment can still be rescheduled or cancelled — false
+            once it has started or been cancelled.
+    RescheduleAppointmentRequest:
+      type: object
+      required:
+        - token
+        - start
+      properties:
+        token:
+          type: string
+          description: The signed token from the manage link.
+        start:
+          type: string
+          format: date-time
+          description: >-
+            The new slot's start instant, as returned by the availability
+            endpoint.
+    CancelAppointmentRequest:
+      type: object
+      required:
+        - token
+      properties:
+        token:
+          type: string
+          description: The signed token from the manage link.
     ErrorEnvelope:
       type: object
       required: [error]
@@ -1518,7 +1979,7 @@ components:
       description: >-
         Everything tied to the signed-in customer's email — the data the account
         dashboard renders.
-      required: [email, customOrders, shopOrders]
+      required: [email, customOrders, shopOrders, appointments]
       properties:
         email:
           type: string
@@ -1537,6 +1998,16 @@ components:
             signed-in email (older shop orders without an order number are omitted).
           items:
             $ref: "#/components/schemas/AccountShopOrderSummary"
+        appointments:
+          type: array
+          description: >-
+            The customer's upcoming appointments, read live from Google Calendar
+            by the email stamped on each booking, soonest first. Empty when none
+            are upcoming, when the calendar integration isn't configured, or (a
+            best-effort read) when the calendar can't be reached. Bookings made
+            before the customer email was stamped on the event are not listed.
+          items:
+            $ref: "#/components/schemas/AccountAppointmentSummary"
     AccountOrderSummary:
       type: object
       description: A custom order as shown on the account dashboard (links out to the full tracking + invoice views).
@@ -1559,6 +2030,8 @@ components:
             The order's target completion date (its Due Date) as an ISO date
             (yyyy-mm-dd). A pass-through string (no format: date). Absent until
             the atelier sets one.
+        measurements:
+          $ref: "#/components/schemas/AccountMeasurements"
     AccountShopOrderSummary:
       type: object
       description: A ready-to-wear shop order as shown on the account dashboard.
@@ -1572,3 +2045,87 @@ components:
         total:
           type: number
           description: The order total in dollars, when recorded.
+    AccountMeasurements:
+      type: object
+      description: >-
+        The measurements on file for a custom order, read from the order's Notion
+        properties. Absent when the customer chose to have measurements taken at a
+        fitting, or for orders placed before measurements were stored as readable
+        properties (those values remain only in the order's page body). Individual
+        values may be absent for a partially-filled order.
+      required: [unit]
+      properties:
+        unit:
+          type: string
+          enum: [inches, cm]
+          description: The unit the measurement values are expressed in.
+        waist:
+          type: number
+        bust:
+          type: number
+        hips:
+          type: number
+        height:
+          type: number
+        bodyGirth:
+          type: number
+    AccountAppointmentSummary:
+      type: object
+      description: >-
+        An upcoming appointment as shown on the account dashboard. Mirrors
+        AppointmentDetails and additionally carries a signed manage token so the
+        dashboard can reschedule or cancel it in place through the existing
+        appointment-manage endpoints (no separate manage-link navigation needed).
+      required:
+        - status
+        - confirmationCode
+        - typeId
+        - typeName
+        - staff
+        - location
+        - locationLabel
+        - start
+        - end
+        - timezone
+        - canModify
+        - manageToken
+      properties:
+        status:
+          type: string
+          enum: [confirmed, cancelled]
+        timezone:
+          type: string
+          description: IANA timezone the appointment's times are expressed in.
+        confirmationCode:
+          type: string
+        typeId:
+          type: string
+        typeName:
+          type: string
+        staff:
+          type: string
+        location:
+          type: string
+          enum: [in-person, virtual]
+        locationLabel:
+          type: string
+        start:
+          type: string
+          format: date-time
+        end:
+          type: string
+          format: date-time
+        meetingUrl:
+          type: string
+          description: The Google Meet link for a virtual appointment, when one exists.
+        canModify:
+          type: boolean
+          description: >-
+            Whether the appointment can still be rescheduled or cancelled — false
+            once it has started or been cancelled.
+        manageToken:
+          type: string
+          description: >-
+            A signed token (the same one the confirmation email's manage link
+            carries) authorizing reschedule/cancel of this specific appointment
+            via the appointment-manage endpoints.

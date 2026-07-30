@@ -22,6 +22,11 @@ export const SHOP_ORDER_TOTAL_PROPERTY = "Total"; // number
 export const SHOP_ORDER_STATUS_PROPERTY = "Status"; // status (workflow)
 export const SHOP_ORDER_SHIPPING_PROPERTY = "Shipping Address"; // rich_text
 export const SHOP_ORDER_CLIENT_PROPERTY = "Client"; // relation -> Client CRM
+// Set by the cancellation-refund flow when the atelier cancels a shop order
+// (`setShopOrderCancelled`). Additive marker (absent ⇒ false), like the custom
+// order's `Cancelled` checkbox — read back so the tracking page shows a
+// cancelled state. See `services/order-cancellation.service.ts`.
+export const SHOP_ORDER_CANCELLED_PROPERTY = "Cancelled"; // checkbox
 
 /**
  * A human-readable shop order number the customer can track their order by
