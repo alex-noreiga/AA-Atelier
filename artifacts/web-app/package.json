@@ -39,7 +39,7 @@
     "class-variance-authority": "catalog:",
     "clsx": "catalog:",
     "embla-carousel-react": "^8.6.0",
-    "jsdom": "^25.0.1",
+    "jsdom": "^30.0.1",
     "jspdf": "^4.2.1",
     "lucide-react": "catalog:",
     "react": "catalog:",
