@@ -587,8 +587,10 @@ describe("fittingReminderEmail", () => {
       orderNumber: "000002",
       targetDate: "2026-08-15",
     });
-    expect(withDate.html).toContain("2026-08-15");
-    expect(withDate.text).toContain("2026-08-15");
+    // Rendered as a friendly, timezone-safe label (UTC), not the raw ISO string.
+    expect(withDate.html).toContain("August 15, 2026");
+    expect(withDate.text).toContain("August 15, 2026");
+    expect(withDate.html).not.toContain("2026-08-15");
 
     const withoutDate = fittingReminderEmail({
       email: "ada@example.com",
