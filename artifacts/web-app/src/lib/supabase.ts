@@ -17,8 +17,13 @@
 
 import { createClient, type SupabaseClient } from "@supabase/supabase-js";
 
-const url = import.meta.env.VITE_SUPABASE_URL as string | undefined;
-const anonKey = import.meta.env.VITE_SUPABASE_ANON_KEY as string | undefined;
+// The Supabase→Vercel integration injects the public config as
+// VITE_PUBLIC_SUPABASE_* (Vite exposes it since it starts with VITE_); a plain
+// VITE_SUPABASE_* also works for a simple local .env.
+const url = (import.meta.env.VITE_PUBLIC_SUPABASE_URL ??
+  import.meta.env.VITE_SUPABASE_URL) as string | undefined;
+const anonKey = (import.meta.env.VITE_PUBLIC_SUPABASE_ANON_KEY ??
+  import.meta.env.VITE_SUPABASE_ANON_KEY) as string | undefined;
 
 /** Whether Supabase Auth is configured for this build. */
 export const supabaseConfigured = Boolean(url && anonKey);
