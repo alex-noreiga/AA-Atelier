@@ -37,4 +37,6 @@ export interface NewOrderRequest {
   rush?: boolean;
   /** Notion file_upload ids for customer-supplied reference / inspiration images, each obtained by first POSTing the image bytes to POST /orders/reference-images (a binary endpoint outside this contract, mounted like the Stripe webhook). They are attached to the order's Notion page as image blocks. Optional; omitted when the customer uploaded none. */
   referenceImageIds?: string[];
+  /** An optional referral code the customer received from another skater. The server looks it up against the Client CRM (best-effort): a valid code — not the customer's own — earns the new customer a welcome discount code now and credits the referrer once this order is first paid. An unknown or self-referring code is ignored, and referral capture never blocks the order. Optional. */
+  referralCode?: string;
 }

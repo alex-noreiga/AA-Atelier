@@ -13,6 +13,7 @@ export * from './accountMeasurements';
 export * from './accountMeasurementsUnit';
 export * from './accountOrderSummary';
 export * from './accountOverview';
+export * from './accountReferral';
 export * from './accountShopOrderSummary';
 export * from './appointmentAvailability';
 export * from './appointmentDetails';

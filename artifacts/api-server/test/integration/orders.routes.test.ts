@@ -12,6 +12,11 @@ vi.mock("../../src/lib/notion/invoice.repository.js", () => ({
   markInvoicePaid: vi.fn(),
 }));
 vi.mock("../../src/lib/stripe/client.js", () => ({ getStripeClient: vi.fn() }));
+// Referral capture is a best-effort side effect of order creation; mock it to
+// assert the wiring and drive the failure branch without touching Notion/Stripe.
+vi.mock("../../src/services/rewards.service.js", () => ({
+  captureReferralOnOrder: vi.fn(),
+}));
 
 import request from "supertest";
 import type Stripe from "stripe";
@@ -21,6 +26,7 @@ import {
   findOrderByNumber,
   createOrder,
 } from "../../src/lib/notion/orders.repository.js";
+import { captureReferralOnOrder } from "../../src/services/rewards.service.js";
 import {
   findInvoice,
   listInvoiceLineItems,
@@ -30,6 +36,7 @@ import { getStripeClient } from "../../src/lib/stripe/client.js";
 
 const mockFind = vi.mocked(findOrderByNumber);
 const mockCreate = vi.mocked(createOrder);
+const mockCapture = vi.mocked(captureReferralOnOrder);
 const mockFindInvoice = vi.mocked(findInvoice);
 const mockListLines = vi.mocked(listInvoiceLineItems);
 const mockGetStripe = vi.mocked(getStripeClient);
@@ -251,6 +258,38 @@ describe("POST /api/orders", () => {
     expect(res.status).toBe(400);
     expect(res.body).toHaveProperty("error");
     expect(mockCreate).not.toHaveBeenCalled();
+  });
+
+  it("captures a referral code when one is supplied", async () => {
+    mockCreate.mockResolvedValue("ORD-REF-001");
+
+    const res = await request(app)
+      .post("/api/orders")
+      .send({ ...validBody, referralCode: "AA-ABC123" });
+
+    expect(res.status).toBe(201);
+    expect(mockCapture).toHaveBeenCalledWith({
+      referralCode: "AA-ABC123",
+      email: validBody.email,
+    });
+  });
+
+  it("does not attempt referral capture when no code is supplied", async () => {
+    mockCreate.mockResolvedValue("ORD-NOREF-001");
+    await request(app).post("/api/orders").send(validBody);
+    expect(mockCapture).not.toHaveBeenCalled();
+  });
+
+  it("still creates the order (201) when referral capture throws", async () => {
+    mockCreate.mockResolvedValue("ORD-REF-002");
+    mockCapture.mockRejectedValueOnce(new Error("capture boom"));
+
+    const res = await request(app)
+      .post("/api/orders")
+      .send({ ...validBody, referralCode: "AA-ABC123" });
+
+    expect(res.status).toBe(201);
+    expect(res.body).toEqual({ orderNumber: "ORD-REF-002" });
   });
 });
 

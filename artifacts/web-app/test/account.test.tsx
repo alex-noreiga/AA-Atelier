@@ -163,6 +163,46 @@ describe("Account dashboard", () => {
     expect(screen.getByTestId("account-empty")).toBeInTheDocument();
   });
 
+  it("renders the referral card with the code when the overview carries one", () => {
+    stubHook(mockOverview, {
+      data: {
+        ...overview,
+        referral: { code: "AA-ABC123", creditAmount: 40 },
+      },
+    });
+    renderPage();
+
+    expect(screen.getByTestId("referral-card")).toBeInTheDocument();
+    expect(screen.getByTestId("referral-code")).toHaveTextContent("AA-ABC123");
+    // The concrete credit value appears in the share copy.
+    expect(screen.getByTestId("referral-card")).toHaveTextContent("$40");
+    // No standing returning code until earned.
+    expect(screen.queryByTestId("returning-code")).not.toBeInTheDocument();
+  });
+
+  it("shows the standing returning-skater code when present", () => {
+    stubHook(mockOverview, {
+      data: {
+        ...overview,
+        referral: {
+          code: "AA-ABC123",
+          creditAmount: 40,
+          returningCode: "AA-AGAIN-99",
+        },
+      },
+    });
+    renderPage();
+    expect(screen.getByTestId("returning-code")).toHaveTextContent(
+      "AA-AGAIN-99",
+    );
+  });
+
+  it("omits the referral card when the overview has no referral block", () => {
+    stubHook(mockOverview, { data: overview });
+    renderPage();
+    expect(screen.queryByTestId("referral-card")).not.toBeInTheDocument();
+  });
+
   it("signs out via the logout mutation", async () => {
     const user = userEvent.setup();
     stubHook(mockOverview, { data: overview });

@@ -320,6 +320,170 @@ export function fittingReminderEmail(
   };
 }
 
+// ---------------------------------------------------------------------------
+// Referral & returning-skater rewards (see services/rewards.service.ts). Each
+// carries a promo code the customer redeems in Stripe's checkout box.
+// ---------------------------------------------------------------------------
+
+/** How to redeem a promo code, shared by the reward emails. */
+function redeemNoteHtml(): string {
+  return `<p style="font-size:14px;color:#8a7f74;">To use it, enter the code in the
+     “Add promotion code” box when you check out.</p>`;
+}
+
+function codeBlockHtml(code: string): string {
+  return `<p style="margin:24px 0;">
+       <span style="display:inline-block;border:1px solid #d9cfc2;border-radius:2px;
+         padding:12px 20px;font-size:20px;letter-spacing:0.12em;">${escapeHtml(code)}</span>
+     </p>`;
+}
+
+export interface ReferralWelcomeEmailDetails {
+  email: string;
+  code: string;
+  /** The welcome discount as a whole-number percentage. */
+  percent: number;
+}
+
+/** Sent to a new customer who placed their first order with a referral code —
+ * their welcome discount, redeemable at checkout. */
+export function referralWelcomeEmail(
+  details: ReferralWelcomeEmailDetails,
+): EmailMessage {
+  const { code, percent } = details;
+
+  const html = layout(
+    "Welcome — a gift for your first piece",
+    `<p>Hi there,</p>
+     <p>A fellow skater sent you our way, and we're so glad they did. As a welcome,
+        here's <strong>${percent}% off</strong> your first order:</p>
+     ${codeBlockHtml(code)}
+     ${redeemNoteHtml()}
+     <p>We can't wait to bring your piece to life.</p>`,
+  );
+
+  const text = [
+    `Hi there,`,
+    ``,
+    `A fellow skater sent you our way, and we're so glad they did. As a welcome,`,
+    `here's ${percent}% off your first order:`,
+    ``,
+    `    ${code}`,
+    ``,
+    `To use it, enter the code in the "Add promotion code" box when you check out.`,
+    ``,
+    `We can't wait to bring your piece to life.`,
+    ``,
+    `Thank you,`,
+    `The ${ATELIER_NAME} team`,
+  ].join("\n");
+
+  return {
+    to: details.email,
+    subject: "A welcome gift for your first order",
+    html,
+    text,
+  };
+}
+
+export interface ReferralCreditEmailDetails {
+  email: string;
+  code: string;
+  /** The credit amount in dollars. */
+  amount: number;
+}
+
+/** Sent to a referring customer once the skater they referred places (and pays
+ * for) their first order — their earned credit, redeemable at checkout. */
+export function referralCreditEmail(
+  details: ReferralCreditEmailDetails,
+): EmailMessage {
+  const { code, amount } = details;
+  const amountLabel = `$${amount.toFixed(2).replace(/\.00$/, "")}`;
+
+  const html = layout(
+    "Thank you for the referral",
+    `<p>Hi there,</p>
+     <p>Someone you referred just began their own custom piece with us — thank you for
+        sharing our atelier. Here's <strong>${escapeHtml(amountLabel)} in credit</strong>
+        toward your next order:</p>
+     ${codeBlockHtml(code)}
+     ${redeemNoteHtml()}
+     <p>With gratitude for spreading the word.</p>`,
+  );
+
+  const text = [
+    `Hi there,`,
+    ``,
+    `Someone you referred just began their own custom piece with us — thank you for`,
+    `sharing our atelier. Here's ${amountLabel} in credit toward your next order:`,
+    ``,
+    `    ${code}`,
+    ``,
+    `To use it, enter the code in the "Add promotion code" box when you check out.`,
+    ``,
+    `With gratitude for spreading the word.`,
+    ``,
+    `Thank you,`,
+    `The ${ATELIER_NAME} team`,
+  ].join("\n");
+
+  return {
+    to: details.email,
+    subject: "You've earned a referral credit",
+    html,
+    text,
+  };
+}
+
+export interface ReturningSkaterRewardEmailDetails {
+  email: string;
+  code: string;
+  /** The standing discount as a whole-number percentage. */
+  percent: number;
+}
+
+/** Sent to a returning customer on a repeat order — a standing personal discount
+ * code they can reuse on future orders. */
+export function returningSkaterRewardEmail(
+  details: ReturningSkaterRewardEmailDetails,
+): EmailMessage {
+  const { code, percent } = details;
+
+  const html = layout(
+    "A thank-you for coming back",
+    `<p>Hi there,</p>
+     <p>It means a great deal that you've returned to us. As our thanks, here's a
+        standing <strong>${percent}% off</strong> — yours to use on your future orders:</p>
+     ${codeBlockHtml(code)}
+     ${redeemNoteHtml()}
+     <p>We look forward to creating with you again.</p>`,
+  );
+
+  const text = [
+    `Hi there,`,
+    ``,
+    `It means a great deal that you've returned to us. As our thanks, here's a`,
+    `standing ${percent}% off — yours to use on your future orders:`,
+    ``,
+    `    ${code}`,
+    ``,
+    `To use it, enter the code in the "Add promotion code" box when you check out.`,
+    ``,
+    `We look forward to creating with you again.`,
+    ``,
+    `Thank you,`,
+    `The ${ATELIER_NAME} team`,
+  ].join("\n");
+
+  return {
+    to: details.email,
+    subject: "A little thank-you for coming back",
+    html,
+    text,
+  };
+}
+
 /** Acknowledgement sent to the customer after a contact-form submission. */
 export function contactAckEmail(input: CreateContactInput): EmailMessage {
   const firstName = input.name.trim().split(/\s+/)[0] || "there";

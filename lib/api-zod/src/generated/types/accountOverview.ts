@@ -7,6 +7,7 @@
  */
 import type { AccountAppointmentSummary } from './accountAppointmentSummary';
 import type { AccountOrderSummary } from './accountOrderSummary';
+import type { AccountReferral } from './accountReferral';
 import type { AccountShopOrderSummary } from './accountShopOrderSummary';
 
 /**
@@ -21,4 +22,5 @@ export interface AccountOverview {
   shopOrders: AccountShopOrderSummary[];
   /** The customer's upcoming appointments, read live from Google Calendar by the email stamped on each booking, soonest first. Empty when none are upcoming, when the calendar integration isn't configured, or (a best-effort read) when the calendar can't be reached. Bookings made before the customer email was stamped on the event are not listed. */
   appointments: AccountAppointmentSummary[];
+  referral?: AccountReferral;
 }

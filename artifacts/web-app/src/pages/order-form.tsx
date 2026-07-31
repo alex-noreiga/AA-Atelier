@@ -62,6 +62,9 @@ const formSchema = z
     bodyGirth: z.string().optional(),
     description: z.string().optional(),
     neededBy: z.string().optional(),
+    // Optional referral code from another skater. Validated server-side against
+    // the CRM (an unknown/self code is silently ignored), so no client checks.
+    referralCode: z.string().optional(),
     // Set when the customer acknowledges the rush surcharge. Only *required*
     // when the needed-by date lands inside the rush window (see superRefine).
     rushAcknowledged: z.boolean().default(false),
@@ -181,6 +184,7 @@ export default function OrderForm() {
     const {
       description,
       neededBy,
+      referralCode,
       measurementMode,
       measurementUnit,
       rushAcknowledged: _rushAcknowledged,
@@ -230,6 +234,7 @@ export default function OrderForm() {
         ...(description ? { description } : {}),
         ...(neededBy ? { neededBy } : {}),
         ...(rush ? { rush: true } : {}),
+        ...(referralCode?.trim() ? { referralCode: referralCode.trim() } : {}),
         ...(referenceImageIds.length ? { referenceImageIds } : {}),
       },
     });
@@ -638,6 +643,29 @@ export default function OrderForm() {
                     disabled={submitting}
                   />
                 </div>
+              </div>
+
+              <div>
+                <Label
+                  htmlFor="referralCode"
+                  className="text-sm font-light tracking-wide"
+                >
+                  Referral Code
+                  <span className="text-muted-foreground/60 ml-1 text-xs">
+                    (optional)
+                  </span>
+                </Label>
+                <Input
+                  id="referralCode"
+                  {...register("referralCode")}
+                  placeholder="e.g. AA-XXXXXX"
+                  data-testid="input-referral-code"
+                  className="mt-1.5 bg-transparent border-0 border-b border-border rounded-none px-0 py-3 focus-visible:ring-0 focus-visible:border-primary transition-colors shadow-none w-64"
+                />
+                <p className="text-muted-foreground/60 text-xs mt-1.5">
+                  Referred by another skater? Enter their code and we'll send
+                  you a welcome discount.
+                </p>
               </div>
             </div>
           </section>
