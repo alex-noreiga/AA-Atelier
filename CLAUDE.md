@@ -1103,7 +1103,7 @@ free text. It's a live-from-Notion read on the way in and a dual-write to the or
 on the way out, following the same conventions as the shop. Load-bearing decisions:
 
 1. **The palette is a live Notion "Fabrics" database, never hardcoded.** `GET
-   /api/fabrics` reads the atelier-editable "Fabrics" database
+/api/fabrics` reads the atelier-editable "Fabrics" database
    (`NOTION_FABRICS_DATABASE_ID`) with the same **60s TTL cache + fallback + edge
    cache** as `/products` — it's the `product-categories` _optional_ stack cloned:
    `getFabricsNotionClient` (`notion/client.ts`), `notion/fabrics.schema.ts`
@@ -1130,7 +1130,7 @@ on the way out, following the same conventions as the shop. Load-bearing decisio
    upload** — the order form still submits (the escape hatch and custom print work
    with no swatches). A swatch image is a short-lived Notion signed URL, so the
    picker falls back to a monogram placeholder on load error (`components/
-   fabric-color-picker.tsx`).
+fabric-color-picker.tsx`).
 
 4. **Two pickers, three facets, mutual exclusivity.** `FabricColorPicker`
    (`components/fabric-color-picker.tsx`) is controlled + form-agnostic (built from
@@ -1141,7 +1141,7 @@ on the way out, following the same conventions as the shop. Load-bearing decisio
    same as reference images). A swatch and a color note are **mutually exclusive**
    (choosing one clears the other, enforced in the change handlers); a custom print
    can accompany either. The form drives selection via `setValue("bodiceFabric"/
-   "skirtFabric", …)` and maps them into the order body as an optional nested
+"skirtFabric", …)` and maps them into the order body as an optional nested
    `fabricSelections.{bodice,skirt}` (contract's `FabricSelection`), omitting an
    untouched picker. A **group-by toggle** ("By fabric type" ⇄ "By color family")
    re-groups the same swatches under the live `Color Family` labels; it appears only
@@ -1154,7 +1154,7 @@ on the way out, following the same conventions as the shop. Load-bearing decisio
 5. **Recorded on the order as a write-only dual-write.** Like the measurement
    precedent, `orders.blocks.ts` writes each choice both as typed **rich_text
    properties** (`Bodice Fabric` / `Bodice Color Note` / `Skirt Fabric` / `Skirt
-   Color Note` — `"<name> (<type>)"` for a swatch, the raw text for a note) **and**
+Color Note` — `"<name> (<type>)"` for a swatch, the raw text for a note) **and**
    as readable **page-body blocks** in the Costume Details section, with any
    custom-print images attached as inline image blocks. The app **never reads these
    back** (unlike measurements) — they're an atelier signal. Property-name constants
@@ -1799,7 +1799,7 @@ and in the maintainer's env without edits.
   its swatches live from `GET /api/fabrics`; unset ⇒ the pickers hide and the intake
   form falls back to its free-text description. Recording a chosen fabric/color also
   needs the four rich_text properties (`Bodice Fabric`, `Bodice Color Note`, `Skirt
-  Fabric`, `Skirt Color Note`) on the Order Tracking Pipeline database (see "Visual
+Fabric`, `Skirt Color Note`) on the Order Tracking Pipeline database (see "Visual
   fabric & color selector"). **Appointment scheduling** instead uses Google: `GOOGLE_SERVICE_ACCOUNT_KEY` (the full
   service-account JSON key, with domain-wide delegation authorized for the
   Calendar scope) and `APPOINTMENT_SHEET_ID` (the working-hours Google Sheet,
@@ -1890,7 +1890,7 @@ and in the maintainer's env without edits.
 | Add request validation / error mapping                 | `artifacts/api-server/src/middlewares/*`                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                      |
 | Change the order-tracking UI (custom + shop)           | `artifacts/web-app/src/pages/track.tsx` (unified lookup) + `components/custom-order-result.tsx` + `components/shop-order-result.tsx`                                                                                                                                                                                                                                                                                                                                                                                                                                          |
 | Change the order intake form                           | `artifacts/web-app/src/pages/order-form.tsx`                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                  |
-| Change the visual fabric & color selector              | `artifacts/web-app/src/components/fabric-color-picker.tsx` + `pages/order-form.tsx` (frontend); `api-server/src/lib/notion/fabrics.{schema,repository}.ts` + `services/fabrics.service.ts` + `routes/fabrics.ts` (live `GET /api/fabrics`, `NOTION_FABRICS_DATABASE_ID`); `lib/notion/orders.{schema,blocks}.ts` (write-back to the order's fabric properties + page body)                                                                                                                                                                                                       |
+| Change the visual fabric & color selector              | `artifacts/web-app/src/components/fabric-color-picker.tsx` + `pages/order-form.tsx` (frontend); `api-server/src/lib/notion/fabrics.{schema,repository}.ts` + `services/fabrics.service.ts` + `routes/fabrics.ts` (live `GET /api/fabrics`, `NOTION_FABRICS_DATABASE_ID`); `lib/notion/orders.{schema,blocks}.ts` (write-back to the order's fabric properties + page body)                                                                                                                                                                                                    |
 | Change the rush order surcharge                        | `artifacts/web-app/src/lib/rush.ts` (window + disclosure) + `pages/order-form.tsx` (detect/acknowledge/send); `api-server/src/lib/notion/orders.blocks.ts` + `orders.schema.ts` (`Rush Order` record); `api-server/src/services/rush.ts` + `services/invoice-generator.service.ts` (server-priced "Surcharge" line); `web-app/src/lib/invoice-format.ts` ("Surcharge" line display)                                                                                                                                                                                           |
 | Add/read an atelier-editable live setting              | `api-server/src/lib/settings/store.ts` (`SETTING_KEYS` + `settingValue`) + `lib/notion/settings.{schema,repository}.ts` (Notion read); consume with `settingValue(KEY) ?? process.env[KEY] ?? default` (see `services/rush.ts`); primed by the middleware in `app.ts`. Notion "Studio Settings" DB, `NOTION_SETTINGS_DATABASE_ID`                                                                                                                                                                                                                                             |
 | Change the measurement-change request                  | `artifacts/web-app/src/components/measurement-change-dialog.tsx` (opened from `components/custom-order-result.tsx`); `api-server/src/services/measurement-change.service.ts` + `routes/orders.ts` + `lib/notion/measurement-change.{blocks,repository}.ts` (writes to the **contact** database)                                                                                                                                                                                                                                                                               |
