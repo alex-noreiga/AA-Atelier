@@ -2,7 +2,7 @@ import { describe, it, expect } from "vitest";
 import { extractFabricRecords } from "../../src/lib/notion/fabrics.schema.js";
 
 describe("extractFabricRecords", () => {
-  it("maps a solid row to id, name, type, placement, hex, and sort", () => {
+  it("maps a solid row to id, name, type, placement, hex, colorFamily, and sort", () => {
     expect(
       extractFabricRecords([
         {
@@ -12,6 +12,7 @@ describe("extractFabricRecords", () => {
             Type: { type: "select", select: { name: "Solid" } },
             Placement: { type: "select", select: { name: "Both" } },
             Hex: { type: "rich_text", rich_text: [{ plain_text: "#F4EFE6" }] },
+            "Color Family": { type: "select", select: { name: "Neutrals" } },
             Sort: { type: "number", number: 1 },
           },
         },
@@ -23,9 +24,46 @@ describe("extractFabricRecords", () => {
         type: "solid",
         placement: "both",
         hex: "#F4EFE6",
+        colorFamily: "Neutrals",
         sort: 1,
       },
     ]);
+  });
+
+  it("omits colorFamily when the Color Family select is unset (a free label passed through verbatim)", () => {
+    const [record] = extractFabricRecords([
+      {
+        id: "f9",
+        properties: {
+          Name: { type: "title", title: [{ plain_text: "Unfamilied" }] },
+          Type: { type: "select", select: { name: "Solid" } },
+          Placement: { type: "select", select: { name: "Bodice" } },
+          "Color Family": { type: "select", select: { name: "Dusty Teal" } },
+        },
+      },
+      {
+        id: "f10",
+        properties: {
+          Name: { type: "title", title: [{ plain_text: "No family" }] },
+          Type: { type: "select", select: { name: "Solid" } },
+          Placement: { type: "select", select: { name: "Bodice" } },
+        },
+      },
+    ]);
+    // A free-label family is passed through verbatim, not mapped/validated.
+    expect(record.colorFamily).toBe("Dusty Teal");
+    // The second row has no family property.
+    const second = extractFabricRecords([
+      {
+        id: "f10",
+        properties: {
+          Name: { type: "title", title: [{ plain_text: "No family" }] },
+          Type: { type: "select", select: { name: "Solid" } },
+          Placement: { type: "select", select: { name: "Bodice" } },
+        },
+      },
+    ])[0];
+    expect(second).not.toHaveProperty("colorFamily");
   });
 
   it("maps an image type to its first Swatch file URL, omitting hex", () => {

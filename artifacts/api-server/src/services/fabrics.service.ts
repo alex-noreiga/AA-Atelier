@@ -14,6 +14,7 @@ export interface FabricView {
   placement: FabricRecord["placement"];
   hex?: string;
   swatchImage?: string;
+  colorFamily?: string;
   sort?: number;
 }
 

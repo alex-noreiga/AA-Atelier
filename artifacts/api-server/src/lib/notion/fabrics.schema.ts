@@ -18,6 +18,7 @@ export const FABRIC_HEX_PROPERTY = "Hex"; // rich_text (no Notion hex/color type
 export const FABRIC_SWATCH_PROPERTY = "Swatch"; // files
 export const FABRIC_SORT_PROPERTY = "Sort"; // number
 export const FABRIC_PUBLISH_PROPERTY = "Show on website"; // checkbox
+export const FABRIC_COLOR_FAMILY_PROPERTY = "Color Family"; // select (free label)
 
 /** Fabric families, matching the contract `Fabric.type` enum. */
 export type FabricType = "solid" | "print" | "foil" | "textured" | "sequin";
@@ -54,6 +55,9 @@ export interface FabricRecord {
   /** First "Swatch" file URL (a short-lived Notion signed URL); absent for
    * solids and for image types whose photo isn't uploaded yet. */
   swatchImage?: string;
+  /** Color-family label for the "group by color family" view (a free select
+   * label, shown verbatim — no mapping). Absent when the atelier hasn't set one. */
+  colorFamily?: string;
   /** Ordering within a fabric-type group; `null` when unset (sorted last). */
   sort: number | null;
 }
@@ -165,6 +169,8 @@ export function extractFabricRecords(
 
     const hex = extractRichText(page, FABRIC_HEX_PROPERTY);
     const swatchImage = extractFirstFileUrl(page, FABRIC_SWATCH_PROPERTY);
+    // A free-label select — shown verbatim as the group heading, not mapped.
+    const colorFamily = extractSelect(page, FABRIC_COLOR_FAMILY_PROPERTY);
     records.push({
       id: page.id,
       name,
@@ -172,6 +178,7 @@ export function extractFabricRecords(
       placement,
       ...(hex ? { hex } : {}),
       ...(swatchImage ? { swatchImage } : {}),
+      ...(colorFamily ? { colorFamily } : {}),
       sort: extractNumber(page, FABRIC_SORT_PROPERTY),
     });
   }

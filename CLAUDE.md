@@ -1112,10 +1112,10 @@ on the way out, following the same conventions as the shop. Load-bearing decisio
    `routes/fabrics.ts`. Each row is one swatch: `Name` (title), `Type` (select),
    `Placement` (select), `Hex` (text — Notion has no color type, so a solid's fill is
    read via `extractRichText`), `Swatch` (files — image tile for the non-solid
-   types), `Sort` (number), `Show on website` (checkbox — the publish gate). The
-   endpoint returns one **flat list carrying `placement`**; the client filters per
-   picker. Contract-first (`/fabrics` + `Fabric`/`FabricList` in `openapi.yaml`, so
-   `useGetFabrics` is generated).
+   types), `Color Family` (select — the "group by color family" view, below), `Sort`
+   (number), `Show on website` (checkbox — the publish gate). The endpoint returns one
+   **flat list carrying `placement`**; the client filters per picker. Contract-first
+   (`/fabrics` + `Fabric`/`FabricList` in `openapi.yaml`, so `useGetFabrics` is generated).
 
 2. **`Type`/`Placement` are targeted business rules.** `TYPE_MAP` / `PLACEMENT_MAP`
    (`notion/fabrics.schema.ts`) map the live Notion select labels (`Solid`, `Print`,
@@ -1143,7 +1143,13 @@ on the way out, following the same conventions as the shop. Load-bearing decisio
    can accompany either. The form drives selection via `setValue("bodiceFabric"/
    "skirtFabric", …)` and maps them into the order body as an optional nested
    `fabricSelections.{bodice,skirt}` (contract's `FabricSelection`), omitting an
-   untouched picker.
+   untouched picker. A **group-by toggle** ("By fabric type" ⇄ "By color family")
+   re-groups the same swatches under the live `Color Family` labels; it appears only
+   when swatches carry a family, families render in first-appearance order over the
+   `Sort`-ordered list (so the atelier orders families via `Sort`), and unassigned
+   swatches fall under a trailing **"Other"** group. Unlike `Type`/`Placement`,
+   `colorFamily` is a **free label passed through verbatim** (no map, nothing
+   hardcoded) — a selection survives a regroup because it's keyed on swatch id.
 
 5. **Recorded on the order as a write-only dual-write.** Like the measurement
    precedent, `orders.blocks.ts` writes each choice both as typed **rich_text
@@ -1154,11 +1160,11 @@ on the way out, following the same conventions as the shop. Load-bearing decisio
    back** (unlike measurements) — they're an atelier signal. Property-name constants
    live in `orders.schema.ts`.
 
-The atelier's one-time setup: create the **"Fabrics"** database (properties above),
-seed swatches, share the Notion integration with it, and set
-`NOTION_FABRICS_DATABASE_ID`; and add the four **rich_text** properties (`Bodice
-Fabric`, `Bodice Color Note`, `Skirt Fabric`, `Skirt Color Note`) to the **Order
-Tracking Pipeline** database. All optional — unset ⇒ the form falls back to free
+The atelier's one-time setup: create the **"Fabrics"** database (properties above,
+including the optional `Color Family` select for the group-by view), seed swatches,
+share the Notion integration with it, and set `NOTION_FABRICS_DATABASE_ID`; and add
+the four **rich_text** properties (`Bodice Fabric`, `Bodice Color Note`, `Skirt
+Fabric`, `Skirt Color Note`) to the **Order Tracking Pipeline** database. All optional — unset ⇒ the form falls back to free
 text, exactly as before. Code: `openapi.yaml` (`/fabrics` + `Fabric`/`FabricList` +
 `fabricSelections` on `NewOrderRequest`), the five backend files above,
 `orders.{schema,blocks}.ts` (write-back), and `web-app/src/components/

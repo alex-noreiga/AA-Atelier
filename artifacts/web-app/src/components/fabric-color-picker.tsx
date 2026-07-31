@@ -48,6 +48,54 @@ function ImageSwatch({ fabric }: { fabric: Fabric }) {
   );
 }
 
+/** A single selectable swatch tile — a color fill for solids, an image tile for
+ * the other types, with the swatch name beneath. Shared by both groupings. */
+function SwatchButton({
+  fabric,
+  selected,
+  disabled,
+  placement,
+  onSelect,
+}: {
+  fabric: Fabric;
+  selected: boolean;
+  disabled?: boolean;
+  placement: "bodice" | "skirt";
+  onSelect: (fabric: Fabric) => void;
+}) {
+  return (
+    <button
+      type="button"
+      disabled={disabled}
+      onClick={() => onSelect(fabric)}
+      aria-pressed={selected}
+      title={fabric.name}
+      className={cn(
+        "flex w-20 flex-col items-center gap-1.5 rounded-lg border p-1.5 transition-colors disabled:opacity-50 disabled:cursor-not-allowed",
+        selected
+          ? "border-primary bg-primary/10 text-primary"
+          : "border-border/60 text-muted-foreground hover:border-primary/50",
+      )}
+      data-testid={`fabric-${placement}-${slug(fabric.name)}`}
+    >
+      {fabric.type === "solid" ? (
+        <span
+          className="block h-14 w-full rounded-md border border-border/40"
+          style={fabric.hex ? { backgroundColor: fabric.hex } : undefined}
+          aria-hidden="true"
+        />
+      ) : (
+        <span className="block w-full">
+          <ImageSwatch fabric={fabric} />
+        </span>
+      )}
+      <span className="w-full truncate text-center text-[0.7rem] leading-tight">
+        {fabric.name}
+      </span>
+    </button>
+  );
+}
+
 interface FabricColorPickerProps {
   /** Which picker this is — filters the fabric list to swatches whose placement
    * is this section or "both". */
@@ -81,10 +129,55 @@ export function FabricColorPicker({
   disabled,
 }: FabricColorPickerProps) {
   const [noteOpen, setNoteOpen] = useState(!!value.colorNote);
+  const [groupBy, setGroupBy] = useState<"type" | "color">("type");
 
   const forSection = fabrics.filter(
     (fabric) => fabric.placement === placement || fabric.placement === "both",
   );
+
+  // The color-family groups, in first-appearance order over the (already
+  // Sort-ordered) swatch list — so the atelier controls family order via the same
+  // Sort numbers. `hasFamilies` gates the toggle; swatches without a family fall
+  // into a trailing "Other" group. No family list is hardcoded.
+  const families: string[] = [];
+  for (const fabric of forSection) {
+    if (fabric.colorFamily && !families.includes(fabric.colorFamily)) {
+      families.push(fabric.colorFamily);
+    }
+  }
+  const hasFamilies = families.length > 0;
+  const hasUnassigned = forSection.some((fabric) => !fabric.colorFamily);
+  // Fall back to type grouping whenever no swatch carries a family (the toggle is
+  // hidden then), so an all-unassigned palette never shows only "Other".
+  const grouping = hasFamilies ? groupBy : "type";
+
+  /** One labelled group of swatches (heading + grid), shared by both groupings. */
+  function swatchGroup(key: string, label: string, swatches: Fabric[]) {
+    if (swatches.length === 0) return null;
+    return (
+      <div key={key}>
+        <p className="text-xs uppercase tracking-widest text-muted-foreground/80 mb-2">
+          {label}
+        </p>
+        <div
+          className="flex flex-wrap gap-3"
+          role="group"
+          aria-label={`${label} — ${placement}`}
+        >
+          {swatches.map((fabric) => (
+            <SwatchButton
+              key={fabric.id}
+              fabric={fabric}
+              selected={value.fabricId === fabric.id}
+              disabled={disabled}
+              placement={placement}
+              onSelect={selectSwatch}
+            />
+          ))}
+        </div>
+      </div>
+    );
+  }
 
   function selectSwatch(fabric: Fabric) {
     const alreadySelected = value.fabricId === fabric.id;
@@ -130,62 +223,59 @@ export function FabricColorPicker({
 
   return (
     <div className="space-y-5" data-testid={`fabric-picker-${placement}`}>
-      {TYPE_GROUPS.map(({ type, label }) => {
-        const swatches = forSection.filter((fabric) => fabric.type === type);
-        if (swatches.length === 0) return null;
-        return (
-          <div key={type}>
-            <p className="text-xs uppercase tracking-widest text-muted-foreground/80 mb-2">
-              {label}
-            </p>
-            <div
-              className="flex flex-wrap gap-3"
-              role="group"
-              aria-label={`${label} — ${placement}`}
+      {/* Group-by toggle — only when swatches carry a color family. */}
+      {hasFamilies && (
+        <div className="flex gap-2" role="group" aria-label="Group swatches by">
+          {(
+            [
+              { key: "type", label: "By fabric type" },
+              { key: "color", label: "By color family" },
+            ] as const
+          ).map(({ key, label }) => (
+            <button
+              key={key}
+              type="button"
+              disabled={disabled}
+              onClick={() => setGroupBy(key)}
+              aria-pressed={grouping === key}
+              className={cn(
+                "rounded-full border px-3 py-1 text-xs tracking-wide transition-colors disabled:opacity-50",
+                grouping === key
+                  ? "border-primary bg-primary/10 text-primary"
+                  : "border-border/60 text-muted-foreground hover:border-primary/50",
+              )}
+              data-testid={`fabric-${placement}-groupby-${key}`}
             >
-              {swatches.map((fabric) => {
-                const isSelected = value.fabricId === fabric.id;
-                return (
-                  <button
-                    key={fabric.id}
-                    type="button"
-                    disabled={disabled}
-                    onClick={() => selectSwatch(fabric)}
-                    aria-pressed={isSelected}
-                    title={fabric.name}
-                    className={cn(
-                      "flex w-20 flex-col items-center gap-1.5 rounded-lg border p-1.5 transition-colors disabled:opacity-50 disabled:cursor-not-allowed",
-                      isSelected
-                        ? "border-primary bg-primary/10 text-primary"
-                        : "border-border/60 text-muted-foreground hover:border-primary/50",
-                    )}
-                    data-testid={`fabric-${placement}-${slug(fabric.name)}`}
-                  >
-                    {fabric.type === "solid" ? (
-                      <span
-                        className="block h-14 w-full rounded-md border border-border/40"
-                        style={
-                          fabric.hex
-                            ? { backgroundColor: fabric.hex }
-                            : undefined
-                        }
-                        aria-hidden="true"
-                      />
-                    ) : (
-                      <span className="block w-full">
-                        <ImageSwatch fabric={fabric} />
-                      </span>
-                    )}
-                    <span className="w-full truncate text-center text-[0.7rem] leading-tight">
-                      {fabric.name}
-                    </span>
-                  </button>
-                );
-              })}
-            </div>
-          </div>
-        );
-      })}
+              {label}
+            </button>
+          ))}
+        </div>
+      )}
+
+      {grouping === "color"
+        ? [
+            ...families.map((family) =>
+              swatchGroup(
+                `family-${family}`,
+                family,
+                forSection.filter((fabric) => fabric.colorFamily === family),
+              ),
+            ),
+            hasUnassigned
+              ? swatchGroup(
+                  "family-other",
+                  "Other",
+                  forSection.filter((fabric) => !fabric.colorFamily),
+                )
+              : null,
+          ]
+        : TYPE_GROUPS.map(({ type, label }) =>
+            swatchGroup(
+              type,
+              label,
+              forSection.filter((fabric) => fabric.type === type),
+            ),
+          )}
 
       {/* Escape hatch — "I don't see the color I want" reveals a free-text field. */}
       <div>

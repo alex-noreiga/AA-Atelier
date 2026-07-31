@@ -26,6 +26,22 @@ const SKIRT_ONLY: Fabric = {
   placement: "skirt",
   hex: "#0B6E4F",
 };
+const SAPPHIRE: Fabric = {
+  id: "sapphire",
+  name: "Sapphire",
+  type: "solid",
+  placement: "bodice",
+  hex: "#1F3A93",
+  colorFamily: "Blues",
+};
+const VELVET: Fabric = {
+  id: "velvet",
+  name: "Velvet",
+  type: "textured",
+  placement: "both",
+  swatchImage: "https://cdn/velvet.jpg",
+  colorFamily: "Neutrals",
+};
 
 /** A stateful wrapper so the controlled picker reflects its own changes, with an
  * optional spy on each onChange. */
@@ -128,6 +144,56 @@ describe("FabricColorPicker", () => {
     expect(screen.queryByAltText("Floral Print")).not.toBeInTheDocument();
     expect(screen.getByTestId("fabric-bodice-floral-print")).toHaveTextContent(
       "AA",
+    );
+  });
+});
+
+describe("FabricColorPicker — group by color family", () => {
+  it("hides the group-by toggle when no swatch carries a color family", () => {
+    // IVORY has no colorFamily.
+    render(<Harness fabrics={[IVORY]} placement="bodice" />);
+    expect(
+      screen.queryByTestId("fabric-bodice-groupby-color"),
+    ).not.toBeInTheDocument();
+    // Type grouping still shows.
+    expect(screen.getByText("Solid colors")).toBeInTheDocument();
+  });
+
+  it("shows the toggle and regroups under family headings, with unfamilied swatches under Other", async () => {
+    const user = userEvent.setup();
+    // SAPPHIRE (Blues), VELVET (Neutrals), IVORY (no family) — all show in bodice.
+    render(<Harness fabrics={[SAPPHIRE, VELVET, IVORY]} placement="bodice" />);
+    // Default view is by fabric type.
+    expect(screen.getByText("Solid colors")).toBeInTheDocument();
+    expect(screen.queryByText("Blues")).not.toBeInTheDocument();
+
+    await user.click(screen.getByTestId("fabric-bodice-groupby-color"));
+
+    // Now grouped by color family; type headings are gone.
+    expect(screen.queryByText("Solid colors")).not.toBeInTheDocument();
+    expect(screen.getByText("Blues")).toBeInTheDocument();
+    expect(screen.getByText("Neutrals")).toBeInTheDocument();
+    // IVORY has no family, so it lands under "Other".
+    expect(screen.getByText("Other")).toBeInTheDocument();
+    // Every swatch is still rendered exactly once.
+    expect(screen.getByTestId("fabric-bodice-sapphire")).toBeInTheDocument();
+    expect(screen.getByTestId("fabric-bodice-velvet")).toBeInTheDocument();
+    expect(screen.getByTestId("fabric-bodice-ivory")).toBeInTheDocument();
+  });
+
+  it("keeps a chosen swatch selected across a regroup", async () => {
+    const user = userEvent.setup();
+    render(<Harness fabrics={[SAPPHIRE, VELVET]} placement="bodice" />);
+    await user.click(screen.getByTestId("fabric-bodice-sapphire"));
+    expect(screen.getByTestId("fabric-bodice-sapphire")).toHaveAttribute(
+      "aria-pressed",
+      "true",
+    );
+    // Switch to color-family grouping — the same swatch (by id) stays selected.
+    await user.click(screen.getByTestId("fabric-bodice-groupby-color"));
+    expect(screen.getByTestId("fabric-bodice-sapphire")).toHaveAttribute(
+      "aria-pressed",
+      "true",
     );
   });
 });

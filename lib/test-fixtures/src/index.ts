@@ -214,6 +214,7 @@ export function fabricList(overrides: Partial<FabricList> = {}): FabricList {
         type: "solid",
         placement: "both",
         hex: "#F4EFE6",
+        colorFamily: "Neutrals",
         sort: 1,
       },
       {
@@ -222,6 +223,7 @@ export function fabricList(overrides: Partial<FabricList> = {}): FabricList {
         type: "print",
         placement: "bodice",
         swatchImage: "https://example.com/floral.jpg",
+        colorFamily: "Multi/Print",
         sort: 1,
       },
     ],

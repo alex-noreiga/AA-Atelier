@@ -173,6 +173,7 @@ export function fabricPage(opts: {
   placement?: string;
   hex?: string;
   swatchUrl?: string;
+  colorFamily?: string;
   sort?: number;
   published?: boolean;
 }) {
@@ -205,6 +206,12 @@ export function fabricPage(opts: {
     properties["Swatch"] = {
       type: "files",
       files: [{ type: "file", file: { url: opts.swatchUrl } }],
+    };
+  }
+  if (opts.colorFamily !== undefined) {
+    properties["Color Family"] = {
+      type: "select",
+      select: { name: opts.colorFamily },
     };
   }
   if (opts.sort !== undefined) {

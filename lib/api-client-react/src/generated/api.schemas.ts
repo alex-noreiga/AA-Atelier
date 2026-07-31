@@ -446,6 +446,8 @@ export interface Fabric {
   type: FabricType;
   /** Which picker(s) the swatch appears in. "both" shows in the bodice and the skirt picker. Clients filter the flat list by this per picker. */
   placement: FabricPlacement;
+  /** The swatch's color-family label (e.g. "Blues", "Neutrals"), for the picker's optional "group by color family" view. A free-text label read live from the Fabrics database "Color Family" select — NOT a fixed enum, so clients must not hardcode the family list. Absent when the atelier hasn't assigned one (the picker groups those under "Other"). */
+  colorFamily?: string;
   /** Hex color for a solid swatch, e.g. "#8A1E2D". Absent for image-based types (print/foil/textured/sequin), which use `swatchImage`. */
   hex?: string;
   /** Swatch photo URL (the first "Swatch" file). A short-lived Notion signed URL, so clients must not persist it. Absent for solids and for image-type swatches whose photo the atelier hasn't uploaded yet. */
