@@ -5,6 +5,7 @@
  * API specification
  * OpenAPI spec version: 0.1.0
  */
+import type { FabricSelections } from './fabricSelections';
 import type { NewOrderRequestMeasurementUnit } from './newOrderRequestMeasurementUnit';
 import type { NewOrderRequestPreferredContact } from './newOrderRequestPreferredContact';
 
@@ -37,4 +38,5 @@ export interface NewOrderRequest {
   rush?: boolean;
   /** Notion file_upload ids for customer-supplied reference / inspiration images, each obtained by first POSTing the image bytes to POST /orders/reference-images (a binary endpoint outside this contract, mounted like the Stripe webhook). They are attached to the order's Notion page as image blocks. Optional; omitted when the customer uploaded none. */
   referenceImageIds?: string[];
+  fabricSelections?: FabricSelections;
 }

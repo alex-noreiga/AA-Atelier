@@ -163,6 +163,56 @@ export function categoryPage(opts: {
   return { id: opts.id ?? "category-page", properties };
 }
 
+/** Minimal "Fabrics" page as returned by a query — a swatch name, its Type and
+ * Placement selects, an optional Hex text, an optional Swatch file, and an
+ * optional Sort number. Only the fields a test names are populated. */
+export function fabricPage(opts: {
+  id?: string;
+  name?: string;
+  type?: string;
+  placement?: string;
+  hex?: string;
+  swatchUrl?: string;
+  sort?: number;
+  published?: boolean;
+}) {
+  const properties: Record<string, unknown> = {
+    Name: {
+      type: "title",
+      title: opts.name ? [{ plain_text: opts.name }] : [],
+    },
+    "Show on website": {
+      type: "checkbox",
+      checkbox: opts.published ?? true,
+    },
+  };
+  if (opts.type !== undefined) {
+    properties["Type"] = { type: "select", select: { name: opts.type } };
+  }
+  if (opts.placement !== undefined) {
+    properties["Placement"] = {
+      type: "select",
+      select: { name: opts.placement },
+    };
+  }
+  if (opts.hex !== undefined) {
+    properties["Hex"] = {
+      type: "rich_text",
+      rich_text: [{ plain_text: opts.hex }],
+    };
+  }
+  if (opts.swatchUrl !== undefined) {
+    properties["Swatch"] = {
+      type: "files",
+      files: [{ type: "file", file: { url: opts.swatchUrl } }],
+    };
+  }
+  if (opts.sort !== undefined) {
+    properties["Sort"] = { type: "number", number: opts.sort };
+  }
+  return { id: opts.id ?? "fabric-page", properties };
+}
+
 /**
  * Minimal Client CRM page as returned by a query. The upsert only reads the
  * page `id` back, so that's all this carries.

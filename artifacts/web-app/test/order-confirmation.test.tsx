@@ -16,6 +16,7 @@ vi.mock("@workspace/api-client-react", () => ({
       opts?.mutation?.onSuccess?.({ orderNumber: "000042" }, variables),
   }),
   useSubscribeNewsletter: () => ({ mutate: vi.fn(), isPending: false }),
+  useGetFabrics: () => ({ data: undefined }),
 }));
 
 import OrderForm from "@/pages/order-form";

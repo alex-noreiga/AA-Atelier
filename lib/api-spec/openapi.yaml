@@ -451,6 +451,31 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/ErrorEnvelope"
+  /fabrics:
+    get:
+      operationId: getFabrics
+      tags: [fabrics]
+      summary: List custom-order fabric swatches
+      description: >-
+        Returns the atelier's fabric/color swatches from the Notion "Fabrics"
+        database, for the custom-order intake form's visual fabric selector.
+        Each swatch carries its fabric type (which picker group it belongs to)
+        and placement (bodice, skirt, or both). The list is empty when the
+        Fabrics database is not configured, so the order form degrades to its
+        free-text description field.
+      responses:
+        "200":
+          description: Fabric swatch list
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/FabricList"
+        "500":
+          description: Server error
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorEnvelope"
   /checkout:
     post:
       operationId: createCheckoutSession
@@ -1251,6 +1276,52 @@ components:
             contract, mounted like the Stripe webhook). They are attached to the
             order's Notion page as image blocks. Optional; omitted when the
             customer uploaded none.
+        fabricSelections:
+          $ref: "#/components/schemas/FabricSelections"
+    FabricSelections:
+      type: object
+      description: >-
+        The customer's fabric/color choices per garment section, from the order
+        form's visual fabric selector. Both sections are optional; the whole
+        object is omitted when the customer made no swatch selections (they may
+        still describe fabric in the free-text `description`). Recorded on the
+        Notion order for the atelier — the app never reads it back.
+      properties:
+        bodice:
+          $ref: "#/components/schemas/FabricSelection"
+        skirt:
+          $ref: "#/components/schemas/FabricSelection"
+    FabricSelection:
+      type: object
+      description: >-
+        One garment section's fabric/color choice. Every field is optional — a
+        customer may pick a swatch, describe a color in free text (the "I don't
+        see my color" escape hatch), upload a custom print, or leave it blank.
+        A swatch selection and a free-text color note are mutually exclusive in
+        the UI, but the contract permits either or both defensively.
+      properties:
+        fabricId:
+          type: string
+          description: The chosen swatch's Notion page id (`Fabric.id`).
+        fabricName:
+          type: string
+          description: The chosen swatch's display name, resolved for the atelier.
+        fabricType:
+          type: string
+          enum: [solid, print, foil, textured, sequin]
+          description: The chosen swatch's fabric family.
+        colorNote:
+          type: string
+          description: >-
+            Free-text desired color/fabric when no swatch fit (the escape hatch).
+        customPrintImageIds:
+          type: array
+          items:
+            type: string
+          description: >-
+            Notion file_upload ids for a customer-uploaded custom print, obtained
+            the same way as `referenceImageIds` (POST /orders/reference-images).
+            Attached to the order's Notion page as image blocks.
     NewOrderResponse:
       type: object
       required:
@@ -1628,6 +1699,59 @@ components:
             changes this list without a redeploy, so clients must not hardcode it.
           items:
             type: string
+    Fabric:
+      type: object
+      required:
+        - id
+        - name
+        - type
+        - placement
+      properties:
+        id:
+          type: string
+          description: The swatch's Notion page id (used as `FabricSelection.fabricId`).
+        name:
+          type: string
+        type:
+          type: string
+          enum: [solid, print, foil, textured, sequin]
+          description: >-
+            Fabric family — the picker groups swatches by this. Resolved live
+            from the Fabrics database "Type" select; clients must not hardcode it.
+        placement:
+          type: string
+          enum: [bodice, skirt, both]
+          description: >-
+            Which picker(s) the swatch appears in. "both" shows in the bodice and
+            the skirt picker. Clients filter the flat list by this per picker.
+        hex:
+          type: string
+          description: >-
+            Hex color for a solid swatch, e.g. "#8A1E2D". Absent for image-based
+            types (print/foil/textured/sequin), which use `swatchImage`.
+        swatchImage:
+          type: string
+          description: >-
+            Swatch photo URL (the first "Swatch" file). A short-lived Notion
+            signed URL, so clients must not persist it. Absent for solids and for
+            image-type swatches whose photo the atelier hasn't uploaded yet.
+        sort:
+          type: number
+          description: Ordering within a fabric-type group (ascending).
+    FabricList:
+      type: object
+      required:
+        - fabrics
+      properties:
+        fabrics:
+          type: array
+          description: >-
+            The atelier's published fabric swatches, read live from the Notion
+            "Fabrics" database. One flat list across bodice and skirt (each
+            carries its `placement`); the client filters per picker. Empty when
+            the Fabrics database is not configured.
+          items:
+            $ref: "#/components/schemas/Fabric"
     CheckoutItem:
       type: object
       required:

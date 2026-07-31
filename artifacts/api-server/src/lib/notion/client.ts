@@ -53,6 +53,7 @@ let costingClient: NotionClient | null = null;
 let materialUsageClient: NotionClient | null = null;
 let reviewsClient: NotionClient | null = null;
 let settingsClient: NotionClient | null = null;
+let fabricsClient: NotionClient | null = null;
 
 /**
  * Lazily-constructed client reading credentials from the environment. Deferring
@@ -253,4 +254,22 @@ export function getSettingsNotionClient(): NotionClient {
     });
   }
   return settingsClient;
+}
+
+/**
+ * Client for the optional "Fabrics" database — the atelier-editable swatch
+ * palette that feeds the custom-order intake form's visual fabric selector (see
+ * `fabrics.repository.ts`). Same lazy construction, reads
+ * `NOTION_FABRICS_DATABASE_ID`. Optional: when the env var is unset the client's
+ * `databaseId` is empty, and the repository treats that as "not configured" so
+ * the order form falls back to its free-text description field.
+ */
+export function getFabricsNotionClient(): NotionClient {
+  if (!fabricsClient) {
+    fabricsClient = createNotionClient({
+      apiKey: process.env.NOTION_API_KEY ?? "",
+      databaseId: process.env.NOTION_FABRICS_DATABASE_ID ?? "",
+    });
+  }
+  return fabricsClient;
 }

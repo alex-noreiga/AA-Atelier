@@ -1,20 +1,29 @@
-import { describe, it, expect, vi } from "vitest";
+import { describe, it, expect, vi, beforeEach } from "vitest";
 import { render, screen, fireEvent, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import { createOrderInput } from "@workspace/test-fixtures";
+import { createOrderInput, fabricList } from "@workspace/test-fixtures";
 
 // Capture what the create-order mutation is called with, without hitting the
 // network. `vi.hoisted` makes the spy available inside the hoisted vi.mock.
-const { mutate, subscribeMutate } = vi.hoisted(() => ({
+const { mutate, subscribeMutate, fabricsResult } = vi.hoisted(() => ({
   mutate: vi.fn(),
   subscribeMutate: vi.fn(),
+  // Mutable so a test can swap in an empty/errored fabrics result.
+  fabricsResult: { current: { data: undefined as unknown } },
 }));
 vi.mock("@workspace/api-client-react", () => ({
   useCreateOrder: () => ({ mutate, isPending: false }),
   useSubscribeNewsletter: () => ({ mutate: subscribeMutate, isPending: false }),
+  useGetFabrics: () => fabricsResult.current,
 }));
 
 import OrderForm from "@/pages/order-form";
+
+// Default the fabrics query to a populated palette; a test can override
+// `fabricsResult.current` to exercise the empty/degraded path.
+beforeEach(() => {
+  fabricsResult.current = { data: fabricList() };
+});
 
 function byId(id: string): HTMLElement {
   const el = document.getElementById(id);
@@ -238,5 +247,61 @@ describe("OrderForm deposit expectation", () => {
     expect(screen.getByTestId("deposit-note")).toHaveTextContent(
       /deposit to reserve your place/i,
     );
+  });
+});
+
+describe("OrderForm fabric selector", () => {
+  it("renders both the bodice and skirt pickers", () => {
+    render(<OrderForm />);
+    expect(screen.getByTestId("fabric-picker-bodice")).toBeInTheDocument();
+    expect(screen.getByTestId("fabric-picker-skirt")).toBeInTheDocument();
+  });
+
+  it("sends the chosen bodice swatch under fabricSelections", async () => {
+    const user = userEvent.setup();
+    render(<OrderForm />);
+    await fillRequired(user);
+    // "Ivory" has placement "both", so it appears in the bodice picker.
+    await user.click(screen.getByTestId("fabric-bodice-ivory"));
+    await user.click(screen.getByRole("button", { name: "Submit Order" }));
+
+    await waitFor(() => expect(mutate).toHaveBeenCalledTimes(1));
+    const { data } = mutate.mock.calls[0][0];
+    expect(data.fabricSelections).toEqual({
+      bodice: {
+        fabricId: "fab-solid",
+        fabricName: "Ivory",
+        fabricType: "solid",
+      },
+    });
+    // The untouched skirt picker sends nothing.
+    expect(data.fabricSelections).not.toHaveProperty("skirt");
+  });
+
+  it("omits fabricSelections entirely when no swatch is chosen", async () => {
+    const user = userEvent.setup();
+    render(<OrderForm />);
+    await fillRequired(user);
+    await user.click(screen.getByRole("button", { name: "Submit Order" }));
+
+    await waitFor(() => expect(mutate).toHaveBeenCalledTimes(1));
+    const { data } = mutate.mock.calls[0][0];
+    expect(data).not.toHaveProperty("fabricSelections");
+  });
+
+  it("still submits when the fabrics query returns no data (degraded)", async () => {
+    fabricsResult.current = { data: undefined };
+    const user = userEvent.setup();
+    render(<OrderForm />);
+    // The escape hatch is still available even with no swatches.
+    expect(
+      screen.getByTestId("fabric-bodice-escape-hatch"),
+    ).toBeInTheDocument();
+    await fillRequired(user);
+    await user.click(screen.getByRole("button", { name: "Submit Order" }));
+
+    await waitFor(() => expect(mutate).toHaveBeenCalledTimes(1));
+    const { data } = mutate.mock.calls[0][0];
+    expect(data).not.toHaveProperty("fabricSelections");
   });
 });

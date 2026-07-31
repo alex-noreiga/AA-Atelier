@@ -29,6 +29,7 @@ import type {
   CheckoutSessionStatus,
   CreateCheckoutSessionRequest,
   ErrorEnvelope,
+  FabricList,
   GetAppointmentAvailabilityParams,
   GetAppointmentParams,
   HealthStatus,
@@ -890,6 +891,84 @@ export function useGetProducts<TData = Awaited<ReturnType<typeof getProducts>>, 
  ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
 
   const queryOptions = getGetProductsQueryOptions(options)
+
+  const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
+
+  return withQueryKey(query, queryOptions.queryKey);
+}
+
+
+
+
+
+
+
+export const getGetFabricsUrl = () => {
+
+
+
+
+  return `/api/fabrics`
+}
+
+/**
+ * Returns the atelier's fabric/color swatches from the Notion "Fabrics" database, for the custom-order intake form's visual fabric selector. Each swatch carries its fabric type (which picker group it belongs to) and placement (bodice, skirt, or both). The list is empty when the Fabrics database is not configured, so the order form degrades to its free-text description field.
+ * @summary List custom-order fabric swatches
+ */
+export const getFabrics = async ( options?: Parameters<typeof customFetch>[1]): Promise<FabricList> => {
+
+  return customFetch<FabricList>(getGetFabricsUrl(),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
+
+
+
+
+export const getGetFabricsQueryKey = () => {
+    return [
+    `/api/fabrics`
+    ] as const;
+    }
+
+
+export const getGetFabricsQueryOptions = <TData = Awaited<ReturnType<typeof getFabrics>>, TError = ErrorType<ErrorEnvelope>>( options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getFabrics>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getGetFabricsQueryKey();
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof getFabrics>>> = ({ signal }) => getFabrics({ signal, ...requestOptions });
+
+
+
+
+
+   return  { queryKey, queryFn, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof getFabrics>>, TError, TData> & { queryKey: QueryKey }
+}
+
+export type GetFabricsQueryResult = NonNullable<Awaited<ReturnType<typeof getFabrics>>>
+export type GetFabricsQueryError = ErrorType<ErrorEnvelope>
+
+
+/**
+ * @summary List custom-order fabric swatches
+ */
+
+export function useGetFabrics<TData = Awaited<ReturnType<typeof getFabrics>>, TError = ErrorType<ErrorEnvelope>>(
+  options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getFabrics>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+
+ ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+
+  const queryOptions = getGetFabricsQueryOptions(options)
 
   const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
 

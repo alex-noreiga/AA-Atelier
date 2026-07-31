@@ -1,6 +1,6 @@
 import { test, expect } from "./support/test";
 import { createOrderInput, GENERIC_ERROR } from "@workspace/test-fixtures";
-import { mockCreateOrder } from "./support/mock-api";
+import { mockCreateOrder, mockFabrics } from "./support/mock-api";
 
 // Measurements come from the shared fixture, but the *identity* stays
 // Playwright-specific on purpose: the opt-in live-Notion test below submits
@@ -25,6 +25,12 @@ async function fillValidOrder(page: import("@playwright/test").Page) {
 }
 
 test.describe("Order form", () => {
+  // The intake form loads its fabric-swatch palette on mount; mock it so the
+  // unmocked-/api guard stays satisfied on every page load in this suite.
+  test.beforeEach(async ({ page }) => {
+    await mockFabrics(page);
+  });
+
   test("submits a valid order and shows the returned order number (API mocked)", async ({
     page,
   }) => {

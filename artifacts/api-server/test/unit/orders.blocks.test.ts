@@ -239,3 +239,52 @@ describe("buildOrderPageBlocks", () => {
     expect(pairs["Needed By"]).toBe("2026-09-01");
   });
 });
+
+describe("fabric selections", () => {
+  const withFabric: CreateOrderInput = {
+    ...baseOrder,
+    fabricSelections: {
+      bodice: { fabricName: "Sapphire", fabricType: "solid" },
+      skirt: {
+        colorNote: "A soft dusty rose",
+        customPrintImageIds: ["print-1", "print-2"],
+      },
+    },
+  };
+
+  it("writes each chosen fabric + color note as rich_text properties", () => {
+    const props = buildOrderProperties(withFabric, "ORD-1") as any;
+    expect(props["Bodice Fabric"].rich_text[0].text.content).toBe(
+      "Sapphire (solid)",
+    );
+    expect(props["Skirt Color Note"].rich_text[0].text.content).toBe(
+      "A soft dusty rose",
+    );
+    // The unused half of each section is omitted.
+    expect(props).not.toHaveProperty("Bodice Color Note");
+    expect(props).not.toHaveProperty("Skirt Fabric");
+  });
+
+  it("omits all four fabric properties when no selections are made", () => {
+    const props = buildOrderProperties(baseOrder, "ORD-1") as any;
+    expect(props).not.toHaveProperty("Bodice Fabric");
+    expect(props).not.toHaveProperty("Bodice Color Note");
+    expect(props).not.toHaveProperty("Skirt Fabric");
+    expect(props).not.toHaveProperty("Skirt Color Note");
+  });
+
+  it("renders the choices as page-body blocks, with custom prints as image blocks", () => {
+    const blocks = buildOrderPageBlocks(withFabric);
+    const pairs = textPairs(blocks);
+    expect(pairs["Bodice Fabric"]).toBe("Sapphire (solid)");
+    expect(pairs["Skirt Color Note"]).toBe("A soft dusty rose");
+    // The custom-print upload ids become inline image blocks.
+    expect(imageUploadIds(blocks)).toEqual(["print-1", "print-2"]);
+  });
+
+  it("adds no fabric blocks when no selections are made", () => {
+    const pairs = textPairs(buildOrderPageBlocks(baseOrder));
+    expect(pairs).not.toHaveProperty("Bodice Fabric");
+    expect(pairs).not.toHaveProperty("Skirt Color Note");
+  });
+});

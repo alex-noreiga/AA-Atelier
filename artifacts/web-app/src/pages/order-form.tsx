@@ -5,6 +5,7 @@ import { z } from "zod";
 import { Link } from "wouter";
 import {
   useCreateOrder,
+  useGetFabrics,
   useSubscribeNewsletter,
 } from "@workspace/api-client-react";
 import { Button } from "@/components/ui/button";
@@ -14,6 +15,7 @@ import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { PageShell } from "@/components/page-shell";
 import { ReferenceImageUpload } from "@/components/reference-image-upload";
+import { FabricColorPicker } from "@/components/fabric-color-picker";
 import { SuccessScreen } from "@/components/success-screen";
 import { Seo } from "@/components/seo";
 import { ROUTE_SEO } from "@/lib/seo-routes";
@@ -35,6 +37,34 @@ const MEASUREMENT_FIELDS = [
   { key: "height", label: "Height" },
   { key: "bodyGirth", label: "Body Girth" },
 ] as const;
+
+// One garment section's fabric/color choice, matching the contract's
+// `FabricSelection` (all fields optional). Driven by <FabricColorPicker/>.
+const fabricSelectionSchema = z
+  .object({
+    fabricId: z.string().optional(),
+    fabricName: z.string().optional(),
+    fabricType: z
+      .enum(["solid", "print", "foil", "textured", "sequin"])
+      .optional(),
+    colorNote: z.string().optional(),
+    customPrintImageIds: z.array(z.string()).optional(),
+  })
+  .optional();
+
+/** Whether a fabric selection carries any real choice (a swatch, a color note,
+ * or a custom print) worth sending — an untouched picker sends nothing. */
+function hasFabricSelection(
+  selection: z.infer<typeof fabricSelectionSchema>,
+): boolean {
+  return Boolean(
+    selection &&
+    (selection.fabricId ||
+      selection.colorNote ||
+      (selection.customPrintImageIds &&
+        selection.customPrintImageIds.length > 0)),
+  );
+}
 
 // Form-friendly schema (string inputs, friendly messages). Its output is mapped
 // to the generated `NewOrderRequest` contract where it is handed to the
@@ -61,6 +91,11 @@ const formSchema = z
     height: z.string().optional(),
     bodyGirth: z.string().optional(),
     description: z.string().optional(),
+    // The visual fabric/color selector's choices per section, driven by
+    // <FabricColorPicker/> via setValue (non-input controls). All-optional and
+    // never required — the customer can also just use the free-text description.
+    bodiceFabric: fabricSelectionSchema,
+    skirtFabric: fabricSelectionSchema,
     neededBy: z.string().optional(),
     // Set when the customer acknowledges the rush surcharge. Only *required*
     // when the needed-by date lands inside the rush window (see superRefine).
@@ -151,6 +186,13 @@ export default function OrderForm() {
   // (the server flow is best-effort too) and never blocks the order confirmation.
   const subscribeNewsletter = useSubscribeNewsletter();
 
+  // The atelier's fabric/color swatches for the visual selector, read live from
+  // Notion. Best-effort: an empty or errored list degrades each picker to just
+  // its free-text "I don't see my color" + custom-print paths, and never blocks
+  // the order form (the Fabrics database is optional).
+  const { data: fabricsData } = useGetFabrics();
+  const fabrics = fabricsData?.fabrics ?? [];
+
   const {
     register,
     handleSubmit,
@@ -163,6 +205,8 @@ export default function OrderForm() {
       measurementMode: "self",
       measurementUnit: "inches",
       preferredContact: undefined,
+      bodiceFabric: {},
+      skirtFabric: {},
     },
   });
 
@@ -170,6 +214,8 @@ export default function OrderForm() {
   const measurementMode = watch("measurementMode");
   const measurementUnit = watch("measurementUnit");
   const preferredContact = watch("preferredContact");
+  const bodiceFabric = watch("bodiceFabric") ?? {};
+  const skirtFabric = watch("skirtFabric") ?? {};
   // A needed-by date inside the rush window surfaces the surcharge disclosure
   // and requires an acknowledgement before the order can be placed.
   const neededByValue = watch("neededBy");
@@ -190,8 +236,19 @@ export default function OrderForm() {
       hips,
       height,
       bodyGirth,
+      bodiceFabric: bodiceSelection,
+      skirtFabric: skirtSelection,
       ...contact
     } = values;
+
+    // The visual fabric selector's choices, per section, omitting a section the
+    // customer never touched so an untouched picker sends nothing.
+    const fabricSelections = {
+      ...(hasFabricSelection(bodiceSelection)
+        ? { bodice: bodiceSelection }
+        : {}),
+      ...(hasFabricSelection(skirtSelection) ? { skirt: skirtSelection } : {}),
+    };
 
     // A rush order is derived from the needed-by date (the superRefine above
     // guarantees the surcharge was acknowledged when this is true).
@@ -231,6 +288,7 @@ export default function OrderForm() {
         ...(neededBy ? { neededBy } : {}),
         ...(rush ? { rush: true } : {}),
         ...(referenceImageIds.length ? { referenceImageIds } : {}),
+        ...(Object.keys(fabricSelections).length ? { fabricSelections } : {}),
       },
     });
   };
@@ -551,10 +609,54 @@ export default function OrderForm() {
                 <Textarea
                   id="description"
                   {...register("description")}
-                  placeholder="Tell us about your vision — style, fabric preferences, special requirements..."
+                  placeholder="Tell us about your vision — style, silhouette, special requirements..."
                   rows={4}
                   className="mt-1.5 bg-transparent border border-border rounded-lg px-3 py-2 text-sm focus-visible:ring-0 focus-visible:border-primary transition-colors resize-none shadow-none"
                 />
+              </div>
+
+              <div>
+                <Label className="text-sm font-light tracking-wide">
+                  Bodice fabric &amp; color
+                  <span className="text-muted-foreground/60 ml-1 text-xs">
+                    (optional)
+                  </span>
+                </Label>
+                <div className="mt-2">
+                  <FabricColorPicker
+                    placement="bodice"
+                    fabrics={fabrics}
+                    value={bodiceFabric}
+                    onChange={(value) =>
+                      setValue("bodiceFabric", value, { shouldValidate: false })
+                    }
+                    disabled={submitting}
+                  />
+                </div>
+              </div>
+
+              <div>
+                <Label className="text-sm font-light tracking-wide">
+                  Skirt fabric &amp; color
+                  <span className="text-muted-foreground/60 ml-1 text-xs">
+                    (optional)
+                  </span>
+                </Label>
+                <p className="text-muted-foreground/60 text-xs mt-1">
+                  Skirts are often a different fabric from the bodice — choose
+                  separately, or leave blank and we'll advise.
+                </p>
+                <div className="mt-2">
+                  <FabricColorPicker
+                    placement="skirt"
+                    fabrics={fabrics}
+                    value={skirtFabric}
+                    onChange={(value) =>
+                      setValue("skirtFabric", value, { shouldValidate: false })
+                    }
+                    disabled={submitting}
+                  />
+                </div>
               </div>
 
               <div>

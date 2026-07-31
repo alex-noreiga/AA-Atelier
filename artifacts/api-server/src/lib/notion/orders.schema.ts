@@ -73,6 +73,17 @@ export const ORDER_HIPS_PROPERTY = "Hips"; // number
 export const ORDER_HEIGHT_PROPERTY = "Height"; // number
 export const ORDER_BODY_GIRTH_PROPERTY = "Body Girth"; // number
 export const ORDER_MEASUREMENT_UNIT_PROPERTY = "Measurement Unit"; // select (inches | cm)
+// The customer's fabric/color choices from the order form's visual selector,
+// stored as rich_text so the atelier sees the choice on the order (like the
+// measurement dual-write, but write-only — the app never reads these back). The
+// "Fabric" property holds the chosen swatch's name (+ type); the "Color Note"
+// holds the free-text "I don't see my color" escape hatch. Any custom-print
+// images go into the page body as image blocks (see `orders.blocks.ts`). Written
+// only when the customer made a choice for that section.
+export const ORDER_BODICE_FABRIC_PROPERTY = "Bodice Fabric"; // rich_text
+export const ORDER_BODICE_COLOR_NOTE_PROPERTY = "Bodice Color Note"; // rich_text
+export const ORDER_SKIRT_FABRIC_PROPERTY = "Skirt Fabric"; // rich_text
+export const ORDER_SKIRT_COLOR_NOTE_PROPERTY = "Skirt Color Note"; // rich_text
 
 /** Validated new-order payload, derived from the OpenAPI contract. */
 export type CreateOrderInput = z.infer<typeof CreateOrderBody>;
