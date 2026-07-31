@@ -4,6 +4,7 @@
 // idempotency guard: it looks up existing milestones by the `Order` relation, so
 // a re-run (or a checkbox that didn't stick) doesn't create duplicate rows.
 
+import { logger } from "../logger.js";
 import {
   getProductionScheduleNotionClient,
   type NotionClient,
@@ -52,6 +53,26 @@ function assertConfigured(client: NotionClient): void {
   }
 }
 
+/**
+ * Whether a non-ok query response is Notion's 400 validation_error for a filter
+ * that references the (optional) `Reminder Sent` checkbox before the atelier has
+ * added it — Notion answers "Could not find property with name or id: Reminder
+ * Sent". That property is the fitting-reminder feature's one-time setup step; if
+ * it's missing the feature simply isn't configured yet, which is a benign state,
+ * not an incident. We treat it exactly like an unset database id (degrade to a
+ * no-op) so the nightly reconciliation doesn't fire an error-level alert on every
+ * run until the property is added. Requires both the 400 status and the property
+ * name in Notion's "could not find property" message, so an unrelated 400 still
+ * surfaces (throws) as before.
+ */
+function isMissingReminderSentProperty(status: number, body: string): boolean {
+  return (
+    status === 400 &&
+    body.includes(PS_REMINDER_SENT_PROPERTY) &&
+    /could not find property/i.test(body)
+  );
+}
+
 /** Whether any milestone row is already linked to this order (via the relation). */
 export async function orderHasMilestones(
   orderPageId: string,
@@ -74,7 +95,10 @@ export async function orderHasMilestones(
   );
 
   if (!response.ok) {
-    throw new Error(`Notion query failed with status ${response.status}`);
+    const body = await response.text();
+    throw new Error(
+      `Notion query failed with status ${response.status}: ${body}`,
+    );
   }
 
   const data = (await response.json()) as NotionQueryResponse;
@@ -178,7 +202,10 @@ export async function listOrderMilestonePages(
   );
 
   if (!response.ok) {
-    throw new Error(`Notion query failed with status ${response.status}`);
+    const body = await response.text();
+    throw new Error(
+      `Notion query failed with status ${response.status}: ${body}`,
+    );
   }
 
   const data = (await response.json()) as MilestonePageQueryResponse;
@@ -295,7 +322,21 @@ export async function findMilestonesNeedingFittingReminder(
   );
 
   if (!response.ok) {
-    throw new Error(`Notion query failed with status ${response.status}`);
+    const body = await response.text();
+    // The `Reminder Sent` checkbox is an optional one-time setup step; if the
+    // atelier hasn't added it, the fitting reminder simply isn't configured yet.
+    // Degrade to a no-op (like an unset database id) instead of alerting nightly.
+    if (isMissingReminderSentProperty(response.status, body)) {
+      logger.warn(
+        `Fitting reminders skipped: the "${PS_REMINDER_SENT_PROPERTY}" checkbox ` +
+          `is missing from the Production Schedule database. Add it to enable ` +
+          `fitting reminders (see CLAUDE.md "Automated fitting reminders").`,
+      );
+      return [];
+    }
+    throw new Error(
+      `Notion query failed with status ${response.status}: ${body}`,
+    );
   }
 
   const data = (await response.json()) as FittingReminderQueryResponse;
