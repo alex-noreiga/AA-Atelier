@@ -379,14 +379,52 @@ describe("findMilestonesNeedingFittingReminder", () => {
     ]);
   });
 
-  it("throws with the status when the query response is not ok", async () => {
-    const client = makeFakeClient(() => errorResponse(500));
+  it("throws with the status and Notion error text when the query response is not ok", async () => {
+    const client = makeFakeClient(() =>
+      errorResponse(500, "internal_error: boom"),
+    );
     await expect(
       findMilestonesNeedingFittingReminder(
         { stages: ["Fitting"], onOrBefore: "2026-08-11" },
         client,
       ),
-    ).rejects.toThrow(/Notion query failed with status 500/);
+    ).rejects.toThrow(/status 500: internal_error: boom/);
+  });
+
+  it("degrades to [] (fail-soft) when the Reminder Sent property is missing", async () => {
+    // Notion's 400 when a filter references a property the atelier hasn't added
+    // yet — the fitting-reminder feature's optional one-time setup step. Treated
+    // as "not configured", not an incident, so the nightly cron doesn't alert.
+    const client = makeFakeClient(() =>
+      errorResponse(
+        400,
+        JSON.stringify({
+          object: "error",
+          status: 400,
+          code: "validation_error",
+          message:
+            "Could not find property with name or id: Reminder Sent. Make sure the relation exists.",
+        }),
+      ),
+    );
+    expect(
+      await findMilestonesNeedingFittingReminder(
+        { stages: ["Fitting"], onOrBefore: "2026-08-11" },
+        client,
+      ),
+    ).toEqual([]);
+  });
+
+  it("still throws on an unrelated 400 (not the missing-property case)", async () => {
+    const client = makeFakeClient(() =>
+      errorResponse(400, "validation_error: body failed validation"),
+    );
+    await expect(
+      findMilestonesNeedingFittingReminder(
+        { stages: ["Fitting"], onOrBefore: "2026-08-11" },
+        client,
+      ),
+    ).rejects.toThrow(/status 400/);
   });
 });
 
