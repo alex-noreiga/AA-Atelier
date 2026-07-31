@@ -32,10 +32,10 @@ function byId(id: string): HTMLElement {
 }
 
 /**
- * Type the shared valid-order fixture into the form. The assertions below are
- * written out by hand rather than derived from the fixture: this is a
- * round-trip test (type a value, expect it in the payload), so the expectation
- * has to be able to disagree with the input.
+ * Type the shared valid-order fixture into step 0 (contact + measurements). The
+ * assertions below are written out by hand rather than derived from the fixture:
+ * this is a round-trip test (type a value, expect it in the payload), so the
+ * expectation has to be able to disagree with the input.
  */
 async function fillRequired(user: ReturnType<typeof userEvent.setup>) {
   const order = createOrderInput();
@@ -50,11 +50,22 @@ async function fillRequired(user: ReturnType<typeof userEvent.setup>) {
   await user.type(byId("bodyGirth"), String(order.bodyGirth));
 }
 
+/**
+ * The intake is a two-step flow: step 0 holds every required field, step 1 is
+ * the optional fabric selector + the final "Submit Order". Advance from step 0
+ * to step 1, waiting for the fabric step (its Submit button) to render.
+ */
+async function continueToFabric(user: ReturnType<typeof userEvent.setup>) {
+  await user.click(screen.getByRole("button", { name: /continue to fabric/i }));
+  await screen.findByRole("button", { name: "Submit Order" });
+}
+
 describe("OrderForm submission mapping", () => {
   it("omits empty optional fields (description, neededBy) from the payload", async () => {
     const user = userEvent.setup();
     render(<OrderForm />);
     await fillRequired(user);
+    await continueToFabric(user);
     await user.click(screen.getByRole("button", { name: "Submit Order" }));
 
     await waitFor(() => expect(mutate).toHaveBeenCalledTimes(1));
@@ -93,6 +104,7 @@ describe("OrderForm submission mapping", () => {
       "/appointments?type=fitting",
     );
 
+    await continueToFabric(user);
     await user.click(screen.getByRole("button", { name: "Submit Order" }));
 
     await waitFor(() => expect(mutate).toHaveBeenCalledTimes(1));
@@ -116,6 +128,7 @@ describe("OrderForm submission mapping", () => {
     // Date inputs don't play well with per-character typing; set directly.
     fireEvent.change(byId("neededBy"), { target: { value: "2026-09-01" } });
 
+    await continueToFabric(user);
     await user.click(screen.getByRole("button", { name: "Submit Order" }));
 
     await waitFor(() => expect(mutate).toHaveBeenCalledTimes(1));
@@ -133,23 +146,30 @@ function isoDaysFromNow(days: number): string {
 }
 
 describe("OrderForm rush order", () => {
-  it("shows the rush notice and blocks submission until the surcharge is acknowledged", async () => {
+  it("shows the rush notice and blocks advancing until the surcharge is acknowledged", async () => {
     const user = userEvent.setup();
     render(<OrderForm />);
     await fillRequired(user);
-    // A date well inside the rush window (5 days out).
+    // A date well inside the rush window (5 days out). Needed-by lives on step 0.
     fireEvent.change(byId("neededBy"), {
       target: { value: isoDaysFromNow(5) },
     });
 
     expect(screen.getByTestId("rush-notice")).toBeInTheDocument();
 
-    await user.click(screen.getByRole("button", { name: "Submit Order" }));
+    // Advancing runs validation; an unacknowledged rush blocks it on step 0.
+    await user.click(
+      screen.getByRole("button", { name: /continue to fabric/i }),
+    );
 
     expect(
       await screen.findByText(/acknowledge the rush surcharge/i),
     ).toBeInTheDocument();
     expect(mutate).not.toHaveBeenCalled();
+    // Still on step 0 — the fabric step (its Submit) never rendered.
+    expect(
+      screen.queryByRole("button", { name: "Submit Order" }),
+    ).not.toBeInTheDocument();
   });
 
   it("sends rush: true once the surcharge is acknowledged", async () => {
@@ -160,6 +180,7 @@ describe("OrderForm rush order", () => {
       target: { value: isoDaysFromNow(5) },
     });
     await user.click(screen.getByTestId("rush-acknowledge"));
+    await continueToFabric(user);
     await user.click(screen.getByRole("button", { name: "Submit Order" }));
 
     await waitFor(() => expect(mutate).toHaveBeenCalledTimes(1));
@@ -178,6 +199,7 @@ describe("OrderForm rush order", () => {
 
     expect(screen.queryByTestId("rush-notice")).not.toBeInTheDocument();
 
+    await continueToFabric(user);
     await user.click(screen.getByRole("button", { name: "Submit Order" }));
 
     await waitFor(() => expect(mutate).toHaveBeenCalledTimes(1));
@@ -191,6 +213,7 @@ describe("OrderForm newsletter opt-in", () => {
     const user = userEvent.setup();
     render(<OrderForm />);
     await fillRequired(user);
+    await continueToFabric(user);
     await user.click(screen.getByRole("button", { name: "Submit Order" }));
 
     await waitFor(() => expect(mutate).toHaveBeenCalledTimes(1));
@@ -201,6 +224,8 @@ describe("OrderForm newsletter opt-in", () => {
     const user = userEvent.setup();
     render(<OrderForm />);
     await fillRequired(user);
+    await continueToFabric(user);
+    // The opt-in sits on the final (fabric) step, next to Submit.
     await user.click(screen.getByTestId("subscribe-newsletter"));
     await user.click(screen.getByRole("button", { name: "Submit Order" }));
 
@@ -212,10 +237,12 @@ describe("OrderForm newsletter opt-in", () => {
 });
 
 describe("OrderForm validation", () => {
-  it("blocks submission and shows messages when required fields are empty", async () => {
+  it("blocks advancing and shows messages when required fields are empty", async () => {
     const user = userEvent.setup();
     render(<OrderForm />);
-    await user.click(screen.getByRole("button", { name: "Submit Order" }));
+    await user.click(
+      screen.getByRole("button", { name: /continue to fabric/i }),
+    );
 
     expect(
       await screen.findByText("Full name is required"),
@@ -224,6 +251,10 @@ describe("OrderForm validation", () => {
       screen.getByText("Please enter a valid email address"),
     ).toBeInTheDocument();
     expect(mutate).not.toHaveBeenCalled();
+    // Validation kept us on step 0.
+    expect(
+      screen.queryByRole("button", { name: "Submit Order" }),
+    ).not.toBeInTheDocument();
   });
 
   it("rejects a needed-by date in the past", async () => {
@@ -232,7 +263,9 @@ describe("OrderForm validation", () => {
     await fillRequired(user);
     fireEvent.change(byId("neededBy"), { target: { value: "2020-01-01" } });
 
-    await user.click(screen.getByRole("button", { name: "Submit Order" }));
+    await user.click(
+      screen.getByRole("button", { name: /continue to fabric/i }),
+    );
 
     expect(
       await screen.findByText("Please choose a date in the future"),
@@ -242,8 +275,12 @@ describe("OrderForm validation", () => {
 });
 
 describe("OrderForm deposit expectation", () => {
-  it("sets the expectation that a deposit follows the quote", () => {
+  it("sets the expectation that a deposit follows the quote", async () => {
+    const user = userEvent.setup();
     render(<OrderForm />);
+    await fillRequired(user);
+    await continueToFabric(user);
+    // The deposit note sits by the final Submit on the fabric step.
     expect(screen.getByTestId("deposit-note")).toHaveTextContent(
       /deposit to reserve your place/i,
     );
@@ -251,8 +288,15 @@ describe("OrderForm deposit expectation", () => {
 });
 
 describe("OrderForm fabric selector", () => {
-  it("renders both the bodice and skirt pickers", () => {
+  it("renders both pickers on the fabric step", async () => {
+    const user = userEvent.setup();
     render(<OrderForm />);
+    // The pickers live on step 1, not the initial page.
+    expect(
+      screen.queryByTestId("fabric-picker-bodice"),
+    ).not.toBeInTheDocument();
+    await fillRequired(user);
+    await continueToFabric(user);
     expect(screen.getByTestId("fabric-picker-bodice")).toBeInTheDocument();
     expect(screen.getByTestId("fabric-picker-skirt")).toBeInTheDocument();
   });
@@ -261,6 +305,7 @@ describe("OrderForm fabric selector", () => {
     const user = userEvent.setup();
     render(<OrderForm />);
     await fillRequired(user);
+    await continueToFabric(user);
     // "Ivory" has placement "both", so it appears in the bodice picker.
     await user.click(screen.getByTestId("fabric-bodice-ivory"));
     await user.click(screen.getByRole("button", { name: "Submit Order" }));
@@ -282,6 +327,7 @@ describe("OrderForm fabric selector", () => {
     const user = userEvent.setup();
     render(<OrderForm />);
     await fillRequired(user);
+    await continueToFabric(user);
     await user.click(screen.getByRole("button", { name: "Submit Order" }));
 
     await waitFor(() => expect(mutate).toHaveBeenCalledTimes(1));
@@ -293,11 +339,12 @@ describe("OrderForm fabric selector", () => {
     fabricsResult.current = { data: undefined };
     const user = userEvent.setup();
     render(<OrderForm />);
-    // The escape hatch is still available even with no swatches.
+    await fillRequired(user);
+    await continueToFabric(user);
+    // The escape hatch is still available on the fabric step even with no swatches.
     expect(
       screen.getByTestId("fabric-bodice-escape-hatch"),
     ).toBeInTheDocument();
-    await fillRequired(user);
     await user.click(screen.getByRole("button", { name: "Submit Order" }));
 
     await waitFor(() => expect(mutate).toHaveBeenCalledTimes(1));

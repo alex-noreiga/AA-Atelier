@@ -24,6 +24,15 @@ async function fillValidOrder(page: import("@playwright/test").Page) {
   await page.locator("#description").fill("A-line silhouette, ivory chiffon");
 }
 
+// The intake is a two-step flow: details, then the optional fabric & color
+// step where the order is placed. Advance from step 0 to the fabric step.
+async function continueToFabric(page: import("@playwright/test").Page) {
+  await page.getByRole("button", { name: /Continue to fabric/i }).click();
+  await expect(
+    page.getByRole("button", { name: "Submit Order" }),
+  ).toBeVisible();
+}
+
 test.describe("Order form", () => {
   // The intake form loads its fabric-swatch palette on mount; mock it so the
   // unmocked-/api guard stays satisfied on every page load in this suite.
@@ -42,6 +51,7 @@ test.describe("Order form", () => {
     ).toBeVisible();
 
     await fillValidOrder(page);
+    await continueToFabric(page);
     await page.getByRole("button", { name: "Submit Order" }).click();
 
     await expect(
@@ -71,6 +81,7 @@ test.describe("Order form", () => {
     // The measurement inputs are hidden in appointment mode.
     await expect(page.locator("#waist")).toHaveCount(0);
 
+    await continueToFabric(page);
     await page.getByRole("button", { name: "Submit Order" }).click();
 
     await expect(
@@ -92,6 +103,7 @@ test.describe("Order form", () => {
 
     await page.goto("/order");
     await fillValidOrder(page);
+    await continueToFabric(page);
     await page.getByRole("button", { name: "Submit Order" }).click();
 
     // `exact` avoids matching sonner's aria-live announcement span, which
@@ -115,13 +127,18 @@ test.describe("Order form", () => {
     });
 
     await page.goto("/order");
-    await page.getByRole("button", { name: "Submit Order" }).click();
+    // Advancing runs validation; an empty form is blocked on step 0.
+    await page.getByRole("button", { name: /Continue to fabric/i }).click();
 
     await expect(page.getByText("Full name is required")).toBeVisible();
     await expect(
       page.getByText("Please enter a valid email address"),
     ).toBeVisible();
     expect(apiCalled).toBe(false);
+    // Never advanced to the fabric step.
+    await expect(
+      page.getByRole("button", { name: "Submit Order" }),
+    ).toHaveCount(0);
   });
 });
 
@@ -139,6 +156,7 @@ test.describe("Order form — live Notion (opt-in)", () => {
   }) => {
     await page.goto("/order");
     await fillValidOrder(page);
+    await continueToFabric(page);
     await page.getByRole("button", { name: "Submit Order" }).click();
 
     await expect(
