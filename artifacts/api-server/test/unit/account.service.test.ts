@@ -6,9 +6,6 @@ vi.mock("../../src/lib/notion/orders.repository.js", () => ({
 vi.mock("../../src/lib/notion/shop-orders.repository.js", () => ({
   findShopOrdersByEmail: vi.fn(),
 }));
-vi.mock("../../src/lib/resend/send.js", () => ({
-  sendEmailBestEffort: vi.fn().mockResolvedValue(undefined),
-}));
 // Partial mock: keep the real EVENT_PROP_* constants (event-details.ts reads them)
 // and only stub the calendar list so no Google I/O happens.
 vi.mock(
@@ -26,20 +23,15 @@ vi.mock("../../src/services/rewards.service.js", () => ({
   ensureReferralCode: vi.fn(async () => null),
 }));
 
-import {
-  requestMagicLink,
-  getAccountOverview,
-} from "../../src/services/account.service.js";
+import { getAccountOverview } from "../../src/services/account.service.js";
 import { findOrdersByEmail } from "../../src/lib/notion/orders.repository.js";
 import { findShopOrdersByEmail } from "../../src/lib/notion/shop-orders.repository.js";
 import { listUpcomingAppointmentsByEmail } from "../../src/lib/google/calendar.repository.js";
-import { sendEmailBestEffort } from "../../src/lib/resend/send.js";
 import { ensureReferralCode } from "../../src/services/rewards.service.js";
 
 const mockOrders = vi.mocked(findOrdersByEmail);
 const mockShop = vi.mocked(findShopOrdersByEmail);
 const mockAppts = vi.mocked(listUpcomingAppointmentsByEmail);
-const mockSend = vi.mocked(sendEmailBestEffort);
 const mockEnsureReferral = vi.mocked(ensureReferralCode);
 
 const BASE_ENV = { ...process.env };
@@ -175,38 +167,5 @@ describe("getAccountOverview", () => {
     expect(result.appointments).toEqual([]);
     // The orders view is unaffected — the failure is swallowed.
     expect(mockOrders).toHaveBeenCalled();
-  });
-});
-
-describe("requestMagicLink", () => {
-  it("emails a verify link to the customer when configured", async () => {
-    await requestMagicLink("Skater@example.com");
-
-    expect(mockSend).toHaveBeenCalledOnce();
-    const message = mockSend.mock.calls[0][0];
-    expect(message.to).toBe("Skater@example.com");
-    expect(message.html).toContain(
-      "https://atelier.test/api/account/verify?token=",
-    );
-    expect(message.text).toContain(
-      "https://atelier.test/api/account/verify?token=",
-    );
-  });
-
-  it("does nothing when SESSION_SECRET is unset", async () => {
-    delete process.env.SESSION_SECRET;
-    await requestMagicLink("a@b.com");
-    expect(mockSend).not.toHaveBeenCalled();
-  });
-
-  it("does nothing when PUBLIC_BASE_URL is unset (can't build an absolute link)", async () => {
-    delete process.env.PUBLIC_BASE_URL;
-    await requestMagicLink("a@b.com");
-    expect(mockSend).not.toHaveBeenCalled();
-  });
-
-  it("ignores a blank email", async () => {
-    await requestMagicLink("   ");
-    expect(mockSend).not.toHaveBeenCalled();
   });
 });

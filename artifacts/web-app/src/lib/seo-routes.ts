@@ -139,7 +139,19 @@ export const ROUTE_SEO: Record<string, RouteSeo> = {
     path: "/account/login",
     title: "Sign In | A.A Atelier",
     description:
-      "Sign in to your A.A Atelier account with a secure email link to see your orders and invoices in one place.",
+      "Sign in to your A.A Atelier account to see your orders and invoices in one place.",
+    noindex: true,
+  },
+  "/account/callback": {
+    path: "/account/callback",
+    title: "Signing In… | A.A Atelier",
+    description: "Completing your A.A Atelier sign-in.",
+    noindex: true,
+  },
+  "/account/reset": {
+    path: "/account/reset",
+    title: "Set a New Password | A.A Atelier",
+    description: "Choose a new password for your A.A Atelier account.",
     noindex: true,
   },
   "/account": {

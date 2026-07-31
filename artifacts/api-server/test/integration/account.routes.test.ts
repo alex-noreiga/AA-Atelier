@@ -1,15 +1,12 @@
-import { describe, it, expect, vi, beforeEach } from "vitest";
+import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 
 // Mock the Notion repos so the overview runs through the real HTTP + auth stack
-// without the network, and the mailer so login doesn't try to send.
+// without the network.
 vi.mock("../../src/lib/notion/orders.repository.js", () => ({
   findOrdersByEmail: vi.fn().mockResolvedValue([]),
 }));
 vi.mock("../../src/lib/notion/shop-orders.repository.js", () => ({
   findShopOrdersByEmail: vi.fn().mockResolvedValue([]),
-}));
-vi.mock("../../src/lib/resend/send.js", () => ({
-  sendEmailBestEffort: vi.fn().mockResolvedValue(undefined),
 }));
 
 import request from "supertest";
@@ -17,46 +14,45 @@ import app from "../../src/app.js";
 import { findOrdersByEmail } from "../../src/lib/notion/orders.repository.js";
 import { findShopOrdersByEmail } from "../../src/lib/notion/shop-orders.repository.js";
 import {
-  signToken,
-  SESSION_TTL_SECONDS,
-  MAGIC_LINK_TTL_SECONDS,
-} from "../../src/lib/auth/tokens.js";
-import { SESSION_COOKIE } from "../../src/lib/auth/cookies.js";
+  __setSupabaseClientForTests,
+  __resetSupabaseClient,
+} from "../../src/lib/supabase/client.js";
+import {
+  makeFakeSupabaseClient,
+  asSupabaseClient,
+  type FakeClaims,
+} from "../support/fake-supabase.js";
 
 const mockOrders = vi.mocked(findOrdersByEmail);
 const mockShop = vi.mocked(findShopOrdersByEmail);
 
-function sessionCookie(email = "skater@example.com"): string {
-  return `${SESSION_COOKIE}=${signToken(email, "session", SESSION_TTL_SECONDS)}`;
+/** Inject a fake that accepts one specific token and returns the given claims. */
+function acceptToken(validToken: string, claims: FakeClaims): void {
+  __setSupabaseClientForTests(
+    asSupabaseClient(
+      makeFakeSupabaseClient((token) =>
+        token === validToken
+          ? { data: { claims }, error: null }
+          : { data: null, error: { message: "invalid token" } },
+      ),
+    ),
+  );
 }
 
 beforeEach(() => {
-  process.env.SESSION_SECRET = "test-session-secret";
-  process.env.PUBLIC_BASE_URL = "https://atelier.test";
+  // supabaseConfigured() gates on these; the injected fake replaces the real
+  // client, so the values just need to be non-empty.
+  process.env.SUPABASE_URL = "https://project.supabase.co";
+  process.env.SUPABASE_ANON_KEY = "anon-test-key";
 });
 
-describe("POST /api/account/login", () => {
-  it("returns 200 with a generic message (never reveals whether orders exist)", async () => {
-    const res = await request(app)
-      .post("/api/account/login")
-      .send({ email: "someone@example.com" });
-
-    expect(res.status).toBe(200);
-    expect(res.body).toHaveProperty("message");
-  });
-
-  it("returns 400 for an invalid email", async () => {
-    const res = await request(app)
-      .post("/api/account/login")
-      .send({ email: "not-an-email" });
-
-    expect(res.status).toBe(400);
-    expect(res.body).toHaveProperty("error");
-  });
+afterEach(() => {
+  __resetSupabaseClient();
 });
 
 describe("GET /api/account/overview", () => {
-  it("returns 401 without a session cookie", async () => {
+  it("returns 401 without a Bearer token", async () => {
+    acceptToken("good-token", { email: "skater@example.com", sub: "user-1" });
     const res = await request(app).get("/api/account/overview");
 
     expect(res.status).toBe(401);
@@ -64,16 +60,29 @@ describe("GET /api/account/overview", () => {
     expect(mockOrders).not.toHaveBeenCalled();
   });
 
-  it("returns 401 for a session token signed with the wrong purpose", async () => {
-    const magic = signToken("a@b.com", "magic", MAGIC_LINK_TTL_SECONDS);
+  it("returns 401 for a token Supabase rejects", async () => {
+    acceptToken("good-token", { email: "skater@example.com", sub: "user-1" });
     const res = await request(app)
       .get("/api/account/overview")
-      .set("Cookie", `${SESSION_COOKIE}=${magic}`);
+      .set("Authorization", "Bearer garbage");
 
     expect(res.status).toBe(401);
+    expect(mockOrders).not.toHaveBeenCalled();
   });
 
-  it("returns 200 with the customer's orders for a valid session", async () => {
+  it("returns 401 when Supabase is not configured", async () => {
+    delete process.env.SUPABASE_URL;
+    delete process.env.SUPABASE_ANON_KEY;
+    const res = await request(app)
+      .get("/api/account/overview")
+      .set("Authorization", "Bearer good-token");
+
+    expect(res.status).toBe(401);
+    expect(mockOrders).not.toHaveBeenCalled();
+  });
+
+  it("returns 200 with the customer's data for a valid token", async () => {
+    acceptToken("good-token", { email: "skater@example.com", sub: "user-1" });
     mockOrders.mockResolvedValue([
       {
         orderNumber: "000002",
@@ -88,7 +97,7 @@ describe("GET /api/account/overview", () => {
 
     const res = await request(app)
       .get("/api/account/overview")
-      .set("Cookie", sessionCookie("skater@example.com"));
+      .set("Authorization", "Bearer good-token");
 
     expect(res.status).toBe(200);
     expect(res.body).toEqual({
@@ -110,46 +119,18 @@ describe("GET /api/account/overview", () => {
     });
     expect(mockOrders).toHaveBeenCalledWith("skater@example.com");
   });
-});
 
-describe("POST /api/account/logout", () => {
-  it("returns 200 and clears the session cookie", async () => {
-    const res = await request(app).post("/api/account/logout");
+  it("looks orders up by the lowercased email from the token", async () => {
+    acceptToken("good-token", { email: "Skater@Example.com", sub: "user-1" });
+    mockOrders.mockResolvedValue([]);
+    mockShop.mockResolvedValue([]);
+
+    const res = await request(app)
+      .get("/api/account/overview")
+      .set("Authorization", "Bearer good-token");
 
     expect(res.status).toBe(200);
-    const setCookie = res.headers["set-cookie"] as unknown as string[];
-    expect(setCookie.some((c) => c.startsWith(`${SESSION_COOKIE}=`))).toBe(
-      true,
-    );
-    // Cleared cookies are set to an empty value with an expiry in the past.
-    expect(setCookie.join(";")).toMatch(/Expires=Thu, 01 Jan 1970/);
-  });
-});
-
-describe("GET /api/account/verify", () => {
-  it("exchanges a valid magic token for a session cookie and redirects to /account", async () => {
-    const magic = signToken(
-      "skater@example.com",
-      "magic",
-      MAGIC_LINK_TTL_SECONDS,
-    );
-
-    const res = await request(app).get(`/api/account/verify?token=${magic}`);
-
-    expect(res.status).toBe(302);
-    expect(res.headers.location).toBe("/account");
-    const setCookie = res.headers["set-cookie"] as unknown as string[];
-    expect(setCookie.some((c) => c.startsWith(`${SESSION_COOKIE}=`))).toBe(
-      true,
-    );
-    expect(setCookie.join(";")).toMatch(/HttpOnly/i);
-  });
-
-  it("redirects an invalid/expired token back to sign-in without a session", async () => {
-    const res = await request(app).get("/api/account/verify?token=garbage");
-
-    expect(res.status).toBe(302);
-    expect(res.headers.location).toBe("/account/login?error=expired");
-    expect(res.headers["set-cookie"]).toBeUndefined();
+    expect(res.body.email).toBe("skater@example.com");
+    expect(mockOrders).toHaveBeenCalledWith("skater@example.com");
   });
 });

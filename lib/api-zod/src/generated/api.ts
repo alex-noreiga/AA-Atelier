@@ -547,20 +547,7 @@ export const CancelAppointmentResponse = zod.object({
 
 
 /**
- * Emails the customer a one-time magic link that signs them into the account portal. Always responds 200 regardless of whether any orders exist for the address — identity is the email itself, so there is no account to enumerate. The email is sent best-effort; a mail outage never fails the request.
- * @summary Request a passwordless sign-in link
- */
-export const RequestMagicLinkBody = zod.object({
-  "email": zod.string().email().describe('The email to send the one-time sign-in link to.')
-})
-
-export const RequestMagicLinkResponse = zod.object({
-  "message": zod.string()
-}).describe('A generic human-readable acknowledgement.')
-
-
-/**
- * Returns everything tied to the signed-in customer's email — their custom orders and their ready-to-wear shop orders — for the account dashboard. Requires a valid session cookie (set by the magic-link verify step); responds 401 when the caller isn't signed in.
+ * Returns everything tied to the signed-in customer's email — their custom orders, ready-to-wear shop orders, and upcoming appointments — for the account dashboard. Requires a valid Supabase access token supplied as a Bearer credential; responds 401 when the caller isn't signed in.
  * @summary The signed-in customer's orders and shop orders
  */
 export const GetAccountOverviewResponse = zod.object({
@@ -606,14 +593,5 @@ export const GetAccountOverviewResponse = zod.object({
   "returningCode": zod.string().optional().describe('A standing personal discount code for this returning customer, present once they\'ve earned it (a qualifying repeat order). Absent otherwise.')
 }).optional().describe('The signed-in customer\'s referral-program state. Present only when the Client CRM is configured (omitted entirely otherwise, so the dashboard\'s referral card simply doesn\'t render).')
 }).describe('Everything tied to the signed-in customer\'s email — the data the account dashboard renders.')
-
-
-/**
- * Clears the session cookie. Idempotent — safe to call when already signed out.
- * @summary Sign out of the account portal
- */
-export const LogoutAccountResponse = zod.object({
-  "message": zod.string()
-}).describe('A generic human-readable acknowledgement.')
 
 

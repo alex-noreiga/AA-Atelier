@@ -599,11 +599,6 @@ export interface MessageResponse {
   message: string;
 }
 
-export interface MagicLinkRequest {
-  /** The email to send the one-time sign-in link to. */
-  email: string;
-}
-
 /**
  * The unit the measurement values are expressed in.
  */
