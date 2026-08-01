@@ -9,7 +9,7 @@ import type { FabricPlacement } from './fabricPlacement';
 import type { FabricType } from './fabricType';
 
 export interface Fabric {
-  /** The swatch's Notion page id (used as `FabricSelection.fabricId`). */
+  /** The swatch's Notion page id. */
   id: string;
   name: string;
   /** Fabric family — the picker groups swatches by this. Resolved live from the Fabrics database "Type" select; clients must not hardcode it. */

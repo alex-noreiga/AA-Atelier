@@ -15,7 +15,7 @@ import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { PageShell } from "@/components/page-shell";
 import { ReferenceImageUpload } from "@/components/reference-image-upload";
-import { FabricColorPicker } from "@/components/fabric-color-picker";
+import { ColorPicker } from "@/components/color-picker";
 import { SuccessScreen } from "@/components/success-screen";
 import { Seo } from "@/components/seo";
 import { ROUTE_SEO } from "@/lib/seo-routes";
@@ -40,38 +40,10 @@ const MEASUREMENT_FIELDS = [
   { key: "bodyGirth", label: "Body Girth" },
 ] as const;
 
-// The intake is a two-step flow so the (optional) fabric selector lives on its
-// own page rather than lengthening the main form. Step 0 carries every required
-// field; step 1 is the skippable fabric & color picker + the final submit.
-const STEPS = ["Your details", "Fabric & color"] as const;
-
-// One garment section's fabric/color choice, matching the contract's
-// `FabricSelection` (all fields optional). Driven by <FabricColorPicker/>.
-const fabricSelectionSchema = z
-  .object({
-    fabricId: z.string().optional(),
-    fabricName: z.string().optional(),
-    fabricType: z
-      .enum(["solid", "print", "foil", "textured", "sequin"])
-      .optional(),
-    colorNote: z.string().optional(),
-    customPrintImageIds: z.array(z.string()).optional(),
-  })
-  .optional();
-
-/** Whether a fabric selection carries any real choice (a swatch, a color note,
- * or a custom print) worth sending — an untouched picker sends nothing. */
-function hasFabricSelection(
-  selection: z.infer<typeof fabricSelectionSchema>,
-): boolean {
-  return Boolean(
-    selection &&
-    (selection.fabricId ||
-      selection.colorNote ||
-      (selection.customPrintImageIds &&
-        selection.customPrintImageIds.length > 0)),
-  );
-}
+// The intake is a two-step flow so the (optional) color step lives on its own
+// page rather than lengthening the main form. Step 0 carries every required
+// field; step 1 is the skippable colors picker + the final submit.
+const STEPS = ["Your details", "Colors"] as const;
 
 // Form-friendly schema (string inputs, friendly messages). Its output is mapped
 // to the generated `NewOrderRequest` contract where it is handed to the
@@ -98,11 +70,11 @@ const formSchema = z
     height: z.string().optional(),
     bodyGirth: z.string().optional(),
     description: z.string().optional(),
-    // The visual fabric/color selector's choices per section, driven by
-    // <FabricColorPicker/> via setValue (non-input controls). All-optional and
-    // never required — the customer can also just use the free-text description.
-    bodiceFabric: fabricSelectionSchema,
-    skirtFabric: fabricSelectionSchema,
+    // The colors the customer picked from the studio palette (multi-select,
+    // driven by <ColorPicker/> via setValue) + a free-text note on how they'd
+    // like them used. Both optional — exact fabric is settled at consultation.
+    colors: z.array(z.string()).default([]),
+    colorUsage: z.string().optional(),
     neededBy: z.string().optional(),
     // Set when the customer acknowledges the rush surcharge. Only *required*
     // when the needed-by date lands inside the rush window (see superRefine).
@@ -165,7 +137,7 @@ export default function OrderForm() {
   // Notion file_upload ids for reference images the customer uploaded (managed
   // by <ReferenceImageUpload/>, which uploads each as it's chosen).
   const [referenceImageIds, setReferenceImageIds] = useState<string[]>([]);
-  // Which step of the two-step flow is showing (0 = details, 1 = fabric & color).
+  // Which step of the two-step flow is showing (0 = details, 1 = colors).
   const [step, setStep] = useState(0);
   const { toast } = useToast();
 
@@ -195,12 +167,12 @@ export default function OrderForm() {
   // (the server flow is best-effort too) and never blocks the order confirmation.
   const subscribeNewsletter = useSubscribeNewsletter();
 
-  // The atelier's fabric/color swatches for the visual selector, read live from
-  // Notion. Best-effort: an empty or errored list degrades each picker to just
-  // its free-text "I don't see my color" + custom-print paths, and never blocks
-  // the order form (the Fabrics database is optional).
+  // The studio's color palette, read live from Notion. Best-effort: an empty or
+  // errored list just hides the color chips (the customer still describes what
+  // they want in the usage note), and never blocks the order form (the palette
+  // database is optional).
   const { data: fabricsData } = useGetFabrics();
-  const fabrics = fabricsData?.fabrics ?? [];
+  const palette = fabricsData?.fabrics ?? [];
 
   const {
     register,
@@ -215,8 +187,7 @@ export default function OrderForm() {
       measurementMode: "self",
       measurementUnit: "inches",
       preferredContact: undefined,
-      bodiceFabric: {},
-      skirtFabric: {},
+      colors: [],
     },
   });
 
@@ -224,8 +195,7 @@ export default function OrderForm() {
   const measurementMode = watch("measurementMode");
   const measurementUnit = watch("measurementUnit");
   const preferredContact = watch("preferredContact");
-  const bodiceFabric = watch("bodiceFabric") ?? {};
-  const skirtFabric = watch("skirtFabric") ?? {};
+  const colors = watch("colors") ?? [];
   // A needed-by date inside the rush window surfaces the surcharge disclosure
   // and requires an acknowledgement before the order can be placed.
   const neededByValue = watch("neededBy");
@@ -233,9 +203,9 @@ export default function OrderForm() {
   // Floor the "needed by" picker at today, so a past date can't be picked.
   const todayIso = new Date().toISOString().split("T")[0];
 
-  // Advance to the fabric step only once the details step validates (every
+  // Advance to the colors step only once the details step validates (every
   // required field lives on step 0), so the customer can't skip past an error.
-  const goToFabric = async () => {
+  const goToColors = async () => {
     if (await trigger()) setStep(1);
   };
 
@@ -252,19 +222,10 @@ export default function OrderForm() {
       hips,
       height,
       bodyGirth,
-      bodiceFabric: bodiceSelection,
-      skirtFabric: skirtSelection,
+      colors: pickedColors,
+      colorUsage,
       ...contact
     } = values;
-
-    // The visual fabric selector's choices, per section, omitting a section the
-    // customer never touched so an untouched picker sends nothing.
-    const fabricSelections = {
-      ...(hasFabricSelection(bodiceSelection)
-        ? { bodice: bodiceSelection }
-        : {}),
-      ...(hasFabricSelection(skirtSelection) ? { skirt: skirtSelection } : {}),
-    };
 
     // A rush order is derived from the needed-by date (the superRefine above
     // guarantees the surcharge was acknowledged when this is true).
@@ -304,7 +265,8 @@ export default function OrderForm() {
         ...(neededBy ? { neededBy } : {}),
         ...(rush ? { rush: true } : {}),
         ...(referenceImageIds.length ? { referenceImageIds } : {}),
-        ...(Object.keys(fabricSelections).length ? { fabricSelections } : {}),
+        ...(pickedColors.length ? { colors: pickedColors } : {}),
+        ...(colorUsage ? { colorUsage } : {}),
       },
     });
   };
@@ -405,7 +367,7 @@ export default function OrderForm() {
             step === 0
               ? (e) => {
                   e.preventDefault();
-                  void goToFabric();
+                  void goToColors();
                 }
               : handleSubmit(onSubmit, () => setStep(0))
           }
@@ -756,6 +718,7 @@ export default function OrderForm() {
                       <ReferenceImageUpload
                         onChange={setReferenceImageIds}
                         disabled={submitting}
+                        helpText="Sketches, inspiration photos, fabric swatches, or a custom print you'd like us to work from."
                       />
                     </div>
                   </div>
@@ -766,9 +729,9 @@ export default function OrderForm() {
                 <Button
                   type="submit"
                   className={ctaVariants({ variant: "primary", size: "lg" })}
-                  data-testid="continue-to-fabric"
+                  data-testid="continue-to-colors"
                 >
-                  Continue to fabric &amp; color
+                  Continue to colors
                   <ArrowRight className="w-4 h-4 ml-2" />
                 </Button>
               </div>
@@ -789,53 +752,40 @@ export default function OrderForm() {
 
               <section>
                 <h2 className="text-xs tracking-[0.2em] uppercase text-muted-foreground mb-2 pb-2 border-b border-border">
-                  Fabric &amp; Color
+                  Colors
                 </h2>
                 <p className="text-muted-foreground font-light text-sm mb-6">
-                  Optional — pick your bodice and skirt fabrics below, or skip
-                  this and we'll talk it through together.
+                  Optional — pick the colors you're picturing (choose as many as
+                  you like), or skip this and we'll settle it together at your
+                  consultation.
                 </p>
-                <div className="space-y-8">
-                  <div>
-                    <Label className="text-sm font-light tracking-wide">
-                      Bodice fabric &amp; color
-                    </Label>
-                    <div className="mt-2">
-                      <FabricColorPicker
-                        placement="bodice"
-                        fabrics={fabrics}
-                        value={bodiceFabric}
-                        onChange={(value) =>
-                          setValue("bodiceFabric", value, {
-                            shouldValidate: false,
-                          })
-                        }
-                        disabled={submitting}
-                      />
-                    </div>
-                  </div>
+                <div className="space-y-6">
+                  <ColorPicker
+                    palette={palette}
+                    value={colors}
+                    onChange={(next) =>
+                      setValue("colors", next, { shouldValidate: false })
+                    }
+                    disabled={submitting}
+                  />
 
                   <div>
-                    <Label className="text-sm font-light tracking-wide">
-                      Skirt fabric &amp; color
+                    <Label
+                      htmlFor="colorUsage"
+                      className="text-sm font-light tracking-wide"
+                    >
+                      How would you like these colors used?
+                      <span className="text-muted-foreground/60 ml-1 text-xs">
+                        (optional)
+                      </span>
                     </Label>
-                    <p className="text-muted-foreground/60 text-xs mt-1">
-                      Skirts are often a different fabric from the bodice —
-                      choose separately, or leave blank and we'll advise.
-                    </p>
-                    <div className="mt-2">
-                      <FabricColorPicker
-                        placement="skirt"
-                        fabrics={fabrics}
-                        value={skirtFabric}
-                        onChange={(value) =>
-                          setValue("skirtFabric", value, {
-                            shouldValidate: false,
-                          })
-                        }
-                        disabled={submitting}
-                      />
-                    </div>
+                    <Textarea
+                      id="colorUsage"
+                      {...register("colorUsage")}
+                      placeholder="e.g. emerald bodice, gold accents on the collar, blush skirt — anything different from your sketch."
+                      rows={3}
+                      className="mt-1.5 bg-transparent border border-border rounded-lg px-3 py-2 text-sm focus-visible:ring-0 focus-visible:border-primary transition-colors resize-none shadow-none"
+                    />
                   </div>
                 </div>
               </section>

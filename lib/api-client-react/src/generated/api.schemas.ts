@@ -120,44 +120,6 @@ export const NewOrderRequestMeasurementUnit = {
 } as const;
 
 /**
- * The chosen swatch's fabric family.
- */
-export type FabricSelectionFabricType = typeof FabricSelectionFabricType[keyof typeof FabricSelectionFabricType];
-
-
-export const FabricSelectionFabricType = {
-  solid: 'solid',
-  print: 'print',
-  foil: 'foil',
-  textured: 'textured',
-  sequin: 'sequin',
-} as const;
-
-/**
- * One garment section's fabric/color choice. Every field is optional — a customer may pick a swatch, describe a color in free text (the "I don't see my color" escape hatch), upload a custom print, or leave it blank. A swatch selection and a free-text color note are mutually exclusive in the UI, but the contract permits either or both defensively.
- */
-export interface FabricSelection {
-  /** The chosen swatch's Notion page id (`Fabric.id`). */
-  fabricId?: string;
-  /** The chosen swatch's display name, resolved for the atelier. */
-  fabricName?: string;
-  /** The chosen swatch's fabric family. */
-  fabricType?: FabricSelectionFabricType;
-  /** Free-text desired color/fabric when no swatch fit (the escape hatch). */
-  colorNote?: string;
-  /** Notion file_upload ids for a customer-uploaded custom print, obtained the same way as `referenceImageIds` (POST /orders/reference-images). Attached to the order's Notion page as image blocks. */
-  customPrintImageIds?: string[];
-}
-
-/**
- * The customer's fabric/color choices per garment section, from the order form's visual fabric selector. Both sections are optional; the whole object is omitted when the customer made no swatch selections (they may still describe fabric in the free-text `description`). Recorded on the Notion order for the atelier — the app never reads it back.
- */
-export interface FabricSelections {
-  bodice?: FabricSelection;
-  skirt?: FabricSelection;
-}
-
-/**
  * A new custom-dress order. Measurements are optional: the customer either supplies all five now (with a measurementUnit), or sets measurementAppointment=true to have them taken at a scheduled fitting or consultation. The server rejects a body with neither.
  */
 export interface NewOrderRequest {
@@ -186,7 +148,10 @@ export interface NewOrderRequest {
   rush?: boolean;
   /** Notion file_upload ids for customer-supplied reference / inspiration images, each obtained by first POSTing the image bytes to POST /orders/reference-images (a binary endpoint outside this contract, mounted like the Stripe webhook). They are attached to the order's Notion page as image blocks. Optional; omitted when the customer uploaded none. */
   referenceImageIds?: string[];
-  fabricSelections?: FabricSelections;
+  /** Names of the colors the customer picked from the studio palette (the live `GET /fabrics` list) — a multi-select. This is a starting point for the consultation, not a final spec: the atelier finalizes the exact fabric + finish together with the customer. Recorded on the Notion order for the atelier (the app never reads it back). Optional; omitted when the customer picked none. */
+  colors?: string[];
+  /** The customer's free-text note on how they'd like their chosen colors used relative to their sketch (e.g. "emerald bodice, gold accents on the collar, blush skirt"). Optional; omitted when blank. */
+  colorUsage?: string;
 }
 
 export interface NewOrderResponse {
@@ -439,7 +404,7 @@ export const FabricPlacement = {
 } as const;
 
 export interface Fabric {
-  /** The swatch's Notion page id (used as `FabricSelection.fabricId`). */
+  /** The swatch's Notion page id. */
   id: string;
   name: string;
   /** Fabric family — the picker groups swatches by this. Resolved live from the Fabrics database "Type" select; clients must not hardcode it. */

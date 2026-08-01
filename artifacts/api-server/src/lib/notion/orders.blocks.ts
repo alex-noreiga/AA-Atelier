@@ -16,26 +16,11 @@ import {
   ORDER_HEIGHT_PROPERTY,
   ORDER_BODY_GIRTH_PROPERTY,
   ORDER_MEASUREMENT_UNIT_PROPERTY,
-  ORDER_BODICE_FABRIC_PROPERTY,
-  ORDER_BODICE_COLOR_NOTE_PROPERTY,
-  ORDER_SKIRT_FABRIC_PROPERTY,
-  ORDER_SKIRT_COLOR_NOTE_PROPERTY,
+  ORDER_COLORS_PROPERTY,
+  ORDER_COLOR_USAGE_PROPERTY,
   type CreateOrderInput,
 } from "./orders.schema.js";
 import { normalizeEmail } from "../email.js";
-
-/** One garment section's fabric/color choice from the order body (contract's
- * `FabricSelection`). */
-type FabricSelectionInput = NonNullable<
-  NonNullable<CreateOrderInput["fabricSelections"]>["bodice"]
->;
-
-/** The label written for a chosen swatch: its name plus its fabric type, e.g.
- * "Sapphire (solid)". */
-function fabricLabel(selection: FabricSelectionInput): string {
-  const name = selection.fabricName ?? "";
-  return selection.fabricType ? `${name} (${selection.fabricType})` : name;
-}
 
 /** Format the customer's "needed by" value as a Notion date string
  * (`YYYY-MM-DD`). The contract coerces it to a `Date`, but we defend against a
@@ -139,30 +124,17 @@ export function buildOrderProperties(
       select: { name: data.measurementUnit },
     };
   }
-  // Fabric/color selections from the visual selector — written as rich_text so
-  // the atelier sees the choice on the order (write-only; the app never reads
-  // them back). Each field is written only when the customer chose it; the
-  // custom-print images live in the page body (below), not a property.
-  const bodice = data.fabricSelections?.bodice;
-  const skirt = data.fabricSelections?.skirt;
-  if (bodice?.fabricName) {
-    properties[ORDER_BODICE_FABRIC_PROPERTY] = {
-      rich_text: [{ text: { content: fabricLabel(bodice) } }],
+  // The customer's color choices from the intake palette — a multi_select of the
+  // picked color names (filterable) + a free-text usage note. Write-only; the app
+  // never reads them back. Each written only when supplied.
+  if (data.colors && data.colors.length > 0) {
+    properties[ORDER_COLORS_PROPERTY] = {
+      multi_select: data.colors.map((name) => ({ name })),
     };
   }
-  if (bodice?.colorNote) {
-    properties[ORDER_BODICE_COLOR_NOTE_PROPERTY] = {
-      rich_text: [{ text: { content: bodice.colorNote } }],
-    };
-  }
-  if (skirt?.fabricName) {
-    properties[ORDER_SKIRT_FABRIC_PROPERTY] = {
-      rich_text: [{ text: { content: fabricLabel(skirt) } }],
-    };
-  }
-  if (skirt?.colorNote) {
-    properties[ORDER_SKIRT_COLOR_NOTE_PROPERTY] = {
-      rich_text: [{ text: { content: skirt.colorNote } }],
+  if (data.colorUsage) {
+    properties[ORDER_COLOR_USAGE_PROPERTY] = {
+      rich_text: [{ text: { content: data.colorUsage } }],
     };
   }
   if (clientPageId) {
@@ -171,32 +143,6 @@ export function buildOrderProperties(
     };
   }
   return properties;
-}
-
-/** The readable page-body blocks for one garment section's fabric choice: a
- * "<label> Fabric" line for a chosen swatch, a "<label> Color Note" line for the
- * free-text escape hatch, and any custom-print images as inline image blocks.
- * Empty when the customer made no choice for that section. */
-function fabricBlocks(
-  label: string,
-  selection: FabricSelectionInput | undefined,
-): unknown[] {
-  if (!selection) return [];
-  const blocks: unknown[] = [];
-  if (selection.fabricName) {
-    blocks.push(textBlock(`${label} Fabric`, fabricLabel(selection)));
-  }
-  if (selection.colorNote) {
-    blocks.push(textBlock(`${label} Color Note`, selection.colorNote));
-  }
-  if (
-    selection.customPrintImageIds &&
-    selection.customPrintImageIds.length > 0
-  ) {
-    blocks.push(textBlock(`${label} Custom Print`, "Customer-uploaded:"));
-    blocks.push(...selection.customPrintImageIds.map(imageBlock));
-  }
-  return blocks;
 }
 
 /** Notion page body (`children`) blocks for a new order. */
@@ -251,10 +197,14 @@ export function buildOrderPageBlocks(data: CreateOrderInput): unknown[] {
       textBlock("Rush Order", "Yes — rush surcharge applies"),
     );
   }
-  // The customer's fabric/color choices from the visual selector (bodice, then
-  // skirt), each omitted when they made no choice for that section.
-  costumeSection.push(...fabricBlocks("Bodice", data.fabricSelections?.bodice));
-  costumeSection.push(...fabricBlocks("Skirt", data.fabricSelections?.skirt));
+  // The customer's color choices from the intake palette + how they'd like them
+  // used, each omitted when not supplied.
+  if (data.colors && data.colors.length > 0) {
+    costumeSection.push(textBlock("Colors", data.colors.join(", ")));
+  }
+  if (data.colorUsage) {
+    costumeSection.push(textBlock("Color Usage", data.colorUsage));
+  }
   costumeSection.push(dividerBlock());
 
   // Customer-uploaded reference / inspiration images, attached as inline image

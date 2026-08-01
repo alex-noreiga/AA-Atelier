@@ -94,22 +94,8 @@ export const CreateOrderBody = zod.object({
   "neededBy": zod.coerce.date().optional(),
   "rush": zod.boolean().optional().describe('True when the customer confirmed a rush order — a neededBy date inside the studio\'s rush window, acknowledged with the disclosed surcharge. Recorded on the Notion order (a \"Rush Order\" checkbox + a page note) so the atelier prices the rush surcharge into the invoice; the app does not compute the fee itself. Optional; omitted for standard-timeline orders.'),
   "referenceImageIds": zod.array(zod.string()).optional().describe('Notion file_upload ids for customer-supplied reference \/ inspiration images, each obtained by first POSTing the image bytes to POST \/orders\/reference-images (a binary endpoint outside this contract, mounted like the Stripe webhook). They are attached to the order\'s Notion page as image blocks. Optional; omitted when the customer uploaded none.'),
-  "fabricSelections": zod.object({
-  "bodice": zod.object({
-  "fabricId": zod.string().optional().describe('The chosen swatch\'s Notion page id (`Fabric.id`).'),
-  "fabricName": zod.string().optional().describe('The chosen swatch\'s display name, resolved for the atelier.'),
-  "fabricType": zod.enum(['solid', 'print', 'foil', 'textured', 'sequin']).optional().describe('The chosen swatch\'s fabric family.'),
-  "colorNote": zod.string().optional().describe('Free-text desired color\/fabric when no swatch fit (the escape hatch).'),
-  "customPrintImageIds": zod.array(zod.string()).optional().describe('Notion file_upload ids for a customer-uploaded custom print, obtained the same way as `referenceImageIds` (POST \/orders\/reference-images). Attached to the order\'s Notion page as image blocks.')
-}).optional().describe('One garment section\'s fabric\/color choice. Every field is optional — a customer may pick a swatch, describe a color in free text (the \"I don\'t see my color\" escape hatch), upload a custom print, or leave it blank. A swatch selection and a free-text color note are mutually exclusive in the UI, but the contract permits either or both defensively.'),
-  "skirt": zod.object({
-  "fabricId": zod.string().optional().describe('The chosen swatch\'s Notion page id (`Fabric.id`).'),
-  "fabricName": zod.string().optional().describe('The chosen swatch\'s display name, resolved for the atelier.'),
-  "fabricType": zod.enum(['solid', 'print', 'foil', 'textured', 'sequin']).optional().describe('The chosen swatch\'s fabric family.'),
-  "colorNote": zod.string().optional().describe('Free-text desired color\/fabric when no swatch fit (the escape hatch).'),
-  "customPrintImageIds": zod.array(zod.string()).optional().describe('Notion file_upload ids for a customer-uploaded custom print, obtained the same way as `referenceImageIds` (POST \/orders\/reference-images). Attached to the order\'s Notion page as image blocks.')
-}).optional().describe('One garment section\'s fabric\/color choice. Every field is optional — a customer may pick a swatch, describe a color in free text (the \"I don\'t see my color\" escape hatch), upload a custom print, or leave it blank. A swatch selection and a free-text color note are mutually exclusive in the UI, but the contract permits either or both defensively.')
-}).optional().describe('The customer\'s fabric\/color choices per garment section, from the order form\'s visual fabric selector. Both sections are optional; the whole object is omitted when the customer made no swatch selections (they may still describe fabric in the free-text `description`). Recorded on the Notion order for the atelier — the app never reads it back.')
+  "colors": zod.array(zod.string()).optional().describe('Names of the colors the customer picked from the studio palette (the live `GET \/fabrics` list) — a multi-select. This is a starting point for the consultation, not a final spec: the atelier finalizes the exact fabric + finish together with the customer. Recorded on the Notion order for the atelier (the app never reads it back). Optional; omitted when the customer picked none.'),
+  "colorUsage": zod.string().optional().describe('The customer\'s free-text note on how they\'d like their chosen colors used relative to their sketch (e.g. \"emerald bodice, gold accents on the collar, blush skirt\"). Optional; omitted when blank.')
 }).describe('A new custom-dress order. Measurements are optional: the customer either supplies all five now (with a measurementUnit), or sets measurementAppointment=true to have them taken at a scheduled fitting or consultation. The server rejects a body with neither.')
 
 export const CreateOrderResponse = zod.object({
@@ -308,7 +294,7 @@ export const GetProductsResponse = zod.object({
  */
 export const GetFabricsResponse = zod.object({
   "fabrics": zod.array(zod.object({
-  "id": zod.string().describe('The swatch\'s Notion page id (used as `FabricSelection.fabricId`).'),
+  "id": zod.string().describe('The swatch\'s Notion page id.'),
   "name": zod.string(),
   "type": zod.enum(['solid', 'print', 'foil', 'textured', 'sequin']).describe('Fabric family — the picker groups swatches by this. Resolved live from the Fabrics database \"Type\" select; clients must not hardcode it.'),
   "placement": zod.enum(['bodice', 'skirt', 'both']).describe('Which picker(s) the swatch appears in. \"both\" shows in the bodice and the skirt picker. Clients filter the flat list by this per picker.'),

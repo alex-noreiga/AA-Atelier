@@ -1276,52 +1276,23 @@ components:
             contract, mounted like the Stripe webhook). They are attached to the
             order's Notion page as image blocks. Optional; omitted when the
             customer uploaded none.
-        fabricSelections:
-          $ref: "#/components/schemas/FabricSelections"
-    FabricSelections:
-      type: object
-      description: >-
-        The customer's fabric/color choices per garment section, from the order
-        form's visual fabric selector. Both sections are optional; the whole
-        object is omitted when the customer made no swatch selections (they may
-        still describe fabric in the free-text `description`). Recorded on the
-        Notion order for the atelier — the app never reads it back.
-      properties:
-        bodice:
-          $ref: "#/components/schemas/FabricSelection"
-        skirt:
-          $ref: "#/components/schemas/FabricSelection"
-    FabricSelection:
-      type: object
-      description: >-
-        One garment section's fabric/color choice. Every field is optional — a
-        customer may pick a swatch, describe a color in free text (the "I don't
-        see my color" escape hatch), upload a custom print, or leave it blank.
-        A swatch selection and a free-text color note are mutually exclusive in
-        the UI, but the contract permits either or both defensively.
-      properties:
-        fabricId:
-          type: string
-          description: The chosen swatch's Notion page id (`Fabric.id`).
-        fabricName:
-          type: string
-          description: The chosen swatch's display name, resolved for the atelier.
-        fabricType:
-          type: string
-          enum: [solid, print, foil, textured, sequin]
-          description: The chosen swatch's fabric family.
-        colorNote:
-          type: string
-          description: >-
-            Free-text desired color/fabric when no swatch fit (the escape hatch).
-        customPrintImageIds:
+        colors:
           type: array
           items:
             type: string
           description: >-
-            Notion file_upload ids for a customer-uploaded custom print, obtained
-            the same way as `referenceImageIds` (POST /orders/reference-images).
-            Attached to the order's Notion page as image blocks.
+            Names of the colors the customer picked from the studio palette (the
+            live `GET /fabrics` list) — a multi-select. This is a starting point
+            for the consultation, not a final spec: the atelier finalizes the
+            exact fabric + finish together with the customer. Recorded on the
+            Notion order for the atelier (the app never reads it back). Optional;
+            omitted when the customer picked none.
+        colorUsage:
+          type: string
+          description: >-
+            The customer's free-text note on how they'd like their chosen colors
+            used relative to their sketch (e.g. "emerald bodice, gold accents on
+            the collar, blush skirt"). Optional; omitted when blank.
     NewOrderResponse:
       type: object
       required:
@@ -1709,7 +1680,7 @@ components:
       properties:
         id:
           type: string
-          description: The swatch's Notion page id (used as `FabricSelection.fabricId`).
+          description: The swatch's Notion page id.
         name:
           type: string
         type:

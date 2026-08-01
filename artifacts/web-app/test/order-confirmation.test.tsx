@@ -46,8 +46,8 @@ async function fillMeasurements(user: ReturnType<typeof userEvent.setup>) {
 
 // The intake is a two-step flow; the final "Submit Order" lives on the fabric
 // step, so advance past the (optional) fabric selector first.
-async function continueToFabric(user: ReturnType<typeof userEvent.setup>) {
-  await user.click(screen.getByRole("button", { name: /continue to fabric/i }));
+async function continueToColors(user: ReturnType<typeof userEvent.setup>) {
+  await user.click(screen.getByRole("button", { name: /continue to colors/i }));
   await screen.findByRole("button", { name: "Submit Order" });
 }
 
@@ -57,7 +57,7 @@ describe("OrderForm confirmation screen", () => {
     render(<OrderForm />);
     await fillContact(user);
     await fillMeasurements(user);
-    await continueToFabric(user);
+    await continueToColors(user);
     await user.click(screen.getByRole("button", { name: "Submit Order" }));
 
     await waitFor(() =>
@@ -81,7 +81,7 @@ describe("OrderForm confirmation screen", () => {
     await user.click(
       screen.getByRole("button", { name: "Take them at an appointment" }),
     );
-    await continueToFabric(user);
+    await continueToColors(user);
     await user.click(screen.getByRole("button", { name: "Submit Order" }));
 
     await waitFor(() =>

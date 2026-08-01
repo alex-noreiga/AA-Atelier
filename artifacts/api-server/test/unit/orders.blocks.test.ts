@@ -240,51 +240,42 @@ describe("buildOrderPageBlocks", () => {
   });
 });
 
-describe("fabric selections", () => {
-  const withFabric: CreateOrderInput = {
+describe("color selections", () => {
+  const withColors: CreateOrderInput = {
     ...baseOrder,
-    fabricSelections: {
-      bodice: { fabricName: "Sapphire", fabricType: "solid" },
-      skirt: {
-        colorNote: "A soft dusty rose",
-        customPrintImageIds: ["print-1", "print-2"],
-      },
-    },
+    colors: ["Emerald", "Blush", "Gold Foil"],
+    colorUsage: "Emerald bodice, gold accents on the collar, blush skirt.",
   };
 
-  it("writes each chosen fabric + color note as rich_text properties", () => {
-    const props = buildOrderProperties(withFabric, "ORD-1") as any;
-    expect(props["Bodice Fabric"].rich_text[0].text.content).toBe(
-      "Sapphire (solid)",
+  it("writes the picked colors as a multi_select and the usage as rich_text", () => {
+    const props = buildOrderProperties(withColors, "ORD-1") as any;
+    expect(props["Colors"].multi_select).toEqual([
+      { name: "Emerald" },
+      { name: "Blush" },
+      { name: "Gold Foil" },
+    ]);
+    expect(props["Color Usage"].rich_text[0].text.content).toBe(
+      "Emerald bodice, gold accents on the collar, blush skirt.",
     );
-    expect(props["Skirt Color Note"].rich_text[0].text.content).toBe(
-      "A soft dusty rose",
-    );
-    // The unused half of each section is omitted.
-    expect(props).not.toHaveProperty("Bodice Color Note");
-    expect(props).not.toHaveProperty("Skirt Fabric");
   });
 
-  it("omits all four fabric properties when no selections are made", () => {
+  it("omits the color properties when nothing was picked", () => {
     const props = buildOrderProperties(baseOrder, "ORD-1") as any;
-    expect(props).not.toHaveProperty("Bodice Fabric");
-    expect(props).not.toHaveProperty("Bodice Color Note");
-    expect(props).not.toHaveProperty("Skirt Fabric");
-    expect(props).not.toHaveProperty("Skirt Color Note");
+    expect(props).not.toHaveProperty("Colors");
+    expect(props).not.toHaveProperty("Color Usage");
   });
 
-  it("renders the choices as page-body blocks, with custom prints as image blocks", () => {
-    const blocks = buildOrderPageBlocks(withFabric);
-    const pairs = textPairs(blocks);
-    expect(pairs["Bodice Fabric"]).toBe("Sapphire (solid)");
-    expect(pairs["Skirt Color Note"]).toBe("A soft dusty rose");
-    // The custom-print upload ids become inline image blocks.
-    expect(imageUploadIds(blocks)).toEqual(["print-1", "print-2"]);
+  it("renders the colors + usage as page-body blocks", () => {
+    const pairs = textPairs(buildOrderPageBlocks(withColors));
+    expect(pairs["Colors"]).toBe("Emerald, Blush, Gold Foil");
+    expect(pairs["Color Usage"]).toBe(
+      "Emerald bodice, gold accents on the collar, blush skirt.",
+    );
   });
 
-  it("adds no fabric blocks when no selections are made", () => {
+  it("adds no color blocks when nothing was picked", () => {
     const pairs = textPairs(buildOrderPageBlocks(baseOrder));
-    expect(pairs).not.toHaveProperty("Bodice Fabric");
-    expect(pairs).not.toHaveProperty("Skirt Color Note");
+    expect(pairs).not.toHaveProperty("Colors");
+    expect(pairs).not.toHaveProperty("Color Usage");
   });
 });

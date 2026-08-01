@@ -143,13 +143,12 @@ Express app (artifacts/api-server)  ──►  Notion REST API (orders database)
   │                                  + sends an acknowledgement email
   ├─ GET  /api/products            → shop inventory + the live category list,
   │                                  from the Notion "inventory" database
-  ├─ GET  /api/fabrics             → the atelier's fabric/color swatches for the
-  │                                  order form's visual selector, read live from
-  │                                  the Notion "Fabrics" database (grouped by type,
-  │                                  filtered per picker by placement). Empty when
-  │                                  the DB is unconfigured (the form degrades to
-  │                                  free text). Same 60s cache + edge-cache pattern
-  │                                  as /products
+  ├─ GET  /api/fabrics             → the studio's color palette for the order
+  │                                  form's color selector, read live from the
+  │                                  Notion "Fabrics" database (name + hex/swatch per
+  │                                  chip). Empty when the DB is unconfigured (the
+  │                                  form degrades to the free-text usage note). Same
+  │                                  60s cache + edge-cache pattern as /products
   ├─ GET  /api/shop-orders/:orderNumber
   │                                → a ready-to-wear shop order's current
   │                                  fulfillment Status + the live status list
@@ -1094,81 +1093,65 @@ acknowledge); `orders.blocks.ts` + `orders.schema.ts` (backend record);
 `services/rush.ts` + `services/invoice-generator.service.ts` (server-side priced
 line); `web-app/src/lib/invoice-format.ts` (display).
 
-## Visual fabric & color selector
+## Color selector (intake)
 
-The custom-order intake form (`pages/order-form.tsx`) lets the customer pick their
-**bodice** and **skirt** fabrics visually — swatch pickers grouped by fabric type
-(**solid / print / foil / textured / sequin**) — instead of only describing them in
-free text. It's a live-from-Notion read on the way in and a dual-write to the order
-on the way out, following the same conventions as the shop. Load-bearing decisions:
+The custom-order intake form (`pages/order-form.tsx`) lets the customer **pick the
+colors they're picturing** from the studio palette (a flat multi-select) and
+**describe how they'd like them used** relative to their sketch — deliberately a
+_starting point for the consultation_, not a fabric spec. Exact fabric + finish (and
+any bodice-vs-skirt split) are settled with the atelier later, so intake stays light.
+This replaced an earlier, clunkier two-picker configurator (fabric-type groups,
+bodice/skirt split, group-by toggle). Load-bearing decisions:
 
 1. **The palette is a live Notion "Fabrics" database, never hardcoded.** `GET
 /api/fabrics` reads the atelier-editable "Fabrics" database
    (`NOTION_FABRICS_DATABASE_ID`) with the same **60s TTL cache + fallback + edge
-   cache** as `/products` — it's the `product-categories` _optional_ stack cloned:
+   cache** as `/products` — the `product-categories` _optional_ stack cloned:
    `getFabricsNotionClient` (`notion/client.ts`), `notion/fabrics.schema.ts`
    (extractors + `extractFabricRecords`), `notion/fabrics.repository.ts`
    (`listFabricRecords`), `services/fabrics.service.ts` (`toFabricList`),
-   `routes/fabrics.ts`. Each row is one swatch: `Name` (title), `Type` (select),
-   `Placement` (select), `Hex` (text — Notion has no color type, so a solid's fill is
-   read via `extractRichText`), `Swatch` (files — image tile for the non-solid
-   types), `Color Family` (select — the "group by color family" view, below), `Sort`
-   (number), `Show on website` (checkbox — the publish gate). The endpoint returns one
-   **flat list carrying `placement`**; the client filters per picker. Contract-first
-   (`/fabrics` + `Fabric`/`FabricList` in `openapi.yaml`, so `useGetFabrics` is generated).
+   `routes/fabrics.ts`. Each row is one color chip: `Name` (title), `Hex` (text — a
+   solid's fill, read via `extractRichText` since Notion has no color type), `Swatch`
+   (files — a thumbnail for a patterned/textured option), `Show on website`
+   (checkbox — the publish gate). It also carries `Type` / `Placement` / `Color
+Family` (selects) that the current flat picker no longer uses (leftover from the
+   old design; harmless). Contract-first (`/fabrics` + `Fabric`/`FabricList` in
+   `openapi.yaml`, so `useGetFabrics` is generated).
 
-2. **`Type`/`Placement` are targeted business rules.** `TYPE_MAP` / `PLACEMENT_MAP`
-   (`notion/fabrics.schema.ts`) map the live Notion select labels (`Solid`, `Print`,
-   …, `Bodice`, `Skirt`, `Both`) to the contract enums — like `STATUS_IN_STOCK`,
-   these name specific option values: rename a `Type`/`Placement` option in Notion
-   and update these maps, or the row is dropped as unrecognized (a swatch we can't
-   group or place can't be shown). A row with a blank name is dropped too.
+2. **Optional + degrade-safe.** The Fabrics DB is optional: unset ⇒ the repository
+   returns `[]`, `/fabrics` 200s with `{ fabrics: [] }`, and the picker renders
+   nothing — the customer still describes what they want in the free-text usage note,
+   and the order form still submits. A swatch thumbnail is a short-lived Notion signed
+   URL, so a chip falls back to a muted dot on image load error
+   (`components/color-picker.tsx`).
 
-3. **Optional + degrade-safe.** The Fabrics DB is optional: unset ⇒ the repository
-   returns `[]`, `/fabrics` 200s with `{ fabrics: [] }`, and each picker shows only
-   its **"I don't see the color I want"** free-text escape hatch + **custom-print
-   upload** — the order form still submits (the escape hatch and custom print work
-   with no swatches). A swatch image is a short-lived Notion signed URL, so the
-   picker falls back to a monogram placeholder on load error (`components/
-fabric-color-picker.tsx`).
+3. **Flat multi-select, controlled.** `ColorPicker` (`components/color-picker.tsx`)
+   is a controlled, form-agnostic grid of `<button>` pill chips (the shadcn set has no
+   checkbox/toggle) — a hex-fill dot for a color, a tiny thumbnail for an image
+   option. Clicking toggles the color name in/out of the selection. The form drives it
+   via `setValue("colors", …)` and pairs it with a registered `colorUsage` textarea.
+   The order body carries a flat `colors: string[]` (picked names) + `colorUsage`
+   (string), both optional (contract-first on `NewOrderRequest`). Custom prints /
+   fabric photos fold into the existing **Reference Images** upload on step 1 (no
+   separate uploader).
 
-4. **Two pickers, three facets, mutual exclusivity.** `FabricColorPicker`
-   (`components/fabric-color-picker.tsx`) is controlled + form-agnostic (built from
-   plain `<button>` pills — the shadcn set has no radio/tabs/card). Per section the
-   customer can: pick a **swatch** (solids render a `backgroundColor` fill, image
-   types an `AspectRatio` tile), type a **color note** via the escape hatch, and/or
-   upload a **custom print** (reusing `ReferenceImageUpload` + the raw-bytes upload,
-   same as reference images). A swatch and a color note are **mutually exclusive**
-   (choosing one clears the other, enforced in the change handlers); a custom print
-   can accompany either. The form drives selection via `setValue("bodiceFabric"/
-"skirtFabric", …)` and maps them into the order body as an optional nested
-   `fabricSelections.{bodice,skirt}` (contract's `FabricSelection`), omitting an
-   untouched picker. A **group-by toggle** ("By fabric type" ⇄ "By color family")
-   re-groups the same swatches under the live `Color Family` labels; it appears only
-   when swatches carry a family, families render in first-appearance order over the
-   `Sort`-ordered list (so the atelier orders families via `Sort`), and unassigned
-   swatches fall under a trailing **"Other"** group. Unlike `Type`/`Placement`,
-   `colorFamily` is a **free label passed through verbatim** (no map, nothing
-   hardcoded) — a selection survives a regroup because it's keyed on swatch id.
+4. **Recorded on the order (write-only).** `orders.blocks.ts` writes the picks as a
+   **`Colors` multi_select** (the picked names — filterable in Notion) + a **`Color
+Usage` rich_text**, and mirrors both as readable **page-body blocks** in the
+   Costume Details section. The app **never reads these back** — they're an atelier
+   signal. Property-name constants (`ORDER_COLORS_PROPERTY`,
+   `ORDER_COLOR_USAGE_PROPERTY`) live in `orders.schema.ts`.
 
-5. **Recorded on the order as a write-only dual-write.** Like the measurement
-   precedent, `orders.blocks.ts` writes each choice both as typed **rich_text
-   properties** (`Bodice Fabric` / `Bodice Color Note` / `Skirt Fabric` / `Skirt
-Color Note` — `"<name> (<type>)"` for a swatch, the raw text for a note) **and**
-   as readable **page-body blocks** in the Costume Details section, with any
-   custom-print images attached as inline image blocks. The app **never reads these
-   back** (unlike measurements) — they're an atelier signal. Property-name constants
-   live in `orders.schema.ts`.
-
-The atelier's one-time setup: create the **"Fabrics"** database (properties above,
-including the optional `Color Family` select for the group-by view), seed swatches,
-share the Notion integration with it, and set `NOTION_FABRICS_DATABASE_ID`; and add
-the four **rich_text** properties (`Bodice Fabric`, `Bodice Color Note`, `Skirt
-Fabric`, `Skirt Color Note`) to the **Order Tracking Pipeline** database. All optional — unset ⇒ the form falls back to free
-text, exactly as before. Code: `openapi.yaml` (`/fabrics` + `Fabric`/`FabricList` +
-`fabricSelections` on `NewOrderRequest`), the five backend files above,
-`orders.{schema,blocks}.ts` (write-back), and `web-app/src/components/
-fabric-color-picker.tsx` + `pages/order-form.tsx` (frontend).
+The color step is the second page of the two-step intake flow (step 1 = details, step
+2 = "Colors" + submit); see `order-form.tsx` (`STEPS`, the step gating). The atelier's
+one-time setup: create the **"Fabrics"** database (`Name`/`Hex`/`Swatch`/`Show on
+website` are what the picker uses), seed colors, share the Notion integration with it,
+and set `NOTION_FABRICS_DATABASE_ID`; and add a **`Colors` (multi_select)** + **`Color
+Usage` (rich_text)** property to the **Order Tracking Pipeline** database. All
+optional — unset ⇒ the form falls back to the free-text usage note alone. Code:
+`openapi.yaml` (`/fabrics` + `Fabric`/`FabricList` + `colors`/`colorUsage` on
+`NewOrderRequest`), the five backend files above, `orders.{schema,blocks}.ts`
+(write-back), and `web-app/src/components/color-picker.tsx` + `pages/order-form.tsx`.
 
 ## Order status-change emails (Notion automation → webhook)
 
@@ -1890,7 +1873,7 @@ Fabric`, `Skirt Color Note`) on the Order Tracking Pipeline database (see "Visua
 | Add request validation / error mapping                 | `artifacts/api-server/src/middlewares/*`                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                      |
 | Change the order-tracking UI (custom + shop)           | `artifacts/web-app/src/pages/track.tsx` (unified lookup) + `components/custom-order-result.tsx` + `components/shop-order-result.tsx`                                                                                                                                                                                                                                                                                                                                                                                                                                          |
 | Change the order intake form                           | `artifacts/web-app/src/pages/order-form.tsx`                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                  |
-| Change the visual fabric & color selector              | `artifacts/web-app/src/components/fabric-color-picker.tsx` + `pages/order-form.tsx` (frontend); `api-server/src/lib/notion/fabrics.{schema,repository}.ts` + `services/fabrics.service.ts` + `routes/fabrics.ts` (live `GET /api/fabrics`, `NOTION_FABRICS_DATABASE_ID`); `lib/notion/orders.{schema,blocks}.ts` (write-back to the order's fabric properties + page body)                                                                                                                                                                                                    |
+| Change the color selector (intake)                     | `artifacts/web-app/src/components/color-picker.tsx` + `pages/order-form.tsx` (frontend, step 2 of the two-step flow); `api-server/src/lib/notion/fabrics.{schema,repository}.ts` + `services/fabrics.service.ts` + `routes/fabrics.ts` (live palette `GET /api/fabrics`, `NOTION_FABRICS_DATABASE_ID`); `lib/notion/orders.{schema,blocks}.ts` (write-back to the order's `Colors` + `Color Usage`)                                                                                                                                                                           |
 | Change the rush order surcharge                        | `artifacts/web-app/src/lib/rush.ts` (window + disclosure) + `pages/order-form.tsx` (detect/acknowledge/send); `api-server/src/lib/notion/orders.blocks.ts` + `orders.schema.ts` (`Rush Order` record); `api-server/src/services/rush.ts` + `services/invoice-generator.service.ts` (server-priced "Surcharge" line); `web-app/src/lib/invoice-format.ts` ("Surcharge" line display)                                                                                                                                                                                           |
 | Add/read an atelier-editable live setting              | `api-server/src/lib/settings/store.ts` (`SETTING_KEYS` + `settingValue`) + `lib/notion/settings.{schema,repository}.ts` (Notion read); consume with `settingValue(KEY) ?? process.env[KEY] ?? default` (see `services/rush.ts`); primed by the middleware in `app.ts`. Notion "Studio Settings" DB, `NOTION_SETTINGS_DATABASE_ID`                                                                                                                                                                                                                                             |
 | Change the measurement-change request                  | `artifacts/web-app/src/components/measurement-change-dialog.tsx` (opened from `components/custom-order-result.tsx`); `api-server/src/services/measurement-change.service.ts` + `routes/orders.ts` + `lib/notion/measurement-change.{blocks,repository}.ts` (writes to the **contact** database)                                                                                                                                                                                                                                                                               |

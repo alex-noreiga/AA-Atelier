@@ -55,8 +55,8 @@ async function fillRequired(user: ReturnType<typeof userEvent.setup>) {
  * the optional fabric selector + the final "Submit Order". Advance from step 0
  * to step 1, waiting for the fabric step (its Submit button) to render.
  */
-async function continueToFabric(user: ReturnType<typeof userEvent.setup>) {
-  await user.click(screen.getByRole("button", { name: /continue to fabric/i }));
+async function continueToColors(user: ReturnType<typeof userEvent.setup>) {
+  await user.click(screen.getByRole("button", { name: /continue to colors/i }));
   await screen.findByRole("button", { name: "Submit Order" });
 }
 
@@ -65,7 +65,7 @@ describe("OrderForm submission mapping", () => {
     const user = userEvent.setup();
     render(<OrderForm />);
     await fillRequired(user);
-    await continueToFabric(user);
+    await continueToColors(user);
     await user.click(screen.getByRole("button", { name: "Submit Order" }));
 
     await waitFor(() => expect(mutate).toHaveBeenCalledTimes(1));
@@ -104,7 +104,7 @@ describe("OrderForm submission mapping", () => {
       "/appointments?type=fitting",
     );
 
-    await continueToFabric(user);
+    await continueToColors(user);
     await user.click(screen.getByRole("button", { name: "Submit Order" }));
 
     await waitFor(() => expect(mutate).toHaveBeenCalledTimes(1));
@@ -128,7 +128,7 @@ describe("OrderForm submission mapping", () => {
     // Date inputs don't play well with per-character typing; set directly.
     fireEvent.change(byId("neededBy"), { target: { value: "2026-09-01" } });
 
-    await continueToFabric(user);
+    await continueToColors(user);
     await user.click(screen.getByRole("button", { name: "Submit Order" }));
 
     await waitFor(() => expect(mutate).toHaveBeenCalledTimes(1));
@@ -159,7 +159,7 @@ describe("OrderForm rush order", () => {
 
     // Advancing runs validation; an unacknowledged rush blocks it on step 0.
     await user.click(
-      screen.getByRole("button", { name: /continue to fabric/i }),
+      screen.getByRole("button", { name: /continue to colors/i }),
     );
 
     expect(
@@ -180,7 +180,7 @@ describe("OrderForm rush order", () => {
       target: { value: isoDaysFromNow(5) },
     });
     await user.click(screen.getByTestId("rush-acknowledge"));
-    await continueToFabric(user);
+    await continueToColors(user);
     await user.click(screen.getByRole("button", { name: "Submit Order" }));
 
     await waitFor(() => expect(mutate).toHaveBeenCalledTimes(1));
@@ -199,7 +199,7 @@ describe("OrderForm rush order", () => {
 
     expect(screen.queryByTestId("rush-notice")).not.toBeInTheDocument();
 
-    await continueToFabric(user);
+    await continueToColors(user);
     await user.click(screen.getByRole("button", { name: "Submit Order" }));
 
     await waitFor(() => expect(mutate).toHaveBeenCalledTimes(1));
@@ -213,7 +213,7 @@ describe("OrderForm newsletter opt-in", () => {
     const user = userEvent.setup();
     render(<OrderForm />);
     await fillRequired(user);
-    await continueToFabric(user);
+    await continueToColors(user);
     await user.click(screen.getByRole("button", { name: "Submit Order" }));
 
     await waitFor(() => expect(mutate).toHaveBeenCalledTimes(1));
@@ -224,7 +224,7 @@ describe("OrderForm newsletter opt-in", () => {
     const user = userEvent.setup();
     render(<OrderForm />);
     await fillRequired(user);
-    await continueToFabric(user);
+    await continueToColors(user);
     // The opt-in sits on the final (fabric) step, next to Submit.
     await user.click(screen.getByTestId("subscribe-newsletter"));
     await user.click(screen.getByRole("button", { name: "Submit Order" }));
@@ -241,7 +241,7 @@ describe("OrderForm validation", () => {
     const user = userEvent.setup();
     render(<OrderForm />);
     await user.click(
-      screen.getByRole("button", { name: /continue to fabric/i }),
+      screen.getByRole("button", { name: /continue to colors/i }),
     );
 
     expect(
@@ -264,7 +264,7 @@ describe("OrderForm validation", () => {
     fireEvent.change(byId("neededBy"), { target: { value: "2020-01-01" } });
 
     await user.click(
-      screen.getByRole("button", { name: /continue to fabric/i }),
+      screen.getByRole("button", { name: /continue to colors/i }),
     );
 
     expect(
@@ -279,7 +279,7 @@ describe("OrderForm deposit expectation", () => {
     const user = userEvent.setup();
     render(<OrderForm />);
     await fillRequired(user);
-    await continueToFabric(user);
+    await continueToColors(user);
     // The deposit note sits by the final Submit on the fabric step.
     expect(screen.getByTestId("deposit-note")).toHaveTextContent(
       /deposit to reserve your place/i,
@@ -287,68 +287,76 @@ describe("OrderForm deposit expectation", () => {
   });
 });
 
-describe("OrderForm fabric selector", () => {
-  it("renders both pickers on the fabric step", async () => {
+describe("OrderForm color selector", () => {
+  it("renders the palette chips on the colors step", async () => {
     const user = userEvent.setup();
     render(<OrderForm />);
-    // The pickers live on step 1, not the initial page.
-    expect(
-      screen.queryByTestId("fabric-picker-bodice"),
-    ).not.toBeInTheDocument();
+    // The palette lives on step 1, not the initial page.
+    expect(screen.queryByTestId("color-picker")).not.toBeInTheDocument();
     await fillRequired(user);
-    await continueToFabric(user);
-    expect(screen.getByTestId("fabric-picker-bodice")).toBeInTheDocument();
-    expect(screen.getByTestId("fabric-picker-skirt")).toBeInTheDocument();
+    await continueToColors(user);
+    expect(screen.getByTestId("color-picker")).toBeInTheDocument();
+    expect(screen.getByTestId("color-ivory")).toBeInTheDocument();
   });
 
-  it("sends the chosen bodice swatch under fabricSelections", async () => {
+  it("sends the picked colors and the usage note", async () => {
     const user = userEvent.setup();
     render(<OrderForm />);
     await fillRequired(user);
-    await continueToFabric(user);
-    // "Ivory" has placement "both", so it appears in the bodice picker.
-    await user.click(screen.getByTestId("fabric-bodice-ivory"));
+    await continueToColors(user);
+    await user.click(screen.getByTestId("color-ivory"));
+    await user.click(screen.getByTestId("color-floral-print"));
+    await user.type(byId("colorUsage"), "Ivory bodice, floral skirt");
     await user.click(screen.getByRole("button", { name: "Submit Order" }));
 
     await waitFor(() => expect(mutate).toHaveBeenCalledTimes(1));
     const { data } = mutate.mock.calls[0][0];
-    expect(data.fabricSelections).toEqual({
-      bodice: {
-        fabricId: "fab-solid",
-        fabricName: "Ivory",
-        fabricType: "solid",
-      },
-    });
-    // The untouched skirt picker sends nothing.
-    expect(data.fabricSelections).not.toHaveProperty("skirt");
+    // Colors are sent as the picked names, in selection order.
+    expect(data.colors).toEqual(["Ivory", "Floral Print"]);
+    expect(data.colorUsage).toBe("Ivory bodice, floral skirt");
   });
 
-  it("omits fabricSelections entirely when no swatch is chosen", async () => {
+  it("omits colors and colorUsage when none are provided", async () => {
     const user = userEvent.setup();
     render(<OrderForm />);
     await fillRequired(user);
-    await continueToFabric(user);
+    await continueToColors(user);
     await user.click(screen.getByRole("button", { name: "Submit Order" }));
 
     await waitFor(() => expect(mutate).toHaveBeenCalledTimes(1));
     const { data } = mutate.mock.calls[0][0];
-    expect(data).not.toHaveProperty("fabricSelections");
+    expect(data).not.toHaveProperty("colors");
+    expect(data).not.toHaveProperty("colorUsage");
   });
 
-  it("still submits when the fabrics query returns no data (degraded)", async () => {
+  it("deselecting a chip removes it from the sent colors", async () => {
+    const user = userEvent.setup();
+    render(<OrderForm />);
+    await fillRequired(user);
+    await continueToColors(user);
+    await user.click(screen.getByTestId("color-ivory"));
+    await user.click(screen.getByTestId("color-ivory")); // toggle back off
+    await user.click(screen.getByRole("button", { name: "Submit Order" }));
+
+    await waitFor(() => expect(mutate).toHaveBeenCalledTimes(1));
+    const { data } = mutate.mock.calls[0][0];
+    expect(data).not.toHaveProperty("colors");
+  });
+
+  it("still submits when the palette is empty (degraded), usage note only", async () => {
     fabricsResult.current = { data: undefined };
     const user = userEvent.setup();
     render(<OrderForm />);
     await fillRequired(user);
-    await continueToFabric(user);
-    // The escape hatch is still available on the fabric step even with no swatches.
-    expect(
-      screen.getByTestId("fabric-bodice-escape-hatch"),
-    ).toBeInTheDocument();
+    await continueToColors(user);
+    // No chips render, but the customer can still describe what they want.
+    expect(screen.queryByTestId("color-picker")).not.toBeInTheDocument();
+    await user.type(byId("colorUsage"), "Deep teal, please");
     await user.click(screen.getByRole("button", { name: "Submit Order" }));
 
     await waitFor(() => expect(mutate).toHaveBeenCalledTimes(1));
     const { data } = mutate.mock.calls[0][0];
-    expect(data).not.toHaveProperty("fabricSelections");
+    expect(data).not.toHaveProperty("colors");
+    expect(data.colorUsage).toBe("Deep teal, please");
   });
 });

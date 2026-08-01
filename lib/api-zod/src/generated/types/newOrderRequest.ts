@@ -5,7 +5,6 @@
  * API specification
  * OpenAPI spec version: 0.1.0
  */
-import type { FabricSelections } from './fabricSelections';
 import type { NewOrderRequestMeasurementUnit } from './newOrderRequestMeasurementUnit';
 import type { NewOrderRequestPreferredContact } from './newOrderRequestPreferredContact';
 
@@ -38,5 +37,8 @@ export interface NewOrderRequest {
   rush?: boolean;
   /** Notion file_upload ids for customer-supplied reference / inspiration images, each obtained by first POSTing the image bytes to POST /orders/reference-images (a binary endpoint outside this contract, mounted like the Stripe webhook). They are attached to the order's Notion page as image blocks. Optional; omitted when the customer uploaded none. */
   referenceImageIds?: string[];
-  fabricSelections?: FabricSelections;
+  /** Names of the colors the customer picked from the studio palette (the live `GET /fabrics` list) — a multi-select. This is a starting point for the consultation, not a final spec: the atelier finalizes the exact fabric + finish together with the customer. Recorded on the Notion order for the atelier (the app never reads it back). Optional; omitted when the customer picked none. */
+  colors?: string[];
+  /** The customer's free-text note on how they'd like their chosen colors used relative to their sketch (e.g. "emerald bodice, gold accents on the collar, blush skirt"). Optional; omitted when blank. */
+  colorUsage?: string;
 }
