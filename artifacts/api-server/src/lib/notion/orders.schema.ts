@@ -76,9 +76,9 @@ export const ORDER_MEASUREMENT_UNIT_PROPERTY = "Measurement Unit"; // select (in
 // The customer's color choices from the order form, stored so the atelier sees
 // them on the order (write-only — the app never reads these back). `Colors` is a
 // multi_select of the picked palette color names (filterable); `Color Usage` is
-// the free-text note on how they'd like those colors used relative to their
-// sketch. Exact fabric + finish is finalized at consultation, so only these two
-// are captured at intake. Written only when the customer supplied them.
+// the free-text note on how they'd like those colors used. Exact fabric + finish
+// is finalized at consultation, so only these two are captured at intake. Written
+// only when the customer supplied them.
 export const ORDER_COLORS_PROPERTY = "Colors"; // multi_select
 export const ORDER_COLOR_USAGE_PROPERTY = "Color Usage"; // rich_text
 

@@ -718,7 +718,7 @@ export default function OrderForm() {
                       <ReferenceImageUpload
                         onChange={setReferenceImageIds}
                         disabled={submitting}
-                        helpText="Sketches, inspiration photos, fabric swatches, or a custom print you'd like us to work from."
+                        helpText="Inspiration photos, fabric swatches, or a custom print you'd like us to work from."
                       />
                     </div>
                   </div>
@@ -782,7 +782,7 @@ export default function OrderForm() {
                     <Textarea
                       id="colorUsage"
                       {...register("colorUsage")}
-                      placeholder="e.g. emerald bodice, gold accents on the collar, blush skirt — anything different from your sketch."
+                      placeholder="e.g. emerald as the main color with gold accents on the collar, and a blush skirt."
                       rows={3}
                       className="mt-1.5 bg-transparent border border-border rounded-lg px-3 py-2 text-sm focus-visible:ring-0 focus-visible:border-primary transition-colors resize-none shadow-none"
                     />

@@ -1291,8 +1291,8 @@ components:
           type: string
           description: >-
             The customer's free-text note on how they'd like their chosen colors
-            used relative to their sketch (e.g. "emerald bodice, gold accents on
-            the collar, blush skirt"). Optional; omitted when blank.
+            used (e.g. "emerald as the main color with gold accents on the collar,
+            and a blush skirt"). Optional; omitted when blank.
     NewOrderResponse:
       type: object
       required:

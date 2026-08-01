@@ -1097,8 +1097,8 @@ line); `web-app/src/lib/invoice-format.ts` (display).
 
 The custom-order intake form (`pages/order-form.tsx`) lets the customer **pick the
 colors they're picturing** from the studio palette (a flat multi-select) and
-**describe how they'd like them used** relative to their sketch — deliberately a
-_starting point for the consultation_, not a fabric spec. Exact fabric + finish (and
+**describe how they'd like them used** — deliberately a _starting point for the
+consultation_, not a fabric spec. Exact fabric + finish (and
 any bodice-vs-skirt split) are settled with the atelier later, so intake stays light.
 This replaced an earlier, clunkier two-picker configurator (fabric-type groups,
 bodice/skirt split, group-by toggle). Load-bearing decisions:

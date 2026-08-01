@@ -150,7 +150,7 @@ export interface NewOrderRequest {
   referenceImageIds?: string[];
   /** Names of the colors the customer picked from the studio palette (the live `GET /fabrics` list) — a multi-select. This is a starting point for the consultation, not a final spec: the atelier finalizes the exact fabric + finish together with the customer. Recorded on the Notion order for the atelier (the app never reads it back). Optional; omitted when the customer picked none. */
   colors?: string[];
-  /** The customer's free-text note on how they'd like their chosen colors used relative to their sketch (e.g. "emerald bodice, gold accents on the collar, blush skirt"). Optional; omitted when blank. */
+  /** The customer's free-text note on how they'd like their chosen colors used (e.g. "emerald as the main color with gold accents on the collar, and a blush skirt"). Optional; omitted when blank. */
   colorUsage?: string;
 }
 
