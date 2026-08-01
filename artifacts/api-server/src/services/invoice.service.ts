@@ -14,12 +14,17 @@
 // coming back). Only the balance is taxed (Stripe Tax); deposits are untaxed.
 
 import type Stripe from "stripe";
-import { findOrderByNumber } from "../lib/notion/orders.repository.js";
+import {
+  findOrderByNumber,
+  findOrderForStageNotification,
+} from "../lib/notion/orders.repository.js";
 import {
   findInvoice,
   listInvoiceLineItems,
   markInvoicePaid,
 } from "../lib/notion/invoice.repository.js";
+import { runPaidOrderRewards } from "./rewards.service.js";
+import { logger } from "../lib/logger.js";
 import {
   LINE_TYPE_DEPOSIT,
   type PaymentStage,
@@ -229,4 +234,24 @@ export async function recordPayment(
     );
   }
   await markInvoicePaid(invoicePageId, stage, session.id);
+
+  // Best-effort referral / returning-skater rewards on the paid custom order (see
+  // rewards.service). The reward passes are idempotent by the CRM flags + the
+  // first-paid-order number, so running on every payment stage (not just the
+  // first deposit) can't double-issue. A failure must never bubble into the
+  // webhook — swallow and log, like the shop path.
+  const orderNumber = session.metadata?.orderNumber;
+  if (orderNumber) {
+    try {
+      const order = await findOrderForStageNotification(orderNumber);
+      if (order?.email) {
+        await runPaidOrderRewards(order.email, orderNumber);
+      }
+    } catch (err) {
+      logger.warn(
+        { err },
+        "Failed to run rewards for a paid custom order; the payment is recorded",
+      );
+    }
+  }
 }

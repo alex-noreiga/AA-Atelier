@@ -1,3 +1,4 @@
+import { useState } from "react";
 import { Link, Redirect, useLocation } from "wouter";
 import { useQueryClient } from "@tanstack/react-query";
 import {
@@ -8,6 +9,7 @@ import {
   type AccountShopOrderSummary,
   type AccountAppointmentSummary,
   type AccountMeasurements,
+  type AccountReferral,
 } from "@workspace/api-client-react";
 import { Button } from "@/components/ui/button";
 import { PageShell } from "@/components/page-shell";
@@ -25,6 +27,9 @@ import {
   CalendarClock,
   Video,
   Ruler,
+  Gift,
+  Copy,
+  Check,
 } from "lucide-react";
 
 /**
@@ -111,6 +116,12 @@ export default function Account() {
               </Button>
             </header>
 
+            {overview.data.referral && (
+              <div className="mb-12">
+                <ReferralCard referral={overview.data.referral} />
+              </div>
+            )}
+
             {(() => {
               const appointments = overview.data.appointments ?? [];
               const { customOrders, shopOrders } = overview.data;
@@ -172,6 +183,97 @@ export default function Account() {
         )}
       </div>
     </PageShell>
+  );
+}
+
+/** The customer's referral code + a standing returning-skater discount, when
+ * earned. The code redeems as a Stripe promotion code at any checkout. */
+function ReferralCard({ referral }: { referral: AccountReferral }) {
+  const [copied, setCopied] = useState<string | null>(null);
+
+  const copy = (value: string) => {
+    void navigator.clipboard?.writeText(value).then(() => {
+      setCopied(value);
+      window.setTimeout(() => setCopied((c) => (c === value ? null : c)), 2000);
+    });
+  };
+
+  const creditLabel =
+    typeof referral.creditAmount === "number" && referral.creditAmount > 0
+      ? `$${referral.creditAmount.toFixed(2).replace(/\.00$/, "")}`
+      : null;
+
+  return (
+    <div
+      className="rounded-sm border border-border bg-card/40 p-5"
+      data-testid="referral-card"
+    >
+      <h2 className="flex items-center gap-2 text-xs tracking-[0.2em] uppercase text-muted-foreground mb-4">
+        <Gift className="w-4 h-4" strokeWidth={1.5} />
+        Refer a friend
+      </h2>
+      <p className="text-sm text-muted-foreground font-light mb-4">
+        {creditLabel
+          ? `Share your code with a fellow skater. When they place their first order, you'll earn ${creditLabel} in credit — and they'll get a welcome discount too.`
+          : "Share your code with a fellow skater. When they place their first order, you'll earn a credit — and they'll get a welcome discount too."}
+      </p>
+      <CodeRow
+        code={referral.code}
+        copied={copied === referral.code}
+        onCopy={() => copy(referral.code)}
+        testId="referral-code"
+      />
+
+      {referral.returningCode && (
+        <div className="mt-5 pt-4 border-t border-border/60">
+          <p className="text-[11px] tracking-widest uppercase text-muted-foreground/70 mb-2">
+            Your returning-skater discount
+          </p>
+          <CodeRow
+            code={referral.returningCode}
+            copied={copied === referral.returningCode}
+            onCopy={() => copy(referral.returningCode as string)}
+            testId="returning-code"
+          />
+        </div>
+      )}
+    </div>
+  );
+}
+
+function CodeRow({
+  code,
+  copied,
+  onCopy,
+  testId,
+}: {
+  code: string;
+  copied: boolean;
+  onCopy: () => void;
+  testId: string;
+}) {
+  return (
+    <div className="flex items-center gap-3">
+      <span
+        className="inline-block border border-border rounded-sm px-4 py-2.5 font-mono text-base tracking-[0.12em] text-foreground"
+        data-testid={testId}
+      >
+        {code}
+      </span>
+      <Button
+        variant="ghost"
+        onClick={onCopy}
+        className="text-muted-foreground hover:text-primary gap-1.5 text-xs tracking-widest uppercase"
+        data-testid={`${testId}-copy`}
+      >
+        {copied ? (
+          <Check className="w-4 h-4" strokeWidth={1.5} />
+        ) : (
+          <Copy className="w-4 h-4" strokeWidth={1.5} />
+        )}
+        {copied ? "Copied" : "Copy"}
+      </Button>
+    </div>
   );
 }
 

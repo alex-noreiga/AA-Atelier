@@ -148,6 +148,8 @@ export interface NewOrderRequest {
   rush?: boolean;
   /** Notion file_upload ids for customer-supplied reference / inspiration images, each obtained by first POSTing the image bytes to POST /orders/reference-images (a binary endpoint outside this contract, mounted like the Stripe webhook). They are attached to the order's Notion page as image blocks. Optional; omitted when the customer uploaded none. */
   referenceImageIds?: string[];
+  /** An optional referral code the customer received from another skater. The server looks it up against the Client CRM (best-effort): a valid code — not the customer's own — earns the new customer a welcome discount code now and credits the referrer once this order is first paid. An unknown or self-referring code is ignored, and referral capture never blocks the order. Optional. */
+  referralCode?: string;
 }
 
 export interface NewOrderResponse {
@@ -670,6 +672,18 @@ export interface AccountAppointmentSummary {
 }
 
 /**
+ * The signed-in customer's referral-program state. Present only when the Client CRM is configured (omitted entirely otherwise, so the dashboard's referral card simply doesn't render).
+ */
+export interface AccountReferral {
+  /** The customer's own shareable referral code. */
+  code: string;
+  /** The credit, in dollars, that a referred skater's first paid order earns this customer — shown in the share copy so the value is concrete. */
+  creditAmount?: number;
+  /** A standing personal discount code for this returning customer, present once they've earned it (a qualifying repeat order). Absent otherwise. */
+  returningCode?: string;
+}
+
+/**
  * Everything tied to the signed-in customer's email — the data the account dashboard renders.
  */
 export interface AccountOverview {
@@ -681,6 +695,7 @@ export interface AccountOverview {
   shopOrders: AccountShopOrderSummary[];
   /** The customer's upcoming appointments, read live from Google Calendar by the email stamped on each booking, soonest first. Empty when none are upcoming, when the calendar integration isn't configured, or (a best-effort read) when the calendar can't be reached. Bookings made before the customer email was stamped on the event are not listed. */
   appointments: AccountAppointmentSummary[];
+  referral?: AccountReferral;
 }
 
 export type GetAppointmentAvailabilityParams = {

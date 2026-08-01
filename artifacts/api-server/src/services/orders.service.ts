@@ -7,6 +7,7 @@ import {
 } from "../lib/notion/orders.repository.js";
 import { listOrderMilestones } from "../lib/notion/production-schedule.repository.js";
 import { upsertClientByEmail } from "../lib/notion/clients.repository.js";
+import { captureReferralOnOrder } from "./rewards.service.js";
 import { measurementsLocked } from "./measurement-lock.js";
 import { getInvoicePaymentInfo } from "./invoice.service.js";
 import type {
@@ -110,6 +111,24 @@ export async function submitOrder(
   }
 
   const orderNumber = await createOrder(input, undefined, clientPageId);
+
+  // Best-effort: capture a referral code (if the customer entered one) — stamp
+  // the referrer link and email this new customer their welcome discount. A
+  // failure (or an unknown/self code, or no CRM) must never fail the order.
+  if (input.referralCode) {
+    try {
+      await captureReferralOnOrder({
+        referralCode: input.referralCode,
+        email: input.email,
+      });
+    } catch (err) {
+      logger.warn(
+        { err },
+        "Failed to capture referral on order; the order is unaffected",
+      );
+    }
+  }
+
   // Best-effort emails; a mail failure must not fail the order.
   const from = fromAddress("orders");
   await sendEmailBestEffort({

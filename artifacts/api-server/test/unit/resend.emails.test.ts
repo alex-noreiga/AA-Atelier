@@ -22,6 +22,9 @@ import {
   errorAlertEmail,
   orderStageChangeEmail,
   fittingReminderEmail,
+  referralWelcomeEmail,
+  referralCreditEmail,
+  returningSkaterRewardEmail,
   appointmentConfirmationEmail,
   appointmentRescheduledEmail,
   appointmentCancelledEmail,
@@ -644,6 +647,48 @@ const appointmentDetails = (
   when: "Monday, July 20 at 10:00 AM EDT",
   confirmationCode: "APT-XYZ",
   ...overrides,
+});
+
+describe("referral & returning-skater reward emails", () => {
+  it("referralWelcomeEmail carries the welcome code + percent, to the new skater", () => {
+    const email = referralWelcomeEmail({
+      email: "new@example.com",
+      code: "AA-WELCOME-ABC123",
+      percent: 10,
+    });
+    expect(email.to).toBe("new@example.com");
+    expect(email.subject).toBe("A welcome gift for your first order");
+    expect(email.html).toContain("AA-WELCOME-ABC123");
+    expect(email.html).toContain("10% off");
+    expect(email.text).toContain("AA-WELCOME-ABC123");
+    expect(email.html).toContain("A.A Atelier");
+  });
+
+  it("referralCreditEmail carries the credit code + amount, to the referrer", () => {
+    const email = referralCreditEmail({
+      email: "referrer@example.com",
+      code: "AA-CREDIT-XYZ789",
+      amount: 40,
+    });
+    expect(email.to).toBe("referrer@example.com");
+    expect(email.subject).toBe("You've earned a referral credit");
+    expect(email.html).toContain("AA-CREDIT-XYZ789");
+    expect(email.html).toContain("$40 in credit");
+    expect(email.text).toContain("AA-CREDIT-XYZ789");
+  });
+
+  it("returningSkaterRewardEmail carries the standing code + percent", () => {
+    const email = returningSkaterRewardEmail({
+      email: "ada@example.com",
+      code: "AA-AGAIN-QQ1122",
+      percent: 15,
+    });
+    expect(email.to).toBe("ada@example.com");
+    expect(email.subject).toBe("A little thank-you for coming back");
+    expect(email.html).toContain("AA-AGAIN-QQ1122");
+    expect(email.html).toContain("15% off");
+    expect(email.text).toContain("AA-AGAIN-QQ1122");
+  });
 });
 
 describe("appointmentConfirmationEmail", () => {

@@ -19,6 +19,11 @@ vi.mock("../../src/lib/notion/clients.repository.js", () => ({
 vi.mock("../../src/lib/resend/send.js", () => ({
   sendEmailBestEffort: vi.fn(),
 }));
+// Rewards are a best-effort side effect on the webhook tail; mock so the tests
+// assert the wiring and drive the failure branch without touching Notion/Stripe.
+vi.mock("../../src/services/rewards.service.js", () => ({
+  runPaidOrderRewards: vi.fn(),
+}));
 
 import type Stripe from "stripe";
 import {
@@ -35,6 +40,7 @@ import {
 } from "../../src/lib/notion/shop-orders.repository.js";
 import { upsertClientByEmail } from "../../src/lib/notion/clients.repository.js";
 import { sendEmailBestEffort } from "../../src/lib/resend/send.js";
+import { runPaidOrderRewards } from "../../src/services/rewards.service.js";
 import type { VariantRecord } from "../../src/lib/notion/products.schema.js";
 
 const mockListVariants = vi.mocked(listVariants);
@@ -42,6 +48,7 @@ const mockFind = vi.mocked(findOrderBySessionId);
 const mockCreate = vi.mocked(createShopOrder);
 const mockUpsertClient = vi.mocked(upsertClientByEmail);
 const mockSend = vi.mocked(sendEmailBestEffort);
+const mockRewards = vi.mocked(runPaidOrderRewards);
 
 function variant(overrides: Partial<VariantRecord> = {}): VariantRecord {
   return {
@@ -516,6 +523,43 @@ describe("recordPaidOrder", () => {
 
     // A CRM failure never fails the webhook; the order is recorded unlinked.
     expect(mockCreate).toHaveBeenCalledWith(fullSession, undefined, undefined);
+  });
+
+  it("runs the reward passes with the buyer email + order number after recording", async () => {
+    mockFind.mockResolvedValue(false);
+    const fullSession = {
+      id: "cs_rw",
+      payment_status: "paid",
+      customer_details: { email: "buyer@example.com", name: "Ada" },
+      metadata: { kind: "shop", orderNumber: "SHP-123" },
+      line_items: { data: [] },
+    } as unknown as Stripe.Checkout.Session;
+    const { stripe, retrieve } = fakeStripe();
+    retrieve.mockResolvedValue(fullSession);
+
+    await recordPaidOrder({ id: "cs_rw" } as Stripe.Checkout.Session, stripe);
+
+    expect(mockRewards).toHaveBeenCalledWith("buyer@example.com", "SHP-123");
+  });
+
+  it("still records the order when the reward pass throws (best-effort)", async () => {
+    mockFind.mockResolvedValue(false);
+    mockRewards.mockRejectedValueOnce(new Error("reward boom"));
+    const fullSession = {
+      id: "cs_rw_boom",
+      payment_status: "paid",
+      customer_details: { email: "buyer@example.com", name: "Ada" },
+      metadata: { kind: "shop", orderNumber: "SHP-999" },
+      line_items: { data: [] },
+    } as unknown as Stripe.Checkout.Session;
+    const { stripe, retrieve } = fakeStripe();
+    retrieve.mockResolvedValue(fullSession);
+
+    // Must not throw — a reward failure can't 500 the webhook.
+    await expect(
+      recordPaidOrder({ id: "cs_rw_boom" } as Stripe.Checkout.Session, stripe),
+    ).resolves.toBeUndefined();
+    expect(mockCreate).toHaveBeenCalled();
   });
 
   it("is idempotent — skips an already-recorded session without retrieving it", async () => {

@@ -171,6 +171,43 @@ export function crmClientPage(opts: { id?: string } = {}) {
   return { id: opts.id ?? "client-page" };
 }
 
+/** Minimal Client CRM page carrying the reward properties the rewards flow
+ * reads (referral code, the referrer link, the idempotency flags, the first
+ * paid order + audit codes). Each is optional so a test names just what it needs. */
+export function crmRewardPage(opts: {
+  id?: string;
+  email?: string;
+  referralCode?: string;
+  referredByEmail?: string;
+  referralRewarded?: boolean;
+  firstPaidOrder?: string;
+  returningRewardIssued?: boolean;
+  returningDiscountCode?: string;
+}) {
+  const rt = (value?: string) => ({
+    type: "rich_text",
+    rich_text: value ? [{ plain_text: value }] : [],
+  });
+  return {
+    id: opts.id ?? "client-page",
+    properties: {
+      Email: { type: "email", email: opts.email ?? null },
+      "Referral Code": rt(opts.referralCode),
+      "Referred By Email": rt(opts.referredByEmail),
+      "Referral Rewarded": {
+        type: "checkbox",
+        checkbox: opts.referralRewarded ?? false,
+      },
+      "First Paid Order": rt(opts.firstPaidOrder),
+      "Returning Reward Issued": {
+        type: "checkbox",
+        checkbox: opts.returningRewardIssued ?? false,
+      },
+      "Returning Discount Code": rt(opts.returningDiscountCode),
+    },
+  };
+}
+
 /** Minimal Notion order page as returned by a database query. Payments live on
  * the linked invoice now, so the order carries only the `Invoices` relation. */
 export function orderPage(opts: {

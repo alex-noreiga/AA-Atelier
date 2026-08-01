@@ -22,6 +22,7 @@ import {
 import { magicLinkEmail } from "../lib/resend/emails.js";
 import { sendEmailBestEffort } from "../lib/resend/send.js";
 import { fromAddress } from "../lib/resend/config.js";
+import { ensureReferralCode, type ReferralInfo } from "./rewards.service.js";
 import { logger } from "../lib/logger.js";
 
 /** An upcoming appointment for the dashboard: its details plus a signed token so
@@ -35,6 +36,8 @@ export interface AccountOverviewResult {
   customOrders: OrderSummary[];
   shopOrders: ShopOrderRecord[];
   appointments: AccountAppointment[];
+  /** The customer's referral-program state, absent when the CRM is unconfigured. */
+  referral?: ReferralInfo;
 }
 
 /** The origin the emailed magic link points back at (Stripe already needs this). */
@@ -130,11 +133,24 @@ async function upcomingAppointments(
 export async function getAccountOverview(
   email: string,
 ): Promise<AccountOverviewResult> {
-  const [customOrders, shopOrders, appointments] = await Promise.all([
+  const [customOrders, shopOrders, appointments, referral] = await Promise.all([
     findOrdersByEmail(email),
     findShopOrdersByEmail(email),
     upcomingAppointments(email),
+    // Best-effort: a customer's referral code, generated on first view. Degrades
+    // to null (no referral block) when the CRM is unconfigured or unreachable, so
+    // it never fails the dashboard's core orders view.
+    ensureReferralCode(email).catch((err) => {
+      logger.warn({ err }, "Account overview: could not resolve referral info");
+      return null;
+    }),
   ]);
 
-  return { email, customOrders, shopOrders, appointments };
+  return {
+    email,
+    customOrders,
+    shopOrders,
+    appointments,
+    ...(referral ? { referral } : {}),
+  };
 }

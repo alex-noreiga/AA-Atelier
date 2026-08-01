@@ -1087,6 +1087,75 @@ acknowledge); `orders.blocks.ts` + `orders.schema.ts` (backend record);
 `services/rush.ts` + `services/invoice-generator.service.ts` (server-side priced
 line); `web-app/src/lib/invoice-format.ts` (display).
 
+## Referral & returning-skater rewards
+
+Every customer gets a shareable **referral code**; when a skater they refer places
+their first order, the referrer earns a **credit** and the new skater got a
+**welcome discount** — and any repeat customer earns a **standing discount**. All
+three are delivered as **Stripe promotion codes** the customer redeems in the
+checkout promo box, which already exists (`allow_promotion_codes: true` is on every
+Checkout path). The whole feature rides the **email-keyed Client CRM** (the returning-
+customer identity is already there) and adds **no new database** — reward state lives
+on the CRM row. Code: `services/rewards.service.ts` (the engine),
+`lib/stripe/promotions.ts` (`createDiscountCode`), and reward state on the CRM
+(`lib/notion/clients.repository.ts`). Load-bearing decisions:
+
+1. **Two mechanics, one engine, driven from the paid-order moment.** There is no
+   Notion→app trigger, but every moment that matters runs in-app: an order is
+   _placed_ via `POST /orders` (`submitOrder`) and _paid_ via the Stripe webhook
+   (`recordPaidOrder` / `recordPayment`). `submitOrder` calls
+   `captureReferralOnOrder` (stamp the referrer link + email the new skater their
+   welcome code); the two webhook recorders call `runPaidOrderRewards(email,
+orderNumber)` at their tails, which issues the **referrer credit** (once the referred
+   order is paid — anti-abuse) and the **returning-skater standing discount**.
+
+2. **Everything is best-effort + CRM/Stripe-optional.** A reward failure must never
+   fail an order or 500 the webhook (a throw into the webhook makes Stripe retry, and
+   the retry early-returns at the dedupe guard, so the reward would be lost) — every
+   entry point is `try/catch` + `logger.warn`, exactly like the `upsertClientByEmail`
+   side effects. When `NOTION_CLIENT_CRM_DATABASE_ID` is unset (or Stripe isn't
+   configured) every reward path no-ops.
+
+3. **Idempotency is layered.** A CRM checkbox is the fast guard —
+   `Referral Rewarded` (credit once per referred customer) and
+   `Returning Reward Issued` (standing code once) — backed by Stripe's globally-unique
+   promo `code` + a per-reward `idempotencyKey` (`createDiscountCode` treats
+   `resource_already_exists` as success). The returning trigger keys off
+   **`First Paid Order`** (a rich_text holding the customer's first paid order
+   _number_), not a boolean: a webhook retry or a later payment stage of the _same_
+   order carries the same number and can't fire the reward — only a genuinely
+   different second order does.
+
+4. **Two-sided referral, self/abuse-guarded.** `captureReferralOnOrder` resolves the
+   code to a referrer (`findClientByReferralCode`), rejects a self-referral and an
+   unknown code, skips an already-captured customer, then stamps
+   `Referred By Email` and issues the welcome code. The **referrer's** credit is a
+   fixed `$` amount (with a `minimum_amount` restriction so a large single-use credit
+   isn't burned on a tiny order); the welcome + returning codes are **percentages**
+   (no currency mismatch with the USD checkouts). The referral **capture** surface is
+   custom-order-only for now (`NewOrderRequest.referralCode`, contract-first); the
+   returning discount + the referrer's own redemption work on any checkout.
+
+5. **Surfaced in the account portal.** `getAccountOverview` calls `ensureReferralCode`
+   (best-effort), which generates a deterministic short code on first view and returns
+   `AccountOverview.referral` (`{ code, creditAmount, returningCode? }`); `pages/account.tsx`
+   renders a "Refer a friend" card with copy-to-clipboard. Absent when the CRM is off.
+
+6. **Amounts are Studio-Settings tunables** (`services/rewards.service.ts` getters,
+   the `rush.ts` pattern — Notion → env → default): `REFERRAL_CREDIT_AMOUNT` (40),
+   `REFERRAL_WELCOME_PERCENT` (10), `RETURNING_DISCOUNT_PERCENT` (10),
+   `REWARD_CODE_EXPIRES_DAYS` (90).
+
+The atelier's one-time setup is **seven properties on the Client CRM** database (no
+new database, no new env var, no Stripe Dashboard setup — codes are created
+programmatically): `Referral Code`, `Referred By Email`, `Referral Rewarded`
+(checkbox), `First Paid Order`, `Returning Reward Issued` (checkbox),
+`Referral Credit Code`, `Returning Discount Code`. Code: `services/rewards.service.ts`,
+`lib/stripe/promotions.ts`, `lib/notion/clients.repository.ts` (reward reads +
+`patchClientProperties`), the three reward builders in `lib/resend/emails.ts`, the
+`submitOrder` / `recordPaidOrder` / `recordPayment` tails, `services/account.service.ts`,
+`pages/order-form.tsx` + `pages/account.tsx`.
+
 ## Order status-change emails (Notion automation → webhook)
 
 When a custom order advances to a new production stage, the customer gets an email
@@ -1770,6 +1839,15 @@ and in the maintainer's env without edits.
   `0.15`), the fraction of the itemized subtotal the invoice generator prices the
   rush `Surcharge` line at (`0` disables it), read in `services/rush.ts`. Keep the
   frontend copy and the server rate in step (see "Rush order surcharge").
+- **Optional reward env vars:** `REFERRAL_CREDIT_AMOUNT` (default `40`, the dollars a
+  referred skater's first paid order credits the referrer), `REFERRAL_WELCOME_PERCENT`
+  (default `10`, the new skater's welcome discount), `RETURNING_DISCOUNT_PERCENT`
+  (default `10`, the standing repeat-customer discount), and `REWARD_CODE_EXPIRES_DAYS`
+  (default `90`, how long a one-time reward code stays redeemable). All are Studio-
+  Settings tunables (Notion → env → default), read in `services/rewards.service.ts`.
+  No new env var is required — the feature reuses the CRM + Stripe + Resend (see
+  "Referral & returning-skater rewards"). One-time: add the seven reward properties to
+  the Client CRM database.
 - **Optional live-config database:** `NOTION_SETTINGS_DATABASE_ID` (the "Studio
   Settings" key/value database). When set (and the integration is shared with it),
   the atelier can retune the runtime business tunables — `RUSH_SURCHARGE_RATE`,
@@ -1801,6 +1879,7 @@ and in the maintainer's env without edits.
 | Change the order-tracking UI (custom + shop)           | `artifacts/web-app/src/pages/track.tsx` (unified lookup) + `components/custom-order-result.tsx` + `components/shop-order-result.tsx`                                                                                                                                                                                                                                                                                                                                                                                                                                          |
 | Change the order intake form                           | `artifacts/web-app/src/pages/order-form.tsx`                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                  |
 | Change the rush order surcharge                        | `artifacts/web-app/src/lib/rush.ts` (window + disclosure) + `pages/order-form.tsx` (detect/acknowledge/send); `api-server/src/lib/notion/orders.blocks.ts` + `orders.schema.ts` (`Rush Order` record); `api-server/src/services/rush.ts` + `services/invoice-generator.service.ts` (server-priced "Surcharge" line); `web-app/src/lib/invoice-format.ts` ("Surcharge" line display)                                                                                                                                                                                           |
+| Change referral & returning-skater rewards             | `api-server/src/services/rewards.service.ts` (engine + amount getters) + `lib/stripe/promotions.ts` (`createDiscountCode`) + `lib/notion/clients.repository.ts` (reward reads + `patchClientProperties`); wired from `submitOrder` (capture) + `recordPaidOrder` / `recordPayment` (issue); reward emails in `lib/resend/emails.ts`; `services/account.service.ts` + `web-app/src/pages/account.tsx` (referral card) + `pages/order-form.tsx` (`referralCode` field)                                                                                                          |
 | Add/read an atelier-editable live setting              | `api-server/src/lib/settings/store.ts` (`SETTING_KEYS` + `settingValue`) + `lib/notion/settings.{schema,repository}.ts` (Notion read); consume with `settingValue(KEY) ?? process.env[KEY] ?? default` (see `services/rush.ts`); primed by the middleware in `app.ts`. Notion "Studio Settings" DB, `NOTION_SETTINGS_DATABASE_ID`                                                                                                                                                                                                                                             |
 | Change the measurement-change request                  | `artifacts/web-app/src/components/measurement-change-dialog.tsx` (opened from `components/custom-order-result.tsx`); `api-server/src/services/measurement-change.service.ts` + `routes/orders.ts` + `lib/notion/measurement-change.{blocks,repository}.ts` (writes to the **contact** database)                                                                                                                                                                                                                                                                               |
 | Change post-delivery review capture                    | `artifacts/web-app/src/components/review-dialog.tsx` (opened from `components/custom-order-result.tsx` for delivered orders); `api-server/src/services/review.service.ts` + `services/delivery.ts` + `routes/orders.ts` + `lib/notion/reviews.{blocks,repository}.ts` (writes to the **Reviews** database)                                                                                                                                                                                                                                                                    |
