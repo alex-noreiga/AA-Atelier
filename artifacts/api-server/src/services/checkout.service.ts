@@ -15,6 +15,7 @@ import {
   findOrderBySessionId,
 } from "../lib/notion/shop-orders.repository.js";
 import { upsertClientByEmail } from "../lib/notion/clients.repository.js";
+import { runPaidOrderRewards } from "./rewards.service.js";
 import {
   generateShopOrderNumber,
   formatShippingAddress,
@@ -377,4 +378,21 @@ export async function recordPaidOrder(
   // idempotency dedupe above so a retried-but-already-recorded event won't
   // re-send. Best-effort — see sendShopOrderConfirmation.
   await sendShopOrderConfirmation(full);
+
+  // Best-effort referral / returning-skater rewards (see rewards.service). A
+  // reward failure must never bubble into the webhook (a throw would 500 it and
+  // make Stripe retry). No-op when the CRM is unconfigured or Stripe collected
+  // no email; sits below the dedupe so a retried-recorded event won't re-run.
+  const rewardEmail = full.customer_details?.email;
+  const orderNumber = full.metadata?.orderNumber;
+  if (rewardEmail && orderNumber) {
+    try {
+      await runPaidOrderRewards(rewardEmail, orderNumber);
+    } catch (err) {
+      logger.warn(
+        { err },
+        "Failed to run rewards for a paid shop order; the order is recorded",
+      );
+    }
+  }
 }

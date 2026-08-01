@@ -136,6 +136,30 @@ describe("OrderForm submission mapping", () => {
     expect(data.description).toBe("Ivory chiffon, A-line");
     expect(data.neededBy).toBe("2026-09-01");
   });
+
+  it("omits referralCode when left blank", async () => {
+    const user = userEvent.setup();
+    render(<OrderForm />);
+    await fillRequired(user);
+    await continueToColors(user);
+    await user.click(screen.getByRole("button", { name: "Submit Order" }));
+
+    await waitFor(() => expect(mutate).toHaveBeenCalledTimes(1));
+    expect(mutate.mock.calls[0][0].data).not.toHaveProperty("referralCode");
+  });
+
+  it("includes a trimmed referralCode when provided", async () => {
+    const user = userEvent.setup();
+    render(<OrderForm />);
+    await fillRequired(user);
+    // The referral field is on the details step, alongside the contact fields.
+    await user.type(byId("referralCode"), "  AA-ABC123  ");
+    await continueToColors(user);
+    await user.click(screen.getByRole("button", { name: "Submit Order" }));
+
+    await waitFor(() => expect(mutate).toHaveBeenCalledTimes(1));
+    expect(mutate.mock.calls[0][0].data.referralCode).toBe("AA-ABC123");
+  });
 });
 
 /** An ISO yyyy-mm-dd date `days` from now, for exercising the rush window. */

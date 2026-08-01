@@ -4,8 +4,14 @@ import {
   jsonResponse,
   errorResponse,
   crmClientPage,
+  crmRewardPage,
 } from "../support/fake-notion.js";
-import { upsertClientByEmail } from "../../src/lib/notion/clients.repository.js";
+import {
+  upsertClientByEmail,
+  findClientByReferralCode,
+  getClientRewardRowByEmail,
+  patchClientProperties,
+} from "../../src/lib/notion/clients.repository.js";
 
 const isQuery = (path: string) => path.endsWith("/query");
 const ISO_DATE = /^\d{4}-\d{2}-\d{2}$/;
@@ -174,5 +180,155 @@ describe("upsertClientByEmail", () => {
         client,
       ),
     ).rejects.toThrow(/status 500/);
+  });
+});
+
+describe("findClientByReferralCode", () => {
+  it("returns null (no fetch) when the CRM db id is unset", async () => {
+    const client = makeFakeClient(() => {
+      throw new Error("should not fetch");
+    }, "");
+    expect(await findClientByReferralCode("AA-ABC123", client)).toBeNull();
+    expect(client.calls).toHaveLength(0);
+  });
+
+  it("returns null (no fetch) for a blank code", async () => {
+    const client = makeFakeClient(() => {
+      throw new Error("should not fetch");
+    });
+    expect(await findClientByReferralCode("  ", client)).toBeNull();
+    expect(client.calls).toHaveLength(0);
+  });
+
+  it("filters on the Referral Code rich_text and returns page id + email", async () => {
+    const client = makeFakeClient((path) => {
+      if (isQuery(path))
+        return jsonResponse({
+          results: [
+            crmRewardPage({ id: "ref-9", email: "referrer@example.com" }),
+          ],
+        });
+      throw new Error(`unexpected ${path}`);
+    });
+
+    const found = await findClientByReferralCode("  AA-ABC123 ", client);
+
+    expect(found).toEqual({ pageId: "ref-9", email: "referrer@example.com" });
+    const body = JSON.parse(client.calls[0].init!.body as string);
+    expect(body.filter).toEqual({
+      property: "Referral Code",
+      rich_text: { equals: "AA-ABC123" },
+    });
+  });
+
+  it("returns null when no client has the code", async () => {
+    const client = makeFakeClient((path) => {
+      if (isQuery(path)) return jsonResponse({ results: [] });
+      throw new Error(`unexpected ${path}`);
+    });
+    expect(await findClientByReferralCode("AA-NOPE00", client)).toBeNull();
+  });
+});
+
+describe("getClientRewardRowByEmail", () => {
+  it("returns null (no fetch) when the CRM db id is unset", async () => {
+    const client = makeFakeClient(() => {
+      throw new Error("should not fetch");
+    }, "");
+    expect(
+      await getClientRewardRowByEmail("ada@example.com", client),
+    ).toBeNull();
+    expect(client.calls).toHaveLength(0);
+  });
+
+  it("parses the reward properties and normalizes the lookup email", async () => {
+    const client = makeFakeClient((path) => {
+      if (isQuery(path))
+        return jsonResponse({
+          results: [
+            crmRewardPage({
+              id: "client-3",
+              email: "ada@example.com",
+              referralCode: "AA-ABC123",
+              referredByEmail: "referrer@example.com",
+              referralRewarded: true,
+              firstPaidOrder: "ORD-000001",
+              returningRewardIssued: false,
+              returningDiscountCode: "AA-AGAIN-XYZ",
+            }),
+          ],
+        });
+      throw new Error(`unexpected ${path}`);
+    });
+
+    const row = await getClientRewardRowByEmail("  Ada@Example.COM ", client);
+
+    expect(row).toEqual({
+      pageId: "client-3",
+      email: "ada@example.com",
+      referralCode: "AA-ABC123",
+      referredByEmail: "referrer@example.com",
+      referralRewarded: true,
+      firstPaidOrder: "ORD-000001",
+      returningRewardIssued: false,
+      returningDiscountCode: "AA-AGAIN-XYZ",
+    });
+    const body = JSON.parse(client.calls[0].init!.body as string);
+    expect(body.filter.email).toEqual({ equals: "ada@example.com" });
+  });
+
+  it("returns empty defaults for an unpopulated row", async () => {
+    const client = makeFakeClient((path) => {
+      if (isQuery(path))
+        return jsonResponse({ results: [crmRewardPage({ id: "c1" })] });
+      throw new Error(`unexpected ${path}`);
+    });
+
+    const row = await getClientRewardRowByEmail("ada@example.com", client);
+    expect(row).toMatchObject({
+      referralCode: "",
+      referredByEmail: "",
+      referralRewarded: false,
+      firstPaidOrder: "",
+      returningRewardIssued: false,
+    });
+  });
+});
+
+describe("patchClientProperties", () => {
+  it("PATCHes the page with the given properties", async () => {
+    const client = makeFakeClient((path) => {
+      if (path === "/v1/pages/client-5")
+        return jsonResponse({ id: "client-5" });
+      throw new Error(`unexpected ${path}`);
+    });
+
+    await patchClientProperties(
+      "client-5",
+      { "Referral Rewarded": { checkbox: true } },
+      client,
+    );
+
+    const call = client.calls[0];
+    expect(call.path).toBe("/v1/pages/client-5");
+    expect(call.init?.method).toBe("PATCH");
+    expect(JSON.parse(call.init!.body as string)).toEqual({
+      properties: { "Referral Rewarded": { checkbox: true } },
+    });
+  });
+
+  it("no-ops (no fetch) when the CRM db id is unset", async () => {
+    const client = makeFakeClient(() => {
+      throw new Error("should not fetch");
+    }, "");
+    await patchClientProperties("client-5", { x: 1 }, client);
+    expect(client.calls).toHaveLength(0);
+  });
+
+  it("throws with the error body when the PATCH fails", async () => {
+    const client = makeFakeClient(() => errorResponse(400, "bad prop"));
+    await expect(
+      patchClientProperties("client-5", { x: 1 }, client),
+    ).rejects.toThrow(/status 400: bad prop/);
   });
 });

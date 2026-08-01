@@ -2,11 +2,17 @@ import { describe, it, expect, vi, beforeEach } from "vitest";
 
 vi.mock("../../src/lib/notion/orders.repository.js", () => ({
   findOrderByNumber: vi.fn(),
+  findOrderForStageNotification: vi.fn(),
 }));
 vi.mock("../../src/lib/notion/invoice.repository.js", () => ({
   findInvoice: vi.fn(),
   listInvoiceLineItems: vi.fn(),
   markInvoicePaid: vi.fn(),
+}));
+// Rewards are a best-effort side effect on the payment recorder; mock so the
+// tests assert the wiring and failure branch without touching Notion/Stripe.
+vi.mock("../../src/services/rewards.service.js", () => ({
+  runPaidOrderRewards: vi.fn(),
 }));
 
 import type Stripe from "stripe";
@@ -17,12 +23,16 @@ import {
   recordPayment,
 } from "../../src/services/invoice.service.js";
 import { BadRequestError, NotFoundError } from "../../src/lib/errors.js";
-import { findOrderByNumber } from "../../src/lib/notion/orders.repository.js";
+import {
+  findOrderByNumber,
+  findOrderForStageNotification,
+} from "../../src/lib/notion/orders.repository.js";
 import {
   findInvoice,
   listInvoiceLineItems,
   markInvoicePaid,
 } from "../../src/lib/notion/invoice.repository.js";
+import { runPaidOrderRewards } from "../../src/services/rewards.service.js";
 import type { OrderRecord } from "../../src/lib/notion/orders.schema.js";
 import type {
   InvoiceRecord,
@@ -31,9 +41,11 @@ import type {
 } from "../../src/lib/notion/invoice.schema.js";
 
 const mockFindOrder = vi.mocked(findOrderByNumber);
+const mockFindForNotify = vi.mocked(findOrderForStageNotification);
 const mockFindInvoice = vi.mocked(findInvoice);
 const mockListLines = vi.mocked(listInvoiceLineItems);
 const mockMark = vi.mocked(markInvoicePaid);
+const mockRewards = vi.mocked(runPaidOrderRewards);
 
 function order(overrides: Partial<OrderRecord> = {}): OrderRecord {
   return {
@@ -324,5 +336,64 @@ describe("recordPayment", () => {
         metadata: { stage: "bogus", invoicePageId: "inv-1" },
       } as unknown as Stripe.Checkout.Session),
     ).rejects.toThrow(/stage\/invoice metadata/);
+  });
+
+  it("runs the reward passes with the order's email + number after marking paid", async () => {
+    mockFindForNotify.mockResolvedValue({
+      email: "ada@example.com",
+    } as never);
+
+    await recordPayment({
+      id: "cs_rw",
+      payment_status: "paid",
+      metadata: {
+        kind: "custom_payment",
+        stage: "first_deposit",
+        invoicePageId: "inv-1",
+        orderNumber: "ORD-77",
+      },
+    } as unknown as Stripe.Checkout.Session);
+
+    expect(mockMark).toHaveBeenCalledWith("inv-1", "first_deposit", "cs_rw");
+    expect(mockFindForNotify).toHaveBeenCalledWith("ORD-77");
+    expect(mockRewards).toHaveBeenCalledWith("ada@example.com", "ORD-77");
+  });
+
+  it("does not run rewards when the order has no email on file", async () => {
+    mockFindForNotify.mockResolvedValue({ email: "" } as never);
+
+    await recordPayment({
+      id: "cs_rw2",
+      payment_status: "paid",
+      metadata: {
+        kind: "custom_payment",
+        stage: "first_deposit",
+        invoicePageId: "inv-1",
+        orderNumber: "ORD-78",
+      },
+    } as unknown as Stripe.Checkout.Session);
+
+    expect(mockRewards).not.toHaveBeenCalled();
+  });
+
+  it("still records the payment when the reward pass throws (best-effort)", async () => {
+    mockFindForNotify.mockResolvedValue({
+      email: "ada@example.com",
+    } as never);
+    mockRewards.mockRejectedValueOnce(new Error("reward boom"));
+
+    await expect(
+      recordPayment({
+        id: "cs_rw3",
+        payment_status: "paid",
+        metadata: {
+          kind: "custom_payment",
+          stage: "balance",
+          invoicePageId: "inv-1",
+          orderNumber: "ORD-79",
+        },
+      } as unknown as Stripe.Checkout.Session),
+    ).resolves.toBeUndefined();
+    expect(mockMark).toHaveBeenCalledWith("inv-1", "balance", "cs_rw3");
   });
 });

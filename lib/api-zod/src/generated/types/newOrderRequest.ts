@@ -41,4 +41,6 @@ export interface NewOrderRequest {
   colors?: string[];
   /** The customer's free-text note on how they'd like their chosen colors used (e.g. "emerald as the main color with gold accents on the collar, and a blush skirt"). Optional; omitted when blank. */
   colorUsage?: string;
+  /** An optional referral code the customer received from another skater. The server looks it up against the Client CRM (best-effort): a valid code — not the customer's own — earns the new customer a welcome discount code now and credits the referrer once this order is first paid. An unknown or self-referring code is ignored, and referral capture never blocks the order. Optional. */
+  referralCode?: string;
 }

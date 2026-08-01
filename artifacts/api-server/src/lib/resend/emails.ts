@@ -272,7 +272,7 @@ export function fittingReminderEmail(
   const { orderNumber, targetDate, bookingUrl } = details;
 
   const timingHtml = targetDate
-    ? `<p>Your custom item is on track for its fitting around <strong>${escapeHtml(targetDate)}</strong>.</p>`
+    ? `<p>Your custom item is on track for its fitting around <strong>${escapeHtml(formatCalendarDate(targetDate))}</strong>.</p>`
     : `<p>Your custom item is approaching its fitting stage.</p>`;
   const ctaHtml = bookingUrl
     ? `<p style="margin:28px 0;">
@@ -298,7 +298,7 @@ export function fittingReminderEmail(
     `Hi there,`,
     ``,
     targetDate
-      ? `Your custom item is on track for its fitting around ${targetDate}.`
+      ? `Your custom item is on track for its fitting around ${formatCalendarDate(targetDate)}.`
       : `Your custom item is approaching its fitting stage.`,
     ``,
     `A fitting lets us perfect the shape and fit of your garment before the final`,
@@ -315,6 +315,170 @@ export function fittingReminderEmail(
   return {
     to: details.email,
     subject: `Let's schedule your fitting (${orderNumber})`,
+    html,
+    text,
+  };
+}
+
+// ---------------------------------------------------------------------------
+// Referral & returning-skater rewards (see services/rewards.service.ts). Each
+// carries a promo code the customer redeems in Stripe's checkout box.
+// ---------------------------------------------------------------------------
+
+/** How to redeem a promo code, shared by the reward emails. */
+function redeemNoteHtml(): string {
+  return `<p style="font-size:14px;color:#8a7f74;">To use it, enter the code in the
+     “Add promotion code” box when you check out.</p>`;
+}
+
+function codeBlockHtml(code: string): string {
+  return `<p style="margin:24px 0;">
+       <span style="display:inline-block;border:1px solid #d9cfc2;border-radius:2px;
+         padding:12px 20px;font-size:20px;letter-spacing:0.12em;">${escapeHtml(code)}</span>
+     </p>`;
+}
+
+export interface ReferralWelcomeEmailDetails {
+  email: string;
+  code: string;
+  /** The welcome discount as a whole-number percentage. */
+  percent: number;
+}
+
+/** Sent to a new customer who placed their first order with a referral code —
+ * their welcome discount, redeemable at checkout. */
+export function referralWelcomeEmail(
+  details: ReferralWelcomeEmailDetails,
+): EmailMessage {
+  const { code, percent } = details;
+
+  const html = layout(
+    "Welcome — a gift for your first piece",
+    `<p>Hi there,</p>
+     <p>A fellow skater sent you our way, and we're so glad they did. As a welcome,
+        here's <strong>${percent}% off</strong> your first order:</p>
+     ${codeBlockHtml(code)}
+     ${redeemNoteHtml()}
+     <p>We can't wait to bring your piece to life.</p>`,
+  );
+
+  const text = [
+    `Hi there,`,
+    ``,
+    `A fellow skater sent you our way, and we're so glad they did. As a welcome,`,
+    `here's ${percent}% off your first order:`,
+    ``,
+    `    ${code}`,
+    ``,
+    `To use it, enter the code in the "Add promotion code" box when you check out.`,
+    ``,
+    `We can't wait to bring your piece to life.`,
+    ``,
+    `Thank you,`,
+    `The ${ATELIER_NAME} team`,
+  ].join("\n");
+
+  return {
+    to: details.email,
+    subject: "A welcome gift for your first order",
+    html,
+    text,
+  };
+}
+
+export interface ReferralCreditEmailDetails {
+  email: string;
+  code: string;
+  /** The credit amount in dollars. */
+  amount: number;
+}
+
+/** Sent to a referring customer once the skater they referred places (and pays
+ * for) their first order — their earned credit, redeemable at checkout. */
+export function referralCreditEmail(
+  details: ReferralCreditEmailDetails,
+): EmailMessage {
+  const { code, amount } = details;
+  const amountLabel = `$${amount.toFixed(2).replace(/\.00$/, "")}`;
+
+  const html = layout(
+    "Thank you for the referral",
+    `<p>Hi there,</p>
+     <p>Someone you referred just began their own custom piece with us — thank you for
+        sharing our atelier. Here's <strong>${escapeHtml(amountLabel)} in credit</strong>
+        toward your next order:</p>
+     ${codeBlockHtml(code)}
+     ${redeemNoteHtml()}
+     <p>With gratitude for spreading the word.</p>`,
+  );
+
+  const text = [
+    `Hi there,`,
+    ``,
+    `Someone you referred just began their own custom piece with us — thank you for`,
+    `sharing our atelier. Here's ${amountLabel} in credit toward your next order:`,
+    ``,
+    `    ${code}`,
+    ``,
+    `To use it, enter the code in the "Add promotion code" box when you check out.`,
+    ``,
+    `With gratitude for spreading the word.`,
+    ``,
+    `Thank you,`,
+    `The ${ATELIER_NAME} team`,
+  ].join("\n");
+
+  return {
+    to: details.email,
+    subject: "You've earned a referral credit",
+    html,
+    text,
+  };
+}
+
+export interface ReturningSkaterRewardEmailDetails {
+  email: string;
+  code: string;
+  /** The standing discount as a whole-number percentage. */
+  percent: number;
+}
+
+/** Sent to a returning customer on a repeat order — a standing personal discount
+ * code they can reuse on future orders. */
+export function returningSkaterRewardEmail(
+  details: ReturningSkaterRewardEmailDetails,
+): EmailMessage {
+  const { code, percent } = details;
+
+  const html = layout(
+    "A thank-you for coming back",
+    `<p>Hi there,</p>
+     <p>It means a great deal that you've returned to us. As our thanks, here's a
+        standing <strong>${percent}% off</strong> — yours to use on your future orders:</p>
+     ${codeBlockHtml(code)}
+     ${redeemNoteHtml()}
+     <p>We look forward to creating with you again.</p>`,
+  );
+
+  const text = [
+    `Hi there,`,
+    ``,
+    `It means a great deal that you've returned to us. As our thanks, here's a`,
+    `standing ${percent}% off — yours to use on your future orders:`,
+    ``,
+    `    ${code}`,
+    ``,
+    `To use it, enter the code in the "Add promotion code" box when you check out.`,
+    ``,
+    `We look forward to creating with you again.`,
+    ``,
+    `Thank you,`,
+    `The ${ATELIER_NAME} team`,
+  ].join("\n");
+
+  return {
+    to: details.email,
+    subject: "A little thank-you for coming back",
     html,
     text,
   };
@@ -484,6 +648,25 @@ function escapeHtml(value: string): string {
     .replace(/</g, "&lt;")
     .replace(/>/g, "&gt;")
     .replace(/"/g, "&quot;");
+}
+
+/**
+ * Render an ISO calendar date (`yyyy-mm-dd`) as a friendly label, e.g.
+ * `2026-08-15` -> "August 15, 2026". Formatted in UTC so a date-only value never
+ * rolls back a day (parsing `yyyy-mm-dd` yields UTC midnight, which a westward
+ * local zone would render as the previous day). Falls back to the raw string if
+ * it isn't a parseable `yyyy-mm-dd`, so a malformed value is shown, not dropped.
+ */
+function formatCalendarDate(isoDate: string): string {
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(isoDate)) return isoDate;
+  const parsed = new Date(`${isoDate}T00:00:00Z`);
+  if (Number.isNaN(parsed.getTime())) return isoDate;
+  return new Intl.DateTimeFormat("en-US", {
+    timeZone: "UTC",
+    year: "numeric",
+    month: "long",
+    day: "numeric",
+  }).format(parsed);
 }
 
 /** A plain internal shell — no customer-facing sign-off. The tagline defaults to

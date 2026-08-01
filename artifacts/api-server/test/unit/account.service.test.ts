@@ -20,6 +20,11 @@ vi.mock(
     listUpcomingAppointmentsByEmail: vi.fn(),
   }),
 );
+// Referral info is a best-effort add to the overview; mock it (default: no
+// referral) so most tests are unaffected and the referral branch is drivable.
+vi.mock("../../src/services/rewards.service.js", () => ({
+  ensureReferralCode: vi.fn(async () => null),
+}));
 
 import {
   requestMagicLink,
@@ -29,11 +34,13 @@ import { findOrdersByEmail } from "../../src/lib/notion/orders.repository.js";
 import { findShopOrdersByEmail } from "../../src/lib/notion/shop-orders.repository.js";
 import { listUpcomingAppointmentsByEmail } from "../../src/lib/google/calendar.repository.js";
 import { sendEmailBestEffort } from "../../src/lib/resend/send.js";
+import { ensureReferralCode } from "../../src/services/rewards.service.js";
 
 const mockOrders = vi.mocked(findOrdersByEmail);
 const mockShop = vi.mocked(findShopOrdersByEmail);
 const mockAppts = vi.mocked(listUpcomingAppointmentsByEmail);
 const mockSend = vi.mocked(sendEmailBestEffort);
+const mockEnsureReferral = vi.mocked(ensureReferralCode);
 
 const BASE_ENV = { ...process.env };
 beforeEach(() => {
@@ -78,6 +85,32 @@ describe("getAccountOverview", () => {
     });
     expect(mockOrders).toHaveBeenCalledWith("skater@example.com");
     expect(mockShop).toHaveBeenCalledWith("skater@example.com");
+  });
+
+  it("includes the referral block when the CRM resolves one", async () => {
+    mockOrders.mockResolvedValue([]);
+    mockShop.mockResolvedValue([]);
+    mockEnsureReferral.mockResolvedValueOnce({
+      code: "AA-ABC123",
+      creditAmount: 40,
+    });
+
+    const result = await getAccountOverview("skater@example.com");
+
+    expect(mockEnsureReferral).toHaveBeenCalledWith("skater@example.com");
+    expect(result.referral).toEqual({ code: "AA-ABC123", creditAmount: 40 });
+  });
+
+  it("omits the referral block (degrades) when referral resolution throws", async () => {
+    mockOrders.mockResolvedValue([]);
+    mockShop.mockResolvedValue([]);
+    mockEnsureReferral.mockRejectedValueOnce(new Error("crm down"));
+
+    const result = await getAccountOverview("skater@example.com");
+
+    expect(result.referral).toBeUndefined();
+    // The core orders view still resolves.
+    expect(result.customOrders).toEqual([]);
   });
 
   it("maps upcoming appointments and tags each with a signed manage token", async () => {
