@@ -148,6 +148,10 @@ export interface NewOrderRequest {
   rush?: boolean;
   /** Notion file_upload ids for customer-supplied reference / inspiration images, each obtained by first POSTing the image bytes to POST /orders/reference-images (a binary endpoint outside this contract, mounted like the Stripe webhook). They are attached to the order's Notion page as image blocks. Optional; omitted when the customer uploaded none. */
   referenceImageIds?: string[];
+  /** Names of the colors the customer picked from the studio palette (the live `GET /fabrics` list) — a multi-select. This is a starting point for the consultation, not a final spec: the atelier finalizes the exact fabric + finish together with the customer. Recorded on the Notion order for the atelier (the app never reads it back). Optional; omitted when the customer picked none. */
+  colors?: string[];
+  /** The customer's free-text note on how they'd like their chosen colors used (e.g. "emerald as the main color with gold accents on the collar, and a blush skirt"). Optional; omitted when blank. */
+  colorUsage?: string;
   /** An optional referral code the customer received from another skater. The server looks it up against the Client CRM (best-effort): a valid code — not the customer's own — earns the new customer a welcome discount code now and credits the referrer once this order is first paid. An unknown or self-referring code is ignored, and referral capture never blocks the order. Optional. */
   referralCode?: string;
 }
@@ -373,6 +377,55 @@ export interface ProductList {
   products: Product[];
   /** The shop's category filters, read live from the Notion "Product Categories" database and returned in the order the atelier arranged them (its `Sort` field). Each inventory item links to its category through a `Category` relation. Editing the categories in Notion changes this list without a redeploy, so clients must not hardcode it. */
   categories: string[];
+}
+
+/**
+ * Fabric family — the picker groups swatches by this. Resolved live from the Fabrics database "Type" select; clients must not hardcode it.
+ */
+export type FabricType = typeof FabricType[keyof typeof FabricType];
+
+
+export const FabricType = {
+  solid: 'solid',
+  print: 'print',
+  foil: 'foil',
+  textured: 'textured',
+  sequin: 'sequin',
+} as const;
+
+/**
+ * Which picker(s) the swatch appears in. "both" shows in the bodice and the skirt picker. Clients filter the flat list by this per picker.
+ */
+export type FabricPlacement = typeof FabricPlacement[keyof typeof FabricPlacement];
+
+
+export const FabricPlacement = {
+  bodice: 'bodice',
+  skirt: 'skirt',
+  both: 'both',
+} as const;
+
+export interface Fabric {
+  /** The swatch's Notion page id. */
+  id: string;
+  name: string;
+  /** Fabric family — the picker groups swatches by this. Resolved live from the Fabrics database "Type" select; clients must not hardcode it. */
+  type: FabricType;
+  /** Which picker(s) the swatch appears in. "both" shows in the bodice and the skirt picker. Clients filter the flat list by this per picker. */
+  placement: FabricPlacement;
+  /** The swatch's color-family label (e.g. "Blues", "Neutrals"), for the picker's optional "group by color family" view. A free-text label read live from the Fabrics database "Color Family" select — NOT a fixed enum, so clients must not hardcode the family list. Absent when the atelier hasn't assigned one (the picker groups those under "Other"). */
+  colorFamily?: string;
+  /** Hex color for a solid swatch, e.g. "#8A1E2D". Absent for image-based types (print/foil/textured/sequin), which use `swatchImage`. */
+  hex?: string;
+  /** Swatch photo URL (the first "Swatch" file). A short-lived Notion signed URL, so clients must not persist it. Absent for solids and for image-type swatches whose photo the atelier hasn't uploaded yet. */
+  swatchImage?: string;
+  /** Ordering within a fabric-type group (ascending). */
+  sort?: number;
+}
+
+export interface FabricList {
+  /** The atelier's published fabric swatches, read live from the Notion "Fabrics" database. One flat list across bodice and skirt (each carries its `placement`); the client filters per picker. Empty when the Fabrics database is not configured. */
+  fabrics: Fabric[];
 }
 
 export interface CheckoutItem {

@@ -21,6 +21,7 @@
 
 import type {
   CheckoutSessionStatus,
+  FabricList,
   NewCancellationRequest,
   NewContactRequest,
   NewMeasurementChangeRequest,
@@ -192,6 +193,38 @@ export function productList(overrides: Partial<ProductList> = {}): ProductList {
             sizes: [],
           },
         ],
+      },
+    ],
+    ...overrides,
+  };
+}
+
+/**
+ * A `GET /api/fabrics` response — the atelier's swatch palette for the order
+ * form's visual fabric selector. One solid (with a hex) + one print (with a
+ * swatch image) by default; pass `fabrics` to reshape it. Used as the mocked HTTP
+ * response / hook result in the order-form + picker tests.
+ */
+export function fabricList(overrides: Partial<FabricList> = {}): FabricList {
+  return {
+    fabrics: [
+      {
+        id: "fab-solid",
+        name: "Ivory",
+        type: "solid",
+        placement: "both",
+        hex: "#F4EFE6",
+        colorFamily: "Neutrals",
+        sort: 1,
+      },
+      {
+        id: "fab-print",
+        name: "Floral Print",
+        type: "print",
+        placement: "bodice",
+        swatchImage: "https://example.com/floral.jpg",
+        colorFamily: "Multi/Print",
+        sort: 1,
       },
     ],
     ...overrides,
