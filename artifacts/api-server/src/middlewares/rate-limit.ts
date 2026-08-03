@@ -1,7 +1,7 @@
-// Rate limiting for the account-portal auth routes. These are the app's only
-// endpoints that either send an email to an arbitrary address (sign-in link) or
-// perform authorization (magic-link verify / session-gated overview), so a brake
-// on abuse — email-bombing, token guessing — belongs here.
+// Rate limiting for the account-portal overview route. Sign-in itself runs on
+// Supabase Auth in the browser, so the one server endpoint left here just
+// performs authorization (verifying the Supabase access token before returning
+// the customer's data); a brake on abuse — token guessing, scraping — belongs here.
 //
 // The store is `express-rate-limit`'s default in-memory store: per serverless
 // instance, not shared across them (the same best-effort caveat the alert
