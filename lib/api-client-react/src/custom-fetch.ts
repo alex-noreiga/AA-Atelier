@@ -34,11 +34,11 @@ export function setBaseUrl(url: string | null): void {
  * the getter is invoked; when it returns a non-null string, an
  * `Authorization: Bearer <token>` header is attached to the request.
  *
- * Useful for Expo bundles making token-gated API calls.
+ * The web app wires this to the Supabase access token (see the web-app's
+ * `lib/auth-context.tsx`): supabase-js holds the session in the browser and
+ * refreshes the token, and this getter reads the current one per request. The
+ * Expo bundle uses the same seam with its own token source.
  * Pass `null` to clear the getter.
- *
- * NOTE: This function should never be used in web applications where session
- * token cookies are automatically associated with API calls by the browser.
  */
 export function setAuthTokenGetter(getter: AuthTokenGetter | null): void {
   _authTokenGetter = getter;
@@ -373,11 +373,10 @@ export async function customFetch<T = unknown>(
 
   const requestInfo = { method, url: resolveUrl(input) };
 
-  // Send the httpOnly session cookie with API calls so the account portal's
-  // magic-link session is recognised. Same-origin in production (the SPA and
-  // /api share an origin) and through the Vite dev proxy locally; a caller can
-  // still override `credentials` via options. This is the intended web-app auth
-  // path — the bearer-token getter above is reserved for the mobile bundle.
+  // `credentials: "include"` is kept for any same-origin cookie a caller relies
+  // on, but the account portal now authenticates with a Supabase access token
+  // attached as a Bearer header (see the auth-token getter above), not a cookie.
+  // A caller can still override `credentials` via options.
   const response = await fetch(input, {
     credentials: "include",
     ...init,

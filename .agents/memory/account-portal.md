@@ -1,9 +1,60 @@
-# Customer account portal (passwordless magic-link)
+# Customer account portal (Supabase Auth)
 
 A signed-in home base gathering a customer's custom orders + shop orders in one
 place, keyed by their email instead of an order-number-per-garment. It's an
 **identity layer over the existing lookups**, not new order/invoice logic —
 Phase-1 roadmap item #2.
+
+## Phase 3 — auth on Supabase (shipped; the "Supabase accounts" card, auth half)
+
+The original passwordless-magic-link auth (stateless HMAC `SESSION_SECRET`
+tokens + an httpOnly `aa_session` cookie) was **replaced by Supabase Auth** —
+the customer-facing half of the Phase-3 "Supabase: accounts + a real database"
+card. The **Postgres data migration is deliberately deferred**: Notion +
+Google Calendar stay the system of record, still matched by **email**. This is
+an authentication-vendor swap, not new order/invoice logic.
+
+- **Sign-in methods:** email+password (Supabase-managed hashing + email
+  verification + forgot-password), Google OAuth, and passwordless magic link —
+  all Supabase-native. The frontend calls supabase-js directly
+  (`signInWithPassword` / `signUp` / `signInWithOtp` / `signInWithOAuth` /
+  `resetPasswordForEmail` / `updateUser`); there is **no** server login/verify/
+  logout route anymore.
+- **Web session transport = Bearer, not cookie.** supabase-js holds the session
+  in the browser (localStorage, auto-refreshed) and the generated API client
+  sends the access token via the **existing `setAuthTokenGetter` seam** in
+  `custom-fetch.ts` (was reserved for mobile). Tradeoff: the token is now
+  JS-readable (XSS-exposed) vs the old httpOnly cookie — accepted for the
+  standard Bearer model.
+- **Server verifies the JWT locally.** `middlewares/auth.ts` `requireCustomer`
+  reads the Bearer token and verifies it with `getSupabaseClient().auth
+.getClaims(token)` (cached JWKS, no per-request round-trip; supports the ES256
+  asymmetric keys new projects default to). It sets `res.locals.customer =
+{ email: normalizeEmail(claims.email), userId: claims.sub }` — **normalizing
+  at the gate** so Notion lookups match. Adapter: `lib/supabase/client.ts`
+  (factory + memoized getter + `supabaseConfigured()`, first-use env read, test
+  seams `__setSupabaseClientForTests` / `__resetSupabaseClient`).
+- **`SESSION_SECRET` is NOT retired.** `lib/auth/tokens.ts` still signs/verifies
+  the **`appointment`**-purpose manage-link token (the only remaining purpose;
+  `magic`/`session` are gone). `lib/auth/cookies.ts` and `routes/account-verify.ts`
+  were deleted; `magicLinkEmail` was removed (Supabase sends branded auth mail via
+  **custom SMTP = Resend**, configured in the dashboard, not code).
+- **Contract:** `/account/login` + `/account/logout` ops and `MagicLinkRequest`
+  were removed from `openapi.yaml`; `/account/overview` gained a `bearerAuth`
+  security scheme. Only `getAccountOverview` survives (unchanged — still
+  email-keyed). Frontend: `lib/supabase.ts` (browser client), `lib/auth-context.tsx`
+  (`AuthProvider` + `useAuth`, wires the token getter once), `pages/account-login.tsx`
+  (tabbed sign-in/create + Google + magic-link + forgot), `pages/account-callback.tsx`
+  (OAuth/magic-link redirect target), `pages/account-reset.tsx` (password reset).
+- **New env:** `SUPABASE_URL` + `SUPABASE_ANON_KEY` (backend) and
+  `VITE_SUPABASE_URL` + `VITE_SUPABASE_ANON_KEY` (frontend). Unset ⇒ portal
+  inert (login shows "unavailable", overview 401s), same degrade pattern as
+  before. One-time Supabase setup: create the project, enable Email+password
+  (confirm-email) + Magic Link + Google, custom SMTP = Resend, Site URL +
+  redirect allow-list (`${PUBLIC_BASE_URL}/account/callback`, `/account/reset`).
+
+Everything below describes the ORIGINAL magic-link design; it's kept for history
+but the auth mechanism is now Supabase per the above.
 
 ## Why it's shaped this way
 

@@ -37,7 +37,6 @@ export * from './invoice';
 export * from './invoiceDeposit';
 export * from './invoiceDepositStage';
 export * from './invoiceLineItem';
-export * from './magicLinkRequest';
 export * from './messageResponse';
 export * from './newAppointmentRequest';
 export * from './newAppointmentRequestLocation';

@@ -131,8 +131,8 @@ describe("getAppointmentForManage", () => {
   });
 
   it("rejects a token missing the appointment claims", async () => {
-    // A well-signed token, but for the account 'magic' purpose (no eventId/staff).
-    const wrong = signToken("ada@example.com", "magic", 3600);
+    // A well-signed appointment token, but with no eventId/staff claims.
+    const wrong = signToken("ada@example.com", "appointment", 3600);
     await expect(getAppointmentForManage(wrong)).rejects.toBeInstanceOf(
       BadRequestError,
     );

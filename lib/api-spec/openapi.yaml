@@ -25,7 +25,7 @@ tags:
   - name: appointments
     description: Customer appointment scheduling with atelier staff
   - name: account
-    description: Passwordless customer account portal (magic-link sign-in)
+    description: Customer account portal (Supabase Auth; Bearer access token)
 paths:
   /health:
     get:
@@ -899,42 +899,6 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/ErrorEnvelope"
-  /account/login:
-    post:
-      operationId: requestMagicLink
-      tags: [account]
-      summary: Request a passwordless sign-in link
-      description: >-
-        Emails the customer a one-time magic link that signs them into the
-        account portal. Always responds 200 regardless of whether any orders
-        exist for the address — identity is the email itself, so there is no
-        account to enumerate. The email is sent best-effort; a mail outage never
-        fails the request.
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              $ref: "#/components/schemas/MagicLinkRequest"
-      responses:
-        "200":
-          description: Sign-in link sent (if the mailer is configured)
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/MessageResponse"
-        "400":
-          description: Validation error
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/ErrorEnvelope"
-        "500":
-          description: Server error
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/ErrorEnvelope"
   /account/overview:
     get:
       operationId: getAccountOverview
@@ -942,9 +906,11 @@ paths:
       summary: The signed-in customer's orders and shop orders
       description: >-
         Returns everything tied to the signed-in customer's email — their custom
-        orders and their ready-to-wear shop orders — for the account dashboard.
-        Requires a valid session cookie (set by the magic-link verify step);
-        responds 401 when the caller isn't signed in.
+        orders, ready-to-wear shop orders, and upcoming appointments — for the
+        account dashboard. Requires a valid Supabase access token supplied as a
+        Bearer credential; responds 401 when the caller isn't signed in.
+      security:
+        - bearerAuth: []
       responses:
         "200":
           description: The customer's account overview
@@ -964,20 +930,17 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/ErrorEnvelope"
-  /account/logout:
-    post:
-      operationId: logoutAccount
-      tags: [account]
-      summary: Sign out of the account portal
-      description: Clears the session cookie. Idempotent — safe to call when already signed out.
-      responses:
-        "200":
-          description: Signed out
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/MessageResponse"
 components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+      description: >-
+        A Supabase Auth access token (JWT). The browser supabase-js client holds
+        the session and the generated API client sends the token as
+        `Authorization: Bearer <jwt>`; the server verifies it against the
+        Supabase project's JWKS.
   schemas:
     HealthStatus:
       type: object
@@ -2027,14 +1990,6 @@ components:
       properties:
         message:
           type: string
-    MagicLinkRequest:
-      type: object
-      required: [email]
-      properties:
-        email:
-          type: string
-          format: email
-          description: The email to send the one-time sign-in link to.
     AccountOverview:
       type: object
       description: >-

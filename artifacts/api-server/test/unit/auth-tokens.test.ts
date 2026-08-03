@@ -3,7 +3,7 @@ import {
   signToken,
   verifyToken,
   authConfigured,
-  MAGIC_LINK_TTL_SECONDS,
+  APPOINTMENT_MANAGE_TTL_SECONDS,
 } from "../../src/lib/auth/tokens.js";
 
 // The setup file sets SESSION_SECRET; restore it after any test that changes it.
@@ -13,14 +13,17 @@ afterEach(() => {
 });
 
 describe("auth tokens", () => {
-  it("signs and verifies a token, returning the email", () => {
+  it("signs and verifies an appointment token, returning the email", () => {
     const token = signToken(
       "skater@example.com",
-      "magic",
-      MAGIC_LINK_TTL_SECONDS,
+      "appointment",
+      APPOINTMENT_MANAGE_TTL_SECONDS,
+      { eventId: "evt-1", staff: "Alayna" },
     );
-    expect(verifyToken(token, "magic")).toEqual({
+    expect(verifyToken(token, "appointment")).toEqual({
       email: "skater@example.com",
+      eventId: "evt-1",
+      staff: "Alayna",
     });
   });
 
@@ -36,62 +39,46 @@ describe("auth tokens", () => {
     });
   });
 
-  it("won't verify an appointment token as a magic/session token", () => {
-    const token = signToken("a@b.com", "appointment", 3600, {
-      eventId: "e",
-      staff: "Alayna",
-    });
-    expect(verifyToken(token, "magic")).toBeNull();
-    expect(verifyToken(token, "session")).toBeNull();
-  });
-
-  it("rejects a token verified against the wrong purpose", () => {
-    const token = signToken("a@b.com", "magic", MAGIC_LINK_TTL_SECONDS);
-    expect(verifyToken(token, "session")).toBeNull();
-  });
-
   it("rejects an expired token", () => {
-    const token = signToken("a@b.com", "session", -1);
-    expect(verifyToken(token, "session")).toBeNull();
+    const token = signToken("a@b.com", "appointment", -1);
+    expect(verifyToken(token, "appointment")).toBeNull();
   });
 
   it("rejects a token with a tampered signature", () => {
-    const token = signToken("a@b.com", "magic", MAGIC_LINK_TTL_SECONDS);
+    const token = signToken("a@b.com", "appointment", 3600);
     const [payload] = token.split(".");
-    expect(verifyToken(`${payload}.deadbeef`, "magic")).toBeNull();
+    expect(verifyToken(`${payload}.deadbeef`, "appointment")).toBeNull();
   });
 
   it("rejects a token whose payload was altered after signing", () => {
-    const token = signToken("a@b.com", "magic", MAGIC_LINK_TTL_SECONDS);
+    const token = signToken("a@b.com", "appointment", 3600);
     const [, sig] = token.split(".");
     const forged = Buffer.from(
       JSON.stringify({
         email: "attacker@evil.com",
-        purpose: "magic",
+        purpose: "appointment",
         exp: Math.floor(Date.now() / 1000) + 999,
       }),
     ).toString("base64url");
-    expect(verifyToken(`${forged}.${sig}`, "magic")).toBeNull();
+    expect(verifyToken(`${forged}.${sig}`, "appointment")).toBeNull();
   });
 
   it("rejects malformed and empty tokens", () => {
-    expect(verifyToken("", "magic")).toBeNull();
-    expect(verifyToken("nodot", "magic")).toBeNull();
-    expect(verifyToken(undefined, "magic")).toBeNull();
+    expect(verifyToken("", "appointment")).toBeNull();
+    expect(verifyToken("nodot", "appointment")).toBeNull();
+    expect(verifyToken(undefined, "appointment")).toBeNull();
   });
 
   it("does not cross-verify tokens signed under a different secret", () => {
-    const token = signToken("a@b.com", "magic", MAGIC_LINK_TTL_SECONDS);
+    const token = signToken("a@b.com", "appointment", 3600);
     process.env.SESSION_SECRET = "a-different-secret";
-    expect(verifyToken(token, "magic")).toBeNull();
+    expect(verifyToken(token, "appointment")).toBeNull();
   });
 
   it("is inert when SESSION_SECRET is unset", () => {
     delete process.env.SESSION_SECRET;
     expect(authConfigured()).toBe(false);
-    expect(() =>
-      signToken("a@b.com", "magic", MAGIC_LINK_TTL_SECONDS),
-    ).toThrow();
-    expect(verifyToken("anything.anything", "magic")).toBeNull();
+    expect(() => signToken("a@b.com", "appointment", 3600)).toThrow();
+    expect(verifyToken("anything.anything", "appointment")).toBeNull();
   });
 });

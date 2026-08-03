@@ -25,11 +25,14 @@ import Contact from "@/pages/contact";
 import Appointments from "@/pages/appointments";
 import AppointmentManage from "@/pages/appointment-manage";
 import AccountLogin from "@/pages/account-login";
+import AccountCallback from "@/pages/account-callback";
+import AccountReset from "@/pages/account-reset";
 import Account from "@/pages/account";
 import Privacy from "@/pages/privacy";
 import Terms from "@/pages/terms";
 import ShippingReturns from "@/pages/shipping-returns";
 import { CartProvider } from "@/lib/cart";
+import { AuthProvider } from "@/lib/auth-context";
 import { ConsentProvider } from "@/lib/consent";
 import CookieConsentBanner from "@/components/cookie-consent-banner";
 import ConsentedAnalytics from "@/components/analytics";
@@ -66,9 +69,13 @@ function Router() {
           before /appointments (wouter matches exact paths, but keep it explicit). */}
       <Route path="/appointments/manage" component={AppointmentManage} />
       <Route path="/appointments" component={Appointments} />
-      {/* Account portal. The login route must precede /account so it isn't
-          shadowed, and /account itself redirects to login when unauthenticated. */}
+      {/* Account portal. The literal sub-routes must precede /account so they
+          aren't shadowed, and /account itself redirects to login when
+          unauthenticated. /account/callback is the Supabase OAuth/magic-link
+          redirect target; /account/reset is the password-reset target. */}
       <Route path="/account/login" component={AccountLogin} />
+      <Route path="/account/callback" component={AccountCallback} />
+      <Route path="/account/reset" component={AccountReset} />
       <Route path="/account" component={Account} />
       <Route path="/contact" component={Contact} />
       <Route path="/privacy" component={Privacy} />
@@ -82,22 +89,24 @@ function Router() {
 function App() {
   return (
     <QueryClientProvider client={queryClient}>
-      <TooltipProvider>
-        <ConsentProvider>
-          <CartProvider>
-            <WouterRouter base={import.meta.env.BASE_URL.replace(/\/$/, "")}>
-              <SkipLink />
-              <RouteFocus />
-              <Navbar />
-              <Router />
-              <Footer />
-              <CookieConsentBanner />
-              <ConsentedAnalytics />
-            </WouterRouter>
-          </CartProvider>
-        </ConsentProvider>
-        <Toaster />
-      </TooltipProvider>
+      <AuthProvider>
+        <TooltipProvider>
+          <ConsentProvider>
+            <CartProvider>
+              <WouterRouter base={import.meta.env.BASE_URL.replace(/\/$/, "")}>
+                <SkipLink />
+                <RouteFocus />
+                <Navbar />
+                <Router />
+                <Footer />
+                <CookieConsentBanner />
+                <ConsentedAnalytics />
+              </WouterRouter>
+            </CartProvider>
+          </ConsentProvider>
+          <Toaster />
+        </TooltipProvider>
+      </AuthProvider>
     </QueryClientProvider>
   );
 }
