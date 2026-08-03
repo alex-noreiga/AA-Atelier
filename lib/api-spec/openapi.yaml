@@ -984,6 +984,19 @@ components:
       properties:
         status:
           type: string
+        commit:
+          type: string
+          description: >-
+            Short git SHA of the deployed build (from VERCEL_GIT_COMMIT_SHA).
+            Omitted when unknown (e.g. local dev). Lets a monitor confirm which
+            build is live.
+        buildTime:
+          type: string
+          format: date-time
+          description: >-
+            When the running bundle was built, injected at build time. Omitted
+            when unknown. Lets a monitor flag a deploy that is unexpectedly old
+            (a stale function serving a months-old build).
       required:
         - status
     OrderStatus:

@@ -7,6 +7,10 @@
  */
 export interface HealthStatus {
   status: string;
+  /** Short git SHA of the deployed build (from VERCEL_GIT_COMMIT_SHA). Omitted when unknown (e.g. local dev). Lets a monitor confirm which build is live. */
+  commit?: string;
+  /** When the running bundle was built, injected at build time. Omitted when unknown. Lets a monitor flag a deploy that is unexpectedly old (a stale function serving a months-old build). */
+  buildTime?: string;
 }
 
 export type OrderStatusMilestonesItem = {
