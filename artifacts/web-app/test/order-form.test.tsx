@@ -218,9 +218,13 @@ describe("OrderForm newsletter opt-in", () => {
     await user.click(screen.getByRole("button", { name: "Submit Order" }));
 
     await waitFor(() => expect(mutate).toHaveBeenCalledTimes(1));
-    expect(subscribeMutate).toHaveBeenCalledWith({
-      data: { email: "ada@example.com", source: "order form" },
+    expect(subscribeMutate).toHaveBeenCalledTimes(1);
+    const { data } = subscribeMutate.mock.calls[0][0];
+    expect(data).toMatchObject({
+      email: "ada@example.com",
+      source: "order form",
     });
+    expect(typeof data.elapsedMs).toBe("number");
   });
 });
 

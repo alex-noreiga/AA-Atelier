@@ -4,6 +4,8 @@ import {
   CreateContactMessageResponse,
 } from "@workspace/api-zod";
 import { validate } from "../middlewares/validate.js";
+import { submissionRateLimiter } from "../middlewares/rate-limit.js";
+import { spamFilter } from "../middlewares/spam-filter.js";
 import { submitContactMessage } from "../services/contact.service.js";
 import type { CreateContactInput } from "../lib/notion/contact.blocks.js";
 
@@ -11,7 +13,9 @@ const router = Router();
 
 router.post(
   "/contact",
+  submissionRateLimiter,
   validate({ body: CreateContactMessageBody }),
+  spamFilter({ status: 201, body: { success: true } }),
   async (_req, res) => {
     const body = res.locals.body as CreateContactInput;
     const result = await submitContactMessage(body);

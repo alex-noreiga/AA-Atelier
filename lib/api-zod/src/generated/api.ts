@@ -211,13 +211,17 @@ export const CreateOrderCancellationRequestResponse = zod.object({
  */
 
 
+export const createContactMessageBodyElapsedMsMin = 0;
+
 
 
 export const CreateContactMessageBody = zod.object({
   "name": zod.string().min(1),
   "email": zod.string().email(),
   "phone": zod.string().optional(),
-  "message": zod.string().min(1)
+  "message": zod.string().min(1),
+  "website": zod.string().optional().describe('Anti-spam honeypot. A hidden field that real visitors never see or fill; a non-empty value marks the submission as spam and it is silently dropped. Always send empty (or omit).'),
+  "elapsedMs": zod.number().int().min(createContactMessageBodyElapsedMsMin).optional().describe('Anti-spam timing signal: milliseconds the visitor spent on the form before submitting. Implausibly fast submissions are dropped. Omit when the client can\'t measure it (treated as human).')
 })
 
 export const CreateContactMessageResponse = zod.object({
@@ -230,12 +234,16 @@ export const CreateContactMessageResponse = zod.object({
  * @summary Request a back-in-stock notification
  */
 
+export const createBackInStockRequestBodyElapsedMsMin = 0;
+
 
 
 export const CreateBackInStockRequestBody = zod.object({
   "email": zod.string().email(),
   "item": zod.string().min(1).describe('The sold-out variant\'s name, e.g. \"Bow Fleece Soaker — Black\".'),
-  "size": zod.string().optional().describe('Set only when the customer asked about one specific sold-out size band; absent when the whole variant is sold out.')
+  "size": zod.string().optional().describe('Set only when the customer asked about one specific sold-out size band; absent when the whole variant is sold out.'),
+  "website": zod.string().optional().describe('Anti-spam honeypot. A hidden field that real visitors never fill; a non-empty value marks the submission as spam and it is silently dropped. Always send empty (or omit).'),
+  "elapsedMs": zod.number().int().min(createBackInStockRequestBodyElapsedMsMin).optional().describe('Anti-spam timing signal: milliseconds the visitor spent on the form before submitting. Implausibly fast submissions are dropped. Omit when unmeasurable (treated as human).')
 })
 
 export const CreateBackInStockRequestResponse = zod.object({
@@ -247,9 +255,15 @@ export const CreateBackInStockRequestResponse = zod.object({
  * Records a customer's opt-in to the studio's marketing mailing list as a tagged row in the Notion contact-messages inbox (and a best-effort Client CRM lead), and sends a best-effort welcome email. Separate from the transactional-only capture: this is explicit marketing consent.
  * @summary Opt in to the marketing newsletter
  */
+export const subscribeNewsletterBodyElapsedMsMin = 0;
+
+
+
 export const SubscribeNewsletterBody = zod.object({
   "email": zod.string().email(),
-  "source": zod.string().optional().describe('Where the opt-in came from, e.g. \"footer\" or \"order form\". Recorded for the atelier\'s own segmentation; the customer never sees it.')
+  "source": zod.string().optional().describe('Where the opt-in came from, e.g. \"footer\" or \"order form\". Recorded for the atelier\'s own segmentation; the customer never sees it.'),
+  "website": zod.string().optional().describe('Anti-spam honeypot. A hidden field that real visitors never fill; a non-empty value marks the submission as spam and it is silently dropped. Always send empty (or omit).'),
+  "elapsedMs": zod.number().int().min(subscribeNewsletterBodyElapsedMsMin).optional().describe('Anti-spam timing signal: milliseconds the visitor spent on the form before submitting. Implausibly fast submissions are dropped. Omit when unmeasurable (treated as human).')
 })
 
 export const SubscribeNewsletterResponse = zod.object({

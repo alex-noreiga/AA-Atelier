@@ -19,3 +19,16 @@ export const accountRateLimiter = rateLimit({
   legacyHeaders: false,
   message: { error: "Too many requests. Please try again in a few minutes." },
 });
+
+// A tighter brake for the public, anonymous submission forms (contact,
+// back-in-stock notify, newsletter). A real visitor submits one of these a
+// handful of times at most, so a low per-IP ceiling backstops the honeypot +
+// timing filter without ever getting in a human's way. Same in-memory /
+// per-instance caveat as above.
+export const submissionRateLimiter = rateLimit({
+  windowMs: 10 * 60 * 1000, // 10 minutes
+  limit: 5, // per IP per window across the public submission forms
+  standardHeaders: "draft-7",
+  legacyHeaders: false,
+  message: { error: "Too many requests. Please try again in a few minutes." },
+});

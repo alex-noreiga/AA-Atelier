@@ -1,5 +1,6 @@
 import { useState } from "react";
 import { useForm } from "react-hook-form";
+import { HoneypotField, honeypotSchema, useSubmitTimer } from "@/lib/anti-spam";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
 import { Link, useSearch } from "wouter";
@@ -38,6 +39,7 @@ const formSchema = z.object({
   email: z.string().email("Please enter a valid email address"),
   phone: z.string().optional(),
   message: z.string().min(1, "Please enter a message"),
+  ...honeypotSchema,
 });
 
 type FormValues = z.infer<typeof formSchema>;
@@ -83,14 +85,17 @@ export default function Contact() {
     defaultValues: { message: defaultMessage },
   });
 
+  const elapsedMs = useSubmitTimer();
   const submitting = createMessage.isPending;
 
   const onSubmit = (values: FormValues) => {
-    const { phone, ...rest } = values;
+    const { phone, website, ...rest } = values;
     createMessage.mutate({
       data: {
         ...rest,
         ...(phone ? { phone } : {}),
+        website: website ?? "",
+        elapsedMs: elapsedMs(),
       },
     });
   };
@@ -131,6 +136,7 @@ export default function Contact() {
         </div>
 
         <form onSubmit={handleSubmit(onSubmit)} className="space-y-8">
+          <HoneypotField registration={register("website")} />
           <div>
             <Label htmlFor="name" className="text-sm font-light tracking-wide">
               Name <span className="text-primary">*</span>

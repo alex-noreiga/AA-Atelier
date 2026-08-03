@@ -1418,6 +1418,19 @@ components:
         message:
           type: string
           minLength: 1
+        website:
+          type: string
+          description: >-
+            Anti-spam honeypot. A hidden field that real visitors never see or
+            fill; a non-empty value marks the submission as spam and it is
+            silently dropped. Always send empty (or omit).
+        elapsedMs:
+          type: integer
+          minimum: 0
+          description: >-
+            Anti-spam timing signal: milliseconds the visitor spent on the form
+            before submitting. Implausibly fast submissions are dropped. Omit
+            when the client can't measure it (treated as human).
     NewContactResponse:
       type: object
       required:
@@ -1443,6 +1456,19 @@ components:
           description: >-
             Set only when the customer asked about one specific sold-out size
             band; absent when the whole variant is sold out.
+        website:
+          type: string
+          description: >-
+            Anti-spam honeypot. A hidden field that real visitors never fill; a
+            non-empty value marks the submission as spam and it is silently
+            dropped. Always send empty (or omit).
+        elapsedMs:
+          type: integer
+          minimum: 0
+          description: >-
+            Anti-spam timing signal: milliseconds the visitor spent on the form
+            before submitting. Implausibly fast submissions are dropped. Omit
+            when unmeasurable (treated as human).
     NewNotifyResponse:
       type: object
       required:
@@ -1463,6 +1489,19 @@ components:
           description: >-
             Where the opt-in came from, e.g. "footer" or "order form". Recorded
             for the atelier's own segmentation; the customer never sees it.
+        website:
+          type: string
+          description: >-
+            Anti-spam honeypot. A hidden field that real visitors never fill; a
+            non-empty value marks the submission as spam and it is silently
+            dropped. Always send empty (or omit).
+        elapsedMs:
+          type: integer
+          minimum: 0
+          description: >-
+            Anti-spam timing signal: milliseconds the visitor spent on the form
+            before submitting. Implausibly fast submissions are dropped. Omit
+            when unmeasurable (treated as human).
     NewNewsletterResponse:
       type: object
       required:
