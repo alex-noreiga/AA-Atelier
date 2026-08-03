@@ -7,6 +7,9 @@ import {
 } from "../lib/notion/orders.repository.js";
 import { listOrderMilestones } from "../lib/notion/production-schedule.repository.js";
 import { upsertClientByEmail } from "../lib/notion/clients.repository.js";
+import { postgresConfigured } from "../lib/db/client.js";
+import { upsertClientIndex } from "../lib/db/clients.repository.js";
+import { writeOrderIndex } from "../lib/db/order-index.repository.js";
 import { captureReferralOnOrder } from "./rewards.service.js";
 import { measurementsLocked } from "./measurement-lock.js";
 import { getInvoicePaymentInfo } from "./invoice.service.js";
@@ -110,7 +113,36 @@ export async function submitOrder(
     );
   }
 
-  const orderNumber = await createOrder(input, undefined, clientPageId);
+  const { orderNumber, pageId } = await createOrder(
+    input,
+    undefined,
+    clientPageId,
+  );
+
+  // Best-effort: index the order in Postgres for the account portal's reliable
+  // (case-insensitive, client-joined) order discovery. Notion is the record; a PG
+  // hiccup must never fail the order — swallow and log, like the CRM upsert above.
+  // No-op when Postgres isn't configured.
+  if (postgresConfigured()) {
+    try {
+      const dbClientId = await upsertClientIndex(
+        input.email,
+        clientPageId ?? null,
+      );
+      await writeOrderIndex({
+        orderNumber,
+        kind: "custom",
+        email: input.email,
+        notionPageId: pageId,
+        clientId: dbClientId,
+      });
+    } catch (err) {
+      logger.warn(
+        { err },
+        "Failed to write the Postgres order index; the order is recorded in Notion",
+      );
+    }
+  }
 
   // Best-effort: capture a referral code (if the customer entered one) — stamp
   // the referrer link and email this new customer their welcome discount. A

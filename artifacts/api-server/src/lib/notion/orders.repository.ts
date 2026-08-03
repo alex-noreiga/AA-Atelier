@@ -81,7 +81,7 @@ export async function createOrder(
   data: CreateOrderInput,
   client: NotionClient = getNotionClient(),
   clientPageId?: string,
-): Promise<string> {
+): Promise<{ orderNumber: string; pageId: string }> {
   assertConfigured(client);
 
   const orderNumber = generateOrderNumber();
@@ -104,7 +104,8 @@ export async function createOrder(
     );
   }
 
-  return orderNumber;
+  const created = (await response.json()) as { id: string };
+  return { orderNumber, pageId: created.id };
 }
 
 export async function findOrderByNumber(
@@ -210,24 +211,88 @@ export async function findOrdersByEmail(
     };
 
     for (const page of data.results) {
-      const orderNumber = extractOrderNumber(page);
-      if (!orderNumber) continue;
-      const estimatedCompletion = extractDueDate(page);
-      const measurements = extractMeasurements(page);
-      summaries.push({
-        orderNumber,
-        orderName: extractOrderName(page),
-        currentStage: extractCurrentStage(page),
-        stages,
-        ...(estimatedCompletion !== undefined ? { estimatedCompletion } : {}),
-        ...(measurements !== undefined ? { measurements } : {}),
-      });
+      const summary = pageToOrderSummary(page, stages);
+      if (summary) summaries.push(summary);
     }
 
     cursor = data.has_more && data.next_cursor ? data.next_cursor : undefined;
   } while (cursor);
 
   return summaries;
+}
+
+/** Map a Notion order page to a lightweight portal summary, sharing the live
+ * stage list. Returns null for a page with no order number (skip it). */
+function pageToOrderSummary(
+  page: NotionQueryResponse["results"][number],
+  stages: string[],
+): OrderSummary | null {
+  const orderNumber = extractOrderNumber(page);
+  if (!orderNumber) return null;
+  const estimatedCompletion = extractDueDate(page);
+  const measurements = extractMeasurements(page);
+  return {
+    orderNumber,
+    orderName: extractOrderName(page),
+    currentStage: extractCurrentStage(page),
+    stages,
+    ...(estimatedCompletion !== undefined ? { estimatedCompletion } : {}),
+    ...(measurements !== undefined ? { measurements } : {}),
+  };
+}
+
+/**
+ * Fetch order summaries for a set of order numbers in a single query (one Notion
+ * `or` filter, chunked at 100 conditions), preserving the input order. The
+ * account portal discovers the numbers from the Postgres index, then calls this
+ * for live Stage/measurements. Returns summaries in the same order as `numbers`.
+ */
+export async function findOrdersByNumbers(
+  numbers: string[],
+  client: NotionClient = getNotionClient(),
+): Promise<OrderSummary[]> {
+  assertConfigured(client);
+
+  const unique = [...new Set(numbers.map((n) => n.trim()).filter(Boolean))];
+  if (unique.length === 0) return [];
+
+  const stages = await fetchLiveOrderStages(client);
+  const byNumber = new Map<string, OrderSummary>();
+
+  // Notion caps an `or` filter at 100 conditions; chunk to stay under it. Each
+  // order number matches at most one page, so a chunk of ≤100 fits one response.
+  for (let i = 0; i < unique.length; i += 100) {
+    const chunk = unique.slice(i, i + 100);
+    const response = await client.fetch(
+      `/v1/databases/${client.databaseId}/query`,
+      {
+        method: "POST",
+        body: JSON.stringify({
+          filter: {
+            or: chunk.map((n) => ({
+              property: ORDER_NUMBER_PROPERTY,
+              rich_text: { equals: n },
+            })),
+          },
+          page_size: 100,
+        }),
+      },
+    );
+
+    if (!response.ok) {
+      throw new Error(`Notion query failed with status ${response.status}`);
+    }
+
+    const data = (await response.json()) as NotionQueryResponse;
+    for (const page of data.results) {
+      const summary = pageToOrderSummary(page, stages);
+      if (summary) byNumber.set(summary.orderNumber, summary);
+    }
+  }
+
+  return unique
+    .map((n) => byNumber.get(n))
+    .filter((s): s is OrderSummary => s !== undefined);
 }
 
 /** An order that has a due date set but whose per-stage milestones haven't been

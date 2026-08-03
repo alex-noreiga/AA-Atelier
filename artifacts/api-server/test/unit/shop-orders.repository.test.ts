@@ -4,6 +4,7 @@ import {
   findOrderBySessionId,
   createShopOrder,
   findShopOrderByNumber,
+  findShopOrdersByNumbers,
   findShopOrderForCancellation,
   setShopOrderCancelled,
   findShopOrderVerification,
@@ -377,6 +378,49 @@ describe("fetchLiveShopOrderStatuses", () => {
       "Payment Confirmed",
       "Processing",
       "Shipped",
+    ]);
+  });
+});
+
+describe("findShopOrdersByNumbers", () => {
+  const isQ = (p: string) => p.endsWith("/query");
+
+  it("returns [] without querying for an empty list", async () => {
+    const client = makeFakeClient(() => {
+      throw new Error("should not fetch");
+    });
+    expect(await findShopOrdersByNumbers([], client)).toEqual([]);
+    expect(client.calls).toHaveLength(0);
+  });
+
+  it("fetches by an OR filter and preserves the input order", async () => {
+    const client = makeFakeClient((path) => {
+      if (isQ(path)) {
+        return jsonResponse({
+          results: [
+            shopOrderResultPage({
+              orderNumber: "SHP-1",
+              status: "Processing",
+              total: 20,
+            }),
+            shopOrderResultPage({
+              orderNumber: "SHP-2",
+              status: "Shipped",
+              total: 30,
+            }),
+          ],
+        });
+      }
+      throw new Error(`unexpected path ${path}`);
+    });
+
+    const result = await findShopOrdersByNumbers(["SHP-2", "SHP-1"], client);
+
+    expect(result.map((o) => o.orderNumber)).toEqual(["SHP-2", "SHP-1"]);
+    const body = JSON.parse(client.calls[0].init!.body as string);
+    expect(body.filter.or).toEqual([
+      { property: "Order Number", rich_text: { equals: "SHP-2" } },
+      { property: "Order Number", rich_text: { equals: "SHP-1" } },
     ]);
   });
 });

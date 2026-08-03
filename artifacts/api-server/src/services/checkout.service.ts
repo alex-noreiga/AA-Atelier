@@ -22,6 +22,8 @@ import {
   releasePayment,
   type ClaimResult,
 } from "../lib/db/processed-payments.repository.js";
+import { upsertClientIndex } from "../lib/db/clients.repository.js";
+import { writeOrderIndex } from "../lib/db/order-index.repository.js";
 import { runPaidOrderRewards } from "./rewards.service.js";
 import {
   generateShopOrderNumber,
@@ -441,7 +443,35 @@ async function processPaidShopOrder(
     );
   }
 
-  await createShopOrder(full, undefined, clientPageId);
+  const notionPageId = await createShopOrder(full, undefined, clientPageId);
+
+  // Best-effort: index the shop order in Postgres for the account portal's
+  // reliable order discovery. Notion is the record; a PG hiccup must never fail
+  // the webhook (a throw would 500 it and risk a Stripe-retry duplicate). No-op
+  // when Postgres isn't configured.
+  const indexEmail = full.customer_details?.email;
+  const indexOrderNumber = full.metadata?.orderNumber;
+  if (postgresConfigured() && indexEmail && indexOrderNumber) {
+    try {
+      const dbClientId = await upsertClientIndex(
+        indexEmail,
+        clientPageId ?? null,
+      );
+      await writeOrderIndex({
+        orderNumber: indexOrderNumber,
+        kind: "shop",
+        email: indexEmail,
+        notionPageId,
+        clientId: dbClientId,
+        stripeSessionId: full.id,
+      });
+    } catch (err) {
+      logger.warn(
+        { err },
+        "Failed to write the Postgres order index; the shop order is recorded in Notion",
+      );
+    }
+  }
 
   // Confirmation email after the source-of-truth Notion write, and below the
   // idempotency dedupe above so a retried-but-already-recorded event won't
