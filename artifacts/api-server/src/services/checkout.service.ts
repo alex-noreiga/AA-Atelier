@@ -15,6 +15,13 @@ import {
   findOrderBySessionId,
 } from "../lib/notion/shop-orders.repository.js";
 import { upsertClientByEmail } from "../lib/notion/clients.repository.js";
+import { postgresConfigured } from "../lib/db/client.js";
+import {
+  claimPayment,
+  confirmPayment,
+  releasePayment,
+  type ClaimResult,
+} from "../lib/db/processed-payments.repository.js";
 import { runPaidOrderRewards } from "./rewards.service.js";
 import {
   generateShopOrderNumber,
@@ -329,25 +336,87 @@ async function sendShopOrderConfirmation(
 
 /**
  * Record a completed checkout as a Notion "Shop Orders" page. Called from the
- * Stripe webhook. Idempotent (dedupes on the session id) so Stripe's at-least-
- * once delivery / retries can't create duplicate orders. Only paid sessions are
- * recorded.
+ * Stripe webhook. Idempotent so Stripe's at-least-once delivery / retries can't
+ * create duplicate orders. Only paid sessions are recorded.
+ *
+ * When Postgres is configured, dedup is an atomic `processed_payments` claim
+ * (claim → write Notion → confirm; release + rethrow on failure so a redelivery
+ * reprocesses). When it isn't, it falls back to the original Notion read-before-
+ * write dedup. Either way the Notion `findOrderBySessionId` guard is retained as
+ * a reclaim-only backstop, because `createShopOrder` is not itself idempotent.
  */
 export async function recordPaidOrder(
   session: Stripe.Checkout.Session,
   stripe: Stripe = getStripeClient(),
 ): Promise<void> {
-  if (await findOrderBySessionId(session.id)) {
+  let claim: ClaimResult | null = null;
+  if (postgresConfigured()) {
+    try {
+      claim = await claimPayment(session.id, "shop");
+    } catch (err) {
+      // A DB hiccup must never block recording a paid order — degrade to the
+      // Notion read-before-write dedup below rather than 500-looping.
+      logger.warn(
+        { err },
+        "processed_payments claim failed; falling back to Notion dedup",
+      );
+    }
+  }
+
+  if (claim === null) {
+    // Postgres unconfigured or unreachable: original Notion dedup (skips the
+    // Stripe retrieve on an already-recorded redelivery).
+    if (await findOrderBySessionId(session.id)) return;
+    await processPaidShopOrder(session, stripe);
     return;
   }
 
+  if (claim === "done") return; // already fully recorded — no-op
+  if (claim === "in_progress") {
+    // A concurrent (or uncommitted-but-recent) peer holds the claim. Fail so the
+    // webhook 500s and Stripe redelivers later, rather than racing a duplicate.
+    throw new Error(
+      `Shop order for session ${session.id} is already being processed; retry`,
+    );
+  }
+
+  try {
+    const recorded = await processPaidShopOrder(session, stripe);
+    if (recorded) await confirmPayment(session.id);
+    // A non-paid session isn't recorded — drop the claim so a later paid event
+    // for the same session (unusual) could still be processed.
+    else await releasePayment(session.id);
+  } catch (err) {
+    // Delete-on-failure: the next Stripe retry re-claims and reprocesses cleanly.
+    await releasePayment(session.id).catch(() => {});
+    throw err;
+  }
+}
+
+/**
+ * The actual work of recording a paid shop order: retrieve the full session,
+ * skip if unpaid, then (guarded against a duplicate Notion page) create the order
+ * and fire the best-effort confirmation email + rewards. Returns true when the
+ * order was recorded (or already existed), false when the session wasn't paid.
+ */
+async function processPaidShopOrder(
+  session: Stripe.Checkout.Session,
+  stripe: Stripe,
+): Promise<boolean> {
   // The webhook's session object omits line items; retrieve them for the record.
   const full = await stripe.checkout.sessions.retrieve(session.id, {
     expand: ["line_items"],
   });
 
   if (full.payment_status !== "paid") {
-    return;
+    return false;
+  }
+
+  // Reclaim-only duplicate guard: on the rare reclaim path (a prior attempt
+  // created the Notion order but crashed before confirming the claim) the order
+  // already exists — treat it as recorded and don't create a second page.
+  if (await findOrderBySessionId(session.id)) {
+    return true;
   }
 
   // Best-effort: mirror the buyer into the Client CRM (dedupe by email) and link
@@ -395,4 +464,6 @@ export async function recordPaidOrder(
       );
     }
   }
+
+  return true;
 }

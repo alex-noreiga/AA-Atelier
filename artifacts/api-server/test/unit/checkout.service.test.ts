@@ -1,4 +1,4 @@
-import { describe, it, expect, vi, beforeEach } from "vitest";
+import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 
 // The service resolves the cart against live inventory and records paid orders
 // via these adapters; both are mocked so the tests stay pure (no Notion/Stripe).
@@ -42,6 +42,8 @@ import { upsertClientByEmail } from "../../src/lib/notion/clients.repository.js"
 import { sendEmailBestEffort } from "../../src/lib/resend/send.js";
 import { runPaidOrderRewards } from "../../src/services/rewards.service.js";
 import type { VariantRecord } from "../../src/lib/notion/products.schema.js";
+import { __setDbForTests, __resetDb } from "../../src/lib/db/client.js";
+import { makeFakeDb } from "../support/fake-db.js";
 
 const mockListVariants = vi.mocked(listVariants);
 const mockFind = vi.mocked(findOrderBySessionId);
@@ -671,5 +673,102 @@ describe("recordPaidOrder", () => {
 
     expect(mockCreate).toHaveBeenCalled();
     expect(mockSend).not.toHaveBeenCalled();
+  });
+});
+
+describe("recordPaidOrder (Postgres dedup)", () => {
+  const paidSession = {
+    id: "cs_pg",
+    payment_status: "paid",
+    line_items: { data: [] },
+  } as unknown as Stripe.Checkout.Session;
+
+  afterEach(() => {
+    delete process.env.POSTGRES_URL;
+    __resetDb();
+  });
+
+  /** A fake db that resolves the claim to a given outcome. */
+  function claimDb(result: "claimed" | "done" | "in_progress") {
+    return makeFakeDb((text) => {
+      if (text.includes("insert into processed_payments"))
+        return result === "claimed" ? [{ stripe_session_id: "cs_pg" }] : [];
+      if (text.includes("select status"))
+        return result === "done"
+          ? [{ status: "done", stale: false }]
+          : [{ status: "processing", stale: false }];
+      return [];
+    });
+  }
+
+  it("claims, records, then confirms a paid session", async () => {
+    process.env.POSTGRES_URL = "postgres://test";
+    const db = claimDb("claimed");
+    __setDbForTests(db);
+    mockFind.mockResolvedValue(false);
+    const { stripe, retrieve } = fakeStripe();
+    retrieve.mockResolvedValue(paidSession);
+
+    await recordPaidOrder({ id: "cs_pg" } as Stripe.Checkout.Session, stripe);
+
+    expect(mockCreate).toHaveBeenCalled();
+    // The claim was confirmed (status set to done).
+    expect(db.calls.some((c) => /status = 'done'/.test(c.text))).toBe(true);
+  });
+
+  it("no-ops a redelivered, already-done session (no retrieve/create)", async () => {
+    process.env.POSTGRES_URL = "postgres://test";
+    __setDbForTests(claimDb("done"));
+    const { stripe, retrieve } = fakeStripe();
+
+    await recordPaidOrder({ id: "cs_pg" } as Stripe.Checkout.Session, stripe);
+
+    expect(retrieve).not.toHaveBeenCalled();
+    expect(mockCreate).not.toHaveBeenCalled();
+  });
+
+  it("throws (→ webhook 500 → Stripe retry) when a peer is mid-flight", async () => {
+    process.env.POSTGRES_URL = "postgres://test";
+    __setDbForTests(claimDb("in_progress"));
+    const { stripe } = fakeStripe();
+
+    await expect(
+      recordPaidOrder({ id: "cs_pg" } as Stripe.Checkout.Session, stripe),
+    ).rejects.toThrow(/already being processed/);
+    expect(mockCreate).not.toHaveBeenCalled();
+  });
+
+  it("releases the claim and rethrows when recording fails mid-flight", async () => {
+    process.env.POSTGRES_URL = "postgres://test";
+    const db = claimDb("claimed");
+    __setDbForTests(db);
+    mockFind.mockResolvedValue(false);
+    mockCreate.mockRejectedValueOnce(new Error("Notion down"));
+    const { stripe, retrieve } = fakeStripe();
+    retrieve.mockResolvedValue(paidSession);
+
+    await expect(
+      recordPaidOrder({ id: "cs_pg" } as Stripe.Checkout.Session, stripe),
+    ).rejects.toThrow("Notion down");
+    expect(
+      db.calls.some((c) => /delete from processed_payments/.test(c.text)),
+    ).toBe(true);
+  });
+
+  it("falls back to Notion dedup when the claim itself errors (DB blip)", async () => {
+    process.env.POSTGRES_URL = "postgres://test";
+    __setDbForTests(
+      makeFakeDb(() => {
+        throw new Error("db unreachable");
+      }),
+    );
+    mockFind.mockResolvedValue(false);
+    const { stripe, retrieve } = fakeStripe();
+    retrieve.mockResolvedValue(paidSession);
+
+    await recordPaidOrder({ id: "cs_pg" } as Stripe.Checkout.Session, stripe);
+
+    // Degraded to the legacy path — the order is still recorded.
+    expect(mockCreate).toHaveBeenCalled();
   });
 });
