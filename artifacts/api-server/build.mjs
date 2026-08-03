@@ -29,6 +29,12 @@ async function buildAll() {
     outdir: distDir,
     outExtension: { ".js": ".mjs" },
     logLevel: "info",
+    // Stamp the build time into the bundle so `/api/health` can report it and a
+    // synthetic monitor can flag a stale deploy. Read via `typeof BUILD_TIME`
+    // in health.ts, so it's simply `undefined` when running unbundled (tests).
+    define: {
+      BUILD_TIME: JSON.stringify(new Date().toISOString()),
+    },
     // Some packages may not be bundleable, so we externalize them, we can add more here as needed.
     // Some of the packages below may not be imported or installed, but we're adding them in case they are in the future.
     // Examples of unbundleable packages:

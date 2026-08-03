@@ -13,7 +13,9 @@ import * as zod from 'zod';
  * @summary Health check
  */
 export const HealthCheckResponse = zod.object({
-  "status": zod.string()
+  "status": zod.string(),
+  "commit": zod.string().optional().describe('Short git SHA of the deployed build (from VERCEL_GIT_COMMIT_SHA). Omitted when unknown (e.g. local dev). Lets a monitor confirm which build is live.'),
+  "buildTime": zod.coerce.date().optional().describe('When the running bundle was built, injected at build time. Omitted when unknown. Lets a monitor flag a deploy that is unexpectedly old (a stale function serving a months-old build).')
 })
 
 
