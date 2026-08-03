@@ -70,8 +70,8 @@ export function getDb(): DbClient {
 }
 
 /** Whether the Postgres layer is configured. When false, callers degrade to the
- * pre-Postgres behavior (the Stripe webhook keeps its Notion read-before-write
- * dedup). */
+ * pre-Postgres behavior (the account portal falls back to Notion by-email
+ * lookups, the Stripe webhook keeps its Notion read-before-write dedup). */
 export function postgresConfigured(): boolean {
   return Boolean(process.env.POSTGRES_URL);
 }
