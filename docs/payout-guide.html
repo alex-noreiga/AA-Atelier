@@ -1,0 +1,587 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>A.A. Atelier — Production Pay Guide</title>
+    <style>
+      :root {
+        --ink: #26221d;
+        --muted: #6f6558;
+        --line: #e4ddd1;
+        --paper: #faf7f1;
+        --card: #ffffff;
+        --accent: #7a5c3e;
+        --alex: #2f5b8f;
+        --alex-bg: #eaf1f9;
+        --alayna: #3d7a4f;
+        --alayna-bg: #ebf4ed;
+        --split: #7a7168;
+        --split-bg: #f0ece5;
+        --warn-bg: #fbf1e4;
+        --warn-line: #e7c89a;
+      }
+      * { box-sizing: border-box; }
+      html { -webkit-text-size-adjust: 100%; }
+      body {
+        margin: 0;
+        background: var(--paper);
+        color: var(--ink);
+        font-family: "Iowan Old Style", "Palatino Linotype", Palatino, Georgia, serif;
+        line-height: 1.6;
+      }
+      .wrap { max-width: 820px; margin: 0 auto; padding: 56px 24px 96px; }
+      header.masthead {
+        border-bottom: 1px solid var(--line);
+        padding-bottom: 28px;
+        margin-bottom: 40px;
+      }
+      .eyebrow {
+        font-family: ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
+        text-transform: uppercase;
+        letter-spacing: 0.22em;
+        font-size: 12px;
+        color: var(--accent);
+        margin: 0 0 14px;
+      }
+      h1 {
+        font-size: clamp(30px, 5vw, 42px);
+        line-height: 1.15;
+        margin: 0 0 12px;
+        font-weight: 600;
+      }
+      .lede { font-size: 18px; color: var(--muted); margin: 0; max-width: 62ch; }
+      h2 {
+        font-size: 24px;
+        margin: 52px 0 14px;
+        padding-top: 8px;
+        font-weight: 600;
+      }
+      h2 .num {
+        font-family: ui-sans-serif, system-ui, sans-serif;
+        font-size: 13px;
+        color: var(--accent);
+        letter-spacing: 0.14em;
+        display: block;
+        margin-bottom: 2px;
+      }
+      h3 { font-size: 18px; margin: 30px 0 8px; font-weight: 600; }
+      p { margin: 0 0 16px; }
+      a { color: var(--accent); }
+      strong { font-weight: 600; }
+      .card {
+        background: var(--card);
+        border: 1px solid var(--line);
+        border-radius: 12px;
+        padding: 22px 24px;
+        margin: 20px 0;
+      }
+      .callout {
+        background: var(--warn-bg);
+        border: 1px solid var(--warn-line);
+        border-radius: 12px;
+        padding: 18px 22px;
+        margin: 22px 0;
+        font-size: 15.5px;
+      }
+      .callout .k {
+        font-family: ui-sans-serif, system-ui, sans-serif;
+        text-transform: uppercase;
+        letter-spacing: 0.14em;
+        font-size: 11px;
+        color: var(--accent);
+        display: block;
+        margin-bottom: 6px;
+      }
+      .scroll { overflow-x: auto; -webkit-overflow-scrolling: touch; margin: 20px 0; }
+      table {
+        border-collapse: collapse;
+        width: 100%;
+        min-width: 520px;
+        font-size: 15px;
+        background: var(--card);
+        border: 1px solid var(--line);
+        border-radius: 12px;
+        overflow: hidden;
+      }
+      caption {
+        text-align: left;
+        color: var(--muted);
+        font-size: 14px;
+        padding: 0 0 10px;
+      }
+      th, td { padding: 11px 14px; text-align: left; border-bottom: 1px solid var(--line); }
+      thead th {
+        font-family: ui-sans-serif, system-ui, sans-serif;
+        font-size: 12px;
+        text-transform: uppercase;
+        letter-spacing: 0.06em;
+        color: var(--muted);
+        background: #f6f1e8;
+        font-weight: 600;
+      }
+      tbody tr:last-child td { border-bottom: 0; }
+      td.num, th.num { text-align: right; font-variant-numeric: tabular-nums; }
+      .pill {
+        display: inline-block;
+        font-family: ui-sans-serif, system-ui, sans-serif;
+        font-size: 12px;
+        font-weight: 600;
+        padding: 2px 9px;
+        border-radius: 999px;
+        line-height: 1.5;
+      }
+      .pill.alex { color: var(--alex); background: var(--alex-bg); }
+      .pill.alayna { color: var(--alayna); background: var(--alayna-bg); }
+      .pill.split { color: var(--split); background: var(--split-bg); }
+      ol.steps { counter-reset: step; list-style: none; padding: 0; margin: 20px 0; }
+      ol.steps > li {
+        position: relative;
+        padding: 4px 0 18px 46px;
+        margin: 0;
+        border-left: 1px solid var(--line);
+        margin-left: 15px;
+      }
+      ol.steps > li:last-child { border-left: 1px solid transparent; }
+      ol.steps > li::before {
+        counter-increment: step;
+        content: counter(step);
+        position: absolute;
+        left: -15px;
+        top: 0;
+        width: 30px;
+        height: 30px;
+        background: var(--accent);
+        color: #fff;
+        border-radius: 50%;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        font-family: ui-sans-serif, system-ui, sans-serif;
+        font-size: 14px;
+        font-weight: 600;
+      }
+      ol.steps > li h3 { margin: 2px 0 6px; }
+      ol.steps > li p { margin: 0 0 8px; }
+      code {
+        font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+        font-size: 13.5px;
+        background: #f0ebe1;
+        padding: 1px 6px;
+        border-radius: 5px;
+      }
+      .formula {
+        font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+        font-size: 14px;
+        background: #2b2620;
+        color: #f3ecdf;
+        padding: 16px 18px;
+        border-radius: 10px;
+        overflow-x: auto;
+        line-height: 1.7;
+        margin: 16px 0;
+      }
+      .formula .c { color: #b9a98c; }
+      .total-row td { font-weight: 700; background: #f6f1e8; }
+      hr.soft { border: 0; border-top: 1px solid var(--line); margin: 40px 0; }
+      .foot {
+        margin-top: 60px;
+        padding-top: 20px;
+        border-top: 1px solid var(--line);
+        color: var(--muted);
+        font-size: 14px;
+        font-family: ui-sans-serif, system-ui, sans-serif;
+      }
+      .toc {
+        font-family: ui-sans-serif, system-ui, sans-serif;
+        font-size: 15px;
+        background: var(--card);
+        border: 1px solid var(--line);
+        border-radius: 12px;
+        padding: 18px 22px;
+      }
+      .toc ol { margin: 8px 0 0; padding-left: 20px; }
+      .toc li { margin: 4px 0; }
+      .toc a { text-decoration: none; }
+      .toc a:hover { text-decoration: underline; }
+
+      @media (prefers-color-scheme: dark) {
+        :root {
+          --ink: #ece5d8;
+          --muted: #a99f8f;
+          --line: #3a352d;
+          --paper: #1a1712;
+          --card: #221e18;
+          --accent: #c79a6a;
+          --alex: #8fb6e6;
+          --alex-bg: #1e2a3a;
+          --alayna: #8fca9f;
+          --alayna-bg: #1c2c22;
+          --split: #c3b8a8;
+          --split-bg: #2b271f;
+          --warn-bg: #2c2416;
+          --warn-line: #5a4a2c;
+        }
+        thead th { background: #2a251d; }
+        .total-row td { background: #2a251d; }
+        code { background: #2f2a22; }
+      }
+    </style>
+  </head>
+  <body>
+    <div class="wrap">
+      <header class="masthead">
+        <p class="eyebrow">A.A. Atelier · Internal Guide</p>
+        <h1>How we pay out production work</h1>
+        <p class="lede">
+          A plain-language walkthrough of how Alexandra and Alayna get paid for
+          each item we make — how the split is decided, where you enter it, and
+          how to run a payout. It mirrors the <strong>work distribution</strong>
+          database in Notion, so the numbers here are the numbers there.
+        </p>
+      </header>
+
+      <nav class="toc" aria-label="Contents">
+        <strong>In this guide</strong>
+        <ol>
+          <li><a href="#idea">The core idea</a></li>
+          <li><a href="#splits">The category pay splits</a></li>
+          <li><a href="#who">Tagging who did each stage</a></li>
+          <li><a href="#log">Logging an item, step by step</a></li>
+          <li><a href="#example">A worked example</a></li>
+          <li><a href="#payout">Running a payout</a></li>
+          <li><a href="#faq">Edge cases &amp; FAQ</a></li>
+        </ol>
+      </nav>
+
+      <h2 id="idea"><span class="num">01</span>The core idea</h2>
+      <p>
+        Every item we sell is worth a certain amount of <em>production pay</em> —
+        the labour value baked into its price. We don't track hours. Instead, each
+        item's value is divided into <strong>five production stages</strong>, and
+        whoever does a stage earns that stage's share.
+      </p>
+      <div class="card">
+        <p style="margin:0 0 10px"><strong>The five stages</strong></p>
+        <p style="margin:0">
+          Consult &amp; sketch &nbsp;·&nbsp; Sourcing materials &nbsp;·&nbsp;
+          Cutting &amp; pinning &nbsp;·&nbsp; Sewing &nbsp;·&nbsp; Detailing
+        </p>
+      </div>
+      <p>
+        How big each stage's slice is depends on the <strong>category</strong> of
+        the item (a dress is weighted differently than a pair of soakers). Those
+        weights live in the <strong>Category Pay Splits</strong> table and always
+        add up to 100%. So the whole thing is just:
+      </p>
+      <div class="formula">
+<span class="c"># For one stage</span>
+stage pay  =  Item value  ×  that stage's %  ×  <span class="c">(1 if you did it, 0.5 if split)</span>
+
+<span class="c"># Item value comes straight from the sale</span>
+Item value  =  Sale price  ×  Units
+      </div>
+      <p>
+        Add up the stages each person did, and that's what they're owed. Notion's
+        <code>Alexandra owed</code> and <code>Alayna owed</code> formulas do this
+        automatically — you never do the math by hand.
+      </p>
+
+      <h2 id="splits"><span class="num">02</span>The category pay splits</h2>
+      <p>
+        These are the current weights, by category. Read a row across: it's the
+        share of the item's value assigned to each stage. Every row totals 100%.
+      </p>
+      <div class="scroll">
+        <table>
+          <caption>Category Pay Splits — the % of item value each stage is worth</caption>
+          <thead>
+            <tr>
+              <th>Category</th>
+              <th class="num">Consult&nbsp;&amp;&nbsp;sketch</th>
+              <th class="num">Sourcing</th>
+              <th class="num">Cutting&nbsp;&amp;&nbsp;pinning</th>
+              <th class="num">Sewing</th>
+              <th class="num">Detailing</th>
+              <th class="num">Total</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td>Dress</td>
+              <td class="num">15%</td><td class="num">10%</td><td class="num">20%</td><td class="num">35%</td><td class="num">20%</td>
+              <td class="num">100%</td>
+            </tr>
+            <tr>
+              <td>Men's Costume</td>
+              <td class="num">15%</td><td class="num">10%</td><td class="num">20%</td><td class="num">35%</td><td class="num">20%</td>
+              <td class="num">100%</td>
+            </tr>
+            <tr>
+              <td>Ready to Wear</td>
+              <td class="num">15%</td><td class="num">10%</td><td class="num">20%</td><td class="num">35%</td><td class="num">20%</td>
+              <td class="num">100%</td>
+            </tr>
+            <tr>
+              <td>Skate Soakers</td>
+              <td class="num">—</td><td class="num">—</td><td class="num">30%</td><td class="num">70%</td><td class="num">—</td>
+              <td class="num">100%</td>
+            </tr>
+            <tr>
+              <td>Bag</td>
+              <td class="num">—</td><td class="num">—</td><td class="num">30%</td><td class="num">40%</td><td class="num">30%</td>
+              <td class="num">100%</td>
+            </tr>
+            <tr>
+              <td>Hair Accessory</td>
+              <td class="num">—</td><td class="num">—</td><td class="num">30%</td><td class="num">40%</td><td class="num">30%</td>
+              <td class="num">100%</td>
+            </tr>
+            <tr>
+              <td>Other</td>
+              <td class="num">—</td><td class="num">—</td><td class="num">30%</td><td class="num">40%</td><td class="num">30%</td>
+              <td class="num">100%</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+      <div class="callout">
+        <span class="k">Where to change these</span>
+        The splits are the single source of truth for weighting. To retune them —
+        or add a new category — edit the <strong>Category Pay Splits</strong>
+        database (under <em>finances → Database Settings</em>). Keep every row
+        totalling 100%; the <code>Total</code> column will flag it if you don't.
+        A change flows into every item using that category automatically.
+      </div>
+
+      <h2 id="who"><span class="num">03</span>Tagging who did each stage</h2>
+      <p>
+        On each item in <strong>work distribution</strong>, each stage has a
+        &ldquo;by&rdquo; field with three choices:
+      </p>
+      <div class="scroll">
+        <table>
+          <thead>
+            <tr><th>Choice</th><th>Meaning</th></tr>
+          </thead>
+          <tbody>
+            <tr><td><span class="pill alex">Alexandra</span></td><td>Alexandra did this stage — she earns its full share.</td></tr>
+            <tr><td><span class="pill alayna">Alayna</span></td><td>Alayna did this stage — she earns its full share.</td></tr>
+            <tr><td><span class="pill split">Split</span></td><td>You did it together — the share is divided 50 / 50.</td></tr>
+          </tbody>
+        </table>
+      </div>
+      <p>
+        There are five &ldquo;by&rdquo; fields, one per stage: <code>Consult &amp;
+        sketch by</code>, <code>Sourcing materials by</code>, <code>Cutting &amp;
+        pinning fabric by</code>, <code>Sewing by</code>, and <code>Detailing
+        by</code>. Leave a stage's field blank only if that stage genuinely
+        doesn't apply to the category (the split table already zeroes those out).
+      </p>
+
+      <h2 id="log"><span class="num">04</span>Logging an item, step by step</h2>
+      <ol class="steps">
+        <li>
+          <h3>Add a row in <em>work distribution</em></h3>
+          <p>
+            Use the matching template (Dress, Soakers, Hair accessories, Hot tools
+            bag) so the checklist and suggested stages come pre-filled. Name the
+            <code>Production item</code> after the design or client.
+          </p>
+        </li>
+        <li>
+          <h3>Set the Category</h3>
+          <p>
+            Link the <code>Category</code> relation to the right category. This is
+            what pulls in the stage percentages — nothing weights correctly until
+            it's set.
+          </p>
+        </li>
+        <li>
+          <h3>Enter Sale price and Units</h3>
+          <p>
+            <code>Sale price</code> is the per-item price; <code>Units</code> is
+            how many identical items this row covers. Together they make
+            <code>Item value</code>, the pool being divided.
+          </p>
+        </li>
+        <li>
+          <h3>Tag each stage's &ldquo;by&rdquo; field</h3>
+          <p>
+            For every stage that applies, choose <span class="pill alex">Alexandra</span>,
+            <span class="pill alayna">Alayna</span>, or <span class="pill split">Split</span>.
+            <code>Alexandra owed</code> and <code>Alayna owed</code> update live as
+            you go.
+          </p>
+        </li>
+        <li>
+          <h3>Link the Order (custom work)</h3>
+          <p>
+            For a custom piece, connect the <code>Order</code> relation so the row
+            carries its <code>Order Stage</code> and stays tied to the customer.
+            Ready-to-wear / shop items can skip this.
+          </p>
+        </li>
+        <li>
+          <h3>Clear &ldquo;Needs attention&rdquo;</h3>
+          <p>
+            The <code>Needs attention</code> formula flags a row that's missing
+            something (no category, no price, an unassigned stage). The
+            <em>Needs stage entries</em> view lists everything still incomplete —
+            aim to keep it empty.
+          </p>
+        </li>
+      </ol>
+
+      <h2 id="example"><span class="num">05</span>A worked example</h2>
+      <p>
+        Take a real one: the <strong>Knight of Midnight Dress</strong> —
+        category <em>Dress</em>, sale price <strong>$500</strong>, 1 unit. So
+        <code>Item value = $500</code>, split by the Dress weights. Here's how the
+        stages were tagged and what each is worth:
+      </p>
+      <div class="scroll">
+        <table>
+          <caption>Knight of Midnight Dress · Item value $500</caption>
+          <thead>
+            <tr>
+              <th>Stage</th>
+              <th class="num">Weight</th>
+              <th class="num">Stage pay</th>
+              <th>Done by</th>
+              <th class="num">Alexandra</th>
+              <th class="num">Alayna</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td>Consult &amp; sketch</td><td class="num">15%</td><td class="num">$75</td>
+              <td><span class="pill alex">Alexandra</span></td><td class="num">$75</td><td class="num">—</td>
+            </tr>
+            <tr>
+              <td>Sourcing materials</td><td class="num">10%</td><td class="num">$50</td>
+              <td><span class="pill alayna">Alayna</span></td><td class="num">—</td><td class="num">$50</td>
+            </tr>
+            <tr>
+              <td>Cutting &amp; pinning</td><td class="num">20%</td><td class="num">$100</td>
+              <td><span class="pill alayna">Alayna</span></td><td class="num">—</td><td class="num">$100</td>
+            </tr>
+            <tr>
+              <td>Sewing</td><td class="num">35%</td><td class="num">$175</td>
+              <td><span class="pill alex">Alexandra</span></td><td class="num">$175</td><td class="num">—</td>
+            </tr>
+            <tr>
+              <td>Detailing</td><td class="num">20%</td><td class="num">$100</td>
+              <td><span class="pill alayna">Alayna</span></td><td class="num">—</td><td class="num">$100</td>
+            </tr>
+            <tr class="total-row">
+              <td colspan="2">Owed</td><td class="num">$500</td><td></td>
+              <td class="num">$250</td><td class="num">$250</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+      <p>
+        Alexandra took the consult and the sewing (the biggest slice), Alayna took
+        sourcing, cutting, and detailing — and it lands at <strong>$250 each</strong>.
+        If a stage had been marked <span class="pill split">Split</span>, its pay
+        would have been halved between the two columns instead.
+      </p>
+
+      <h2 id="payout"><span class="num">06</span>Running a payout</h2>
+      <p>
+        When it's time to settle up — say, at the end of a month or when an order
+        is delivered:
+      </p>
+      <ol class="steps">
+        <li>
+          <h3>Open the <em>Pay review</em> view</h3>
+          <p>
+            It shows each item with <code>Alexandra owed</code>,
+            <code>Alayna owed</code>, and both <code>Paid</code> checkboxes.
+          </p>
+        </li>
+        <li>
+          <h3>Filter to unpaid &amp; finished work</h3>
+          <p>
+            Look at rows where <code>Paid Alexandra</code> / <code>Paid Alayna</code>
+            is unchecked and the <code>Order Stage</code> is far enough along that
+            the work is really done. Sum each person's <em>owed</em> column (Notion
+            can total it at the bottom of the view).
+          </p>
+        </li>
+        <li>
+          <h3>Pay each person their total</h3>
+          <p>
+            Transfer Alexandra her sum and Alayna hers. Pay the two people
+            independently — an item can be part-paid to one and not the other, so
+            the checkboxes are separate on purpose.
+          </p>
+        </li>
+        <li>
+          <h3>Check the boxes to close it out</h3>
+          <p>
+            Tick <code>Paid Alexandra</code> and/or <code>Paid Alayna</code> on the
+            rows you just settled. Those rows drop out of the unpaid filter, so the
+            next payout only ever shows what's still outstanding.
+          </p>
+        </li>
+      </ol>
+      <div class="callout">
+        <span class="k">Rule of thumb</span>
+        Don't mark a stage paid until the work is actually finished and the sale
+        price is final. If a price changes after payout, the owed amounts recompute
+        — reconcile the difference on the next round rather than editing history.
+      </div>
+
+      <h2 id="faq"><span class="num">07</span>Edge cases &amp; FAQ</h2>
+
+      <h3>We both worked on one stage</h3>
+      <p>
+        Mark that stage <span class="pill split">Split</span>. Its pay is divided
+        50 / 50. (If the real split isn't even, the cleanest fix is to give the
+        stage to whoever did most of it and note the adjustment in
+        <code>Notes</code>, or split the row into two rows.)
+      </p>
+
+      <h3>A category doesn't use all five stages</h3>
+      <p>
+        That's expected — soakers, bags, and hair accessories have 0% on the
+        stages they don't need, so leaving those &ldquo;by&rdquo; fields blank
+        changes nothing. Only the weighted stages pay out.
+      </p>
+
+      <h3>Multiple identical items</h3>
+      <p>
+        Put the count in <code>Units</code> rather than making a row each — the
+        item value (and every stage share) scales up automatically. Split one row
+        out only if different people did the stages on different copies.
+      </p>
+
+      <h3>The percentages feel wrong for how the work actually goes</h3>
+      <p>
+        The weights are a policy decision, not a law of nature. If sewing is
+        routinely heavier than 35% for dresses, change it once in
+        <strong>Category Pay Splits</strong> and it applies going forward. Keep the
+        row at 100%.
+      </p>
+
+      <h3>Where does the sale price come from?</h3>
+      <p>
+        For custom orders it's the order's agreed price (the same figure the
+        invoice is built from); for shop items it's the listed sale price. Enter
+        the price the customer actually paid for that item, before shipping and
+        tax.
+      </p>
+
+      <div class="foot">
+        <p>
+          A.A. Atelier — internal reference. Mirrors the <strong>work
+          distribution</strong> and <strong>Category Pay Splits</strong> databases
+          in Notion; if the two ever disagree, Notion is authoritative. Update this
+          guide when the split policy or stage list changes.
+        </p>
+      </div>
+    </div>
+  </body>
+</html>
