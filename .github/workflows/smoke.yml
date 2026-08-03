@@ -76,6 +76,12 @@ jobs:
         run: pnpm --filter @workspace/tests exec playwright install-deps chromium
 
       - name: Run production smoke tests
+        env:
+          # Optional sentinel order for the known-good success-render smoke
+          # (tests/smoke/order-success.smoke.ts). Set it as a repo VARIABLE
+          # (an order number isn't sensitive) or a secret — either is picked up
+          # here. Unset ⇒ that one spec skips itself; every other spec runs.
+          SMOKE_KNOWN_ORDER_NUMBER: ${{ vars.SMOKE_KNOWN_ORDER_NUMBER || secrets.SMOKE_KNOWN_ORDER_NUMBER }}
         run: pnpm test:smoke
 
       - name: Upload smoke report
