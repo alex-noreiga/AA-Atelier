@@ -28,9 +28,9 @@ an authentication-vendor swap, not new order/invoice logic.
   standard Bearer model.
 - **Server verifies the JWT locally.** `middlewares/auth.ts` `requireCustomer`
   reads the Bearer token and verifies it with `getSupabaseClient().auth
-  .getClaims(token)` (cached JWKS, no per-request round-trip; supports the ES256
+.getClaims(token)` (cached JWKS, no per-request round-trip; supports the ES256
   asymmetric keys new projects default to). It sets `res.locals.customer =
-  { email: normalizeEmail(claims.email), userId: claims.sub }` — **normalizing
+{ email: normalizeEmail(claims.email), userId: claims.sub }` — **normalizing
   at the gate** so Notion lookups match. Adapter: `lib/supabase/client.ts`
   (factory + memoized getter + `supabaseConfigured()`, first-use env read, test
   seams `__setSupabaseClientForTests` / `__resetSupabaseClient`).
