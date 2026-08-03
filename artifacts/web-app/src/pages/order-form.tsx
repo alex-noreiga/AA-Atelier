@@ -18,6 +18,7 @@ import { SuccessScreen } from "@/components/success-screen";
 import { Seo } from "@/components/seo";
 import { ROUTE_SEO } from "@/lib/seo-routes";
 import { isRushNeededBy, RUSH_SURCHARGE_NOTE } from "@/lib/rush";
+import { useSubmitTimer } from "@/lib/anti-spam";
 import { useToast } from "@/hooks/use-toast";
 import {
   ArrowLeft,
@@ -153,6 +154,7 @@ export default function OrderForm() {
   // ticks the box. Independent of the order write: a failure here is swallowed
   // (the server flow is best-effort too) and never blocks the order confirmation.
   const subscribeNewsletter = useSubscribeNewsletter();
+  const newsletterElapsedMs = useSubmitTimer();
 
   const {
     register,
@@ -206,7 +208,11 @@ export default function OrderForm() {
     // unchanged and the marketing capture lives in one place.
     if (optIn) {
       subscribeNewsletter.mutate({
-        data: { email: contact.email, source: "order form" },
+        data: {
+          email: contact.email,
+          source: "order form",
+          elapsedMs: newsletterElapsedMs(),
+        },
       });
     }
 

@@ -35,9 +35,14 @@ describe("NewsletterSignup", () => {
     );
     await user.click(screen.getByTestId("newsletter-submit"));
 
-    expect(hoisted.mutate).toHaveBeenCalledWith({
-      data: { email: "grace@example.com", source: "footer" },
+    expect(hoisted.mutate).toHaveBeenCalledTimes(1);
+    const { data } = hoisted.mutate.mock.calls[0][0];
+    expect(data).toMatchObject({
+      email: "grace@example.com",
+      source: "footer",
+      website: "", // honeypot left empty by a real user
     });
+    expect(typeof data.elapsedMs).toBe("number");
   });
 
   it("shows an inline error and does not submit a malformed email", async () => {

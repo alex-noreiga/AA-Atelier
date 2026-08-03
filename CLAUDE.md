@@ -1504,6 +1504,58 @@ Tests: `test/consent.test.tsx` (the context), `test/cookie-consent-banner.test.t
 `@vercel/analytics/react` mocked). No E2E/smoke changes — the mocked e2e run
 never loads the real script, and the smoke suite is read-only.
 
+## Invisible anti-spam (honeypot + timing + submission rate limit)
+
+The public, anonymous submission forms — **contact** (`POST /api/contact`),
+**back-in-stock notify** (`POST /api/notify`), and **newsletter**
+(`POST /api/newsletter`) — carry a **zero-friction, no-third-party** anti-spam
+layer so a bot can't cheaply pollute the Notion contact database (+ Resend mail /
+marketing audience). Nothing is customer-visible; there is no CAPTCHA. Three
+signals, all invisible:
+
+1. **Honeypot** — a hidden `website` field a real visitor never sees or fills
+   (off-screen + `aria-hidden` + `tabIndex=-1`, not `display:none`). Any non-empty
+   value marks the submission as a bot.
+2. **Timing** — an `elapsedMs` field (how long the visitor spent on the form). A
+   submit faster than a human plausibly could (`< SPAM_MIN_FILL_MS`, default
+   **2000**, `0` disables) is a bot. **Absent ⇒ treated as human (fail open)**, so a
+   client that can't measure it still works.
+3. **Rate limit** — a shared per-IP `submissionRateLimiter` (5 / 10 min, same
+   in-memory/per-instance `express-rate-limit` as the account limiter — a
+   best-effort brake, not a hard wall).
+
+Load-bearing decisions:
+
+- **Contract-first.** `website` + `elapsedMs` are **optional** fields on
+  `NewContactRequest` / `NewNotifyRequest` / `NewNewsletterRequest` in
+  `openapi.yaml` (regenerate the libs after editing). Optional ⇒ a legacy client
+  that omits them keeps working.
+- **Silent success-looking drop, never a 4xx.** `spamFilter(success)`
+  (`middlewares/spam-filter.ts`) runs **after** `validate` (reads
+  `res.locals.body`); a flagged request gets the exact success response the
+  endpoint would return (`{ status: 201, body: { success: true } }`) with **no**
+  Notion write / email, so a bot gets no signal it was caught and never learns to
+  evade. The pure `isLikelySpam` predicate is unit-testable without HTTP.
+- **No service / Notion-blocks change.** The two fields are never read by the
+  blocks builders — the middleware short-circuits before the service, and on a
+  clean request the extra props are ignored downstream.
+- **`SPAM_MIN_FILL_MS` is read fresh from env per call** (mirrors
+  `lib/resend/config.ts`); unset ⇒ default, so it's inert-safe in dev/test (tests
+  omit the timing field and fail open). It is **not** a Studio-Settings key.
+- **Frontend reuse.** `web-app/src/lib/anti-spam.tsx` exports the shared
+  `HoneypotField`, `honeypotSchema` (spread into each form's local zod schema), and
+  `useSubmitTimer()`. Wired into `pages/contact.tsx`,
+  `components/notify-dialog.tsx`, `components/newsletter-signup.tsx`, and the
+  order-form newsletter path (`pages/order-form.tsx`).
+
+Tests: `test/unit/spam-filter.test.ts` (predicate + middleware),
+`test/integration/contact.routes.test.ts` (honeypot silently dropped, no write),
+`test/integration/submission-rate-limit.routes.test.ts` (429 past the window), and
+the frontend form tests assert the hidden field + `elapsedMs` in the payload. **No
+new env var is required** (`SPAM_MIN_FILL_MS` is the one optional knob). This
+covers the fully-anonymous forms only; the order/appointment/order-scoped
+endpoints are out of scope for this layer.
+
 ## Development workflow
 
 ### Prerequisites
@@ -1865,6 +1917,12 @@ and in the maintainer's env without edits.
   `services/fitting-reminder.ts`, consumed by `sendDueFittingReminders` in
   `services/schedule.service.ts`. One-time: add a `Reminder Sent` checkbox to the
   Production Schedule database. See "Automated fitting reminders" above.
+- **Optional anti-spam env var:** `SPAM_MIN_FILL_MS` (default `2000`) — the minimum
+  plausible human fill time, in ms, for the public submission forms (contact /
+  notify / newsletter); a faster submit is silently dropped as a bot. `0` disables
+  the timing check (the hidden honeypot still applies). Read fresh from env in
+  `middlewares/spam-filter.ts`; **not** a Studio-Settings key. No other setup — the
+  honeypot + per-IP submission rate limit need no config. See "Invisible anti-spam".
 
 ## Quick reference — where things live
 
@@ -1903,6 +1961,7 @@ and in the maintainer's env without edits.
 | Change appointment slot logic / policy                 | `api-server/src/lib/appointments/availability.ts` (`computeSlots`) + `time.ts` + `settings.ts`; `services/appointments.service.ts` + `routes/appointments.ts` + `lib/google/*` (Calendar free/busy + event insert)                                                                                                                                                                                                                                                                                                                                                            |
 | Change the customer account portal (magic-link)        | `artifacts/web-app/src/pages/account.tsx` (+ `components/appointment-manage-panel.tsx`, shared with `pages/appointment-manage.tsx`) + `pages/account-login.tsx` (frontend); `api-server/src/services/account.service.ts` + `routes/account.ts` + `routes/account-verify.ts` + `middlewares/auth.ts` + `lib/auth/{tokens,cookies}.ts`; queries `findOrdersByEmail` / `findShopOrdersByEmail` + `listUpcomingAppointmentsByEmail` (`lib/google/calendar.repository.ts`, mapped via `lib/appointments/event-details.ts`) + `extractMeasurements` (`lib/notion/orders.schema.ts`) |
 | Change the newsletter opt-in                           | `artifacts/web-app/src/components/newsletter-signup.tsx` (footer field, in `footer.tsx`) + the intake checkbox in `pages/order-form.tsx`; `api-server/src/services/newsletter.service.ts` + `routes/newsletter.ts` + `lib/notion/newsletter.{blocks,repository}.ts` (writes to the **contact** database) + `newsletterWelcomeEmail` in `lib/resend/emails.ts`                                                                                                                                                                                                                 |
+| Change invisible anti-spam (honeypot/timing/limit)     | `api-server/src/middlewares/spam-filter.ts` (`isLikelySpam` + `spamFilter`) + `submissionRateLimiter` in `middlewares/rate-limit.ts`; applied in `routes/{contact,notify,newsletter}.ts`; frontend `web-app/src/lib/anti-spam.tsx` (`HoneypotField` / `honeypotSchema` / `useSubmitTimer`) wired into `pages/contact.tsx` + `components/{notify-dialog,newsletter-signup}.tsx` + `pages/order-form.tsx`. Fields `website` + `elapsedMs` on the contact/notify/newsletter request schemas in `openapi.yaml`                                                                    |
 | Change the mailing-list / Resend audience sync         | `api-server/src/lib/resend/audience.ts` (`upsertAudienceContact` → Resend Contacts API) + `audienceId()` in `lib/resend/config.ts`; wired best-effort from `services/newsletter.service.ts`. Campaigns are sent as Resend **Broadcasts** from the dashboard (no in-app sender). Marketing-email disclosure in `pages/privacy.tsx`                                                                                                                                                                                                                                             |
 | Add a page / route                                     | new `src/pages/*.tsx` + `<Route>` in `src/App.tsx`                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                            |
 | Add or rename a nav link                               | `NAV_LINKS` in `artifacts/web-app/src/components/navbar.tsx`                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                  |

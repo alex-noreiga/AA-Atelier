@@ -424,12 +424,11 @@ describe("Shop sizes", () => {
     );
     await userEvent.click(screen.getByTestId("notify-submit"));
 
-    expect(notifyMutate).toHaveBeenCalledWith({
-      data: {
-        email: "grace@example.com",
-        item: "Keyhole Test Dress",
-        size: "Adult S",
-      },
+    expect(notifyMutate).toHaveBeenCalledTimes(1);
+    expect(notifyMutate.mock.calls[0][0].data).toMatchObject({
+      email: "grace@example.com",
+      item: "Keyhole Test Dress",
+      size: "Adult S",
     });
   });
 
@@ -526,9 +525,13 @@ describe("Shop contact CTAs", () => {
     await userEvent.click(screen.getByTestId("notify-submit"));
 
     // No size — the whole variant is sold out.
-    expect(notifyMutate).toHaveBeenCalledWith({
-      data: { email: "grace@example.com", item: "Bow Fleece Soaker" },
+    expect(notifyMutate).toHaveBeenCalledTimes(1);
+    const { data } = notifyMutate.mock.calls[0][0];
+    expect(data).toMatchObject({
+      email: "grace@example.com",
+      item: "Bow Fleece Soaker",
     });
+    expect(data).not.toHaveProperty("size");
   });
 
   it("rejects a malformed email without calling the API", async () => {
