@@ -37,6 +37,7 @@ import {
 import { sendEmailBestEffort } from "../lib/resend/send.js";
 import { fromAddress, atelierInbox } from "../lib/resend/config.js";
 import { getStripeClient } from "../lib/stripe/client.js";
+import { bnplPaymentMethodTypes } from "../lib/stripe/payment-methods.js";
 import { siteBaseUrl } from "../lib/site.js";
 import { BadRequestError } from "../lib/errors.js";
 import { logger } from "../lib/logger.js";
@@ -200,9 +201,15 @@ export async function createCheckoutSession(
   const base = siteBaseUrl();
   const orderNumber = generateShopOrderNumber();
   const shippingOptions = await resolveShippingOptions(stripe);
+  // Optional buy-now-pay-later methods (Klarna / Affirm / Afterpay), when the
+  // atelier configures STRIPE_BNPL_METHODS. Stripe collects the shipping address
+  // below, which BNPL needs. Unset ⇒ undefined ⇒ dynamic payment methods (today's
+  // behavior). See lib/stripe/payment-methods.ts.
+  const paymentMethodTypes = bnplPaymentMethodTypes();
   const session = await stripe.checkout.sessions.create({
     mode: "payment",
     line_items: lineItems,
+    ...(paymentMethodTypes ? { payment_method_types: paymentMethodTypes } : {}),
     // Stripe Tax computes sales tax from the collected address (configure the
     // origin + default tax category in the Stripe Dashboard). Deposits stay
     // untaxed — tax is assessed on the final balance, not the deposit — so this

@@ -686,6 +686,26 @@ and `src/lib/notion/shop-orders.*`. Four things are load-bearing:
    the right match. No new env var; the atelier just adds the `Matching Add-ons`
    relation and links each soaker to its cloth.
 
+10. **Installment financing (BNPL) is an opt-in env list, priced by Stripe.** The
+    optional `STRIPE_BNPL_METHODS` (comma-separated from `klarna`, `affirm`,
+    `afterpay_clearpay`) offers buy-now-pay-later at checkout — Stripe pays the
+    studio **in full up front** and carries the installment risk, so nothing extra
+    reconciles on our side. `bnplPaymentMethodTypes()` (`lib/stripe/payment-methods.ts`,
+    the shipping-rate `STRIPE_SHIPPING_RATE_IDS` pattern) validates the list against
+    the supported set (unknown ids dropped + logged at `error`, like the shipping
+    resolver) and returns `["card", ...methods]`. **Applied to the shop cart and the
+    custom-order final balance only** — both collect an address (shipping / required
+    billing) that BNPL needs; deposits are partial pre-payments and stay card-only
+    (`taxed ? bnplPaymentMethodTypes() : undefined` in `invoice.service`). Load-bearing:
+    setting the var **pins** `payment_method_types` to card + these methods, which
+    overrides Stripe's dynamic payment methods on those sessions (other Dashboard
+    methods like Link won't appear); **unset ⇒ `payment_method_types` is omitted ⇒
+    dynamic methods, exactly as before** (degrade-safe). Card is always prepended and
+    an all-invalid list degrades to omitted, so a typo can never produce a card-less
+    checkout. Each method must **also** be enabled in the Stripe Dashboard, is
+    **mode-scoped** like the shipping rates, and Stripe hides an ineligible method
+    (currency/country/amount) itself, so no amount-gating lives here.
+
 The atelier must create the "Shop Orders" Notion database (properties in
 `shop-orders.blocks.ts`, including the `Order Number` rich_text property) and
 share the integration with it. Local testing uses Stripe test-mode keys +
@@ -2054,7 +2074,14 @@ and in the maintainer's env without edits.
     (a test-mode rate won't work with a live key, and vice-versa). The rate's
     currency must be USD to match the checkout session, or Stripe silently drops
     it. The atelier reprices by editing the rate's amount in the Dashboard (no
-    redeploy); a redeploy is only needed when the ids themselves change. Customer
+    redeploy); a redeploy is only needed when the ids themselves change.
+    Optionally, `STRIPE_BNPL_METHODS` — a comma-separated list of buy-now-pay-later
+    methods (`klarna`, `affirm`, `afterpay_clearpay`) to offer at checkout (shop
+    cart + custom-order balance; deposits stay card-only). Each must also be enabled
+    in the Stripe Dashboard (Settings → Payment methods) and is **mode-scoped** like
+    the shipping rates. Setting it pins the session's payment methods to card + these
+    (overriding dynamic payment methods on those sessions); unset ⇒ payment methods
+    stay dynamic (Dashboard-managed), unchanged. See "Working with Stripe". Customer
     notification emails also require
     `RESEND_API_KEY` and `RESEND_FROM_EMAIL` (the verified sender, e.g.
     `A.A Atelier <orders@a3iceanddance.com>`). The sending domain must be verified in
