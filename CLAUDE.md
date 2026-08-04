@@ -668,7 +668,7 @@ and `src/lib/notion/shop-orders.*`. Four things are load-bearing:
    lookup only serves orders placed after this shipped (older ones have no
    `Order Number`). Once the order ships, the atelier can add **carrier tracking**
    (three **optional, additive** properties the app only ever reads): `Tracking
-   Number` (rich_text), `Carrier` (rich_text, a display label), and `Tracking URL`
+Number` (rich_text), `Carrier` (rich_text, a display label), and `Tracking URL`
    (url). `findShopOrderByNumber` reads them via `readTracking` — gated on the
    number (a carrier/url with no number is meaningless, so it's dropped) — into
    `ShopOrderRecord.tracking`, which flows through the service to
