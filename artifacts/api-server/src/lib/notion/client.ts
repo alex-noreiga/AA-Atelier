@@ -18,6 +18,22 @@ export interface NotionClient {
   fetch(path: string, init?: RequestInit): Promise<Response>;
 }
 
+/**
+ * Throw when a Notion client has no database id — i.e. its `NOTION_*_DATABASE_ID`
+ * env var is unset. Every per-database repository guards its reads/writes with a
+ * thin local wrapper over this, so an unconfigured integration fails loudly with a
+ * pointed message instead of 404-ing against an empty id. The message is
+ * per-database (names the specific env var); only the check is shared.
+ */
+export function assertDatabaseConfigured(
+  client: NotionClient,
+  message: string,
+): void {
+  if (!client.databaseId) {
+    throw new Error(message);
+  }
+}
+
 function createNotionClient(config: NotionClientConfig): NotionClient {
   const { apiKey, databaseId } = config;
 

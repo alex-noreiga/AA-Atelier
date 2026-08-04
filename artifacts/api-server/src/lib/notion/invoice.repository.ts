@@ -8,6 +8,7 @@ import {
   getInvoicesNotionClient,
   getInvoiceLineItemsNotionClient,
   type NotionClient,
+  assertDatabaseConfigured,
 } from "./client.js";
 import {
   LINE_ITEM_INVOICE_RELATION_PROPERTY,
@@ -27,9 +28,10 @@ import {
 } from "./invoice-line-items.blocks.js";
 
 function assertConfigured(client: NotionClient, envVar: string): void {
-  if (!client.databaseId) {
-    throw new Error(`${envVar} is not configured for the invoice databases`);
-  }
+  assertDatabaseConfigured(
+    client,
+    `${envVar} is not configured for the invoice databases`,
+  );
 }
 
 /**

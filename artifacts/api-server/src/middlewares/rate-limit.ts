@@ -14,7 +14,7 @@ import rateLimit from "express-rate-limit";
 
 export const accountRateLimiter = rateLimit({
   windowMs: 15 * 60 * 1000, // 15 minutes
-  limit: 30, // per IP per window across the account auth routes
+  limit: 30, // per IP per window on the account overview route
   standardHeaders: "draft-7",
   legacyHeaders: false,
   message: { error: "Too many requests. Please try again in a few minutes." },

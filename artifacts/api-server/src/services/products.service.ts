@@ -103,7 +103,7 @@ export function groupVariants(
 }
 
 /**
- * Narrow the live Item Type options to those that actually have a card on the
+ * Narrow the live category options to those that actually have a card on the
  * shop, preserving Notion's ordering. Pure, so it can be unit-tested directly.
  * An option the team has defined but not yet stocked would otherwise render a
  * filter chip that leads to an empty grid.
@@ -119,8 +119,8 @@ export function visibleCategories(
 /**
  * Build the shop payload from the Product Categories records (the configured
  * path). Each variant's category + sized flag is resolved from its `Category`
- * relation via the record's page id; a variant with no link falls back to its
- * "Item Type" label. The chip list is the category names ordered by `Sort`,
+ * relation via the record's page id; a variant with no link keeps its raw
+ * (blank) category. The chip list is the category names ordered by `Sort`,
  * narrowed to those actually stocked. Pure, so it's unit-testable directly.
  */
 export function resolveFromCategories(
@@ -128,8 +128,8 @@ export function resolveFromCategories(
   records: CategoryRecord[],
 ): { products: ProductRecord[]; categories: string[] } {
   const byId = new Map(records.map((record) => [record.id, record]));
-  // Resolve the authoritative category name from the relation; keep the Item Type
-  // label when a row isn't linked (or its category was deleted).
+  // Resolve the authoritative category name from the relation; keep the raw
+  // (blank) category when a row isn't linked (or its category was deleted).
   const resolved = variants.map((variant) => {
     const record = variant.categoryId
       ? byId.get(variant.categoryId)

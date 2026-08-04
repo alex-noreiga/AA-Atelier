@@ -18,6 +18,7 @@ import {
   CONTACT_SUBJECT_PROPERTY,
   CONTACT_TYPE_PROPERTY,
   contactClientRelation,
+  emailVerifiedLine,
 } from "./contact.blocks.js";
 
 /** The "Request type" value that marks a row as a cancellation request. */
@@ -48,7 +49,7 @@ function buildMessageBody(row: CancellationRow): string {
     `Reason: ${row.reason?.trim() ? row.reason.trim() : "—"}`,
     // Legacy orders have no stored email to check against; the atelier should
     // confirm the requester before refunding an unverified cancellation.
-    `Email verified: ${row.emailVerified ? "yes" : "no (confirm requester)"} (${row.email})`,
+    emailVerifiedLine(row.emailVerified, row.email),
   ];
   return lines.join("\n");
 }

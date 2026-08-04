@@ -5,7 +5,7 @@ import { measurementChangeInput } from "@workspace/test-fixtures";
 // order lookup (identity + stage source), the inbox writer, and best-effort
 // send. The gates run for real between them.
 vi.mock("../../src/lib/notion/orders.repository.js", () => ({
-  findOrderForMeasurementChange: vi.fn(),
+  findOrderVerification: vi.fn(),
 }));
 vi.mock("../../src/lib/notion/measurement-change.repository.js", () => ({
   createMeasurementChangeRequest: vi.fn(),
@@ -18,7 +18,7 @@ vi.mock("../../src/lib/resend/send.js", () => ({
 }));
 
 import { submitMeasurementChangeRequest } from "../../src/services/measurement-change.service.js";
-import { findOrderForMeasurementChange } from "../../src/lib/notion/orders.repository.js";
+import { findOrderVerification } from "../../src/lib/notion/orders.repository.js";
 import { createMeasurementChangeRequest } from "../../src/lib/notion/measurement-change.repository.js";
 import { upsertClientByEmail } from "../../src/lib/notion/clients.repository.js";
 import { sendEmailBestEffort } from "../../src/lib/resend/send.js";
@@ -29,7 +29,7 @@ import {
   ValidationError,
 } from "../../src/lib/errors.js";
 
-const mockFind = vi.mocked(findOrderForMeasurementChange);
+const mockFind = vi.mocked(findOrderVerification);
 const mockWrite = vi.mocked(createMeasurementChangeRequest);
 const mockUpsertClient = vi.mocked(upsertClientByEmail);
 const mockSend = vi.mocked(sendEmailBestEffort);

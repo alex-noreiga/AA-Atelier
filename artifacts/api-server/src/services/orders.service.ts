@@ -24,20 +24,8 @@ import {
 } from "../lib/resend/emails.js";
 import { sendEmailBestEffort } from "../lib/resend/send.js";
 import { fromAddress, atelierInbox } from "../lib/resend/config.js";
+import { hasAllMeasurements } from "./measurements.js";
 import { logger } from "../lib/logger.js";
-
-const MEASUREMENT_FIELDS = [
-  "waist",
-  "bust",
-  "hips",
-  "height",
-  "bodyGirth",
-] as const;
-
-/** True when every body measurement is present as a number. */
-function hasAllMeasurements(input: CreateOrderInput): boolean {
-  return MEASUREMENT_FIELDS.every((field) => typeof input[field] === "number");
-}
 
 export async function getOrderStatus(
   orderNumber: string,

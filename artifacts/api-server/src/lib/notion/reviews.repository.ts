@@ -3,7 +3,11 @@
 // `NOTION_REVIEWS_DATABASE_ID` (via `getReviewsNotionClient`) rather than
 // reusing the contact client.
 
-import { getReviewsNotionClient, type NotionClient } from "./client.js";
+import {
+  getReviewsNotionClient,
+  assertDatabaseConfigured,
+  type NotionClient,
+} from "./client.js";
 import {
   buildReviewProperties,
   buildReviewPageBlocks,
@@ -11,11 +15,10 @@ import {
 } from "./reviews.blocks.js";
 
 function assertConfigured(client: NotionClient): void {
-  if (!client.databaseId) {
-    throw new Error(
-      "NOTION_REVIEWS_DATABASE_ID is not configured for the reviews database",
-    );
-  }
+  assertDatabaseConfigured(
+    client,
+    "NOTION_REVIEWS_DATABASE_ID is not configured for the reviews database",
+  );
 }
 
 export async function createReview(

@@ -4,7 +4,7 @@ import { describe, it, expect, vi } from "vitest";
 // gates → response schema parse → error handler) runs end-to-end without the
 // network. The service's gate logic runs for real.
 vi.mock("../../src/lib/notion/orders.repository.js", () => ({
-  findOrderForMeasurementChange: vi.fn(),
+  findOrderVerification: vi.fn(),
 }));
 vi.mock("../../src/lib/notion/measurement-change.repository.js", () => ({
   createMeasurementChangeRequest: vi.fn(),
@@ -13,10 +13,10 @@ vi.mock("../../src/lib/notion/measurement-change.repository.js", () => ({
 import request from "supertest";
 import { measurementChangeInput } from "@workspace/test-fixtures";
 import app from "../../src/app.js";
-import { findOrderForMeasurementChange } from "../../src/lib/notion/orders.repository.js";
+import { findOrderVerification } from "../../src/lib/notion/orders.repository.js";
 import { createMeasurementChangeRequest } from "../../src/lib/notion/measurement-change.repository.js";
 
-const mockFind = vi.mocked(findOrderForMeasurementChange);
+const mockFind = vi.mocked(findOrderVerification);
 const mockWrite = vi.mocked(createMeasurementChangeRequest);
 
 const STAGES = ["Consultation", "Sketching", "Cutting/Pinning", "Delivery"];
