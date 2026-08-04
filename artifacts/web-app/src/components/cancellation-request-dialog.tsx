@@ -1,4 +1,3 @@
-import { useState } from "react";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
@@ -18,7 +17,11 @@ import {
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
-import { useToast } from "@/hooks/use-toast";
+import {
+  useRequestDialog,
+  REQUEST_FORM_INPUT_CLASS,
+  REQUEST_FORM_TEXTAREA_CLASS,
+} from "@/hooks/use-request-dialog";
 
 // Form-friendly schema. Email is verified against the order server-side; the
 // reason is optional context passed through to the atelier. The mapped output is
@@ -51,53 +54,40 @@ export function CancellationRequestDialog({
   orderNumber,
   variant,
 }: CancellationRequestDialogProps) {
-  const [open, setOpen] = useState(false);
-  const [submitted, setSubmitted] = useState(false);
-  const [formError, setFormError] = useState<string | null>(null);
-  const { toast } = useToast();
-
-  const mutationOptions = {
-    mutation: {
-      onSuccess: () => setSubmitted(true),
-      onError: (error: {
-        status?: number;
-        data?: { error?: string; message?: string };
-        message?: string;
-      }) => {
-        // error.data is ErrorEnvelope { error } (400/403/409/500) or
-        // OrderNotFound { message } (404) — read whichever field is present.
-        const data = error.data;
-        const message =
-          (data && ("error" in data ? data.error : data.message)) ||
-          error.message ||
-          "Something went wrong. Please try again.";
-        // 403 (email mismatch) and 409 (already delivered) are expected,
-        // actionable outcomes — show them in the form. Anything else is
-        // unexpected, so raise a toast as the other flows do.
-        if (error.status === 403 || error.status === 409) {
-          setFormError(message);
-        } else {
-          setFormError(null);
-          toast({
-            variant: "destructive",
-            title: "Couldn't submit your request",
-            description: message,
-          });
-        }
-      },
-    },
-  };
-
-  const customRequest = useCreateOrderCancellationRequest(mutationOptions);
-  const shopRequest = useCreateShopOrderCancellationRequest(mutationOptions);
-  const request = variant === "shop" ? shopRequest : customRequest;
-
   const {
     register,
     handleSubmit,
     reset,
     formState: { errors },
   } = useForm<FormValues>({ resolver: zodResolver(formSchema) });
+
+  // 403 (email mismatch) and 409 (already delivered) are expected, actionable
+  // outcomes shown inline; anything else raises a toast.
+  const {
+    open,
+    setOpen,
+    submitted,
+    setSubmitted,
+    formError,
+    setFormError,
+    handleError,
+    onOpenChange,
+  } = useRequestDialog({
+    reset,
+    inlineStatuses: [403, 409],
+    toastTitle: "Couldn't submit your request",
+  });
+
+  const mutationOptions = {
+    mutation: {
+      onSuccess: () => setSubmitted(true),
+      onError: handleError,
+    },
+  };
+
+  const customRequest = useCreateOrderCancellationRequest(mutationOptions);
+  const shopRequest = useCreateShopOrderCancellationRequest(mutationOptions);
+  const request = variant === "shop" ? shopRequest : customRequest;
 
   const onSubmit = (values: FormValues) => {
     setFormError(null);
@@ -107,16 +97,6 @@ export function CancellationRequestDialog({
       // Omit an empty reason so the server never receives an empty string.
       data: { email, ...(reason?.trim() ? { reason: reason.trim() } : {}) },
     });
-  };
-
-  const onOpenChange = (next: boolean) => {
-    setOpen(next);
-    if (!next) {
-      // Closing discards the previous attempt, so reopening starts clean.
-      setSubmitted(false);
-      setFormError(null);
-      reset();
-    }
   };
 
   return (
@@ -200,7 +180,7 @@ export function CancellationRequestDialog({
                     {...register("email")}
                     placeholder="you@example.com"
                     data-testid="cancellation-email"
-                    className="mt-1.5 bg-transparent border-0 border-b border-border rounded-none px-0 py-3 focus-visible:ring-0 focus-visible:border-primary transition-colors shadow-none"
+                    className={REQUEST_FORM_INPUT_CLASS}
                   />
                   {errors.email && (
                     <p className="text-destructive text-xs mt-1">
@@ -225,7 +205,7 @@ export function CancellationRequestDialog({
                     placeholder="Anything the atelier should know about this cancellation..."
                     rows={3}
                     data-testid="cancellation-reason"
-                    className="mt-1.5 bg-transparent border border-border rounded-lg px-3 py-2 text-sm focus-visible:ring-0 focus-visible:border-primary transition-colors resize-none shadow-none"
+                    className={REQUEST_FORM_TEXTAREA_CLASS}
                   />
                 </div>
 
