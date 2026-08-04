@@ -3,8 +3,7 @@
 // the staff member's Google Calendar — so the durable handle is the event id,
 // carried (with the staff calendar + customer email) inside a signed token that
 // the confirmation email embeds in a "manage your appointment" link. Possession
-// of the signed link is the authorization, exactly like the account portal's
-// magic link.
+// of the signed link is the authorization, like a magic link.
 //
 // Every action re-reads the event live from Google (never trusting the token's
 // copy of anything but the ids), and a reschedule re-runs the same `computeSlots`
@@ -61,7 +60,7 @@ import {
 } from "../lib/errors.js";
 
 /** The public origin the manage link points back at (also used for the Stripe
- * redirect + the magic link). Empty when unset. */
+ * redirect). Empty when unset. */
 function publicBaseUrl(): string {
   return (process.env.PUBLIC_BASE_URL ?? "").replace(/\/+$/, "");
 }

@@ -5,7 +5,11 @@
 // changes without a redeploy). On a fetch error we fall back to the cached list
 // rather than failing the request.
 
-import { getNotionClient, type NotionClient } from "./client.js";
+import {
+  getNotionClient,
+  assertDatabaseConfigured,
+  type NotionClient,
+} from "./client.js";
 import { buildOrderProperties, buildOrderPageBlocks } from "./orders.blocks.js";
 import { normalizeEmail } from "../email.js";
 import {
@@ -70,11 +74,10 @@ function generateOrderNumber(): string {
 }
 
 function assertConfigured(client: NotionClient): void {
-  if (!client.databaseId) {
-    throw new Error(
-      "NOTION_ORDERS_DATABASE_ID is not configured for the orders database",
-    );
-  }
+  assertDatabaseConfigured(
+    client,
+    "NOTION_ORDERS_DATABASE_ID is not configured for the orders database",
+  );
 }
 
 export async function createOrder(
@@ -614,10 +617,6 @@ export async function findOrderVerification(
     stages,
   };
 }
-
-/** @deprecated Prefer {@link findOrderVerification}. Kept so the measurement-
- * change flow's existing imports (and their tests) keep resolving. */
-export { findOrderVerification as findOrderForMeasurementChange };
 
 /** What the atelier cancellation-refund flow needs about a custom order: the
  * page id (to mark it cancelled), the order name + email (for the confirmation

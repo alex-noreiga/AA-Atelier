@@ -8,6 +8,7 @@ import { logger } from "../logger.js";
 import {
   getProductionScheduleNotionClient,
   type NotionClient,
+  assertDatabaseConfigured,
 } from "./client.js";
 import {
   buildMilestoneProperties,
@@ -46,11 +47,10 @@ interface MilestoneQueryResponse {
 }
 
 function assertConfigured(client: NotionClient): void {
-  if (!client.databaseId) {
-    throw new Error(
-      "NOTION_PRODUCTION_SCHEDULE_DATABASE_ID is not configured for the production-schedule database",
-    );
-  }
+  assertDatabaseConfigured(
+    client,
+    "NOTION_PRODUCTION_SCHEDULE_DATABASE_ID is not configured for the production-schedule database",
+  );
 }
 
 /**

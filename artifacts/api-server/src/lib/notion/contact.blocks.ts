@@ -39,6 +39,13 @@ export function contactClientRelation(
     : {};
 }
 
+/** The "Email verified: …" body line shared by the order-scoped contact writers
+ * (cancellation / measurement-change / return). A legacy order with no stored
+ * email reads "no (confirm requester)", the atelier's cue to vet the requester. */
+export function emailVerifiedLine(verified: boolean, email: string): string {
+  return `Email verified: ${verified ? "yes" : "no (confirm requester)"} (${email})`;
+}
+
 /** Validated contact-message payload, derived from the OpenAPI contract. */
 export type CreateContactInput = z.infer<typeof CreateContactMessageBody>;
 

@@ -22,6 +22,7 @@ import {
   CONTACT_SUBJECT_PROPERTY,
   CONTACT_TYPE_PROPERTY,
   contactClientRelation,
+  emailVerifiedLine,
 } from "./contact.blocks.js";
 import { normalizeEmail } from "../email.js";
 
@@ -63,7 +64,7 @@ function buildMessageBody(row: MeasurementChangeRow): string {
     `Note: ${request.note?.trim() ? request.note.trim() : "—"}`,
     // Legacy orders have no stored email to check against; the atelier should
     // confirm the requester before applying an unverified change.
-    `Email verified: ${emailVerified ? "yes" : "no (confirm requester)"} (${request.email})`,
+    emailVerifiedLine(emailVerified, request.email),
   ];
   return lines.join("\n");
 }

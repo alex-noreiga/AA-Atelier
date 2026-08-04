@@ -18,15 +18,16 @@
 // notification), the same convention every other submission flow follows; the
 // Notion row stays the source of truth, so a mail failure never fails the request.
 
-import { findOrderForMeasurementChange } from "../lib/notion/orders.repository.js";
+import { findOrderVerification } from "../lib/notion/orders.repository.js";
 import { createMeasurementChangeRequest } from "../lib/notion/measurement-change.repository.js";
 import type { CreateMeasurementChangeInput } from "../lib/notion/measurement-change.blocks.js";
 import { upsertClientByEmail } from "../lib/notion/clients.repository.js";
 import { measurementsLocked } from "./measurement-lock.js";
+import { resolveEmailVerification } from "./order-identity.js";
+import { hasAllMeasurements } from "./measurements.js";
 import { logger } from "../lib/logger.js";
 import {
   NotFoundError,
-  ForbiddenError,
   MeasurementsLockedError,
   ValidationError,
 } from "../lib/errors.js";
@@ -36,19 +37,6 @@ import {
 } from "../lib/resend/emails.js";
 import { sendEmailBestEffort } from "../lib/resend/send.js";
 import { fromAddress, atelierInbox } from "../lib/resend/config.js";
-
-const MEASUREMENT_FIELDS = [
-  "waist",
-  "bust",
-  "hips",
-  "height",
-  "bodyGirth",
-] as const;
-
-/** True when every body measurement is present as a number. */
-function hasAllMeasurements(input: CreateMeasurementChangeInput): boolean {
-  return MEASUREMENT_FIELDS.every((field) => typeof input[field] === "number");
-}
 
 export async function submitMeasurementChangeRequest(
   orderNumber: string,
@@ -61,23 +49,13 @@ export async function submitMeasurementChangeRequest(
     );
   }
 
-  const order = await findOrderForMeasurementChange(orderNumber);
+  const order = await findOrderVerification(orderNumber);
   if (!order) {
     throw new NotFoundError("We couldn't find an order with that number.");
   }
 
-  // Identity gate. Compare case-insensitively/trimmed. No stored email (legacy
-  // order) -> accept but flag unverified; a present-but-different email -> 403.
-  const storedEmail = order.email.trim().toLowerCase();
-  const suppliedEmail = input.email.trim().toLowerCase();
-  let emailVerified: boolean;
-  if (!storedEmail) {
-    emailVerified = false;
-  } else if (storedEmail === suppliedEmail) {
-    emailVerified = true;
-  } else {
-    throw new ForbiddenError("That email doesn't match the one on this order.");
-  }
+  // Identity gate (403 on a mismatch; legacy no-email orders accepted unverified).
+  const emailVerified = resolveEmailVerification(order.email, input.email);
 
   if (measurementsLocked(order.currentStage, order.stages)) {
     throw new MeasurementsLockedError(

@@ -38,7 +38,7 @@ test.describe("Production smoke: site navigation", () => {
       heading: "Shipping & Returns",
       name: "Shipping & Returns",
     },
-    // Account portal sign-in shell (the magic-link request form) — the form
+    // Account portal sign-in shell (the account sign-in form) — the form
     // renders read-only; we never submit it, so no email is sent.
     { path: "/account/login", testId: "input-email", name: "Account sign-in" },
   ];

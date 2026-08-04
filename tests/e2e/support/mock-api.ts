@@ -14,16 +14,6 @@ const json = (route: Route, status: number, body: unknown) =>
     body: JSON.stringify(body),
   });
 
-export interface OrderStatusPayload {
-  orderNumber: string;
-  orderName: string;
-  currentStage: string;
-  stages: string[];
-  measurementsLocked: boolean;
-  estimatedCompletion?: string;
-  milestones?: { stage: string; targetDate: string }[];
-}
-
 /**
  * Mock `GET /api/orders/:orderNumber`. Records the order numbers actually
  * requested so a test can assert client-side normalization (trim/uppercase).

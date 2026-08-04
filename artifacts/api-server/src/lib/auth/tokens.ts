@@ -33,7 +33,7 @@ export type TokenPurpose = "appointment";
 export const APPOINTMENT_MANAGE_TTL_SECONDS = 60 * 24 * 60 * 60;
 
 /** Extra, purpose-specific claims signed alongside the email. Only appointment
- * links use these today (the account tokens carry email + purpose alone). */
+ * manage-links use these today. */
 export interface TokenClaims {
   /** The Google Calendar event id the appointment link acts on. */
   eventId?: string;
@@ -53,8 +53,9 @@ function secret(): string {
   return process.env.SESSION_SECRET ?? "";
 }
 
-/** Whether the portal's signing secret is configured. When false the sign-in
- * flow is disabled (the route reports it) and verification always fails. */
+/** Whether the appointment manage-link signing secret (`SESSION_SECRET`) is
+ * configured. When false, manage links are omitted and verification always
+ * fails. */
 export function authConfigured(): boolean {
   return secret().length > 0;
 }
@@ -97,8 +98,8 @@ export function signToken(
  * signature is valid, the purpose matches, and it hasn't expired — otherwise
  * null. Never throws: any malformed input, bad signature, wrong purpose, or
  * expiry yields null so callers treat a verification failure uniformly. The
- * account routes read only `.email`; the appointment routes also read the
- * `eventId` / `staff` claims (and validate they're present).
+ * appointment routes read the `eventId` / `staff` claims (and validate they're
+ * present).
  */
 export function verifyToken(
   token: string | undefined | null,

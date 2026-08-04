@@ -21,8 +21,9 @@ import { findShopOrderVerification } from "../lib/notion/shop-orders.repository.
 import { createReturnRequest } from "../lib/notion/return-request.repository.js";
 import type { CreateReturnInput } from "../lib/notion/return-request.blocks.js";
 import { upsertClientByEmail } from "../lib/notion/clients.repository.js";
+import { resolveEmailVerification } from "./order-identity.js";
 import { logger } from "../lib/logger.js";
-import { NotFoundError, ForbiddenError } from "../lib/errors.js";
+import { NotFoundError } from "../lib/errors.js";
 import {
   returnRequestConfirmationEmail,
   returnRequestNotificationEmail,
@@ -39,18 +40,8 @@ export async function submitReturnRequest(
     throw new NotFoundError("We couldn't find a shop order with that number.");
   }
 
-  // Identity gate. Compare case-insensitively/trimmed. No stored email (legacy
-  // order) -> accept but flag unverified; a present-but-different email -> 403.
-  const storedEmail = order.email.trim().toLowerCase();
-  const suppliedEmail = input.email.trim().toLowerCase();
-  let emailVerified: boolean;
-  if (!storedEmail) {
-    emailVerified = false;
-  } else if (storedEmail === suppliedEmail) {
-    emailVerified = true;
-  } else {
-    throw new ForbiddenError("That email doesn't match the one on this order.");
-  }
+  // Identity gate (403 on a mismatch; legacy no-email orders accepted unverified).
+  const emailVerified = resolveEmailVerification(order.email, input.email);
 
   // Best-effort: link the request to the customer's Client CRM record (dedupe by
   // email). This customer placed the order, so a new CRM row defaults to

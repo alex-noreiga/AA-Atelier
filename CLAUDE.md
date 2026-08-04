@@ -1607,14 +1607,18 @@ first-use env read, the narrow injectable `DbClient` seam — `query` + `end` �
 repos are driver-agnostic and fakeable like `NotionClient`; test seams
 `__setDbForTests` / `__resetDb`). Load-bearing points:
 
-1. **Only `processed_payments` is wired today.** The single migration
+1. **Three tables are wired today.** The single migration
    (`supabase/migrations/0001_init.sql`) provisions four tables —
-   `schema_migrations`, `clients`, `order_index`, `processed_payments` — but only
-   **`processed_payments`** has a repository and a caller. `clients` and
-   `order_index` are **schema-ahead-of-code**: the intended email-keyed
-   customer/order discovery index for the account portal, not yet written or read
-   by anything (the portal still reads Notion directly). Don't document them as
-   live; there is also **no backfill script** (the word appears only in comments).
+   `schema_migrations`, `clients`, `order_index`, `processed_payments`. All three
+   data tables have a repository and callers: `processed_payments` for Stripe
+   idempotency (below), and `clients` + `order_index` as the email-keyed
+   customer/order discovery index for the account portal — written **best-effort**
+   on order/checkout (`upsertClientIndex` / `writeOrderIndex`, from
+   `orders.service` + `checkout.service`) and read by the overview
+   (`findOrderRefsByEmail`, `account.service`). When Postgres is unset the index
+   no-ops and the portal falls back to reading Notion directly. A one-off
+   `backfill-order-index.ts` (`pnpm db:backfill`) seeds the index from existing
+   Notion orders.
 
 2. **`processed_payments` is atomic Stripe idempotency for shop orders.**
    `lib/db/processed-payments.repository.ts` — `claimPayment` (`insert … on

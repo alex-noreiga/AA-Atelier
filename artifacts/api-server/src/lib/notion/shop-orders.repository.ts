@@ -4,7 +4,11 @@
 // re-delivered `checkout.session.completed` event does not create a duplicate.
 
 import type Stripe from "stripe";
-import { getShopOrdersNotionClient, type NotionClient } from "./client.js";
+import {
+  getShopOrdersNotionClient,
+  assertDatabaseConfigured,
+  type NotionClient,
+} from "./client.js";
 import { normalizeEmail } from "../email.js";
 import {
   buildShopOrderProperties,
@@ -56,11 +60,10 @@ const STATUS_CACHE_TTL_MS = 60_000;
 let cachedStatuses: { statuses: string[]; fetchedAt: number } | null = null;
 
 function assertConfigured(client: NotionClient): void {
-  if (!client.databaseId) {
-    throw new Error(
-      "NOTION_SHOP_ORDERS_DATABASE_ID is not configured for the shop-orders database",
-    );
-  }
+  assertDatabaseConfigured(
+    client,
+    "NOTION_SHOP_ORDERS_DATABASE_ID is not configured for the shop-orders database",
+  );
 }
 
 function readRichText(prop: NotionReadProperty | undefined): string {

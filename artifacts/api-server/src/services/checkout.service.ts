@@ -206,7 +206,8 @@ export async function createCheckoutSession(
     // Stripe Tax computes sales tax from the collected address (configure the
     // origin + default tax category in the Stripe Dashboard). Deposits stay
     // untaxed — tax is assessed on the final balance, not the deposit — so this
-    // is deliberately only on the shop cart, not deposit.service.
+    // is deliberately only on the shop cart, not the custom-order deposit
+    // checkout (invoice.service).
     automatic_tax: { enabled: true },
     // Let the atelier run sales/comps: Stripe renders a promo-code box on the
     // hosted page and applies codes created in the Stripe Dashboard. No code or
@@ -244,7 +245,7 @@ interface ReceiptLine {
 export interface CheckoutSessionView {
   status: string;
   orderNumber?: string;
-  /** "shop" or "deposit" (from the session's metadata.kind). */
+  /** "shop" or "custom_payment" (from the session's metadata.kind). */
   kind?: string;
   email?: string;
   currency?: string;

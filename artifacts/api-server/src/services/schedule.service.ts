@@ -50,11 +50,6 @@ import {
 import { sendEmailBestEffort } from "../lib/resend/send.js";
 import { fromAddress } from "../lib/resend/config.js";
 
-// StageMilestone now lives with the other Production Schedule domain types in
-// production-schedule.blocks.ts (so the milestone reader and writer share it);
-// re-export it here to keep this module's existing import path working.
-export type { StageMilestone } from "../lib/notion/production-schedule.blocks.js";
-
 export interface MilestoneGenerationResult {
   ordersProcessed: number;
   milestonesCreated: number;

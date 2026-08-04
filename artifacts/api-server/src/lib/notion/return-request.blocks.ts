@@ -21,6 +21,7 @@ import {
   CONTACT_SUBJECT_PROPERTY,
   CONTACT_TYPE_PROPERTY,
   contactClientRelation,
+  emailVerifiedLine,
 } from "./contact.blocks.js";
 import { NOTIFY_ITEM_PROPERTY } from "./notify.blocks.js";
 
@@ -67,7 +68,7 @@ function buildMessageBody(row: ReturnRequestRow): string {
     `Note: ${request.note?.trim() ? request.note.trim() : "—"}`,
     // Legacy orders have no stored email to check against; the atelier should
     // confirm the requester before actioning an unverified request.
-    `Email verified: ${emailVerified ? "yes" : "no (confirm requester)"} (${request.email})`,
+    emailVerifiedLine(emailVerified, request.email),
   );
   return lines.join("\n");
 }

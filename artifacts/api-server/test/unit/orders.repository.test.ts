@@ -183,12 +183,12 @@ describe("invoice relation mapping", () => {
   });
 });
 
-describe("findOrderForMeasurementChange", () => {
+describe("findOrderVerification", () => {
   it("returns null for an empty/whitespace number without calling Notion", async () => {
     const client = makeFakeClient(() => {
       throw new Error("should not fetch");
     });
-    expect(await repo.findOrderForMeasurementChange("   ", client)).toBeNull();
+    expect(await repo.findOrderVerification("   ", client)).toBeNull();
     expect(client.calls).toHaveLength(0);
   });
 
@@ -213,7 +213,7 @@ describe("findOrderForMeasurementChange", () => {
       throw new Error(`unexpected path ${path}`);
     });
 
-    const verification = await repo.findOrderForMeasurementChange(
+    const verification = await repo.findOrderVerification(
       "  000002  ",
       client,
     );
@@ -233,7 +233,7 @@ describe("findOrderForMeasurementChange", () => {
       });
     });
 
-    const verification = await repo.findOrderForMeasurementChange(
+    const verification = await repo.findOrderVerification(
       "000002",
       client,
     );
@@ -246,7 +246,7 @@ describe("findOrderForMeasurementChange", () => {
       return jsonResponse({ results: [] });
     });
     expect(
-      await repo.findOrderForMeasurementChange("ORD-NOPE", client),
+      await repo.findOrderVerification("ORD-NOPE", client),
     ).toBeNull();
   });
 });

@@ -14,7 +14,6 @@
 // writes these databases — it only reads them to build invoice lines.
 
 // --- costing (custom orders) ---
-export const COSTING_ITEM_TITLE_PROPERTY = "Item"; // title
 export const COSTING_LABOR_COST_PROPERTY = "Labor Cost"; // formula (number)
 // The margin-loaded price the invoice total reconciles to. Its formula folds in
 // the profit margin (and, for Production rows, selling fees) — the app reads the
