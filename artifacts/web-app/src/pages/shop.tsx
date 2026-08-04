@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { Link, useParams, useLocation } from "wouter";
-import { ArrowRight, Bell, Loader2, PenLine } from "lucide-react";
+import { ArrowRight, Bell, Loader2, PenLine, Search } from "lucide-react";
 import {
   useGetProducts,
   type Product,
@@ -9,6 +9,7 @@ import {
 import { NotifyDialog } from "@/components/notify-dialog";
 import { AddToCartButton } from "@/components/add-to-cart";
 import { SizeSelector } from "@/components/size-selector";
+import { Input } from "@/components/ui/input";
 import { PageShell } from "@/components/page-shell";
 import { CtaLink } from "@/components/cta";
 import { Seo, StructuredData, SITE_ORIGIN } from "@/components/seo";
@@ -83,6 +84,19 @@ export function resolveAddOns(
 
 function testId(value: string): string {
   return value.toLowerCase().replace(/\s+/g, "-");
+}
+
+/** Case-insensitive match of a search query against the names shown on a
+ * product's card — its title and each variant's name (colorways/styles) — so a
+ * shopper can find a piece by anything it's called. An empty/whitespace query
+ * matches everything. Pure, so it's unit-tested. */
+export function matchesQuery(product: Product, query: string): boolean {
+  const q = query.trim().toLowerCase();
+  if (q === "") return true;
+  const haystack = [product.title, ...product.variants.map((v) => v.name)]
+    .join(" ")
+    .toLowerCase();
+  return haystack.includes(q);
 }
 
 /** A single photo, the whole gallery, or a monogram placeholder. */
@@ -533,6 +547,7 @@ function ProductSeo({ product }: { product: Product }) {
  */
 export default function Shop() {
   const [filter, setFilter] = useState<string>(ALL);
+  const [query, setQuery] = useState("");
   const params = useParams();
   const [, navigate] = useLocation();
   const { data, isLoading, isError } = useGetProducts();
@@ -552,10 +567,13 @@ export default function Shop() {
   // A category can vanish between refetches (the team retires an Item Type);
   // fall back to "All" rather than stranding the user on a dead chip.
   const active = categories.includes(filter) ? filter : ALL;
-  const visible =
-    active === ALL
-      ? products
-      : products.filter((product) => product.category === active);
+  // The grid is the catalogue narrowed by both the category chip and the search
+  // box — a piece has to satisfy both to show.
+  const visible = products.filter(
+    (product) =>
+      (active === ALL || product.category === active) &&
+      matchesQuery(product, query),
+  );
 
   return (
     <PageShell align="top">
@@ -580,9 +598,36 @@ export default function Shop() {
           </p>
         </div>
 
+        {/* Search box — client-side filter over the loaded catalogue, matching a
+            piece by name. Shown once there's more than one item to sift through. */}
+        {!isLoading && !isError && products.length > 1 && (
+          <div className="mt-14 mx-auto w-full max-w-sm">
+            <div className="relative">
+              <Search
+                className="pointer-events-none absolute left-4 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground"
+                aria-hidden
+              />
+              <Input
+                type="search"
+                value={query}
+                onChange={(event) => setQuery(event.target.value)}
+                placeholder="Search pieces by name"
+                aria-label="Search the shop by name"
+                data-testid="shop-search"
+                className="h-11 rounded-full border-border/70 pl-11 pr-4 text-sm"
+              />
+            </div>
+          </div>
+        )}
+
         {/* Category filter — only meaningful once there's more than one category */}
         {categories.length > 2 && (
-          <div className="mt-14 flex flex-wrap items-center justify-center gap-3">
+          <div
+            className={cn(
+              "flex flex-wrap items-center justify-center gap-3",
+              products.length > 1 ? "mt-6" : "mt-14",
+            )}
+          >
             {categories.map((category) => (
               <button
                 key={category}
@@ -615,13 +660,21 @@ export default function Shop() {
             We couldn't load current stock just now. Please try again in a
             moment.
           </p>
-        ) : visible.length === 0 ? (
+        ) : products.length === 0 ? (
           <p
             className="mt-16 text-center text-muted-foreground font-light"
             data-testid="shop-empty"
           >
             The shop is restocking. Commission something bespoke in the
             meantime.
+          </p>
+        ) : visible.length === 0 ? (
+          <p
+            className="mt-16 text-center text-muted-foreground font-light"
+            data-testid="shop-no-results"
+          >
+            No pieces match your search. Try a different term or clear the
+            filters.
           </p>
         ) : (
           <div className="mt-12 grid gap-8 sm:grid-cols-2 lg:grid-cols-3">
