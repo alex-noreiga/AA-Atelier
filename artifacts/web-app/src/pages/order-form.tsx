@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useRef, useState } from "react";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
@@ -18,6 +18,7 @@ import { SuccessScreen } from "@/components/success-screen";
 import { Seo } from "@/components/seo";
 import { ROUTE_SEO } from "@/lib/seo-routes";
 import { isRushNeededBy, RUSH_SURCHARGE_NOTE } from "@/lib/rush";
+import { useAnalytics, AnalyticsEvent } from "@/lib/analytics";
 import { useSubmitTimer } from "@/lib/anti-spam";
 import { useToast } from "@/hooks/use-toast";
 import {
@@ -156,6 +157,15 @@ export default function OrderForm() {
   const subscribeNewsletter = useSubscribeNewsletter();
   const newsletterElapsedMs = useSubmitTimer();
 
+  const analytics = useAnalytics();
+  // Funnel-start fires once, on the customer's first interaction with the form.
+  const formStarted = useRef(false);
+  const onFormStart = () => {
+    if (formStarted.current) return;
+    formStarted.current = true;
+    analytics(AnalyticsEvent.OrderFormStart);
+  };
+
   const {
     register,
     handleSubmit,
@@ -202,6 +212,16 @@ export default function OrderForm() {
     // A rush order is derived from the needed-by date (the superRefine above
     // guarantees the surcharge was acknowledged when this is true).
     const rush = isRushNeededBy(neededBy);
+
+    // Funnel-submit: non-identifying shape of the order only (no name/email/
+    // phone/measurements). Fired client-side before the network call.
+    analytics(AnalyticsEvent.OrderFormSubmit, {
+      rush,
+      measurementMode,
+      hasReferral: Boolean(referralCode?.trim()),
+      hasReferenceImages: referenceImageIds.length > 0,
+      subscribeNewsletter: Boolean(optIn),
+    });
 
     // Opt-in rides alongside the order rather than through it: a separate,
     // best-effort call keyed to the same email, so the order contract stays
@@ -338,6 +358,8 @@ export default function OrderForm() {
         <form
           noValidate
           onSubmit={handleSubmit(onSubmit)}
+          onFocusCapture={onFormStart}
+          onChangeCapture={onFormStart}
           className="space-y-12"
         >
           <section>

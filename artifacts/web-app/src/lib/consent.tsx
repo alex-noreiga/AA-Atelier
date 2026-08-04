@@ -87,3 +87,13 @@ export function useConsent(): ConsentContextValue {
   }
   return context;
 }
+
+/**
+ * Like {@link useConsent}, but returns `null` instead of throwing when rendered
+ * outside a `ConsentProvider`. For consumers that must never crash a component
+ * over a missing provider (e.g. analytics, which treats "no provider" the same
+ * as "no consent" and simply emits nothing).
+ */
+export function useOptionalConsent(): ConsentContextValue | null {
+  return useContext(ConsentContext);
+}
