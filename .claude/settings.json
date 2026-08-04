@@ -1,0 +1,16 @@
+{
+  "hooks": {
+    "PostToolUse": [
+      {
+        "matcher": "Write|Edit",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "f=$(jq -r '.tool_input.file_path // .tool_response.filePath // empty'); case \"$f\" in */CLAUDE.md|CLAUDE.md) pnpm exec prettier --write \"$f\" >/dev/null 2>&1;; esac; true",
+            "statusMessage": "Formatting CLAUDE.md"
+          }
+        ]
+      }
+    ]
+  }
+}

@@ -27,6 +27,14 @@ export const SHOP_ORDER_CLIENT_PROPERTY = "Client"; // relation -> Client CRM
 // order's `Cancelled` checkbox — read back so the tracking page shows a
 // cancelled state. See `services/order-cancellation.service.ts`.
 export const SHOP_ORDER_CANCELLED_PROPERTY = "Cancelled"; // checkbox
+// Carrier tracking, filled in by the atelier once the order ships. All three are
+// additive and optional (absent until set): the number is what's shown to the
+// customer, the URL makes it a clickable link, and the carrier is a display
+// label. The app never writes these — they're an atelier signal, read back so
+// the tracking page can surface them. See "Shop-order tracking" in CLAUDE.md.
+export const SHOP_ORDER_TRACKING_NUMBER_PROPERTY = "Tracking Number"; // rich_text
+export const SHOP_ORDER_TRACKING_CARRIER_PROPERTY = "Carrier"; // rich_text
+export const SHOP_ORDER_TRACKING_URL_PROPERTY = "Tracking URL"; // url
 
 /**
  * A human-readable shop order number the customer can track their order by

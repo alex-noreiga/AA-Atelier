@@ -5,6 +5,7 @@
 import {
   findShopOrderByNumber,
   fetchLiveShopOrderStatuses,
+  type ShopOrderTracking,
 } from "../lib/notion/shop-orders.repository.js";
 import { NotFoundError } from "../lib/errors.js";
 
@@ -14,6 +15,7 @@ export interface ShopOrderStatusView {
   statuses: string[];
   total?: number;
   cancelled?: boolean;
+  tracking?: ShopOrderTracking;
 }
 
 export async function getShopOrderStatus(
@@ -41,5 +43,6 @@ export async function getShopOrderStatus(
     statuses: timeline,
     ...(order.total !== undefined ? { total: order.total } : {}),
     ...(order.cancelled ? { cancelled: true } : {}),
+    ...(order.tracking ? { tracking: order.tracking } : {}),
   };
 }

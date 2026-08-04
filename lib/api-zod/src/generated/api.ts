@@ -363,7 +363,12 @@ export const GetShopOrderStatusResponse = zod.object({
   "status": zod.string().describe('The order\'s current fulfilment status.'),
   "statuses": zod.array(zod.string()).describe('The live ordered list of possible fulfilment statuses (read from the Notion \"Status\" workflow options), so the client can render a progress timeline. Never hardcode this list.'),
   "total": zod.number().optional().describe('The order total in dollars.'),
-  "cancelled": zod.boolean().optional().describe('True once the atelier has cancelled the shop order (the `Cancelled` marker on the Notion order). When true the tracking page shows a cancelled banner and suppresses the request affordance. Absent\/false for an active order.')
+  "cancelled": zod.boolean().optional().describe('True once the atelier has cancelled the shop order (the `Cancelled` marker on the Notion order). When true the tracking page shows a cancelled banner and suppresses the request affordance. Absent\/false for an active order.'),
+  "tracking": zod.object({
+  "number": zod.string().describe('The carrier tracking number, shown to the customer.'),
+  "carrier": zod.string().optional().describe('An optional human carrier label, e.g. \"USPS\" or \"UPS\".'),
+  "url": zod.string().optional().describe('An optional carrier tracking URL; when present the number is rendered as a link to it.')
+}).optional().describe('The carrier tracking details, surfaced once the atelier fills them in on the Notion order (a `Tracking Number`, an optional `Carrier` label, and an optional `Tracking URL`). Absent until a tracking number is set. When present the tracking page shows the number, linked to the URL when one is given.')
 })
 
 
