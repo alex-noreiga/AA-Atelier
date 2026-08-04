@@ -19,10 +19,21 @@ import {
   SHOP_ORDER_STATUS_PROPERTY,
   SHOP_ORDER_TOTAL_PROPERTY,
   SHOP_ORDER_CANCELLED_PROPERTY,
+  SHOP_ORDER_TRACKING_NUMBER_PROPERTY,
+  SHOP_ORDER_TRACKING_CARRIER_PROPERTY,
+  SHOP_ORDER_TRACKING_URL_PROPERTY,
 } from "./shop-orders.blocks.js";
 
 interface NotionQueryResponse {
   results: Array<{ id: string }>;
+}
+
+/** Carrier tracking details for a shipped shop order, present only once the
+ * atelier has filled in a tracking number. `carrier`/`url` are optional. */
+export interface ShopOrderTracking {
+  number: string;
+  carrier?: string;
+  url?: string;
 }
 
 /** A shop order as read back for the customer-facing tracking lookup. */
@@ -32,6 +43,8 @@ export interface ShopOrderRecord {
   total?: number;
   /** True once the atelier has cancelled the order (`Cancelled` checkbox). */
   cancelled?: boolean;
+  /** Carrier tracking, once the atelier fills in a tracking number. */
+  tracking?: ShopOrderTracking;
 }
 
 // Raw Notion property shapes we read back (only the types we touch).
@@ -40,7 +53,8 @@ type NotionReadProperty =
   | { type: "status"; status: { name: string } | null }
   | { type: "number"; number: number | null }
   | { type: "email"; email: string | null }
-  | { type: "checkbox"; checkbox: boolean };
+  | { type: "checkbox"; checkbox: boolean }
+  | { type: "url"; url: string | null };
 
 interface NotionLookupResponse {
   results: Array<{
@@ -92,6 +106,30 @@ function readEmail(prop: NotionReadProperty | undefined): string {
 function readCheckbox(prop: NotionReadProperty | undefined): boolean {
   if (prop?.type !== "checkbox") return false;
   return prop.checkbox;
+}
+
+function readUrl(prop: NotionReadProperty | undefined): string {
+  if (prop?.type !== "url") return "";
+  return (prop.url ?? "").trim();
+}
+
+/** Read the carrier tracking off a page, or undefined when no tracking number
+ * is set yet (the number gates the whole block — carrier/url are display extras
+ * that make no sense on their own). */
+function readTracking(
+  properties: Record<string, NotionReadProperty | undefined>,
+): ShopOrderTracking | undefined {
+  const number = readRichText(properties[SHOP_ORDER_TRACKING_NUMBER_PROPERTY]);
+  if (!number) return undefined;
+  const carrier = readRichText(
+    properties[SHOP_ORDER_TRACKING_CARRIER_PROPERTY],
+  );
+  const url = readUrl(properties[SHOP_ORDER_TRACKING_URL_PROPERTY]);
+  return {
+    number,
+    ...(carrier ? { carrier } : {}),
+    ...(url ? { url } : {}),
+  };
 }
 
 /** What a shop-order-scoped gate needs: the email to verify the requester
@@ -241,6 +279,7 @@ export async function findShopOrderByNumber(
   if (!page) return null;
 
   const total = readNumber(page.properties[SHOP_ORDER_TOTAL_PROPERTY]);
+  const tracking = readTracking(page.properties);
   return {
     orderNumber:
       readRichText(page.properties[SHOP_ORDER_NUMBER_PROPERTY]) || trimmed,
@@ -249,6 +288,7 @@ export async function findShopOrderByNumber(
     ...(readCheckbox(page.properties[SHOP_ORDER_CANCELLED_PROPERTY])
       ? { cancelled: true }
       : {}),
+    ...(tracking ? { tracking } : {}),
   };
 }
 

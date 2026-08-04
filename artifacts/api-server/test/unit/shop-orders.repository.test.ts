@@ -16,6 +16,9 @@ import {
   SHOP_ORDER_TOTAL_PROPERTY,
   SHOP_ORDER_EMAIL_PROPERTY,
   SHOP_ORDER_CANCELLED_PROPERTY,
+  SHOP_ORDER_TRACKING_NUMBER_PROPERTY,
+  SHOP_ORDER_TRACKING_CARRIER_PROPERTY,
+  SHOP_ORDER_TRACKING_URL_PROPERTY,
 } from "../../src/lib/notion/shop-orders.blocks.js";
 import {
   makeFakeClient,
@@ -31,6 +34,9 @@ function shopOrderResultPage(opts: {
   email?: string;
   sessionId?: string;
   cancelled?: boolean;
+  trackingNumber?: string;
+  trackingCarrier?: string;
+  trackingUrl?: string;
 }) {
   return {
     id: "so-page",
@@ -58,6 +64,22 @@ function shopOrderResultPage(opts: {
       [SHOP_ORDER_CANCELLED_PROPERTY]: {
         type: "checkbox",
         checkbox: opts.cancelled ?? false,
+      },
+      [SHOP_ORDER_TRACKING_NUMBER_PROPERTY]: {
+        type: "rich_text",
+        rich_text: opts.trackingNumber
+          ? [{ plain_text: opts.trackingNumber }]
+          : [],
+      },
+      [SHOP_ORDER_TRACKING_CARRIER_PROPERTY]: {
+        type: "rich_text",
+        rich_text: opts.trackingCarrier
+          ? [{ plain_text: opts.trackingCarrier }]
+          : [],
+      },
+      [SHOP_ORDER_TRACKING_URL_PROPERTY]: {
+        type: "url",
+        url: opts.trackingUrl ?? null,
       },
     },
   };
@@ -224,6 +246,62 @@ describe("findShopOrderByNumber", () => {
     );
     const order = await findShopOrderByNumber("SHP-1", client);
     expect(order?.cancelled).toBe(true);
+  });
+
+  it("surfaces carrier tracking with the carrier and url when all are set", async () => {
+    const client = makeFakeClient(() =>
+      jsonResponse({
+        results: [
+          shopOrderResultPage({
+            orderNumber: "SHP-1",
+            status: "Shipped",
+            trackingNumber: "9400111899",
+            trackingCarrier: "USPS",
+            trackingUrl:
+              "https://tools.usps.com/go/TrackConfirmAction?tLabels=9400111899",
+          }),
+        ],
+      }),
+    );
+    const order = await findShopOrderByNumber("SHP-1", client);
+    expect(order?.tracking).toEqual({
+      number: "9400111899",
+      carrier: "USPS",
+      url: "https://tools.usps.com/go/TrackConfirmAction?tLabels=9400111899",
+    });
+  });
+
+  it("omits the carrier and url from tracking when only a number is set", async () => {
+    const client = makeFakeClient(() =>
+      jsonResponse({
+        results: [
+          shopOrderResultPage({
+            orderNumber: "SHP-1",
+            status: "Shipped",
+            trackingNumber: "9400111899",
+          }),
+        ],
+      }),
+    );
+    const order = await findShopOrderByNumber("SHP-1", client);
+    expect(order?.tracking).toEqual({ number: "9400111899" });
+  });
+
+  it("omits tracking entirely when no tracking number is set", async () => {
+    const client = makeFakeClient(() =>
+      jsonResponse({
+        results: [
+          // A carrier/url without a number is meaningless — the number gates it.
+          shopOrderResultPage({
+            orderNumber: "SHP-1",
+            status: "Processing",
+            trackingCarrier: "USPS",
+          }),
+        ],
+      }),
+    );
+    const order = await findShopOrderByNumber("SHP-1", client);
+    expect(order?.tracking).toBeUndefined();
   });
 });
 

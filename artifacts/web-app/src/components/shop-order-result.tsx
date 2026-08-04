@@ -54,6 +54,38 @@ export function ShopOrderResult({
         testIdPrefix="row-status"
       />
 
+      {order.tracking && !isCancelled && (
+        <div
+          className="mt-12 rounded-2xl border border-border/60 p-6 text-center"
+          data-testid="tracking-details"
+        >
+          <p className="text-xs uppercase tracking-widest text-muted-foreground">
+            {order.tracking.carrier
+              ? `Tracking · ${order.tracking.carrier}`
+              : "Tracking"}
+          </p>
+          {order.tracking.url ? (
+            <a
+              href={order.tracking.url}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="mt-1 inline-flex items-center gap-2 font-serif text-2xl text-primary hover:underline"
+              data-testid="tracking-link"
+            >
+              <span>{order.tracking.number}</span>
+              <ArrowRight className="w-4 h-4" />
+            </a>
+          ) : (
+            <p
+              className="mt-1 font-serif text-2xl"
+              data-testid="tracking-number"
+            >
+              {order.tracking.number}
+            </p>
+          )}
+        </div>
+      )}
+
       <div className="mt-16 flex flex-col items-center gap-6">
         {!isCancelled && (
           <>

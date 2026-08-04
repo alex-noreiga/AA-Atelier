@@ -1149,6 +1149,28 @@ components:
             marker on the Notion order). When true the tracking page shows a
             cancelled banner and suppresses the request affordance. Absent/false
             for an active order.
+        tracking:
+          type: object
+          description: >-
+            The carrier tracking details, surfaced once the atelier fills them in
+            on the Notion order (a `Tracking Number`, an optional `Carrier` label,
+            and an optional `Tracking URL`). Absent until a tracking number is
+            set. When present the tracking page shows the number, linked to the
+            URL when one is given.
+          properties:
+            number:
+              type: string
+              description: The carrier tracking number, shown to the customer.
+            carrier:
+              type: string
+              description: An optional human carrier label, e.g. "USPS" or "UPS".
+            url:
+              type: string
+              description: >-
+                An optional carrier tracking URL; when present the number is
+                rendered as a link to it.
+          required:
+            - number
       required:
         - orderNumber
         - status

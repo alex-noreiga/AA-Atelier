@@ -74,4 +74,5 @@ export * from './productVariant';
 export * from './receiptLineItem';
 export * from './rescheduleAppointmentRequest';
 export * from './shopOrderStatus';
+export * from './shopOrderStatusTracking';
 export * from './sizeOption';

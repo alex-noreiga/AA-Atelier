@@ -666,7 +666,18 @@ and `src/lib/notion/shop-orders.*`. Four things are load-bearing:
    `checkout.service.ts` passes `metadata.orderNumber` into `ShopOrderEmailDetails`,
    which `shopOrderConfirmationEmail` renders), plus the atelier notification. The
    lookup only serves orders placed after this shipped (older ones have no
-   `Order Number`).
+   `Order Number`). Once the order ships, the atelier can add **carrier tracking**
+   (three **optional, additive** properties the app only ever reads): `Tracking
+   Number` (rich_text), `Carrier` (rich_text, a display label), and `Tracking URL`
+   (url). `findShopOrderByNumber` reads them via `readTracking` — gated on the
+   number (a carrier/url with no number is meaningless, so it's dropped) — into
+   `ShopOrderRecord.tracking`, which flows through the service to
+   `ShopOrderStatus.tracking` (contract-first, in `openapi.yaml` + the generated
+   client). `shop-order-result.tsx` renders a "Tracking" panel below the timeline:
+   the number linked to the URL when set (else plain text), the carrier as the
+   label. Suppressed on a cancelled order. No new env var and nothing to write —
+   the atelier just adds the three properties to the Shop Orders database and fills
+   them in per order.
 
 9. **Matching add-ons are a self-relation on the inventory, resolved client-side.**
    A product can offer companion items (a skate soaker → its matching blade towel)
