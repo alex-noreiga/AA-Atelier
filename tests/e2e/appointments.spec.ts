@@ -20,6 +20,7 @@ const OPTIONS = {
       description: "Talk through ideas for a new custom piece.",
       staff: ["Alexandra", "Alayna"],
       locations: ["in-person", "virtual"],
+      requiresProjectDetails: true,
     },
     {
       id: "fitting",
@@ -28,6 +29,7 @@ const OPTIONS = {
       description: "In person only.",
       staff: ["Alexandra"],
       locations: ["in-person"],
+      requiresOrder: true,
     },
   ],
 };
@@ -75,6 +77,9 @@ test.describe("Appointment booking", () => {
 
     await page.locator("#fullName").fill("Ada Lovelace");
     await page.locator("#email").fill("ada@example.com");
+    await page
+      .locator("#projectDetails")
+      .fill("A competition dress in navy for December.");
     await page.getByRole("button", { name: "Confirm Booking" }).click();
 
     await expect(
@@ -94,6 +99,7 @@ test.describe("Appointment booking", () => {
       start: SLOT_ISO,
       fullName: "Ada Lovelace",
       email: "ada@example.com",
+      projectDetails: "A competition dress in navy for December.",
     });
     expect(body).not.toHaveProperty("staff");
   });
@@ -148,6 +154,9 @@ test.describe("Appointment booking", () => {
     await page.getByTestId(`slot-${SLOT_ISO}`).click();
     await page.locator("#fullName").fill("Ada Lovelace");
     await page.locator("#email").fill("ada@example.com");
+    await page
+      .locator("#projectDetails")
+      .fill("A competition dress in navy for December.");
     await page.getByRole("button", { name: "Confirm Booking" }).click();
 
     // `exact` avoids matching sonner's aria-live span, which concatenates the

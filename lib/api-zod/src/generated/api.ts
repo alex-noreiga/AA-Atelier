@@ -423,7 +423,9 @@ export const GetAppointmentOptionsResponse = zod.object({
   "durationMinutes": zod.number().int().describe('How long the appointment runs, in minutes.'),
   "description": zod.string().optional(),
   "staff": zod.array(zod.string()).describe('The staff members who offer this appointment type.'),
-  "locations": zod.array(zod.enum(['in-person', 'virtual'])).describe('The locations this type is offered in.')
+  "locations": zod.array(zod.enum(['in-person', 'virtual'])).describe('The locations this type is offered in.'),
+  "requiresOrder": zod.boolean().optional().describe('When true, this type may only be booked against an existing order — the request must carry an orderNumber that matches a real order (and the booking email must match the one on that order). Order-scoped types like fittings and design reviews set this.'),
+  "requiresProjectDetails": zod.boolean().optional().describe('When true, the request must include a non-empty projectDetails describing what the customer wants made. New-customer types like consultations set this to filter out uncertain requests.')
 }))
 })
 
@@ -471,7 +473,9 @@ export const CreateAppointmentBody = zod.object({
   "email": zod.string().email(),
   "phone": zod.string().optional(),
   "preferredContact": zod.enum(['email', 'phone', 'text']).optional(),
-  "notes": zod.string().optional()
+  "notes": zod.string().optional(),
+  "orderNumber": zod.string().optional().describe('The customer\'s order number. Required for order-scoped types (requiresOrder) — the server verifies it against a real order whose email matches the booking email. Ignored for other types.'),
+  "projectDetails": zod.string().optional().describe('A short description of what the customer wants made. Required for new-customer types (requiresProjectDetails); ignored otherwise.')
 })
 
 export const CreateAppointmentResponse = zod.object({

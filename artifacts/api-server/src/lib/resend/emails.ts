@@ -951,6 +951,12 @@ export interface AppointmentEmailDetails {
   when: string;
   confirmationCode: string;
   notes?: string;
+  /** The customer's order number, for order-scoped types (fittings, design
+   * reviews) — shown to the atelier so they know which order the booking is for. */
+  orderNumber?: string;
+  /** The customer's project description, for new-customer types (consultations,
+   * general) — shown to the atelier so they can prepare for the ask. */
+  projectDetails?: string;
   /** The Google Meet link for a virtual appointment, when one was created. */
   meetingUrl?: string;
   /** Self-service reschedule/cancel link (present when the portal secret +
@@ -1147,7 +1153,11 @@ export function appointmentNotificationEmail(
     ["Name", details.customerName],
     ["Email", details.email],
     ...(details.phone ? [["Phone", details.phone] as Field] : []),
+    ...(details.orderNumber ? [["Order", details.orderNumber] as Field] : []),
     ["Confirmation", details.confirmationCode],
+    ...(details.projectDetails
+      ? [["Project", details.projectDetails] as Field]
+      : []),
     ...(details.notes ? [["Notes", details.notes] as Field] : []),
   ];
 
