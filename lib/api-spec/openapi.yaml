@@ -1786,6 +1786,19 @@ components:
           items:
             type: string
             enum: [in-person, virtual]
+        requiresOrder:
+          type: boolean
+          description: >-
+            When true, this type may only be booked against an existing order —
+            the request must carry an orderNumber that matches a real order (and
+            the booking email must match the one on that order). Order-scoped
+            types like fittings and design reviews set this.
+        requiresProjectDetails:
+          type: boolean
+          description: >-
+            When true, the request must include a non-empty projectDetails
+            describing what the customer wants made. New-customer types like
+            consultations set this to filter out uncertain requests.
     AppointmentOptions:
       type: object
       required:
@@ -1865,6 +1878,17 @@ components:
           enum: [email, phone, text]
         notes:
           type: string
+        orderNumber:
+          type: string
+          description: >-
+            The customer's order number. Required for order-scoped types
+            (requiresOrder) — the server verifies it against a real order whose
+            email matches the booking email. Ignored for other types.
+        projectDetails:
+          type: string
+          description: >-
+            A short description of what the customer wants made. Required for
+            new-customer types (requiresProjectDetails); ignored otherwise.
     NewAppointmentResponse:
       type: object
       required:

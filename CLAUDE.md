@@ -1275,6 +1275,28 @@ in `api-server/src/lib/appointments/*` (pure logic + config),
    staff member here; the staff names must match the `Staff` column in the
    working-hours sheet (below).
 
+   **Booking gates split by who a type is for** (added to stop strangers who
+   don't understand the atelier from booking): each type carries one of two
+   optional flags in the catalog. Order-scoped types (**fittings, design
+   reviews**) set `requiresOrder` — they only make sense once someone has an
+   order, so `bookAppointment` requires an `orderNumber` on the request and
+   verifies it with `findOrderVerification` (the same email-matched check the
+   measurement-change/review flows use): missing number → 400, unknown order →
+   404, mismatched email → 403, legacy order with no stored email → accepted
+   (can't lock those customers out). New-customer types (**consultations,
+   general**) set `requiresProjectDetails` — a new customer has no order number,
+   so instead the request must carry a non-empty `projectDetails` describing what
+   they want made (blank → 400), a light screen on the funnel. Both fields are
+   optional on `NewAppointmentRequest` (contract-first) and required only by the
+   flagged type; the frontend (`pages/appointments.tsx`) renders the matching
+   field in the details step and enforces the same requirement client-side, and
+   `getAppointmentOptions` surfaces the flags so the UI knows which to show
+   (the Purpose step also labels order-scoped types "Requires an order number").
+   Both values are recorded on the calendar event + the atelier notification
+   email so the studio sees the order / the ask up front. Enforced in
+   `services/appointments.service.ts` (`enforceBookingGate`). To change which
+   types are gated, flip the flags in the catalog — no other code changes.
+
 2. **Working hours are a Google Sheet; conflicts are Google free/busy.**
    `computeSlots` (`lib/appointments/availability.ts`, pure + heavily unit-tested)
    needs a _positive_ grid of open hours, which Google free/busy can't give (it

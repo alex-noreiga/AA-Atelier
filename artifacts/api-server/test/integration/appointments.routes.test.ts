@@ -101,6 +101,7 @@ describe("POST /api/appointments", () => {
     start: FIRST_SLOT_ISO,
     fullName: "Ada Lovelace",
     email: "ada@example.com",
+    projectDetails: "A competition dress in navy for December.",
   });
 
   it("books an open slot and returns 201 with a confirmation", async () => {
@@ -132,6 +133,15 @@ describe("POST /api/appointments", () => {
     const res = await request(app)
       .post("/api/appointments")
       .send({ typeId: "consultation", location: "in-person" });
+    expect(res.status).toBe(400);
+    expect(mockCreate).not.toHaveBeenCalled();
+  });
+
+  it("400s when a consultation omits its project details (funnel gate)", async () => {
+    const { projectDetails: _omit, ...withoutDetails } = body();
+    const res = await request(app)
+      .post("/api/appointments")
+      .send(withoutDetails);
     expect(res.status).toBe(400);
     expect(mockCreate).not.toHaveBeenCalled();
   });

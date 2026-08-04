@@ -41,6 +41,10 @@ const detailsSchema = z.object({
   phone: z.string().optional(),
   preferredContact: z.enum(["email", "phone", "text"]).optional(),
   notes: z.string().optional(),
+  // Conditionally required based on the chosen type's gate — enforced in the
+  // submit handler (which knows the selected type), then re-checked server-side.
+  orderNumber: z.string().optional(),
+  projectDetails: z.string().optional(),
 });
 type DetailsValues = z.infer<typeof detailsSchema>;
 
@@ -143,6 +147,7 @@ export default function Appointments() {
     handleSubmit,
     watch,
     setValue,
+    setError,
     formState: { errors },
   } = useForm<DetailsValues>({
     resolver: zodResolver(detailsSchema),
@@ -186,6 +191,25 @@ export default function Appointments() {
 
   function onSubmitDetails(values: DetailsValues) {
     if (!typeId || !location || !selectedSlot) return;
+
+    // Type-specific gate, enforced here (the schema is type-agnostic) and again
+    // server-side. Order-scoped types need an order number; new-customer types
+    // need a project description.
+    const orderNumber = values.orderNumber?.trim();
+    const projectDetails = values.projectDetails?.trim();
+    if (selectedType?.requiresOrder && !orderNumber) {
+      setError("orderNumber", {
+        message: "Your order number is required for this appointment.",
+      });
+      return;
+    }
+    if (selectedType?.requiresProjectDetails && !projectDetails) {
+      setError("projectDetails", {
+        message: "Please tell us a little about your project.",
+      });
+      return;
+    }
+
     createAppointment.mutate({
       data: {
         typeId,
@@ -199,6 +223,8 @@ export default function Appointments() {
           ? { preferredContact: values.preferredContact }
           : {}),
         ...(values.notes ? { notes: values.notes } : {}),
+        ...(orderNumber ? { orderNumber } : {}),
+        ...(projectDetails ? { projectDetails } : {}),
       },
     });
   }
@@ -350,6 +376,11 @@ export default function Appointments() {
                 {type.description && (
                   <p className="text-sm text-muted-foreground font-light mt-1.5">
                     {type.description}
+                  </p>
+                )}
+                {type.requiresOrder && (
+                  <p className="text-[11px] tracking-wide uppercase text-muted-foreground/70 mt-2">
+                    Requires an order number
                   </p>
                 )}
               </button>
@@ -512,6 +543,61 @@ export default function Appointments() {
               onSubmit={handleSubmit(onSubmitDetails)}
               className="space-y-6"
             >
+              {selectedType.requiresOrder && (
+                <div>
+                  <Label
+                    htmlFor="orderNumber"
+                    className="text-sm font-light tracking-wide"
+                  >
+                    Order Number <span className="text-primary">*</span>
+                  </Label>
+                  <Input
+                    id="orderNumber"
+                    {...register("orderNumber")}
+                    placeholder="e.g. 000123"
+                    className="mt-1.5 bg-transparent border-0 border-b border-border rounded-none px-0 py-3 focus-visible:ring-0 focus-visible:border-primary transition-colors shadow-none"
+                  />
+                  <p className="text-xs text-muted-foreground/70 mt-1.5">
+                    This appointment is for existing orders. Enter your order
+                    number — use the same email you placed the order with so we
+                    can match it.
+                  </p>
+                  {errors.orderNumber && (
+                    <p className="text-destructive text-xs mt-1">
+                      {errors.orderNumber.message}
+                    </p>
+                  )}
+                </div>
+              )}
+
+              {selectedType.requiresProjectDetails && (
+                <div>
+                  <Label
+                    htmlFor="projectDetails"
+                    className="text-sm font-light tracking-wide"
+                  >
+                    Tell us about your project{" "}
+                    <span className="text-primary">*</span>
+                  </Label>
+                  <Textarea
+                    id="projectDetails"
+                    {...register("projectDetails")}
+                    placeholder="What would you like made? A dress for a competition, a specific style, colors, the event date… whatever you have in mind."
+                    rows={4}
+                    className="mt-1.5 bg-transparent border border-border rounded-lg px-3 py-2 text-sm focus-visible:ring-0 focus-visible:border-primary transition-colors resize-none shadow-none"
+                  />
+                  <p className="text-xs text-muted-foreground/70 mt-1.5">
+                    A few words help us prepare and make sure we're the right
+                    fit for your piece.
+                  </p>
+                  {errors.projectDetails && (
+                    <p className="text-destructive text-xs mt-1">
+                      {errors.projectDetails.message}
+                    </p>
+                  )}
+                </div>
+              )}
+
               <div>
                 <Label
                   htmlFor="fullName"
