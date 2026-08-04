@@ -245,7 +245,10 @@ Express app (artifacts/api-server)  ──►  Notion REST API (orders database)
   │                                  real progress, not a frozen "Not Started").
   │                                  Also emails a best-effort fitting reminder for
   │                                  any "Fitting" milestone due within the lead
-  │                                  window (see "Automated fitting reminders").
+  │                                  window (see "Automated fitting reminders") and
+  │                                  a best-effort payment reminder for any invoice
+  │                                  deposit/balance coming due or overdue (see
+  │                                  "Payment & deposit due reminders").
   │                                  NOT part of the OpenAPI contract.
   ├─ GET  /api/cron/generate-milestones/run
   │                                → the SAME reconciliation, on demand: a Notion
@@ -988,6 +991,72 @@ There are **no new env vars required** (it reuses `CRON_SECRET`, `PUBLIC_BASE_UR
 Resend vars, and `NOTION_PRODUCTION_SCHEDULE_DATABASE_ID`); the two optional knobs above
 tune it. The atelier's one-time setup is adding a **`Reminder Sent`** (checkbox) property
 to the "📅 Production Schedule" database (the app writes it; leave it unchecked).
+
+## Payment & deposit due reminders
+
+When a custom order's **deposit or final balance is coming due — or is overdue** —
+the app emails the customer a best-effort nudge to pay, using the **due dates already
+on the invoice**. Like the fitting reminder, it **wires two existing systems together**
+— the milestone reconciliation and the Resend mailer — with **no new endpoint, no new
+cron, and no frontend change** (the CTA deep-links to the existing tracking page, where
+the deposit + balance pay buttons live). Load-bearing points:
+
+1. **It rides the nightly reconciliation, not a new trigger.** `reconcileMilestones`
+   (the Vercel cron + the on-demand button) runs a fourth pass, `sendDuePaymentReminders`,
+   after generation + status-sync + fitting reminders. It queries the **"invoices &
+   payments"** database for invoices with an unpaid stage whose due date is **on or before
+   `today + PAYMENT_REMINDER_LEAD_DAYS`** (which naturally covers already-overdue stages)
+   and whose per-stage `Reminded` marker isn't set, then emails the order's customer one
+   reminder **per due stage**. Because the invoice rows don't carry the customer email, each
+   order is resolved back from the invoice's **`Order` relation** via
+   `findOrderForStageNotificationByPageId` (the same resolver the stage-change + fitting
+   emails use) — the **only** place the app navigates invoice → order (everywhere else it
+   reads an invoice _from_ an order's `Invoices` relation). Code:
+   `services/schedule.service.ts` (`sendDuePaymentReminders`) → `services/payment-reminder.ts`
+   (the business-rule config) + `lib/notion/invoice.repository.ts`
+   (`findInvoicesNeedingPaymentReminder` / `markPaymentStageReminded`) +
+   `extractPaymentReminderInvoice` in `lib/notion/invoice.schema.ts` + `paymentReminderEmail`
+   in `lib/resend/emails.ts`.
+
+2. **Every amount is read from the invoice, never invented.** A deposit's amount is its
+   `First/Second Deposit Amount`; the balance is `Final Balance` − the deposits already
+   marked paid (mirroring `buildInvoiceView`'s `balanceDue`, without fetching line items),
+   floored at 0 and **omitted from the email** when `Final Balance` isn't set yet. This keeps
+   the "Notion/invoice is the source of truth for money" rule intact. The three stages'
+   field mapping (due date, paid checkbox, `Reminded` marker, label) is the single
+   `PAYMENT_STAGE_REMINDER_FIELDS` table, the payment analogue of `DEPOSIT_STAGE_FIELDS`;
+   the balance's due date reuses the existing `Payment Deadline`.
+
+3. **Idempotent via a per-stage `Reminded` checkbox.** Each stage is reminded once — a
+   `First Deposit Reminded` / `Second Deposit Reminded` / `Balance Reminded` checkbox on the
+   invoice is flipped after the email, the payment analogue of the schedule's `Reminder Sent`
+   marker. An absent/unchecked box reads as false (a new invoice needs nothing set). The order
+   is resolved **once per invoice**, then each due stage is emailed + marked; a stage is
+   marked reminded **even when the order carries no email** (a legacy order can't be reached —
+   marking it stops a nightly re-check). If the order lookup itself throws, the invoice's
+   stages are left unmarked so the next run retries, with per-invoice failures logged and
+   skipped like the other passes. **This means one reminder per stage** — the first time it's
+   within the window or overdue; a distinct repeated-overdue nudge would be a fast follow (a
+   second marker per stage). If the reminder query 400s because the setup properties aren't
+   added yet, the pass **degrades to a no-op with a warn** (like the fitting reminder's missing
+   `Reminder Sent` checkbox), so the nightly cron doesn't alert until the atelier configures it.
+
+4. **Customer email only + best-effort, like the fitting reminder.** The reminder sends from
+   the **orders** sender (`fromAddress("orders")`) and is best-effort (a Resend failure is
+   logged-and-swallowed, never fails the cron). There is deliberately **no** internal atelier
+   notification — the atelier already sees the invoice's `Payment Status` in Notion, so a
+   per-reminder studio email would be noise (same rationale as the fitting reminder / newsletter
+   opt-in). The email's pay link uses `PUBLIC_BASE_URL` (`/track?orderNumber=…`) and is omitted
+   when unset.
+
+There are **no new env vars required** (it reuses `CRON_SECRET`, `PUBLIC_BASE_URL`, the Resend
+vars, and the invoice database ids); the one optional knob is `PAYMENT_REMINDER_LEAD_DAYS`
+(default `7`), a targeted business rule like `FITTING_REMINDER_LEAD_DAYS`, read in
+`services/payment-reminder.ts`. The atelier's one-time setup on the **"invoices & payments"**
+database: add the per-stage due dates **`First Deposit Due`** / **`Second Deposit Due`** (date)
+— the balance reuses the existing **`Payment Deadline`** — and three checkboxes **`First Deposit
+Reminded`** / **`Second Deposit Reminded`** / **`Balance Reminded`** (the app writes them; leave
+unchecked). Until those exist the pass is a no-op.
 
 ## Post-delivery review capture
 
@@ -2046,6 +2115,15 @@ and in the maintainer's env without edits.
   `services/fitting-reminder.ts`, consumed by `sendDueFittingReminders` in
   `services/schedule.service.ts`. One-time: add a `Reminder Sent` checkbox to the
   Production Schedule database. See "Automated fitting reminders" above.
+- **Optional payment-reminder env var:** `PAYMENT_REMINDER_LEAD_DAYS` (default `7`) —
+  how many days ahead of an invoice deposit/balance due date to email the customer a
+  payment reminder (the same `on_or_before` cutoff also catches already-overdue
+  stages). A targeted business rule like `FITTING_REMINDER_LEAD_DAYS`; read in
+  `services/payment-reminder.ts`, consumed by `sendDuePaymentReminders` in
+  `services/schedule.service.ts`. One-time on the invoices & payments database: add
+  `First Deposit Due` / `Second Deposit Due` (date) — the balance reuses the existing
+  `Payment Deadline` — plus `First Deposit Reminded` / `Second Deposit Reminded` /
+  `Balance Reminded` checkboxes. See "Payment & deposit due reminders" above.
 - **Optional anti-spam env var:** `SPAM_MIN_FILL_MS` (default `2000`) — the minimum
   plausible human fill time, in ms, for the public submission forms (contact /
   notify / newsletter); a faster submit is silently dropped as a bot. `0` disables
@@ -2083,6 +2161,7 @@ and in the maintainer's env without edits.
 | Change production-schedule milestones                  | `api-server/src/services/schedule.service.ts` + `routes/cron.ts` + `lib/notion/production-schedule.{blocks,repository}.ts` + `lib/notion/orders.repository.ts` (`findOrdersNeedingMilestones`/`markMilestonesGenerated`); cron in `vercel.json`                                                                                                                                                                                                                                                                                                                                                                                                                                               |
 | Change order status-change emails (+ pipeline graphic) | `api-server/src/lib/resend/emails.ts` (`orderStageChangeEmail`) + `services/order-notification.service.ts` + `routes/order-notification.ts` + `lib/notion/orders.repository.ts` (`findOrderForStageNotification`); Notion automation → `POST /api/webhooks/notion-stage-change`                                                                                                                                                                                                                                                                                                                                                                                                               |
 | Change automated fitting reminders                     | `api-server/src/services/schedule.service.ts` (`sendDueFittingReminders`) + `services/fitting-reminder.ts` (env business rule) + `lib/notion/production-schedule.{blocks,repository}.ts` (`findMilestonesNeedingFittingReminder`/`markFittingReminderSent`, `Reminder Sent` prop) + `fittingReminderEmail` in `lib/resend/emails.ts`; runs in the milestone cron                                                                                                                                                                                                                                                                                                                              |
+| Change payment & deposit due reminders                 | `api-server/src/services/schedule.service.ts` (`sendDuePaymentReminders`) + `services/payment-reminder.ts` (env business rule) + `lib/notion/invoice.repository.ts` (`findInvoicesNeedingPaymentReminder`/`markPaymentStageReminded`) + `extractPaymentReminderInvoice` + `PAYMENT_STAGE_REMINDER_FIELDS` in `lib/notion/invoice.schema.ts` + `paymentReminderEmail` in `lib/resend/emails.ts`; runs in the milestone cron |
 | Change appointment booking (UI)                        | `artifacts/web-app/src/pages/appointments.tsx`                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                |
 | Change appointment reschedule / cancel                 | `artifacts/web-app/src/pages/appointment-manage.tsx` (+ shared `lib/appointment-format.ts`); `api-server/src/services/appointment-manage.service.ts` + `routes/appointments.ts` (`/appointments/manage`, `/reschedule`, `/cancel`) + `lib/google/calendar.repository.ts` (`getCalendarEvent`/`updateCalendarEvent`/`cancelCalendarEvent`) + the reschedule/cancel builders in `lib/resend/emails.ts`; token `"appointment"` purpose in `lib/auth/tokens.ts`                                                                                                                                                                                                                                   |
 | Change appointment types / routing rules               | `api-server/src/lib/appointments/catalog.ts` (targeted business rule — durations, which staff, which locations)                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                               |

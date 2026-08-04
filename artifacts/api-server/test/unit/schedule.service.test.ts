@@ -16,6 +16,10 @@ vi.mock("../../src/lib/notion/production-schedule.repository.js", () => ({
   findMilestonesNeedingFittingReminder: vi.fn(),
   markFittingReminderSent: vi.fn(),
 }));
+vi.mock("../../src/lib/notion/invoice.repository.js", () => ({
+  findInvoicesNeedingPaymentReminder: vi.fn(),
+  markPaymentStageReminded: vi.fn(),
+}));
 vi.mock("../../src/lib/resend/send.js", () => ({
   sendEmailBestEffort: vi.fn(),
 }));
@@ -30,6 +34,7 @@ import {
   milestoneStatusFor,
   syncMilestoneStatuses,
   sendDueFittingReminders,
+  sendDuePaymentReminders,
   reconcileMilestones,
 } from "../../src/services/schedule.service.js";
 import {
@@ -47,6 +52,10 @@ import {
   findMilestonesNeedingFittingReminder,
   markFittingReminderSent,
 } from "../../src/lib/notion/production-schedule.repository.js";
+import {
+  findInvoicesNeedingPaymentReminder,
+  markPaymentStageReminded,
+} from "../../src/lib/notion/invoice.repository.js";
 import { sendEmailBestEffort } from "../../src/lib/resend/send.js";
 import { logger } from "../../src/lib/logger.js";
 
@@ -60,6 +69,8 @@ const mockListPages = vi.mocked(listOrderMilestonePages);
 const mockUpdateStatus = vi.mocked(updateMilestoneStatus);
 const mockFindReminders = vi.mocked(findMilestonesNeedingFittingReminder);
 const mockMarkReminded = vi.mocked(markFittingReminderSent);
+const mockFindPaymentInvoices = vi.mocked(findInvoicesNeedingPaymentReminder);
+const mockMarkPaymentReminded = vi.mocked(markPaymentStageReminded);
 const mockSend = vi.mocked(sendEmailBestEffort);
 
 const from = new Date("2026-01-01T00:00:00Z");
@@ -407,6 +418,158 @@ describe("sendDueFittingReminders", () => {
   });
 });
 
+describe("sendDuePaymentReminders", () => {
+  function invoice(overrides = {}) {
+    return {
+      pageId: "inv-1",
+      invoiceId: "Toothless",
+      orderPageId: "order-1",
+      stages: [
+        {
+          stage: "second_deposit" as const,
+          label: "Second deposit",
+          dueDate: "2026-01-05",
+          paid: false,
+          reminded: false,
+          amount: 80,
+        },
+      ],
+      ...overrides,
+    };
+  }
+
+  function orderNotification(overrides = {}) {
+    return {
+      pageId: "order-1",
+      orderNumber: "000002",
+      orderName: "Ada – Custom Dress",
+      email: "ada@example.com",
+      currentStage: "Fitting",
+      stages: ["Consultation", "Fitting", "Delivered"],
+      lastNotifiedStage: "",
+      ...overrides,
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    } as any;
+  }
+
+  beforeEach(() => {
+    mockMarkPaymentReminded.mockResolvedValue();
+    mockSend.mockResolvedValue();
+    delete process.env.PUBLIC_BASE_URL;
+  });
+
+  it("emails an overdue stage and marks it reminded, with a pay link", async () => {
+    process.env.PUBLIC_BASE_URL = "https://a3iceanddance.com/";
+    mockFindPaymentInvoices.mockResolvedValue([invoice()]);
+    mockFindOrderByPage.mockResolvedValue(orderNotification());
+
+    // `from` is 2026-01-01; the stage is due 2026-01-05 → upcoming, not overdue.
+    const sent = await sendDuePaymentReminders(
+      new Date("2026-01-10T00:00:00Z"),
+    );
+
+    expect(sent).toBe(1);
+    expect(mockFindOrderByPage).toHaveBeenCalledWith("order-1");
+    const message = mockSend.mock.calls[0][0];
+    expect(message.to).toBe("ada@example.com");
+    expect(message.subject).toContain("Payment overdue");
+    expect(message.html).toContain(
+      "https://a3iceanddance.com/track?orderNumber=000002",
+    );
+    expect(mockMarkPaymentReminded).toHaveBeenCalledWith(
+      "inv-1",
+      "second_deposit",
+    );
+  });
+
+  it("uses the coming-due wording when the due date is still ahead", async () => {
+    mockFindPaymentInvoices.mockResolvedValue([invoice()]);
+    mockFindOrderByPage.mockResolvedValue(orderNotification());
+
+    await sendDuePaymentReminders(from); // 2026-01-01, before the 2026-01-05 due
+
+    expect(mockSend.mock.calls[0][0].subject).toContain("Payment reminder");
+  });
+
+  it("marks a stage reminded without sending when the order has no email", async () => {
+    mockFindPaymentInvoices.mockResolvedValue([invoice()]);
+    mockFindOrderByPage.mockResolvedValue(orderNotification({ email: "" }));
+
+    const sent = await sendDuePaymentReminders(from);
+
+    expect(sent).toBe(0);
+    expect(mockSend).not.toHaveBeenCalled();
+    expect(mockMarkPaymentReminded).toHaveBeenCalledWith(
+      "inv-1",
+      "second_deposit",
+    );
+  });
+
+  it("skips already-paid/reminded stages and invoices with no due stage", async () => {
+    mockFindPaymentInvoices.mockResolvedValue([
+      invoice({
+        stages: [
+          {
+            stage: "first_deposit" as const,
+            label: "First deposit",
+            dueDate: "2026-01-05",
+            paid: true, // already paid
+            reminded: false,
+            amount: 100,
+          },
+        ],
+      }),
+    ]);
+
+    const sent = await sendDuePaymentReminders(from);
+
+    expect(sent).toBe(0);
+    expect(mockFindOrderByPage).not.toHaveBeenCalled();
+    expect(mockMarkPaymentReminded).not.toHaveBeenCalled();
+  });
+
+  it("isolates an invoice whose order lookup throws (leaves it unmarked to retry)", async () => {
+    mockFindPaymentInvoices.mockResolvedValue([
+      invoice({ pageId: "bad", orderPageId: "bad-order" }),
+      invoice({ pageId: "good", orderPageId: "good-order" }),
+    ]);
+    mockFindOrderByPage.mockImplementation(async (pageId: string) => {
+      if (pageId === "bad-order") throw new Error("Notion 500");
+      return orderNotification({ pageId: "good-order" });
+    });
+
+    const sent = await sendDuePaymentReminders(from);
+
+    expect(sent).toBe(1);
+    expect(logger.error).toHaveBeenCalledTimes(1);
+    expect(mockMarkPaymentReminded).toHaveBeenCalledWith(
+      "good",
+      "second_deposit",
+    );
+    expect(mockMarkPaymentReminded).not.toHaveBeenCalledWith(
+      "bad",
+      "second_deposit",
+    );
+  });
+
+  it("returns 0 (and logs) when the invoice query itself fails", async () => {
+    mockFindPaymentInvoices.mockRejectedValue(new Error("Notion down"));
+
+    const sent = await sendDuePaymentReminders(from);
+
+    expect(sent).toBe(0);
+    expect(mockSend).not.toHaveBeenCalled();
+    expect(mockMarkPaymentReminded).not.toHaveBeenCalled();
+    expect(logger.error).toHaveBeenCalledTimes(1);
+  });
+
+  it("does nothing when no invoices are due", async () => {
+    mockFindPaymentInvoices.mockResolvedValue([]);
+    expect(await sendDuePaymentReminders(from)).toBe(0);
+    expect(mockSend).not.toHaveBeenCalled();
+  });
+});
+
 describe("reconcileMilestones", () => {
   beforeEach(() => {
     mockHas.mockResolvedValue(false);
@@ -415,6 +578,8 @@ describe("reconcileMilestones", () => {
     mockUpdateStatus.mockResolvedValue();
     mockFindReminders.mockResolvedValue([]);
     mockMarkReminded.mockResolvedValue();
+    mockFindPaymentInvoices.mockResolvedValue([]);
+    mockMarkPaymentReminded.mockResolvedValue();
     mockSend.mockResolvedValue();
   });
 
@@ -471,6 +636,7 @@ describe("reconcileMilestones", () => {
       milestonesCreated: 2,
       milestonesUpdated: 1,
       remindersSent: 1,
+      paymentRemindersSent: 0,
     });
   });
 });

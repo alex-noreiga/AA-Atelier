@@ -18,7 +18,25 @@ export const INVOICE_ID_PROPERTY = "Invoice ID"; // title
 export const INVOICE_READY_PROPERTY = "Invoice Ready"; // checkbox (the balance gate)
 export const INVOICE_BALANCE_PAID_PROPERTY = "Balance Paid"; // checkbox
 export const INVOICE_BALANCE_SESSION_PROPERTY = "Balance Payment Session Id"; // rich_text
-export const INVOICE_PAYMENT_DEADLINE_PROPERTY = "Payment Deadline"; // date
+export const INVOICE_PAYMENT_DEADLINE_PROPERTY = "Payment Deadline"; // date (the balance due date)
+// The relation back to the order in the Order Tracking Pipeline (one invoice per
+// order). Read by the payment-reminder pass to resolve the customer email off the
+// order — the app looks an invoice up FROM an order everywhere else (the order's
+// `Invoices` relation), so this is the only place it navigates invoice → order.
+export const INVOICE_ORDER_RELATION_PROPERTY = "Order"; // relation → orders
+// Per-stage payment due dates the atelier sets on the invoice. The first/second
+// deposit dues are their own date properties; the balance's due date reuses
+// `Payment Deadline` above. Read (not written) by the payment-reminder pass.
+export const INVOICE_FIRST_DEPOSIT_DUE_PROPERTY = "First Deposit Due"; // date
+export const INVOICE_SECOND_DEPOSIT_DUE_PROPERTY = "Second Deposit Due"; // date
+// Per-stage "a due reminder was sent" markers, the payment analogue of the
+// production schedule's `Reminder Sent` checkbox: the reminder pass flips the
+// stage's marker once emailed so the nightly cron never re-sends it. An
+// absent/unchecked box reads as false (a new invoice needs nothing set).
+export const INVOICE_FIRST_DEPOSIT_REMINDED_PROPERTY = "First Deposit Reminded"; // checkbox
+export const INVOICE_SECOND_DEPOSIT_REMINDED_PROPERTY =
+  "Second Deposit Reminded"; // checkbox
+export const INVOICE_BALANCE_REMINDED_PROPERTY = "Balance Reminded"; // checkbox
 // `Final Balance` sums the linked line items' `Line Total`. It has been both a
 // rollup and (currently) a formula in the live schema; `extractNumericValue`
 // reads either, so the app doesn't care which the atelier uses.
@@ -74,6 +92,43 @@ export function stagePaymentFields(stage: PaymentStage): {
   const { paidProp, sessionProp } = DEPOSIT_STAGE_FIELDS[stage];
   return { paidProp, sessionProp };
 }
+
+/** The three payment stages in order, for the payment-reminder pass to iterate. */
+export const PAYMENT_STAGES: PaymentStage[] = [
+  "first_deposit",
+  "second_deposit",
+  "balance",
+];
+
+/** The invoice property names + display label the payment-reminder pass reads
+ * per stage: the due date, the paid checkbox (so a paid stage is skipped), and
+ * the per-stage `Reminded` marker (the idempotency guard). Keyed by stage so the
+ * repository/service pick fields by stage rather than branching everywhere — the
+ * same shape as `DEPOSIT_STAGE_FIELDS`. The balance's due date is the shared
+ * `Payment Deadline`. */
+export const PAYMENT_STAGE_REMINDER_FIELDS: Record<
+  PaymentStage,
+  { dueProp: string; paidProp: string; remindedProp: string; label: string }
+> = {
+  first_deposit: {
+    dueProp: INVOICE_FIRST_DEPOSIT_DUE_PROPERTY,
+    paidProp: INVOICE_FIRST_DEPOSIT_PAID_PROPERTY,
+    remindedProp: INVOICE_FIRST_DEPOSIT_REMINDED_PROPERTY,
+    label: "First deposit",
+  },
+  second_deposit: {
+    dueProp: INVOICE_SECOND_DEPOSIT_DUE_PROPERTY,
+    paidProp: INVOICE_SECOND_DEPOSIT_PAID_PROPERTY,
+    remindedProp: INVOICE_SECOND_DEPOSIT_REMINDED_PROPERTY,
+    label: "Second deposit",
+  },
+  balance: {
+    dueProp: INVOICE_PAYMENT_DEADLINE_PROPERTY,
+    paidProp: INVOICE_BALANCE_PAID_PROPERTY,
+    remindedProp: INVOICE_BALANCE_REMINDED_PROPERTY,
+    label: "Final balance",
+  },
+};
 
 // --- Invoice Line Items (the itemized lines) ---
 export const LINE_ITEM_TITLE_PROPERTY = "Line Item"; // title
@@ -149,6 +204,34 @@ export interface InvoiceRecord {
   paymentDeadline?: string;
   /** The staged deposits that have an amount set, in order (first, then second). */
   deposits: InvoiceDepositView[];
+}
+
+/** One payment stage as the reminder pass sees it — only surfaced for a stage the
+ * atelier has given a due date. `amount` is the dollars owed for the stage (the
+ * deposit amount, or the balance = `Final Balance` − paid deposits); undefined
+ * when it can't be derived (e.g. no `Final Balance` yet for the balance stage), so
+ * the email just omits the figure. */
+export interface PaymentReminderStage {
+  stage: PaymentStage;
+  label: string;
+  /** The stage's due date (ISO `yyyy-mm-dd`). */
+  dueDate: string;
+  paid: boolean;
+  /** Whether this stage's `Reminded` marker is already set. */
+  reminded: boolean;
+  amount?: number;
+}
+
+/** An invoice reduced to what the payment-reminder pass needs: the page (to mark
+ * a stage reminded), the linked order's page id (to resolve the customer email),
+ * and the payable stages that carry a due date. */
+export interface PaymentReminderInvoice {
+  pageId: string;
+  invoiceId: string;
+  /** Notion page id of the linked order (the `Order` relation), when present. */
+  orderPageId?: string;
+  /** Stages that have a due date set (unpaid or not — the caller filters). */
+  stages: PaymentReminderStage[];
 }
 
 // --- Raw Notion payload typing (only the property types we read) ---
@@ -305,6 +388,80 @@ export function extractInvoice(page: NotionInvoicePage): InvoiceRecord {
     ...(paymentDeadline !== undefined ? { paymentDeadline } : {}),
     ...(balanceSessionId !== undefined ? { balanceSessionId } : {}),
     deposits: extractInvoiceDeposits(page),
+  };
+}
+
+/** The first linked page id of a relation property, or undefined when empty. */
+function extractRelationFirstId(
+  page: NotionInvoicePage,
+  name: string,
+): string | undefined {
+  const p = page.properties[name];
+  if (p?.type !== "relation") return undefined;
+  return p.relation[0]?.id;
+}
+
+/**
+ * Map an "invoices & payments" page into the view the payment-reminder pass reads.
+ * Only stages the atelier has given a due date are surfaced (a stage with no due
+ * date has nothing to remind against). Deposit amounts come from their own fields;
+ * the balance owed is `Final Balance` − the deposits already marked paid (mirroring
+ * `buildInvoiceView`'s `balanceDue`, without fetching line items), floored at 0 and
+ * omitted when `Final Balance` isn't set yet.
+ */
+export function extractPaymentReminderInvoice(
+  page: NotionInvoicePage,
+): PaymentReminderInvoice {
+  const finalBalance = extractNumericValue(
+    page,
+    INVOICE_FINAL_BALANCE_PROPERTY,
+  );
+
+  // The dollars already credited by paid deposits — subtracted from the balance.
+  let paidDepositsTotal = 0;
+  for (const depositStage of ["first_deposit", "second_deposit"] as const) {
+    const fields = DEPOSIT_STAGE_FIELDS[depositStage];
+    const amount = extractNumber(page, fields.amountProp);
+    if (typeof amount === "number" && extractCheckbox(page, fields.paidProp)) {
+      paidDepositsTotal += amount;
+    }
+  }
+
+  const stages: PaymentReminderStage[] = [];
+  for (const stage of PAYMENT_STAGES) {
+    const fields = PAYMENT_STAGE_REMINDER_FIELDS[stage];
+    const dueDate = extractDateStart(page, fields.dueProp);
+    if (!dueDate) continue; // no due date → nothing to remind against
+
+    let amount: number | undefined;
+    if (stage === "balance") {
+      amount =
+        finalBalance !== undefined
+          ? Math.max(0, finalBalance - paidDepositsTotal)
+          : undefined;
+    } else {
+      amount = extractNumber(page, DEPOSIT_STAGE_FIELDS[stage].amountProp);
+    }
+
+    stages.push({
+      stage,
+      label: fields.label,
+      dueDate,
+      paid: extractCheckbox(page, fields.paidProp),
+      reminded: extractCheckbox(page, fields.remindedProp),
+      ...(amount !== undefined ? { amount } : {}),
+    });
+  }
+
+  const orderPageId = extractRelationFirstId(
+    page,
+    INVOICE_ORDER_RELATION_PROPERTY,
+  );
+  return {
+    pageId: page.id,
+    invoiceId: extractTitle(page, INVOICE_ID_PROPERTY),
+    ...(orderPageId !== undefined ? { orderPageId } : {}),
+    stages,
   };
 }
 

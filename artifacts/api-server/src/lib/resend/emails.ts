@@ -321,6 +321,92 @@ export function fittingReminderEmail(
 }
 
 // ---------------------------------------------------------------------------
+// Payment & deposit due reminder (see services/schedule.service.ts +
+// services/payment-reminder.ts). Emailed from the nightly reconciliation when a
+// deposit or the final balance is coming due — or overdue — using the due dates
+// on the order's invoice. Like the fitting reminder its source isn't a
+// `CreateXInput`; the caller hands this builder an already-formatted struct.
+// ---------------------------------------------------------------------------
+
+/** The details needed to render a payment-reminder email. */
+export interface PaymentReminderEmailDetails {
+  email: string;
+  orderNumber: string;
+  /** The stage label — "First deposit" / "Second deposit" / "Final balance". */
+  stageLabel: string;
+  /** The stage's due date (ISO `yyyy-mm-dd`). */
+  dueDate: string;
+  /** True when the due date has already passed (drives the "overdue" wording). */
+  overdue: boolean;
+  /** The amount owed for this stage, in dollars, when known. */
+  amount?: number;
+  /** Absolute URL to the customer's order/payment page (`/track?orderNumber=…`),
+   * when PUBLIC_BASE_URL is configured (omitted otherwise). */
+  payUrl?: string;
+}
+
+/** Sent to the customer when a deposit or the final balance is coming due or is
+ * overdue, nudging them to pay from their order page. */
+export function paymentReminderEmail(
+  details: PaymentReminderEmailDetails,
+): EmailMessage {
+  const { orderNumber, stageLabel, dueDate, overdue, amount, payUrl } = details;
+  const stage = stageLabel.toLowerCase();
+  const dueLabel = formatCalendarDate(dueDate);
+
+  const timingSentence = overdue
+    ? `The ${stage} for your custom order was due on ${dueLabel} and is now overdue.`
+    : `The ${stage} for your custom order is coming due on ${dueLabel}.`;
+  const amountSentence =
+    amount !== undefined ? ` The amount due is ${formatUsd(amount)}.` : "";
+
+  const ctaHtml = payUrl
+    ? `<p style="margin:28px 0;">
+         <a href="${encodeURI(payUrl)}" style="display:inline-block;background:#2b2622;color:#faf8f5;
+            text-decoration:none;padding:12px 24px;border-radius:2px;font-size:15px;">Pay now</a>
+       </p>
+       <p style="font-size:13px;color:#8a7f74;word-break:break-all;">Or paste this link
+          into your browser:<br/>${escapeHtml(payUrl)}</p>`
+    : "";
+
+  const html = layout(
+    overdue ? "A payment is overdue" : "A payment is coming due",
+    `<p>Hi there,</p>
+     <p>${escapeHtml(timingSentence)}${escapeHtml(amountSentence)}</p>
+     <p>You can pay securely online from your order page. If you've already sent
+        this payment, please disregard this note — it may have crossed with your
+        payment, and it will clear on our end shortly.</p>
+     ${ctaHtml}
+     <p style="color:#8a7f74;margin:0;">Order number: <strong>${escapeHtml(orderNumber)}</strong></p>`,
+  );
+
+  const text = [
+    `Hi there,`,
+    ``,
+    `${timingSentence}${amountSentence}`,
+    ``,
+    `You can pay securely online from your order page. If you've already sent this`,
+    `payment, please disregard this note — it may have crossed with your payment,`,
+    `and it will clear on our end shortly.`,
+    ...(payUrl ? [``, `Pay now: ${payUrl}`] : []),
+    ``,
+    `Order number: ${orderNumber}`,
+    ``,
+    `Thank you,`,
+    `The ${ATELIER_NAME} team`,
+  ].join("\n");
+
+  return {
+    to: details.email,
+    subject: overdue
+      ? `Payment overdue: ${stageLabel} (${orderNumber})`
+      : `Payment reminder: ${stageLabel} (${orderNumber})`,
+    html,
+    text,
+  };
+}
+
+// ---------------------------------------------------------------------------
 // Referral & returning-skater rewards (see services/rewards.service.ts). Each
 // carries a promo code the customer redeems in Stripe's checkout box.
 // ---------------------------------------------------------------------------
