@@ -213,10 +213,7 @@ describe("findOrderVerification", () => {
       throw new Error(`unexpected path ${path}`);
     });
 
-    const verification = await repo.findOrderVerification(
-      "  000002  ",
-      client,
-    );
+    const verification = await repo.findOrderVerification("  000002  ", client);
 
     expect(verification).toEqual({
       email: "ada@example.com",
@@ -233,10 +230,7 @@ describe("findOrderVerification", () => {
       });
     });
 
-    const verification = await repo.findOrderVerification(
-      "000002",
-      client,
-    );
+    const verification = await repo.findOrderVerification("000002", client);
     expect(verification?.email).toBe("");
   });
 
@@ -245,9 +239,7 @@ describe("findOrderVerification", () => {
       if (isSchema(path)) return jsonResponse(databaseSchemaWithStages([]));
       return jsonResponse({ results: [] });
     });
-    expect(
-      await repo.findOrderVerification("ORD-NOPE", client),
-    ).toBeNull();
+    expect(await repo.findOrderVerification("ORD-NOPE", client)).toBeNull();
   });
 });
 
