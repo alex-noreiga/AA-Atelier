@@ -5,10 +5,18 @@
 // lookups re-keyed from order number to email. (Sign-in itself runs on Supabase
 // Auth in the browser; there's no server-side login/verify flow anymore.)
 
-import { findOrdersByEmail } from "../lib/notion/orders.repository.js";
-import { findShopOrdersByEmail } from "../lib/notion/shop-orders.repository.js";
+import {
+  findOrdersByEmail,
+  findOrdersByNumbers,
+} from "../lib/notion/orders.repository.js";
+import {
+  findShopOrdersByEmail,
+  findShopOrdersByNumbers,
+} from "../lib/notion/shop-orders.repository.js";
 import type { OrderSummary } from "../lib/notion/orders.schema.js";
 import type { ShopOrderRecord } from "../lib/notion/shop-orders.repository.js";
+import { postgresConfigured } from "../lib/db/client.js";
+import { findOrderRefsByEmail } from "../lib/db/order-index.repository.js";
 import { listUpcomingAppointmentsByEmail } from "../lib/google/calendar.repository.js";
 import {
   eventToDetailsOrNull,
@@ -79,6 +87,52 @@ async function upcomingAppointments(
 }
 
 /**
+ * The customer's custom orders for the dashboard. Uses the Notion by-email lookup
+ * as the never-regress baseline, then — when Postgres is configured — augments it
+ * with any orders the index discovers that the exact-email match missed
+ * (case-insensitive via `citext`, and legacy orders joined by client id). The PG
+ * step is best-effort: a DB failure degrades to the Notion-only result, and it
+ * fetches live Stage/measurements from Notion (never a stale cached copy).
+ */
+async function listCustomOrders(email: string): Promise<OrderSummary[]> {
+  const base = await findOrdersByEmail(email);
+  if (!postgresConfigured()) return base;
+  try {
+    const refs = await findOrderRefsByEmail(email, "custom");
+    const have = new Set(base.map((o) => o.orderNumber));
+    const extra = refs.map((r) => r.orderNumber).filter((n) => !have.has(n));
+    if (extra.length === 0) return base;
+    return [...base, ...(await findOrdersByNumbers(extra))];
+  } catch (err) {
+    logger.warn(
+      { err },
+      "Account overview: Postgres custom-order discovery failed; using Notion-only results",
+    );
+    return base;
+  }
+}
+
+/** Shop-order counterpart of {@link listCustomOrders} — same baseline-plus-index
+ * union, same best-effort degrade, live fulfilment status from Notion. */
+async function listShopOrders(email: string): Promise<ShopOrderRecord[]> {
+  const base = await findShopOrdersByEmail(email);
+  if (!postgresConfigured()) return base;
+  try {
+    const refs = await findOrderRefsByEmail(email, "shop");
+    const have = new Set(base.map((o) => o.orderNumber));
+    const extra = refs.map((r) => r.orderNumber).filter((n) => !have.has(n));
+    if (extra.length === 0) return base;
+    return [...base, ...(await findShopOrdersByNumbers(extra))];
+  } catch (err) {
+    logger.warn(
+      { err },
+      "Account overview: Postgres shop-order discovery failed; using Notion-only results",
+    );
+    return base;
+  }
+}
+
+/**
  * Everything the account dashboard shows for a signed-in customer: their custom
  * orders, shop orders, and upcoming appointments, all looked up by the session
  * email. The lookups are independent, so run them together — and appointments
@@ -89,8 +143,8 @@ export async function getAccountOverview(
   email: string,
 ): Promise<AccountOverviewResult> {
   const [customOrders, shopOrders, appointments, referral] = await Promise.all([
-    findOrdersByEmail(email),
-    findShopOrdersByEmail(email),
+    listCustomOrders(email),
+    listShopOrders(email),
     upcomingAppointments(email),
     // Best-effort: a customer's referral code, generated on first view. Degrades
     // to null (no referral block) when the CRM is unconfigured or unreachable, so

@@ -176,7 +176,7 @@ export async function createShopOrder(
   session: Stripe.Checkout.Session,
   client: NotionClient = getShopOrdersNotionClient(),
   clientPageId?: string,
-): Promise<void> {
+): Promise<string> {
   assertConfigured(client);
 
   const body: Record<string, unknown> = {
@@ -196,6 +196,9 @@ export async function createShopOrder(
       `Notion shop-order creation failed with status ${response.status}: ${errorText}`,
     );
   }
+
+  const created = (await response.json()) as { id: string };
+  return created.id;
 }
 
 /**
@@ -370,22 +373,80 @@ export async function findShopOrdersByEmail(
     };
 
     for (const page of data.results) {
-      const orderNumber = readRichText(
-        page.properties[SHOP_ORDER_NUMBER_PROPERTY],
-      );
-      if (!orderNumber) continue;
-      const total = readNumber(page.properties[SHOP_ORDER_TOTAL_PROPERTY]);
-      orders.push({
-        orderNumber,
-        status: readStatus(page.properties[SHOP_ORDER_STATUS_PROPERTY]),
-        ...(total !== null ? { total } : {}),
-      });
+      const record = pageToShopOrder(page);
+      if (record) orders.push(record);
     }
 
     cursor = data.has_more && data.next_cursor ? data.next_cursor : undefined;
   } while (cursor);
 
   return orders;
+}
+
+/** Map a Notion shop-order page to a tracking record, or null when it has no
+ * order number (placed before that property shipped — nothing to link to). */
+function pageToShopOrder(
+  page: NotionLookupResponse["results"][number],
+): ShopOrderRecord | null {
+  const orderNumber = readRichText(page.properties[SHOP_ORDER_NUMBER_PROPERTY]);
+  if (!orderNumber) return null;
+  const total = readNumber(page.properties[SHOP_ORDER_TOTAL_PROPERTY]);
+  return {
+    orderNumber,
+    status: readStatus(page.properties[SHOP_ORDER_STATUS_PROPERTY]),
+    ...(total !== null ? { total } : {}),
+  };
+}
+
+/**
+ * Fetch shop-order records for a set of order numbers in a single query (one
+ * Notion `or` filter, chunked at 100), preserving the input order. The account
+ * portal discovers the numbers from the Postgres index, then calls this for the
+ * live fulfilment `Status`.
+ */
+export async function findShopOrdersByNumbers(
+  numbers: string[],
+  client: NotionClient = getShopOrdersNotionClient(),
+): Promise<ShopOrderRecord[]> {
+  assertConfigured(client);
+
+  const unique = [...new Set(numbers.map((n) => n.trim()).filter(Boolean))];
+  if (unique.length === 0) return [];
+
+  const byNumber = new Map<string, ShopOrderRecord>();
+
+  for (let i = 0; i < unique.length; i += 100) {
+    const chunk = unique.slice(i, i + 100);
+    const response = await client.fetch(
+      `/v1/databases/${client.databaseId}/query`,
+      {
+        method: "POST",
+        body: JSON.stringify({
+          filter: {
+            or: chunk.map((n) => ({
+              property: SHOP_ORDER_NUMBER_PROPERTY,
+              rich_text: { equals: n },
+            })),
+          },
+          page_size: 100,
+        }),
+      },
+    );
+
+    if (!response.ok) {
+      throw new Error(`Notion query failed with status ${response.status}`);
+    }
+
+    const data = (await response.json()) as NotionLookupResponse;
+    for (const page of data.results) {
+      const record = pageToShopOrder(page);
+      if (record) byNumber.set(record.orderNumber, record);
+    }
+  }
+
+  return unique
+    .map((n) => byNumber.get(n))
+    .filter((r): r is ShopOrderRecord => r !== undefined);
 }
 
 /**

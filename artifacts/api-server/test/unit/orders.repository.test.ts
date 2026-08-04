@@ -32,15 +32,16 @@ describe("createOrder", () => {
     );
   });
 
-  it("POSTs a page and returns an ORD- order number", async () => {
+  it("POSTs a page and returns the ORD- order number + created page id", async () => {
     const client = makeFakeClient((path) => {
       if (path === "/v1/pages") return jsonResponse({ id: "new-page" }, 200);
       throw new Error(`unexpected path ${path}`);
     });
 
-    const orderNumber = await repo.createOrder(validOrder, client);
+    const { orderNumber, pageId } = await repo.createOrder(validOrder, client);
 
     expect(orderNumber).toMatch(/^ORD-[A-Z0-9]+-[A-Z0-9]+$/);
+    expect(pageId).toBe("new-page");
     expect(client.calls).toHaveLength(1);
     const call = client.calls[0];
     expect(call.path).toBe("/v1/pages");
@@ -727,5 +728,52 @@ describe("fetchLiveOrderStages caching (through findOrderByNumber)", () => {
     await expect(repo.findOrderByNumber("ORD-1", client)).rejects.toThrow(
       /database schema fetch failed with status 503/,
     );
+  });
+});
+
+describe("findOrdersByNumbers", () => {
+  const isQ = (p: string) => p.endsWith("/query");
+  const isS = (p: string) => /\/v1\/databases\/[^/]+$/.test(p);
+
+  it("returns [] without querying for an empty list", async () => {
+    const client = makeFakeClient(() => {
+      throw new Error("should not fetch");
+    });
+    expect(await repo.findOrdersByNumbers([], client)).toEqual([]);
+    expect(client.calls).toHaveLength(0);
+  });
+
+  it("fetches by an OR filter and preserves the input order", async () => {
+    const client = makeFakeClient((path) => {
+      if (isS(path)) return jsonResponse(databaseSchemaWithStages(["A", "B"]));
+      if (isQ(path)) {
+        return jsonResponse({
+          results: [
+            // Notion returns them in its own order; the function reorders to input.
+            orderPage({
+              orderNumber: "ORD-1",
+              orderName: "One",
+              currentStage: "A",
+            }),
+            orderPage({
+              orderNumber: "ORD-2",
+              orderName: "Two",
+              currentStage: "B",
+            }),
+          ],
+        });
+      }
+      throw new Error(`unexpected path ${path}`);
+    });
+
+    const result = await repo.findOrdersByNumbers(["ORD-2", "ORD-1"], client);
+
+    expect(result.map((o) => o.orderNumber)).toEqual(["ORD-2", "ORD-1"]);
+    const query = client.calls.find((c) => isQ(c.path));
+    const body = JSON.parse(query!.init!.body as string);
+    expect(body.filter.or).toEqual([
+      { property: "Order Number", rich_text: { equals: "ORD-2" } },
+      { property: "Order Number", rich_text: { equals: "ORD-1" } },
+    ]);
   });
 });

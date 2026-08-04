@@ -165,7 +165,10 @@ describe("getOrderStatus", () => {
 
 describe("submitOrder", () => {
   it("delegates to the repository and returns the new order number", async () => {
-    mockCreate.mockResolvedValue("ORD-XYZ-987");
+    mockCreate.mockResolvedValue({
+      orderNumber: "ORD-XYZ-987",
+      pageId: "page-1",
+    });
     const result = await submitOrder(
       createOrderInput({ email: "ada@example.com" }),
     );
@@ -175,7 +178,10 @@ describe("submitOrder", () => {
 
   it("upserts a Client CRM record by email and links the order to it", async () => {
     mockUpsertClient.mockResolvedValue("client-123");
-    mockCreate.mockResolvedValue("ORD-XYZ-987");
+    mockCreate.mockResolvedValue({
+      orderNumber: "ORD-XYZ-987",
+      pageId: "page-1",
+    });
     const input = createOrderInput({ email: "ada@example.com" });
 
     await submitOrder(input);
@@ -191,7 +197,10 @@ describe("submitOrder", () => {
 
   it("still creates the order (unlinked) when the CRM upsert fails", async () => {
     mockUpsertClient.mockRejectedValue(new Error("Notion CRM down"));
-    mockCreate.mockResolvedValue("ORD-XYZ-987");
+    mockCreate.mockResolvedValue({
+      orderNumber: "ORD-XYZ-987",
+      pageId: "page-1",
+    });
 
     const result = await submitOrder(
       createOrderInput({ email: "ada@example.com" }),
@@ -206,7 +215,10 @@ describe("submitOrder", () => {
   });
 
   it("accepts an order with no measurements when an appointment is requested", async () => {
-    mockCreate.mockResolvedValue("ORD-APPT-001");
+    mockCreate.mockResolvedValue({
+      orderNumber: "ORD-APPT-001",
+      pageId: "page-1",
+    });
     const {
       waist,
       bust,
@@ -242,7 +254,10 @@ describe("submitOrder", () => {
   });
 
   it("dispatches a confirmation email to the customer after creating the order", async () => {
-    mockCreate.mockResolvedValue("ORD-XYZ-987");
+    mockCreate.mockResolvedValue({
+      orderNumber: "ORD-XYZ-987",
+      pageId: "page-1",
+    });
 
     await submitOrder(createOrderInput({ email: "ada@example.com" }));
 
@@ -254,7 +269,10 @@ describe("submitOrder", () => {
 
   it("also notifies the atelier inbox (reply-to the customer) when ATELIER_INBOX_EMAIL is set", async () => {
     process.env.ATELIER_INBOX_EMAIL = "orders@a3iceanddance.com";
-    mockCreate.mockResolvedValue("ORD-XYZ-987");
+    mockCreate.mockResolvedValue({
+      orderNumber: "ORD-XYZ-987",
+      pageId: "page-1",
+    });
 
     await submitOrder(createOrderInput({ email: "ada@example.com" }));
 
@@ -268,7 +286,10 @@ describe("submitOrder", () => {
   });
 
   it("does not notify the atelier when ATELIER_INBOX_EMAIL is unset", async () => {
-    mockCreate.mockResolvedValue("ORD-XYZ-987");
+    mockCreate.mockResolvedValue({
+      orderNumber: "ORD-XYZ-987",
+      pageId: "page-1",
+    });
 
     await submitOrder(createOrderInput({ email: "ada@example.com" }));
 
@@ -279,7 +300,10 @@ describe("submitOrder", () => {
   it("sends both customer and atelier mail from the orders sender", async () => {
     process.env.RESEND_FROM_EMAIL = "A.A Atelier <orders@a3iceanddance.com>";
     process.env.ATELIER_INBOX_EMAIL = "orders@a3iceanddance.com";
-    mockCreate.mockResolvedValue("ORD-XYZ-987");
+    mockCreate.mockResolvedValue({
+      orderNumber: "ORD-XYZ-987",
+      pageId: "page-1",
+    });
 
     await submitOrder(createOrderInput({ email: "ada@example.com" }));
 
