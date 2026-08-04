@@ -38,7 +38,7 @@ import {
   useGetProducts,
   useCreateBackInStockRequest,
 } from "@workspace/api-client-react";
-import Shop, { indexVariants, resolveAddOns } from "@/pages/shop";
+import Shop, { indexVariants, resolveAddOns, matchesQuery } from "@/pages/shop";
 import type { Product, ProductVariant } from "@workspace/api-client-react";
 
 const mockHook = vi.mocked(useGetProducts);
@@ -374,6 +374,98 @@ describe("Shop category filter", () => {
     // Not stranded on a dead chip showing an empty grid.
     expect(screen.getByTestId("product-p1")).toBeInTheDocument();
     expect(screen.queryByTestId("shop-empty")).not.toBeInTheDocument();
+  });
+});
+
+describe("Shop search", () => {
+  it("hides the search box until there's more than one piece to sift", () => {
+    setHook({ products: [product({ id: "p1" })] });
+    renderShop(<Shop />);
+    expect(screen.queryByTestId("shop-search")).not.toBeInTheDocument();
+  });
+
+  it("narrows the grid to pieces matching the typed name", async () => {
+    setHook({
+      products: [
+        product({ id: "p1", title: "Bow Fleece Soaker" }),
+        product({ id: "p2", title: "Crystal Dress" }),
+      ],
+    });
+    renderShop(<Shop />);
+    // Both show before typing.
+    expect(screen.getByTestId("product-p1")).toBeInTheDocument();
+    expect(screen.getByTestId("product-p2")).toBeInTheDocument();
+
+    await userEvent.type(screen.getByTestId("shop-search"), "crystal");
+
+    expect(screen.getByTestId("product-p2")).toBeInTheDocument();
+    expect(screen.queryByTestId("product-p1")).not.toBeInTheDocument();
+  });
+
+  it("shows a no-results message (not the restocking one) when nothing matches", async () => {
+    setHook({
+      products: [
+        product({ id: "p1", title: "Bow Fleece Soaker" }),
+        product({ id: "p2", title: "Crystal Dress" }),
+      ],
+    });
+    renderShop(<Shop />);
+    await userEvent.type(screen.getByTestId("shop-search"), "zzz");
+
+    expect(screen.getByTestId("shop-no-results")).toBeInTheDocument();
+    expect(screen.queryByTestId("shop-empty")).not.toBeInTheDocument();
+    // The commission CTA still offers a way forward.
+    expect(screen.getByTestId("cta-commission")).toBeInTheDocument();
+  });
+
+  it("combines the search box with the category chip", async () => {
+    setHook({
+      products: [
+        product({ id: "p1", title: "Bow Fleece Soaker", category: "Soaker" }),
+        product({ id: "p2", title: "Crystal Soaker", category: "Soaker" }),
+        product({ id: "p3", title: "Crystal Dress", category: "Dress" }),
+      ],
+      categories: ["Soaker", "Dress"],
+    });
+    renderShop(<Shop />);
+    await userEvent.click(screen.getByTestId("filter-soaker"));
+    await userEvent.type(screen.getByTestId("shop-search"), "crystal");
+
+    // Only the Crystal *Soaker* survives both filters.
+    expect(screen.getByTestId("product-p2")).toBeInTheDocument();
+    expect(screen.queryByTestId("product-p1")).not.toBeInTheDocument();
+    expect(screen.queryByTestId("product-p3")).not.toBeInTheDocument();
+  });
+});
+
+describe("matchesQuery", () => {
+  const p = (o: Record<string, unknown> = {}): Product =>
+    product(o) as unknown as Product;
+
+  it("matches everything for an empty or whitespace query", () => {
+    expect(matchesQuery(p(), "")).toBe(true);
+    expect(matchesQuery(p(), "   ")).toBe(true);
+  });
+
+  it("matches the product title, case-insensitively", () => {
+    const dress = p({
+      title: "Crystal Dress",
+      variants: [variant({ id: "v1", name: "Crystal Dress" })],
+    });
+    expect(matchesQuery(dress, "crystal")).toBe(true);
+    expect(matchesQuery(dress, "DRESS")).toBe(true);
+    expect(matchesQuery(dress, "soaker")).toBe(false);
+  });
+
+  it("matches a variant name so colorways are findable", () => {
+    const withVariants = p({
+      title: "Fleece Soaker",
+      variants: [
+        variant({ id: "v1", name: "Blush Fleece Soaker" }),
+        variant({ id: "v2", name: "Midnight Fleece Soaker" }),
+      ],
+    });
+    expect(matchesQuery(withVariants, "midnight")).toBe(true);
   });
 });
 
