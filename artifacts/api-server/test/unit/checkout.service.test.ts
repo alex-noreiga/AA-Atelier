@@ -89,6 +89,7 @@ beforeEach(() => {
   process.env.PUBLIC_BASE_URL = "https://shop.test";
   process.env.RESEND_FROM_EMAIL = "orders@shop.test";
   delete process.env.STRIPE_SHIPPING_RATE_IDS;
+  delete process.env.STRIPE_BNPL_METHODS;
   // The atelier notification is opt-in; individual tests set the inbox when they
   // want to exercise it, so clear it by default.
   delete process.env.ATELIER_INBOX_EMAIL;
@@ -344,6 +345,29 @@ describe("createCheckoutSession", () => {
     expect(create).toHaveBeenCalled();
     expect(create.mock.calls[0][0].shipping_options).toBeUndefined();
     expect(logger.error).toHaveBeenCalled();
+  });
+
+  it("offers the configured buy-now-pay-later methods (card + BNPL) when set", async () => {
+    process.env.STRIPE_BNPL_METHODS = "klarna, affirm";
+    mockListVariants.mockResolvedValue([variant()]);
+    const { stripe, create } = fakeStripe();
+
+    await createCheckoutSession([{ variantId: "v1", quantity: 1 }], stripe);
+
+    expect(create.mock.calls[0][0].payment_method_types).toEqual([
+      "card",
+      "klarna",
+      "affirm",
+    ]);
+  });
+
+  it("omits payment_method_types when no BNPL is configured (dynamic methods)", async () => {
+    mockListVariants.mockResolvedValue([variant()]);
+    const { stripe, create } = fakeStripe();
+
+    await createCheckoutSession([{ variantId: "v1", quantity: 1 }], stripe);
+
+    expect(create.mock.calls[0][0].payment_method_types).toBeUndefined();
   });
 
   it("throws when PUBLIC_BASE_URL is not configured", async () => {
