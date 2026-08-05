@@ -6,10 +6,21 @@ import { test, expect } from "@playwright/test";
 // write path. Pure navigation + static-render assertions.
 
 test.describe("Production smoke: site navigation", () => {
-  test("landing page renders with the global navbar", async ({ page }) => {
+  test("landing page renders with the global navbar", async ({
+    page,
+    isMobile,
+  }) => {
     await page.goto("/");
     await expect(page.getByTestId("link-brand")).toBeVisible();
-    await expect(page.getByTestId("nav-shop")).toBeVisible();
+    // The navbar swaps to a Sheet (hamburger) menu below the `md` breakpoint,
+    // where the desktop links live in a `hidden md:flex` container. So the
+    // stable nav-chrome element differs by viewport: the menu button on mobile,
+    // the Shop link on desktop.
+    if (isMobile) {
+      await expect(page.getByTestId("button-menu")).toBeVisible();
+    } else {
+      await expect(page.getByTestId("nav-shop")).toBeVisible();
+    }
     // A home CTA proves the page body rendered, not just the shared chrome.
     await expect(page.getByTestId("cta-place-order")).toBeVisible();
   });
@@ -53,9 +64,20 @@ test.describe("Production smoke: site navigation", () => {
     });
   }
 
-  test("navbar routes from the landing page to the shop", async ({ page }) => {
+  test("navbar routes from the landing page to the shop", async ({
+    page,
+    isMobile,
+  }) => {
     await page.goto("/");
-    await page.getByTestId("nav-shop").click();
+    // On mobile the Shop link lives inside the Sheet menu (open it first, then
+    // click the mobile link); on desktop it's a top-level navbar link. This is
+    // the real navigation path a visitor takes on each viewport.
+    if (isMobile) {
+      await page.getByTestId("button-menu").click();
+      await page.getByTestId("nav-mobile-shop").click();
+    } else {
+      await page.getByTestId("nav-shop").click();
+    }
     await expect(page).toHaveURL(/\/shop$/);
   });
 });
