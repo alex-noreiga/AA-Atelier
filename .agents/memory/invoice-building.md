@@ -170,12 +170,25 @@ Load-bearing:
   (lookup is via the order's `Invoices` relation, never the title), so it's safe.
 - **Packaging usage lines are skipped** (`USAGE_TYPE_PACKAGING` — an internal cost,
   not itemized to the customer).
-- **`Suggested Price`'s formula is CORRECT; its description is stale.** The Notion
-  description still reads "Break-even price + labor cost," but the real formula is
-  `round(Break Even × (1 + margin) / (Production ? 1 − sellingFees : 1), 2)` —
-  markup-on-cost, grossing up fees on Production rows only. Do **not** rewrite the
-  formula to match the description. (The description text can't be edited via the
-  Notion API's `update-data-source` DDL — it's a manual UI fix.)
+- **`Suggested Price` is now channel-agnostic (standardized 2026-08).** It was
+  `round(Break Even × (1 + margin) / (Production ? 1 − sellingFees : 1), 2)` where
+  `margin` fell back from a per-row `Profit Margin` override to the settings default.
+  It is now `round(base × (1 + settingsMargin) / (1 − settingsFee), 2)`, reading
+  **both** margin and selling fees from the row's `Pricing Settings` rollups
+  (`Default Profit Margin (from settings)` / `Default Selling Fees % (from settings)`)
+  — **no `Channel` branch, no per-row override**. Price-neutral for existing rows
+  because the Custom settings row carries a 0% fee (÷1); Production keeps its 6.5%.
+  The per-row `Profit Margin` column was **dropped** (the `Profit` analytic was
+  rewritten off it too). See `costing-engine-standardization.md`.
+- **DDL gotcha — the formula inlines Break Even.** `update-data-source`'s formula
+  type-checker **rejects referencing another formula property** (`prop("Break Even
+  Price")` / `prop("Labor Cost")` → "Type error with formula"), even though the
+  Notion UI accepts it. So both `Suggested Price` and `Profit` inline the break-even
+  base — `Material Cost + Labor Hours × Default Hourly Rate (from settings) +
+  Packaging Cost (from usage)` — instead of referencing the `Break Even Price`
+  column. Same value; if you edit these in the Notion UI you can collapse them back
+  to `prop("Break Even Price")`. (Property descriptions also can't be set via DDL —
+  a manual UI fix.)
 
 New env: `NOTION_COSTING_DATABASE_ID`, `NOTION_MATERIAL_USAGE_DATABASE_ID`
 (integration shared with both). Traversal is order → `Costing Items` → each

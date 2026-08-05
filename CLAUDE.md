@@ -836,10 +836,21 @@ Number`) that builds the clickable URL
 the order number (a formula that returns a URL renders as a link; a native Button
 can't interpolate the row's order number into its URL, which is why this is a
 formula link rather than a Button). The `Suggested Price` costing formula is the
-source of truth for the invoice total; its Notion _description_ text is stale
-("Break-even price + labor cost") but the **formula is correct** (marks up
-`Break Even Price` by the profit margin, grossing up for selling fees on
-Production rows only) — don't "fix" the formula to match the description.
+source of truth for the invoice total. As of the 2026-08 costing-engine
+standardization it is **channel-agnostic**: `round(base × (1 + settingsMargin) /
+(1 − settingsFee), 2)`, reading both the profit margin and the selling fee from the
+row's `Pricing Settings` rollups (`Default Profit Margin (from settings)` /
+`Default Selling Fees % (from settings)`) — **no `Channel` branch and no per-row
+`Profit Margin` override** (that column was dropped; a single uniform $5 hourly rate
+and 100% margin now live in the two `Pricing Settings` rows, which differ only in the
+selling fee: Custom / Direct 0%, Production / Marketplace 6.5%). It stays
+markup-on-cost. Two Notion-API gotchas if you edit these formulas via the
+`update-data-source` DDL: it **rejects referencing another formula property**
+(`prop("Break Even Price")` / `prop("Labor Cost")` → "Type error"), so `Suggested
+Price` and `Profit` **inline** the break-even base (`Material Cost + Labor Hours ×
+Default Hourly Rate (from settings) + Packaging Cost (from usage)`) rather than
+referencing the `Break Even Price` column; and property _descriptions_ can't be set
+via DDL (a manual UI fix). See `.agents/memory/costing-engine-standardization.md`.
 
 ### Order cancellation & refunds
 
