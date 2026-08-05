@@ -957,9 +957,29 @@ order that has a firm due date. The load-bearing points:
    "Not Started" (the milestone `Status` has no Notion→app trigger otherwise). Same
    per-order isolation as generation: one order's failure is logged and skipped.
 
+5. **Order context is read, not copied — three rollups through the `Order`
+   relation.** So the atelier's Timeline/Calendar/table views can identify a
+   milestone's order without opening it, the Production Schedule carries three
+   **read-only rollups** that read the linked order directly: `Order Number`
+   (← the order's `Order Number`), `Order Due Date` (← its `Due Date`), and
+   `Customer` (← its `Order Name` title). These are **display-only and unread by
+   the app** — nothing in the code path reads or writes them, so they're purely
+   additive (adding a Notion property is always safe). Only the two things Notion
+   can't derive stay app-written: the `Production Stage` label (a select — used by
+   the fitting-reminder filter) and the milestone's own `Status`, which is a
+   _positional_ completion state (`milestoneStatusFor` compares the milestone's
+   stage against the order's live `Stage` in the live pipeline order). A Notion
+   rollup can't compute that without hardcoding the stage ordering in a formula,
+   which the "never hardcode a Notion option list" rule forbids — hence
+   `syncMilestoneStatuses` keeps that one field in sync while the rollups cover the
+   rest of the order context.
+
 The atelier must, one time: add `Due Date` (date) + `Milestones Generated`
 (checkbox) to the Order Tracking Pipeline; add `Production Stage` (select) +
-`Order` (relation → Order Tracking Pipeline) to the Production Schedule; share the
+`Order` (relation → Order Tracking Pipeline) to the Production Schedule, plus the
+three read-only rollups above (`Order Number` / `Order Due Date` / `Customer`,
+each rolling up the linked order through the `Order` relation) surfaced on the
+schedule views; share the
 Notion integration with the Production Schedule database; set
 `NOTION_PRODUCTION_SCHEDULE_DATABASE_ID` + `CRON_SECRET`; and (optional) add a
 Notion **Button** → "Open link" →
