@@ -113,7 +113,11 @@ test.describe("Shop back-in-stock dialog", () => {
     await page.getByTestId("notify-email").fill("grace@example.com");
     await page.getByTestId("notify-submit").click();
 
-    await expect(page.getByText("Couldn't save your request")).toBeVisible();
+    // `exact` avoids a strict-mode double-match: the toaster's sr-only aria-live
+    // announcer concatenates the toast title and description into one text node.
+    await expect(
+      page.getByText("Couldn't save your request", { exact: true }),
+    ).toBeVisible();
     await expect(page.getByTestId("notify-success")).toHaveCount(0);
   });
 });
