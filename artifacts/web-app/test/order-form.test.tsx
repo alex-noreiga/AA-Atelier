@@ -1,28 +1,28 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import { render, screen, fireEvent, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import { createOrderInput, fabricList } from "@workspace/test-fixtures";
+import { createOrderInput, colorList } from "@workspace/test-fixtures";
 
 // Capture what the create-order mutation is called with, without hitting the
 // network. `vi.hoisted` makes the spy available inside the hoisted vi.mock.
-const { mutate, subscribeMutate, fabricsResult } = vi.hoisted(() => ({
+const { mutate, subscribeMutate, colorsResult } = vi.hoisted(() => ({
   mutate: vi.fn(),
   subscribeMutate: vi.fn(),
-  // Mutable so a test can swap in an empty/errored fabrics result.
-  fabricsResult: { current: { data: undefined as unknown } },
+  // Mutable so a test can swap in an empty/errored colors result.
+  colorsResult: { current: { data: undefined as unknown } },
 }));
 vi.mock("@workspace/api-client-react", () => ({
   useCreateOrder: () => ({ mutate, isPending: false }),
   useSubscribeNewsletter: () => ({ mutate: subscribeMutate, isPending: false }),
-  useGetFabrics: () => fabricsResult.current,
+  useGetColors: () => colorsResult.current,
 }));
 
 import OrderForm from "@/pages/order-form";
 
-// Default the fabrics query to a populated palette; a test can override
-// `fabricsResult.current` to exercise the empty/degraded path.
+// Default the colors query to a populated palette; a test can override
+// `colorsResult.current` to exercise the empty/degraded path.
 beforeEach(() => {
-  fabricsResult.current = { data: fabricList() };
+  colorsResult.current = { data: colorList() };
 });
 
 function byId(id: string): HTMLElement {
@@ -52,8 +52,8 @@ async function fillRequired(user: ReturnType<typeof userEvent.setup>) {
 
 /**
  * The intake is a two-step flow: step 0 holds every required field, step 1 is
- * the optional fabric selector + the final "Submit Order". Advance from step 0
- * to step 1, waiting for the fabric step (its Submit button) to render.
+ * the optional color selector + the final "Submit Order". Advance from step 0
+ * to step 1, waiting for the colors step (its Submit button) to render.
  */
 async function continueToColors(user: ReturnType<typeof userEvent.setup>) {
   await user.click(screen.getByRole("button", { name: /continue to colors/i }));
@@ -190,7 +190,7 @@ describe("OrderForm rush order", () => {
       await screen.findByText(/acknowledge the rush surcharge/i),
     ).toBeInTheDocument();
     expect(mutate).not.toHaveBeenCalled();
-    // Still on step 0 — the fabric step (its Submit) never rendered.
+    // Still on step 0 — the colors step (its Submit) never rendered.
     expect(
       screen.queryByRole("button", { name: "Submit Order" }),
     ).not.toBeInTheDocument();
@@ -249,7 +249,7 @@ describe("OrderForm newsletter opt-in", () => {
     render(<OrderForm />);
     await fillRequired(user);
     await continueToColors(user);
-    // The opt-in sits on the final (fabric) step, next to Submit.
+    // The opt-in sits on the final (colors) step, next to Submit.
     await user.click(screen.getByTestId("subscribe-newsletter"));
     await user.click(screen.getByRole("button", { name: "Submit Order" }));
 
@@ -304,7 +304,7 @@ describe("OrderForm deposit expectation", () => {
     render(<OrderForm />);
     await fillRequired(user);
     await continueToColors(user);
-    // The deposit note sits by the final Submit on the fabric step.
+    // The deposit note sits by the final Submit on the colors step.
     expect(screen.getByTestId("deposit-note")).toHaveTextContent(
       /deposit to reserve your place/i,
     );
@@ -329,15 +329,15 @@ describe("OrderForm color selector", () => {
     await fillRequired(user);
     await continueToColors(user);
     await user.click(screen.getByTestId("color-ivory"));
-    await user.click(screen.getByTestId("color-floral-print"));
-    await user.type(byId("colorUsage"), "Ivory bodice, floral skirt");
+    await user.click(screen.getByTestId("color-emerald"));
+    await user.type(byId("colorUsage"), "Ivory bodice, emerald skirt");
     await user.click(screen.getByRole("button", { name: "Submit Order" }));
 
     await waitFor(() => expect(mutate).toHaveBeenCalledTimes(1));
     const { data } = mutate.mock.calls[0][0];
     // Colors are sent as the picked names, in selection order.
-    expect(data.colors).toEqual(["Ivory", "Floral Print"]);
-    expect(data.colorUsage).toBe("Ivory bodice, floral skirt");
+    expect(data.colors).toEqual(["Ivory", "Emerald"]);
+    expect(data.colorUsage).toBe("Ivory bodice, emerald skirt");
   });
 
   it("omits colors and colorUsage when none are provided", async () => {
@@ -368,7 +368,7 @@ describe("OrderForm color selector", () => {
   });
 
   it("still submits when the palette is empty (degraded), usage note only", async () => {
-    fabricsResult.current = { data: undefined };
+    colorsResult.current = { data: undefined };
     const user = userEvent.setup();
     render(<OrderForm />);
     await fillRequired(user);

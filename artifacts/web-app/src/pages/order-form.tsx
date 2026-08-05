@@ -5,7 +5,7 @@ import { z } from "zod";
 import { Link } from "wouter";
 import {
   useCreateOrder,
-  useGetFabrics,
+  useGetColors,
   useSubscribeNewsletter,
 } from "@workspace/api-client-react";
 import { Button } from "@/components/ui/button";
@@ -170,12 +170,12 @@ export default function OrderForm() {
   // (the server flow is best-effort too) and never blocks the order confirmation.
   const subscribeNewsletter = useSubscribeNewsletter();
 
-  // The studio's color palette, read live from Notion. Best-effort: an empty or
-  // errored list just hides the color chips (the customer still describes what
-  // they want in the usage note), and never blocks the order form (the palette
-  // database is optional).
-  const { data: fabricsData } = useGetFabrics();
-  const palette = fabricsData?.fabrics ?? [];
+  // The studio's color palette (a built-in primary set, atelier-overridable via
+  // the COLOR_PALETTE Studio Settings value). Best-effort: if the fetch errors,
+  // the chips just don't render and the customer still describes what they want
+  // in the usage note — it never blocks the order form.
+  const { data: colorsData } = useGetColors();
+  const palette = colorsData?.colors ?? [];
 
   const {
     register,
@@ -364,7 +364,7 @@ export default function OrderForm() {
 
         {/* noValidate: zod owns validation (incl. the needed-by floor), so the
             browser's native constraint bubble can't pre-empt our inline
-            messages. On step 0 a submit (button or Enter) advances to the fabric
+            messages. On step 0 a submit (button or Enter) advances to the colors
             step after validating; on step 1 it places the order. */}
         <form
           noValidate
