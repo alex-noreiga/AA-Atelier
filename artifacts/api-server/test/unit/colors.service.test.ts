@@ -53,8 +53,9 @@ describe("intakeColorPalette", () => {
     const palette = intakeColorPalette();
     expect(palette.length).toBeGreaterThan(0);
     // Every default color carries an id, name, and a hex fill.
-    expect(palette.every((c) => c.id && c.name && /^#[0-9a-fA-F]{6}$/.test(c.hex)))
-      .toBe(true);
+    expect(
+      palette.every((c) => c.id && c.name && /^#[0-9a-fA-F]{6}$/.test(c.hex)),
+    ).toBe(true);
     expect(palette.map((c) => c.name)).toContain("Red");
   });
 
