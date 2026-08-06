@@ -21,7 +21,7 @@
 
 import type {
   CheckoutSessionStatus,
-  FabricList,
+  ColorList,
   NewCancellationRequest,
   NewContactRequest,
   NewMeasurementChangeRequest,
@@ -200,32 +200,15 @@ export function productList(overrides: Partial<ProductList> = {}): ProductList {
 }
 
 /**
- * A `GET /api/fabrics` response — the atelier's swatch palette for the order
- * form's visual fabric selector. One solid (with a hex) + one print (with a
- * swatch image) by default; pass `fabrics` to reshape it. Used as the mocked HTTP
- * response / hook result in the order-form + picker tests.
+ * A `GET /api/colors` response — the studio's intake color palette for the order
+ * form's color picker. Two solid colors by default; pass `colors` to reshape it.
+ * Used as the mocked HTTP response / hook result in the order-form + picker tests.
  */
-export function fabricList(overrides: Partial<FabricList> = {}): FabricList {
+export function colorList(overrides: Partial<ColorList> = {}): ColorList {
   return {
-    fabrics: [
-      {
-        id: "fab-solid",
-        name: "Ivory",
-        type: "solid",
-        placement: "both",
-        hex: "#F4EFE6",
-        colorFamily: "Neutrals",
-        sort: 1,
-      },
-      {
-        id: "fab-print",
-        name: "Floral Print",
-        type: "print",
-        placement: "bodice",
-        swatchImage: "https://example.com/floral.jpg",
-        colorFamily: "Multi/Print",
-        sort: 1,
-      },
+    colors: [
+      { id: "ivory", name: "Ivory", hex: "#F3ECE2" },
+      { id: "emerald", name: "Emerald", hex: "#0B6E4F" },
     ],
     ...overrides,
   };

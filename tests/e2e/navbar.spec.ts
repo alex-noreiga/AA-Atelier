@@ -1,16 +1,16 @@
 import { test, expect } from "./support/test";
-import { mockFabrics } from "./support/mock-api";
+import { mockColors } from "./support/mock-api";
 
 // The navbar fetches nothing, and the status page calls the API only on submit —
 // so most tests here need no API mocking. The one exception is the order form:
-// it loads its fabric-swatch palette (GET /api/fabrics) on mount, so the test that
-// lands on /order mocks that endpoint to satisfy the unmocked-/api guard.
+// it loads its color palette (GET /api/colors) on mount, so the test that lands
+// on /order mocks that endpoint to satisfy the unmocked-/api guard.
 
 test.describe("Navbar", () => {
   test("reaches the order form through the Services dropdown", async ({
     page,
   }) => {
-    await mockFabrics(page);
+    await mockColors(page);
     await page.goto("/");
 
     await expect(page.getByTestId("nav-place-an-order")).toBeHidden();

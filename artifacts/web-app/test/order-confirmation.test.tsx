@@ -16,7 +16,7 @@ vi.mock("@workspace/api-client-react", () => ({
       opts?.mutation?.onSuccess?.({ orderNumber: "000042" }, variables),
   }),
   useSubscribeNewsletter: () => ({ mutate: vi.fn(), isPending: false }),
-  useGetFabrics: () => ({ data: undefined }),
+  useGetColors: () => ({ data: undefined }),
 }));
 
 import OrderForm from "@/pages/order-form";
@@ -44,8 +44,8 @@ async function fillMeasurements(user: ReturnType<typeof userEvent.setup>) {
   await user.type(byId("bodyGirth"), String(order.bodyGirth));
 }
 
-// The intake is a two-step flow; the final "Submit Order" lives on the fabric
-// step, so advance past the (optional) fabric selector first.
+// The intake is a two-step flow; the final "Submit Order" lives on the colors
+// step, so advance past the (optional) color selector first.
 async function continueToColors(user: ReturnType<typeof userEvent.setup>) {
   await user.click(screen.getByRole("button", { name: /continue to colors/i }));
   await screen.findByRole("button", { name: "Submit Order" });

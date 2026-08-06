@@ -27,9 +27,9 @@ import type {
   CancelAppointmentRequest,
   CheckoutSessionResponse,
   CheckoutSessionStatus,
+  ColorList,
   CreateCheckoutSessionRequest,
   ErrorEnvelope,
-  FabricList,
   GetAppointmentAvailabilityParams,
   GetAppointmentParams,
   HealthStatus,
@@ -903,21 +903,21 @@ export function useGetProducts<TData = Awaited<ReturnType<typeof getProducts>>, 
 
 
 
-export const getGetFabricsUrl = () => {
+export const getGetColorsUrl = () => {
 
 
 
 
-  return `/api/fabrics`
+  return `/api/colors`
 }
 
 /**
- * Returns the atelier's fabric/color swatches from the Notion "Fabrics" database, for the custom-order intake form's visual fabric selector. Each swatch carries its fabric type (which picker group it belongs to) and placement (bodice, skirt, or both). The list is empty when the Fabrics database is not configured, so the order form degrades to its free-text description field.
- * @summary List custom-order fabric swatches
+ * Returns the studio's color palette for the custom-order intake form's color picker. The palette is an atelier-editable "Studio Settings" value (`COLOR_PALETTE`), falling back to a built-in primary-color palette, so this always returns a non-empty list.
+ * @summary List custom-order palette colors
  */
-export const getFabrics = async ( options?: Parameters<typeof customFetch>[1]): Promise<FabricList> => {
+export const getColors = async ( options?: Parameters<typeof customFetch>[1]): Promise<ColorList> => {
 
-  return customFetch<FabricList>(getGetFabricsUrl(),
+  return customFetch<ColorList>(getGetColorsUrl(),
   {
     ...options,
     method: 'GET'
@@ -930,45 +930,45 @@ export const getFabrics = async ( options?: Parameters<typeof customFetch>[1]): 
 
 
 
-export const getGetFabricsQueryKey = () => {
+export const getGetColorsQueryKey = () => {
     return [
-    `/api/fabrics`
+    `/api/colors`
     ] as const;
     }
 
 
-export const getGetFabricsQueryOptions = <TData = Awaited<ReturnType<typeof getFabrics>>, TError = ErrorType<ErrorEnvelope>>( options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getFabrics>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+export const getGetColorsQueryOptions = <TData = Awaited<ReturnType<typeof getColors>>, TError = ErrorType<ErrorEnvelope>>( options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getColors>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
 ) => {
 
 const {query: queryOptions, request: requestOptions} = options ?? {};
 
-  const queryKey =  queryOptions?.queryKey ?? getGetFabricsQueryKey();
+  const queryKey =  queryOptions?.queryKey ?? getGetColorsQueryKey();
 
 
 
-    const queryFn: QueryFunction<Awaited<ReturnType<typeof getFabrics>>> = ({ signal }) => getFabrics({ signal, ...requestOptions });
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof getColors>>> = ({ signal }) => getColors({ signal, ...requestOptions });
 
 
 
 
 
-   return  { queryKey, queryFn, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof getFabrics>>, TError, TData> & { queryKey: QueryKey }
+   return  { queryKey, queryFn, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof getColors>>, TError, TData> & { queryKey: QueryKey }
 }
 
-export type GetFabricsQueryResult = NonNullable<Awaited<ReturnType<typeof getFabrics>>>
-export type GetFabricsQueryError = ErrorType<ErrorEnvelope>
+export type GetColorsQueryResult = NonNullable<Awaited<ReturnType<typeof getColors>>>
+export type GetColorsQueryError = ErrorType<ErrorEnvelope>
 
 
 /**
- * @summary List custom-order fabric swatches
+ * @summary List custom-order palette colors
  */
 
-export function useGetFabrics<TData = Awaited<ReturnType<typeof getFabrics>>, TError = ErrorType<ErrorEnvelope>>(
-  options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getFabrics>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+export function useGetColors<TData = Awaited<ReturnType<typeof getColors>>, TError = ErrorType<ErrorEnvelope>>(
+  options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getColors>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
 
  ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
 
-  const queryOptions = getGetFabricsQueryOptions(options)
+  const queryOptions = getGetColorsQueryOptions(options)
 
   const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
 

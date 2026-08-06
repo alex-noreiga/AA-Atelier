@@ -5,7 +5,7 @@
 // generated react-query client, and the rendered result).
 
 import type { Page, Route } from "@playwright/test";
-import { fabricList, type OrderStatus } from "@workspace/test-fixtures";
+import { colorList, type OrderStatus } from "@workspace/test-fixtures";
 
 const json = (route: Route, status: number, body: unknown) =>
   route.fulfill({
@@ -79,17 +79,17 @@ export async function mockCreateOrder(
 }
 
 /**
- * Mock `GET /api/fabrics` (the order form's visual fabric selector palette).
- * Defaults to the shared `fabricList()` fixture; pass `body: { fabrics: [] }` to
- * exercise the degraded (unconfigured/empty) path.
+ * Mock `GET /api/colors` (the order form's color-picker palette). Defaults to the
+ * shared `colorList()` fixture; pass `body: { colors: [] }` to exercise the
+ * degraded (empty) path.
  */
-export async function mockFabrics(
+export async function mockColors(
   page: Page,
   opts: { status?: number; body?: unknown } = {},
 ): Promise<void> {
-  await page.route("**/api/fabrics", async (route) => {
+  await page.route("**/api/colors", async (route) => {
     if (route.request().method() !== "GET") return route.fallback();
-    await json(route, opts.status ?? 200, opts.body ?? fabricList());
+    await json(route, opts.status ?? 200, opts.body ?? colorList());
   });
 }
 

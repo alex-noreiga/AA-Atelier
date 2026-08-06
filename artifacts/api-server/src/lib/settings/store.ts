@@ -31,6 +31,7 @@ export const SETTING_KEYS = [
   "REFERRAL_WELCOME_PERCENT",
   "RETURNING_DISCOUNT_PERCENT",
   "REWARD_CODE_EXPIRES_DAYS",
+  "COLOR_PALETTE",
 ] as const;
 
 let snapshot = new Map<string, string>();
