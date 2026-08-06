@@ -24,7 +24,10 @@ const validBody = returnRequestInput({ email: "grace@example.com" });
 
 describe("POST /api/shop-orders/:orderNumber/return-requests", () => {
   it("returns 201 when the email matches the order", async () => {
-    mockFind.mockResolvedValue({ email: "grace@example.com" });
+    mockFind.mockResolvedValue({
+      pageId: "page-shop-test",
+      email: "grace@example.com",
+    });
     mockWrite.mockResolvedValue();
 
     const res = await request(app).post(url).send(validBody);
@@ -35,7 +38,10 @@ describe("POST /api/shop-orders/:orderNumber/return-requests", () => {
   });
 
   it("returns 201 for an exchange with exchangeFor + items", async () => {
-    mockFind.mockResolvedValue({ email: "grace@example.com" });
+    mockFind.mockResolvedValue({
+      pageId: "page-shop-test",
+      email: "grace@example.com",
+    });
     mockWrite.mockResolvedValue();
 
     const res = await request(app)
@@ -65,7 +71,10 @@ describe("POST /api/shop-orders/:orderNumber/return-requests", () => {
   });
 
   it("returns 403 when the email doesn't match the order", async () => {
-    mockFind.mockResolvedValue({ email: "someone-else@example.com" });
+    mockFind.mockResolvedValue({
+      pageId: "page-shop-test",
+      email: "someone-else@example.com",
+    });
 
     const res = await request(app).post(url).send(validBody);
 

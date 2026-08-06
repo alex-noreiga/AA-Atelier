@@ -23,6 +23,7 @@ import { createMeasurementChangeRequest } from "../lib/notion/measurement-change
 import type { CreateMeasurementChangeInput } from "../lib/notion/measurement-change.blocks.js";
 import { upsertClientByEmail } from "../lib/notion/clients.repository.js";
 import { measurementsLocked } from "./measurement-lock.js";
+import { relationLinksEnabled } from "./request-links.js";
 import { resolveEmailVerification } from "./order-identity.js";
 import { hasAllMeasurements } from "./measurements.js";
 import { logger } from "../lib/logger.js";
@@ -87,6 +88,7 @@ export async function submitMeasurementChangeRequest(
       orderNumber: trimmedOrderNumber,
       emailVerified,
       request: input,
+      ...(relationLinksEnabled() ? { orderPageId: order.pageId } : {}),
     },
     undefined,
     clientPageId,

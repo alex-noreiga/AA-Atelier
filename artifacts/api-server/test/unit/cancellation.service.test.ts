@@ -44,6 +44,7 @@ const STAGES = ["Consultation", "Sketching", "Delivery"];
 
 const preDelivery = (email = "ada@example.com") => ({
   email,
+  pageId: "page-order-test",
   currentStage: "Sketching",
   stages: STAGES,
 });
@@ -86,6 +87,7 @@ describe("submitOrderCancellationRequest (custom)", () => {
   it("throws ConflictError when the order has already been delivered", async () => {
     mockFindOrder.mockResolvedValue({
       email: "ada@example.com",
+      pageId: "page-order-test",
       currentStage: "Delivery",
       stages: STAGES,
     });

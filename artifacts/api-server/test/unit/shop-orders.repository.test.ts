@@ -403,7 +403,7 @@ describe("findShopOrderVerification", () => {
       property: SHOP_ORDER_NUMBER_PROPERTY,
       rich_text: { equals: "shp-abc-1234" },
     });
-    expect(result).toEqual({ email: "grace@example.com" });
+    expect(result).toEqual({ pageId: "so-page", email: "grace@example.com" });
   });
 
   it("returns an empty email for a legacy order with none stored", async () => {
@@ -411,6 +411,7 @@ describe("findShopOrderVerification", () => {
       jsonResponse({ results: [pageWithEmail("SHP-OLD", null)] }),
     );
     expect(await findShopOrderVerification("SHP-OLD", client)).toEqual({
+      pageId: "so-page",
       email: "",
     });
   });

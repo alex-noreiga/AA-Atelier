@@ -176,7 +176,6 @@ describe("createInvoiceLineItem", () => {
     await createInvoiceLineItem(
       {
         invoicePageId: "inv-1",
-        orderPageId: "ord-1",
         name: "Red chiffon",
         lineType: "Material",
         unitPrice: 30,
@@ -205,7 +204,6 @@ describe("createInvoiceLineItem", () => {
       createInvoiceLineItem(
         {
           invoicePageId: "inv-1",
-          orderPageId: "ord-1",
           name: "Labor",
           lineType: "Labor",
           unitPrice: 40,

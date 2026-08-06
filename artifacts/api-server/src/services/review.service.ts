@@ -24,6 +24,7 @@ import { createReview } from "../lib/notion/reviews.repository.js";
 import type { CreateReviewInput } from "../lib/notion/reviews.blocks.js";
 import { upsertClientByEmail } from "../lib/notion/clients.repository.js";
 import { orderDelivered } from "./delivery.js";
+import { relationLinksEnabled } from "./request-links.js";
 import { resolveEmailVerification } from "./order-identity.js";
 import { logger } from "../lib/logger.js";
 import { NotFoundError, ConflictError } from "../lib/errors.js";
@@ -78,6 +79,7 @@ export async function submitOrderReview(
       orderNumber: trimmedOrderNumber,
       emailVerified,
       request: input,
+      ...(relationLinksEnabled() ? { orderPageId: order.pageId } : {}),
     },
     undefined,
     clientPageId,

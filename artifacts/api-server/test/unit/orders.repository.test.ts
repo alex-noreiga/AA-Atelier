@@ -216,6 +216,7 @@ describe("findOrderVerification", () => {
     const verification = await repo.findOrderVerification("  000002  ", client);
 
     expect(verification).toEqual({
+      pageId: "page-id",
       email: "ada@example.com",
       currentStage: "Consultation",
       stages: ["Consultation", "Sewing", "Delivery"],

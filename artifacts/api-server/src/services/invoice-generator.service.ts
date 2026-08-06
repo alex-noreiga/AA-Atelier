@@ -79,7 +79,7 @@ export async function generateInvoiceLineItems(
   if (!order.pageId || !order.invoicePageId) {
     throw new BadRequestError("There's no invoice for this order yet.");
   }
-  const { pageId: orderPageId, invoicePageId } = order;
+  const { invoicePageId } = order;
 
   // Name the invoice after the order number regardless of itemization state, so
   // a press always reconciles the title (this is also idempotent).
@@ -128,7 +128,6 @@ export async function generateInvoiceLineItems(
     const unitPrice = roundCents(usage.materialCost);
     await createInvoiceLineItem({
       invoicePageId,
-      orderPageId,
       name: usage.name || "Material",
       lineType: LINE_TYPE_MATERIAL,
       unitPrice,
@@ -144,7 +143,6 @@ export async function generateInvoiceLineItems(
   if (laborTotal > 0) {
     await createInvoiceLineItem({
       invoicePageId,
-      orderPageId,
       name: "Labor",
       lineType: LINE_TYPE_LABOR,
       unitPrice: laborTotal,
@@ -159,7 +157,6 @@ export async function generateInvoiceLineItems(
   if (Math.abs(adjustment) >= ADJUSTMENT_EPSILON) {
     await createInvoiceLineItem({
       invoicePageId,
-      orderPageId,
       name: RECONCILING_LINE_NAME,
       lineType: LINE_TYPE_ADJUSTMENT,
       unitPrice: adjustment,
@@ -184,7 +181,6 @@ export async function generateInvoiceLineItems(
     if (rushSurcharge >= ADJUSTMENT_EPSILON) {
       await createInvoiceLineItem({
         invoicePageId,
-        orderPageId,
         name: rushSurchargeLineName(rushRate),
         lineType: LINE_TYPE_SURCHARGE,
         unitPrice: rushSurcharge,

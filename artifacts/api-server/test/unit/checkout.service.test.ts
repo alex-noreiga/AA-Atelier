@@ -117,7 +117,12 @@ describe("createCheckoutSession", () => {
           currency: "usd",
           unit_amount: 2200,
           tax_behavior: "exclusive",
-          product_data: { name: "Bow Fleece Soaker" },
+          // The inventory page id is stamped on the product metadata so the
+          // webhook can relate the shop order back to inventory (card #9).
+          product_data: {
+            name: "Bow Fleece Soaker",
+            metadata: { variantId: "v1" },
+          },
         },
       },
     ]);
@@ -235,7 +240,10 @@ describe("createCheckoutSession", () => {
     );
     expect(
       create.mock.calls[0][0].line_items[0].price_data.product_data,
-    ).toEqual({ name: "Keyhole Dress — Adult S" });
+    ).toEqual({
+      name: "Keyhole Dress — Adult S",
+      metadata: { variantId: "v1" },
+    });
   });
 
   it("offers the configured Stripe shipping rates, trimmed, in order", async () => {
@@ -501,10 +509,74 @@ describe("recordPaidOrder", () => {
 
     await recordPaidOrder({ id: "cs_1" } as Stripe.Checkout.Session, stripe);
 
-    expect(retrieve).toHaveBeenCalledWith("cs_1", { expand: ["line_items"] });
+    expect(retrieve).toHaveBeenCalledWith("cs_1", {
+      expand: ["line_items.data.price.product"],
+    });
     // No customer email on this session -> no CRM upsert, no client link.
     expect(mockUpsertClient).not.toHaveBeenCalled();
-    expect(mockCreate).toHaveBeenCalledWith(fullSession, undefined, undefined);
+    expect(mockCreate).toHaveBeenCalledWith(
+      fullSession,
+      undefined,
+      undefined,
+      undefined,
+    );
+  });
+
+  it("relates the order to inventory rows (deduped) when NOTION_RELATION_LINKS is on", async () => {
+    process.env.NOTION_RELATION_LINKS = "1";
+    mockFind.mockResolvedValue(false);
+    const fullSession = {
+      id: "cs_items",
+      payment_status: "paid",
+      line_items: {
+        data: [
+          { price: { product: { metadata: { variantId: "inv-a" } } } },
+          { price: { product: { metadata: { variantId: "inv-b" } } } },
+          // A second line of the same item links once (deduped).
+          { price: { product: { metadata: { variantId: "inv-a" } } } },
+          // A line with no metadata (legacy/ad-hoc) contributes nothing.
+          { price: { product: { metadata: {} } } },
+        ],
+      },
+    } as unknown as Stripe.Checkout.Session;
+    const { stripe, retrieve } = fakeStripe();
+    retrieve.mockResolvedValue(fullSession);
+
+    await recordPaidOrder(
+      { id: "cs_items" } as Stripe.Checkout.Session,
+      stripe,
+    );
+
+    expect(mockCreate).toHaveBeenCalledWith(fullSession, undefined, undefined, [
+      "inv-a",
+      "inv-b",
+    ]);
+    delete process.env.NOTION_RELATION_LINKS;
+  });
+
+  it("omits the inventory relation when the gate is off, even with metadata present", async () => {
+    mockFind.mockResolvedValue(false);
+    const fullSession = {
+      id: "cs_items_off",
+      payment_status: "paid",
+      line_items: {
+        data: [{ price: { product: { metadata: { variantId: "inv-a" } } } }],
+      },
+    } as unknown as Stripe.Checkout.Session;
+    const { stripe, retrieve } = fakeStripe();
+    retrieve.mockResolvedValue(fullSession);
+
+    await recordPaidOrder(
+      { id: "cs_items_off" } as Stripe.Checkout.Session,
+      stripe,
+    );
+
+    expect(mockCreate).toHaveBeenCalledWith(
+      fullSession,
+      undefined,
+      undefined,
+      undefined,
+    );
   });
 
   it("upserts the buyer into the Client CRM (Active) and links the order to it", async () => {
@@ -527,7 +599,12 @@ describe("recordPaidOrder", () => {
       email: "buyer@example.com",
     });
     // The resolved client page id is threaded into the shop-order write.
-    expect(mockCreate).toHaveBeenCalledWith(fullSession, undefined, "client-9");
+    expect(mockCreate).toHaveBeenCalledWith(
+      fullSession,
+      undefined,
+      "client-9",
+      undefined,
+    );
   });
 
   it("still records the order (unlinked) when the CRM upsert fails", async () => {
@@ -548,7 +625,12 @@ describe("recordPaidOrder", () => {
     );
 
     // A CRM failure never fails the webhook; the order is recorded unlinked.
-    expect(mockCreate).toHaveBeenCalledWith(fullSession, undefined, undefined);
+    expect(mockCreate).toHaveBeenCalledWith(
+      fullSession,
+      undefined,
+      undefined,
+      undefined,
+    );
   });
 
   it("runs the reward passes with the buyer email + order number after recording", async () => {
@@ -638,7 +720,12 @@ describe("recordPaidOrder", () => {
       stripe,
     );
 
-    expect(mockCreate).toHaveBeenCalledWith(fullSession, undefined, undefined);
+    expect(mockCreate).toHaveBeenCalledWith(
+      fullSession,
+      undefined,
+      undefined,
+      undefined,
+    );
     // Customer confirmation dispatched, from the orders sender.
     expect(mockSend).toHaveBeenCalledTimes(1);
     const message = mockSend.mock.calls[0][0];

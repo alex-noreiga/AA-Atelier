@@ -2172,6 +2172,64 @@ and in the maintainer's env without edits.
   the timing check (the hidden honeypot still applies). Read fresh from env in
   `middlewares/spam-filter.ts`; **not** a Studio-Settings key. No other setup — the
   honeypot + per-IP submission rate limit need no config. See "Invisible anti-spam".
+- **Optional relation-links env var:** `NOTION_RELATION_LINKS` (default off; set to
+  `1` / `true` / `yes`) — the Phase-2 "relate, don't just name" workspace cards. When
+  on, the customer-request writers link the row to the order it concerns via a real
+  Notion relation (instead of only naming it in free text), and a paid shop order
+  links to the inventory rows purchased. Read fresh from env in
+  `services/request-links.ts` (`relationLinksEnabled()`). Gated because the app writes
+  to **existing** Notion properties — writing a relation property that doesn't exist
+  400s the whole page-create — so the property must exist first. Unset ⇒ no relation is
+  written and the behavior is exactly as before (degrade-safe, like the `Client` link).
+  See "Relate requests & orders to their sources" below.
+
+## Relate requests & orders to their sources (Phase-2 workspace cards)
+
+Four Phase-2 "Workspace" roadmap cards give the Notion rows a real **relation** to the
+thing they concern, so the atelier can click through and totals roll up — instead of
+only naming them in free text. All the new relation **writes** are gated behind
+`NOTION_RELATION_LINKS` (above); the relation **properties** are added to the Notion
+databases out-of-band (done — see "Atelier setup" below).
+
+1. **Requests → their order** (measurement-change / cancellation / return / review).
+   Each writer now threads the order's Notion page id (the verification lookups
+   `findOrderVerification` / `findShopOrderVerification` return `pageId`; the shop
+   cancellation already had it) and, when enabled, sets a relation: a **custom**-order
+   request links `Order` → Custom Orders, a **shop**-order request links `Shop Order`
+   → shop orders (both on the shared "Website Contact Messages" db), and a **review**
+   links `Order` → Custom Orders on the Reviews db. Helpers: `contactOrderRelation`
+   (`lib/notion/contact.blocks.ts`, mirrors `contactClientRelation`) and the inline
+   `Order` write in `reviews.blocks.ts`. Custom Orders carries an **Open Requests**
+   rollup over the back-relation.
+2. **Shop orders → inventory rows.** `checkout.service.ts` stamps each cart line's
+   `variantId` (= the inventory Notion page id) onto the Stripe line's
+   `price_data.product_data.metadata` (always on — harmless); the webhook retrieves the
+   session with `expand: ["line_items.data.price.product"]`, recovers the deduped
+   inventory ids, and (when enabled) writes them to the shop order's **`Inventory
+Items`** relation (`SHOP_ORDER_ITEMS_PROPERTY`, additive alongside the existing
+   text bullets). inventory carries a **Times Ordered** rollup (best-seller signal).
+3. **Prune the redundant invoice link.** Generated invoice line items no longer write
+   the `Order` relation (it was redundant with the invoice's own `Order`, and nothing
+   read it) — see `invoice-line-items.blocks.ts` / `invoice-generator.service.ts`. The
+   stale `Order` property on the **Invoice Line Items** database should be deleted in
+   Notion **only after this ships** (deleting it before deploy would 404 the currently
+   deployed invoice generator, which still writes it).
+4. **Backfill legacy rows.** `src/scripts/backfill-legacy-fields.ts`
+   (`pnpm --filter @workspace/api-server db:backfill-legacy [-- --dry-run]`) is a
+   one-time, idempotent backfill: it recovers a legacy custom order's `Email` +
+   measurements from its page **body** blocks and stamps the typed properties, and
+   stamps a deterministic `SHP-LEGACY-…` `Order Number` on legacy shop orders that
+   lack one (so they surface in the email-keyed account portal). Needs
+   `NOTION_API_KEY` + the order/shop-order database ids in env; run it where those
+   live (it is out-of-band, not in the deploy path, like `db:backfill`).
+
+**Atelier setup (done in Notion; enable with `NOTION_RELATION_LINKS=1`):** an `Order`
+(→ Custom Orders) + `Shop Order` (→ shop orders) relation on Website Contact Messages;
+an `Order` (→ Custom Orders) relation on Reviews; an `Inventory Items` (→ inventory)
+relation on shop orders; the five measurement number properties (`Waist`, `Chest`,
+`Hips`, `Height`, `Body Girth`) + `Measurement Unit` select on Custom Orders (the
+targets the app + backfill write); plus the `Open Requests` (Custom Orders) and
+`Times Ordered` (inventory) count rollups.
 
 ## Quick reference — where things live
 

@@ -24,6 +24,7 @@ export const REVIEW_CONSENT_PROPERTY = "Consent to Publish"; // checkbox
 export const REVIEW_VERIFIED_PROPERTY = "Email Verified"; // checkbox
 export const REVIEW_STATUS_PROPERTY = "Status"; // select
 export const REVIEW_CLIENT_PROPERTY = "Client"; // relation → Client CRM
+export const REVIEW_ORDER_RELATION_PROPERTY = "Order"; // relation → Custom Orders
 
 /** The triage stage a fresh review lands in; the atelier moves it to a
  * "Published" (or similar) value when curating it into the portfolio. */
@@ -38,6 +39,9 @@ export interface ReviewRow {
   orderNumber: string;
   emailVerified: boolean;
   request: CreateReviewInput;
+  /** The custom order's Notion page id, to link the review via the `Order`
+   * relation. Omitted when the `NOTION_RELATION_LINKS` gate is off. */
+  orderPageId?: string;
 }
 
 /** A filled/empty star string, e.g. 4 → "★★★★☆". Bounded to the 1–5 the
@@ -111,6 +115,11 @@ export function buildReviewProperties(
   if (clientPageId) {
     properties[REVIEW_CLIENT_PROPERTY] = {
       relation: [{ id: clientPageId }],
+    };
+  }
+  if (row.orderPageId) {
+    properties[REVIEW_ORDER_RELATION_PROPERTY] = {
+      relation: [{ id: row.orderPageId }],
     };
   }
 
