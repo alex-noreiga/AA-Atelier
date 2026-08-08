@@ -288,6 +288,25 @@ describe("findInvoicesNeedingPaymentReminder", () => {
     ).resolves.toEqual([]);
   });
 
+  it("degrades to [] (no throw) when the database isn't shared with the integration", async () => {
+    const client = makeFakeClient(() =>
+      errorResponse(
+        404,
+        JSON.stringify({
+          object: "error",
+          status: 404,
+          code: "object_not_found",
+          message:
+            'Could not find database with ID: 9d03dedf-7a0e-48a8-94c0-cb82b8d9fe4d. Make sure the relevant pages and databases are shared with your integration.',
+        }),
+      ),
+    );
+
+    await expect(
+      findInvoicesNeedingPaymentReminder({ onOrBefore: "2026-08-11" }, client),
+    ).resolves.toEqual([]);
+  });
+
   it("returns [] when the invoices database is unconfigured", async () => {
     const client = makeFakeClient(() => {
       throw new Error("should not fetch");

@@ -164,6 +164,18 @@ function isMissingReminderProperty(status: number, body: string): boolean {
   );
 }
 
+/** Whether a non-ok response is Notion's 404 `object_not_found` for the invoices &
+ * payments database itself — the state where `NOTION_INVOICES_DATABASE_ID` is set
+ * but the database isn't shared with the integration (Notion answers "Could not
+ * find database with ID: …"). Like a missing setup property, this is a
+ * configuration state the atelier must fix, not a code incident, so the nightly
+ * reminder pass degrades to a no-op with a warn rather than firing an error-level
+ * alert on every run. Requires both the 404 and Notion's `object_not_found` code,
+ * so an unrelated 404 still surfaces (throws) as before. */
+function isDatabaseNotShared(status: number, body: string): boolean {
+  return status === 404 && /"code"\s*:\s*"object_not_found"/.test(body);
+}
+
 interface PaymentReminderQueryResponse {
   results: NotionInvoicePage[];
   has_more: boolean;
@@ -178,7 +190,8 @@ interface PaymentReminderQueryResponse {
  * group, so one query returns every candidate invoice; the caller re-derives which
  * stages qualify and emails each. Fail-soft on an unconfigured database (returns
  * `[]`), and degrades to `[]` (with a warn) when the reminder setup properties
- * aren't added yet — a query error otherwise throws so the caller logs and retries.
+ * aren't added yet or the database isn't shared with the integration (Notion 404
+ * `object_not_found`) — a query error otherwise throws so the caller logs and retries.
  */
 export async function findInvoicesNeedingPaymentReminder(
   params: { onOrBefore: string },
@@ -225,6 +238,15 @@ export async function findInvoicesNeedingPaymentReminder(
             `properties are missing from the invoices & payments database. ` +
             `Add them to enable payment reminders (see CLAUDE.md "Payment & ` +
             `deposit due reminders").`,
+        );
+        return [];
+      }
+      if (isDatabaseNotShared(response.status, body)) {
+        logger.warn(
+          `Payment reminders skipped: the invoices & payments database ` +
+            `(NOTION_INVOICES_DATABASE_ID) isn't shared with the Notion ` +
+            `integration. Share it to enable payment reminders (see CLAUDE.md ` +
+            `"Payment & deposit due reminders").`,
         );
         return [];
       }
