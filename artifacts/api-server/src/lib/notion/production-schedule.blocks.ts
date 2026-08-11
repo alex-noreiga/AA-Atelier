@@ -4,49 +4,40 @@
 // testable (same split as `blocks.ts` / `shop-orders.blocks.ts`).
 //
 // Property *types* here must match the live Production Schedule schema, not the
-// property name (same lesson as `.agents/memory/notion-status-filters.md`). Two
-// properties are new and must be added to that database (the atelier does this
-// once): `Production Stage` (select) and `Order` (relation -> Order Tracking
-// Pipeline). `Production Stage` is the milestone's stage label (Cutting, Fitting,
-// …) and is named apart from `Status` (its completion state) on purpose.
+// property name (same lesson as `.agents/memory/notion-status-filters.md`).
+// `Production Stage` (select) is the milestone's stage label (Cutting, Fitting,
+// …); the milestone's *completion state* is the derived `Milestone Status`
+// formula (see below), read live from the order's Stage rather than hand-synced.
 
 // Live-schema property names (a Notion rename is a one-line change here). The
 // milestone row is deliberately lean: the client name and the order's due date
 // are reachable through the `Order` relation, so they aren't duplicated here.
 export const PS_TITLE_PROPERTY = "Project / Dress Name"; // title
-export const PS_STATUS_PROPERTY = "Status"; // status (completion)
+// Formula (string) — the milestone's completion state, DERIVED in Notion from the
+// order's live Stage (via an `Order Stage Index` rollup) compared against this
+// row's Production Stage over the fixed pipeline order. It replaces the old
+// hand-synced `Status` status-property: the app no longer writes a completion
+// state, so there is no nightly status-sync pass. The fitting-reminder query
+// filters on it. See CLAUDE.md "Production schedule" +
+// `.agents/memory/phase2-workspace-cards.md`.
+export const PS_MILESTONE_STATUS_PROPERTY = "Milestone Status";
 export const PS_STAGE_PROPERTY = "Production Stage"; // select — the stage label
 export const PS_TARGET_DATE_PROPERTY = "Target Completion Date"; // date
-export const PS_ORDER_RELATION_PROPERTY = "Order"; // relation -> orders (new)
+export const PS_ORDER_RELATION_PROPERTY = "Order"; // relation -> orders
 // checkbox — the fitting-reminder de-dupe marker (the atelier adds this once; the
 // app flips it once a fitting reminder has been emailed, so the nightly cron never
 // re-sends). An absent/unchecked box reads as false, which the query matches.
 export const PS_REMINDER_SENT_PROPERTY = "Reminder Sent";
 
 /**
- * The three live options on the Production Schedule "Status" property, in
- * workflow order. These name specific option values (not the list), coupling
- * them to code the same way SHOP_ORDER_PAID_STATUS does — rename an option in
- * Notion and you must update it here too. They're used both to seed a new
- * milestone and to keep an existing one in step with its order's live stage
- * (see `milestoneStatusFor` / `syncMilestoneStatuses` in schedule.service).
+ * Two of the three completion states the derived `Milestone Status` formula can
+ * return, named here because the fitting-reminder query filters on them: a
+ * milestone not yet done (`does_not_equal` "Completed") and one the order has
+ * reached (`equals` "In Progress"). They must match the exact strings the Notion
+ * formula emits — the same targeted-business-rule coupling as STATUS_IN_STOCK.
  */
-export const MILESTONE_STATUS_NOT_STARTED = "Not Started";
 export const MILESTONE_STATUS_IN_PROGRESS = "In Progress";
 export const MILESTONE_STATUS_COMPLETED = "Completed";
-
-export type MilestoneStatus =
-  | typeof MILESTONE_STATUS_NOT_STARTED
-  | typeof MILESTONE_STATUS_IN_PROGRESS
-  | typeof MILESTONE_STATUS_COMPLETED;
-
-/**
- * The "Status" a freshly-generated milestone lands in. "Not Started" is where a
- * new milestone begins; the reconciliation advances it as the order's stage
- * moves past it.
- */
-export const PRODUCTION_SCHEDULE_INITIAL_STATUS: MilestoneStatus =
-  MILESTONE_STATUS_NOT_STARTED;
 
 /** One stage's target completion date — the unit both the schedule writer
  * (`computeMilestoneSchedule`) and the status-lookup reader
@@ -98,25 +89,12 @@ export function buildMilestoneProperties(
     [PS_TARGET_DATE_PROPERTY]: {
       date: { start: input.targetDate },
     },
-    [PS_STATUS_PROPERTY]: {
-      status: { name: PRODUCTION_SCHEDULE_INITIAL_STATUS },
-    },
+    // No completion state is written: `Milestone Status` is a Notion formula
+    // derived from the order's live Stage, so a new milestone reflects the order
+    // immediately with nothing to seed or sync.
     [PS_ORDER_RELATION_PROPERTY]: {
       relation: [{ id: input.orderPageId }],
     },
-  };
-}
-
-/**
- * The `properties` patch that sets *only* a milestone's completion `Status`,
- * used by the reconciliation to advance an existing row without touching its
- * stage, date, or order relation.
- */
-export function buildMilestoneStatusUpdate(
-  status: MilestoneStatus,
-): Record<string, unknown> {
-  return {
-    [PS_STATUS_PROPERTY]: { status: { name: status } },
   };
 }
 

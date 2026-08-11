@@ -911,8 +911,8 @@ order that has a firm due date. The load-bearing points:
    atelier sets a `Due Date` on the order in the Order Tracking Pipeline and the
    reconciliation later scans for orders that have a due date but whose
    `Milestones Generated` checkbox is unset, and generates their milestones. It
-   runs two ways, both calling `reconcileMilestones` (generation +
-   `syncMilestoneStatuses`, see point 4): a **Vercel Cron** job
+   runs two ways, both calling `reconcileMilestones` (generation + reminder
+   passes; milestone completion state is a live Notion formula now, see point 4): a **Vercel Cron** job
    nightly (`GET /api/cron/generate-milestones`, Bearer `CRON_SECRET`, JSON; in
    `vercel.json` `crons`) and an on-demand **Notion "Open link" button**
    (`GET /api/cron/generate-milestones/run?secret=<CRON_SECRET>`, query token,
@@ -924,7 +924,7 @@ order that has a firm due date. The load-bearing points:
    outside the OpenAPI contract** (mounted in `app.ts`, not the `/api` router).
    Code: `routes/cron.ts` → `services/schedule.service.ts` →
    `lib/notion/orders.repository.ts`
-   (`findOrdersNeedingMilestones`/`findOrdersWithMilestones`/`markMilestonesGenerated`) +
+   (`findOrdersNeedingMilestones`/`markMilestonesGenerated`) +
    `lib/notion/production-schedule.{blocks,repository}.ts`.
 
 2. **Scheduling is even-split over the live stage list — don't hardcode stages.**
@@ -935,7 +935,7 @@ order that has a firm due date. The load-bearing points:
    stages. The milestone's `Production Stage` is written to a **select** property,
    which Notion auto-creates options for, so no stage constant is baked in either.
    (`Production Stage` is the stage label — named apart from the milestone's
-   `Status`, which is its completion state.)
+   completion state, the derived `Milestone Status` formula, see point 4.)
 
 3. **Idempotent.** The `Milestones Generated` checkbox plus an
    existing-milestones lookup (`orderHasMilestones`, by the `Order` relation) stop a
@@ -944,18 +944,24 @@ order that has a firm due date. The load-bearing points:
    rather than aborting the batch. To **reschedule** after changing a due date, uncheck
    `Milestones Generated` (and delete the stale rows); the next run regenerates.
 
-4. **Status stays live — milestones aren't write-once.** After generation, the
-   same reconciliation runs `syncMilestoneStatuses`: for every order that already
-   has milestones (`findOrdersWithMilestones`), it re-derives each row's `Status`
-   from the order's current `Stage` — stages the order has passed → `Completed`,
-   the current stage → `In Progress` (`Completed` if it's the final stage, i.e.
-   delivered), stages ahead → `Not Started` — and PATCHes only the rows that
-   drifted (`milestoneStatusFor` + `updateMilestoneStatus`). Ordering comes from
-   the live `fetchLiveOrderStages` list, so no stage names are baked in; a
-   blank-`Production Stage` row is skipped rather than blanked. This is what keeps
-   the "Coming Up" calendar honest instead of every milestone reading a frozen
-   "Not Started" (the milestone `Status` has no Notion→app trigger otherwise). Same
-   per-order isolation as generation: one order's failure is logged and skipped.
+4. **Status stays live via a Notion formula — no sync pass (Phase-2 "let the
+   schedule read").** A milestone's completion state is the **`Milestone Status`**
+   _formula_ on the Production Schedule DB, derived live from the order's `Stage`:
+   an **`Order Stage Index`** rollup reads the order's stage (through a
+   `Stage Index Sys` index formula on Custom Orders, status→0–10), and
+   `Milestone Status` compares this row's `Production Stage` index to it — past →
+   `Completed`, current → `In Progress` (`Completed` at the last/Delivered stage),
+   ahead → `Not Started`, unknown → blank. So the "Coming Up" calendar reflects real
+   progress with **nothing to sync** — the old `syncMilestoneStatuses` /
+   `milestoneStatusFor` / `updateMilestoneStatus` pass was retired, and
+   `buildMilestoneProperties` no longer seeds a status. Trade-off: the two formulas
+   **hardcode the 11-stage pipeline order** (generation still reads the live
+   `fetchLiveOrderStages` list; the formulas degrade to blank for an unknown stage),
+   so renaming/reordering Stage options means updating them. The fitting-reminder
+   query filters on `Milestone Status` with **formula-string** operators (not the
+   old status-type filter). Details + the API-formula gotchas + the one-time setup
+   (add the rollups/formulas; the old status-type `Status` property is dropped
+   post-deploy) live in `.agents/memory/phase2-workspace-cards.md`.
 
 The atelier must, one time: add `Due Date` (date) + `Milestones Generated`
 (checkbox) to the Order Tracking Pipeline; add `Production Stage` (select) +
@@ -977,16 +983,17 @@ endpoint, no new cron, and no frontend change (the booking page already preselec
 from `?type=`). Load-bearing points:
 
 1. **It rides the nightly reconciliation, not a new trigger.** `reconcileMilestones`
-   (the Vercel cron + the on-demand button) runs a third pass, `sendDueFittingReminders`,
-   after generation + status-sync. It finds Production Schedule milestones whose
+   (the Vercel cron + the on-demand button) runs a pass, `sendDueFittingReminders`,
+   after generation. It finds Production Schedule milestones whose
    `Production Stage` is a configured fitting stage, aren't `Completed`, haven't been
    reminded yet, and are **either** due on/before `today + FITTING_REMINDER_LEAD_DAYS`
-   **or** already at the fitting stage (`Status = In Progress`) — then emails the order's
+   **or** already at the fitting stage (`Milestone Status = In Progress`, the derived
+   formula) — then emails the order's
    customer. The In-Progress clause is what catches an order running **ahead of
    schedule**: it reaches Fitting before the target date, so a date-only filter would
    never fire before the stage advances to `Completed` and the reminder would be missed
-   entirely. (The pass runs after `syncMilestoneStatuses`, so the status reflects the
-   order's live stage.) Code: `services/schedule.service.ts` (`sendDueFittingReminders`) →
+   entirely. (`Milestone Status` is a live formula derived from the order's stage, so
+   it's always current.) Code: `services/schedule.service.ts` (`sendDueFittingReminders`) →
    `services/fitting-reminder.ts` (the business-rule config) +
    `lib/notion/production-schedule.repository.ts`
    (`findMilestonesNeedingFittingReminder` / `markFittingReminderSent`) +
@@ -1034,7 +1041,7 @@ the deposit + balance pay buttons live). Load-bearing points:
 
 1. **It rides the nightly reconciliation, not a new trigger.** `reconcileMilestones`
    (the Vercel cron + the on-demand button) runs a fourth pass, `sendDuePaymentReminders`,
-   after generation + status-sync + fitting reminders. It queries the **"invoices &
+   after generation + fitting reminders. It queries the **"invoices &
    payments"** database for invoices with an unpaid stage whose due date is **on or before
    `today + PAYMENT_REMINDER_LEAD_DAYS`** (which naturally covers already-overdue stages)
    and whose per-stage `Reminded` marker isn't set, then emails the order's customer one
