@@ -46,7 +46,7 @@ was per-request-type views.
   `Stage != Closed`) — Inquiries, Back in stock, Measurement updates, Cancellations,
   Returns / exchanges, plus Newsletter sign-ups.
 - **App impact:** none — writers still set `Stage = "New"` + their own `Request
-  type`; adding options/views doesn't touch writes. No code change.
+type`; adding options/views doesn't touch writes. No code change.
 
 ## ④ One category list for everything — DONE (Notion only, app-safe)
 
@@ -74,7 +74,7 @@ Notion formula and **retired the status-sync pass in code**.
   - `Stage Index Sys` (formula) on **Custom Orders** = maps the order's live `Stage`
     (status) → its index 0–10 over the fixed pipeline (`0-1` fallback for unknown).
   - `Order Stage` (rollup, status) + `Order Stage Index` (rollup, **max** of `Stage
-    Index Sys` → a number) on Production Schedule — each milestone now _reads_ the
+Index Sys` → a number) on Production Schedule — each milestone now _reads_ the
     order's live stage directly.
   - `Milestone Status` (formula) on Production Schedule = for the row's
     `Production Stage`, compare its literal index to `Order Stage Index`: past →
@@ -85,14 +85,14 @@ Notion formula and **retired the status-sync pass in code**.
     Not Started). Logic verified by hand (formula values aren't API-readable).
 - **Code (applied — 1030 api-server tests green):**
   - `production-schedule.blocks.ts`: `PS_STATUS_PROPERTY` → `PS_MILESTONE_STATUS_PROPERTY
-    = "Milestone Status"`; `buildMilestoneProperties` no longer writes a completion
+= "Milestone Status"`; `buildMilestoneProperties` no longer writes a completion
     state; removed `buildMilestoneStatusUpdate`, `PRODUCTION_SCHEDULE_INITIAL_STATUS`,
     `MILESTONE_STATUS_NOT_STARTED`, `MilestoneStatus`. Kept `MILESTONE_STATUS_IN_PROGRESS`
     / `_COMPLETED` (the fitting-reminder filter's string literals).
   - `production-schedule.repository.ts`: removed `listOrderMilestonePages` +
     `updateMilestoneStatus`; **rewrote the fitting-reminder filter** from status-type
     (`status: {does_not_equal/equals}`) to **formula-string** (`formula: {string:
-    {…}}`) on `Milestone Status`.
+{…}}`) on `Milestone Status`.
   - `orders.repository.ts`: removed `findOrdersWithMilestones` (sync-only).
   - `schedule.service.ts`: removed `syncMilestoneStatuses` + `milestoneStatusFor`;
     dropped the sync pass + `milestonesUpdated` from `reconcileMilestones` /

@@ -174,7 +174,7 @@ Load-bearing:
   description still reads "Break-even price + labor cost," but the real formula is
   markup-on-cost with a selling-fee gross-up:
   `round((Material Cost + Labor Hours × Hourly Rate + Packaging) × (1 + margin) /
-  (1 − sellingFees), 2)`. **There is NO `Channel` branch** (an earlier version of
+(1 − sellingFees), 2)`. **There is NO `Channel` branch** (an earlier version of
   this note wrongly claimed `Production ? 1 − sellingFees : 1` — that's stale; the
   live formula divides by `(1 − sellingFees)` unconditionally). The **fee is
   data-driven, not hardcoded**: `Pricing Settings` has two rows — **Custom / Direct**
