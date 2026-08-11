@@ -21,12 +21,12 @@
     "cors": "^2.8.6",
     "dotenv": "^17.4.2",
     "express": "^5.2.1",
-    "express-rate-limit": "^8.6.1",
+    "express-rate-limit": "^8.6.2",
     "google-auth-library": "^10.9.1",
     "pino": "^9.14.0",
     "postgres": "catalog:",
     "pino-http": "^11.0.0",
-    "stripe": "^22.3.2",
+    "stripe": "^22.4.0",
     "zod": "catalog:"
   },
   "devDependencies": {
