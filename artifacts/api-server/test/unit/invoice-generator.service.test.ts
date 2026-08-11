@@ -97,7 +97,6 @@ describe("generateInvoiceLineItems", () => {
     expect(materialCalls).toHaveLength(2);
     expect(materialCalls[0][0]).toMatchObject({
       invoicePageId: "invoice-1",
-      orderPageId: "order-1",
       name: "Red chiffon",
       unitPrice: 30,
       materialUsageLineId: "u1",
@@ -148,7 +147,6 @@ describe("generateInvoiceLineItems", () => {
       lineType: "Surcharge",
       unitPrice: 21,
       invoicePageId: "invoice-1",
-      orderPageId: "order-1",
     });
     // The surcharge line never links a costing item (same rule as every line).
     expect(lineOfType("Surcharge")).not.toHaveProperty("materialUsageLineId");

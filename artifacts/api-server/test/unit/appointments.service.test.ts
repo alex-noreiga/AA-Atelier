@@ -310,6 +310,7 @@ describe("bookAppointment", () => {
     it("403s when the email doesn't match the order", async () => {
       mockVerify.mockResolvedValue({
         email: "someone-else@example.com",
+        pageId: "page-order-test",
         currentStage: "Sketching",
         stages: ["Sketching", "Cutting/Pinning", "Delivered"],
       });
@@ -322,6 +323,7 @@ describe("bookAppointment", () => {
     it("books when the order number + email match", async () => {
       mockVerify.mockResolvedValue({
         email: "ADA@example.com", // case-insensitive match
+        pageId: "page-order-test",
         currentStage: "Sketching",
         stages: ["Sketching", "Cutting/Pinning", "Delivered"],
       });
@@ -335,6 +337,7 @@ describe("bookAppointment", () => {
     it("accepts a legacy order with no stored email", async () => {
       mockVerify.mockResolvedValue({
         email: "",
+        pageId: "page-order-test",
         currentStage: "Sketching",
         stages: ["Sketching", "Cutting/Pinning", "Delivered"],
       });

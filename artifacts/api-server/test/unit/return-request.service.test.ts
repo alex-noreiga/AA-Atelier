@@ -43,7 +43,10 @@ describe("submitReturnRequest — identity gate", () => {
   });
 
   it("throws ForbiddenError and never writes when the email doesn't match", async () => {
-    mockFind.mockResolvedValue({ email: "someone-else@example.com" });
+    mockFind.mockResolvedValue({
+      pageId: "page-shop-test",
+      email: "someone-else@example.com",
+    });
     await expect(
       submitReturnRequest(
         "SHP-ABC-1234",
@@ -54,7 +57,10 @@ describe("submitReturnRequest — identity gate", () => {
   });
 
   it("files the request marked verified when the email matches (case-insensitively, trimmed order)", async () => {
-    mockFind.mockResolvedValue({ email: "Grace@Example.com" });
+    mockFind.mockResolvedValue({
+      pageId: "page-shop-test",
+      email: "Grace@Example.com",
+    });
 
     const result = await submitReturnRequest(
       "  SHP-ABC-1234  ",
@@ -69,7 +75,7 @@ describe("submitReturnRequest — identity gate", () => {
   });
 
   it("accepts a legacy order (no stored email) but flags it unverified", async () => {
-    mockFind.mockResolvedValue({ email: "" });
+    mockFind.mockResolvedValue({ pageId: "page-shop-test", email: "" });
 
     await submitReturnRequest("SHP-ABC-1234", returnRequestInput());
 
@@ -78,7 +84,10 @@ describe("submitReturnRequest — identity gate", () => {
   });
 
   it("links the request to the customer's Client CRM record (dedupe by email)", async () => {
-    mockFind.mockResolvedValue({ email: "grace@example.com" });
+    mockFind.mockResolvedValue({
+      pageId: "page-shop-test",
+      email: "grace@example.com",
+    });
     mockUpsertClient.mockResolvedValue("client-5");
 
     await submitReturnRequest(
@@ -100,7 +109,10 @@ describe("submitReturnRequest — identity gate", () => {
 describe("submitReturnRequest — emails", () => {
   it("confirms to the customer (from the orders sender) after filing", async () => {
     process.env.RESEND_FROM_EMAIL = "A.A Atelier <orders@a3iceanddance.com>";
-    mockFind.mockResolvedValue({ email: "grace@example.com" });
+    mockFind.mockResolvedValue({
+      pageId: "page-shop-test",
+      email: "grace@example.com",
+    });
 
     await submitReturnRequest(
       "SHP-ABC-1234",
@@ -116,7 +128,10 @@ describe("submitReturnRequest — emails", () => {
 
   it("also notifies the atelier inbox (reply-to the customer) when configured", async () => {
     process.env.ATELIER_INBOX_EMAIL = "orders@a3iceanddance.com";
-    mockFind.mockResolvedValue({ email: "grace@example.com" });
+    mockFind.mockResolvedValue({
+      pageId: "page-shop-test",
+      email: "grace@example.com",
+    });
 
     await submitReturnRequest(
       "SHP-ABC-1234",
@@ -131,7 +146,10 @@ describe("submitReturnRequest — emails", () => {
   });
 
   it("sends no atelier notification when no inbox is configured", async () => {
-    mockFind.mockResolvedValue({ email: "grace@example.com" });
+    mockFind.mockResolvedValue({
+      pageId: "page-shop-test",
+      email: "grace@example.com",
+    });
     await submitReturnRequest("SHP-ABC-1234", returnRequestInput());
     expect(mockSend).toHaveBeenCalledOnce();
   });

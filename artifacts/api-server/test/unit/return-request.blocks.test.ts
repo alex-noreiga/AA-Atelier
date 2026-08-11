@@ -125,4 +125,17 @@ describe("buildReturnRequestProperties", () => {
     const props = buildReturnRequestProperties(row()) as any;
     expect(props).not.toHaveProperty("Client");
   });
+
+  it("links the shop order via the `Shop Order` relation when a page id is given", () => {
+    const props = buildReturnRequestProperties(
+      row({ orderPageId: "shop-page-2" }),
+    ) as any;
+    expect(props["Shop Order"]).toEqual({ relation: [{ id: "shop-page-2" }] });
+    expect(props).not.toHaveProperty("Order");
+  });
+
+  it("omits the `Shop Order` relation when no order page id is given", () => {
+    const props = buildReturnRequestProperties(row()) as any;
+    expect(props).not.toHaveProperty("Shop Order");
+  });
 });

@@ -22,6 +22,13 @@ export const SHOP_ORDER_TOTAL_PROPERTY = "Total"; // number
 export const SHOP_ORDER_STATUS_PROPERTY = "Status"; // status (workflow)
 export const SHOP_ORDER_SHIPPING_PROPERTY = "Shipping Address"; // rich_text
 export const SHOP_ORDER_CLIENT_PROPERTY = "Client"; // relation -> Client CRM
+// Relation to the inventory rows purchased on this order, so units/best-sellers
+// roll up instead of living only as free-text bullets (roadmap: "relate shop
+// orders to inventory rows"). Additive alongside the bullets, and gated behind
+// `NOTION_RELATION_LINKS` (the property must exist first, or the create 404s) —
+// so it's only written when the caller resolves inventory page ids. Named apart
+// from the legacy free-text `Items` property (Etsy receipts) it complements.
+export const SHOP_ORDER_ITEMS_PROPERTY = "Inventory Items"; // relation -> inventory
 // Set by the cancellation-refund flow when the atelier cancels a shop order
 // (`setShopOrderCancelled`). Additive marker (absent ⇒ false), like the custom
 // order's `Cancelled` checkbox — read back so the tracking page shows a
@@ -114,6 +121,7 @@ interface AddressParts {
 export function buildShopOrderProperties(
   session: Stripe.Checkout.Session,
   clientPageId?: string,
+  itemPageIds?: string[],
 ): Record<string, unknown> {
   const email = session.customer_details?.email ?? undefined;
   const name = session.customer_details?.name ?? undefined;
@@ -161,6 +169,13 @@ export function buildShopOrderProperties(
   if (clientPageId) {
     properties[SHOP_ORDER_CLIENT_PROPERTY] = {
       relation: [{ id: clientPageId }],
+    };
+  }
+  // Gated on the caller resolving inventory page ids (NOTION_RELATION_LINKS on +
+  // the variant metadata present). Deduped so an item bought twice links once.
+  if (itemPageIds && itemPageIds.length > 0) {
+    properties[SHOP_ORDER_ITEMS_PROPERTY] = {
+      relation: itemPageIds.map((id) => ({ id })),
     };
   }
 

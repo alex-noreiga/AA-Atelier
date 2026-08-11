@@ -39,6 +39,7 @@ const STAGES = ["Consultation", "Sketching", "Cutting/Pinning", "Delivery"];
 
 const preProduction = (email = "ada@example.com") => ({
   email,
+  pageId: "page-order-test",
   currentStage: "Consultation",
   stages: STAGES,
 });
@@ -61,6 +62,7 @@ describe("submitMeasurementChangeRequest — identity gate", () => {
   it("throws ForbiddenError and never writes when the email doesn't match", async () => {
     mockFind.mockResolvedValue({
       email: "someone-else@example.com",
+      pageId: "page-order-test",
       currentStage: "Consultation",
       stages: STAGES,
     });
@@ -76,6 +78,7 @@ describe("submitMeasurementChangeRequest — identity gate", () => {
   it("files the request marked verified when the email matches (case-insensitively)", async () => {
     mockFind.mockResolvedValue({
       email: "Ada@Example.com",
+      pageId: "page-order-test",
       currentStage: "Consultation",
       stages: STAGES,
     });
@@ -114,6 +117,7 @@ describe("submitMeasurementChangeRequest — identity gate", () => {
   it("accepts a legacy order (no stored email) but flags it unverified", async () => {
     mockFind.mockResolvedValue({
       email: "",
+      pageId: "page-order-test",
       currentStage: "Consultation",
       stages: STAGES,
     });
@@ -129,6 +133,7 @@ describe("submitMeasurementChangeRequest — production lock", () => {
   it("allows a change before the lock stage", async () => {
     mockFind.mockResolvedValue({
       email: "ada@example.com",
+      pageId: "page-order-test",
       currentStage: "Sketching",
       stages: STAGES,
     });
@@ -139,6 +144,7 @@ describe("submitMeasurementChangeRequest — production lock", () => {
   it("throws MeasurementsLockedError at the lock stage", async () => {
     mockFind.mockResolvedValue({
       email: "ada@example.com",
+      pageId: "page-order-test",
       currentStage: "Cutting/Pinning",
       stages: STAGES,
     });
@@ -151,6 +157,7 @@ describe("submitMeasurementChangeRequest — production lock", () => {
   it("throws MeasurementsLockedError past the lock stage", async () => {
     mockFind.mockResolvedValue({
       email: "ada@example.com",
+      pageId: "page-order-test",
       currentStage: "Delivery",
       stages: STAGES,
     });
@@ -162,6 +169,7 @@ describe("submitMeasurementChangeRequest — production lock", () => {
   it("fails open (allows) when the current stage isn't in the live list", async () => {
     mockFind.mockResolvedValue({
       email: "ada@example.com",
+      pageId: "page-order-test",
       currentStage: "Some Renamed Stage",
       stages: STAGES,
     });
@@ -173,6 +181,7 @@ describe("submitMeasurementChangeRequest — production lock", () => {
     process.env.MEASUREMENT_LOCK_FROM_STAGE = "Sketching";
     mockFind.mockResolvedValue({
       email: "ada@example.com",
+      pageId: "page-order-test",
       currentStage: "Sketching",
       stages: STAGES,
     });
@@ -204,6 +213,33 @@ describe("submitMeasurementChangeRequest — values-or-appointment rule", () => 
     expect(mockWrite.mock.calls[0][0].request.measurementAppointment).toBe(
       true,
     );
+  });
+});
+
+describe("submitMeasurementChangeRequest — order relation gate", () => {
+  afterEach(() => delete process.env.NOTION_RELATION_LINKS);
+
+  it("passes the order page id when NOTION_RELATION_LINKS is enabled", async () => {
+    process.env.NOTION_RELATION_LINKS = "1";
+    mockFind.mockResolvedValue(preProduction());
+
+    await submitMeasurementChangeRequest(
+      "000002",
+      measurementChangeInput({ email: "ada@example.com" }),
+    );
+
+    expect(mockWrite.mock.calls[0][0].orderPageId).toBe("page-order-test");
+  });
+
+  it("omits the order page id when the gate is off (default)", async () => {
+    mockFind.mockResolvedValue(preProduction());
+
+    await submitMeasurementChangeRequest(
+      "000002",
+      measurementChangeInput({ email: "ada@example.com" }),
+    );
+
+    expect(mockWrite.mock.calls[0][0].orderPageId).toBeUndefined();
   });
 });
 

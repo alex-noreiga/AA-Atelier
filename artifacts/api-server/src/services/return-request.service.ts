@@ -21,6 +21,7 @@ import { findShopOrderVerification } from "../lib/notion/shop-orders.repository.
 import { createReturnRequest } from "../lib/notion/return-request.repository.js";
 import type { CreateReturnInput } from "../lib/notion/return-request.blocks.js";
 import { upsertClientByEmail } from "../lib/notion/clients.repository.js";
+import { relationLinksEnabled } from "./request-links.js";
 import { resolveEmailVerification } from "./order-identity.js";
 import { logger } from "../lib/logger.js";
 import { NotFoundError } from "../lib/errors.js";
@@ -67,6 +68,7 @@ export async function submitReturnRequest(
       orderNumber: trimmedOrderNumber,
       emailVerified,
       request: input,
+      ...(relationLinksEnabled() ? { orderPageId: order.pageId } : {}),
     },
     undefined,
     clientPageId,

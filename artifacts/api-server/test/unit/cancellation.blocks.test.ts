@@ -77,4 +77,24 @@ describe("buildCancellationProperties", () => {
     const props = buildCancellationProperties(row()) as any;
     expect(props).not.toHaveProperty("Client");
   });
+
+  it("links a custom order via `Order` and a shop order via `Shop Order`", () => {
+    const custom = buildCancellationProperties(
+      row({ orderType: "custom", orderPageId: "order-page-1" }),
+    ) as any;
+    expect(custom.Order).toEqual({ relation: [{ id: "order-page-1" }] });
+    expect(custom).not.toHaveProperty("Shop Order");
+
+    const shop = buildCancellationProperties(
+      row({ orderType: "shop", orderPageId: "shop-page-1" }),
+    ) as any;
+    expect(shop["Shop Order"]).toEqual({ relation: [{ id: "shop-page-1" }] });
+    expect(shop).not.toHaveProperty("Order");
+  });
+
+  it("omits the order relation when no order page id is given", () => {
+    const props = buildCancellationProperties(row()) as any;
+    expect(props).not.toHaveProperty("Order");
+    expect(props).not.toHaveProperty("Shop Order");
+  });
 });

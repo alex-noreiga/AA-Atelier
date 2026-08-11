@@ -137,6 +137,7 @@ function readTracking(
  * so the email is never returned by the status lookup — the shop-order analogue
  * of the custom order's {@link findOrderVerification}. */
 export interface ShopOrderVerification {
+  pageId: string;
   email: string;
 }
 
@@ -179,7 +180,10 @@ export async function findShopOrderVerification(
   const page = data.results[0];
   if (!page) return null;
 
-  return { email: readEmail(page.properties[SHOP_ORDER_EMAIL_PROPERTY]) };
+  return {
+    pageId: page.id,
+    email: readEmail(page.properties[SHOP_ORDER_EMAIL_PROPERTY]),
+  };
 }
 
 /** Whether an order has already been recorded for this Stripe session. */
@@ -217,12 +221,13 @@ export async function createShopOrder(
   session: Stripe.Checkout.Session,
   client: NotionClient = getShopOrdersNotionClient(),
   clientPageId?: string,
+  itemPageIds?: string[],
 ): Promise<string> {
   assertConfigured(client);
 
   const body: Record<string, unknown> = {
     parent: { database_id: client.databaseId },
-    properties: buildShopOrderProperties(session, clientPageId),
+    properties: buildShopOrderProperties(session, clientPageId, itemPageIds),
     children: buildShopOrderPageBlocks(session),
   };
 

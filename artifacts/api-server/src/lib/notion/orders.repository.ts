@@ -562,10 +562,12 @@ export async function updateLastNotifiedStage(
 
 /** What an order-scoped gate needs about an order: the email to verify against,
  * plus the current stage and the live ordered stage list to decide whether an
- * action is still allowed (measurements editable, order delivered, …). Kept
- * separate from `OrderRecord` (the public status view) so the email is never
- * returned by order lookup. */
+ * action is still allowed (measurements editable, order delivered, …), and the
+ * Notion page id so a filed request can relate back to the order. Kept separate
+ * from `OrderRecord` (the public status view) so the email is never returned by
+ * order lookup. */
 export interface OrderVerification {
+  pageId: string;
   email: string;
   currentStage: string;
   stages: string[];
@@ -609,9 +611,8 @@ export async function findOrderVerification(
     return null;
   }
 
-  // TODO(measurements-b): also return page.id here — the direct in-place PATCH
-  // path (Approach B) will target `PATCH /v1/pages/{id}` with this id.
   return {
+    pageId: page.id,
     email: extractOrderEmail(page),
     currentStage: extractCurrentStage(page),
     stages,

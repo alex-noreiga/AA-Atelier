@@ -91,6 +91,18 @@ describe("buildReviewProperties", () => {
     const props = buildReviewProperties(row()) as any;
     expect(props).not.toHaveProperty("Client");
   });
+
+  it("links the order via the `Order` relation when a page id is given", () => {
+    const props = buildReviewProperties(
+      row({ orderPageId: "order-page-4" }),
+    ) as any;
+    expect(props.Order).toEqual({ relation: [{ id: "order-page-4" }] });
+  });
+
+  it("omits the `Order` relation when no order page id is given", () => {
+    const props = buildReviewProperties(row()) as any;
+    expect(props).not.toHaveProperty("Order");
+  });
 });
 
 describe("buildReviewPageBlocks", () => {

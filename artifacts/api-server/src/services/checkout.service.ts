@@ -25,6 +25,7 @@ import {
 import { upsertClientIndex } from "../lib/db/clients.repository.js";
 import { writeOrderIndex } from "../lib/db/order-index.repository.js";
 import { runPaidOrderRewards } from "./rewards.service.js";
+import { relationLinksEnabled } from "./request-links.js";
 import {
   generateShopOrderNumber,
   formatShippingAddress,
@@ -181,7 +182,12 @@ function toLineItem(
       unit_amount: Math.round(variant.price * 100),
       // Listed prices are pre-tax; Stripe Tax adds tax on top ("exclusive").
       tax_behavior: "exclusive",
-      product_data: { name },
+      // Stamp the inventory row's Notion page id (`variantId === page id`, see
+      // products.schema.ts) onto the ad-hoc product's metadata. Stripe drops the
+      // id from the returned line item otherwise, so this is how the webhook
+      // recovers which inventory row each purchased line is, to relate the shop
+      // order back to inventory (roadmap: "relate shop orders to inventory rows").
+      product_data: { name, metadata: { variantId: item.variantId } },
     },
   };
 }
@@ -404,6 +410,28 @@ export async function recordPaidOrder(
 }
 
 /**
+ * Recover the deduped inventory (Notion page) ids purchased on a session, from
+ * the `variantId` metadata stamped on each line's product at checkout (see
+ * `toLineItem`). Lines with no such metadata (e.g. a legacy session created
+ * before this shipped) are skipped, so an empty array means "nothing to relate".
+ */
+function resolvePurchasedInventoryIds(
+  session: Stripe.Checkout.Session,
+): string[] {
+  const ids = new Set<string>();
+  for (const line of session.line_items?.data ?? []) {
+    const product = line.price?.product;
+    // `product` is only an object when expanded (and not deleted); its metadata
+    // carries the inventory page id. A string id or a deleted product yields none.
+    if (product && typeof product === "object" && "metadata" in product) {
+      const variantId = product.metadata?.variantId;
+      if (variantId) ids.add(variantId);
+    }
+  }
+  return [...ids];
+}
+
+/**
  * The actual work of recording a paid shop order: retrieve the full session,
  * skip if unpaid, then (guarded against a duplicate Notion page) create the order
  * and fire the best-effort confirmation email + rewards. Returns true when the
@@ -414,8 +442,10 @@ async function processPaidShopOrder(
   stripe: Stripe,
 ): Promise<boolean> {
   // The webhook's session object omits line items; retrieve them for the record.
+  // Expand each line's product so we can read back the `variantId` metadata we
+  // stamped at checkout (toLineItem) — Stripe drops it from the line item itself.
   const full = await stripe.checkout.sessions.retrieve(session.id, {
-    expand: ["line_items"],
+    expand: ["line_items.data.price.product"],
   });
 
   if (full.payment_status !== "paid") {
@@ -451,7 +481,20 @@ async function processPaidShopOrder(
     );
   }
 
-  const notionPageId = await createShopOrder(full, undefined, clientPageId);
+  // Relate the order to the inventory rows purchased (roadmap: "relate shop
+  // orders to inventory rows"), gated on NOTION_RELATION_LINKS + the relation
+  // property existing. Recovered from the per-line product metadata; deduped so
+  // an item bought twice links once. Empty ⇒ omitted (no relation written).
+  const itemPageIds = relationLinksEnabled()
+    ? resolvePurchasedInventoryIds(full)
+    : undefined;
+
+  const notionPageId = await createShopOrder(
+    full,
+    undefined,
+    clientPageId,
+    itemPageIds,
+  );
 
   // Best-effort: index the shop order in Postgres for the account portal's
   // reliable order discovery. Notion is the record; a PG hiccup must never fail

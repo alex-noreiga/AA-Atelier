@@ -100,4 +100,17 @@ describe("buildMeasurementChangeProperties", () => {
     const props = buildMeasurementChangeProperties(row()) as any;
     expect(props).not.toHaveProperty("Client");
   });
+
+  it("links the custom order via the `Order` relation when a page id is given", () => {
+    const props = buildMeasurementChangeProperties(
+      row({ orderPageId: "order-page-9" }),
+    ) as any;
+    expect(props.Order).toEqual({ relation: [{ id: "order-page-9" }] });
+    expect(props).not.toHaveProperty("Shop Order");
+  });
+
+  it("omits the `Order` relation when no order page id is given", () => {
+    const props = buildMeasurementChangeProperties(row()) as any;
+    expect(props).not.toHaveProperty("Order");
+  });
 });
