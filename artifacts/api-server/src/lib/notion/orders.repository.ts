@@ -376,18 +376,6 @@ export function findOrdersNeedingMilestones(
 }
 
 /**
- * Find custom orders that already have milestones (`Due Date` set and
- * `Milestones Generated` checked) — the ones the status-sync pass re-checks so
- * each milestone's completion state tracks the order's live stage instead of
- * being frozen at "Not Started".
- */
-export function findOrdersWithMilestones(
-  client: NotionClient = getNotionClient(),
-): Promise<PendingMilestoneOrder[]> {
-  return queryOrdersByMilestoneState(client, true);
-}
-
-/**
  * Mark an order's milestones as generated so the reconciliation cron won't
  * regenerate them. Setting the same value again is harmless, so this is
  * idempotent. To force a reschedule the atelier unchecks this in Notion.

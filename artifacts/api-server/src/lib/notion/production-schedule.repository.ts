@@ -12,18 +12,16 @@ import {
 } from "./client.js";
 import {
   buildMilestoneProperties,
-  buildMilestoneStatusUpdate,
   buildReminderSentUpdate,
   MILESTONE_STATUS_COMPLETED,
   MILESTONE_STATUS_IN_PROGRESS,
+  PS_MILESTONE_STATUS_PROPERTY,
   PS_ORDER_RELATION_PROPERTY,
   PS_REMINDER_SENT_PROPERTY,
   PS_STAGE_PROPERTY,
-  PS_STATUS_PROPERTY,
   PS_TARGET_DATE_PROPERTY,
   type FittingReminderMilestone,
   type MilestoneInput,
-  type MilestoneStatus,
   type StageMilestone,
 } from "./production-schedule.blocks.js";
 
@@ -149,96 +147,6 @@ export async function listOrderMilestones(
   return milestones;
 }
 
-// A milestone row as the status reconciliation reads it: the page id (to patch),
-// its stage label (Production Stage select), and its current completion Status.
-interface MilestonePageRow {
-  id: string;
-  properties?: {
-    [PS_STAGE_PROPERTY]?: { select?: { name?: string } | null };
-    [PS_STATUS_PROPERTY]?: { status?: { name?: string } | null };
-  };
-}
-
-interface MilestonePageQueryResponse {
-  results: MilestonePageRow[];
-}
-
-/** One milestone page, reduced to what the status sync needs. */
-export interface MilestonePage {
-  pageId: string;
-  /** Production Stage select value; `""` if the row has none. */
-  stage: string;
-  /** Current completion Status; `""` if unset. */
-  status: string;
-}
-
-/**
- * List an order's milestone pages (by the `Order` relation) with their stage and
- * current status, so the reconciliation can advance any whose status has drifted
- * from the order's live stage. Fail-soft on an unconfigured database (returns
- * `[]`, like `listOrderMilestones`) so a missing Production Schedule never turns
- * the reconciliation into an alert storm; a query error still throws so the
- * per-order guard in the service logs and retries it.
- */
-export async function listOrderMilestonePages(
-  orderPageId: string,
-  client: NotionClient = getProductionScheduleNotionClient(),
-): Promise<MilestonePage[]> {
-  if (!client.databaseId) {
-    return [];
-  }
-
-  const response = await client.fetch(
-    `/v1/databases/${client.databaseId}/query`,
-    {
-      method: "POST",
-      body: JSON.stringify({
-        filter: {
-          property: PS_ORDER_RELATION_PROPERTY,
-          relation: { contains: orderPageId },
-        },
-      }),
-    },
-  );
-
-  if (!response.ok) {
-    const body = await response.text();
-    throw new Error(
-      `Notion query failed with status ${response.status}: ${body}`,
-    );
-  }
-
-  const data = (await response.json()) as MilestonePageQueryResponse;
-  return data.results.map((row) => ({
-    pageId: row.id,
-    stage: row.properties?.[PS_STAGE_PROPERTY]?.select?.name ?? "",
-    status: row.properties?.[PS_STATUS_PROPERTY]?.status?.name ?? "",
-  }));
-}
-
-/** Set a single milestone page's completion `Status` (leaves stage/date/relation
- * untouched). Used by the reconciliation to keep milestones in step with the
- * order's stage. */
-export async function updateMilestoneStatus(
-  pageId: string,
-  status: MilestoneStatus,
-  client: NotionClient = getProductionScheduleNotionClient(),
-): Promise<void> {
-  assertConfigured(client);
-
-  const response = await client.fetch(`/v1/pages/${pageId}`, {
-    method: "PATCH",
-    body: JSON.stringify({ properties: buildMilestoneStatusUpdate(status) }),
-  });
-
-  if (!response.ok) {
-    const errorText = await response.text();
-    throw new Error(
-      `Notion milestone status update failed with status ${response.status}: ${errorText}`,
-    );
-  }
-}
-
 // A milestone row as the fitting-reminder pass reads it: the page id, its stage +
 // target date (for the email), and the linked order's page id (to resolve the
 // customer email). `Order` is a relation; the reminder needs the first linked id.
@@ -259,12 +167,13 @@ interface FittingReminderQueryResponse {
  * Find fitting milestones that are due for a reminder: their `Production Stage` is
  * one of the configured fitting stages, they aren't completed, no reminder has been
  * sent yet, and *either* the target date is on or before the cutoff (the reminder
- * window) *or* the order has already reached the fitting stage (`Status = In
- * Progress`). The second clause is what catches an order running ahead of schedule —
- * it reaches Fitting before the target date, so a date-only filter would never fire
- * before the stage advances to Completed and the reminder is missed entirely.
- * (`syncMilestoneStatuses` runs before this in `reconcileMilestones`, so the status
- * reflects the order's live stage.) Rows missing a stage or an order relation are
+ * window) *or* the order has already reached the fitting stage (`Milestone Status =
+ * In Progress`). The second clause is what catches an order running ahead of
+ * schedule — it reaches Fitting before the target date, so a date-only filter would
+ * never fire before the stage advances to Completed and the reminder is missed
+ * entirely. `Milestone Status` is a Notion formula derived live from the order's
+ * stage (there is no status-sync pass), so it's always current. Rows missing a
+ * stage or an order relation are
  * skipped (nothing to email about). Fail-soft on an unconfigured database (returns
  * `[]`), but a query error throws so the caller logs and retries next run —
  * mirroring `listOrderMilestonePages`.
@@ -294,20 +203,23 @@ export async function findMilestonesNeedingFittingReminder(
               })),
             },
             {
-              property: PS_STATUS_PROPERTY,
-              status: { does_not_equal: MILESTONE_STATUS_COMPLETED },
+              property: PS_MILESTONE_STATUS_PROPERTY,
+              formula: {
+                string: { does_not_equal: MILESTONE_STATUS_COMPLETED },
+              },
             },
             {
               // Due by the cutoff (the scheduled heads-up) OR the order is already
-              // at the fitting stage (the "you're here now, book it" trigger).
+              // at the fitting stage (the "you're here now, book it" trigger —
+              // `Milestone Status` is derived live from the order's stage).
               or: [
                 {
                   property: PS_TARGET_DATE_PROPERTY,
                   date: { on_or_before: params.onOrBefore },
                 },
                 {
-                  property: PS_STATUS_PROPERTY,
-                  status: { equals: MILESTONE_STATUS_IN_PROGRESS },
+                  property: PS_MILESTONE_STATUS_PROPERTY,
+                  formula: { string: { equals: MILESTONE_STATUS_IN_PROGRESS } },
                 },
               ],
             },

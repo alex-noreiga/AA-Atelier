@@ -64,14 +64,9 @@ export async function generateMilestonesButtonHandler(
     const {
       ordersProcessed,
       milestonesCreated,
-      milestonesUpdated,
       remindersSent,
       paymentRemindersSent,
     } = result;
-    const updatedNote =
-      milestonesUpdated === 0
-        ? ""
-        : ` Refreshed the status of ${milestonesUpdated} existing milestone${milestonesUpdated === 1 ? "" : "s"}.`;
     const reminderNote =
       remindersSent === 0
         ? ""
@@ -82,8 +77,8 @@ export async function generateMilestonesButtonHandler(
         : ` Sent ${paymentRemindersSent} payment reminder${paymentRemindersSent === 1 ? "" : "s"}.`;
     const summary =
       milestonesCreated === 0
-        ? `Everything was already up to date — no new milestones were needed.${updatedNote}${reminderNote}${paymentReminderNote}`
-        : `Generated ${milestonesCreated} milestone${milestonesCreated === 1 ? "" : "s"} across ${ordersProcessed} order${ordersProcessed === 1 ? "" : "s"}.${updatedNote}${reminderNote}${paymentReminderNote}`;
+        ? `Everything was already up to date — no new milestones were needed.${reminderNote}${paymentReminderNote}`
+        : `Generated ${milestonesCreated} milestone${milestonesCreated === 1 ? "" : "s"} across ${ordersProcessed} order${ordersProcessed === 1 ? "" : "s"}.${reminderNote}${paymentReminderNote}`;
     res
       .status(200)
       .type("html")
