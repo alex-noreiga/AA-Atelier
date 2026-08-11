@@ -111,35 +111,44 @@ Notion formula and **retired the status-sync pass in code**.
   Calendar / "The Truth" views at `Milestone Status`. Until then both columns
   coexist, which is the built-in way to eyeball that the formula matches.
 
-## ① One costing engine — profit model — NEEDS AN OWNER DECISION (not applied)
+## ① One costing engine — ALREADY STANDARDIZED (no change; docs were stale)
 
-Labor unit is **already unified** (`Labor Hours`, hours, all channels). What's left
-is the profit model, and it can't be done unilaterally:
+**Finding: this card is effectively already done.** The live `Suggested Price` formula
+(pasted from Notion by the atelier) is:
 
-- The current `Suggested Price` = `round(Break Even × (1 + margin) / (Production ?
-  1 − sellingFees : 1), 2)` — **only Production grosses up selling fees**; Custom
-  and Rhinestone divide by 1.
-- "Standardizing" means one model for all channels, which **necessarily changes some
-  prices**: (a) margin-only everywhere → Production prices _drop_; (b) margin + fee
-  gross-up everywhere → Custom/Rhinestone prices _rise_.
-- The `Default Selling Fees %` rollup is **global** (every row relates to the one
-  Pricing Settings row), so a naive "one formula, fee as data" does **not** leave
-  Custom unchanged — Custom would start dividing by `(1 − fees)`.
-- **The app reads Custom-channel costing rows to build customer invoices** (the
-  generator's Adjustment line makes the invoice total = Σ `Suggested Price`), so any
-  change to Custom's `Suggested Price` changes what customers are billed. And
-  **formula values aren't API-readable**, so a rewrite can't be verified through the
-  API — only in the Notion UI.
+```
+round((Material Cost + Labor Hours × Hourly Rate + Packaging Cost) × (1 + margin)
+      / (1 − Default Selling Fees %), 2)
+```
 
-**Recommendation to run in Notion (owner picks the model, verifies values by eye):**
-express the fee as a per-row value that's 0 for direct-sale channels, e.g.
-`effectiveFees = if(prop("Channel") == "Production", prop("Default Selling Fees %
-(from settings)"), 0)` and `Suggested Price = round(prop("Break Even Price") × (1 +
-prop("Default Profit Margin (from settings)")) / (1 − effectiveFees), 2)`. That's
-identical to today for Custom (unchanged invoices) and Production, and only reprices
-Rhinestone advisory rows — the smallest-blast-radius "standardization." If the
-atelier instead wants fees on every channel, that's option (b) and it _will_ change
-Custom invoices. **Left for the owner to choose + apply.**
+— **one uniform formula, no `Channel` branch**, labor already in `Labor Hours`. The
+channel difference is expressed **as data, not logic**: `Pricing Settings` has TWO
+rows —
+
+- **Custom / Direct** — `Default Selling Fees %` = **0**, Hourly Rate 5, Margin 1
+- **Production / Marketplace** — `Default Selling Fees %` = **0.065**, Hourly Rate 5, Margin 1
+
+— and every costing row relates to the correct one (verified: all Custom items →
+Custom/Direct, all Production items → Production/Marketplace; no Rhinestone rows yet).
+So a Custom item divides by `(1 − 0) = 1` (no fee gross-up) and a Production item by
+`0.935`, from the same formula. **This is exactly the "standardized profit model
+across channels" the card asked for** — the labor unit is unified and the profit model
+is one data-driven formula. Nothing to change.
+
+**Do NOT rewrite the formula, and do NOT add a `Channel` branch.** An earlier draft of
+this note (and `invoice-building.md`) wrongly claimed the formula had a `Production ?
+1 − sellingFees : 1` branch — that's **stale**; the real formula has no branch. Adding
+`if(Channel=="Custom", 0, fees)` would hardcode a redundant branch duplicating the
+Pricing Settings relation and could **diverge** from it (e.g. a mislinked row, or a
+future Rhinestone item). The relation IS the source of truth for the per-channel fee.
+
+- **Docs corrected here:** `invoice-building.md` (the "`Suggested Price` is CORRECT"
+  note) and `CLAUDE.md` (invoice-generator section) now describe the real branch-free,
+  two-Pricing-Settings-rows model.
+- **Gotcha for the future:** the app reads Custom-channel `Suggested Price` to bill
+  customers (the generator's Adjustment line makes the invoice total = Σ Suggested
+  Price), and **formula values are not API-readable** — so any real change to this
+  formula must be made + verified in the Notion UI, never blind via the API.
 
 ## ② Retire the copy-a-secret buttons — OWNER RUNBOOK (not app-executable)
 

@@ -837,9 +837,15 @@ the order number (a formula that returns a URL renders as a link; a native Butto
 can't interpolate the row's order number into its URL, which is why this is a
 formula link rather than a Button). The `Suggested Price` costing formula is the
 source of truth for the invoice total; its Notion _description_ text is stale
-("Break-even price + labor cost") but the **formula is correct** (marks up
-`Break Even Price` by the profit margin, grossing up for selling fees on
-Production rows only) — don't "fix" the formula to match the description.
+("Break-even price + labor cost") but the **formula is correct**: it marks up the
+break-even cost by the profit margin and grosses up for selling fees —
+`round(base × (1 + margin) / (1 − sellingFees), 2)` with **no `Channel` branch**.
+The fee is **data-driven**: `Pricing Settings` has a **Custom / Direct** row (fees
+0%) and a **Production / Marketplace** row (6.5%), and each costing item relates to
+the right one, so one formula prices every channel (Custom ÷1, Production ÷0.935).
+This is the "one costing engine" standardized model (Phase-2 card ①) — don't "fix"
+the formula to match the stale description, and don't add a `Channel` branch (it
+would duplicate the Pricing Settings relation). See `.agents/memory/invoice-building.md`.
 
 ### Order cancellation & refunds
 
