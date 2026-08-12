@@ -507,9 +507,9 @@ describe("getCheckoutSession", () => {
       }),
     );
 
-    await expect(getCheckoutSession("IN_PERSON", stripe)).rejects.toBeInstanceOf(
-      NotFoundError,
-    );
+    await expect(
+      getCheckoutSession("IN_PERSON", stripe),
+    ).rejects.toBeInstanceOf(NotFoundError);
   });
 
   it("rethrows an unexpected Stripe error (not a missing session) untouched", async () => {
