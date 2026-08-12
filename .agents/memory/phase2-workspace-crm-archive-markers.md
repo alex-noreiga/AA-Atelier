@@ -56,17 +56,25 @@ a shop-only customer read as "0 orders / $0").
   - `Last Order Date`  = `ROLLUP('Orders', 'Created', 'latest_date')`
   - `Shop Order Count` = `ROLLUP('Shop Orders', 'Order Name', 'count')`
   - `Shop Revenue`     = `ROLLUP('Shop Orders', 'Total', 'sum')`
+- **Applied — two blended formulas** (custom + shop, so the record shows one
+  number each): `Total Orders` = `prop("Order Count") + prop("Shop Order Count")`
+  and `Total Lifetime Value` = `prop("Lifetime Value") + prop("Shop Revenue")`.
+  (Number-sum/count rollups read fine in a formula — only status/select rollups
+  error; and **no parens in the column name** or the FORMULA DDL parser breaks,
+  hence "Total Lifetime Value", not "Lifetime Value (All)".) They read as plain
+  numbers — set the dollar format on `Total Lifetime Value` in the UI if wanted.
 - **Applied — a `Clients` table view** (`view://3b9da6fa-c638-8120-a910-000c7b83f9cb`)
-  that leads with the record fields (name, status, contact, the two counts, the
-  two revenue rollups, paid-to-date, first/last order date, last contact, order
-  stages, the relations, referral code) and **omits the reward markers** (see ③).
+  that leads with the record fields (name, status, contact, the counts +
+  `Total Orders`, the revenue rollups + `Total Lifetime Value`, paid-to-date,
+  first/last order date, last contact, order stages, the relations, referral
+  code) and **omits the reward markers** (see ③).
 - **Known limits (documented, not bugs):** `First/Last Order Date` span **custom
   orders only** (one rollup can't merge two relations; shop dates live on
-  `shop orders.Order Date`). `Lifetime Value` still sums the custom invoice
-  balances only and `Shop Revenue` sums **all** shop `Total`s incl. voided/refunded
-  (a DDL rollup can't filter). If the atelier wants a single blended LTV /
-  total-order-count, add a formula = `Lifetime Value + Shop Revenue` /
-  `Order Count + Shop Order Count` (left out to avoid clutter — see ③).
+  `shop orders.Order Date`). `Lifetime Value` sums the custom invoice balances
+  (full invoice, not just paid) and `Shop Revenue` sums **all** shop `Total`s incl.
+  voided/refunded (a DDL rollup can't filter), so `Total Lifetime Value` inherits
+  both — a contracted-value figure, not strictly collected cash (`Paid to Date` is
+  the collected-cash number).
 
 ## ② Archiving convention for finished orders — APPLIED (Notion only, app-safe)
 

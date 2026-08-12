@@ -2271,7 +2271,8 @@ keys on exact property names). Recorded here only because two facts are
 - **Client CRM reads as a customer record.** Rollups over the order relations:
   `Order Count` + `Lifetime Value` (custom invoice balances) + `Paid to Date`
   (pre-existing), plus new `First Order Date` / `Last Order Date` (over a `Created`
-  created_time added to Custom Orders) and `Shop Order Count` / `Shop Revenue`. The
+  created_time added to Custom Orders), `Shop Order Count` / `Shop Revenue`, and two
+  blended formulas `Total Orders` / `Total Lifetime Value` (custom + shop). The
   app reads **none** of these (`clients.repository.ts` reads only email / status /
   last-contact / reward fields), so they're safe to retune or extend.
 - **App-owned markers are corralled out of the working views** (Last Notified
