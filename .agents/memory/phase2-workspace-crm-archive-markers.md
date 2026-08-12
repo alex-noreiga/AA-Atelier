@@ -53,9 +53,9 @@ a shop-only customer read as "0 orders / $0").
   though it isn't in the tool's short type list.
 - **Applied — four rollups on Client CRM:**
   - `First Order Date` = `ROLLUP('Orders', 'Created', 'earliest_date')`
-  - `Last Order Date`  = `ROLLUP('Orders', 'Created', 'latest_date')`
+  - `Last Order Date` = `ROLLUP('Orders', 'Created', 'latest_date')`
   - `Shop Order Count` = `ROLLUP('Shop Orders', 'Order Name', 'count')`
-  - `Shop Revenue`     = `ROLLUP('Shop Orders', 'Total', 'sum')`
+  - `Shop Revenue` = `ROLLUP('Shop Orders', 'Total', 'sum')`
 - **Applied — two blended formulas** (custom + shop, so the record shows one
   number each): `Total Orders` = `prop("Order Count") + prop("Shop Order Count")`
   and `Total Lifetime Value` = `prop("Lifetime Value") + prop("Shop Revenue")`.
