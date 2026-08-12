@@ -40,7 +40,7 @@ import { fromAddress, atelierInbox } from "../lib/resend/config.js";
 import { getStripeClient } from "../lib/stripe/client.js";
 import { bnplPaymentMethodTypes } from "../lib/stripe/payment-methods.js";
 import { siteBaseUrl } from "../lib/site.js";
-import { BadRequestError } from "../lib/errors.js";
+import { BadRequestError, NotFoundError } from "../lib/errors.js";
 import { logger } from "../lib/logger.js";
 
 const CURRENCY = "usd";
@@ -274,14 +274,39 @@ function toDollars(amountInCents: number | null | undefined): number {
   return typeof amountInCents === "number" ? amountInCents / 100 : 0;
 }
 
+/**
+ * True for a Stripe error meaning "that id doesn't name a session" — a bad,
+ * unknown, or wrong-mode session id (Stripe's `resource_missing` / 404). A
+ * session id reaches us straight from the `?session_id=` URL, so a garbage or
+ * hand-entered value (e.g. a deposit the atelier marked paid in person with a
+ * non-Stripe marker in the invoice's Session Id field) must degrade to a clean
+ * 404, not an unhandled 500 that fires a production error alert.
+ */
+function isMissingSessionError(err: unknown): boolean {
+  if (typeof err !== "object" || err === null) return false;
+  const e = err as { type?: unknown; code?: unknown; statusCode?: unknown };
+  return (
+    e.type === "StripeInvalidRequestError" &&
+    (e.code === "resource_missing" || e.statusCode === 404)
+  );
+}
+
 export async function getCheckoutSession(
   sessionId: string,
   stripe: Stripe = getStripeClient(),
 ): Promise<CheckoutSessionView> {
   // Expand line items so the success page can render an itemized receipt.
-  const session = await stripe.checkout.sessions.retrieve(sessionId, {
-    expand: ["line_items"],
-  });
+  let session: Stripe.Checkout.Session;
+  try {
+    session = await stripe.checkout.sessions.retrieve(sessionId, {
+      expand: ["line_items"],
+    });
+  } catch (err) {
+    if (isMissingSessionError(err)) {
+      throw new NotFoundError("No receipt found for that payment.");
+    }
+    throw err;
+  }
   const email = session.customer_details?.email ?? undefined;
   const orderNumber = session.metadata?.orderNumber ?? undefined;
   const kind = session.metadata?.kind ?? undefined;
