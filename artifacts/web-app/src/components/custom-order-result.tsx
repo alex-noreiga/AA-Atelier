@@ -67,7 +67,11 @@ function DepositCard({
           <Check className="w-4 h-4" />
           {deposit.label} paid
         </div>
-        {deposit.sessionId && (
+        {/* Only a Stripe-processed payment has an online receipt. A deposit the
+            atelier marked paid in person carries a non-Stripe marker in the
+            invoice's Session Id field (e.g. "IN_PERSON"), which would 404 the
+            receipt lookup — so gate on a real Stripe session id (`cs_…`). */}
+        {deposit.sessionId?.startsWith("cs_") && (
           <CtaLink
             to={`/shop/success?session_id=${encodeURIComponent(deposit.sessionId)}`}
             variant="outline"

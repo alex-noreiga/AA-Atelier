@@ -31,7 +31,7 @@ import {
   getCheckoutSession,
   recordPaidOrder,
 } from "../../src/services/checkout.service.js";
-import { BadRequestError } from "../../src/lib/errors.js";
+import { BadRequestError, NotFoundError } from "../../src/lib/errors.js";
 import { logger } from "../../src/lib/logger.js";
 import { listVariants } from "../../src/lib/notion/products.repository.js";
 import {
@@ -493,6 +493,37 @@ describe("getCheckoutSession", () => {
 
     const view = await getCheckoutSession("cs_deposit", stripe);
     expect(view.kind).toBe("deposit");
+  });
+
+  it("maps a Stripe 'no such session' error to a NotFoundError (404, not an unhandled 500)", async () => {
+    const { stripe, retrieve } = fakeStripe();
+    // A non-Stripe id (e.g. a deposit marked paid in person with an "IN_PERSON"
+    // marker in the invoice's Session Id field) reaches Stripe from the URL.
+    retrieve.mockRejectedValue(
+      Object.assign(new Error("No such checkout.session: IN_PERSON"), {
+        type: "StripeInvalidRequestError",
+        code: "resource_missing",
+        statusCode: 404,
+      }),
+    );
+
+    await expect(
+      getCheckoutSession("IN_PERSON", stripe),
+    ).rejects.toBeInstanceOf(NotFoundError);
+  });
+
+  it("rethrows an unexpected Stripe error (not a missing session) untouched", async () => {
+    const { stripe, retrieve } = fakeStripe();
+    retrieve.mockRejectedValue(
+      Object.assign(new Error("Stripe is down"), {
+        type: "StripeAPIError",
+        statusCode: 500,
+      }),
+    );
+
+    await expect(getCheckoutSession("cs_boom", stripe)).rejects.toThrow(
+      /Stripe is down/,
+    );
   });
 });
 
