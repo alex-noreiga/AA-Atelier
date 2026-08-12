@@ -2244,6 +2244,43 @@ relation on shop orders; the five measurement number properties (`Waist`, `Chest
 targets the app + backfill write); plus the `Open Requests` (Custom Orders) and
 `Times Ordered` (inventory) count rollups.
 
+## Workspace record hygiene (Phase-2 cards — CRM, archiving, markers, templates)
+
+Four more Phase-2 "Workspace" cards, all **additive Notion configuration the app
+never reads** — so they need no code and are invisible to the deployed app (which
+keys on exact property names). Recorded here only because two facts are
+**load-bearing / a foot-gun to get wrong**; full detail in
+`.agents/memory/phase2-workspace-crm-archive-markers.md`.
+
+- **Order archiving is a `checkbox`, NEVER a `Stage` option.** Custom Orders and
+  shop orders carry an `Archived` checkbox + `Active Orders` / `Archived` views.
+  Archived must stay a separate property because the app reads `Stage`
+  **positionally** — `services/delivery.ts` `orderDelivered()` treats the **last**
+  live stage as "delivered" (review gate, schedule, portal). An "Archived" **Stage**
+  after "Delivered" would silently become the delivered position and break all
+  three. Nothing in the app filters on `Archived`; it's a pure view-cleanliness
+  convention (no cron re-touches an archived order).
+- **The Custom Orders template pre-fills `Stage` + `Measurement Unit`.**
+  `buildOrderProperties` (`orders.blocks.ts`) deliberately **omits `Stage`** on
+  create (a new page inherits Notion's Stage status default) and writes
+  `Measurement Unit` **only when measurements are supplied** — so a hand-keyed order
+  can miss the unit the account portal reads back. The database template
+  ("✨ Your Custom Dress — [Client Name]") now defaults `Stage = Consultation` and
+  `Measurement Unit = inches` so manual entry matches what the code expects. Don't
+  rely on this in code — it's an atelier convenience, not an app guarantee.
+- **Client CRM reads as a customer record.** Rollups over the order relations:
+  `Order Count` + `Lifetime Value` (custom invoice balances) + `Paid to Date`
+  (pre-existing), plus new `First Order Date` / `Last Order Date` (over a `Created`
+  created_time added to Custom Orders), `Shop Order Count` / `Shop Revenue`, and two
+  blended formulas `Total Orders` / `Total Lifetime Value` (custom + shop). The
+  app reads **none** of these (`clients.repository.ts` reads only email / status /
+  last-contact / reward fields), so they're safe to retune or extend.
+- **App-owned markers are corralled out of the working views** (Last Notified
+  Stage, Milestones Generated, Stage Index Sys, Reminder Sent, the reward flags,
+  Stripe session ids). The curated views hide them; a collapsed "🔧 System" property
+  group on each database's page detail is a UI-only runbook step (property groups
+  aren't API-reachable).
+
 ## Quick reference — where things live
 
 | I want to…                                             | Go to                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                         |
