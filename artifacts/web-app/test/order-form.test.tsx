@@ -104,15 +104,19 @@ describe("OrderForm submission mapping", () => {
     render(<OrderForm />);
     await fillRequired(user);
     await user.type(byId("description"), "Ivory chiffon, A-line");
+    // A standard-timeline date, well outside the rush window, so the rush-
+    // surcharge acknowledgement gate doesn't block submit. Kept relative to
+    // today (not a fixed date) so it can't drift into the window over time.
     // Date inputs don't play well with per-character typing; set directly.
-    fireEvent.change(byId("neededBy"), { target: { value: "2026-09-01" } });
+    const neededBy = isoDaysFromNow(90);
+    fireEvent.change(byId("neededBy"), { target: { value: neededBy } });
 
     await user.click(screen.getByRole("button", { name: "Submit Order" }));
 
     await waitFor(() => expect(mutate).toHaveBeenCalledTimes(1));
     const { data } = mutate.mock.calls[0][0];
     expect(data.description).toBe("Ivory chiffon, A-line");
-    expect(data.neededBy).toBe("2026-09-01");
+    expect(data.neededBy).toBe(neededBy);
   });
 
   it("omits referralCode when left blank", async () => {
