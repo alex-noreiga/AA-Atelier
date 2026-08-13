@@ -29,7 +29,21 @@ Notion API gotchas learned here (add to the `invoice-building.md` list):
   number — so compare literals to the rollup, don't build a same-row index formula.
 - **Formula _values_ are not readable via the MCP** — `fetch`/`query_data_sources`
   return `formulaResult://…` refs, never the computed value. Verify formula output
-  by eye in the Notion UI, not through the API.
+  by eye in the Notion UI, not through the API. (The **raw REST** `POST
+/databases/{id}/query` _does_ return each row's computed formula value — e.g.
+  `properties["Milestone Status"].formula.string` — so client-side evaluation over
+  query results is fine; only the MCP hides it.)
+- **A rollup-derived formula often can't be _filtered_ via the REST API.** A
+  `formula: {string: {…}}` (or number/date) filter on a formula whose body reads a
+  rollup is rejected with a 400 `validation_error` — _"Unable to filter based on a
+  formula of unknown type"_ — because the API can't resolve the formula's declared
+  result type through the rollup. (Distinct from reading the value, which works —
+  see above.) This bit `findMilestonesNeedingFittingReminder`: it filtered on the
+  `Milestone Status` formula and threw on every nightly cron run. **Fix (shipped):**
+  filter the query only on the reliably-typed properties (the `Production Stage`
+  select + the `Reminder Sent` checkbox) and evaluate the not-completed /
+  due-or-in-progress conditions **client-side** from each row's computed
+  `Milestone Status` value. Degrades to date-only if the value is unreadable.
 
 ---
 
@@ -92,7 +106,9 @@ Index Sys` → a number) on Production Schedule — each milestone now _reads_ t
   - `production-schedule.repository.ts`: removed `listOrderMilestonePages` +
     `updateMilestoneStatus`; **rewrote the fitting-reminder filter** from status-type
     (`status: {does_not_equal/equals}`) to **formula-string** (`formula: {string:
-{…}}`) on `Milestone Status`.
+{…}}`) on `Milestone Status`. **(Superseded — see the follow-up below: the
+    formula filter 400s in production; the query now filters only on the stage
+    select + `Reminder Sent` checkbox and evaluates `Milestone Status` client-side.)**
   - `orders.repository.ts`: removed `findOrdersWithMilestones` (sync-only).
   - `schedule.service.ts`: removed `syncMilestoneStatuses` + `milestoneStatusFor`;
     dropped the sync pass + `milestonesUpdated` from `reconcileMilestones` /

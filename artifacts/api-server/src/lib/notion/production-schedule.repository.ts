@@ -148,14 +148,20 @@ export async function listOrderMilestones(
 }
 
 // A milestone row as the fitting-reminder pass reads it: the page id, its stage +
-// target date (for the email), and the linked order's page id (to resolve the
-// customer email). `Order` is a relation; the reminder needs the first linked id.
+// target date (for the email), the linked order's page id (to resolve the
+// customer email), and its live `Milestone Status` (the derived formula's
+// computed value — evaluated here rather than filtered server-side; see
+// `findMilestonesNeedingFittingReminder`). `Order` is a relation; the reminder
+// needs the first linked id.
 interface FittingReminderRow {
   id: string;
   properties?: {
     [PS_STAGE_PROPERTY]?: { select?: { name?: string } | null };
     [PS_TARGET_DATE_PROPERTY]?: { date?: { start?: string } | null };
     [PS_ORDER_RELATION_PROPERTY]?: { relation?: Array<{ id: string }> | null };
+    [PS_MILESTONE_STATUS_PROPERTY]?: {
+      formula?: { string?: string | null } | null;
+    };
   };
 }
 
@@ -169,14 +175,26 @@ interface FittingReminderQueryResponse {
  * sent yet, and *either* the target date is on or before the cutoff (the reminder
  * window) *or* the order has already reached the fitting stage (`Milestone Status =
  * In Progress`). The second clause is what catches an order running ahead of
- * schedule — it reaches Fitting before the target date, so a date-only filter would
+ * schedule — it reaches Fitting before the target date, so a date-only test would
  * never fire before the stage advances to Completed and the reminder is missed
- * entirely. `Milestone Status` is a Notion formula derived live from the order's
- * stage (there is no status-sync pass), so it's always current. Rows missing a
- * stage or an order relation are
- * skipped (nothing to email about). Fail-soft on an unconfigured database (returns
- * `[]`), but a query error throws so the caller logs and retries next run —
- * mirroring `listOrderMilestonePages`.
+ * entirely.
+ *
+ * The completion + due/in-progress conditions are evaluated **here** from each
+ * row's computed `Milestone Status`, not filtered server-side. That property is a
+ * Notion formula derived from a rollup (`Order Stage Index`), and Notion's API
+ * frequently can't resolve its *filter* type — a `formula: {...}` filter is
+ * rejected with a 400 "Unable to filter based on a formula of unknown type" (see
+ * `.agents/memory/phase2-workspace-cards.md` — a rollup-derived formula's type is
+ * flaky through the API). So the query filters only on reliably-typed properties
+ * (the stage `select` + the `Reminder Sent` checkbox) and this reads the formula's
+ * *computed value* back per row, which is unaffected by the filter-typing quirk.
+ * If the value is unreadable (an unconfigured/broken formula) we can't tell a
+ * milestone is completed, so it falls through to the date test — a safe
+ * degradation that keeps genuine upcoming reminders working.
+ *
+ * Rows missing a stage, target date, or an order relation are skipped (nothing to
+ * email about). Fail-soft on an unconfigured database (returns `[]`), but a query
+ * error throws so the caller logs and retries next run.
  */
 export async function findMilestonesNeedingFittingReminder(
   params: { stages: string[]; onOrBefore: string },
@@ -201,27 +219,6 @@ export async function findMilestonesNeedingFittingReminder(
                 property: PS_STAGE_PROPERTY,
                 select: { equals: stage },
               })),
-            },
-            {
-              property: PS_MILESTONE_STATUS_PROPERTY,
-              formula: {
-                string: { does_not_equal: MILESTONE_STATUS_COMPLETED },
-              },
-            },
-            {
-              // Due by the cutoff (the scheduled heads-up) OR the order is already
-              // at the fitting stage (the "you're here now, book it" trigger —
-              // `Milestone Status` is derived live from the order's stage).
-              or: [
-                {
-                  property: PS_TARGET_DATE_PROPERTY,
-                  date: { on_or_before: params.onOrBefore },
-                },
-                {
-                  property: PS_MILESTONE_STATUS_PROPERTY,
-                  formula: { string: { equals: MILESTONE_STATUS_IN_PROGRESS } },
-                },
-              ],
             },
             {
               property: PS_REMINDER_SENT_PROPERTY,
@@ -258,7 +255,25 @@ export async function findMilestonesNeedingFittingReminder(
     const targetDate = row.properties?.[PS_TARGET_DATE_PROPERTY]?.date?.start;
     const orderPageId =
       row.properties?.[PS_ORDER_RELATION_PROPERTY]?.relation?.[0]?.id;
-    if (stage && targetDate && orderPageId) {
+    if (!stage || !targetDate || !orderPageId) {
+      continue;
+    }
+
+    const status =
+      row.properties?.[PS_MILESTONE_STATUS_PROPERTY]?.formula?.string;
+    // A completed fitting needs no reminder. (Unreadable status ⇒ we can't tell,
+    // so fall through to the date test rather than silently skip.)
+    if (status === MILESTONE_STATUS_COMPLETED) {
+      continue;
+    }
+
+    // Due by the cutoff (the scheduled heads-up) OR the order is already at the
+    // fitting stage (the "you're here now, book it" trigger). Compare on the
+    // calendar date only — milestones are written as `yyyy-mm-dd`, and `onOrBefore`
+    // is a `yyyy-mm-dd` cutoff.
+    const dueByCutoff = targetDate.slice(0, 10) <= params.onOrBefore;
+    const inProgress = status === MILESTONE_STATUS_IN_PROGRESS;
+    if (dueByCutoff || inProgress) {
       milestones.push({ pageId: row.id, stage, targetDate, orderPageId });
     }
   }

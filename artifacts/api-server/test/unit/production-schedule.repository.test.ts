@@ -149,6 +149,7 @@ describe("findMilestonesNeedingFittingReminder", () => {
     stage: string | null,
     targetDate: string | null,
     orderId: string | null,
+    status: string | null = null,
   ) => ({
     id,
     properties: {
@@ -158,6 +159,9 @@ describe("findMilestonesNeedingFittingReminder", () => {
       },
       [PS_ORDER_RELATION_PROPERTY]: {
         relation: orderId === null ? [] : [{ id: orderId }],
+      },
+      [PS_MILESTONE_STATUS_PROPERTY]: {
+        formula: { type: "string", string: status },
       },
     },
   });
@@ -184,7 +188,11 @@ describe("findMilestonesNeedingFittingReminder", () => {
     expect(client.calls).toHaveLength(0);
   });
 
-  it("filters on stage(s), not-completed, (due-by-cutoff OR in-progress), and not-yet-reminded", async () => {
+  it("filters server-side only on stage(s) and not-yet-reminded (the reliably-typed properties)", async () => {
+    // The completed / due / in-progress conditions are NOT filtered server-side:
+    // they read the `Milestone Status` formula, whose *filter* type Notion often
+    // can't resolve ("Unable to filter based on a formula of unknown type"). They
+    // are evaluated client-side from each row's computed value instead.
     const client = makeFakeClient((path) => {
       if (isQuery(path)) return jsonResponse({ results: [] });
       throw new Error(`unexpected path ${path}`);
@@ -205,32 +213,26 @@ describe("findMilestonesNeedingFittingReminder", () => {
           { property: PS_STAGE_PROPERTY, select: { equals: "Second Fitting" } },
         ],
       },
-      {
-        property: PS_MILESTONE_STATUS_PROPERTY,
-        formula: { string: { does_not_equal: MILESTONE_STATUS_COMPLETED } },
-      },
-      {
-        // Reminder is due if the target date is near OR the order already reached
-        // the fitting stage — so an ahead-of-schedule order isn't missed.
-        or: [
-          {
-            property: PS_TARGET_DATE_PROPERTY,
-            date: { on_or_before: "2026-08-11" },
-          },
-          {
-            property: PS_MILESTONE_STATUS_PROPERTY,
-            formula: { string: { equals: MILESTONE_STATUS_IN_PROGRESS } },
-          },
-        ],
-      },
       { property: PS_REMINDER_SENT_PROPERTY, checkbox: { equals: false } },
     ]);
+    // No formula filter is sent — that's the whole point of the fix.
+    const filterJson = JSON.stringify(body.filter);
+    expect(filterJson).not.toContain("formula");
+    expect(filterJson).not.toContain(PS_MILESTONE_STATUS_PROPERTY);
   });
 
   it("maps each row to page id, stage, target date, and linked order page id", async () => {
     const client = makeFakeClient(() =>
       jsonResponse({
-        results: [reminderRow("m-1", "Fitting", "2026-08-08", "order-1")],
+        results: [
+          reminderRow(
+            "m-1",
+            "Fitting",
+            "2026-08-08",
+            "order-1",
+            MILESTONE_STATUS_IN_PROGRESS,
+          ),
+        ],
       }),
     );
 
@@ -258,6 +260,102 @@ describe("findMilestonesNeedingFittingReminder", () => {
           reminderRow("m-3", "Fitting", null, "order-3"),
           reminderRow("m-4", "Fitting", "2026-08-08", null),
         ],
+      }),
+    );
+
+    expect(
+      await findMilestonesNeedingFittingReminder(
+        { stages: ["Fitting"], onOrBefore: "2026-08-11" },
+        client,
+      ),
+    ).toEqual([
+      {
+        pageId: "m-1",
+        stage: "Fitting",
+        targetDate: "2026-08-08",
+        orderPageId: "order-1",
+      },
+    ]);
+  });
+
+  it("excludes a completed milestone even when its date is within the cutoff", async () => {
+    const client = makeFakeClient(() =>
+      jsonResponse({
+        results: [
+          reminderRow(
+            "m-1",
+            "Fitting",
+            "2026-08-08",
+            "order-1",
+            MILESTONE_STATUS_COMPLETED,
+          ),
+        ],
+      }),
+    );
+
+    expect(
+      await findMilestonesNeedingFittingReminder(
+        { stages: ["Fitting"], onOrBefore: "2026-08-11" },
+        client,
+      ),
+    ).toEqual([]);
+  });
+
+  it("includes an ahead-of-schedule milestone (In Progress) whose date is past the cutoff", async () => {
+    const client = makeFakeClient(() =>
+      jsonResponse({
+        results: [
+          // Target date is AFTER the cutoff, so date alone wouldn't qualify — but
+          // the order has already reached the fitting stage.
+          reminderRow(
+            "m-1",
+            "Fitting",
+            "2026-09-01",
+            "order-1",
+            MILESTONE_STATUS_IN_PROGRESS,
+          ),
+        ],
+      }),
+    );
+
+    expect(
+      await findMilestonesNeedingFittingReminder(
+        { stages: ["Fitting"], onOrBefore: "2026-08-11" },
+        client,
+      ),
+    ).toEqual([
+      {
+        pageId: "m-1",
+        stage: "Fitting",
+        targetDate: "2026-09-01",
+        orderPageId: "order-1",
+      },
+    ]);
+  });
+
+  it("excludes a not-yet-reached milestone whose date is still past the cutoff", async () => {
+    const client = makeFakeClient(() =>
+      jsonResponse({
+        results: [
+          reminderRow("m-1", "Fitting", "2026-09-01", "order-1", "Not Started"),
+        ],
+      }),
+    );
+
+    expect(
+      await findMilestonesNeedingFittingReminder(
+        { stages: ["Fitting"], onOrBefore: "2026-08-11" },
+        client,
+      ),
+    ).toEqual([]);
+  });
+
+  it("still reminds by date when the Milestone Status value is unreadable (degraded formula)", async () => {
+    // If the derived formula is unconfigured/broken its value comes back null; a
+    // due-by-date fitting still gets its reminder rather than the whole pass dying.
+    const client = makeFakeClient(() =>
+      jsonResponse({
+        results: [reminderRow("m-1", "Fitting", "2026-08-08", "order-1", null)],
       }),
     );
 
