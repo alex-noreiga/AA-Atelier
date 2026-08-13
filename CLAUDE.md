@@ -964,8 +964,12 @@ order that has a firm due date. The load-bearing points:
    **hardcode the 11-stage pipeline order** (generation still reads the live
    `fetchLiveOrderStages` list; the formulas degrade to blank for an unknown stage),
    so renaming/reordering Stage options means updating them. The fitting-reminder
-   query filters on `Milestone Status` with **formula-string** operators (not the
-   old status-type filter). Details + the API-formula gotchas + the one-time setup
+   query reads `Milestone Status` **client-side** (it filters the query only on the
+   `Production Stage` select + `Reminder Sent` checkbox, then evaluates the
+   completed / due-or-in-progress conditions from each row's computed value) —
+   because a `formula: {…}` **filter** on this rollup-derived formula 400s via the
+   API ("Unable to filter based on a formula of unknown type"), even though reading
+   the value back per row works. Details + the API-formula gotchas + the one-time setup
    (add the rollups/formulas; the old status-type `Status` property is dropped
    post-deploy) live in `.agents/memory/phase2-workspace-cards.md`.
 
