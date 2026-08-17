@@ -4,6 +4,8 @@ import { useQueryClient } from "@tanstack/react-query";
 import {
   useGetAccountOverview,
   getGetAccountOverviewQueryKey,
+  type AccountOverview,
+  type AccountOrderState,
   type AccountOrderSummary,
   type AccountShopOrderSummary,
   type AccountAppointmentSummary,
@@ -30,6 +32,11 @@ import {
   Gift,
   Copy,
   Check,
+  CheckCircle2,
+  Archive,
+  ChevronDown,
+  ChevronUp,
+  Ban,
 } from "lucide-react";
 
 /**
@@ -122,68 +129,151 @@ export default function Account() {
               </div>
             )}
 
-            {(() => {
-              const appointments = overview.data.appointments ?? [];
-              const { customOrders, shopOrders } = overview.data;
-              if (
-                customOrders.length === 0 &&
-                shopOrders.length === 0 &&
-                appointments.length === 0
-              ) {
-                return <EmptyState />;
-              }
-              return (
-                <div className="space-y-12">
-                  {appointments.length > 0 && (
-                    <Section
-                      icon={
-                        <CalendarClock className="w-4 h-4" strokeWidth={1.5} />
-                      }
-                      title="Upcoming appointments"
-                    >
-                      {appointments.map((appt) => (
-                        <AppointmentCard
-                          key={`${appt.staff}-${appt.confirmationCode}-${String(appt.start)}`}
-                          appt={appt}
-                        />
-                      ))}
-                    </Section>
-                  )}
-
-                  {customOrders.length > 0 && (
-                    <Section
-                      icon={<Package className="w-4 h-4" strokeWidth={1.5} />}
-                      title="Custom orders"
-                    >
-                      {customOrders.map((order) => (
-                        <CustomOrderCard
-                          key={order.orderNumber}
-                          order={order}
-                        />
-                      ))}
-                    </Section>
-                  )}
-
-                  {shopOrders.length > 0 && (
-                    <Section
-                      icon={
-                        <ShoppingBag className="w-4 h-4" strokeWidth={1.5} />
-                      }
-                      title="Shop orders"
-                    >
-                      {shopOrders.map((order) => (
-                        <ShopOrderCard key={order.orderNumber} order={order} />
-                      ))}
-                    </Section>
-                  )}
-                </div>
-              );
-            })()}
+            <Dashboard data={overview.data} />
           </>
         )}
       </div>
     </PageShell>
   );
+}
+
+/**
+ * The dashboard body, split by where each order sits in its lifecycle: what's
+ * still moving stays at the top, and everything finished or cancelled collects
+ * in one "Past orders" section below (collapsed by default, so a customer with
+ * years of history still opens onto their live work). Each finished order also
+ * carries an explicit badge, so completion is never something the customer has
+ * to infer from a stage name.
+ *
+ * Mounted only once the overview has loaded, so the collapse default can be
+ * decided from the real data on first render.
+ */
+function Dashboard({ data }: { data: AccountOverview }) {
+  const appointments = data.appointments ?? [];
+  const isActive = (o: { state: AccountOrderState }) => o.state === "active";
+  const activeCustom = data.customOrders.filter(isActive);
+  const activeShop = data.shopOrders.filter(isActive);
+  const pastCustom = data.customOrders.filter((o) => !isActive(o));
+  const pastShop = data.shopOrders.filter((o) => !isActive(o));
+  const pastCount = pastCustom.length + pastShop.length;
+
+  const nothingCurrent =
+    appointments.length === 0 &&
+    activeCustom.length === 0 &&
+    activeShop.length === 0;
+
+  // Expanded when there's nothing current to show, so the page never opens on
+  // an apparently empty account that in fact has history.
+  const [showPast, setShowPast] = useState(nothingCurrent);
+
+  if (nothingCurrent && pastCount === 0) return <EmptyState />;
+
+  return (
+    <div className="space-y-12">
+      {appointments.length > 0 && (
+        <Section
+          icon={<CalendarClock className="w-4 h-4" strokeWidth={1.5} />}
+          title="Upcoming appointments"
+        >
+          {appointments.map((appt) => (
+            <AppointmentCard
+              key={`${appt.staff}-${appt.confirmationCode}-${String(appt.start)}`}
+              appt={appt}
+            />
+          ))}
+        </Section>
+      )}
+
+      {activeCustom.length > 0 && (
+        <Section
+          icon={<Package className="w-4 h-4" strokeWidth={1.5} />}
+          title="Custom orders"
+        >
+          {activeCustom.map((order) => (
+            <CustomOrderCard key={order.orderNumber} order={order} />
+          ))}
+        </Section>
+      )}
+
+      {activeShop.length > 0 && (
+        <Section
+          icon={<ShoppingBag className="w-4 h-4" strokeWidth={1.5} />}
+          title="Shop orders"
+        >
+          {activeShop.map((order) => (
+            <ShopOrderCard key={order.orderNumber} order={order} />
+          ))}
+        </Section>
+      )}
+
+      {pastCount > 0 && (
+        <section data-testid="past-orders">
+          <h2 className="flex items-center gap-2 text-xs tracking-[0.2em] uppercase text-muted-foreground mb-4">
+            <Archive className="w-4 h-4" strokeWidth={1.5} />
+            Past orders
+            <span className="text-muted-foreground/60 normal-case tracking-normal">
+              ({pastCount})
+            </span>
+            <button
+              type="button"
+              onClick={() => setShowPast((open) => !open)}
+              className="ml-auto inline-flex items-center gap-1 text-xs tracking-widest uppercase text-muted-foreground hover:text-primary transition-colors"
+              aria-expanded={showPast}
+              data-testid="button-toggle-past-orders"
+            >
+              {showPast ? "Hide" : "Show"}
+              {showPast ? (
+                <ChevronUp className="w-3.5 h-3.5" strokeWidth={1.5} />
+              ) : (
+                <ChevronDown className="w-3.5 h-3.5" strokeWidth={1.5} />
+              )}
+            </button>
+          </h2>
+          {showPast && (
+            <div className="space-y-3">
+              {pastCustom.map((order) => (
+                <CustomOrderCard key={order.orderNumber} order={order} />
+              ))}
+              {pastShop.map((order) => (
+                <ShopOrderCard key={order.orderNumber} order={order} />
+              ))}
+            </div>
+          )}
+        </section>
+      )}
+    </div>
+  );
+}
+
+/** How a finished or cancelled order is denoted on its card. Active orders show
+ * nothing — the stage line already says where they are. */
+function StateBadge({ state }: { state: AccountOrderState }) {
+  if (state === "active") return null;
+  const completed = state === "completed";
+  return (
+    <span
+      className={`inline-flex items-center gap-1.5 rounded-full border px-2.5 py-0.5 text-[10px] tracking-[0.15em] uppercase ${
+        completed
+          ? "border-primary/40 text-primary"
+          : "border-border text-muted-foreground"
+      }`}
+      data-testid={`order-state-${state}`}
+    >
+      {completed ? (
+        <CheckCircle2 className="w-3 h-3" strokeWidth={1.5} />
+      ) : (
+        <Ban className="w-3 h-3" strokeWidth={1.5} />
+      )}
+      {completed ? "Completed" : "Cancelled"}
+    </span>
+  );
+}
+
+/** Card chrome, dimmed a touch once an order is no longer active. */
+function cardClass(state: AccountOrderState): string {
+  return state === "active"
+    ? "rounded-sm border border-border bg-card/40 p-5"
+    : "rounded-sm border border-border/60 bg-card/20 p-5";
 }
 
 /** The customer's referral code + a standing returning-skater discount, when
@@ -383,16 +473,21 @@ function AppointmentCard({ appt }: { appt: AccountAppointmentSummary }) {
 }
 
 function CustomOrderCard({ order }: { order: AccountOrderSummary }) {
+  const active = order.state === "active";
   const index = order.stages.indexOf(order.currentStage);
+  // "Stage 3 of 6" is progress through work still under way; a finished or
+  // cancelled order needs its badge and its last stage, not a fraction.
   const progress =
-    index >= 0 && order.stages.length > 0
+    active && index >= 0 && order.stages.length > 0
       ? `Stage ${index + 1} of ${order.stages.length}`
       : null;
-  const completion = formatDate(order.estimatedCompletion);
+  // Likewise the due date: a target completion only means something while the
+  // order is still working toward it.
+  const completion = active ? formatDate(order.estimatedCompletion) : null;
 
   return (
     <div
-      className="rounded-sm border border-border bg-card/40 p-5"
+      className={cardClass(order.state)}
       data-testid={`custom-order-${order.orderNumber}`}
     >
       <div className="flex items-baseline justify-between gap-3">
@@ -403,12 +498,15 @@ function CustomOrderCard({ order }: { order: AccountOrderSummary }) {
           {order.orderNumber}
         </span>
       </div>
-      <p className="text-sm text-muted-foreground mt-1">
-        {order.currentStage || "In progress"}
-        {progress && (
-          <span className="text-muted-foreground/60"> · {progress}</span>
-        )}
-      </p>
+      <div className="flex flex-wrap items-center gap-x-3 gap-y-2 mt-2">
+        <StateBadge state={order.state} />
+        <p className="text-sm text-muted-foreground">
+          {order.currentStage || "In progress"}
+          {progress && (
+            <span className="text-muted-foreground/60"> · {progress}</span>
+          )}
+        </p>
+      </div>
       {completion && (
         <p className="text-xs text-muted-foreground/70 mt-1">
           Target completion {completion}
@@ -423,24 +521,31 @@ function CustomOrderCard({ order }: { order: AccountOrderSummary }) {
           className="inline-flex items-center gap-1 text-xs tracking-widest uppercase text-primary hover:opacity-70 transition-opacity"
           data-testid={`link-track-${order.orderNumber}`}
         >
-          View progress <ArrowRight className="w-3 h-3" />
+          {active ? "View progress" : "View order"}{" "}
+          <ArrowRight className="w-3 h-3" />
         </Link>
-        <Link
-          to={`/invoice/${encodeURIComponent(order.orderNumber)}`}
-          className="inline-flex items-center gap-1 text-xs tracking-widest uppercase text-muted-foreground hover:text-primary transition-colors"
-          data-testid={`link-invoice-${order.orderNumber}`}
-        >
-          Invoice &amp; payments
-        </Link>
+        {/* A cancelled order's payments are settled by the atelier's refund —
+            don't point the customer back at a pay screen. */}
+        {order.state !== "cancelled" && (
+          <Link
+            to={`/invoice/${encodeURIComponent(order.orderNumber)}`}
+            className="inline-flex items-center gap-1 text-xs tracking-widest uppercase text-muted-foreground hover:text-primary transition-colors"
+            data-testid={`link-invoice-${order.orderNumber}`}
+          >
+            Invoice &amp; payments
+          </Link>
+        )}
       </div>
     </div>
   );
 }
 
 function ShopOrderCard({ order }: { order: AccountShopOrderSummary }) {
+  const active = order.state === "active";
+
   return (
     <div
-      className="rounded-sm border border-border bg-card/40 p-5"
+      className={cardClass(order.state)}
       data-testid={`shop-order-${order.orderNumber}`}
     >
       <div className="flex items-baseline justify-between gap-3">
@@ -453,16 +558,20 @@ function ShopOrderCard({ order }: { order: AccountShopOrderSummary }) {
           </span>
         )}
       </div>
-      <p className="text-sm text-muted-foreground mt-1">
-        {order.status || "Processing"}
-      </p>
+      <div className="flex flex-wrap items-center gap-x-3 gap-y-2 mt-2">
+        <StateBadge state={order.state} />
+        <p className="text-sm text-muted-foreground">
+          {order.status || "Processing"}
+        </p>
+      </div>
       <div className="mt-4">
         <Link
           to={`/track?orderNumber=${encodeURIComponent(order.orderNumber)}`}
           className="inline-flex items-center gap-1 text-xs tracking-widest uppercase text-primary hover:opacity-70 transition-opacity"
           data-testid={`link-track-${order.orderNumber}`}
         >
-          Track order <ArrowRight className="w-3 h-3" />
+          {active ? "Track order" : "View order"}{" "}
+          <ArrowRight className="w-3 h-3" />
         </Link>
       </div>
     </div>

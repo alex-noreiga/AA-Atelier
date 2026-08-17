@@ -567,6 +567,7 @@ export const GetAccountOverviewResponse = zod.object({
   "orderNumber": zod.string(),
   "orderName": zod.string(),
   "currentStage": zod.string(),
+  "state": zod.enum(['active', 'completed', 'cancelled']).describe('Where an order sits in its lifecycle, derived server-side so the dashboard never has to infer it from a stage\/status name. \"completed\" means the order has reached the final stage\/status in its live list (delivered for a custom order, fulfilled for a shop order); \"cancelled\" means the atelier has cancelled it (and takes precedence over \"completed\"); everything else is \"active\".'),
   "stages": zod.array(zod.string()).describe('The live ordered stage list, so the dashboard can show progress (e.g. \"3 of 6\").'),
   "estimatedCompletion": zod.string().optional().describe('The order\'s target completion date (its Due Date) as an ISO date (yyyy-mm-dd). A pass-through string (no format: date). Absent until the atelier sets one.'),
   "measurements": zod.object({
@@ -581,6 +582,7 @@ export const GetAccountOverviewResponse = zod.object({
   "shopOrders": zod.array(zod.object({
   "orderNumber": zod.string(),
   "status": zod.string().describe('The order\'s current fulfilment status.'),
+  "state": zod.enum(['active', 'completed', 'cancelled']).describe('Where an order sits in its lifecycle, derived server-side so the dashboard never has to infer it from a stage\/status name. \"completed\" means the order has reached the final stage\/status in its live list (delivered for a custom order, fulfilled for a shop order); \"cancelled\" means the atelier has cancelled it (and takes precedence over \"completed\"); everything else is \"active\".'),
   "total": zod.number().optional().describe('The order total in dollars, when recorded.')
 }).describe('A ready-to-wear shop order as shown on the account dashboard.')).describe('The customer\'s ready-to-wear shop orders. Empty when none match the signed-in email (older shop orders without an order number are omitted).'),
   "appointments": zod.array(zod.object({

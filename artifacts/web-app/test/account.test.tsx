@@ -69,6 +69,7 @@ const overview = {
       orderName: "Ada – Custom Dress",
       currentStage: "Sewing",
       stages: ["Consultation", "Sewing", "Delivery"],
+      state: "active",
       estimatedCompletion: "2026-08-01",
       measurements: {
         unit: "inches",
@@ -81,7 +82,12 @@ const overview = {
     },
   ],
   shopOrders: [
-    { orderNumber: "SHP-ABC-1234", status: "Payment Confirmed", total: 42 },
+    {
+      orderNumber: "SHP-ABC-1234",
+      status: "Payment Confirmed",
+      total: 42,
+      state: "active",
+    },
   ],
   appointments: [
     {
@@ -223,6 +229,97 @@ describe("Account dashboard", () => {
     stubHook(mockOverview, { data: overview });
     renderPage();
     expect(screen.queryByTestId("referral-card")).not.toBeInTheDocument();
+  });
+
+  it("badges a completed custom order and files it under past orders", async () => {
+    const user = userEvent.setup();
+    stubHook(mockOverview, {
+      data: {
+        ...overview,
+        customOrders: [
+          {
+            ...overview.customOrders[0],
+            currentStage: "Delivery",
+            state: "completed",
+          },
+        ],
+      },
+    });
+    renderPage();
+
+    // Collapsed by default (there's still an active shop order + appointment).
+    expect(screen.getByTestId("past-orders")).toHaveTextContent("(1)");
+    expect(screen.queryByTestId("custom-order-000002")).not.toBeInTheDocument();
+
+    await user.click(screen.getByTestId("button-toggle-past-orders"));
+
+    const custom = screen.getByTestId("custom-order-000002");
+    expect(custom).toHaveTextContent("Completed");
+    expect(custom).toHaveTextContent("Delivery");
+    // A finished order shows no "stage N of N" fraction or target date.
+    expect(custom).not.toHaveTextContent("Stage 3 of 3");
+    expect(custom).not.toHaveTextContent("Target completion");
+  });
+
+  it("badges a cancelled order and drops its invoice link", async () => {
+    const user = userEvent.setup();
+    stubHook(mockOverview, {
+      data: {
+        ...overview,
+        customOrders: [{ ...overview.customOrders[0], state: "cancelled" }],
+      },
+    });
+    renderPage();
+    await user.click(screen.getByTestId("button-toggle-past-orders"));
+
+    const custom = screen.getByTestId("custom-order-000002");
+    expect(custom).toHaveTextContent("Cancelled");
+    expect(screen.queryByTestId("link-invoice-000002")).not.toBeInTheDocument();
+  });
+
+  it("badges a completed shop order under past orders", async () => {
+    const user = userEvent.setup();
+    stubHook(mockOverview, {
+      data: {
+        ...overview,
+        shopOrders: [
+          {
+            ...overview.shopOrders[0],
+            status: "Delivered",
+            state: "completed",
+          },
+        ],
+      },
+    });
+    renderPage();
+    await user.click(screen.getByTestId("button-toggle-past-orders"));
+
+    const shop = screen.getByTestId("shop-order-SHP-ABC-1234");
+    expect(shop).toHaveTextContent("Completed");
+    expect(shop).toHaveTextContent("Delivered");
+  });
+
+  it("opens past orders expanded when nothing is current", () => {
+    stubHook(mockOverview, {
+      data: {
+        email: "skater@example.com",
+        customOrders: [{ ...overview.customOrders[0], state: "completed" }],
+        shopOrders: [],
+        appointments: [],
+      },
+    });
+    renderPage();
+
+    // No active work to show, so the history is open rather than hidden behind
+    // a toggle on an apparently empty account.
+    expect(screen.getByTestId("custom-order-000002")).toBeInTheDocument();
+    expect(screen.queryByTestId("account-empty")).not.toBeInTheDocument();
+  });
+
+  it("shows no past-orders section when every order is active", () => {
+    stubHook(mockOverview, { data: overview });
+    renderPage();
+    expect(screen.queryByTestId("past-orders")).not.toBeInTheDocument();
   });
 
   it("signs out via the auth context", async () => {

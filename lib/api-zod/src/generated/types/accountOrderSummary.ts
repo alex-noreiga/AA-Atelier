@@ -6,6 +6,7 @@
  * OpenAPI spec version: 0.1.0
  */
 import type { AccountMeasurements } from './accountMeasurements';
+import type { AccountOrderState } from './accountOrderState';
 
 /**
  * A custom order as shown on the account dashboard (links out to the full tracking + invoice views).
@@ -14,6 +15,7 @@ export interface AccountOrderSummary {
   orderNumber: string;
   orderName: string;
   currentStage: string;
+  state: AccountOrderState;
   /** The live ordered stage list, so the dashboard can show progress (e.g. "3 of 6"). */
   stages: string[];
   /** The order's target completion date (its Due Date) as an ISO date (yyyy-mm-dd). A pass-through string (no format: date). Absent until the atelier sets one. */

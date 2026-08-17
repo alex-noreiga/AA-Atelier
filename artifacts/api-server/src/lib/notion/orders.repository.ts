@@ -239,6 +239,7 @@ function pageToOrderSummary(
     orderName: extractOrderName(page),
     currentStage: extractCurrentStage(page),
     stages,
+    cancelled: extractCancelled(page),
     ...(estimatedCompletion !== undefined ? { estimatedCompletion } : {}),
     ...(measurements !== undefined ? { measurements } : {}),
   };

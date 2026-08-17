@@ -7,6 +7,10 @@ vi.mock("../../src/lib/notion/orders.repository.js", () => ({
 }));
 vi.mock("../../src/lib/notion/shop-orders.repository.js", () => ({
   findShopOrdersByEmail: vi.fn().mockResolvedValue([]),
+  // The live fulfilment-status list the portal places each shop order in.
+  fetchLiveShopOrderStatuses: vi
+    .fn()
+    .mockResolvedValue(["Payment Confirmed", "Shipped", "Delivered"]),
 }));
 
 import request from "supertest";
@@ -108,10 +112,16 @@ describe("GET /api/account/overview", () => {
           orderName: "Ada – Custom Dress",
           currentStage: "Sewing",
           stages: ["Consultation", "Sewing", "Delivery"],
+          state: "active",
         },
       ],
       shopOrders: [
-        { orderNumber: "SHP-ABC-1234", status: "Payment Confirmed", total: 42 },
+        {
+          orderNumber: "SHP-ABC-1234",
+          status: "Payment Confirmed",
+          total: 42,
+          state: "active",
+        },
       ],
       // Google Calendar isn't configured in the test env, so the best-effort
       // appointments lookup degrades to an empty list (never failing the route).

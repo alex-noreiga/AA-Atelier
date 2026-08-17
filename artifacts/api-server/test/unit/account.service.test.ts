@@ -7,6 +7,7 @@ vi.mock("../../src/lib/notion/orders.repository.js", () => ({
 vi.mock("../../src/lib/notion/shop-orders.repository.js", () => ({
   findShopOrdersByEmail: vi.fn(),
   findShopOrdersByNumbers: vi.fn(),
+  fetchLiveShopOrderStatuses: vi.fn(),
 }));
 // The Postgres order-index discovery; default to no extra refs so the non-PG
 // tests below are unaffected (the PG path also self-gates on POSTGRES_URL).
@@ -35,7 +36,10 @@ import {
   findOrdersByEmail,
   findOrdersByNumbers,
 } from "../../src/lib/notion/orders.repository.js";
-import { findShopOrdersByEmail } from "../../src/lib/notion/shop-orders.repository.js";
+import {
+  findShopOrdersByEmail,
+  fetchLiveShopOrderStatuses,
+} from "../../src/lib/notion/shop-orders.repository.js";
 import { findOrderRefsByEmail } from "../../src/lib/db/order-index.repository.js";
 import { listUpcomingAppointmentsByEmail } from "../../src/lib/google/calendar.repository.js";
 import { ensureReferralCode } from "../../src/services/rewards.service.js";
@@ -43,6 +47,7 @@ import { ensureReferralCode } from "../../src/services/rewards.service.js";
 const mockOrders = vi.mocked(findOrdersByEmail);
 const mockOrdersByNumbers = vi.mocked(findOrdersByNumbers);
 const mockShop = vi.mocked(findShopOrdersByEmail);
+const mockShopStatuses = vi.mocked(fetchLiveShopOrderStatuses);
 const mockRefs = vi.mocked(findOrderRefsByEmail);
 const mockAppts = vi.mocked(listUpcomingAppointmentsByEmail);
 const mockEnsureReferral = vi.mocked(ensureReferralCode);
@@ -52,6 +57,11 @@ beforeEach(() => {
   process.env.SESSION_SECRET = "test-session-secret";
   process.env.PUBLIC_BASE_URL = "https://atelier.test";
   mockAppts.mockResolvedValue([]);
+  mockShopStatuses.mockResolvedValue([
+    "Payment Confirmed",
+    "Shipped",
+    "Delivered",
+  ]);
 });
 afterEach(() => {
   process.env = { ...BASE_ENV };
@@ -81,10 +91,16 @@ describe("getAccountOverview", () => {
           orderName: "Ada – Custom Dress",
           currentStage: "Sewing",
           stages: ["Consultation", "Sewing", "Delivery"],
+          state: "active",
         },
       ],
       shopOrders: [
-        { orderNumber: "SHP-ABC-1234", status: "Payment Confirmed", total: 42 },
+        {
+          orderNumber: "SHP-ABC-1234",
+          status: "Payment Confirmed",
+          total: 42,
+          state: "active",
+        },
       ],
       appointments: [],
     });
@@ -180,6 +196,73 @@ describe("getAccountOverview", () => {
     expect(result.appointments).toEqual([]);
     // The orders view is unaffected — the failure is swallowed.
     expect(mockOrders).toHaveBeenCalled();
+  });
+});
+
+describe("getAccountOverview — order lifecycle state", () => {
+  const custom = (over: Record<string, unknown>) => ({
+    orderNumber: "ORD-1",
+    orderName: "Ada – Custom Dress",
+    currentStage: "Sewing",
+    stages: ["Consultation", "Sewing", "Delivered"],
+    ...over,
+  });
+
+  it("marks a custom order completed once it reaches the final stage", async () => {
+    mockOrders.mockResolvedValue([custom({ currentStage: "Delivered" })]);
+    mockShop.mockResolvedValue([]);
+
+    const result = await getAccountOverview("skater@example.com");
+
+    expect(result.customOrders[0].state).toBe("completed");
+  });
+
+  it("marks a cancelled custom order cancelled, even at the final stage", async () => {
+    mockOrders.mockResolvedValue([
+      custom({ currentStage: "Delivered", cancelled: true }),
+    ]);
+    mockShop.mockResolvedValue([]);
+
+    const result = await getAccountOverview("skater@example.com");
+
+    expect(result.customOrders[0].state).toBe("cancelled");
+  });
+
+  it("marks a shop order completed at the final live fulfilment status", async () => {
+    mockOrders.mockResolvedValue([]);
+    mockShop.mockResolvedValue([
+      { orderNumber: "SHP-1", status: "Delivered" },
+      { orderNumber: "SHP-2", status: "Shipped" },
+      { orderNumber: "SHP-3", status: "Delivered", cancelled: true },
+    ]);
+
+    const result = await getAccountOverview("skater@example.com");
+
+    expect(result.shopOrders.map((o) => o.state)).toEqual([
+      "completed",
+      "active",
+      "cancelled",
+    ]);
+  });
+
+  it("falls back to active when the shop status list can't be read", async () => {
+    mockOrders.mockResolvedValue([]);
+    mockShop.mockResolvedValue([{ orderNumber: "SHP-1", status: "Delivered" }]);
+    mockShopStatuses.mockRejectedValueOnce(new Error("notion down"));
+
+    const result = await getAccountOverview("skater@example.com");
+
+    // Never wrongly denote an order as finished on a failed read.
+    expect(result.shopOrders[0].state).toBe("active");
+  });
+
+  it("skips the status read entirely when there are no shop orders", async () => {
+    mockOrders.mockResolvedValue([]);
+    mockShop.mockResolvedValue([]);
+
+    await getAccountOverview("skater@example.com");
+
+    expect(mockShopStatuses).not.toHaveBeenCalled();
   });
 });
 

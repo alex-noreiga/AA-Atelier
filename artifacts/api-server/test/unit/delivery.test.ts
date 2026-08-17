@@ -1,5 +1,8 @@
 import { describe, it, expect } from "vitest";
-import { orderDelivered } from "../../src/services/delivery.js";
+import {
+  orderDelivered,
+  orderLifecycleState,
+} from "../../src/services/delivery.js";
 
 const STAGES = ["Consultation", "Sketching", "Cutting/Pinning", "Delivery"];
 
@@ -26,5 +29,26 @@ describe("orderDelivered", () => {
     const renamed = ["Consultation", "Sketching", "Shipped to you"];
     expect(orderDelivered("Shipped to you", renamed)).toBe(true);
     expect(orderDelivered("Delivery", renamed)).toBe(false);
+  });
+});
+
+describe("orderLifecycleState", () => {
+  it("is active while the order is still moving through the list", () => {
+    expect(orderLifecycleState(false, "Sketching", STAGES)).toBe("active");
+  });
+
+  it("is completed at the final stage/status", () => {
+    expect(orderLifecycleState(false, "Delivery", STAGES)).toBe("completed");
+  });
+
+  it("is cancelled whenever the order is cancelled, wherever it got to", () => {
+    expect(orderLifecycleState(true, "Sketching", STAGES)).toBe("cancelled");
+    // Cancellation wins over completion (a shop order can be cancelled late).
+    expect(orderLifecycleState(true, "Delivery", STAGES)).toBe("cancelled");
+  });
+
+  it("falls back to active on an unknown stage or an empty list", () => {
+    expect(orderLifecycleState(false, "Renamed", STAGES)).toBe("active");
+    expect(orderLifecycleState(false, "Delivery", [])).toBe("active");
   });
 });
