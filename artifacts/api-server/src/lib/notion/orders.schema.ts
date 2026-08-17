@@ -136,6 +136,11 @@ export interface OrderSummary {
   orderName: string;
   currentStage: string;
   stages: string[];
+  /** True once the atelier has cancelled the order (the `Cancelled` checkbox).
+   * Internal to the portal's state derivation — the dashboard is served the
+   * derived `state`, so this is stripped from the HTTP response by the
+   * `GetAccountOverviewResponse` zod parse. */
+  cancelled?: boolean;
   estimatedCompletion?: string;
   /** The customer's measurements, when stored as readable properties. Absent for
    * measure-at-fitting orders and orders that predate the measurement properties. */

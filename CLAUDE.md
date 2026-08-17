@@ -1770,6 +1770,31 @@ landing) + `pages/account-reset.tsx` (password reset) + `pages/account.tsx`
      **after** the migration have readable measurements; earlier ones show none.
      **Still deferred:** in-place measurement _editing_ (Approach B PATCH).
 
+9. **Finished orders are denoted, not inferred — and filed away.** Every order in
+   the overview carries a derived **`state`** (`AccountOrderState`: `active` /
+   `completed` / `cancelled`, contract-first), so the dashboard never has to read
+   completion out of a stage name. It's computed server-side by
+   `orderLifecycleState` (`services/delivery.ts`, alongside the review gate's
+   `orderDelivered`) so **both order kinds are classified by the one positional
+   rule** — the order is `completed` when its stage/status is the **last** in its
+   live list (no stage name baked in, survives an atelier rename), `cancelled`
+   when the `Cancelled` checkbox is set, which **wins over** completed (a shop
+   order can be cancelled after fulfilment; a custom one can't). Custom orders
+   classify for free (the summary already carries its live `stages`); shop-order
+   records don't carry their status list, so `listShopOrders` reads the live one
+   (`fetchLiveShopOrderStatuses`, 60s cached) — **best-effort**: a failed read
+   yields an empty list, which classifies everything uncancelled as `active`, the
+   safe way to be wrong (an order is never wrongly shown as finished). On the
+   frontend (`pages/account.tsx`), active orders stay under "Custom orders" /
+   "Shop orders"; everything completed or cancelled collects in one **"Past
+   orders"** section, collapsed by default (expanded when nothing is current, so
+   a history-only account never looks empty). A past card carries a
+   **Completed / Cancelled badge**, drops the now-meaningless "Stage N of N" +
+   target-completion line, and — when cancelled — drops the invoice link (the
+   refund is the atelier's, don't point back at a pay screen). The `cancelled`
+   flag added to `OrderSummary` is internal: the zod response parse strips it,
+   the dashboard is served the derived `state`.
+
 The atelier must, one time: create a Supabase project and set `SUPABASE_URL` +
 `SUPABASE_ANON_KEY` (backend) and `VITE_PUBLIC_SUPABASE_URL` +
 `VITE_PUBLIC_SUPABASE_ANON_KEY` (frontend) — on Vercel these come from the

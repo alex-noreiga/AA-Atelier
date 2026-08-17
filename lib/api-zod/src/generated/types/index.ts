@@ -11,6 +11,7 @@ export * from './accountAppointmentSummaryLocation';
 export * from './accountAppointmentSummaryStatus';
 export * from './accountMeasurements';
 export * from './accountMeasurementsUnit';
+export * from './accountOrderState';
 export * from './accountOrderSummary';
 export * from './accountOverview';
 export * from './accountReferral';
