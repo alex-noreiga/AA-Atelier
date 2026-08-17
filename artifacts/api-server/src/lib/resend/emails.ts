@@ -948,6 +948,55 @@ export function cancellationRefundEmail(
   };
 }
 
+/**
+ * Sent to the customer when the atelier processes the refund for a return or
+ * exchange they requested. Deliberately separate from
+ * {@link cancellationRefundEmail}: a return is a piece going back after it
+ * arrived, not an order that was called off, and the amount may be partial (a
+ * restocking fee, or one item out of several) — so the copy never claims the
+ * order was cancelled and never implies the full total came back.
+ */
+export function returnRefundEmail(
+  email: string,
+  orderNumber: string,
+  refundedAmount: number,
+): EmailMessage {
+  const html = layout(
+    "Your refund is on its way",
+    `<p>Hi there,</p>
+     <p>We've processed the refund for your return on order
+        <strong>${orderNumber}</strong>.</p>
+     <p>We've refunded <strong>${formatUsd(refundedAmount)}</strong> to your
+        original payment method. Refunds typically take 5–10 business days to
+        appear, depending on your bank.</p>
+     <p>If anything about this doesn't look right, just reply to this email and
+        we'll sort it out.</p>
+     <p>Thank you for giving us the chance to make it right.</p>`,
+  );
+
+  const text = [
+    `Hi there,`,
+    ``,
+    `We've processed the refund for your return on order ${orderNumber}.`,
+    ``,
+    `We've refunded ${formatUsd(refundedAmount)} to your original payment method. Refunds typically take 5–10 business days to appear, depending on your bank.`,
+    ``,
+    `If anything about this doesn't look right, just reply to this email and we'll sort it out.`,
+    ``,
+    `Thank you for giving us the chance to make it right.`,
+    ``,
+    `Thank you,`,
+    `The ${ATELIER_NAME} team`,
+  ].join("\n");
+
+  return {
+    to: email,
+    subject: `Your refund for order ${orderNumber}`,
+    html,
+    text,
+  };
+}
+
 /** Render a 1–5 rating as filled/empty stars for email copy. */
 function ratingStars(rating: number): string {
   const filled = Math.max(0, Math.min(5, Math.round(rating)));

@@ -15,6 +15,10 @@ import {
   processCancellationHandler,
   processCancellationButtonHandler,
 } from "./routes/order-cancellation.js";
+import {
+  processReturnRefundHandler,
+  processReturnRefundButtonHandler,
+} from "./routes/return-refund.js";
 import { uploadReferenceImageHandler } from "./routes/order-images.js";
 import {
   notionStageChangeHandler,
@@ -122,6 +126,18 @@ app.get("/api/orders/process-cancellation", processCancellationHandler);
 app.get(
   "/api/orders/process-cancellation/run",
   processCancellationButtonHandler,
+);
+
+// Return / exchange refund, on demand from Notion — the atelier-facing half of
+// a customer's return request, the same shape as the cancellation refund above.
+// Takes ?order=SHP-… plus an optional ?amount= (a TARGET total in dollars, so a
+// re-pressed link can't double-refund; omit to refund in full). Registered
+// BEFORE the /api router so `/api/shop-orders/process-return` isn't captured by
+// its `/shop-orders/:orderNumber` status-lookup route. See routes/return-refund.ts.
+app.get("/api/shop-orders/process-return", processReturnRefundHandler);
+app.get(
+  "/api/shop-orders/process-return/run",
+  processReturnRefundButtonHandler,
 );
 
 app.use("/api", router);
