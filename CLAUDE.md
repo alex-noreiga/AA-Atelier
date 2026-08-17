@@ -1645,7 +1645,9 @@ landing) + `pages/account-reset.tsx` (password reset) + `pages/account.tsx`
    "Shop orders"; everything completed or cancelled collects in one **"Past
    orders"** section, collapsed by default (expanded when nothing is current, so
    a history-only account never looks empty). A past card carries a
-   **Completed / Cancelled badge**, drops the now-meaningless "Stage N of N" +
+   **Delivered / Cancelled badge** (the contract's finished state is the
+   kind-neutral `completed`; the customer-facing word is the atelier's own
+   "Delivered", for both order kinds), drops the now-meaningless "Stage N of N" +
    target-completion line, and — when cancelled — drops the invoice link (the
    refund is the atelier's, don't point back at a pay screen). The `cancelled`
    flag added to `OrderSummary` is internal: the zod response parse strips it,

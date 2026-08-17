@@ -254,7 +254,10 @@ describe("Account dashboard", () => {
     await user.click(screen.getByTestId("button-toggle-past-orders"));
 
     const custom = screen.getByTestId("custom-order-000002");
-    expect(custom).toHaveTextContent("Completed");
+    expect(screen.getByTestId("order-state-completed")).toHaveTextContent(
+      "Delivered",
+    );
+    // The live stage name still shows alongside the badge.
     expect(custom).toHaveTextContent("Delivery");
     // A finished order shows no "stage N of N" fraction or target date.
     expect(custom).not.toHaveTextContent("Stage 3 of 3");
@@ -295,8 +298,10 @@ describe("Account dashboard", () => {
     await user.click(screen.getByTestId("button-toggle-past-orders"));
 
     const shop = screen.getByTestId("shop-order-SHP-ABC-1234");
-    expect(shop).toHaveTextContent("Completed");
-    expect(shop).toHaveTextContent("Delivered");
+    expect(shop).toContainElement(screen.getByTestId("order-state-completed"));
+    expect(screen.getByTestId("order-state-completed")).toHaveTextContent(
+      "Delivered",
+    );
   });
 
   it("opens past orders expanded when nothing is current", () => {
