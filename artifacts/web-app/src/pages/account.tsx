@@ -246,7 +246,11 @@ function Dashboard({ data }: { data: AccountOverview }) {
 }
 
 /** How a finished or cancelled order is denoted on its card. Active orders show
- * nothing — the stage line already says where they are. */
+ * nothing — the stage line already says where they are.
+ *
+ * The contract's finished state is the kind-neutral `completed` (it covers a
+ * custom garment and a shop parcel alike); the customer-facing word is the
+ * atelier's own — "Delivered". */
 function StateBadge({ state }: { state: AccountOrderState }) {
   if (state === "active") return null;
   const completed = state === "completed";
@@ -264,7 +268,7 @@ function StateBadge({ state }: { state: AccountOrderState }) {
       ) : (
         <Ban className="w-3 h-3" strokeWidth={1.5} />
       )}
-      {completed ? "Completed" : "Cancelled"}
+      {completed ? "Delivered" : "Cancelled"}
     </span>
   );
 }
