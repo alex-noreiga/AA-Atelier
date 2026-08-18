@@ -5,13 +5,15 @@ import { PageShell } from "@/components/page-shell";
 import { Seo } from "@/components/seo";
 import { ROUTE_SEO } from "@/lib/seo-routes";
 import { useAuth } from "@/lib/auth-context";
+import { takePostSignInPath } from "@/lib/post-signin";
 
 /**
  * Landing page for the Supabase Auth redirect (Google OAuth, magic link, and
  * email-verification links). supabase-js parses the token out of the URL on load
  * (`detectSessionInUrl`), which surfaces here as a resolved session; we then
- * forward to the dashboard — or back to sign-in with an error if it didn't take.
- * (Password-reset links use their own `/account/reset` redirect target.)
+ * forward to wherever the sign-in started (the studio dashboard, say) or the
+ * customer dashboard by default — or back to sign-in with an error if it didn't
+ * take. (Password-reset links use their own `/account/reset` redirect target.)
  */
 export default function AccountCallback() {
   const { session, loading } = useAuth();
@@ -19,7 +21,8 @@ export default function AccountCallback() {
 
   useEffect(() => {
     if (loading) return;
-    navigate(session ? "/account" : "/account/login?error=expired", {
+    const next = takePostSignInPath() ?? "/account";
+    navigate(session ? next : "/account/login?error=expired", {
       replace: true,
     });
   }, [loading, session, navigate]);

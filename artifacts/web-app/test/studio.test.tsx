@@ -32,6 +32,16 @@ vi.mock("@workspace/api-client-react", () => ({
   getGetStudioAnalyticsQueryKey: () => ["studio-analytics"],
 }));
 
+// The 403 panel offers a Google re-sign-in, which drives supabase-js directly.
+const sb = vi.hoisted(() => ({
+  signOut: vi.fn().mockResolvedValue({ error: null }),
+  signInWithOAuth: vi.fn().mockResolvedValue({ error: null }),
+}));
+vi.mock("@/lib/supabase", () => ({
+  supabaseConfigured: true,
+  supabase: { auth: sb },
+}));
+
 import { useGetStudioAnalytics } from "@workspace/api-client-react";
 import Studio from "@/pages/studio";
 
@@ -172,6 +182,37 @@ describe("studio dashboard — access", () => {
     renderPage();
     expect(screen.getByTestId("studio-forbidden")).toBeInTheDocument();
     expect(screen.queryByTestId("redirect")).not.toBeInTheDocument();
+  });
+
+  it("shows the server's own reason for a 403, so a wrong sign-in method says so", () => {
+    stubAnalytics({
+      isError: true,
+      error: {
+        status: 403,
+        data: {
+          error:
+            "Studio access requires signing in with Google. Please sign out and use Continue with Google.",
+        },
+      },
+    });
+    renderPage();
+    expect(screen.getByTestId("studio-forbidden")).toHaveTextContent(
+      /requires signing in with Google/,
+    );
+  });
+
+  it("re-signs-in with Google from the 403 panel, dropping the stale session first", async () => {
+    stubAnalytics({ isError: true, error: { status: 403 } });
+    renderPage();
+
+    await userEvent.click(screen.getByTestId("button-studio-google"));
+
+    expect(sb.signOut).toHaveBeenCalled();
+    expect(sb.signInWithOAuth).toHaveBeenCalledWith(
+      expect.objectContaining({ provider: "google" }),
+    );
+    // And it comes back here rather than the customer dashboard.
+    expect(window.sessionStorage.getItem("aa-post-signin")).toBe("/studio");
   });
 
   it("shows a spinner while loading", () => {

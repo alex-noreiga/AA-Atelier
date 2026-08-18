@@ -1840,8 +1840,9 @@ Load-bearing decisions:
    `requireStaff` verifies the same Bearer JWT `requireCustomer` does (both share
    one `resolveSessionCustomer`) and then checks the email against
    `STUDIO_STAFF_EMAILS` (`lib/staff.ts`). Not signed in ⇒ **401** (the page
-   redirects to sign-in); signed in but not staff ⇒ **403** (re-authenticating
-   wouldn't help, so the page says so instead of bouncing). The allowlist is
+   redirects to sign-in); signed in but failing the gate ⇒ **403** (bouncing them
+   to sign-in would just loop, so the page shows the reason instead). The
+   allowlist is
    **env-only and NOT a Studio Setting** — access control isn't a business
    tunable, and anyone who could edit the settings database could otherwise grant
    themselves the studio's revenue figures. It **fails closed**: unset ⇒ nobody is
@@ -1849,7 +1850,30 @@ Load-bearing decisions:
    degrade-to-off. This is the cheap slice of the roadmap's "Staff authentication
    for internal tools"; the CRON_SECRET-in-a-URL atelier buttons are untouched.
 
-2. **Full-database scans, bounded in one place.** Unlike every other Notion read
+2. **Staff must sign in with Google — the method is checked, not just the
+   identity.** The studio's addresses are published on the site, so an allowlist
+   alone is only as strong as the mailbox behind one: a leaked password or an
+   intercepted magic link would be enough. So `requireStaff` also requires the
+   session to have been established through Google, read from the access token's
+   **`amr`** claim — what established _this_ session, unlike
+   `app_metadata.provider`, which only says what's linked to the account.
+   Supabase records an OAuth sign-in as `oauth` and doesn't name the provider, so
+   this means "Google" precisely because Google is the only OAuth provider
+   enabled on the project; enable a second and the check widens with it. The
+   actual second factor is then **2-step verification enforced in Google
+   Workspace admin**, which is what buys real MFA with no enrollment flow of our
+   own. Load-bearing details: it **defaults ON** (`STUDIO_REQUIRE_GOOGLE`,
+   opt-_out_ via `false`/`0`/`no`/`off`) because an access-control default you
+   have to remember isn't one; it **fails closed** when a token carries no
+   readable `amr`; the refusal is logged at `warn` with the email and methods (a
+   staff address failing only on method is worth seeing); and the 403 message is
+   rendered verbatim by the page, which offers a **Continue with Google** button
+   that signs out first (Supabase would otherwise hand back the same session) and
+   returns to `/studio` via `lib/post-signin.ts` — a `sessionStorage` hop rather
+   than a `?next=` on the redirect URL, which would need its own Supabase
+   allow-list entry and hand a stranger an open-redirect parameter.
+
+3. **Full-database scans, bounded in one place.** Unlike every other Notion read
    here, the analytics have nothing to filter by — they summarize the whole book
    of work. `lib/notion/scan.ts` (`scanDatabase`) is the single paging
    implementation the three readers share (`listOrdersForAnalytics`,
@@ -1860,7 +1884,7 @@ Load-bearing decisions:
    cached for 60s (the same TTL as every other live Notion read), so a refreshed
    dashboard doesn't re-scan.
 
-3. **Shop revenue and custom bookings are side by side, never summed.** A shop
+4. **Shop revenue and custom bookings are side by side, never summed.** A shop
    order records what was collected and when (Stripe took it, Notion stamped the
    page `created_time`). A custom order's payments carry **no dates at all** — the
    invoice holds a paid _checkbox_ per stage — so the only honest monthly figure
@@ -1872,7 +1896,7 @@ Load-bearing decisions:
    timezone (`APPOINTMENT_TIMEZONE`), so a 9pm order on the 31st lands in the month
    the atelier worked it.
 
-4. **Deposits vs. balances split without double counting.** Across every invoice
+5. **Deposits vs. balances split without double counting.** Across every invoice
    on a live (non-cancelled) order: an unpaid deposit counts once as
    `depositsOutstanding`, and `balancesOutstanding` is what's left **beyond every
    deposit scheduled against the invoice** — so the two add to `outstandingTotal`
@@ -1881,13 +1905,13 @@ Load-bearing decisions:
    deposit), so it leaves nothing outstanding. An invoice whose `Order` relation is
    empty still counts; one on a cancelled order doesn't.
 
-5. **Completion is positional, as everywhere else.** Both pipelines classify with
+6. **Completion is positional, as everywhere else.** Both pipelines classify with
    the shared `orderLifecycleState` (`services/delivery.ts`) against the live
    stage / fulfilment-status lists, so an atelier rename never miscounts. An active
    order whose stage isn't in the live list still counts as active — it just has no
    bucket.
 
-6. **Best sellers ride the inventory relation, and can legitimately be empty.**
+7. **Best sellers ride the inventory relation, and can legitimately be empty.**
    Top items are counted from each shop order's `Inventory Items` relation (the
    Phase-2 "relate shop orders to inventory rows" card), deduped per order and
    resolved to names via `listVariants()`. That relation records _which_ pieces
@@ -1898,15 +1922,23 @@ Load-bearing decisions:
    sellers); the orders / shop orders / invoices scans **are** the dashboard, so a
    failure there surfaces as a 500 rather than quietly rendering zeroes.
 
-7. **No charting dependency.** The panels are plain CSS bars. A charting library
+8. **No charting dependency.** The panels are plain CSS bars. A charting library
    would be the largest dependency in the app for six panels of numbers, against
    the repo's pruned-dependencies rule. The page is **not in `NAV_LINKS`** and is
    `noindex` (so it's out of the sitemap and the prerender pass) — the gate that
    matters is server-side, but there's no reason to advertise it.
 
-The atelier's one-time setup is **one env var**: `STUDIO_STAFF_EMAILS`
-(comma-separated). Everything else is already configured — it reads the orders,
-shop-orders, invoices, and inventory databases the app already uses.
+The atelier's one-time setup: set **`STUDIO_STAFF_EMAILS`** (comma-separated);
+make sure **Google sign-in is enabled** in Supabase Auth and each staff address
+can use it; and enforce **2-step verification** for those accounts in Google
+Workspace admin — that last step is what the `amr` check leans on, and without it
+the gate only means "signed in with Google". Prefer addresses that aren't
+published on the site: the allowlist entry needn't be the studio's contact
+address, and a private one removes the enumeration angle entirely. Also confirm
+**"Confirm email" is ON** in Supabase, or a stranger could sign up _as_ a studio
+address without ever touching its inbox. Everything else is already configured —
+it reads the orders, shop-orders, invoices, and inventory databases the app
+already uses.
 
 ## Postgres (payment idempotency + a provisioned read-model)
 
@@ -2464,6 +2496,12 @@ and in the maintainer's env without edits.
   Matching is case-insensitive. Deliberately env-only (**not** a Studio Settings
   key) — it's access control, not a business tunable. Read fresh from env in
   `lib/staff.ts`. See "Studio analytics dashboard" above.
+- **Optional staff sign-in-method env var:** `STUDIO_REQUIRE_GOOGLE` (**default
+  on**) — whether a studio session must have been established with Google. Set it
+  to `false`/`0`/`no`/`off` to accept any sign-in method; that's the recovery
+  hatch if Google sign-in is ever unavailable, not a normal setting. Read fresh
+  from env in `lib/staff.ts`, env-only for the same reason as the allowlist. See
+  "Studio analytics dashboard" above.
 - **Optional anti-spam env var:** `SPAM_MIN_FILL_MS` (default `2000`) — the minimum
   plausible human fill time, in ms, for the public submission forms (contact /
   notify / newsletter); a faster submit is silently dropped as a bot. `0` disables
@@ -2605,7 +2643,7 @@ keys on exact property names). Recorded here only because two facts are
 | Change staff working hours / calendars                 | The working-hours **Google Sheet** (`APPOINTMENT_SHEET_ID`); read in `api-server/src/lib/google/sheets.repository.ts`, parsed by `lib/appointments/staff.ts`                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                  |
 | Change appointment slot logic / policy                 | `api-server/src/lib/appointments/availability.ts` (`computeSlots`) + `time.ts` + `settings.ts`; `services/appointments.service.ts` + `routes/appointments.ts` + `lib/google/*` (Calendar free/busy + event insert)                                                                                                                                                                                                                                                                                                                                                                                                                                                                            |
 | Change the customer account portal (Supabase Auth)     | `artifacts/web-app/src/pages/account.tsx` (+ `components/appointment-manage-panel.tsx`, shared with `pages/appointment-manage.tsx`) + `pages/account-login.tsx` / `account-callback.tsx` / `account-reset.tsx` + `lib/supabase.ts` + `lib/auth-context.tsx` (frontend); `api-server/src/services/account.service.ts` + `routes/account.ts` + `middlewares/auth.ts` + `lib/supabase/client.ts`; queries `findOrdersByEmail` / `findShopOrdersByEmail` + `listUpcomingAppointmentsByEmail` (`lib/google/calendar.repository.ts`, mapped via `lib/appointments/event-details.ts`) + `extractMeasurements` (`lib/notion/orders.schema.ts`). Auth emails: `.agents/memory/supabase-auth-emails.md` |
-| Change the internal studio dashboard                   | `artifacts/web-app/src/pages/studio.tsx` (+ the `/studio` route in `App.tsx`, `noindex` entry in `lib/seo-routes.ts`); `api-server/src/services/studio-analytics.service.ts` (the pure `aggregateStudioAnalytics` + the cached use-case) + `routes/studio.ts` + `requireStaff` in `middlewares/auth.ts` + `lib/staff.ts` (the `STUDIO_STAFF_EMAILS` allowlist); reads via `lib/notion/scan.ts` + `listOrdersForAnalytics` / `listShopOrdersForAnalytics` / `listInvoicesForAnalytics`                                                                                                                                                                                                         |
+| Change the internal studio dashboard                   | `artifacts/web-app/src/pages/studio.tsx` (+ the `/studio` route in `App.tsx`, `noindex` entry in `lib/seo-routes.ts`); `api-server/src/services/studio-analytics.service.ts` (the pure `aggregateStudioAnalytics` + the cached use-case) + `routes/studio.ts` + `requireStaff` in `middlewares/auth.ts` + `lib/staff.ts` (the `STUDIO_STAFF_EMAILS` allowlist + the `amr` Google check); the 403 panel's re-sign-in lands back via `web-app/src/lib/post-signin.ts` (read by `pages/account-callback.tsx`); reads via `lib/notion/scan.ts` + `listOrdersForAnalytics` / `listShopOrdersForAnalytics` / `listInvoicesForAnalytics`                                                             |
 | Change the Postgres integrity layer / payment dedup    | `api-server/src/lib/db/client.ts` (`DbClient` seam + `postgresConfigured`) + `lib/db/processed-payments.repository.ts` (`claimPayment` / `confirmPayment` / `releasePayment`); consumed by `services/checkout.service.ts` (`recordPaidOrder`). Schema in `supabase/migrations/*.sql`, applied by `src/scripts/migrate.ts` (`pnpm db:migrate`, `.github/workflows/migrate.yml`)                                                                                                                                                                                                                                                                                                                |
 | Change the newsletter opt-in                           | `artifacts/web-app/src/components/newsletter-signup.tsx` (footer field, in `footer.tsx`) + the intake checkbox in `pages/order-form.tsx`; `api-server/src/services/newsletter.service.ts` + `routes/newsletter.ts` + `lib/notion/newsletter.{blocks,repository}.ts` (writes to the **contact** database) + `newsletterWelcomeEmail` in `lib/resend/emails.ts`                                                                                                                                                                                                                                                                                                                                 |
 | Change invisible anti-spam (honeypot/timing/limit)     | `api-server/src/middlewares/spam-filter.ts` (`isLikelySpam` + `spamFilter`) + `submissionRateLimiter` in `middlewares/rate-limit.ts`; applied in `routes/{contact,notify,newsletter}.ts`; frontend `web-app/src/lib/anti-spam.tsx` (`HoneypotField` / `honeypotSchema` / `useSubmitTimer`) wired into `pages/contact.tsx` + `components/{notify-dialog,newsletter-signup}.tsx` + `pages/order-form.tsx`. Fields `website` + `elapsedMs` on the contact/notify/newsletter request schemas in `openapi.yaml`                                                                                                                                                                                    |

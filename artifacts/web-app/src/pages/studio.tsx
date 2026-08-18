@@ -13,8 +13,11 @@ import { Button } from "@/components/ui/button";
 import { PageShell } from "@/components/page-shell";
 import { Seo } from "@/components/seo";
 import { useAuth } from "@/lib/auth-context";
+import { supabase } from "@/lib/supabase";
+import { setPostSignInPath } from "@/lib/post-signin";
 import { ROUTE_SEO } from "@/lib/seo-routes";
 import { formatPrice, formatDate } from "@/lib/format";
+import { useState } from "react";
 import {
   Loader2,
   RefreshCw,
@@ -35,9 +38,11 @@ import {
  * opening five Notion databases.
  *
  * Access is the same Supabase Auth session customers use, plus a server-side
- * staff allowlist: signed out redirects to sign-in, signed in as a customer
- * gets a plain "not a studio account" note rather than a broken page. The gate
- * that matters is the server's — this page just renders what it's given.
+ * staff gate — the allowlist, and (by default) a requirement that the session
+ * was established with Google. Signed out redirects to sign-in; a 403 shows the
+ * server's own reason with a Google re-sign-in to hand, which is the fix when a
+ * staff member arrived with a password session. The gate that matters is the
+ * server's — this page just renders what it's given.
  *
  * The charts are deliberately plain CSS bars. A charting library would be the
  * largest dependency in the app for six panels of numbers, and the repo keeps
@@ -77,7 +82,7 @@ export default function Studio() {
             />
           </div>
         ) : status === 403 ? (
-          <NotStaff />
+          <AccessDenied reason={errorMessage(analytics.error)} />
         ) : analytics.isError || !analytics.data ? (
           <div className="text-center py-16" data-testid="studio-error">
             <h1 className="text-3xl font-serif mb-4">Something went wrong</h1>
@@ -120,9 +125,38 @@ export default function Studio() {
   );
 }
 
-/** A signed-in customer who isn't studio staff. Deliberately unhelpful about
- * what lives here — there's nothing they can do with the information. */
-function NotStaff() {
+/**
+ * A signed-in session the server refused. Two things land here — an account
+ * that isn't on the staff allowlist, and a staff account that signed in with a
+ * password or magic link when Google is required — so the server's own message
+ * is shown rather than a guess. Both get the Google button: for the second case
+ * it's the fix, and for the first it changes nothing (the same 403 comes back),
+ * so no one is told which side of the gate they failed on by what's offered.
+ */
+function AccessDenied({ reason }: { reason?: string }) {
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  const signInWithGoogle = async () => {
+    if (!supabase) return;
+    setError(null);
+    setBusy(true);
+    // Come back here rather than the customer dashboard once Google is done.
+    setPostSignInPath("/studio");
+    // A stale session has to go first, or Supabase returns the existing one and
+    // its sign-in method (the thing being refused) never changes.
+    await supabase.auth.signOut();
+    const { error: oauthError } = await supabase.auth.signInWithOAuth({
+      provider: "google",
+      options: { redirectTo: `${window.location.origin}/account/callback` },
+    });
+    // On success the browser is redirected away; only reached on error.
+    if (oauthError) {
+      setBusy(false);
+      setError(oauthError.message);
+    }
+  };
+
   return (
     <div className="text-center py-16" data-testid="studio-forbidden">
       <Lock
@@ -130,10 +164,32 @@ function NotStaff() {
         strokeWidth={1}
       />
       <h1 className="text-3xl font-serif mb-4">Studio access only</h1>
-      <p className="text-muted-foreground">
-        This page is for the atelier team. Your account is signed in, but it
-        isn&apos;t a studio account.
+      <p className="text-muted-foreground max-w-md mx-auto">
+        {reason ??
+          "This page is for the atelier team. Your account is signed in, but it isn't a studio account."}
       </p>
+      {supabase && (
+        <Button
+          variant="outline"
+          onClick={() => void signInWithGoogle()}
+          disabled={busy}
+          className="mt-8 gap-2"
+          data-testid="button-studio-google"
+        >
+          {busy ? (
+            <Loader2 className="w-4 h-4 animate-spin" strokeWidth={1.5} />
+          ) : null}
+          Continue with Google
+        </Button>
+      )}
+      {error && (
+        <p
+          className="mt-4 text-sm text-destructive"
+          data-testid="studio-forbidden-error"
+        >
+          {error}
+        </p>
+      )}
     </div>
   );
 }
@@ -579,6 +635,15 @@ export function monthLabel(month: string): string {
     month: "long",
     timeZone: "UTC",
   });
+}
+
+/** The server's own explanation for a refusal, when it sent one. The API's
+ * error envelope is `{ error }`, and the generated client hangs the parsed body
+ * off the thrown error as `data`. */
+function errorMessage(error: unknown): string | undefined {
+  const data = (error as { data?: unknown } | null)?.data;
+  const message = (data as { error?: unknown } | null)?.error;
+  return typeof message === "string" && message.trim() ? message : undefined;
 }
 
 /** The "figures as of" line — a date-time, so a stale cached read is visible. */

@@ -51,3 +51,73 @@ export function isStaffEmail(email: string): boolean {
   if (!candidate) return false;
   return staffEmails().includes(candidate);
 }
+
+// --- Second factor: how the staff member signed in ---
+//
+// The allowlist alone is only as strong as the mailbox behind the address, and
+// the studio's addresses are published on the site. Requiring the *method* —
+// not just the identity — closes that: a leaked password or a stolen magic
+// link can't reach the studio surfaces, because the session has to have been
+// established through Google, where the studio enforces 2-step verification in
+// Workspace admin. That's real MFA without an enrollment flow of our own.
+//
+// The signal is the access token's `amr` ("authentication methods reference")
+// claim, which Supabase stamps with what actually established THIS session —
+// unlike `app_metadata.provider`, which only says what's linked to the account.
+// Supabase reports an OAuth sign-in as `oauth`; it does not name the provider,
+// so this means "Google" precisely because Google is the only OAuth provider
+// enabled on the project. Enable a second one and this check widens with it.
+
+/** The `amr` method Supabase records for an OAuth (Google) sign-in. */
+export const OAUTH_AMR_METHOD = "oauth";
+
+/**
+ * Whether staff sessions must have been established with Google.
+ *
+ * **Defaults to ON.** An access-control default that has to be remembered isn't
+ * one, so this is opt-*out*: set `STUDIO_REQUIRE_GOOGLE` to `false`/`0`/`no`/
+ * `off` to fall back to any sign-in method. The escape hatch matters — it's the
+ * recovery path if Google sign-in is ever unavailable — but the safe state is
+ * the one you get by doing nothing.
+ */
+export function staffRequiresGoogle(): boolean {
+  const raw = (process.env.STUDIO_REQUIRE_GOOGLE ?? "").trim().toLowerCase();
+  return !["false", "0", "no", "off"].includes(raw);
+}
+
+/**
+ * The authentication methods recorded on a verified access token's claims.
+ *
+ * Supabase emits `amr` in either shape — a plain RFC-8176 string array, or
+ * entries carrying a timestamp — so both are read. Anything unrecognizable
+ * yields an empty list, which the caller treats as "can't confirm the method".
+ */
+export function extractAuthMethods(claims: unknown): string[] {
+  if (!claims || typeof claims !== "object") return [];
+  const amr = (claims as { amr?: unknown }).amr;
+  if (!Array.isArray(amr)) return [];
+
+  const methods: string[] = [];
+  for (const entry of amr) {
+    if (typeof entry === "string") {
+      methods.push(entry);
+    } else if (entry && typeof entry === "object") {
+      const method = (entry as { method?: unknown }).method;
+      if (typeof method === "string") methods.push(method);
+    }
+  }
+  return methods;
+}
+
+/**
+ * Whether a session established with these methods came through Google.
+ *
+ * **Fails closed**: an empty list (a token with no readable `amr`) can't prove
+ * how the session was created, so it doesn't pass. If a project somehow never
+ * emits the claim, the symptom is a 403 for staff with an actionable message,
+ * and `STUDIO_REQUIRE_GOOGLE=false` is the way out — never a silent downgrade
+ * to "any password will do".
+ */
+export function signedInWithGoogle(methods: string[]): boolean {
+  return methods.includes(OAUTH_AMR_METHOD);
+}

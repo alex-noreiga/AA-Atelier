@@ -41,6 +41,13 @@ const mockShop = vi.mocked(listShopOrdersForAnalytics);
 const mockInvoices = vi.mocked(listInvoicesForAnalytics);
 
 const STAFF = "alexandra@a3iceanddance.com";
+/** Claims for a staff member who signed in with Google — what the gate wants.
+ * `amr` is what Supabase stamps with how THIS session was established. */
+const GOOGLE_STAFF: FakeClaims = {
+  email: STAFF,
+  sub: "user-1",
+  amr: [{ method: "oauth", timestamp: 1_700_000_000 }],
+};
 
 /** Inject a fake that accepts one specific token and returns the given claims. */
 function acceptToken(validToken: string, claims: FakeClaims): void {
@@ -59,6 +66,7 @@ beforeEach(() => {
   process.env.SUPABASE_URL = "https://project.supabase.co";
   process.env.SUPABASE_ANON_KEY = "anon-test-key";
   process.env.STUDIO_STAFF_EMAILS = STAFF;
+  delete process.env.STUDIO_REQUIRE_GOOGLE; // the default (required) is the norm
   // The service caches its aggregation for a minute; each test starts clean.
   __resetStudioAnalyticsCache();
   mockOrders.mockResolvedValue({
@@ -72,18 +80,19 @@ beforeEach(() => {
 afterEach(() => {
   __resetSupabaseClient();
   delete process.env.STUDIO_STAFF_EMAILS;
+  delete process.env.STUDIO_REQUIRE_GOOGLE;
 });
 
 describe("GET /api/studio/analytics", () => {
   it("returns 401 without a Bearer token", async () => {
-    acceptToken("good-token", { email: STAFF, sub: "user-1" });
+    acceptToken("good-token", GOOGLE_STAFF);
     const res = await request(app).get("/api/studio/analytics");
     expect(res.status).toBe(401);
     expect(mockOrders).not.toHaveBeenCalled();
   });
 
   it("returns 401 for a token Supabase rejects", async () => {
-    acceptToken("good-token", { email: STAFF, sub: "user-1" });
+    acceptToken("good-token", GOOGLE_STAFF);
     const res = await request(app)
       .get("/api/studio/analytics")
       .set("Authorization", "Bearer stale-token");
@@ -95,6 +104,7 @@ describe("GET /api/studio/analytics", () => {
     acceptToken("customer-token", {
       email: "skater@example.com",
       sub: "user-2",
+      amr: ["oauth"],
     });
     const res = await request(app)
       .get("/api/studio/analytics")
@@ -106,7 +116,7 @@ describe("GET /api/studio/analytics", () => {
 
   it("returns 403 for everyone when no allowlist is configured", async () => {
     delete process.env.STUDIO_STAFF_EMAILS;
-    acceptToken("staff-token", { email: STAFF, sub: "user-1" });
+    acceptToken("staff-token", GOOGLE_STAFF);
 
     const res = await request(app)
       .get("/api/studio/analytics")
@@ -143,7 +153,7 @@ describe("GET /api/studio/analytics", () => {
         balancePaid: false,
       },
     ]);
-    acceptToken("staff-token", { email: STAFF, sub: "user-1" });
+    acceptToken("staff-token", GOOGLE_STAFF);
 
     const res = await request(app)
       .get("/api/studio/analytics")
@@ -165,8 +175,8 @@ describe("GET /api/studio/analytics", () => {
   it("matches the allowlist on the canonical email", async () => {
     process.env.STUDIO_STAFF_EMAILS = "Alexandra@A3IceAndDance.com";
     acceptToken("staff-token", {
+      ...GOOGLE_STAFF,
       email: "ALEXANDRA@a3iceanddance.com",
-      sub: "user-1",
     });
 
     const res = await request(app)
@@ -174,5 +184,93 @@ describe("GET /api/studio/analytics", () => {
       .set("Authorization", "Bearer staff-token");
 
     expect(res.status).toBe(200);
+  });
+});
+
+describe("GET /api/studio/analytics — sign-in method", () => {
+  it("refuses a staff address whose session came from a password", async () => {
+    acceptToken("password-token", {
+      email: STAFF,
+      sub: "user-1",
+      amr: [{ method: "password", timestamp: 1_700_000_000 }],
+    });
+
+    const res = await request(app)
+      .get("/api/studio/analytics")
+      .set("Authorization", "Bearer password-token");
+
+    expect(res.status).toBe(403);
+    expect(res.body.error).toMatch(/Google/);
+    expect(mockOrders).not.toHaveBeenCalled();
+  });
+
+  it("refuses a staff address whose session came from a magic link", async () => {
+    acceptToken("magic-token", {
+      email: STAFF,
+      sub: "user-1",
+      amr: ["magiclink"],
+    });
+
+    const res = await request(app)
+      .get("/api/studio/analytics")
+      .set("Authorization", "Bearer magic-token");
+
+    expect(res.status).toBe(403);
+    expect(mockOrders).not.toHaveBeenCalled();
+  });
+
+  it("fails closed when the token records no sign-in method at all", async () => {
+    acceptToken("no-amr-token", { email: STAFF, sub: "user-1" });
+
+    const res = await request(app)
+      .get("/api/studio/analytics")
+      .set("Authorization", "Bearer no-amr-token");
+
+    expect(res.status).toBe(403);
+  });
+
+  it("accepts the RFC-8176 string form of the claim", async () => {
+    acceptToken("oauth-token", {
+      email: STAFF,
+      sub: "user-1",
+      amr: ["oauth"],
+    });
+
+    const res = await request(app)
+      .get("/api/studio/analytics")
+      .set("Authorization", "Bearer oauth-token");
+
+    expect(res.status).toBe(200);
+  });
+
+  it("allows a password session when the requirement is switched off", async () => {
+    process.env.STUDIO_REQUIRE_GOOGLE = "false";
+    acceptToken("password-token", {
+      email: STAFF,
+      sub: "user-1",
+      amr: ["password"],
+    });
+
+    const res = await request(app)
+      .get("/api/studio/analytics")
+      .set("Authorization", "Bearer password-token");
+
+    expect(res.status).toBe(200);
+  });
+
+  it("still refuses a non-staff address with the requirement switched off", async () => {
+    process.env.STUDIO_REQUIRE_GOOGLE = "false";
+    acceptToken("customer-token", {
+      email: "skater@example.com",
+      sub: "user-2",
+      amr: ["oauth"],
+    });
+
+    const res = await request(app)
+      .get("/api/studio/analytics")
+      .set("Authorization", "Bearer customer-token");
+
+    expect(res.status).toBe(403);
+    expect(res.body.error).not.toMatch(/Google/);
   });
 });
