@@ -11,6 +11,7 @@ import {
   assertDatabaseConfigured,
 } from "./client.js";
 import { logger } from "../logger.js";
+import { scanDatabase } from "./scan.js";
 import {
   LINE_ITEM_INVOICE_RELATION_PROPERTY,
   INVOICE_ID_PROPERTY,
@@ -20,10 +21,12 @@ import {
   extractInvoice,
   extractLineItem,
   extractPaymentReminderInvoice,
+  extractInvoiceAnalytics,
   type PaymentStage,
   type InvoiceRecord,
   type InvoiceLineItemRecord,
   type PaymentReminderInvoice,
+  type InvoiceAnalyticsRecord,
   type NotionInvoicePage,
   type NotionInvoiceLineItemsQueryResponse,
 } from "./invoice.schema.js";
@@ -325,4 +328,19 @@ export async function setInvoiceTitle(
       `Notion invoice title update failed with status ${response.status}: ${errorText}`,
     );
   }
+}
+
+/**
+ * Read every invoice for the studio analytics — a bounded full-database scan,
+ * the invoice counterpart of `listOrdersForAnalytics`. One scan replaces a
+ * per-order invoice fetch, which for a few hundred orders would be a few hundred
+ * requests; the caller joins each invoice to its order by the `Order` relation.
+ */
+export async function listInvoicesForAnalytics(
+  client: NotionClient = getInvoicesNotionClient(),
+): Promise<InvoiceAnalyticsRecord[]> {
+  assertConfigured(client, "NOTION_INVOICES_DATABASE_ID");
+
+  const pages = await scanDatabase<NotionInvoicePage>(client, "invoices");
+  return pages.map(extractInvoiceAnalytics);
 }

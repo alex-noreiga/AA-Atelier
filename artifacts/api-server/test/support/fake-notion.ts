@@ -222,10 +222,19 @@ export function orderPage(opts: {
   milestonesGenerated?: boolean;
   lastNotifiedStage?: string;
   cancelled?: boolean;
+  rush?: boolean;
+  /** Notion's page-creation timestamp, read by the studio analytics. */
+  createdTime?: string;
 }) {
   return {
     id: opts.id ?? "page-id",
+    ...(opts.createdTime !== undefined
+      ? { created_time: opts.createdTime }
+      : {}),
     properties: {
+      ...(opts.rush !== undefined
+        ? { "Rush Order": { type: "checkbox", checkbox: opts.rush } }
+        : {}),
       "Costing Items": {
         type: "relation",
         relation: (opts.costingItemIds ?? []).map((id) => ({ id })),

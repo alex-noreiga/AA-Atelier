@@ -57,7 +57,8 @@ import type {
   PaymentSessionResponse,
   ProductList,
   RescheduleAppointmentRequest,
-  ShopOrderStatus
+  ShopOrderStatus,
+  StudioAnalytics
 } from './api.schemas';
 
 import { customFetch } from '../custom-fetch';
@@ -1884,6 +1885,84 @@ export function useGetAccountOverview<TData = Awaited<ReturnType<typeof getAccou
  ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
 
   const queryOptions = getGetAccountOverviewQueryOptions(options)
+
+  const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
+
+  return withQueryKey(query, queryOptions.queryKey);
+}
+
+
+
+
+
+
+
+export const getGetStudioAnalyticsUrl = () => {
+
+
+
+
+  return `/api/studio/analytics`
+}
+
+/**
+ * Aggregates the atelier's own numbers — custom and shop orders by stage, production load against due dates, revenue by month, deposits vs. balances, and the best-selling shop pieces — for the internal studio dashboard. Requires a valid Supabase access token supplied as a Bearer credential whose email is on the studio staff allowlist: 401 when the caller isn't signed in, 403 when they are but aren't staff.
+ * @summary Studio analytics for the internal dashboard
+ */
+export const getStudioAnalytics = async ( options?: Parameters<typeof customFetch>[1]): Promise<StudioAnalytics> => {
+
+  return customFetch<StudioAnalytics>(getGetStudioAnalyticsUrl(),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
+
+
+
+
+export const getGetStudioAnalyticsQueryKey = () => {
+    return [
+    `/api/studio/analytics`
+    ] as const;
+    }
+
+
+export const getGetStudioAnalyticsQueryOptions = <TData = Awaited<ReturnType<typeof getStudioAnalytics>>, TError = ErrorType<ErrorEnvelope>>( options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getStudioAnalytics>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getGetStudioAnalyticsQueryKey();
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof getStudioAnalytics>>> = ({ signal }) => getStudioAnalytics({ signal, ...requestOptions });
+
+
+
+
+
+   return  { queryKey, queryFn, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof getStudioAnalytics>>, TError, TData> & { queryKey: QueryKey }
+}
+
+export type GetStudioAnalyticsQueryResult = NonNullable<Awaited<ReturnType<typeof getStudioAnalytics>>>
+export type GetStudioAnalyticsQueryError = ErrorType<ErrorEnvelope>
+
+
+/**
+ * @summary Studio analytics for the internal dashboard
+ */
+
+export function useGetStudioAnalytics<TData = Awaited<ReturnType<typeof getStudioAnalytics>>, TError = ErrorType<ErrorEnvelope>>(
+  options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getStudioAnalytics>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+
+ ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+
+  const queryOptions = getGetStudioAnalyticsQueryOptions(options)
 
   const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
 

@@ -623,3 +623,71 @@ export const GetAccountOverviewResponse = zod.object({
 }).describe('Everything tied to the signed-in customer\'s email — the data the account dashboard renders.')
 
 
+/**
+ * Aggregates the atelier's own numbers — custom and shop orders by stage, production load against due dates, revenue by month, deposits vs. balances, and the best-selling shop pieces — for the internal studio dashboard. Requires a valid Supabase access token supplied as a Bearer credential whose email is on the studio staff allowlist: 401 when the caller isn't signed in, 403 when they are but aren't staff.
+ * @summary Studio analytics for the internal dashboard
+ */
+export const GetStudioAnalyticsResponse = zod.object({
+  "generatedAt": zod.coerce.date().describe('When these figures were computed. The server caches an aggregation briefly, so this can trail the request by up to a minute.'),
+  "customOrders": zod.object({
+  "total": zod.number().int().describe('Every order of this kind on record.'),
+  "active": zod.number().int().describe('Orders neither cancelled nor at the final stage.'),
+  "completed": zod.number().int().describe('Orders sitting at the last stage in the live list.'),
+  "cancelled": zod.number().int(),
+  "stages": zod.array(zod.object({
+  "stage": zod.string(),
+  "count": zod.number().int()
+})).describe('Active orders per stage, in the live stage order (stages with no orders are included as zeroes, so the pipeline reads end to end).')
+}).describe('How a set of orders is distributed across its live workflow — the custom order Stage list, or the shop order fulfilment Status list.'),
+  "shopOrders": zod.object({
+  "total": zod.number().int().describe('Every order of this kind on record.'),
+  "active": zod.number().int().describe('Orders neither cancelled nor at the final stage.'),
+  "completed": zod.number().int().describe('Orders sitting at the last stage in the live list.'),
+  "cancelled": zod.number().int(),
+  "stages": zod.array(zod.object({
+  "stage": zod.string(),
+  "count": zod.number().int()
+})).describe('Active orders per stage, in the live stage order (stages with no orders are included as zeroes, so the pipeline reads end to end).')
+}).describe('How a set of orders is distributed across its live workflow — the custom order Stage list, or the shop order fulfilment Status list.'),
+  "production": zod.object({
+  "activeOrders": zod.number().int().describe('Custom orders in progress (not cancelled, not delivered).'),
+  "scheduled": zod.number().int().describe('Of those, the ones carrying a Due Date.'),
+  "unscheduled": zod.number().int().describe('Active orders with no Due Date — invisible to the production schedule until the atelier sets one.'),
+  "overdue": zod.number().int().describe('Active orders whose due date has passed.'),
+  "dueThisWeek": zod.number().int().describe('Active orders due within the next 7 days (today included).'),
+  "dueThisMonth": zod.number().int().describe('Active orders due within the next 30 days (today included).'),
+  "rush": zod.number().int().describe('Active orders flagged as rush at intake.'),
+  "upcoming": zod.array(zod.object({
+  "orderNumber": zod.string(),
+  "orderName": zod.string(),
+  "stage": zod.string(),
+  "dueDate": zod.string().describe('The order\'s Due Date as YYYY-MM-DD.'),
+  "overdue": zod.boolean(),
+  "rush": zod.boolean().optional()
+})).describe('The nearest-due active orders, soonest first (overdue ones lead), capped to a short list for the dashboard.')
+}).describe('The making-side workload: active custom orders measured against the due dates the atelier has set.'),
+  "revenue": zod.array(zod.object({
+  "month": zod.string().describe('The month as YYYY-MM.'),
+  "shopRevenue": zod.number().describe('Dollars taken on shop orders placed that month (order totals, including shipping and tax; cancelled orders excluded).'),
+  "shopOrders": zod.number().int().describe('Shop orders placed that month (cancelled excluded).'),
+  "customBooked": zod.number().describe('Dollars invoiced on custom orders placed that month (each order\'s invoice Final Balance). Zero for orders not yet itemized.'),
+  "customOrders": zod.number().int().describe('Custom orders placed that month (cancelled excluded).')
+}).describe('A month of trade. The two money figures are deliberately NOT summed: shop revenue is money actually collected, while the custom figure is work booked (Notion holds no per-payment dates, so a custom payment can\'t be attributed to the month it was made).')).describe('One entry per month over the trailing window, oldest first. Months with no activity are included as zeroes so a chart has no gaps.'),
+  "payments": zod.object({
+  "invoicedTotal": zod.number().describe('The sum of every invoice\'s Final Balance.'),
+  "collectedTotal": zod.number().describe('Deposits plus balances marked paid.'),
+  "outstandingTotal": zod.number().describe('Deposits plus balances still to collect.'),
+  "depositsCollected": zod.number(),
+  "depositsOutstanding": zod.number().describe('Deposit amounts set on an invoice but not yet paid.'),
+  "balancesCollected": zod.number().describe('Final balances marked paid, net of the deposits already credited against them (that is what the balance stage actually charges).'),
+  "balancesOutstanding": zod.number().describe('What is still owed on unpaid balances beyond every deposit scheduled against them — so this and depositsOutstanding add up to outstandingTotal without counting the same dollar twice. A paid balance settles its invoice outright and leaves nothing here.'),
+  "invoiceCount": zod.number().int(),
+  "unpaidInvoiceCount": zod.number().int().describe('Invoices with money still outstanding.')
+}).describe('Deposits against balances across every custom-order invoice on a live (non-cancelled) order — what has been collected and what is still out.'),
+  "topItems": zod.array(zod.object({
+  "name": zod.string(),
+  "orders": zod.number().int()
+}).describe('One best-selling shop piece. The count is orders containing the piece, not units — the order\'s inventory relation records which pieces were bought, not how many of each.')).describe('The shop\'s best sellers, most-ordered first. Empty when no shop order carries its inventory relation (legacy orders, or the relation-links flag being off) — item-level figures are only as good as that link.')
+}).describe('The atelier\'s own figures, aggregated from the live Notion databases for the internal studio dashboard. Every money value is US dollars.')
+
+

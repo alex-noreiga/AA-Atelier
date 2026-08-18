@@ -476,3 +476,59 @@ export function extractLineItem(
     amount: extractNumericValue(page, LINE_ITEM_TOTAL_PROPERTY) ?? 0,
   };
 }
+
+/** An invoice reduced to what the studio analytics aggregate: the money on it
+ * and the order to attribute that money to. Deposits are kept split from the
+ * balance because "deposits vs. balance" is the figure the atelier is actually
+ * asking for. */
+export interface InvoiceAnalyticsRecord {
+  pageId: string;
+  /** Notion page id of the linked order (the `Order` relation), when set. An
+   * invoice with no order can't be attributed, so the aggregation skips it. */
+  orderPageId?: string;
+  /** The `Final Balance` (dollars) — the invoice's whole value. Undefined until
+   * the invoice is itemized. */
+  finalBalance?: number;
+  /** Deposit dollars already paid. */
+  depositsPaid: number;
+  /** Deposit dollars set on the invoice but not yet paid. */
+  depositsUnpaid: number;
+  /** Whether the final balance is marked paid. */
+  balancePaid: boolean;
+}
+
+/** Map an "invoices & payments" page into the analytics record above. */
+export function extractInvoiceAnalytics(
+  page: NotionInvoicePage,
+): InvoiceAnalyticsRecord {
+  const finalBalance = extractNumericValue(
+    page,
+    INVOICE_FINAL_BALANCE_PROPERTY,
+  );
+  const orderPageId = extractRelationFirstId(
+    page,
+    INVOICE_ORDER_RELATION_PROPERTY,
+  );
+
+  let depositsPaid = 0;
+  let depositsUnpaid = 0;
+  for (const stage of ["first_deposit", "second_deposit"] as DepositStage[]) {
+    const fields = DEPOSIT_STAGE_FIELDS[stage];
+    const amount = extractNumber(page, fields.amountProp);
+    if (typeof amount !== "number" || amount <= 0) continue;
+    if (extractCheckbox(page, fields.paidProp)) {
+      depositsPaid += amount;
+    } else {
+      depositsUnpaid += amount;
+    }
+  }
+
+  return {
+    pageId: page.id,
+    depositsPaid,
+    depositsUnpaid,
+    balancePaid: extractCheckbox(page, INVOICE_BALANCE_PAID_PROPERTY),
+    ...(finalBalance !== undefined ? { finalBalance } : {}),
+    ...(orderPageId !== undefined ? { orderPageId } : {}),
+  };
+}

@@ -10,6 +10,7 @@ import {
   type NotionClient,
 } from "./client.js";
 import { normalizeEmail } from "../email.js";
+import { scanDatabase } from "./scan.js";
 import {
   buildShopOrderProperties,
   buildShopOrderPageBlocks,
@@ -24,6 +25,7 @@ import {
   SHOP_ORDER_TRACKING_NUMBER_PROPERTY,
   SHOP_ORDER_TRACKING_CARRIER_PROPERTY,
   SHOP_ORDER_TRACKING_URL_PROPERTY,
+  SHOP_ORDER_ITEMS_PROPERTY,
 } from "./shop-orders.blocks.js";
 import { logger } from "../logger.js";
 
@@ -57,13 +59,19 @@ type NotionReadProperty =
   | { type: "number"; number: number | null }
   | { type: "email"; email: string | null }
   | { type: "checkbox"; checkbox: boolean }
-  | { type: "url"; url: string | null };
+  | { type: "url"; url: string | null }
+  | { type: "relation"; relation: Array<{ id: string }> };
 
 interface NotionLookupResponse {
-  results: Array<{
-    id: string;
-    properties: Record<string, NotionReadProperty | undefined>;
-  }>;
+  results: NotionShopOrderPage[];
+}
+
+interface NotionShopOrderPage {
+  id: string;
+  /** Notion's page-creation timestamp (ISO) — when the order was paid for, and
+   * the only date the studio analytics can place a shop order in a month by. */
+  created_time?: string;
+  properties: Record<string, NotionReadProperty | undefined>;
 }
 
 interface NotionShopOrdersSchema {
@@ -114,6 +122,11 @@ function readCheckbox(prop: NotionReadProperty | undefined): boolean {
 function readUrl(prop: NotionReadProperty | undefined): string {
   if (prop?.type !== "url") return "";
   return (prop.url ?? "").trim();
+}
+
+function readRelationIds(prop: NotionReadProperty | undefined): string[] {
+  if (prop?.type !== "relation") return [];
+  return prop.relation.map((entry) => entry.id);
 }
 
 /** Read the carrier tracking off a page, or undefined when no tracking number
@@ -596,4 +609,52 @@ export async function fetchLiveShopOrderStatuses(
     }
     throw error;
   }
+}
+
+/** A shop order reduced to what the studio analytics aggregate over. Unlike
+ * {@link ShopOrderRecord} this keeps orders with no `Order Number` — a legacy
+ * order can't be *tracked*, but its money and its fulfilment status still
+ * count — and carries the purchased inventory ids the best-seller list is
+ * built from. */
+export interface ShopOrderAnalyticsRecord {
+  orderNumber: string;
+  status: string;
+  total?: number;
+  cancelled: boolean;
+  /** Notion's page-creation time (ISO) — when the order was paid. */
+  createdTime: string;
+  /** Inventory page ids from the `Inventory Items` relation. Empty for orders
+   * placed before that relation was written (or with it switched off), which is
+   * why the best-seller list can legitimately come back empty. */
+  itemIds: string[];
+}
+
+/**
+ * Read every shop order for the studio analytics, alongside the live fulfilment
+ * status list (the never-hardcode rule again). A bounded full-database scan, the
+ * shop-order counterpart of `listOrdersForAnalytics`.
+ */
+export async function listShopOrdersForAnalytics(
+  client: NotionClient = getShopOrdersNotionClient(),
+): Promise<{ orders: ShopOrderAnalyticsRecord[]; statuses: string[] }> {
+  assertConfigured(client);
+
+  const [pages, statuses] = await Promise.all([
+    scanDatabase<NotionShopOrderPage>(client, "shop orders"),
+    fetchLiveShopOrderStatuses(client),
+  ]);
+
+  const orders = pages.map((page) => {
+    const total = readNumber(page.properties[SHOP_ORDER_TOTAL_PROPERTY]);
+    return {
+      orderNumber: readRichText(page.properties[SHOP_ORDER_NUMBER_PROPERTY]),
+      status: readStatus(page.properties[SHOP_ORDER_STATUS_PROPERTY]),
+      cancelled: readCheckbox(page.properties[SHOP_ORDER_CANCELLED_PROPERTY]),
+      createdTime: page.created_time ?? "",
+      itemIds: readRelationIds(page.properties[SHOP_ORDER_ITEMS_PROPERTY]),
+      ...(total !== null ? { total } : {}),
+    } satisfies ShopOrderAnalyticsRecord;
+  });
+
+  return { orders, statuses };
 }

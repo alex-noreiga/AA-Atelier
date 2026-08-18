@@ -771,6 +771,120 @@ export interface AccountOverview {
   referral?: AccountReferral;
 }
 
+export interface StudioStageCount {
+  stage: string;
+  count: number;
+}
+
+/**
+ * How a set of orders is distributed across its live workflow — the custom order Stage list, or the shop order fulfilment Status list.
+ */
+export interface StudioPipeline {
+  /** Every order of this kind on record. */
+  total: number;
+  /** Orders neither cancelled nor at the final stage. */
+  active: number;
+  /** Orders sitting at the last stage in the live list. */
+  completed: number;
+  cancelled: number;
+  /** Active orders per stage, in the live stage order (stages with no orders are included as zeroes, so the pipeline reads end to end). */
+  stages: StudioStageCount[];
+}
+
+export interface StudioScheduledOrder {
+  orderNumber: string;
+  orderName: string;
+  stage: string;
+  /** The order's Due Date as YYYY-MM-DD. */
+  dueDate: string;
+  overdue: boolean;
+  rush?: boolean;
+}
+
+/**
+ * The making-side workload: active custom orders measured against the due dates the atelier has set.
+ */
+export interface StudioProductionLoad {
+  /** Custom orders in progress (not cancelled, not delivered). */
+  activeOrders: number;
+  /** Of those, the ones carrying a Due Date. */
+  scheduled: number;
+  /** Active orders with no Due Date — invisible to the production schedule until the atelier sets one. */
+  unscheduled: number;
+  /** Active orders whose due date has passed. */
+  overdue: number;
+  /** Active orders due within the next 7 days (today included). */
+  dueThisWeek: number;
+  /** Active orders due within the next 30 days (today included). */
+  dueThisMonth: number;
+  /** Active orders flagged as rush at intake. */
+  rush: number;
+  /** The nearest-due active orders, soonest first (overdue ones lead), capped to a short list for the dashboard. */
+  upcoming: StudioScheduledOrder[];
+}
+
+/**
+ * A month of trade. The two money figures are deliberately NOT summed: shop revenue is money actually collected, while the custom figure is work booked (Notion holds no per-payment dates, so a custom payment can't be attributed to the month it was made).
+ */
+export interface StudioRevenueMonth {
+  /** The month as YYYY-MM. */
+  month: string;
+  /** Dollars taken on shop orders placed that month (order totals, including shipping and tax; cancelled orders excluded). */
+  shopRevenue: number;
+  /** Shop orders placed that month (cancelled excluded). */
+  shopOrders: number;
+  /** Dollars invoiced on custom orders placed that month (each order's invoice Final Balance). Zero for orders not yet itemized. */
+  customBooked: number;
+  /** Custom orders placed that month (cancelled excluded). */
+  customOrders: number;
+}
+
+/**
+ * Deposits against balances across every custom-order invoice on a live (non-cancelled) order — what has been collected and what is still out.
+ */
+export interface StudioPaymentTotals {
+  /** The sum of every invoice's Final Balance. */
+  invoicedTotal: number;
+  /** Deposits plus balances marked paid. */
+  collectedTotal: number;
+  /** Deposits plus balances still to collect. */
+  outstandingTotal: number;
+  depositsCollected: number;
+  /** Deposit amounts set on an invoice but not yet paid. */
+  depositsOutstanding: number;
+  /** Final balances marked paid, net of the deposits already credited against them (that is what the balance stage actually charges). */
+  balancesCollected: number;
+  /** What is still owed on unpaid balances beyond every deposit scheduled against them — so this and depositsOutstanding add up to outstandingTotal without counting the same dollar twice. A paid balance settles its invoice outright and leaves nothing here. */
+  balancesOutstanding: number;
+  invoiceCount: number;
+  /** Invoices with money still outstanding. */
+  unpaidInvoiceCount: number;
+}
+
+/**
+ * One best-selling shop piece. The count is orders containing the piece, not units — the order's inventory relation records which pieces were bought, not how many of each.
+ */
+export interface StudioTopItem {
+  name: string;
+  orders: number;
+}
+
+/**
+ * The atelier's own figures, aggregated from the live Notion databases for the internal studio dashboard. Every money value is US dollars.
+ */
+export interface StudioAnalytics {
+  /** When these figures were computed. The server caches an aggregation briefly, so this can trail the request by up to a minute. */
+  generatedAt: string;
+  customOrders: StudioPipeline;
+  shopOrders: StudioPipeline;
+  production: StudioProductionLoad;
+  /** One entry per month over the trailing window, oldest first. Months with no activity are included as zeroes so a chart has no gaps. */
+  revenue: StudioRevenueMonth[];
+  payments: StudioPaymentTotals;
+  /** The shop's best sellers, most-ordered first. Empty when no shop order carries its inventory relation (legacy orders, or the relation-links flag being off) — item-level figures are only as good as that link. */
+  topItems: StudioTopItem[];
+}
+
 export type GetAppointmentAvailabilityParams = {
 typeId: string;
 location: GetAppointmentAvailabilityLocation;

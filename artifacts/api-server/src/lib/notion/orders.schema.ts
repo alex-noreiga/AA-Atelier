@@ -179,6 +179,10 @@ export interface NotionDatabaseSchema {
 
 export interface NotionOrderPage {
   id: string;
+  /** Notion's own page-creation timestamp (ISO). Every page carries it — there
+   * is no property to add — which makes it the only date the app can use to
+   * place an order in a month for the studio analytics. */
+  created_time?: string;
   properties: {
     "Order Number"?: {
       type: "rich_text";
@@ -352,4 +356,48 @@ export function extractLastNotifiedStage(page: NotionOrderPage): string {
       ?.map((t) => t.plain_text)
       .join("") ?? ""
   );
+}
+
+/** An order reduced to what the studio analytics aggregate over: where it sits
+ * in the pipeline, when it was placed, when it's due, and the invoice to join
+ * its money to. Deliberately lighter than {@link OrderRecord} — the analytics
+ * scan the whole database, so every field here is paid for once per order. */
+export interface OrderAnalyticsRecord {
+  pageId: string;
+  orderNumber: string;
+  orderName: string;
+  stage: string;
+  /** Notion's page-creation time (ISO) — when the order was placed. */
+  createdTime: string;
+  /** The atelier's target completion date (ISO `yyyy-mm-dd`), when set. */
+  dueDate?: string;
+  cancelled: boolean;
+  rush: boolean;
+  /** The linked invoice's page id, when the order has one. */
+  invoicePageId?: string;
+}
+
+/** Notion's page-creation timestamp, or an empty string on a payload that
+ * somehow omits it (every real page carries one). */
+export function extractCreatedTime(page: NotionOrderPage): string {
+  return page.created_time ?? "";
+}
+
+/** Map an order page to the analytics record above. */
+export function extractOrderAnalytics(
+  page: NotionOrderPage,
+): OrderAnalyticsRecord {
+  const dueDate = extractDueDate(page);
+  const invoicePageId = extractInvoiceRelationId(page);
+  return {
+    pageId: page.id,
+    orderNumber: extractOrderNumber(page),
+    orderName: extractOrderName(page),
+    stage: extractCurrentStage(page),
+    createdTime: extractCreatedTime(page),
+    cancelled: extractCancelled(page),
+    rush: extractRush(page),
+    ...(dueDate !== undefined ? { dueDate } : {}),
+    ...(invoicePageId !== undefined ? { invoicePageId } : {}),
+  };
 }
