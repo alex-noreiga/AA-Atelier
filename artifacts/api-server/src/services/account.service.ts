@@ -12,6 +12,7 @@ import {
 import {
   findShopOrdersByEmail,
   findShopOrdersByNumbers,
+  fetchLiveShopOrderStatuses,
 } from "../lib/notion/shop-orders.repository.js";
 import type { OrderSummary } from "../lib/notion/orders.schema.js";
 import type { ShopOrderRecord } from "../lib/notion/shop-orders.repository.js";
@@ -28,6 +29,7 @@ import {
   APPOINTMENT_MANAGE_TTL_SECONDS,
 } from "../lib/auth/tokens.js";
 import { ensureReferralCode, type ReferralInfo } from "./rewards.service.js";
+import { orderLifecycleState, type OrderLifecycleState } from "./delivery.js";
 import { logger } from "../lib/logger.js";
 
 /** An upcoming appointment for the dashboard: its details plus a signed token so
@@ -36,10 +38,17 @@ export interface AccountAppointment extends AppointmentManageDetails {
   manageToken: string;
 }
 
+/** A dashboard order, tagged with where it sits in its lifecycle so the portal
+ * can denote a finished or cancelled order rather than leaving the customer to
+ * read it out of a stage name. Derived server-side (see `delivery.ts`) so both
+ * order kinds are classified by the one rule. */
+export type AccountCustomOrder = OrderSummary & { state: OrderLifecycleState };
+export type AccountShopOrder = ShopOrderRecord & { state: OrderLifecycleState };
+
 export interface AccountOverviewResult {
   email: string;
-  customOrders: OrderSummary[];
-  shopOrders: ShopOrderRecord[];
+  customOrders: AccountCustomOrder[];
+  shopOrders: AccountShopOrder[];
   appointments: AccountAppointment[];
   /** The customer's referral-program state, absent when the CRM is unconfigured. */
   referral?: ReferralInfo;
@@ -94,42 +103,78 @@ async function upcomingAppointments(
  * step is best-effort: a DB failure degrades to the Notion-only result, and it
  * fetches live Stage/measurements from Notion (never a stale cached copy).
  */
-async function listCustomOrders(email: string): Promise<OrderSummary[]> {
-  const base = await findOrdersByEmail(email);
-  if (!postgresConfigured()) return base;
-  try {
-    const refs = await findOrderRefsByEmail(email, "custom");
-    const have = new Set(base.map((o) => o.orderNumber));
-    const extra = refs.map((r) => r.orderNumber).filter((n) => !have.has(n));
-    if (extra.length === 0) return base;
-    return [...base, ...(await findOrdersByNumbers(extra))];
-  } catch (err) {
-    logger.warn(
-      { err },
-      "Account overview: Postgres custom-order discovery failed; using Notion-only results",
-    );
-    return base;
-  }
+async function listCustomOrders(email: string): Promise<AccountCustomOrder[]> {
+  const orders = await findOrdersByEmail(email).then(async (base) => {
+    if (!postgresConfigured()) return base;
+    try {
+      const refs = await findOrderRefsByEmail(email, "custom");
+      const have = new Set(base.map((o) => o.orderNumber));
+      const extra = refs.map((r) => r.orderNumber).filter((n) => !have.has(n));
+      if (extra.length === 0) return base;
+      return [...base, ...(await findOrdersByNumbers(extra))];
+    } catch (err) {
+      logger.warn(
+        { err },
+        "Account overview: Postgres custom-order discovery failed; using Notion-only results",
+      );
+      return base;
+    }
+  });
+
+  // Each summary already carries the live stage list it was mapped against, so
+  // classifying is pure — no extra Notion read.
+  return orders.map((order) => ({
+    ...order,
+    state: orderLifecycleState(
+      order.cancelled === true,
+      order.currentStage,
+      order.stages,
+    ),
+  }));
 }
 
 /** Shop-order counterpart of {@link listCustomOrders} — same baseline-plus-index
  * union, same best-effort degrade, live fulfilment status from Notion. */
-async function listShopOrders(email: string): Promise<ShopOrderRecord[]> {
-  const base = await findShopOrdersByEmail(email);
-  if (!postgresConfigured()) return base;
-  try {
-    const refs = await findOrderRefsByEmail(email, "shop");
-    const have = new Set(base.map((o) => o.orderNumber));
-    const extra = refs.map((r) => r.orderNumber).filter((n) => !have.has(n));
-    if (extra.length === 0) return base;
-    return [...base, ...(await findShopOrdersByNumbers(extra))];
-  } catch (err) {
+async function listShopOrders(email: string): Promise<AccountShopOrder[]> {
+  const orders = await findShopOrdersByEmail(email).then(async (base) => {
+    if (!postgresConfigured()) return base;
+    try {
+      const refs = await findOrderRefsByEmail(email, "shop");
+      const have = new Set(base.map((o) => o.orderNumber));
+      const extra = refs.map((r) => r.orderNumber).filter((n) => !have.has(n));
+      if (extra.length === 0) return base;
+      return [...base, ...(await findShopOrdersByNumbers(extra))];
+    } catch (err) {
+      logger.warn(
+        { err },
+        "Account overview: Postgres shop-order discovery failed; using Notion-only results",
+      );
+      return base;
+    }
+  });
+
+  if (orders.length === 0) return [];
+
+  // Unlike a custom order, a shop-order record doesn't carry its status list, so
+  // read the live one (60s cached) to place each order in it. Best-effort: an
+  // empty list classifies everything uncancelled as active, which is the safe
+  // way to be wrong — an order is never wrongly shown as finished.
+  const statuses = await fetchLiveShopOrderStatuses().catch((err) => {
     logger.warn(
       { err },
-      "Account overview: Postgres shop-order discovery failed; using Notion-only results",
+      "Account overview: could not read shop-order statuses; orders show as in progress",
     );
-    return base;
-  }
+    return [] as string[];
+  });
+
+  return orders.map((order) => ({
+    ...order,
+    state: orderLifecycleState(
+      order.cancelled === true,
+      order.status,
+      statuses,
+    ),
+  }));
 }
 
 /**

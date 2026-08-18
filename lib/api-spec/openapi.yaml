@@ -2095,10 +2095,23 @@ components:
             A standing personal discount code for this returning customer,
             present once they've earned it (a qualifying repeat order). Absent
             otherwise.
+    AccountOrderState:
+      type: string
+      enum:
+        - active
+        - completed
+        - cancelled
+      description: >-
+        Where an order sits in its lifecycle, derived server-side so the
+        dashboard never has to infer it from a stage/status name. "completed"
+        means the order has reached the final stage/status in its live list
+        (delivered for a custom order, fulfilled for a shop order); "cancelled"
+        means the atelier has cancelled it (and takes precedence over
+        "completed"); everything else is "active".
     AccountOrderSummary:
       type: object
       description: A custom order as shown on the account dashboard (links out to the full tracking + invoice views).
-      required: [orderNumber, orderName, currentStage, stages]
+      required: [orderNumber, orderName, currentStage, stages, state]
       properties:
         orderNumber:
           type: string
@@ -2106,6 +2119,8 @@ components:
           type: string
         currentStage:
           type: string
+        state:
+          $ref: "#/components/schemas/AccountOrderState"
         stages:
           type: array
           description: The live ordered stage list, so the dashboard can show progress (e.g. "3 of 6").
@@ -2122,13 +2137,15 @@ components:
     AccountShopOrderSummary:
       type: object
       description: A ready-to-wear shop order as shown on the account dashboard.
-      required: [orderNumber, status]
+      required: [orderNumber, status, state]
       properties:
         orderNumber:
           type: string
         status:
           type: string
           description: The order's current fulfilment status.
+        state:
+          $ref: "#/components/schemas/AccountOrderState"
         total:
           type: number
           description: The order total in dollars, when recorded.

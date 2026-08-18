@@ -626,6 +626,18 @@ export interface MessageResponse {
 }
 
 /**
+ * Where an order sits in its lifecycle, derived server-side so the dashboard never has to infer it from a stage/status name. "completed" means the order has reached the final stage/status in its live list (delivered for a custom order, fulfilled for a shop order); "cancelled" means the atelier has cancelled it (and takes precedence over "completed"); everything else is "active".
+ */
+export type AccountOrderState = typeof AccountOrderState[keyof typeof AccountOrderState];
+
+
+export const AccountOrderState = {
+  active: 'active',
+  completed: 'completed',
+  cancelled: 'cancelled',
+} as const;
+
+/**
  * The unit the measurement values are expressed in.
  */
 export type AccountMeasurementsUnit = typeof AccountMeasurementsUnit[keyof typeof AccountMeasurementsUnit];
@@ -656,6 +668,7 @@ export interface AccountOrderSummary {
   orderNumber: string;
   orderName: string;
   currentStage: string;
+  state: AccountOrderState;
   /** The live ordered stage list, so the dashboard can show progress (e.g. "3 of 6"). */
   stages: string[];
   /** The order's target completion date (its Due Date) as an ISO date (yyyy-mm-dd). A pass-through string (no format: date). Absent until the atelier sets one. */
@@ -670,6 +683,7 @@ export interface AccountShopOrderSummary {
   orderNumber: string;
   /** The order's current fulfilment status. */
   status: string;
+  state: AccountOrderState;
   /** The order total in dollars, when recorded. */
   total?: number;
 }
