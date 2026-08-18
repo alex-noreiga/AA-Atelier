@@ -3,85 +3,11 @@ import react from "@vitejs/plugin-react";
 import tailwindcss from "@tailwindcss/vite";
 import fs from "node:fs";
 import path from "path";
-import {
-  INDEXABLE_ROUTES,
-  SITE_ORIGIN,
-  DEFAULT_OG_IMAGE,
-  type RouteSeo,
-} from "./src/lib/seo-routes";
+import { INDEXABLE_ROUTES } from "./src/lib/seo-routes";
+import { renderRouteHtml, renderSitemap } from "./src/lib/seo-html";
 
 const port = process.env.PORT ? Number(process.env.PORT) : 5173;
 const basePath = process.env.BASE_PATH ?? "/";
-
-/** HTML text-node escaping (for the <title> element). */
-function escapeHtml(s: string) {
-  return s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
-}
-
-/** Attribute-value escaping (for meta/link content/href). */
-function escapeAttr(s: string) {
-  return s.replace(/&/g, "&amp;").replace(/"/g, "&quot;");
-}
-
-/** Absolute canonical URL for a route — mirrors the logic in components/seo.tsx. */
-function canonicalFor(routePath: string) {
-  return (
-    SITE_ORIGIN +
-    (routePath === "/" ? "/" : `/${routePath.replace(/^\/|\/$/g, "")}`)
-  );
-}
-
-/**
- * Rewrite the head of the built `index.html` template for a single route:
- * title, description, canonical, og/twitter title/description/url/image, robots.
- * Every other tag (Organization JSON-LD, image dimensions, fonts, manifest) is
- * left untouched. `[^>]` matches newlines, so this handles the multi-line meta
- * tags in index.html without a DOM parser.
- */
-function renderRouteHtml(template: string, route: RouteSeo): string {
-  const canonical = canonicalFor(route.path);
-  const image = route.image ?? DEFAULT_OG_IMAGE;
-  let html = template.replace(
-    /<title>[\s\S]*?<\/title>/,
-    `<title>${escapeHtml(route.title)}</title>`,
-  );
-
-  const setMeta = (attr: string, value: string) => {
-    const re = new RegExp(`(<meta[^>]*${attr}[^>]*content=")[^"]*(")`);
-    html = html.replace(re, `$1${escapeAttr(value)}$2`);
-  };
-
-  setMeta('name="description"', route.description);
-  setMeta('property="og:title"', route.title);
-  setMeta('property="og:description"', route.description);
-  setMeta('property="og:url"', canonical);
-  setMeta('property="og:image"', image);
-  setMeta('name="twitter:title"', route.title);
-  setMeta('name="twitter:description"', route.description);
-  setMeta('name="twitter:image"', image);
-  setMeta('name="robots"', "index, follow");
-
-  html = html.replace(
-    /(<link[^>]*rel="canonical"[^>]*href=")[^"]*(")/,
-    `$1${escapeAttr(canonical)}$2`,
-  );
-  return html;
-}
-
-function renderSitemap(buildDate: string): string {
-  const urls = INDEXABLE_ROUTES.map((r) => {
-    const loc = canonicalFor(r.path);
-    return [
-      "  <url>",
-      `    <loc>${loc}</loc>`,
-      `    <lastmod>${buildDate}</lastmod>`,
-      `    <changefreq>${r.changefreq ?? "monthly"}</changefreq>`,
-      `    <priority>${(r.priority ?? 0.5).toFixed(1)}</priority>`,
-      "  </url>",
-    ].join("\n");
-  }).join("\n");
-  return `<?xml version="1.0" encoding="UTF-8"?>\n<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">\n${urls}\n</urlset>\n`;
-}
 
 /**
  * Build-time SEO prerendering.
@@ -122,7 +48,7 @@ function seoPrerender(): Plugin {
 
       fs.writeFileSync(
         path.join(outDir, "sitemap.xml"),
-        renderSitemap(buildDate),
+        renderSitemap(INDEXABLE_ROUTES, buildDate),
       );
       this.info(
         `seo-prerender: wrote ${INDEXABLE_ROUTES.length} prerendered route(s) + sitemap.xml`,

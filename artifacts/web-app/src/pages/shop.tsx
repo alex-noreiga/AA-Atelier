@@ -521,14 +521,19 @@ function breadcrumbJsonLd(product: Product): Record<string, unknown> {
 
 /** Per-product page metadata + JSON-LD, shown while a product deep link is open. */
 function ProductSeo({ product }: { product: Product }) {
-  const image = product.variants[0]?.photos[0];
+  const photo = product.variants[0]?.photos[0];
+  // A Notion-hosted product photo has no known pixel size, so it carries no
+  // width/height — better than advertising the default image's dimensions.
+  const images = photo
+    ? [{ url: photo, alt: `${product.title} — A.A Atelier` }]
+    : undefined;
   return (
     <>
       <Seo
         title={`${product.title} | The Shop | A.A Atelier`}
         description={metaDescription(product)}
         path={`/shop/${product.id}`}
-        {...(image ? { image } : {})}
+        {...(images ? { images } : {})}
       />
       <StructuredData data={productJsonLd(product)} />
       <StructuredData data={breadcrumbJsonLd(product)} />

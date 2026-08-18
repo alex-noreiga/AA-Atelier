@@ -22,16 +22,6 @@
     <meta property="og:type" content="website" />
     <meta property="og:site_name" content="A3 Ice and Dance" />
     <meta property="og:url" content="https://a3iceanddance.com/" />
-    <meta
-      property="og:image"
-      content="https://a3iceanddance.com/opengraph.jpg"
-    />
-    <meta property="og:image:width" content="1280" />
-    <meta property="og:image:height" content="720" />
-    <meta
-      property="og:image:alt"
-      content="A.A Atelier — handcrafted custom figure skating and dance costumes"
-    />
     <meta property="og:locale" content="en_US" />
     <meta name="twitter:card" content="summary_large_image" />
     <meta
@@ -42,6 +32,26 @@
       name="twitter:description"
       content="Custom, made-to-measure figure skating and dance costumes, handcrafted by A.A Atelier — from first sketch to final stitch."
     />
+    <!--
+      Social share images. Everything between the seo:images markers is REPLACED
+      wholesale per route by the seo-prerender plugin (vite.config.ts) and by the
+      runtime <Seo> component, so that each og:image keeps its OWN width/height/
+      alt: per the Open Graph spec those structured properties attach to the
+      og:image tag they follow. Patching the tags individually would let a route
+      with a differently-sized image inherit the dimensions below. Do not insert
+      non-image tags inside the markers.
+    -->
+    <!-- seo:images:start -->
+    <meta
+      property="og:image"
+      content="https://a3iceanddance.com/opengraph.jpg"
+    />
+    <meta property="og:image:width" content="1280" />
+    <meta property="og:image:height" content="720" />
+    <meta
+      property="og:image:alt"
+      content="A.A Atelier — handcrafted custom figure skating and dance costumes"
+    />
     <meta
       name="twitter:image"
       content="https://a3iceanddance.com/opengraph.jpg"
@@ -50,6 +60,7 @@
       name="twitter:image:alt"
       content="A.A Atelier — handcrafted custom figure skating and dance costumes"
     />
+    <!-- seo:images:end -->
     <link rel="icon" href="/favicon.ico" sizes="any" />
     <link rel="icon" type="image/png" sizes="192x192" href="/favicon-192.png" />
     <link rel="icon" type="image/png" sizes="32x32" href="/favicon-32.png" />
@@ -92,6 +103,12 @@
         "url": "https://a3iceanddance.com/"
       }
     </script>
+    <!--
+      Per-route JSON-LD is injected here by the seo-prerender plugin. The
+      runtime <StructuredData> component appends its own blocks at the end of
+      the head instead; both are additive to the two static blocks above.
+    -->
+    <!-- seo:structured-data -->
   </head>
   <body>
     <div id="root"></div>
