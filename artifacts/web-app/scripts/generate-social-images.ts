@@ -14,8 +14,7 @@
  *     pnpm --filter @workspace/web-app run social-images
  *
  * It needs a Chromium binary (set `CHROMIUM_PATH`, or let it find Playwright's)
- * and network access to fetch the two brand fonts from Google Fonts. Fonts are
- * cached in the system temp dir between runs.
+ * and network access to fetch the two brand fonts from Google Fonts.
  */
 
 import { execFileSync } from "node:child_process";
@@ -91,7 +90,6 @@ const ART: Record<string, { headline: string; subline: string }> = {
 };
 
 // ── Fonts ───────────────────────────────────────────────────────────────────
-const FONT_CACHE = path.join(os.tmpdir(), "aa-atelier-social-fonts");
 
 /** The Google Fonts CSS API serves plain TTF to an old user-agent string. */
 const FONT_CSS = {
@@ -100,25 +98,30 @@ const FONT_CSS = {
   sans: "https://fonts.googleapis.com/css2?family=Jost:wght@300;400;500&display=swap",
 };
 
+/**
+ * Fetch a font family's files as base64, for inlining into the page.
+ *
+ * Deliberately NOT cached to disk. Each family is fetched once per run and the
+ * `@font-face` block is reused across every image, so a cache would only save
+ * two HTTP requests *between* runs of a tool that runs a few times a year — and
+ * the obvious place to put one, a fixed path under the OS temp dir, is a shared
+ * world-writable directory. That combination (predictable name + remote bytes
+ * written through it + an exists-then-read gap) is a symlink-attack shape worth
+ * avoiding for no real benefit.
+ */
 async function fetchFont(name: string, cssUrl: string): Promise<string[]> {
-  fs.mkdirSync(FONT_CACHE, { recursive: true });
-  const cached = path.join(FONT_CACHE, `${name}.json`);
-  if (fs.existsSync(cached)) return JSON.parse(fs.readFileSync(cached, "utf8"));
-
   const css = await fetch(cssUrl, {
     headers: { "User-Agent": "Mozilla/4.0" },
   }).then((r) => r.text());
   const urls = [...new Set(css.match(/https:\/\/fonts\.gstatic\.com\/[^)]+/g))];
   if (urls.length === 0) throw new Error(`No font files found for ${name}`);
 
-  const files = await Promise.all(
+  return Promise.all(
     urls.map(async (u) => {
       const buf = Buffer.from(await (await fetch(u)).arrayBuffer());
       return buf.toString("base64");
     }),
   );
-  fs.writeFileSync(cached, JSON.stringify(files));
-  return files;
 }
 
 /** `@font-face` rules with the font bytes inlined, so Chromium needs no network. */
