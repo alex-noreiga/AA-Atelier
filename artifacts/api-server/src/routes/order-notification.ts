@@ -30,18 +30,18 @@ import {
   notifyOrderStageChange,
   type OrderLocator,
 } from "../services/order-notification.service.js";
+import {
+  htmlPage,
+  hasCronBearer,
+  hasCronQuerySecret,
+} from "../lib/cron-route.js";
 import { logger } from "../lib/logger.js";
 
 /** Authorized when the Bearer header OR the ?secret= query matches CRON_SECRET.
  * The header is preferred (token stays out of the URL); the query token is the
  * fallback for the browser `/run` link, which can't set a custom header. */
 function isAuthorized(req: Request): boolean {
-  const secret = process.env.CRON_SECRET;
-  if (!secret) return false;
-  return (
-    req.headers.authorization === `Bearer ${secret}` ||
-    req.query.secret === secret
-  );
+  return hasCronBearer(req) || hasCronQuerySecret(req);
 }
 
 /**
@@ -102,20 +102,6 @@ function shownOrder(locator: OrderLocator | null): string {
   return "";
 }
 
-/** Escape dynamic values before interpolating them into the HTML confirmation. */
-function escapeHtml(value: string): string {
-  return value
-    .replace(/&/g, "&amp;")
-    .replace(/</g, "&lt;")
-    .replace(/>/g, "&gt;")
-    .replace(/"/g, "&quot;");
-}
-
-/** A minimal self-contained HTML confirmation page for the on-demand link tab. */
-function htmlPage(title: string, message: string): string {
-  return `<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>${title}</title><style>body{margin:0;min-height:100vh;display:flex;align-items:center;justify-content:center;font-family:ui-serif,Georgia,serif;background:#faf8f5;color:#2b2b2b}main{max-width:26rem;padding:2.5rem;text-align:center}h1{font-size:1.5rem;font-weight:500;margin:0 0 .75rem}p{color:#6b6b6b;line-height:1.5;margin:0}</style></head><body><main><h1>${title}</h1><p>${message}</p></main></body></html>`;
-}
-
 /** Notion automation webhook (POST, JSON). */
 export async function notionStageChangeHandler(
   req: Request,
@@ -168,7 +154,7 @@ export async function notionStageChangeButtonHandler(
       .send(
         htmlPage(
           "Missing order",
-          "Add ?order=&lt;order number&gt; to this link to send its status update.",
+          "Add ?order=<order number> to this link to send its status update.",
         ),
       );
     return;
@@ -182,10 +168,10 @@ export async function notionStageChangeButtonHandler(
     logger.info(result, "Order status-change link processed");
     const message =
       result.status === "sent"
-        ? `A status update for order ${escapeHtml(result.orderNumber)} (now at ${escapeHtml(result.currentStage ?? "")}) is on its way. You can close this tab.`
+        ? `A status update for order ${result.orderNumber} (now at ${result.currentStage ?? ""}) is on its way. You can close this tab.`
         : result.status === "not_found"
-          ? `No order found for "${escapeHtml(shownOrder(locator))}". You can close this tab.`
-          : `Nothing sent for order ${escapeHtml(result.orderNumber)} — ${escapeHtml(result.reason ?? "skipped")}. You can close this tab.`;
+          ? `No order found for "${shownOrder(locator)}". You can close this tab.`
+          : `Nothing sent for order ${result.orderNumber} — ${result.reason ?? "skipped"}. You can close this tab.`;
     res.status(200).type("html").send(htmlPage("Order update", message));
   } catch (err) {
     logger.error({ err, locator }, "Order status-change link failed");

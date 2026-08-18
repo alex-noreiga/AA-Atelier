@@ -1,19 +1,20 @@
-// Stateless, signed tokens for the passwordless account portal.
+// Stateless, signed tokens for the "manage your appointment" links.
 //
-// There is no user table (identity IS the customer's email — see CLAUDE.md), and
-// the app runs on serverless with no session store, so both the magic-link token
-// and the session token are self-contained HMAC-signed blobs rather than
-// server-side sessions. A token is `base64url(payload) . base64url(HMAC-SHA256)`,
-// where the payload is `{ email, purpose, exp }`. Verification recomputes the MAC
-// (timing-safe) and checks the purpose + expiry — nothing is persisted.
+// Customer sign-in now runs on Supabase Auth (see `middlewares/auth.ts`), so the
+// former magic-link and session tokens are gone. What remains is the appointment
+// manage-link: a self-contained HMAC-signed blob that lets a customer
+// reschedule/cancel a booking straight from their confirmation email, with no
+// sign-in. A token is `base64url(payload) . base64url(HMAC-SHA256)`, where the
+// payload is `{ email, purpose, exp }` (+ the calendar event id + staff).
+// Verification recomputes the MAC (timing-safe) and checks the purpose + expiry —
+// nothing is persisted.
 //
 // The signing secret is `SESSION_SECRET`, read at call time (like the Notion/
 // Resend clients) so the module imports without it and tests can set it. When it
-// is unset the portal is inert: signing throws and verification returns null.
+// is unset the manage links are omitted and the confirmation email falls back to
+// "reply to us".
 //
-// Token purposes, with very different lifetimes:
-//   - "magic"       — emailed sign-in link, short-lived (minutes).
-//   - "session"     — the cookie set after a magic link is verified, long-lived.
+// Token purposes:
 //   - "appointment" — the link in an appointment confirmation email that lets the
 //                     customer reschedule/cancel without signing in. Carries the
 //                     calendar event id + staff alongside the email so possession
@@ -23,13 +24,8 @@
 
 import { createHmac, timingSafeEqual } from "node:crypto";
 
-export type TokenPurpose = "magic" | "session" | "appointment";
+export type TokenPurpose = "appointment";
 
-/** Magic-link lifetime: long enough to open the email, short enough to limit a
- * leaked-link window. */
-export const MAGIC_LINK_TTL_SECONDS = 15 * 60;
-/** Session lifetime: 30 days, matching the cookie `maxAge`. */
-export const SESSION_TTL_SECONDS = 30 * 24 * 60 * 60;
 /** Appointment manage-link lifetime: 60 days, comfortably covering the max
  * booking-advance window (`APPOINTMENT_MAX_ADVANCE_DAYS`, default 45) plus a
  * buffer. The calendar event itself gates real validity — a cancelled/past event
@@ -37,7 +33,7 @@ export const SESSION_TTL_SECONDS = 30 * 24 * 60 * 60;
 export const APPOINTMENT_MANAGE_TTL_SECONDS = 60 * 24 * 60 * 60;
 
 /** Extra, purpose-specific claims signed alongside the email. Only appointment
- * links use these today (the account tokens carry email + purpose alone). */
+ * manage-links use these today. */
 export interface TokenClaims {
   /** The Google Calendar event id the appointment link acts on. */
   eventId?: string;
@@ -57,8 +53,9 @@ function secret(): string {
   return process.env.SESSION_SECRET ?? "";
 }
 
-/** Whether the portal's signing secret is configured. When false the sign-in
- * flow is disabled (the route reports it) and verification always fails. */
+/** Whether the appointment manage-link signing secret (`SESSION_SECRET`) is
+ * configured. When false, manage links are omitted and verification always
+ * fails. */
 export function authConfigured(): boolean {
   return secret().length > 0;
 }
@@ -101,8 +98,8 @@ export function signToken(
  * signature is valid, the purpose matches, and it hasn't expired — otherwise
  * null. Never throws: any malformed input, bad signature, wrong purpose, or
  * expiry yields null so callers treat a verification failure uniformly. The
- * account routes read only `.email`; the appointment routes also read the
- * `eventId` / `staff` claims (and validate they're present).
+ * appointment routes read the `eventId` / `staff` claims (and validate they're
+ * present).
  */
 export function verifyToken(
   token: string | undefined | null,

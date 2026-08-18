@@ -3,6 +3,7 @@ import { Link } from "wouter";
 import { ArrowRight, ShoppingBag } from "lucide-react";
 import type { ProductVariant } from "@workspace/api-client-react";
 import { useCart, type CartItem } from "@/lib/cart";
+import { useAnalytics, AnalyticsEvent } from "@/lib/analytics";
 import { useToast } from "@/hooks/use-toast";
 import { formatPrice } from "@/lib/format";
 import { cn } from "@/lib/utils";
@@ -44,6 +45,7 @@ export function AddToCartButton({
   addOns?: ProductVariant[];
 }) {
   const { addItem } = useCart();
+  const analytics = useAnalytics();
   const { toast } = useToast();
   // Ids of the add-ons the customer has ticked. Empty (all off) by default.
   const [checkedAddOns, setCheckedAddOns] = useState<Set<string>>(new Set());
@@ -97,6 +99,14 @@ export function AddToCartButton({
       size ? `${variant.name} — ${size}` : variant.name,
       ...addedAddOns.map((a) => a.name),
     ];
+    analytics(AnalyticsEvent.AddToCart, {
+      variantId: variant.id,
+      name: variant.name,
+      price: variant.price,
+      quantity: 1,
+      addOns: addedAddOns.length,
+      ...(size ? { size } : {}),
+    });
     toast({
       title: "Added to cart",
       description: names.join(" + "),

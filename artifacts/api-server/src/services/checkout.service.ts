@@ -15,7 +15,17 @@ import {
   findOrderBySessionId,
 } from "../lib/notion/shop-orders.repository.js";
 import { upsertClientByEmail } from "../lib/notion/clients.repository.js";
+import { postgresConfigured } from "../lib/db/client.js";
+import {
+  claimPayment,
+  confirmPayment,
+  releasePayment,
+  type ClaimResult,
+} from "../lib/db/processed-payments.repository.js";
+import { upsertClientIndex } from "../lib/db/clients.repository.js";
+import { writeOrderIndex } from "../lib/db/order-index.repository.js";
 import { runPaidOrderRewards } from "./rewards.service.js";
+import { relationLinksEnabled } from "./request-links.js";
 import {
   generateShopOrderNumber,
   formatShippingAddress,
@@ -28,8 +38,9 @@ import {
 import { sendEmailBestEffort } from "../lib/resend/send.js";
 import { fromAddress, atelierInbox } from "../lib/resend/config.js";
 import { getStripeClient } from "../lib/stripe/client.js";
+import { bnplPaymentMethodTypes } from "../lib/stripe/payment-methods.js";
 import { siteBaseUrl } from "../lib/site.js";
-import { BadRequestError } from "../lib/errors.js";
+import { BadRequestError, NotFoundError } from "../lib/errors.js";
 import { logger } from "../lib/logger.js";
 
 const CURRENCY = "usd";
@@ -171,7 +182,12 @@ function toLineItem(
       unit_amount: Math.round(variant.price * 100),
       // Listed prices are pre-tax; Stripe Tax adds tax on top ("exclusive").
       tax_behavior: "exclusive",
-      product_data: { name },
+      // Stamp the inventory row's Notion page id (`variantId === page id`, see
+      // products.schema.ts) onto the ad-hoc product's metadata. Stripe drops the
+      // id from the returned line item otherwise, so this is how the webhook
+      // recovers which inventory row each purchased line is, to relate the shop
+      // order back to inventory (roadmap: "relate shop orders to inventory rows").
+      product_data: { name, metadata: { variantId: item.variantId } },
     },
   };
 }
@@ -191,13 +207,20 @@ export async function createCheckoutSession(
   const base = siteBaseUrl();
   const orderNumber = generateShopOrderNumber();
   const shippingOptions = await resolveShippingOptions(stripe);
+  // Optional buy-now-pay-later methods (Klarna / Affirm / Afterpay), when the
+  // atelier configures STRIPE_BNPL_METHODS. Stripe collects the shipping address
+  // below, which BNPL needs. Unset ⇒ undefined ⇒ dynamic payment methods (today's
+  // behavior). See lib/stripe/payment-methods.ts.
+  const paymentMethodTypes = bnplPaymentMethodTypes();
   const session = await stripe.checkout.sessions.create({
     mode: "payment",
     line_items: lineItems,
+    ...(paymentMethodTypes ? { payment_method_types: paymentMethodTypes } : {}),
     // Stripe Tax computes sales tax from the collected address (configure the
     // origin + default tax category in the Stripe Dashboard). Deposits stay
     // untaxed — tax is assessed on the final balance, not the deposit — so this
-    // is deliberately only on the shop cart, not deposit.service.
+    // is deliberately only on the shop cart, not the custom-order deposit
+    // checkout (invoice.service).
     automatic_tax: { enabled: true },
     // Let the atelier run sales/comps: Stripe renders a promo-code box on the
     // hosted page and applies codes created in the Stripe Dashboard. No code or
@@ -235,7 +258,7 @@ interface ReceiptLine {
 export interface CheckoutSessionView {
   status: string;
   orderNumber?: string;
-  /** "shop" or "deposit" (from the session's metadata.kind). */
+  /** "shop" or "custom_payment" (from the session's metadata.kind). */
   kind?: string;
   email?: string;
   currency?: string;
@@ -251,14 +274,39 @@ function toDollars(amountInCents: number | null | undefined): number {
   return typeof amountInCents === "number" ? amountInCents / 100 : 0;
 }
 
+/**
+ * True for a Stripe error meaning "that id doesn't name a session" — a bad,
+ * unknown, or wrong-mode session id (Stripe's `resource_missing` / 404). A
+ * session id reaches us straight from the `?session_id=` URL, so a garbage or
+ * hand-entered value (e.g. a deposit the atelier marked paid in person with a
+ * non-Stripe marker in the invoice's Session Id field) must degrade to a clean
+ * 404, not an unhandled 500 that fires a production error alert.
+ */
+function isMissingSessionError(err: unknown): boolean {
+  if (typeof err !== "object" || err === null) return false;
+  const e = err as { type?: unknown; code?: unknown; statusCode?: unknown };
+  return (
+    e.type === "StripeInvalidRequestError" &&
+    (e.code === "resource_missing" || e.statusCode === 404)
+  );
+}
+
 export async function getCheckoutSession(
   sessionId: string,
   stripe: Stripe = getStripeClient(),
 ): Promise<CheckoutSessionView> {
   // Expand line items so the success page can render an itemized receipt.
-  const session = await stripe.checkout.sessions.retrieve(sessionId, {
-    expand: ["line_items"],
-  });
+  let session: Stripe.Checkout.Session;
+  try {
+    session = await stripe.checkout.sessions.retrieve(sessionId, {
+      expand: ["line_items"],
+    });
+  } catch (err) {
+    if (isMissingSessionError(err)) {
+      throw new NotFoundError("No receipt found for that payment.");
+    }
+    throw err;
+  }
   const email = session.customer_details?.email ?? undefined;
   const orderNumber = session.metadata?.orderNumber ?? undefined;
   const kind = session.metadata?.kind ?? undefined;
@@ -329,25 +377,111 @@ async function sendShopOrderConfirmation(
 
 /**
  * Record a completed checkout as a Notion "Shop Orders" page. Called from the
- * Stripe webhook. Idempotent (dedupes on the session id) so Stripe's at-least-
- * once delivery / retries can't create duplicate orders. Only paid sessions are
- * recorded.
+ * Stripe webhook. Idempotent so Stripe's at-least-once delivery / retries can't
+ * create duplicate orders. Only paid sessions are recorded.
+ *
+ * When Postgres is configured, dedup is an atomic `processed_payments` claim
+ * (claim → write Notion → confirm; release + rethrow on failure so a redelivery
+ * reprocesses). When it isn't, it falls back to the original Notion read-before-
+ * write dedup. Either way the Notion `findOrderBySessionId` guard is retained as
+ * a reclaim-only backstop, because `createShopOrder` is not itself idempotent.
  */
 export async function recordPaidOrder(
   session: Stripe.Checkout.Session,
   stripe: Stripe = getStripeClient(),
 ): Promise<void> {
-  if (await findOrderBySessionId(session.id)) {
+  let claim: ClaimResult | null = null;
+  if (postgresConfigured()) {
+    try {
+      claim = await claimPayment(session.id, "shop");
+    } catch (err) {
+      // A DB hiccup must never block recording a paid order — degrade to the
+      // Notion read-before-write dedup below rather than 500-looping.
+      logger.warn(
+        { err },
+        "processed_payments claim failed; falling back to Notion dedup",
+      );
+    }
+  }
+
+  if (claim === null) {
+    // Postgres unconfigured or unreachable: original Notion dedup (skips the
+    // Stripe retrieve on an already-recorded redelivery).
+    if (await findOrderBySessionId(session.id)) return;
+    await processPaidShopOrder(session, stripe);
     return;
   }
 
+  if (claim === "done") return; // already fully recorded — no-op
+  if (claim === "in_progress") {
+    // A concurrent (or uncommitted-but-recent) peer holds the claim. Fail so the
+    // webhook 500s and Stripe redelivers later, rather than racing a duplicate.
+    throw new Error(
+      `Shop order for session ${session.id} is already being processed; retry`,
+    );
+  }
+
+  try {
+    const recorded = await processPaidShopOrder(session, stripe);
+    if (recorded) await confirmPayment(session.id);
+    // A non-paid session isn't recorded — drop the claim so a later paid event
+    // for the same session (unusual) could still be processed.
+    else await releasePayment(session.id);
+  } catch (err) {
+    // Delete-on-failure: the next Stripe retry re-claims and reprocesses cleanly.
+    await releasePayment(session.id).catch(() => {});
+    throw err;
+  }
+}
+
+/**
+ * Recover the deduped inventory (Notion page) ids purchased on a session, from
+ * the `variantId` metadata stamped on each line's product at checkout (see
+ * `toLineItem`). Lines with no such metadata (e.g. a legacy session created
+ * before this shipped) are skipped, so an empty array means "nothing to relate".
+ */
+function resolvePurchasedInventoryIds(
+  session: Stripe.Checkout.Session,
+): string[] {
+  const ids = new Set<string>();
+  for (const line of session.line_items?.data ?? []) {
+    const product = line.price?.product;
+    // `product` is only an object when expanded (and not deleted); its metadata
+    // carries the inventory page id. A string id or a deleted product yields none.
+    if (product && typeof product === "object" && "metadata" in product) {
+      const variantId = product.metadata?.variantId;
+      if (variantId) ids.add(variantId);
+    }
+  }
+  return [...ids];
+}
+
+/**
+ * The actual work of recording a paid shop order: retrieve the full session,
+ * skip if unpaid, then (guarded against a duplicate Notion page) create the order
+ * and fire the best-effort confirmation email + rewards. Returns true when the
+ * order was recorded (or already existed), false when the session wasn't paid.
+ */
+async function processPaidShopOrder(
+  session: Stripe.Checkout.Session,
+  stripe: Stripe,
+): Promise<boolean> {
   // The webhook's session object omits line items; retrieve them for the record.
+  // Expand each line's product so we can read back the `variantId` metadata we
+  // stamped at checkout (toLineItem) — Stripe drops it from the line item itself.
   const full = await stripe.checkout.sessions.retrieve(session.id, {
-    expand: ["line_items"],
+    expand: ["line_items.data.price.product"],
   });
 
   if (full.payment_status !== "paid") {
-    return;
+    return false;
+  }
+
+  // Reclaim-only duplicate guard: on the rare reclaim path (a prior attempt
+  // created the Notion order but crashed before confirming the claim) the order
+  // already exists — treat it as recorded and don't create a second page.
+  if (await findOrderBySessionId(session.id)) {
+    return true;
   }
 
   // Best-effort: mirror the buyer into the Client CRM (dedupe by email) and link
@@ -372,7 +506,48 @@ export async function recordPaidOrder(
     );
   }
 
-  await createShopOrder(full, undefined, clientPageId);
+  // Relate the order to the inventory rows purchased (roadmap: "relate shop
+  // orders to inventory rows"), gated on NOTION_RELATION_LINKS + the relation
+  // property existing. Recovered from the per-line product metadata; deduped so
+  // an item bought twice links once. Empty ⇒ omitted (no relation written).
+  const itemPageIds = relationLinksEnabled()
+    ? resolvePurchasedInventoryIds(full)
+    : undefined;
+
+  const notionPageId = await createShopOrder(
+    full,
+    undefined,
+    clientPageId,
+    itemPageIds,
+  );
+
+  // Best-effort: index the shop order in Postgres for the account portal's
+  // reliable order discovery. Notion is the record; a PG hiccup must never fail
+  // the webhook (a throw would 500 it and risk a Stripe-retry duplicate). No-op
+  // when Postgres isn't configured.
+  const indexEmail = full.customer_details?.email;
+  const indexOrderNumber = full.metadata?.orderNumber;
+  if (postgresConfigured() && indexEmail && indexOrderNumber) {
+    try {
+      const dbClientId = await upsertClientIndex(
+        indexEmail,
+        clientPageId ?? null,
+      );
+      await writeOrderIndex({
+        orderNumber: indexOrderNumber,
+        kind: "shop",
+        email: indexEmail,
+        notionPageId,
+        clientId: dbClientId,
+        stripeSessionId: full.id,
+      });
+    } catch (err) {
+      logger.warn(
+        { err },
+        "Failed to write the Postgres order index; the shop order is recorded in Notion",
+      );
+    }
+  }
 
   // Confirmation email after the source-of-truth Notion write, and below the
   // idempotency dedupe above so a retried-but-already-recorded event won't
@@ -395,4 +570,6 @@ export async function recordPaidOrder(
       );
     }
   }
+
+  return true;
 }

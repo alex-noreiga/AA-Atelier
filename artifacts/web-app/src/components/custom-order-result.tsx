@@ -6,6 +6,7 @@ import { MeasurementChangeDialog } from "@/components/measurement-change-dialog"
 import { CancellationRequestDialog } from "@/components/cancellation-request-dialog";
 import { ReviewDialog } from "@/components/review-dialog";
 import { CtaLink } from "@/components/cta";
+import { StatusTimeline } from "@/components/status-timeline";
 import { getStageDescription } from "@/lib/stage-descriptions";
 import { formatPrice, formatDate } from "@/lib/format";
 import { useToast } from "@/hooks/use-toast";
@@ -66,7 +67,11 @@ function DepositCard({
           <Check className="w-4 h-4" />
           {deposit.label} paid
         </div>
-        {deposit.sessionId && (
+        {/* Only a Stripe-processed payment has an online receipt. A deposit the
+            atelier marked paid in person carries a non-Stripe marker in the
+            invoice's Session Id field (e.g. "IN_PERSON"), which would 404 the
+            receipt lookup — so gate on a real Stripe session id (`cs_…`). */}
+        {deposit.sessionId?.startsWith("cs_") && (
           <CtaLink
             to={`/shop/success?session_id=${encodeURIComponent(deposit.sessionId)}`}
             variant="outline"
@@ -251,81 +256,35 @@ export function CustomOrderResult({
         </div>
       )}
 
-      <div className="relative pl-6 md:pl-8 space-y-12">
-        {/* Vertical Thread Line */}
-        <div className="absolute left-[11px] md:left-[15px] top-2 bottom-2 w-[1px] bg-border z-0"></div>
-
-        {orderStatus.stages.map((stage, index) => {
-          const currentIndex = orderStatus.stages.indexOf(
-            orderStatus.currentStage,
-          );
-          const isCompleted = index < currentIndex;
-          const isActive = index === currentIndex;
-          const isFuture = index > currentIndex;
+      <StatusTimeline
+        items={orderStatus.stages}
+        currentIndex={orderStatus.stages.indexOf(orderStatus.currentStage)}
+        testIdPrefix="row-stage"
+        renderExtra={(stage, index, { isActive }) => {
           // Per-stage target date from the Production Schedule, when the
           // atelier has generated milestones (matched by stage name).
           const targetDate = orderStatus.milestones?.find(
             (m) => m.stage === stage,
           )?.targetDate;
-
           return (
-            <div
-              key={stage}
-              className="relative z-10 flex items-start group"
-              data-testid={`row-stage-${index}`}
-            >
-              {/* Stage Indicator Node */}
-              <div className="absolute -left-6 md:-left-8 flex items-center justify-center w-6 h-6 bg-background">
-                <div
-                  className={`
-                  w-2.5 h-2.5 rounded-full transition-all duration-700
-                  ${isActive ? "bg-primary shadow-[0_0_12px_var(--color-primary)] scale-125" : ""}
-                  ${isCompleted ? "bg-primary/50" : ""}
-                  ${isFuture ? "bg-border" : ""}
-                `}
-                />
-              </div>
-
-              {/* Stage Content */}
-              <div
-                className={`
-                flex-1 pl-6 transition-all duration-500
-                ${isActive ? "opacity-100 translate-x-2" : ""}
-                ${isCompleted ? "opacity-60" : ""}
-                ${isFuture ? "opacity-30" : ""}
-              `}
-              >
-                <h3
-                  className={`
-                  font-serif text-2xl mb-1
-                  ${isActive ? "text-primary" : "text-foreground"}
-                `}
+            <>
+              {targetDate && (
+                <p
+                  className="text-muted-foreground/70 font-light text-xs uppercase tracking-widest mb-1"
+                  data-testid={`stage-target-${index}`}
                 >
-                  {stage}
-                </h3>
-                {targetDate && (
-                  <p
-                    className="text-muted-foreground/70 font-light text-xs uppercase tracking-widest mb-1"
-                    data-testid={`stage-target-${index}`}
-                  >
-                    Target · {formatDate(targetDate)}
-                  </p>
-                )}
-                {isActive && (
-                  <p className="text-muted-foreground font-light text-sm animate-in fade-in slide-in-from-left-2 duration-700 delay-300 fill-mode-both">
-                    {getStageDescription(stage)}
-                  </p>
-                )}
-                {isCompleted && (
-                  <p className="text-muted-foreground/50 font-light text-xs uppercase tracking-widest">
-                    Completed
-                  </p>
-                )}
-              </div>
-            </div>
+                  Target · {formatDate(targetDate)}
+                </p>
+              )}
+              {isActive && (
+                <p className="text-muted-foreground font-light text-sm animate-in fade-in slide-in-from-left-2 duration-700 delay-300 fill-mode-both">
+                  {getStageDescription(stage)}
+                </p>
+              )}
+            </>
           );
-        })}
-      </div>
+        }}
+      />
 
       <div className="mt-16 flex flex-col items-center gap-6">
         {/* A delivered order shows the review invite above; here it needs no

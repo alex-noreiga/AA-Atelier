@@ -41,6 +41,32 @@ describe("GET /api/shop-orders/:orderNumber", () => {
     });
   });
 
+  it("passes carrier tracking through to the response when present", async () => {
+    mockFind.mockResolvedValue({
+      orderNumber: "SHP-1",
+      status: "Shipped",
+      tracking: {
+        number: "9400111899",
+        carrier: "USPS",
+        url: "https://tools.usps.com/go/TrackConfirmAction?tLabels=9400111899",
+      },
+    });
+    mockStatuses.mockResolvedValue([
+      "Payment Confirmed",
+      "Processing",
+      "Shipped",
+    ]);
+
+    const res = await request(app).get("/api/shop-orders/SHP-1");
+
+    expect(res.status).toBe(200);
+    expect(res.body.tracking).toEqual({
+      number: "9400111899",
+      carrier: "USPS",
+      url: "https://tools.usps.com/go/TrackConfirmAction?tLabels=9400111899",
+    });
+  });
+
   it("appends an off-list current status to the timeline", async () => {
     mockFind.mockResolvedValue({
       orderNumber: "SHP-ABC-1234",

@@ -33,7 +33,6 @@ import type {
   GetAppointmentAvailabilityParams,
   GetAppointmentParams,
   HealthStatus,
-  MagicLinkRequest,
   MessageResponse,
   NewAppointmentRequest,
   NewAppointmentResponse,
@@ -1819,78 +1818,6 @@ export const useCancelAppointment = <TError = ErrorType<ErrorEnvelope>,
       return useMutation(getCancelAppointmentMutationOptions(options));
     }
 
-export const getRequestMagicLinkUrl = () => {
-
-
-
-
-  return `/api/account/login`
-}
-
-/**
- * Emails the customer a one-time magic link that signs them into the account portal. Always responds 200 regardless of whether any orders exist for the address — identity is the email itself, so there is no account to enumerate. The email is sent best-effort; a mail outage never fails the request.
- * @summary Request a passwordless sign-in link
- */
-export const requestMagicLink = async (magicLinkRequest: MagicLinkRequest, options?: Parameters<typeof customFetch>[1]): Promise<MessageResponse> => {
-
-  return customFetch<MessageResponse>(getRequestMagicLinkUrl(),
-  {
-    ...options,
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json', ...options?.headers },
-    body: JSON.stringify(magicLinkRequest)
-  }
-);}
-
-
-
-
-
-export const getRequestMagicLinkMutationOptions = <TError = ErrorType<ErrorEnvelope>,
-    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof requestMagicLink>>, TError,{data: BodyType<MagicLinkRequest>}, TContext>, request?: SecondParameter<typeof customFetch>}
-): UseMutationOptions<Awaited<ReturnType<typeof requestMagicLink>>, TError,{data: BodyType<MagicLinkRequest>}, TContext> => {
-
-const mutationKey = ['requestMagicLink'];
-const {mutation: mutationOptions, request: requestOptions} = options ?
-      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
-      options
-      : {...options, mutation: {...options.mutation, mutationKey}}
-      : {mutation: { mutationKey, }, request: undefined};
-
-
-
-
-      const mutationFn: MutationFunction<Awaited<ReturnType<typeof requestMagicLink>>, {data: BodyType<MagicLinkRequest>}> = (props) => {
-          const {data} = props ?? {};
-
-          return  requestMagicLink(data,requestOptions)
-        }
-
-
-
-
-
-
-  return  { mutationFn, ...mutationOptions }}
-
-    export type RequestMagicLinkMutationResult = NonNullable<Awaited<ReturnType<typeof requestMagicLink>>>
-    export type RequestMagicLinkMutationBody = BodyType<MagicLinkRequest>
-    export type RequestMagicLinkMutationError = ErrorType<ErrorEnvelope>
-
-    /**
- * @summary Request a passwordless sign-in link
- */
-export const useRequestMagicLink = <TError = ErrorType<ErrorEnvelope>,
-    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof requestMagicLink>>, TError,{data: BodyType<MagicLinkRequest>}, TContext>, request?: SecondParameter<typeof customFetch>}
- ): UseMutationResult<
-        Awaited<ReturnType<typeof requestMagicLink>>,
-        TError,
-        {data: BodyType<MagicLinkRequest>},
-        TContext
-      > => {
-      return useMutation(getRequestMagicLinkMutationOptions(options));
-    }
-
 export const getGetAccountOverviewUrl = () => {
 
 
@@ -1900,7 +1827,7 @@ export const getGetAccountOverviewUrl = () => {
 }
 
 /**
- * Returns everything tied to the signed-in customer's email — their custom orders and their ready-to-wear shop orders — for the account dashboard. Requires a valid session cookie (set by the magic-link verify step); responds 401 when the caller isn't signed in.
+ * Returns everything tied to the signed-in customer's email — their custom orders, ready-to-wear shop orders, and upcoming appointments — for the account dashboard. Requires a valid Supabase access token supplied as a Bearer credential; responds 401 when the caller isn't signed in.
  * @summary The signed-in customer's orders and shop orders
  */
 export const getAccountOverview = async ( options?: Parameters<typeof customFetch>[1]): Promise<AccountOverview> => {
@@ -1968,76 +1895,4 @@ export function useGetAccountOverview<TData = Awaited<ReturnType<typeof getAccou
 
 
 
-
-export const getLogoutAccountUrl = () => {
-
-
-
-
-  return `/api/account/logout`
-}
-
-/**
- * Clears the session cookie. Idempotent — safe to call when already signed out.
- * @summary Sign out of the account portal
- */
-export const logoutAccount = async ( options?: Parameters<typeof customFetch>[1]): Promise<MessageResponse> => {
-
-  return customFetch<MessageResponse>(getLogoutAccountUrl(),
-  {
-    ...options,
-    method: 'POST'
-
-
-  }
-);}
-
-
-
-
-
-export const getLogoutAccountMutationOptions = <TError = ErrorType<unknown>,
-    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof logoutAccount>>, TError,void, TContext>, request?: SecondParameter<typeof customFetch>}
-): UseMutationOptions<Awaited<ReturnType<typeof logoutAccount>>, TError,void, TContext> => {
-
-const mutationKey = ['logoutAccount'];
-const {mutation: mutationOptions, request: requestOptions} = options ?
-      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
-      options
-      : {...options, mutation: {...options.mutation, mutationKey}}
-      : {mutation: { mutationKey, }, request: undefined};
-
-
-
-
-      const mutationFn: MutationFunction<Awaited<ReturnType<typeof logoutAccount>>, void> = () => {
-
-
-          return  logoutAccount(requestOptions)
-        }
-
-
-
-
-
-
-  return  { mutationFn, ...mutationOptions }}
-
-    export type LogoutAccountMutationResult = NonNullable<Awaited<ReturnType<typeof logoutAccount>>>
-
-    export type LogoutAccountMutationError = ErrorType<unknown>
-
-    /**
- * @summary Sign out of the account portal
- */
-export const useLogoutAccount = <TError = ErrorType<unknown>,
-    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof logoutAccount>>, TError,void, TContext>, request?: SecondParameter<typeof customFetch>}
- ): UseMutationResult<
-        Awaited<ReturnType<typeof logoutAccount>>,
-        TError,
-        void,
-        TContext
-      > => {
-      return useMutation(getLogoutAccountMutationOptions(options));
-    }
 

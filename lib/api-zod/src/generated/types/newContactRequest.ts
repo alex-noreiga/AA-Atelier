@@ -13,4 +13,11 @@ export interface NewContactRequest {
   phone?: string;
   /** @minLength 1 */
   message: string;
+  /** Anti-spam honeypot. A hidden field that real visitors never see or fill; a non-empty value marks the submission as spam and it is silently dropped. Always send empty (or omit). */
+  website?: string;
+  /**
+     * Anti-spam timing signal: milliseconds the visitor spent on the form before submitting. Implausibly fast submissions are dropped. Omit when the client can't measure it (treated as human).
+     * @minimum 0
+     */
+  elapsedMs?: number;
 }

@@ -46,7 +46,7 @@ export function makeFakeResendClient(
 }
 
 /** A JSON `Response` with the given status (defaults to 200/ok). */
-export function jsonResponse(body: unknown, status = 200): Response {
+function jsonResponse(body: unknown, status = 200): Response {
   return new Response(JSON.stringify(body), {
     status,
     headers: { "Content-Type": "application/json" },

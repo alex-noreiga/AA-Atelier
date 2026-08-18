@@ -10,7 +10,11 @@
 // (~1h). Because callers fetch through this repository fresh (<= TTL) per
 // request, the URLs are valid when delivered to the browser.
 
-import { getInventoryNotionClient, type NotionClient } from "./client.js";
+import {
+  getInventoryNotionClient,
+  assertDatabaseConfigured,
+  type NotionClient,
+} from "./client.js";
 import {
   PRODUCT_PUBLISH_PROPERTY,
   extractIsPublished,
@@ -24,11 +28,10 @@ let cachedVariants: { variants: VariantRecord[]; fetchedAt: number } | null =
   null;
 
 function assertConfigured(client: NotionClient): void {
-  if (!client.databaseId) {
-    throw new Error(
-      "NOTION_INVENTORY_DATABASE_ID is not configured for the inventory database",
-    );
-  }
+  assertDatabaseConfigured(
+    client,
+    "NOTION_INVENTORY_DATABASE_ID is not configured for the inventory database",
+  );
 }
 
 async function queryAllPublishedPages(

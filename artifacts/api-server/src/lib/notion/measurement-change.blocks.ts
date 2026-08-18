@@ -22,6 +22,8 @@ import {
   CONTACT_SUBJECT_PROPERTY,
   CONTACT_TYPE_PROPERTY,
   contactClientRelation,
+  contactOrderRelation,
+  emailVerifiedLine,
 } from "./contact.blocks.js";
 import { normalizeEmail } from "../email.js";
 
@@ -39,6 +41,9 @@ export interface MeasurementChangeRow {
   orderNumber: string;
   emailVerified: boolean;
   request: CreateMeasurementChangeInput;
+  /** The custom order's Notion page id, to link the request via the `Order`
+   * relation. Omitted when the `NOTION_RELATION_LINKS` gate is off. */
+  orderPageId?: string;
 }
 
 function buildMessageBody(row: MeasurementChangeRow): string {
@@ -63,7 +68,7 @@ function buildMessageBody(row: MeasurementChangeRow): string {
     `Note: ${request.note?.trim() ? request.note.trim() : "—"}`,
     // Legacy orders have no stored email to check against; the atelier should
     // confirm the requester before applying an unverified change.
-    `Email verified: ${emailVerified ? "yes" : "no (confirm requester)"} (${request.email})`,
+    emailVerifiedLine(emailVerified, request.email),
   ];
   return lines.join("\n");
 }
@@ -94,5 +99,6 @@ export function buildMeasurementChangeProperties(
       rich_text: [{ text: { content: buildMessageBody(row) } }],
     },
     ...contactClientRelation(clientPageId),
+    ...contactOrderRelation("custom", row.orderPageId),
   };
 }

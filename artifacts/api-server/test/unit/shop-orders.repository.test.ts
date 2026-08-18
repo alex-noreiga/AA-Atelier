@@ -4,6 +4,7 @@ import {
   findOrderBySessionId,
   createShopOrder,
   findShopOrderByNumber,
+  findShopOrdersByNumbers,
   findShopOrderForCancellation,
   setShopOrderCancelled,
   findShopOrderVerification,
@@ -15,6 +16,9 @@ import {
   SHOP_ORDER_TOTAL_PROPERTY,
   SHOP_ORDER_EMAIL_PROPERTY,
   SHOP_ORDER_CANCELLED_PROPERTY,
+  SHOP_ORDER_TRACKING_NUMBER_PROPERTY,
+  SHOP_ORDER_TRACKING_CARRIER_PROPERTY,
+  SHOP_ORDER_TRACKING_URL_PROPERTY,
 } from "../../src/lib/notion/shop-orders.blocks.js";
 import {
   makeFakeClient,
@@ -30,6 +34,9 @@ function shopOrderResultPage(opts: {
   email?: string;
   sessionId?: string;
   cancelled?: boolean;
+  trackingNumber?: string;
+  trackingCarrier?: string;
+  trackingUrl?: string;
 }) {
   return {
     id: "so-page",
@@ -57,6 +64,22 @@ function shopOrderResultPage(opts: {
       [SHOP_ORDER_CANCELLED_PROPERTY]: {
         type: "checkbox",
         checkbox: opts.cancelled ?? false,
+      },
+      [SHOP_ORDER_TRACKING_NUMBER_PROPERTY]: {
+        type: "rich_text",
+        rich_text: opts.trackingNumber
+          ? [{ plain_text: opts.trackingNumber }]
+          : [],
+      },
+      [SHOP_ORDER_TRACKING_CARRIER_PROPERTY]: {
+        type: "rich_text",
+        rich_text: opts.trackingCarrier
+          ? [{ plain_text: opts.trackingCarrier }]
+          : [],
+      },
+      [SHOP_ORDER_TRACKING_URL_PROPERTY]: {
+        type: "url",
+        url: opts.trackingUrl ?? null,
       },
     },
   };
@@ -224,6 +247,62 @@ describe("findShopOrderByNumber", () => {
     const order = await findShopOrderByNumber("SHP-1", client);
     expect(order?.cancelled).toBe(true);
   });
+
+  it("surfaces carrier tracking with the carrier and url when all are set", async () => {
+    const client = makeFakeClient(() =>
+      jsonResponse({
+        results: [
+          shopOrderResultPage({
+            orderNumber: "SHP-1",
+            status: "Shipped",
+            trackingNumber: "9400111899",
+            trackingCarrier: "USPS",
+            trackingUrl:
+              "https://tools.usps.com/go/TrackConfirmAction?tLabels=9400111899",
+          }),
+        ],
+      }),
+    );
+    const order = await findShopOrderByNumber("SHP-1", client);
+    expect(order?.tracking).toEqual({
+      number: "9400111899",
+      carrier: "USPS",
+      url: "https://tools.usps.com/go/TrackConfirmAction?tLabels=9400111899",
+    });
+  });
+
+  it("omits the carrier and url from tracking when only a number is set", async () => {
+    const client = makeFakeClient(() =>
+      jsonResponse({
+        results: [
+          shopOrderResultPage({
+            orderNumber: "SHP-1",
+            status: "Shipped",
+            trackingNumber: "9400111899",
+          }),
+        ],
+      }),
+    );
+    const order = await findShopOrderByNumber("SHP-1", client);
+    expect(order?.tracking).toEqual({ number: "9400111899" });
+  });
+
+  it("omits tracking entirely when no tracking number is set", async () => {
+    const client = makeFakeClient(() =>
+      jsonResponse({
+        results: [
+          // A carrier/url without a number is meaningless — the number gates it.
+          shopOrderResultPage({
+            orderNumber: "SHP-1",
+            status: "Processing",
+            trackingCarrier: "USPS",
+          }),
+        ],
+      }),
+    );
+    const order = await findShopOrderByNumber("SHP-1", client);
+    expect(order?.tracking).toBeUndefined();
+  });
 });
 
 describe("findShopOrderForCancellation", () => {
@@ -324,7 +403,7 @@ describe("findShopOrderVerification", () => {
       property: SHOP_ORDER_NUMBER_PROPERTY,
       rich_text: { equals: "shp-abc-1234" },
     });
-    expect(result).toEqual({ email: "grace@example.com" });
+    expect(result).toEqual({ pageId: "so-page", email: "grace@example.com" });
   });
 
   it("returns an empty email for a legacy order with none stored", async () => {
@@ -332,6 +411,7 @@ describe("findShopOrderVerification", () => {
       jsonResponse({ results: [pageWithEmail("SHP-OLD", null)] }),
     );
     expect(await findShopOrderVerification("SHP-OLD", client)).toEqual({
+      pageId: "so-page",
       email: "",
     });
   });
@@ -377,6 +457,49 @@ describe("fetchLiveShopOrderStatuses", () => {
       "Payment Confirmed",
       "Processing",
       "Shipped",
+    ]);
+  });
+});
+
+describe("findShopOrdersByNumbers", () => {
+  const isQ = (p: string) => p.endsWith("/query");
+
+  it("returns [] without querying for an empty list", async () => {
+    const client = makeFakeClient(() => {
+      throw new Error("should not fetch");
+    });
+    expect(await findShopOrdersByNumbers([], client)).toEqual([]);
+    expect(client.calls).toHaveLength(0);
+  });
+
+  it("fetches by an OR filter and preserves the input order", async () => {
+    const client = makeFakeClient((path) => {
+      if (isQ(path)) {
+        return jsonResponse({
+          results: [
+            shopOrderResultPage({
+              orderNumber: "SHP-1",
+              status: "Processing",
+              total: 20,
+            }),
+            shopOrderResultPage({
+              orderNumber: "SHP-2",
+              status: "Shipped",
+              total: 30,
+            }),
+          ],
+        });
+      }
+      throw new Error(`unexpected path ${path}`);
+    });
+
+    const result = await findShopOrdersByNumbers(["SHP-2", "SHP-1"], client);
+
+    expect(result.map((o) => o.orderNumber)).toEqual(["SHP-2", "SHP-1"]);
+    const body = JSON.parse(client.calls[0].init!.body as string);
+    expect(body.filter.or).toEqual([
+      { property: "Order Number", rich_text: { equals: "SHP-2" } },
+      { property: "Order Number", rich_text: { equals: "SHP-1" } },
     ]);
   });
 });

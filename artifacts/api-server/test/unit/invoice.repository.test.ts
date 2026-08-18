@@ -12,6 +12,8 @@ import {
   markInvoicePaid,
   createInvoiceLineItem,
   setInvoiceTitle,
+  findInvoicesNeedingPaymentReminder,
+  markPaymentStageReminded,
 } from "../../src/lib/notion/invoice.repository.js";
 
 const isQuery = (path: string) => path.endsWith("/query");
@@ -174,7 +176,6 @@ describe("createInvoiceLineItem", () => {
     await createInvoiceLineItem(
       {
         invoicePageId: "inv-1",
-        orderPageId: "ord-1",
         name: "Red chiffon",
         lineType: "Material",
         unitPrice: 30,
@@ -203,7 +204,6 @@ describe("createInvoiceLineItem", () => {
       createInvoiceLineItem(
         {
           invoicePageId: "inv-1",
-          orderPageId: "ord-1",
           name: "Labor",
           lineType: "Labor",
           unitPrice: 40,
@@ -233,5 +233,91 @@ describe("setInvoiceTitle", () => {
     await expect(setInvoiceTitle("inv-1", "ORD-1", client)).rejects.toThrow(
       /status 500: boom/,
     );
+  });
+});
+
+describe("findInvoicesNeedingPaymentReminder", () => {
+  it("queries with the cutoff and maps candidate invoices", async () => {
+    const client = makeFakeClient((path) => {
+      if (isQuery(path)) {
+        return jsonResponse({
+          results: [
+            invoicePage({
+              id: "inv-1",
+              orderPageId: "order-1",
+              secondDepositAmount: 80,
+              secondDepositPaid: false,
+              secondDepositDue: "2026-08-02",
+            }),
+          ],
+          has_more: false,
+          next_cursor: null,
+        });
+      }
+      throw new Error(`unexpected ${path}`);
+    });
+
+    const invoices = await findInvoicesNeedingPaymentReminder(
+      { onOrBefore: "2026-08-11" },
+      client,
+    );
+
+    expect(invoices).toHaveLength(1);
+    expect(invoices[0]).toMatchObject({
+      pageId: "inv-1",
+      orderPageId: "order-1",
+    });
+    // The cutoff flows into an on_or_before filter on each stage's due date.
+    const body = JSON.parse(client.calls[0].init?.body as string);
+    expect(JSON.stringify(body.filter)).toContain("2026-08-11");
+    expect(JSON.stringify(body.filter)).toContain("on_or_before");
+  });
+
+  it("degrades to [] (no throw) when the reminder setup properties are missing", async () => {
+    const client = makeFakeClient(() =>
+      errorResponse(
+        400,
+        "Could not find property with name or id: First Deposit Reminded",
+      ),
+    );
+
+    await expect(
+      findInvoicesNeedingPaymentReminder({ onOrBefore: "2026-08-11" }, client),
+    ).resolves.toEqual([]);
+  });
+
+  it("returns [] when the invoices database is unconfigured", async () => {
+    const client = makeFakeClient(() => {
+      throw new Error("should not fetch");
+    }, "");
+
+    await expect(
+      findInvoicesNeedingPaymentReminder({ onOrBefore: "2026-08-11" }, client),
+    ).resolves.toEqual([]);
+  });
+
+  it("throws on an unrelated query error", async () => {
+    const client = makeFakeClient(() => errorResponse(500, "boom"));
+    await expect(
+      findInvoicesNeedingPaymentReminder({ onOrBefore: "2026-08-11" }, client),
+    ).rejects.toThrow(/status 500: boom/);
+  });
+});
+
+describe("markPaymentStageReminded", () => {
+  it("patches only the stage's Reminded checkbox", async () => {
+    const client = makeFakeClient(() => jsonResponse({}));
+    await markPaymentStageReminded("inv-1", "balance", client);
+
+    expect(client.calls[0].path).toBe("/v1/pages/inv-1");
+    const body = JSON.parse(client.calls[0].init?.body as string);
+    expect(body.properties).toEqual({ "Balance Reminded": { checkbox: true } });
+  });
+
+  it("throws when the update fails", async () => {
+    const client = makeFakeClient(() => errorResponse(500, "boom"));
+    await expect(
+      markPaymentStageReminded("inv-1", "first_deposit", client),
+    ).rejects.toThrow(/status 500: boom/);
   });
 });

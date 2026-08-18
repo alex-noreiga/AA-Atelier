@@ -24,8 +24,10 @@ import { createReview } from "../lib/notion/reviews.repository.js";
 import type { CreateReviewInput } from "../lib/notion/reviews.blocks.js";
 import { upsertClientByEmail } from "../lib/notion/clients.repository.js";
 import { orderDelivered } from "./delivery.js";
+import { relationLinksEnabled } from "./request-links.js";
+import { resolveEmailVerification } from "./order-identity.js";
 import { logger } from "../lib/logger.js";
-import { NotFoundError, ForbiddenError, ConflictError } from "../lib/errors.js";
+import { NotFoundError, ConflictError } from "../lib/errors.js";
 import {
   reviewConfirmationEmail,
   reviewNotificationEmail,
@@ -50,18 +52,8 @@ export async function submitOrderReview(
     );
   }
 
-  // Identity gate. Compare case-insensitively/trimmed. No stored email (legacy
-  // order) -> accept but flag unverified; a present-but-different email -> 403.
-  const storedEmail = order.email.trim().toLowerCase();
-  const suppliedEmail = input.email.trim().toLowerCase();
-  let emailVerified: boolean;
-  if (!storedEmail) {
-    emailVerified = false;
-  } else if (storedEmail === suppliedEmail) {
-    emailVerified = true;
-  } else {
-    throw new ForbiddenError("That email doesn't match the one on this order.");
-  }
+  // Identity gate (403 on a mismatch; legacy no-email orders accepted unverified).
+  const emailVerified = resolveEmailVerification(order.email, input.email);
 
   // Best-effort: link the review to the customer's Client CRM record (dedupe by
   // email). This customer received a delivered order, so a new CRM row would be
@@ -87,6 +79,7 @@ export async function submitOrderReview(
       orderNumber: trimmedOrderNumber,
       emailVerified,
       request: input,
+      ...(relationLinksEnabled() ? { orderPageId: order.pageId } : {}),
     },
     undefined,
     clientPageId,

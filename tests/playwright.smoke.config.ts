@@ -62,5 +62,16 @@ export default defineConfig({
       name: "chromium",
       use: { ...devices["Desktop Chrome"] },
     },
+    // A mobile viewport too: the whole site is responsive and the navbar swaps
+    // to a Sheet menu on small screens, so mobile-only breakage (a menu that
+    // won't open, an unreachable CTA) is invisible to a desktop-only run. Uses
+    // the same Chromium binary, just a phone viewport + touch emulation.
+    {
+      name: "mobile-chrome",
+      use: {
+        ...devices["Pixel 5"],
+        launchOptions: chromiumPath ? { executablePath: chromiumPath } : {},
+      },
+    },
   ],
 });

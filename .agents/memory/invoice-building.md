@@ -172,10 +172,20 @@ Load-bearing:
   not itemized to the customer).
 - **`Suggested Price`'s formula is CORRECT; its description is stale.** The Notion
   description still reads "Break-even price + labor cost," but the real formula is
-  `round(Break Even × (1 + margin) / (Production ? 1 − sellingFees : 1), 2)` —
-  markup-on-cost, grossing up fees on Production rows only. Do **not** rewrite the
-  formula to match the description. (The description text can't be edited via the
-  Notion API's `update-data-source` DDL — it's a manual UI fix.)
+  markup-on-cost with a selling-fee gross-up:
+  `round((Material Cost + Labor Hours × Hourly Rate + Packaging) × (1 + margin) /
+(1 − sellingFees), 2)`. **There is NO `Channel` branch** (an earlier version of
+  this note wrongly claimed `Production ? 1 − sellingFees : 1` — that's stale; the
+  live formula divides by `(1 − sellingFees)` unconditionally). The **fee is
+  data-driven, not hardcoded**: `Pricing Settings` has two rows — **Custom / Direct**
+  (`Default Selling Fees %` = 0) and **Production / Marketplace** (= 0.065) — and each
+  costing row relates to the right one, so Custom items divide by 1 (no fee) and
+  Production items by 0.935, with one formula. This IS the "one costing engine,
+  standardized profit model" end state (Phase-2 card ①) — the labor unit is unified
+  (`Labor Hours`) and the channel difference lives in the Pricing Settings relation.
+  Do **not** rewrite the formula (and don't add a `Channel` branch — it would
+  duplicate the relation data and could diverge from it). (The Notion property
+  _description_ text can't be edited via the `update-data-source` DDL — a manual UI fix.)
 
 New env: `NOTION_COSTING_DATABASE_ID`, `NOTION_MATERIAL_USAGE_DATABASE_ID`
 (integration shared with both). Traversal is order → `Costing Items` → each

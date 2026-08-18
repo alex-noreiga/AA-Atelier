@@ -2,12 +2,16 @@ import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 
 vi.mock("../../src/lib/notion/orders.repository.js", () => ({
   findOrdersByEmail: vi.fn(),
+  findOrdersByNumbers: vi.fn(),
 }));
 vi.mock("../../src/lib/notion/shop-orders.repository.js", () => ({
   findShopOrdersByEmail: vi.fn(),
+  findShopOrdersByNumbers: vi.fn(),
 }));
-vi.mock("../../src/lib/resend/send.js", () => ({
-  sendEmailBestEffort: vi.fn().mockResolvedValue(undefined),
+// The Postgres order-index discovery; default to no extra refs so the non-PG
+// tests below are unaffected (the PG path also self-gates on POSTGRES_URL).
+vi.mock("../../src/lib/db/order-index.repository.js", () => ({
+  findOrderRefsByEmail: vi.fn(async () => []),
 }));
 // Partial mock: keep the real EVENT_PROP_* constants (event-details.ts reads them)
 // and only stub the calendar list so no Google I/O happens.
@@ -26,20 +30,21 @@ vi.mock("../../src/services/rewards.service.js", () => ({
   ensureReferralCode: vi.fn(async () => null),
 }));
 
+import { getAccountOverview } from "../../src/services/account.service.js";
 import {
-  requestMagicLink,
-  getAccountOverview,
-} from "../../src/services/account.service.js";
-import { findOrdersByEmail } from "../../src/lib/notion/orders.repository.js";
+  findOrdersByEmail,
+  findOrdersByNumbers,
+} from "../../src/lib/notion/orders.repository.js";
 import { findShopOrdersByEmail } from "../../src/lib/notion/shop-orders.repository.js";
+import { findOrderRefsByEmail } from "../../src/lib/db/order-index.repository.js";
 import { listUpcomingAppointmentsByEmail } from "../../src/lib/google/calendar.repository.js";
-import { sendEmailBestEffort } from "../../src/lib/resend/send.js";
 import { ensureReferralCode } from "../../src/services/rewards.service.js";
 
 const mockOrders = vi.mocked(findOrdersByEmail);
+const mockOrdersByNumbers = vi.mocked(findOrdersByNumbers);
 const mockShop = vi.mocked(findShopOrdersByEmail);
+const mockRefs = vi.mocked(findOrderRefsByEmail);
 const mockAppts = vi.mocked(listUpcomingAppointmentsByEmail);
-const mockSend = vi.mocked(sendEmailBestEffort);
 const mockEnsureReferral = vi.mocked(ensureReferralCode);
 
 const BASE_ENV = { ...process.env };
@@ -178,35 +183,66 @@ describe("getAccountOverview", () => {
   });
 });
 
-describe("requestMagicLink", () => {
-  it("emails a verify link to the customer when configured", async () => {
-    await requestMagicLink("Skater@example.com");
+describe("getAccountOverview — Postgres order-index augmentation", () => {
+  afterEach(() => {
+    delete process.env.POSTGRES_URL;
+  });
 
-    expect(mockSend).toHaveBeenCalledOnce();
-    const message = mockSend.mock.calls[0][0];
-    expect(message.to).toBe("Skater@example.com");
-    expect(message.html).toContain(
-      "https://atelier.test/api/account/verify?token=",
+  it("adds index-discovered orders the Notion by-email lookup missed", async () => {
+    process.env.POSTGRES_URL = "postgres://test";
+    mockOrders.mockResolvedValue([
+      {
+        orderNumber: "ORD-1",
+        orderName: "One",
+        currentStage: "A",
+        stages: ["A"],
+      },
+    ]);
+    mockShop.mockResolvedValue([]);
+    mockRefs.mockImplementation(async (_email, kind) =>
+      kind === "custom"
+        ? [
+            { orderNumber: "ORD-1", notionPageId: "p1" },
+            { orderNumber: "ORD-LEGACY", notionPageId: "p9" },
+          ]
+        : [],
     );
-    expect(message.text).toContain(
-      "https://atelier.test/api/account/verify?token=",
-    );
+    mockOrdersByNumbers.mockResolvedValue([
+      {
+        orderNumber: "ORD-LEGACY",
+        orderName: "Legacy",
+        currentStage: "B",
+        stages: ["A", "B"],
+      },
+    ]);
+
+    const result = await getAccountOverview("skater@example.com");
+
+    // Base (ORD-1) + the index-only extra (ORD-LEGACY), deduped.
+    expect(result.customOrders.map((o) => o.orderNumber)).toEqual([
+      "ORD-1",
+      "ORD-LEGACY",
+    ]);
+    // Only the number the base lookup missed is fetched for live detail.
+    expect(mockOrdersByNumbers).toHaveBeenCalledWith(["ORD-LEGACY"]);
   });
 
-  it("does nothing when SESSION_SECRET is unset", async () => {
-    delete process.env.SESSION_SECRET;
-    await requestMagicLink("a@b.com");
-    expect(mockSend).not.toHaveBeenCalled();
-  });
+  it("degrades to the Notion-only baseline when the index query fails", async () => {
+    process.env.POSTGRES_URL = "postgres://test";
+    mockOrders.mockResolvedValue([
+      {
+        orderNumber: "ORD-1",
+        orderName: "One",
+        currentStage: "A",
+        stages: ["A"],
+      },
+    ]);
+    mockShop.mockResolvedValue([]);
+    mockRefs.mockRejectedValue(new Error("db down"));
 
-  it("does nothing when PUBLIC_BASE_URL is unset (can't build an absolute link)", async () => {
-    delete process.env.PUBLIC_BASE_URL;
-    await requestMagicLink("a@b.com");
-    expect(mockSend).not.toHaveBeenCalled();
-  });
+    const result = await getAccountOverview("skater@example.com");
 
-  it("ignores a blank email", async () => {
-    await requestMagicLink("   ");
-    expect(mockSend).not.toHaveBeenCalled();
+    expect(result.customOrders.map((o) => o.orderNumber)).toEqual(["ORD-1"]);
+    expect(mockOrdersByNumbers).not.toHaveBeenCalled();
   });
 });

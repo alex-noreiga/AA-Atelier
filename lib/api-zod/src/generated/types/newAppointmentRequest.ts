@@ -21,4 +21,8 @@ export interface NewAppointmentRequest {
   phone?: string;
   preferredContact?: NewAppointmentRequestPreferredContact;
   notes?: string;
+  /** The customer's order number. Required for order-scoped types (requiresOrder) — the server verifies it against a real order whose email matches the booking email. Ignored for other types. */
+  orderNumber?: string;
+  /** A short description of what the customer wants made. Required for new-customer types (requiresProjectDetails); ignored otherwise. */
+  projectDetails?: string;
 }

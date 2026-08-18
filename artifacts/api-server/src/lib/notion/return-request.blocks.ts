@@ -21,6 +21,8 @@ import {
   CONTACT_SUBJECT_PROPERTY,
   CONTACT_TYPE_PROPERTY,
   contactClientRelation,
+  contactOrderRelation,
+  emailVerifiedLine,
 } from "./contact.blocks.js";
 import { NOTIFY_ITEM_PROPERTY } from "./notify.blocks.js";
 
@@ -46,6 +48,9 @@ export interface ReturnRequestRow {
   orderNumber: string;
   emailVerified: boolean;
   request: CreateReturnInput;
+  /** The shop order's Notion page id, to link the request via the `Shop Order`
+   * relation. Omitted when the `NOTION_RELATION_LINKS` gate is off. */
+  orderPageId?: string;
 }
 
 function buildMessageBody(row: ReturnRequestRow): string {
@@ -67,7 +72,7 @@ function buildMessageBody(row: ReturnRequestRow): string {
     `Note: ${request.note?.trim() ? request.note.trim() : "—"}`,
     // Legacy orders have no stored email to check against; the atelier should
     // confirm the requester before actioning an unverified request.
-    `Email verified: ${emailVerified ? "yes" : "no (confirm requester)"} (${request.email})`,
+    emailVerifiedLine(emailVerified, request.email),
   );
   return lines.join("\n");
 }
@@ -100,6 +105,7 @@ export function buildReturnRequestProperties(
       rich_text: [{ text: { content: buildMessageBody(row) } }],
     },
     ...contactClientRelation(clientPageId),
+    ...contactOrderRelation("shop", row.orderPageId),
   };
 
   // Reuse the shared `Item` column (from the back-in-stock writer) so the

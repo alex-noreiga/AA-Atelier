@@ -3,6 +3,7 @@ import { invoicePage, lineItemPage } from "../support/fake-notion.js";
 import {
   extractInvoice,
   extractLineItem,
+  extractPaymentReminderInvoice,
   type NotionInvoicePage,
   type NotionLineItemPage,
 } from "../../src/lib/notion/invoice.schema.js";
@@ -103,5 +104,83 @@ describe("extractLineItem", () => {
     }) as NotionLineItemPage;
 
     expect(extractLineItem(page).amount).toBe(0);
+  });
+});
+
+describe("extractPaymentReminderInvoice", () => {
+  it("surfaces only stages that have a due date, with paid/reminded flags", () => {
+    const page = invoicePage({
+      id: "inv-1",
+      invoiceId: "Toothless",
+      orderPageId: "order-1",
+      firstDepositAmount: 100,
+      firstDepositPaid: true,
+      firstDepositDue: "2026-08-01",
+      firstDepositReminded: true,
+      secondDepositAmount: 80,
+      secondDepositPaid: false,
+      secondDepositDue: "2026-08-10",
+      // Balance has no Payment Deadline set → not surfaced.
+    }) as NotionInvoicePage;
+
+    const view = extractPaymentReminderInvoice(page);
+    expect(view.pageId).toBe("inv-1");
+    expect(view.invoiceId).toBe("Toothless");
+    expect(view.orderPageId).toBe("order-1");
+    expect(view.stages).toEqual([
+      {
+        stage: "first_deposit",
+        label: "First deposit",
+        dueDate: "2026-08-01",
+        paid: true,
+        reminded: true,
+        amount: 100,
+      },
+      {
+        stage: "second_deposit",
+        label: "Second deposit",
+        dueDate: "2026-08-10",
+        paid: false,
+        reminded: false,
+        amount: 80,
+      },
+    ]);
+  });
+
+  it("computes the balance amount as Final Balance minus paid deposits", () => {
+    const page = invoicePage({
+      id: "inv-2",
+      finalBalance: 500,
+      firstDepositAmount: 100,
+      firstDepositPaid: true,
+      secondDepositAmount: 80,
+      secondDepositPaid: false, // unpaid → not credited
+      paymentDeadline: "2026-09-01",
+    }) as NotionInvoicePage;
+
+    const balance = extractPaymentReminderInvoice(page).stages.find(
+      (s) => s.stage === "balance",
+    );
+    expect(balance).toMatchObject({
+      stage: "balance",
+      label: "Final balance",
+      dueDate: "2026-09-01",
+      paid: false,
+      amount: 400, // 500 - 100 (only the paid first deposit is credited)
+    });
+  });
+
+  it("omits the balance amount when Final Balance isn't set, and omits an absent order relation", () => {
+    const page = invoicePage({
+      id: "inv-3",
+      finalBalance: null,
+      paymentDeadline: "2026-09-01",
+    }) as NotionInvoicePage;
+
+    const view = extractPaymentReminderInvoice(page);
+    expect(view.orderPageId).toBeUndefined();
+    const balance = view.stages.find((s) => s.stage === "balance");
+    expect(balance).toMatchObject({ stage: "balance", dueDate: "2026-09-01" });
+    expect(balance?.amount).toBeUndefined();
   });
 });

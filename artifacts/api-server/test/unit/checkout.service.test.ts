@@ -1,4 +1,4 @@
-import { describe, it, expect, vi, beforeEach } from "vitest";
+import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 
 // The service resolves the cart against live inventory and records paid orders
 // via these adapters; both are mocked so the tests stay pure (no Notion/Stripe).
@@ -31,7 +31,7 @@ import {
   getCheckoutSession,
   recordPaidOrder,
 } from "../../src/services/checkout.service.js";
-import { BadRequestError } from "../../src/lib/errors.js";
+import { BadRequestError, NotFoundError } from "../../src/lib/errors.js";
 import { logger } from "../../src/lib/logger.js";
 import { listVariants } from "../../src/lib/notion/products.repository.js";
 import {
@@ -42,6 +42,8 @@ import { upsertClientByEmail } from "../../src/lib/notion/clients.repository.js"
 import { sendEmailBestEffort } from "../../src/lib/resend/send.js";
 import { runPaidOrderRewards } from "../../src/services/rewards.service.js";
 import type { VariantRecord } from "../../src/lib/notion/products.schema.js";
+import { __setDbForTests, __resetDb } from "../../src/lib/db/client.js";
+import { makeFakeDb } from "../support/fake-db.js";
 
 const mockListVariants = vi.mocked(listVariants);
 const mockFind = vi.mocked(findOrderBySessionId);
@@ -87,6 +89,7 @@ beforeEach(() => {
   process.env.PUBLIC_BASE_URL = "https://shop.test";
   process.env.RESEND_FROM_EMAIL = "orders@shop.test";
   delete process.env.STRIPE_SHIPPING_RATE_IDS;
+  delete process.env.STRIPE_BNPL_METHODS;
   // The atelier notification is opt-in; individual tests set the inbox when they
   // want to exercise it, so clear it by default.
   delete process.env.ATELIER_INBOX_EMAIL;
@@ -114,7 +117,12 @@ describe("createCheckoutSession", () => {
           currency: "usd",
           unit_amount: 2200,
           tax_behavior: "exclusive",
-          product_data: { name: "Bow Fleece Soaker" },
+          // The inventory page id is stamped on the product metadata so the
+          // webhook can relate the shop order back to inventory (card #9).
+          product_data: {
+            name: "Bow Fleece Soaker",
+            metadata: { variantId: "v1" },
+          },
         },
       },
     ]);
@@ -232,7 +240,10 @@ describe("createCheckoutSession", () => {
     );
     expect(
       create.mock.calls[0][0].line_items[0].price_data.product_data,
-    ).toEqual({ name: "Keyhole Dress — Adult S" });
+    ).toEqual({
+      name: "Keyhole Dress — Adult S",
+      metadata: { variantId: "v1" },
+    });
   });
 
   it("offers the configured Stripe shipping rates, trimmed, in order", async () => {
@@ -342,6 +353,29 @@ describe("createCheckoutSession", () => {
     expect(create).toHaveBeenCalled();
     expect(create.mock.calls[0][0].shipping_options).toBeUndefined();
     expect(logger.error).toHaveBeenCalled();
+  });
+
+  it("offers the configured buy-now-pay-later methods (card + BNPL) when set", async () => {
+    process.env.STRIPE_BNPL_METHODS = "klarna, affirm";
+    mockListVariants.mockResolvedValue([variant()]);
+    const { stripe, create } = fakeStripe();
+
+    await createCheckoutSession([{ variantId: "v1", quantity: 1 }], stripe);
+
+    expect(create.mock.calls[0][0].payment_method_types).toEqual([
+      "card",
+      "klarna",
+      "affirm",
+    ]);
+  });
+
+  it("omits payment_method_types when no BNPL is configured (dynamic methods)", async () => {
+    mockListVariants.mockResolvedValue([variant()]);
+    const { stripe, create } = fakeStripe();
+
+    await createCheckoutSession([{ variantId: "v1", quantity: 1 }], stripe);
+
+    expect(create.mock.calls[0][0].payment_method_types).toBeUndefined();
   });
 
   it("throws when PUBLIC_BASE_URL is not configured", async () => {
@@ -460,6 +494,37 @@ describe("getCheckoutSession", () => {
     const view = await getCheckoutSession("cs_deposit", stripe);
     expect(view.kind).toBe("deposit");
   });
+
+  it("maps a Stripe 'no such session' error to a NotFoundError (404, not an unhandled 500)", async () => {
+    const { stripe, retrieve } = fakeStripe();
+    // A non-Stripe id (e.g. a deposit marked paid in person with an "IN_PERSON"
+    // marker in the invoice's Session Id field) reaches Stripe from the URL.
+    retrieve.mockRejectedValue(
+      Object.assign(new Error("No such checkout.session: IN_PERSON"), {
+        type: "StripeInvalidRequestError",
+        code: "resource_missing",
+        statusCode: 404,
+      }),
+    );
+
+    await expect(
+      getCheckoutSession("IN_PERSON", stripe),
+    ).rejects.toBeInstanceOf(NotFoundError);
+  });
+
+  it("rethrows an unexpected Stripe error (not a missing session) untouched", async () => {
+    const { stripe, retrieve } = fakeStripe();
+    retrieve.mockRejectedValue(
+      Object.assign(new Error("Stripe is down"), {
+        type: "StripeAPIError",
+        statusCode: 500,
+      }),
+    );
+
+    await expect(getCheckoutSession("cs_boom", stripe)).rejects.toThrow(
+      /Stripe is down/,
+    );
+  });
 });
 
 describe("recordPaidOrder", () => {
@@ -475,10 +540,74 @@ describe("recordPaidOrder", () => {
 
     await recordPaidOrder({ id: "cs_1" } as Stripe.Checkout.Session, stripe);
 
-    expect(retrieve).toHaveBeenCalledWith("cs_1", { expand: ["line_items"] });
+    expect(retrieve).toHaveBeenCalledWith("cs_1", {
+      expand: ["line_items.data.price.product"],
+    });
     // No customer email on this session -> no CRM upsert, no client link.
     expect(mockUpsertClient).not.toHaveBeenCalled();
-    expect(mockCreate).toHaveBeenCalledWith(fullSession, undefined, undefined);
+    expect(mockCreate).toHaveBeenCalledWith(
+      fullSession,
+      undefined,
+      undefined,
+      undefined,
+    );
+  });
+
+  it("relates the order to inventory rows (deduped) when NOTION_RELATION_LINKS is on", async () => {
+    process.env.NOTION_RELATION_LINKS = "1";
+    mockFind.mockResolvedValue(false);
+    const fullSession = {
+      id: "cs_items",
+      payment_status: "paid",
+      line_items: {
+        data: [
+          { price: { product: { metadata: { variantId: "inv-a" } } } },
+          { price: { product: { metadata: { variantId: "inv-b" } } } },
+          // A second line of the same item links once (deduped).
+          { price: { product: { metadata: { variantId: "inv-a" } } } },
+          // A line with no metadata (legacy/ad-hoc) contributes nothing.
+          { price: { product: { metadata: {} } } },
+        ],
+      },
+    } as unknown as Stripe.Checkout.Session;
+    const { stripe, retrieve } = fakeStripe();
+    retrieve.mockResolvedValue(fullSession);
+
+    await recordPaidOrder(
+      { id: "cs_items" } as Stripe.Checkout.Session,
+      stripe,
+    );
+
+    expect(mockCreate).toHaveBeenCalledWith(fullSession, undefined, undefined, [
+      "inv-a",
+      "inv-b",
+    ]);
+    delete process.env.NOTION_RELATION_LINKS;
+  });
+
+  it("omits the inventory relation when the gate is off, even with metadata present", async () => {
+    mockFind.mockResolvedValue(false);
+    const fullSession = {
+      id: "cs_items_off",
+      payment_status: "paid",
+      line_items: {
+        data: [{ price: { product: { metadata: { variantId: "inv-a" } } } }],
+      },
+    } as unknown as Stripe.Checkout.Session;
+    const { stripe, retrieve } = fakeStripe();
+    retrieve.mockResolvedValue(fullSession);
+
+    await recordPaidOrder(
+      { id: "cs_items_off" } as Stripe.Checkout.Session,
+      stripe,
+    );
+
+    expect(mockCreate).toHaveBeenCalledWith(
+      fullSession,
+      undefined,
+      undefined,
+      undefined,
+    );
   });
 
   it("upserts the buyer into the Client CRM (Active) and links the order to it", async () => {
@@ -501,7 +630,12 @@ describe("recordPaidOrder", () => {
       email: "buyer@example.com",
     });
     // The resolved client page id is threaded into the shop-order write.
-    expect(mockCreate).toHaveBeenCalledWith(fullSession, undefined, "client-9");
+    expect(mockCreate).toHaveBeenCalledWith(
+      fullSession,
+      undefined,
+      "client-9",
+      undefined,
+    );
   });
 
   it("still records the order (unlinked) when the CRM upsert fails", async () => {
@@ -522,7 +656,12 @@ describe("recordPaidOrder", () => {
     );
 
     // A CRM failure never fails the webhook; the order is recorded unlinked.
-    expect(mockCreate).toHaveBeenCalledWith(fullSession, undefined, undefined);
+    expect(mockCreate).toHaveBeenCalledWith(
+      fullSession,
+      undefined,
+      undefined,
+      undefined,
+    );
   });
 
   it("runs the reward passes with the buyer email + order number after recording", async () => {
@@ -612,7 +751,12 @@ describe("recordPaidOrder", () => {
       stripe,
     );
 
-    expect(mockCreate).toHaveBeenCalledWith(fullSession, undefined, undefined);
+    expect(mockCreate).toHaveBeenCalledWith(
+      fullSession,
+      undefined,
+      undefined,
+      undefined,
+    );
     // Customer confirmation dispatched, from the orders sender.
     expect(mockSend).toHaveBeenCalledTimes(1);
     const message = mockSend.mock.calls[0][0];
@@ -671,5 +815,102 @@ describe("recordPaidOrder", () => {
 
     expect(mockCreate).toHaveBeenCalled();
     expect(mockSend).not.toHaveBeenCalled();
+  });
+});
+
+describe("recordPaidOrder (Postgres dedup)", () => {
+  const paidSession = {
+    id: "cs_pg",
+    payment_status: "paid",
+    line_items: { data: [] },
+  } as unknown as Stripe.Checkout.Session;
+
+  afterEach(() => {
+    delete process.env.POSTGRES_URL;
+    __resetDb();
+  });
+
+  /** A fake db that resolves the claim to a given outcome. */
+  function claimDb(result: "claimed" | "done" | "in_progress") {
+    return makeFakeDb((text) => {
+      if (text.includes("insert into processed_payments"))
+        return result === "claimed" ? [{ stripe_session_id: "cs_pg" }] : [];
+      if (text.includes("select status"))
+        return result === "done"
+          ? [{ status: "done", stale: false }]
+          : [{ status: "processing", stale: false }];
+      return [];
+    });
+  }
+
+  it("claims, records, then confirms a paid session", async () => {
+    process.env.POSTGRES_URL = "postgres://test";
+    const db = claimDb("claimed");
+    __setDbForTests(db);
+    mockFind.mockResolvedValue(false);
+    const { stripe, retrieve } = fakeStripe();
+    retrieve.mockResolvedValue(paidSession);
+
+    await recordPaidOrder({ id: "cs_pg" } as Stripe.Checkout.Session, stripe);
+
+    expect(mockCreate).toHaveBeenCalled();
+    // The claim was confirmed (status set to done).
+    expect(db.calls.some((c) => /status = 'done'/.test(c.text))).toBe(true);
+  });
+
+  it("no-ops a redelivered, already-done session (no retrieve/create)", async () => {
+    process.env.POSTGRES_URL = "postgres://test";
+    __setDbForTests(claimDb("done"));
+    const { stripe, retrieve } = fakeStripe();
+
+    await recordPaidOrder({ id: "cs_pg" } as Stripe.Checkout.Session, stripe);
+
+    expect(retrieve).not.toHaveBeenCalled();
+    expect(mockCreate).not.toHaveBeenCalled();
+  });
+
+  it("throws (→ webhook 500 → Stripe retry) when a peer is mid-flight", async () => {
+    process.env.POSTGRES_URL = "postgres://test";
+    __setDbForTests(claimDb("in_progress"));
+    const { stripe } = fakeStripe();
+
+    await expect(
+      recordPaidOrder({ id: "cs_pg" } as Stripe.Checkout.Session, stripe),
+    ).rejects.toThrow(/already being processed/);
+    expect(mockCreate).not.toHaveBeenCalled();
+  });
+
+  it("releases the claim and rethrows when recording fails mid-flight", async () => {
+    process.env.POSTGRES_URL = "postgres://test";
+    const db = claimDb("claimed");
+    __setDbForTests(db);
+    mockFind.mockResolvedValue(false);
+    mockCreate.mockRejectedValueOnce(new Error("Notion down"));
+    const { stripe, retrieve } = fakeStripe();
+    retrieve.mockResolvedValue(paidSession);
+
+    await expect(
+      recordPaidOrder({ id: "cs_pg" } as Stripe.Checkout.Session, stripe),
+    ).rejects.toThrow("Notion down");
+    expect(
+      db.calls.some((c) => /delete from processed_payments/.test(c.text)),
+    ).toBe(true);
+  });
+
+  it("falls back to Notion dedup when the claim itself errors (DB blip)", async () => {
+    process.env.POSTGRES_URL = "postgres://test";
+    __setDbForTests(
+      makeFakeDb(() => {
+        throw new Error("db unreachable");
+      }),
+    );
+    mockFind.mockResolvedValue(false);
+    const { stripe, retrieve } = fakeStripe();
+    retrieve.mockResolvedValue(paidSession);
+
+    await recordPaidOrder({ id: "cs_pg" } as Stripe.Checkout.Session, stripe);
+
+    // Degraded to the legacy path — the order is still recorded.
+    expect(mockCreate).toHaveBeenCalled();
   });
 });

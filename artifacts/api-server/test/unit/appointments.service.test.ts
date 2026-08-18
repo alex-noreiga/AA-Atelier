@@ -6,22 +6,32 @@ vi.mock("../../src/lib/google/calendar.repository.js", () => ({
   createCalendarEvent: vi.fn(),
 }));
 
+vi.mock("../../src/lib/notion/orders.repository.js", () => ({
+  findOrderVerification: vi.fn(),
+}));
+
 import {
   bookAppointment,
   getAppointmentAvailability,
   getAppointmentOptions,
 } from "../../src/services/appointments.service.js";
-import { BadRequestError } from "../../src/lib/errors.js";
+import {
+  BadRequestError,
+  NotFoundError,
+  ForbiddenError,
+} from "../../src/lib/errors.js";
 import {
   getScheduleConfig,
   listBusyInRange,
   createCalendarEvent,
 } from "../../src/lib/google/calendar.repository.js";
+import { findOrderVerification } from "../../src/lib/notion/orders.repository.js";
 import type { WeeklyHours } from "../../src/lib/appointments/availability.js";
 
 const mockSchedule = vi.mocked(getScheduleConfig);
 const mockBusy = vi.mocked(listBusyInRange);
 const mockCreate = vi.mocked(createCalendarEvent);
+const mockVerify = vi.mocked(findOrderVerification);
 
 // A Monday 09:00–11:00 in-person + virtual block for Alexandra and Alayna, in UTC.
 const weeklyHours: WeeklyHours[] = [
@@ -68,6 +78,20 @@ describe("getAppointmentOptions", () => {
     expect(fitting.locations).toEqual(["in-person"]);
     expect(fitting.staff).toEqual(["Alexandra", "Alayna"]);
   });
+
+  it("flags the gate on each type", () => {
+    const options = getAppointmentOptions();
+    const byId = (id: string) => options.types.find((t) => t.id === id)!;
+    // Order-scoped types are locked behind an order number.
+    expect(byId("fitting").requiresOrder).toBe(true);
+    expect(byId("design-review").requiresOrder).toBe(true);
+    // New-customer types ask for project details instead.
+    expect(byId("consultation").requiresProjectDetails).toBe(true);
+    expect(byId("general").requiresProjectDetails).toBe(true);
+    // The two gates are mutually exclusive per type.
+    expect(byId("fitting").requiresProjectDetails).toBeUndefined();
+    expect(byId("consultation").requiresOrder).toBeUndefined();
+  });
 });
 
 describe("getAppointmentAvailability", () => {
@@ -112,12 +136,24 @@ describe("getAppointmentAvailability", () => {
 });
 
 describe("bookAppointment", () => {
+  // Consultations require project details (the new-customer funnel gate).
   const validBody = {
     typeId: "consultation",
     location: "in-person" as const,
     start: new Date("2026-07-20T09:00:00.000Z"),
     fullName: "Ada Lovelace",
     email: "ada@example.com",
+    projectDetails: "A competition dress in navy for December.",
+  };
+
+  // A fitting is order-scoped: it needs an order number + matching email.
+  const validFitting = {
+    typeId: "fitting",
+    location: "in-person" as const,
+    start: new Date("2026-07-20T09:00:00.000Z"),
+    fullName: "Ada Lovelace",
+    email: "ada@example.com",
+    orderNumber: "000123",
   };
 
   it("books an open slot and writes a calendar event", async () => {
@@ -228,5 +264,86 @@ describe("bookAppointment", () => {
     // Booking still succeeds; the notification is a best-effort side effect.
     expect(result.confirmationCode).toMatch(/^APT-/);
     expect(mockCreate).toHaveBeenCalledOnce();
+  });
+
+  // --- Funnel gate: new-customer types require project details -------------
+  describe("project-details gate", () => {
+    it("rejects a consultation with no project details", async () => {
+      await expect(
+        bookAppointment({ ...validBody, projectDetails: "  " } as never),
+      ).rejects.toBeInstanceOf(BadRequestError);
+      expect(mockCreate).not.toHaveBeenCalled();
+      // Never touches the order lookup — the funnel gate isn't order-scoped.
+      expect(mockVerify).not.toHaveBeenCalled();
+    });
+
+    it("records the project details on the calendar event", async () => {
+      await bookAppointment(validBody as never);
+      const [appointment] = mockCreate.mock.calls[0];
+      expect(appointment.projectDetails).toBe(
+        "A competition dress in navy for December.",
+      );
+    });
+  });
+
+  // --- Order gate: order-scoped types require a verified order -------------
+  describe("order gate", () => {
+    it("rejects a fitting with no order number", async () => {
+      await expect(
+        bookAppointment({
+          ...validFitting,
+          orderNumber: undefined,
+        } as never),
+      ).rejects.toBeInstanceOf(BadRequestError);
+      expect(mockCreate).not.toHaveBeenCalled();
+      expect(mockVerify).not.toHaveBeenCalled();
+    });
+
+    it("404s when the order number is unknown", async () => {
+      mockVerify.mockResolvedValue(null);
+      await expect(
+        bookAppointment(validFitting as never),
+      ).rejects.toBeInstanceOf(NotFoundError);
+      expect(mockCreate).not.toHaveBeenCalled();
+    });
+
+    it("403s when the email doesn't match the order", async () => {
+      mockVerify.mockResolvedValue({
+        email: "someone-else@example.com",
+        pageId: "page-order-test",
+        currentStage: "Sketching",
+        stages: ["Sketching", "Cutting/Pinning", "Delivered"],
+      });
+      await expect(
+        bookAppointment(validFitting as never),
+      ).rejects.toBeInstanceOf(ForbiddenError);
+      expect(mockCreate).not.toHaveBeenCalled();
+    });
+
+    it("books when the order number + email match", async () => {
+      mockVerify.mockResolvedValue({
+        email: "ADA@example.com", // case-insensitive match
+        pageId: "page-order-test",
+        currentStage: "Sketching",
+        stages: ["Sketching", "Cutting/Pinning", "Delivered"],
+      });
+      const result = await bookAppointment(validFitting as never);
+      expect(result.type).toBe("Fitting & Measurements");
+      expect(mockCreate).toHaveBeenCalledOnce();
+      const [appointment] = mockCreate.mock.calls[0];
+      expect(appointment.orderNumber).toBe("000123");
+    });
+
+    it("accepts a legacy order with no stored email", async () => {
+      mockVerify.mockResolvedValue({
+        email: "",
+        pageId: "page-order-test",
+        currentStage: "Sketching",
+        stages: ["Sketching", "Cutting/Pinning", "Delivered"],
+      });
+      const result = await bookAppointment(validFitting as never);
+      expect(result.confirmationCode).toMatch(/^APT-/);
+      expect(mockCreate).toHaveBeenCalledOnce();
+    });
   });
 });

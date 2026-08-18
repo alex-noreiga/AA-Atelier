@@ -55,8 +55,8 @@ router.post(
 );
 
 // Self-service reschedule / cancel, all keyed off the signed token in the manage
-// link the confirmation email carries (identity is the token, like the account
-// magic link — see appointment-manage.service.ts).
+// link the confirmation email carries (identity is the token, like a magic link
+// — see appointment-manage.service.ts).
 router.get(
   "/appointments/manage",
   validate({ query: GetAppointmentQueryParams }),

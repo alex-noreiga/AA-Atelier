@@ -36,11 +36,34 @@ export interface AppointmentTypeDef {
   /** The staff who offer this type (a customer may also pick "no preference"). */
   staff: string[];
   locations: AppointmentLocation[];
+  /**
+   * An *order gate*: this type may only be booked against an existing order.
+   * The booking request must carry an `orderNumber` that resolves to a real
+   * order whose stored email matches the booking email (verified server-side
+   * via `findOrderVerification`, the same check the measurement-change and
+   * review flows use). Set on the order-scoped types (fittings, design reviews)
+   * so a stranger who doesn't yet have an order can't book them.
+   */
+  requiresOrder?: boolean;
+  /**
+   * A *funnel gate*: this type is the new-customer entry point (no order exists
+   * yet), so instead of an order number the request must include a non-empty
+   * `projectDetails` describing what they want made. A light screen that filters
+   * out uncertain "what do you even do?" requests without turning away real
+   * leads. Order-scoped types don't set this — the order is the context.
+   */
+  requiresProjectDetails?: boolean;
 }
 
 // Routing rules, per the atelier: consultations are Alayna only; fittings,
 // design reviews, and general appointments can be booked with either Alexandra
 // or Alayna. Fittings are in-person only.
+//
+// Gating: fittings and design reviews are order-scoped (`requiresOrder`) — they
+// only make sense once someone has an order, so they're locked behind a verified
+// order number. Consultations and general appointments are the new-customer
+// funnel (`requiresProjectDetails`) — they can't require an order number (a new
+// customer has none), so they ask for a short project description instead.
 export const APPOINTMENT_TYPES: readonly AppointmentTypeDef[] = [
   {
     id: "consultation",
@@ -49,6 +72,7 @@ export const APPOINTMENT_TYPES: readonly AppointmentTypeDef[] = [
     description: "Talk through ideas for a new custom piece.",
     staff: [STAFF.alayna],
     locations: ["in-person", "virtual"],
+    requiresProjectDetails: true,
   },
   {
     id: "fitting",
@@ -58,6 +82,7 @@ export const APPOINTMENT_TYPES: readonly AppointmentTypeDef[] = [
       "Have your measurements taken or try your garment on in person.",
     staff: [STAFF.alexandra, STAFF.alayna],
     locations: ["in-person"],
+    requiresOrder: true,
   },
   {
     id: "design-review",
@@ -66,6 +91,7 @@ export const APPOINTMENT_TYPES: readonly AppointmentTypeDef[] = [
     description: "Review sketches, fabrics, and progress on your order.",
     staff: [STAFF.alexandra, STAFF.alayna],
     locations: ["in-person", "virtual"],
+    requiresOrder: true,
   },
   {
     id: "general",
@@ -74,6 +100,7 @@ export const APPOINTMENT_TYPES: readonly AppointmentTypeDef[] = [
     description: "Anything else — we'll help however we can.",
     staff: [STAFF.alexandra, STAFF.alayna],
     locations: ["in-person", "virtual"],
+    requiresProjectDetails: true,
   },
 ];
 

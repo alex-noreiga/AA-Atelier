@@ -22,8 +22,11 @@ import {
 // + invoice relation). A Notion rename is a one-line change here.
 export const LINE_ITEM_MANUAL_UNIT_PRICE_PROPERTY = "Manual Unit Price"; // number
 export const LINE_ITEM_QUANTITY_PROPERTY = "Quantity"; // number
-export const LINE_ITEM_ORDER_RELATION_PROPERTY = "Order"; // relation → orders
 export const LINE_ITEM_MATERIAL_USAGE_RELATION_PROPERTY = "Material Usage Line"; // relation → material usage
+// The line item's `Order` relation is deliberately NOT written: it's redundant
+// with the invoice's own `Order` relation (a line reaches its order via its
+// `Invoice`), and nothing reads it (roadmap: "prune the redundant invoice link").
+// The stale Notion property is removed out-of-band after this ships.
 
 // The three `Line Type` option values the generator writes. Named option values
 // coupled to code (like `STATUS_IN_STOCK`) — rename them in Notion and update
@@ -45,7 +48,6 @@ export const RECONCILING_LINE_NAME = "Design & finishing";
 /** Everything needed to write one generated invoice line. */
 export interface InvoiceLineItemInput {
   invoicePageId: string;
-  orderPageId: string;
   /** The line title (a material's usage-line name, "Labor", or the adjustment). */
   name: string;
   /** A `LINE_TYPE_*` value. */
@@ -76,9 +78,6 @@ export function buildInvoiceLineItemProperties(
     },
     [LINE_ITEM_INVOICE_RELATION_PROPERTY]: {
       relation: [{ id: input.invoicePageId }],
-    },
-    [LINE_ITEM_ORDER_RELATION_PROPERTY]: {
-      relation: [{ id: input.orderPageId }],
     },
     ...(input.materialUsageLineId
       ? {

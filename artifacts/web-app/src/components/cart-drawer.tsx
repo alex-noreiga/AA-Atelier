@@ -9,6 +9,7 @@ import {
   SheetTrigger,
 } from "@/components/ui/sheet";
 import { useCart, lineKey } from "@/lib/cart";
+import { useAnalytics, AnalyticsEvent } from "@/lib/analytics";
 import { formatPrice } from "@/lib/format";
 import { useToast } from "@/hooks/use-toast";
 import { cn } from "@/lib/utils";
@@ -21,6 +22,7 @@ import { cn } from "@/lib/utils";
 export function CartButton({ className }: { className?: string }) {
   const [open, setOpen] = useState(false);
   const { items, count, subtotal, updateQuantity, removeItem } = useCart();
+  const analytics = useAnalytics();
   const { toast } = useToast();
 
   const checkout = useCreateCheckoutSession({
@@ -43,6 +45,7 @@ export function CartButton({ className }: { className?: string }) {
   });
 
   const onCheckout = () => {
+    analytics(AnalyticsEvent.BeginCheckout, { itemCount: count, subtotal });
     checkout.mutate({
       data: {
         items: items.map((i) => ({

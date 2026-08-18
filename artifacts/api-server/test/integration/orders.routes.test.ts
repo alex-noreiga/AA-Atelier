@@ -202,7 +202,10 @@ describe("GET /api/orders/:orderNumber", () => {
 
 describe("POST /api/orders", () => {
   it("returns 201 with the new order number for a valid body", async () => {
-    mockCreate.mockResolvedValue("ORD-XYZ-987");
+    mockCreate.mockResolvedValue({
+      orderNumber: "ORD-XYZ-987",
+      pageId: "page-1",
+    });
 
     const res = await request(app).post("/api/orders").send(validBody);
 
@@ -222,7 +225,10 @@ describe("POST /api/orders", () => {
   });
 
   it("returns 201 for a measurement-appointment order with no measurements", async () => {
-    mockCreate.mockResolvedValue("ORD-APPT-001");
+    mockCreate.mockResolvedValue({
+      orderNumber: "ORD-APPT-001",
+      pageId: "page-1",
+    });
     const {
       waist,
       bust,
@@ -261,7 +267,10 @@ describe("POST /api/orders", () => {
   });
 
   it("captures a referral code when one is supplied", async () => {
-    mockCreate.mockResolvedValue("ORD-REF-001");
+    mockCreate.mockResolvedValue({
+      orderNumber: "ORD-REF-001",
+      pageId: "page-1",
+    });
 
     const res = await request(app)
       .post("/api/orders")
@@ -275,13 +284,19 @@ describe("POST /api/orders", () => {
   });
 
   it("does not attempt referral capture when no code is supplied", async () => {
-    mockCreate.mockResolvedValue("ORD-NOREF-001");
+    mockCreate.mockResolvedValue({
+      orderNumber: "ORD-NOREF-001",
+      pageId: "page-1",
+    });
     await request(app).post("/api/orders").send(validBody);
     expect(mockCapture).not.toHaveBeenCalled();
   });
 
   it("still creates the order (201) when referral capture throws", async () => {
-    mockCreate.mockResolvedValue("ORD-REF-002");
+    mockCreate.mockResolvedValue({
+      orderNumber: "ORD-REF-002",
+      pageId: "page-1",
+    });
     mockCapture.mockRejectedValueOnce(new Error("capture boom"));
 
     const res = await request(app)

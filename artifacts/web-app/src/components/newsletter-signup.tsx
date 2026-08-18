@@ -6,12 +6,14 @@ import { CheckCircle, Loader2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { useToast } from "@/hooks/use-toast";
+import { HoneypotField, honeypotSchema, useSubmitTimer } from "@/lib/anti-spam";
 
 // Form-friendly schema. Its output is handed to the `useSubscribeNewsletter`
 // mutation below, whose `data` is typed as the generated `NewNewsletterRequest`,
 // so the form cannot silently drift from the API contract.
 const formSchema = z.object({
   email: z.string().email("Please enter a valid email address"),
+  ...honeypotSchema,
 });
 
 type FormValues = z.infer<typeof formSchema>;
@@ -55,8 +57,12 @@ export function NewsletterSignup({ source }: NewsletterSignupProps) {
     formState: { errors },
   } = useForm<FormValues>({ resolver: zodResolver(formSchema) });
 
-  const onSubmit = ({ email }: FormValues) => {
-    subscribe.mutate({ data: { email, source } });
+  const elapsedMs = useSubmitTimer();
+
+  const onSubmit = ({ email, website }: FormValues) => {
+    subscribe.mutate({
+      data: { email, source, website: website ?? "", elapsedMs: elapsedMs() },
+    });
   };
 
   if (subscribe.isSuccess) {
@@ -83,6 +89,7 @@ export function NewsletterSignup({ source }: NewsletterSignupProps) {
       className="flex flex-col gap-3"
       data-testid="newsletter-form"
     >
+      <HoneypotField registration={register("website")} />
       <Input
         type="email"
         {...register("email")}

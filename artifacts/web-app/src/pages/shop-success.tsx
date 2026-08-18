@@ -1,4 +1,4 @@
-import { useEffect } from "react";
+import { useEffect, useRef } from "react";
 import { useSearch } from "wouter";
 import { ArrowRight, CheckCircle } from "lucide-react";
 import {
@@ -13,6 +13,7 @@ import { ROUTE_SEO } from "@/lib/seo-routes";
 import { ReceiptRow } from "@/components/receipt-row";
 import { formatPrice } from "@/lib/format";
 import { useCart } from "@/lib/cart";
+import { useAnalytics, AnalyticsEvent } from "@/lib/analytics";
 
 /**
  * Post-checkout landing page. Stripe redirects here (with `?session_id=…`) only
@@ -24,6 +25,10 @@ export default function ShopSuccess() {
   const search = useSearch();
   const sessionId = new URLSearchParams(search).get("session_id") ?? "";
   const { clear } = useCart();
+  const analytics = useAnalytics();
+  // Guards the purchase event to at most once per checkout session (StrictMode
+  // double-invokes effects, and the session query can re-settle on refetch).
+  const purchaseTracked = useRef<string | null>(null);
 
   const { data } = useGetCheckoutSession(sessionId, {
     query: {
@@ -41,6 +46,19 @@ export default function ShopSuccess() {
       clear();
     }
   }, [data?.kind, clear]);
+
+  // Conversion event: a completed payment landed here. Fired once per session,
+  // and consent-gated inside useAnalytics. `kind` distinguishes a shop-cart
+  // purchase from a custom-order deposit/balance; the total is Stripe's, no PII.
+  useEffect(() => {
+    if (!data || !sessionId || purchaseTracked.current === sessionId) return;
+    purchaseTracked.current = sessionId;
+    analytics(AnalyticsEvent.Purchase, {
+      total: data.amountTotal ?? 0,
+      kind: data.kind ?? "shop",
+      ...(data.orderNumber ? { orderNumber: data.orderNumber } : {}),
+    });
+  }, [data, sessionId, analytics]);
 
   const lineItems = data?.lineItems ?? [];
 

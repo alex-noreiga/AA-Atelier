@@ -121,11 +121,14 @@ export default function Privacy() {
         </p>
         <p>
           With your permission, we also use privacy-friendly web analytics to
-          understand how our site is used — which pages are visited and where
-          visitors drop off — so we can improve it. This analytics is
-          cookieless, does not track you across other websites, and is only
-          loaded once you accept it. You can accept or decline from the banner
-          shown on your first visit, and change your mind at any time below.
+          understand how our site is used — which pages are visited, and a few
+          key actions such as adding an item to the cart, starting checkout, or
+          placing an order, so we can see where visitors drop off and improve
+          the experience. These measurements are not linked to your name or
+          email. This analytics is cookieless, does not track you across other
+          websites, and is only loaded once you accept it. You can accept or
+          decline from the banner shown on your first visit, and change your
+          mind at any time below.
         </p>
         <ManageCookiePreferences />
       </LegalSection>

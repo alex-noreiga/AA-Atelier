@@ -1,0 +1,45 @@
+name: DB backfill
+
+# One-time (re-runnable) backfill of the account-portal index (`clients` +
+# `order_index`) from the existing Notion orders + shop-orders databases, so
+# orders placed before the index existed become discoverable in the portal.
+# Idempotent (`on conflict do nothing` / upsert-by-email), so it's safe to re-run
+# to heal any best-effort write gaps.
+#
+# Deliberately manual (workflow_dispatch) and OUT of the deploy path, like
+# migrate.yml. Reads Notion with a raw client and writes Postgres over the DIRECT
+# (non-pooled) connection. Requires these repo secrets:
+#   POSTGRES_URL_NON_POOLING       the Supabase direct/session-pooler URL (port 5432)
+#   NOTION_API_KEY                 the Notion integration token
+#   NOTION_ORDERS_DATABASE_ID      the custom "Order Tracking Pipeline" database
+#   NOTION_SHOP_ORDERS_DATABASE_ID the "Shop Orders" database
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  backfill:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: pnpm/action-setup@v6
+
+      - uses: actions/setup-node@v7
+        with:
+          node-version-file: .nvmrc
+          cache: pnpm
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Run backfill
+        env:
+          POSTGRES_URL_NON_POOLING: ${{ secrets.POSTGRES_URL_NON_POOLING }}
+          NOTION_API_KEY: ${{ secrets.NOTION_API_KEY }}
+          NOTION_ORDERS_DATABASE_ID: ${{ secrets.NOTION_ORDERS_DATABASE_ID }}
+          NOTION_SHOP_ORDERS_DATABASE_ID: ${{ secrets.NOTION_SHOP_ORDERS_DATABASE_ID }}
+        run: pnpm --filter @workspace/api-server db:backfill

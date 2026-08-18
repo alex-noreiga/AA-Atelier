@@ -64,11 +64,25 @@ describe("Contact page submission mapping", () => {
     await waitFor(() => expect(hoisted.mutate).toHaveBeenCalledTimes(1));
     const { data } = hoisted.mutate.mock.calls[0][0];
     expect(data).not.toHaveProperty("phone");
-    expect(data).toEqual({
+    expect(data).toMatchObject({
       name: "Grace Hopper",
       email: "grace@example.com",
       message: "Do you ship internationally?",
+      // Honeypot left empty by a real user; timing measured.
+      website: "",
     });
+    expect(typeof data.elapsedMs).toBe("number");
+  });
+
+  it("renders the honeypot field hidden and out of the a11y tree", () => {
+    render(<Contact />);
+    const honeypot = document.querySelector<HTMLInputElement>(
+      'input[name="website"]',
+    );
+    expect(honeypot).not.toBeNull();
+    // Off-screen wrapper removed from the accessibility tree and untabbable.
+    expect(honeypot!.closest('[aria-hidden="true"]')).not.toBeNull();
+    expect(honeypot!.tabIndex).toBe(-1);
   });
 
   it("includes the phone when it is provided", async () => {

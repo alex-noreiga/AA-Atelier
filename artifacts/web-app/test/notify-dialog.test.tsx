@@ -60,13 +60,14 @@ describe("NotifyDialog submission mapping", () => {
     await user.click(screen.getByTestId("notify-submit"));
 
     await waitFor(() => expect(hoisted.mutate).toHaveBeenCalledTimes(1));
-    expect(hoisted.mutate.mock.calls[0][0]).toEqual({
-      data: {
-        email: "grace@example.com",
-        item: "Bow Fleece Soaker",
-        size: "M",
-      },
+    const { data } = hoisted.mutate.mock.calls[0][0];
+    expect(data).toMatchObject({
+      email: "grace@example.com",
+      item: "Bow Fleece Soaker",
+      size: "M",
+      website: "", // honeypot left empty by a real user
     });
+    expect(typeof data.elapsedMs).toBe("number");
   });
 
   it("omits size for a whole-variant (no size) request", async () => {

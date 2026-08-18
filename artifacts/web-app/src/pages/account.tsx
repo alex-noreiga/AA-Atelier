@@ -3,7 +3,6 @@ import { Link, Redirect, useLocation } from "wouter";
 import { useQueryClient } from "@tanstack/react-query";
 import {
   useGetAccountOverview,
-  useLogoutAccount,
   getGetAccountOverviewQueryKey,
   type AccountOrderSummary,
   type AccountShopOrderSummary,
@@ -15,6 +14,7 @@ import { Button } from "@/components/ui/button";
 import { PageShell } from "@/components/page-shell";
 import { Seo } from "@/components/seo";
 import { AppointmentManagePanel } from "@/components/appointment-manage-panel";
+import { useAuth } from "@/lib/auth-context";
 import { ROUTE_SEO } from "@/lib/seo-routes";
 import { formatPrice, formatDate } from "@/lib/format";
 import { fmtWhen } from "@/lib/appointment-format";
@@ -34,40 +34,39 @@ import {
 
 /**
  * The customer account portal dashboard. Gathers the signed-in customer's custom
- * orders and shop orders — looked up by the session email, no order number to
- * remember — behind the magic-link identity. The cards link out to the existing
- * detail surfaces (`/track`, `/invoice/:n`) rather than re-implementing them, so
- * this is a home base, not a fork of the tracking pages.
+ * orders, shop orders, and upcoming appointments — looked up by the signed-in
+ * email, no order number to remember. The cards link out to the existing detail
+ * surfaces (`/track`, `/invoice/:n`) rather than re-implementing them, so this is
+ * a home base, not a fork of the tracking pages.
  *
- * Auth is the session cookie: an unauthenticated visit gets a 401 from the
- * overview endpoint, which redirects here to the sign-in page.
+ * Auth is a Supabase Auth session (email+password / Google / magic link), held
+ * by supabase-js in the browser; its access token rides every API call as a
+ * Bearer credential. An unauthenticated visit is redirected to the sign-in page
+ * — driven off the client-side session, with the overview's 401 as a fallback.
  */
 export default function Account() {
   const [, navigate] = useLocation();
-  const queryClient = useQueryClient();
+  const { session, loading, signOut } = useAuth();
 
   const overview = useGetAccountOverview({
     query: {
       queryKey: getGetAccountOverviewQueryKey(),
-      retry: false, // A 401 (not signed in) must not retry — redirect instead.
+      // Only fetch once we know there's a session; a 401 must not retry.
+      enabled: !loading && Boolean(session),
+      retry: false,
     },
   });
 
-  const logout = useLogoutAccount({
-    mutation: {
-      onSuccess: () => {
-        // Drop the cached overview so a later sign-in refetches fresh data.
-        queryClient.removeQueries({
-          queryKey: getGetAccountOverviewQueryKey(),
-        });
-        navigate("/account/login");
-      },
-    },
-  });
+  const handleSignOut = async () => {
+    await signOut();
+    navigate("/account/login");
+  };
 
-  // Not signed in (or the session expired) → send them to sign in.
+  // Not signed in (or the session expired) → send them to sign in. Prefer the
+  // client-side session; fall back to a server 401 (e.g. a token rejected
+  // server-side while the client still holds it).
   const status = (overview.error as { status?: number } | null)?.status;
-  if (overview.isError && status === 401) {
+  if ((!loading && !session) || (overview.isError && status === 401)) {
     return <Redirect to="/account/login" replace />;
   }
 
@@ -75,7 +74,9 @@ export default function Account() {
     <PageShell align="top" className="pt-28 pb-20">
       <Seo {...ROUTE_SEO["/account"]} />
       <div className="w-full max-w-2xl z-10 mx-auto px-6 animate-in fade-in duration-700">
-        {overview.isLoading ? (
+        {loading ||
+        overview.isLoading ||
+        (Boolean(session) && overview.isPending) ? (
           <div
             className="flex items-center justify-center py-24"
             data-testid="account-loading"
@@ -106,8 +107,7 @@ export default function Account() {
               </div>
               <Button
                 variant="ghost"
-                onClick={() => logout.mutate()}
-                disabled={logout.isPending}
+                onClick={handleSignOut}
                 className="text-muted-foreground hover:text-primary shrink-0 gap-2 text-xs tracking-widest uppercase"
                 data-testid="button-sign-out"
               >

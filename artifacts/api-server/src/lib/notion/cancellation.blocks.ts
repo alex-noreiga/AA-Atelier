@@ -18,6 +18,8 @@ import {
   CONTACT_SUBJECT_PROPERTY,
   CONTACT_TYPE_PROPERTY,
   contactClientRelation,
+  contactOrderRelation,
+  emailVerifiedLine,
 } from "./contact.blocks.js";
 
 /** The "Request type" value that marks a row as a cancellation request. */
@@ -35,6 +37,9 @@ export interface CancellationRow {
   emailVerified: boolean;
   email: string;
   reason?: string;
+  /** The order's Notion page id, to link the request via the `Order` (custom) /
+   * `Shop Order` (shop) relation. Omitted when `NOTION_RELATION_LINKS` is off. */
+  orderPageId?: string;
 }
 
 function orderTypeLabel(orderType: CancellationOrderType): string {
@@ -48,7 +53,7 @@ function buildMessageBody(row: CancellationRow): string {
     `Reason: ${row.reason?.trim() ? row.reason.trim() : "—"}`,
     // Legacy orders have no stored email to check against; the atelier should
     // confirm the requester before refunding an unverified cancellation.
-    `Email verified: ${row.emailVerified ? "yes" : "no (confirm requester)"} (${row.email})`,
+    emailVerifiedLine(row.emailVerified, row.email),
   ];
   return lines.join("\n");
 }
@@ -85,5 +90,6 @@ export function buildCancellationProperties(
       rich_text: [{ text: { content: buildMessageBody(row) } }],
     },
     ...contactClientRelation(clientPageId),
+    ...contactOrderRelation(row.orderType, row.orderPageId),
   };
 }
