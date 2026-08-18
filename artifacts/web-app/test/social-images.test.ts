@@ -1,5 +1,6 @@
 import { describe, it, expect } from "vitest";
 import fs from "node:fs";
+import { imageSize } from "./support/image-size";
 import path from "node:path";
 import {
   DEFAULT_OG_IMAGES,
@@ -22,54 +23,6 @@ import {
  */
 
 const PUBLIC_DIR = path.resolve(import.meta.dirname, "../public");
-
-interface Size {
-  width: number;
-  height: number;
-}
-
-/** Width and height from a PNG's IHDR chunk. */
-function pngSize(buf: Buffer): Size {
-  expect(buf.subarray(12, 16).toString("ascii")).toBe("IHDR");
-  return { width: buf.readUInt32BE(16), height: buf.readUInt32BE(20) };
-}
-
-/**
- * Width and height from a JPEG's start-of-frame segment. Walks the marker
- * chain rather than assuming a fixed offset, because the JFIF/EXIF headers
- * before the frame vary in length between encoders.
- */
-function jpegSize(buf: Buffer): Size {
-  let i = 2; // past the SOI marker
-  while (i < buf.length - 9) {
-    if (buf[i] !== 0xff) {
-      i++;
-      continue;
-    }
-    const marker = buf[i + 1]!;
-    const length = buf.readUInt16BE(i + 2);
-    // Any SOF except the DHT/DAC/RST markers that share the 0xC. range.
-    const isSof =
-      marker >= 0xc0 &&
-      marker <= 0xcf &&
-      marker !== 0xc4 &&
-      marker !== 0xc8 &&
-      marker !== 0xcc;
-    if (isSof) {
-      return {
-        height: buf.readUInt16BE(i + 5),
-        width: buf.readUInt16BE(i + 7),
-      };
-    }
-    i += 2 + length;
-  }
-  throw new Error("No JPEG start-of-frame segment found");
-}
-
-function imageSize(file: string): Size {
-  const buf = fs.readFileSync(file);
-  return file.endsWith(".png") ? pngSize(buf) : jpegSize(buf);
-}
 
 /** Map an absolute site URL back to the file that serves it. */
 function localFile(url: string): string {
