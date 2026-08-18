@@ -9,6 +9,7 @@ import {
   renderRouteHtml,
   renderSitemap,
   replaceImageBlock,
+  pinterestVerifyTag,
 } from "@/lib/seo-html";
 import { DEFAULT_OG_IMAGE, SITE_ORIGIN } from "@/lib/seo-routes";
 
@@ -201,5 +202,28 @@ describe("renderSitemap", () => {
 
     expect(xml).toContain("<changefreq>monthly</changefreq>");
     expect(xml).toContain("<priority>0.5</priority>");
+  });
+});
+
+describe("pinterestVerifyTag", () => {
+  it("emits the claim tag when a token is configured", () => {
+    expect(pinterestVerifyTag("abc123")).toEqual([
+      {
+        tag: "meta",
+        attrs: { name: "p:domain_verify", content: "abc123" },
+        injectTo: "head",
+      },
+    ]);
+  });
+
+  it("emits nothing when unset or blank", () => {
+    // An empty content attribute reads to Pinterest as a failed claim, which is
+    // worse than simply not claiming the domain — so emit no tag at all.
+    expect(pinterestVerifyTag(undefined)).toEqual([]);
+    expect(pinterestVerifyTag("   ")).toEqual([]);
+  });
+
+  it("trims surrounding whitespace from a pasted token", () => {
+    expect(pinterestVerifyTag("  abc123\n")[0]?.attrs.content).toBe("abc123");
   });
 });

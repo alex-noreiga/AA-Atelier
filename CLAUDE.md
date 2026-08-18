@@ -1769,6 +1769,104 @@ Tests: `test/consent.test.tsx` (the context), `test/cookie-consent-banner.test.t
 `@vercel/analytics/react` mocked). No E2E/smoke changes — the mocked e2e run
 never loads the real script, and the smoke suite is read-only.
 
+## Social share metadata (Open Graph, Pinterest, prerendering)
+
+Every page carries Open Graph / Twitter card metadata, and — because this is a
+client-rendered SPA — the version that matters is **baked in at build time**. A
+social scraper (Pinterest, Facebook, LinkedIn, Slack, iMessage) does not execute
+JS, so the runtime `<Seo>` component reaches only JS-executing crawlers like
+Google. Three layers, all reading from one source of truth:
+
+| Layer                                | File                                                                           | Reaches         |
+| ------------------------------------ | ------------------------------------------------------------------------------ | --------------- |
+| Route metadata (the source of truth) | `web-app/src/lib/seo-routes.ts`                                                | —               |
+| Runtime head mutation                | `web-app/src/components/seo.tsx` (`<Seo>`)                                     | JS crawlers     |
+| Build-time prerender + sitemap       | `web-app/src/lib/seo-html.ts` + the `seo-prerender` plugin in `vite.config.ts` | Everything else |
+
+`seo-html.ts` holds the pure string transforms so they are unit-testable
+(`test/seo-html.test.ts`); `vite.config.ts` is only the filesystem shell. On
+Vercel the built filesystem is checked **before** `rewrites`, so
+`dist/public/<route>/index.html` is served at the clean path and the SPA
+catch-all remains the fallback for dynamic/noindex routes.
+
+Load-bearing decisions:
+
+1. **Each route ships two images, landscape first.** The platforms disagree and
+   only one image can be primary: Facebook / LinkedIn / Slack crop to landscape
+   (1.91:1), while **Pinterest's feed is 2:3 vertical** and renders a landscape
+   image as an easily-scrolled-past sliver. So `socialImages()` emits an ordered
+   pair — `1200x630` then `1000x1500` — and a scraper that understands only one
+   image takes the first, exactly as before. Sizes live in `SOCIAL_IMAGE_SIZES`
+   next to the metadata, not in the generator, so the two can't disagree.
+
+2. **`og:image:width` / `:height` / `:alt` bind to the `og:image` they FOLLOW,**
+   so an image and its dimensions must move together. Both writers replace the
+   **whole** image block (delimited by the `<!-- seo:images:start/end -->`
+   markers in `index.html`) rather than patching tags one at a time — patching
+   individually is what let a per-route image inherit the default's `1280x720`.
+   An image of **unknown** size (a Notion-hosted product photo) emits **no**
+   dimension tags; never guess, since a wrong ratio is worse than none. The
+   prerenderer **throws** if the markers go missing rather than silently
+   shipping every route with the default image.
+
+3. **Artwork is generated out-of-band and committed.** `pnpm --filter
+@workspace/web-app social-images` (`scripts/generate-social-images.ts`) renders
+   each route's card from the brand tokens + fonts via headless Chromium and
+   writes `public/social/<slug>-{og,pin}.png`; the display copy lives in that
+   script's `ART` table (deliberately _not_ the SEO title/description, which are
+   written for search results and read as clutter at poster scale) and the run
+   **fails** if an indexable route has no entry. It is **not** in the build or
+   deploy path. Prefer Playwright's `headless_shell` binary: with a full Chrome,
+   `--window-size` sizes the OS _window_, so the viewport comes out ~90px short
+   and the bottom of the art is clipped. `test/social-images.test.ts` guards the
+   seam by reading each file's real dimensions out of its PNG/JPEG header, so a
+   route added without regenerating the art fails CI instead of shipping a 404
+   share image.
+
+4. **Product pages are prerendered from a build-time catalogue snapshot.**
+   `/shop/:productId` is dynamic, so it can't live in `seo-routes.ts` — and
+   without a page of its own it fell through Vercel's SPA rewrite to the _home_
+   `index.html`, meaning pinning a dress produced a card titled "Custom Figure
+   Skating & Dance Costumes". `build:vercel` now runs `pnpm --filter
+@workspace/api-server seo:export-products` between the two builds, which writes
+   the verbatim `GET /api/products` payload to `web-app/.seo/products.json`
+   (gitignored); the prerender plugin bakes `dist/public/shop/<id>/index.html`
+   per product with real OG tags, the `Product` + `BreadcrumbList` JSON-LD, and a
+   sitemap entry. The share image is the product's **own photograph** — a real
+   garment beats any typographic card — falling back to the shop's artwork when
+   it has none. The JSON-LD/meta helpers are shared with `pages/shop.tsx` via
+   `web-app/src/lib/product-seo.ts` so the runtime and prerendered tags can't
+   drift. Two consequences to know: the exporter is **degrade-safe** (Notion
+   unconfigured or failing ⇒ it logs, writes nothing, exits 0, and the build
+   simply ships without product pages, i.e. the old behaviour — it must never
+   fail a deploy), and the baked pages are a **snapshot**: a product added after
+   a deploy has no prerendered page until the next one, and a removed product
+   keeps a stale one. The SPA always renders live inventory; only the share card
+   is frozen. Ids are filtered against `SAFE_ID` so catalogue data can't write
+   outside `outDir`.
+
+5. **The exporter is bundled by esbuild, not run through type-stripping.** It
+   imports the Notion service layer, whose relative imports use `.js` specifiers
+   that `node --experimental-strip-types` will not resolve back to the `.ts`
+   sources — which is why `db:migrate` is documented as self-contained. It is a
+   third entry point in `api-server/build.mjs`, emitting
+   `dist/scripts/export-product-seo.mjs`; `dist/app.mjs` and `dist/index.mjs`
+   keep their paths, so the Vercel entrypoint is unaffected.
+
+6. **Pinterest domain claim is an optional build-time env var.**
+   `PINTEREST_DOMAIN_VERIFY` (no `VITE_` prefix — it is consumed by a Vite plugin
+   at build time and never reaches the client bundle) injects
+   `<meta name="p:domain_verify">` into `index.html`, which the prerenderer then
+   propagates to every route. Claiming the domain attributes Pins saved from the
+   site to the studio account and unlocks Pinterest analytics. Unset ⇒ **no tag
+   at all** rather than an empty one, since an empty `content` reads to Pinterest
+   as a failed claim.
+
+**Atelier setup for Pinterest (one time):** in Pinterest → Settings → Claimed
+accounts → Claim website → "Add HTML tag", copy the `content="…"` value into the
+`PINTEREST_DOMAIN_VERIFY` Vercel env var, redeploy, then press Verify. Nothing
+else is required — the share images and product pages ship with the build.
+
 ## Invisible anti-spam (honeypot + timing + submission rate limit)
 
 The public, anonymous submission forms — **contact** (`POST /api/contact`),
@@ -2353,6 +2451,8 @@ keys on exact property names). Recorded here only because two facts are
 | Change the newsletter opt-in                           | `artifacts/web-app/src/components/newsletter-signup.tsx` (footer field, in `footer.tsx`) + the intake checkbox in `pages/order-form.tsx`; `api-server/src/services/newsletter.service.ts` + `routes/newsletter.ts` + `lib/notion/newsletter.{blocks,repository}.ts` (writes to the **contact** database) + `newsletterWelcomeEmail` in `lib/resend/emails.ts`                                                                                                                                                                                                                                                                                                                                 |
 | Change invisible anti-spam (honeypot/timing/limit)     | `api-server/src/middlewares/spam-filter.ts` (`isLikelySpam` + `spamFilter`) + `submissionRateLimiter` in `middlewares/rate-limit.ts`; applied in `routes/{contact,notify,newsletter}.ts`; frontend `web-app/src/lib/anti-spam.tsx` (`HoneypotField` / `honeypotSchema` / `useSubmitTimer`) wired into `pages/contact.tsx` + `components/{notify-dialog,newsletter-signup}.tsx` + `pages/order-form.tsx`. Fields `website` + `elapsedMs` on the contact/notify/newsletter request schemas in `openapi.yaml`                                                                                                                                                                                    |
 | Change the mailing-list / Resend audience sync         | `api-server/src/lib/resend/audience.ts` (`upsertAudienceContact` → Resend Contacts API) + `audienceId()` in `lib/resend/config.ts`; wired best-effort from `services/newsletter.service.ts`. Campaigns are sent as Resend **Broadcasts** from the dashboard (no in-app sender). Marketing-email disclosure in `pages/privacy.tsx`                                                                                                                                                                                                                                                                                                                                                             |
+| Change social share metadata / OG tags                 | `web-app/src/lib/seo-routes.ts` (per-route titles, descriptions, image sizes) + `src/components/seo.tsx` (runtime) + `src/lib/seo-html.ts` + the `seo-prerender` plugin in `vite.config.ts` (build-time). Regenerate artwork with `pnpm --filter @workspace/web-app social-images` (`scripts/generate-social-images.ts`); guard test `test/social-images.test.ts`                                                                                                                                                                                                                                                                                                                             |
+| Change product page SEO / share cards                  | `web-app/src/lib/product-seo.ts` (shared by `pages/shop.tsx` and the prerenderer) + `api-server/src/scripts/export-product-seo.ts` (the build-time catalogue snapshot, wired into `build:vercel`)                                                                                                                                                                                                                                                                                                                                                                                                                                                                                             |
 | Add a page / route                                     | new `src/pages/*.tsx` + `<Route>` in `src/App.tsx`                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                            |
 | Add or rename a nav link                               | `NAV_LINKS` in `artifacts/web-app/src/components/navbar.tsx`                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                  |
 | Add a shared UI component                              | `artifacts/web-app/src/components/ui/`                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                        |

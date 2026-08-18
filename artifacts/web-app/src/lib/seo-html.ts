@@ -204,3 +204,34 @@ export function renderSitemap(
     .join("\n");
   return `<?xml version="1.0" encoding="UTF-8"?>\n<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">\n${urls}\n</urlset>\n`;
 }
+
+/** One head tag, in the shape Vite's `transformIndexHtml` hook consumes. */
+export interface HeadTag {
+  tag: string;
+  attrs: Record<string, string>;
+  injectTo: "head";
+}
+
+/**
+ * The Pinterest domain-claim tag, or nothing when unconfigured.
+ *
+ * Claiming a3iceanddance.com in Pinterest is what attributes every Pin saved
+ * from the site back to the studio's account (logo on the Pin, and access to
+ * the analytics for saves and outbound clicks). The claim is a one-off token
+ * Pinterest issues; it is public by design, so it lives in an ordinary build
+ * env var rather than a secret.
+ *
+ * Unset ⇒ no tag at all, rather than an empty one: an empty `content` reads to
+ * Pinterest as a failed claim, which is worse than an unclaimed domain.
+ */
+export function pinterestVerifyTag(token: string | undefined): HeadTag[] {
+  const content = token?.trim();
+  if (!content) return [];
+  return [
+    {
+      tag: "meta",
+      attrs: { name: "p:domain_verify", content },
+      injectTo: "head",
+    },
+  ];
+}
