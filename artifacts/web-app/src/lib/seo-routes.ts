@@ -17,8 +17,122 @@
 /** Canonical production origin — mirror of `SITE_ORIGIN` in `components/seo.tsx`. */
 export const SITE_ORIGIN = "https://a3iceanddance.com";
 
-/** Default social-share image (absolute), used when a route sets no `image`. */
-export const DEFAULT_OG_IMAGE = `${SITE_ORIGIN}/opengraph.jpg`;
+/**
+ * One social-share image, plus the structured properties that describe it.
+ *
+ * Per the Open Graph spec `og:image:width` / `:height` / `:alt` attach to the
+ * `og:image` they FOLLOW, so an image and its dimensions travel together as one
+ * unit — that is why this is an object rather than four parallel fields. Width
+ * and height are optional: a remote image whose size we don't know (a Notion
+ * product photo) must emit NO dimension tags rather than inherit another
+ * image's, which would make scrapers lay out the card against a wrong aspect
+ * ratio.
+ */
+export interface OgImage {
+  /** Absolute URL — social scrapers do not resolve relative paths. */
+  url: string;
+  /** Pixel width. Omit when unknown; never guess. */
+  width?: number;
+  /** Pixel height. Omit when unknown; never guess. */
+  height?: number;
+  /** Accessible description of the image. */
+  alt?: string;
+}
+
+const DEFAULT_OG_ALT =
+  "A.A Atelier — handcrafted custom figure skating and dance costumes";
+
+/**
+ * The two share formats every indexable route ships.
+ *
+ * They exist because the platforms disagree and only one image can be primary:
+ * Facebook / LinkedIn / Slack / iMessage crop to landscape (1.91:1), while
+ * Pinterest's feed is vertical (2:3) and shows a landscape image as a small
+ * sliver. Emitting both as an ordered `og:image` pair costs nothing — a scraper
+ * that only understands one image takes the first (landscape, unchanged from
+ * before), and Pinterest can offer the tall one.
+ *
+ * Kept here rather than in the generator script so the metadata and the
+ * artwork can't disagree about a file's dimensions.
+ */
+export const SOCIAL_IMAGE_SIZES = {
+  og: { width: 1200, height: 630 },
+  pin: { width: 1000, height: 1500 },
+} as const;
+
+/**
+ * The filename stem for a route's generated artwork: "/" → "home",
+ * "/shipping-returns" → "shipping-returns". Shared with
+ * `scripts/generate-social-images.ts`, which writes the files.
+ */
+export function socialSlug(routePath: string): string {
+  const trimmed = routePath.replace(/^\/|\/$/g, "");
+  return trimmed === "" ? "home" : trimmed.replace(/\//g, "-");
+}
+
+/**
+ * Alt text for a route's artwork, from its title.
+ *
+ * A page title is written for a search result and carries a brand suffix
+ * ("… | A.A Atelier") that reads as noise when a screen reader announces an
+ * image. Trim the suffix and name the studio once, as a description of the
+ * card rather than a repeat of the headline.
+ */
+function socialAlt(title: string): string {
+  const headline = title.split("|")[0]!.trim();
+  return `${headline} — A.A Atelier`;
+}
+
+/** The generated landscape + vertical pair for a route, in preference order. */
+export function socialImages(routePath: string, title: string): OgImage[] {
+  const slug = socialSlug(routePath);
+  const alt = socialAlt(title);
+  return (["og", "pin"] as const).map((format) => ({
+    url: `${SITE_ORIGIN}/social/${slug}-${format}.png`,
+    ...SOCIAL_IMAGE_SIZES[format],
+    alt,
+  }));
+}
+
+/** Default landscape share image, used when a route has no artwork of its own. */
+export const DEFAULT_OG_IMAGE: OgImage = {
+  url: `${SITE_ORIGIN}/opengraph.jpg`,
+  width: 1280,
+  height: 720,
+  alt: DEFAULT_OG_ALT,
+};
+
+/**
+ * The fallback set: the home route's generated pair, with the legacy
+ * `opengraph.jpg` kept last so a scraper still has something if the generated
+ * art is ever missing from a deploy.
+ */
+export const DEFAULT_OG_IMAGES: OgImage[] = [
+  ...socialImages("/", "Custom Figure Skating & Dance Costumes"),
+  DEFAULT_OG_IMAGE,
+];
+
+/**
+ * The images a route shares, in order. The first is the primary card (what
+ * Facebook, LinkedIn, Slack, and the Twitter card use); later entries are
+ * alternates a scraper may offer as a choice.
+ *
+ * An explicit `images` wins (a product deep link passes its own photo); an
+ * indexable route falls back to its generated pair; anything else — a noindex
+ * route, the SPA catch-all — gets the shared default.
+ */
+export function imagesFor(route: {
+  path?: string;
+  title?: string;
+  images?: OgImage[];
+  noindex?: boolean;
+}): OgImage[] {
+  if (route.images && route.images.length > 0) return route.images;
+  if (route.path && !route.noindex && ROUTE_SEO[route.path]) {
+    return socialImages(route.path, route.title ?? DEFAULT_OG_ALT);
+  }
+  return DEFAULT_OG_IMAGES;
+}
 
 export interface RouteSeo {
   /** Route path, e.g. "/" or "/about". Also the sitemap `loc` and canonical. */
@@ -27,8 +141,11 @@ export interface RouteSeo {
   title: string;
   /** Meta description — one to two sentences, keyword-aware. */
   description: string;
-  /** Optional absolute og:image / twitter:image. Falls back to DEFAULT_OG_IMAGE. */
-  image?: string;
+  /**
+   * Social share images in preference order. Falls back to `DEFAULT_OG_IMAGES`.
+   * The first entry is the primary card.
+   */
+  images?: OgImage[];
   /** When true: robots noindex, excluded from the sitemap and from prerendering. */
   noindex?: boolean;
   /** Sitemap `changefreq` hint (indexable routes only). */

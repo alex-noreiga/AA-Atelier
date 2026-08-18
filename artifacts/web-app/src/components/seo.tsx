@@ -1,4 +1,5 @@
 import { useEffect } from "react";
+import { imagesFor, type OgImage } from "@/lib/seo-routes";
 
 /**
  * Per-page document metadata.
@@ -35,10 +36,11 @@ interface SeoProps {
   /** When true, emits `<meta name="robots" content="noindex">` (e.g. 404). */
   noindex?: boolean;
   /**
-   * Optional absolute og:image / twitter:image for this route. When omitted the
-   * static default from `index.html` (`/opengraph.jpg`) is left in place.
+   * Social share images for this route, in preference order. When omitted the
+   * shared default set (`DEFAULT_OG_IMAGES`) is used, which matches what
+   * `index.html` ships statically.
    */
-  image?: string;
+  images?: OgImage[];
 }
 
 /** Find an existing head tag or create and append it. */
@@ -68,6 +70,46 @@ function setMetaByProperty(property: string, content: string) {
   el.setAttribute("content", content);
 }
 
+/**
+ * Replace every image tag in the head with the given set.
+ *
+ * The whole block is rebuilt rather than patched because `og:image:width` /
+ * `:height` / `:alt` attach to the `og:image` they follow — patching tags
+ * individually would let a route's image keep the *previous* image's
+ * dimensions, which is exactly the bug this avoids. Selecting on the tag
+ * prefixes also sweeps up the static tags `index.html` ships, so a route can
+ * never end up advertising both its own image and the default.
+ */
+function setImages(images: OgImage[]) {
+  document.head
+    .querySelectorAll('meta[property^="og:image"], meta[name^="twitter:image"]')
+    .forEach((el) => el.remove());
+
+  const add = (attr: "property" | "name", key: string, content: string) => {
+    const m = document.createElement("meta");
+    m.setAttribute(attr, key);
+    m.setAttribute("content", content);
+    document.head.appendChild(m);
+  };
+
+  for (const image of images) {
+    add("property", "og:image", image.url);
+    // Only emit dimensions we actually know — a wrong width is worse than none.
+    if (image.width !== undefined)
+      add("property", "og:image:width", String(image.width));
+    if (image.height !== undefined)
+      add("property", "og:image:height", String(image.height));
+    if (image.alt) add("property", "og:image:alt", image.alt);
+  }
+
+  // A Twitter card carries a single image: the primary one.
+  const primary = images[0];
+  if (primary) {
+    add("name", "twitter:image", primary.url);
+    if (primary.alt) add("name", "twitter:image:alt", primary.alt);
+  }
+}
+
 function setLinkRel(rel: string, href: string) {
   const el = upsertTag(`link[rel="${rel}"]`, () => {
     const l = document.createElement("link");
@@ -82,7 +124,7 @@ export function Seo({
   description,
   path = "/",
   noindex = false,
-  image,
+  images,
 }: SeoProps) {
   useEffect(() => {
     const canonical =
@@ -99,13 +141,12 @@ export function Seo({
     setMetaByName("twitter:title", title);
     setMetaByName("twitter:description", description);
 
-    if (image) {
-      setMetaByProperty("og:image", image);
-      setMetaByName("twitter:image", image);
-    }
+    setImages(imagesFor({ path, title, images, noindex }));
 
     setMetaByName("robots", noindex ? "noindex, follow" : "index, follow");
-  }, [title, description, path, noindex, image]);
+    // `images` is an array literal at most call sites, so depend on its content
+    // rather than its identity to avoid rebuilding the block on every render.
+  }, [title, description, path, noindex, JSON.stringify(images ?? null)]);
 
   return null;
 }

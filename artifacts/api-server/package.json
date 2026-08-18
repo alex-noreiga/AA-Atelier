@@ -7,6 +7,7 @@
     "dev": "export NODE_ENV=development && export PORT=${PORT:-3000} && export DOTENV_CONFIG_PATH=${DOTENV_CONFIG_PATH:-../../.env} && pnpm run build && pnpm run start",
     "build": "node ./build.mjs",
     "start": "node --enable-source-maps ./dist/index.mjs",
+    "seo:export-products": "node dist/scripts/export-product-seo.mjs",
     "typecheck": "tsc -p tsconfig.json --noEmit && tsc -p tsconfig.test.json",
     "db:migrate": "node --experimental-strip-types src/scripts/migrate.ts",
     "db:backfill": "node --experimental-strip-types src/scripts/backfill-order-index.ts",
