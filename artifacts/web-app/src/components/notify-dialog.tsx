@@ -15,12 +15,14 @@ import {
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { useToast } from "@/hooks/use-toast";
+import { HoneypotField, honeypotSchema, useSubmitTimer } from "@/lib/anti-spam";
 
 // Form-friendly schema. Its output is handed to the `useCreateBackInStockRequest`
 // mutation below, whose `data` is typed as the generated `NewNotifyRequest`, so
 // the form cannot silently drift from the API contract.
 const formSchema = z.object({
   email: z.string().email("Please enter a valid email address"),
+  ...honeypotSchema,
 });
 
 type FormValues = z.infer<typeof formSchema>;
@@ -78,8 +80,18 @@ export function NotifyDialog({ item, size, trigger }: NotifyDialogProps) {
     formState: { errors },
   } = useForm<FormValues>({ resolver: zodResolver(formSchema) });
 
-  const onSubmit = ({ email }: FormValues) => {
-    createRequest.mutate({ data: { email, item, ...(size ? { size } : {}) } });
+  const elapsedMs = useSubmitTimer();
+
+  const onSubmit = ({ email, website }: FormValues) => {
+    createRequest.mutate({
+      data: {
+        email,
+        item,
+        ...(size ? { size } : {}),
+        website: website ?? "",
+        elapsedMs: elapsedMs(),
+      },
+    });
   };
 
   const onOpenChange = (next: boolean) => {
@@ -132,6 +144,7 @@ export function NotifyDialog({ item, size, trigger }: NotifyDialogProps) {
                 onSubmit={handleSubmit(onSubmit)}
                 className="mt-2 space-y-6"
               >
+                <HoneypotField registration={register("website")} />
                 <div>
                   <Label
                     htmlFor="notify-email"

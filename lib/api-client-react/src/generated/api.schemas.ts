@@ -7,6 +7,10 @@
  */
 export interface HealthStatus {
   status: string;
+  /** Short git SHA of the deployed build (from VERCEL_GIT_COMMIT_SHA). Omitted when unknown (e.g. local dev). Lets a monitor confirm which build is live. */
+  commit?: string;
+  /** When the running bundle was built, injected at build time. Omitted when unknown. Lets a monitor flag a deploy that is unexpectedly old (a stale function serving a months-old build). */
+  buildTime?: string;
 }
 
 export type OrderStatusMilestonesItem = {
@@ -90,6 +94,18 @@ export interface OrderNotFound {
   message: string;
 }
 
+/**
+ * The carrier tracking details, surfaced once the atelier fills them in on the Notion order (a `Tracking Number`, an optional `Carrier` label, and an optional `Tracking URL`). Absent until a tracking number is set. When present the tracking page shows the number, linked to the URL when one is given.
+ */
+export type ShopOrderStatusTracking = {
+  /** The carrier tracking number, shown to the customer. */
+  number: string;
+  /** An optional human carrier label, e.g. "USPS" or "UPS". */
+  carrier?: string;
+  /** An optional carrier tracking URL; when present the number is rendered as a link to it. */
+  url?: string;
+};
+
 export interface ShopOrderStatus {
   orderNumber: string;
   /** The order's current fulfilment status. */
@@ -100,6 +116,8 @@ export interface ShopOrderStatus {
   total?: number;
   /** True once the atelier has cancelled the shop order (the `Cancelled` marker on the Notion order). When true the tracking page shows a cancelled banner and suppresses the request affordance. Absent/false for an active order. */
   cancelled?: boolean;
+  /** The carrier tracking details, surfaced once the atelier fills them in on the Notion order (a `Tracking Number`, an optional `Carrier` label, and an optional `Tracking URL`). Absent until a tracking number is set. When present the tracking page shows the number, linked to the URL when one is given. */
+  tracking?: ShopOrderStatusTracking;
 }
 
 export type NewOrderRequestPreferredContact = typeof NewOrderRequestPreferredContact[keyof typeof NewOrderRequestPreferredContact];
@@ -252,6 +270,13 @@ export interface NewContactRequest {
   phone?: string;
   /** @minLength 1 */
   message: string;
+  /** Anti-spam honeypot. A hidden field that real visitors never see or fill; a non-empty value marks the submission as spam and it is silently dropped. Always send empty (or omit). */
+  website?: string;
+  /**
+     * Anti-spam timing signal: milliseconds the visitor spent on the form before submitting. Implausibly fast submissions are dropped. Omit when the client can't measure it (treated as human).
+     * @minimum 0
+     */
+  elapsedMs?: number;
 }
 
 export interface NewContactResponse {
@@ -267,6 +292,13 @@ export interface NewNotifyRequest {
   item: string;
   /** Set only when the customer asked about one specific sold-out size band; absent when the whole variant is sold out. */
   size?: string;
+  /** Anti-spam honeypot. A hidden field that real visitors never fill; a non-empty value marks the submission as spam and it is silently dropped. Always send empty (or omit). */
+  website?: string;
+  /**
+     * Anti-spam timing signal: milliseconds the visitor spent on the form before submitting. Implausibly fast submissions are dropped. Omit when unmeasurable (treated as human).
+     * @minimum 0
+     */
+  elapsedMs?: number;
 }
 
 export interface NewNotifyResponse {
@@ -277,6 +309,13 @@ export interface NewNewsletterRequest {
   email: string;
   /** Where the opt-in came from, e.g. "footer" or "order form". Recorded for the atelier's own segmentation; the customer never sees it. */
   source?: string;
+  /** Anti-spam honeypot. A hidden field that real visitors never fill; a non-empty value marks the submission as spam and it is silently dropped. Always send empty (or omit). */
+  website?: string;
+  /**
+     * Anti-spam timing signal: milliseconds the visitor spent on the form before submitting. Implausibly fast submissions are dropped. Omit when unmeasurable (treated as human).
+     * @minimum 0
+     */
+  elapsedMs?: number;
 }
 
 export interface NewNewsletterResponse {
@@ -464,6 +503,10 @@ export interface AppointmentType {
   staff: string[];
   /** The locations this type is offered in. */
   locations: AppointmentTypeLocationsItem[];
+  /** When true, this type may only be booked against an existing order — the request must carry an orderNumber that matches a real order (and the booking email must match the one on that order). Order-scoped types like fittings and design reviews set this. */
+  requiresOrder?: boolean;
+  /** When true, the request must include a non-empty projectDetails describing what the customer wants made. New-customer types like consultations set this to filter out uncertain requests. */
+  requiresProjectDetails?: boolean;
 }
 
 export interface AppointmentOptions {
@@ -514,6 +557,10 @@ export interface NewAppointmentRequest {
   phone?: string;
   preferredContact?: NewAppointmentRequestPreferredContact;
   notes?: string;
+  /** The customer's order number. Required for order-scoped types (requiresOrder) — the server verifies it against a real order whose email matches the booking email. Ignored for other types. */
+  orderNumber?: string;
+  /** A short description of what the customer wants made. Required for new-customer types (requiresProjectDetails); ignored otherwise. */
+  projectDetails?: string;
 }
 
 export interface NewAppointmentResponse {
@@ -593,11 +640,6 @@ export interface ErrorEnvelope {
  */
 export interface MessageResponse {
   message: string;
-}
-
-export interface MagicLinkRequest {
-  /** The email to send the one-time sign-in link to. */
-  email: string;
 }
 
 /**

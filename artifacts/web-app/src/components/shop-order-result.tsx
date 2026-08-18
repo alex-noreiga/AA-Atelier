@@ -3,6 +3,7 @@ import { formatPrice } from "@/lib/format";
 import { CancellationRequestDialog } from "@/components/cancellation-request-dialog";
 import { ArrowRight } from "lucide-react";
 import { ReturnExchangeDialog } from "@/components/return-exchange-dialog";
+import { StatusTimeline } from "@/components/status-timeline";
 
 /**
  * The "order found" body for a ready-to-wear shop order: header plus the
@@ -47,61 +48,43 @@ export function ShopOrderResult({
         </div>
       )}
 
-      <div className="relative pl-6 md:pl-8 space-y-12">
-        {/* Vertical Thread Line */}
-        <div className="absolute left-[11px] md:left-[15px] top-2 bottom-2 w-[1px] bg-border z-0"></div>
+      <StatusTimeline
+        items={order.statuses}
+        currentIndex={order.statuses.indexOf(order.status)}
+        testIdPrefix="row-status"
+      />
 
-        {order.statuses.map((status, index) => {
-          const currentIndex = order.statuses.indexOf(order.status);
-          const isCompleted = index < currentIndex;
-          const isActive = index === currentIndex;
-          const isFuture = index > currentIndex;
-
-          return (
-            <div
-              key={status}
-              className="relative z-10 flex items-start group"
-              data-testid={`row-status-${index}`}
+      {order.tracking && !isCancelled && (
+        <div
+          className="mt-12 rounded-2xl border border-border/60 p-6 text-center"
+          data-testid="tracking-details"
+        >
+          <p className="text-xs uppercase tracking-widest text-muted-foreground">
+            {order.tracking.carrier
+              ? `Tracking · ${order.tracking.carrier}`
+              : "Tracking"}
+          </p>
+          {order.tracking.url ? (
+            <a
+              href={order.tracking.url}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="mt-1 inline-flex items-center gap-2 font-serif text-2xl text-primary hover:underline"
+              data-testid="tracking-link"
             >
-              {/* Status Indicator Node */}
-              <div className="absolute -left-6 md:-left-8 flex items-center justify-center w-6 h-6 bg-background">
-                <div
-                  className={`
-                  w-2.5 h-2.5 rounded-full transition-all duration-700
-                  ${isActive ? "bg-primary shadow-[0_0_12px_var(--color-primary)] scale-125" : ""}
-                  ${isCompleted ? "bg-primary/50" : ""}
-                  ${isFuture ? "bg-border" : ""}
-                `}
-                />
-              </div>
-
-              {/* Status Content */}
-              <div
-                className={`
-                flex-1 pl-6 transition-all duration-500
-                ${isActive ? "opacity-100 translate-x-2" : ""}
-                ${isCompleted ? "opacity-60" : ""}
-                ${isFuture ? "opacity-30" : ""}
-              `}
-              >
-                <h3
-                  className={`
-                  font-serif text-2xl mb-1
-                  ${isActive ? "text-primary" : "text-foreground"}
-                `}
-                >
-                  {status}
-                </h3>
-                {isCompleted && (
-                  <p className="text-muted-foreground/50 font-light text-xs uppercase tracking-widest">
-                    Completed
-                  </p>
-                )}
-              </div>
-            </div>
-          );
-        })}
-      </div>
+              <span>{order.tracking.number}</span>
+              <ArrowRight className="w-4 h-4" />
+            </a>
+          ) : (
+            <p
+              className="mt-1 font-serif text-2xl"
+              data-testid="tracking-number"
+            >
+              {order.tracking.number}
+            </p>
+          )}
+        </div>
+      )}
 
       <div className="mt-16 flex flex-col items-center gap-6">
         {!isCancelled && (

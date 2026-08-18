@@ -22,6 +22,18 @@ describe("POST /api/contact", () => {
     expect(mockCreate).toHaveBeenCalledOnce();
   });
 
+  it("silently drops a honeypot-filled submission without writing to Notion", async () => {
+    const res = await request(app)
+      .post("/api/contact")
+      .send(contactInput({ website: "http://spam.example" }));
+
+    // Success-looking response so a bot gets no signal it was caught...
+    expect(res.status).toBe(201);
+    expect(res.body).toEqual({ success: true });
+    // ...but nothing was written.
+    expect(mockCreate).not.toHaveBeenCalled();
+  });
+
   it("returns 400 for a missing message and does not call the repository", async () => {
     const res = await request(app)
       .post("/api/contact")

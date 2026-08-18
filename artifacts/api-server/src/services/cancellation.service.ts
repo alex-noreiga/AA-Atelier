@@ -27,8 +27,10 @@ import { createCancellationRequest } from "../lib/notion/cancellation.repository
 import type { CancellationOrderType } from "../lib/notion/cancellation.blocks.js";
 import { upsertClientByEmail } from "../lib/notion/clients.repository.js";
 import { orderDelivered } from "./delivery.js";
+import { relationLinksEnabled } from "./request-links.js";
+import { resolveEmailVerification } from "./order-identity.js";
 import { logger } from "../lib/logger.js";
-import { NotFoundError, ForbiddenError, ConflictError } from "../lib/errors.js";
+import { NotFoundError, ConflictError } from "../lib/errors.js";
 import {
   cancellationRequestConfirmationEmail,
   cancellationRequestNotificationEmail,
@@ -42,16 +44,6 @@ export type CreateCancellationInput = z.infer<
   typeof CreateOrderCancellationRequestBody
 >;
 
-/** Compare two emails case-insensitively/trimmed. A blank stored email (legacy
- * order) is accepted but "unverified"; a present-but-different email throws 403. */
-function verifyEmail(storedEmail: string, suppliedEmail: string): boolean {
-  const stored = storedEmail.trim().toLowerCase();
-  const supplied = suppliedEmail.trim().toLowerCase();
-  if (!stored) return false;
-  if (stored === supplied) return true;
-  throw new ForbiddenError("That email doesn't match the one on this order.");
-}
-
 /** File the request into Notion (best-effort CRM link) + send best-effort emails.
  * Shared by the custom and shop flows once the order-specific gates have passed. */
 async function fileCancellationRequest(
@@ -59,6 +51,7 @@ async function fileCancellationRequest(
   orderType: CancellationOrderType,
   input: CreateCancellationInput,
   emailVerified: boolean,
+  orderPageId: string,
 ): Promise<{ received: true }> {
   // Best-effort: link the request to the customer's Client CRM record (dedupe by
   // email). Never fails the request; no-ops when CRM is unconfigured.
@@ -84,6 +77,7 @@ async function fileCancellationRequest(
       emailVerified,
       email: input.email,
       ...(input.reason?.trim() ? { reason: input.reason.trim() } : {}),
+      ...(relationLinksEnabled() ? { orderPageId } : {}),
     },
     undefined,
     clientPageId,
@@ -133,8 +127,14 @@ export async function submitOrderCancellationRequest(
     );
   }
 
-  const emailVerified = verifyEmail(order.email, input.email);
-  return fileCancellationRequest(orderNumber, "custom", input, emailVerified);
+  const emailVerified = resolveEmailVerification(order.email, input.email);
+  return fileCancellationRequest(
+    orderNumber,
+    "custom",
+    input,
+    emailVerified,
+    order.pageId,
+  );
 }
 
 /** File a cancellation request for a ready-to-wear shop order. */
@@ -147,6 +147,12 @@ export async function submitShopOrderCancellationRequest(
     throw new NotFoundError("We couldn't find a shop order with that number.");
   }
 
-  const emailVerified = verifyEmail(order.email, input.email);
-  return fileCancellationRequest(orderNumber, "shop", input, emailVerified);
+  const emailVerified = resolveEmailVerification(order.email, input.email);
+  return fileCancellationRequest(
+    orderNumber,
+    "shop",
+    input,
+    emailVerified,
+    order.pageId,
+  );
 }

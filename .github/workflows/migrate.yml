@@ -1,0 +1,33 @@
+name: DB migrate
+
+# Applies supabase/migrations/*.sql against the Supabase Postgres DIRECT
+# (non-pooled) connection. Deliberately manual (workflow_dispatch) and kept OUT of
+# the deploy path — DDL must not run in build:vercel or at a serverless cold start.
+# Requires a POSTGRES_URL_NON_POOLING repo secret (the Supabase direct URL, port 5432).
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  migrate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: pnpm/action-setup@v6
+
+      - uses: actions/setup-node@v7
+        with:
+          node-version-file: .nvmrc
+          cache: pnpm
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Apply migrations
+        env:
+          POSTGRES_URL_NON_POOLING: ${{ secrets.POSTGRES_URL_NON_POOLING }}
+        run: pnpm --filter @workspace/api-server db:migrate

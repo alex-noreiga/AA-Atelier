@@ -8,16 +8,22 @@ import {
   getInvoicesNotionClient,
   getInvoiceLineItemsNotionClient,
   type NotionClient,
+  assertDatabaseConfigured,
 } from "./client.js";
+import { logger } from "../logger.js";
 import {
   LINE_ITEM_INVOICE_RELATION_PROPERTY,
   INVOICE_ID_PROPERTY,
+  PAYMENT_STAGES,
+  PAYMENT_STAGE_REMINDER_FIELDS,
   stagePaymentFields,
   extractInvoice,
   extractLineItem,
+  extractPaymentReminderInvoice,
   type PaymentStage,
   type InvoiceRecord,
   type InvoiceLineItemRecord,
+  type PaymentReminderInvoice,
   type NotionInvoicePage,
   type NotionInvoiceLineItemsQueryResponse,
 } from "./invoice.schema.js";
@@ -27,9 +33,10 @@ import {
 } from "./invoice-line-items.blocks.js";
 
 function assertConfigured(client: NotionClient, envVar: string): void {
-  if (!client.databaseId) {
-    throw new Error(`${envVar} is not configured for the invoice databases`);
-  }
+  assertDatabaseConfigured(
+    client,
+    `${envVar} is not configured for the invoice databases`,
+  );
 }
 
 /**
@@ -130,6 +137,133 @@ export async function markInvoicePaid(
     const errorText = await response.text();
     throw new Error(
       `Notion invoice ${stage} paid update failed with status ${response.status}: ${errorText}`,
+    );
+  }
+}
+
+// The invoice properties the payment-reminder feature adds as one-time setup (the
+// per-stage due dates + `Reminded` markers). If any is missing, Notion answers a
+// 400 "Could not find property..." to the reminder query — we treat that exactly
+// like an unset database (degrade to a no-op) so the nightly reconciliation
+// doesn't fire an error-level alert every run until the atelier adds them. The
+// paid checkboxes already existed for the payment flow, so they're not listed.
+const PAYMENT_REMINDER_SETUP_PROPERTIES = PAYMENT_STAGES.flatMap((stage) => {
+  const f = PAYMENT_STAGE_REMINDER_FIELDS[stage];
+  return [f.dueProp, f.remindedProp];
+});
+
+/** Whether a non-ok response is Notion's 400 for one of the reminder setup
+ * properties not existing yet (the mirror of the production schedule's
+ * `isMissingReminderSentProperty`). Requires both the 400 and Notion's "could not
+ * find property" message naming one of them, so an unrelated 400 still throws. */
+function isMissingReminderProperty(status: number, body: string): boolean {
+  return (
+    status === 400 &&
+    /could not find property/i.test(body) &&
+    PAYMENT_REMINDER_SETUP_PROPERTIES.some((name) => body.includes(name))
+  );
+}
+
+interface PaymentReminderQueryResponse {
+  results: NotionInvoicePage[];
+  has_more: boolean;
+  next_cursor: string | null;
+}
+
+/**
+ * Find invoices with a payment stage due for a reminder: a stage that's unpaid,
+ * whose due date is on or before the cutoff (`now + lead days`, which naturally
+ * includes already-overdue stages), and whose per-stage `Reminded` marker isn't
+ * set yet. The three stages are OR'd, each as its own unpaid+due+not-reminded AND
+ * group, so one query returns every candidate invoice; the caller re-derives which
+ * stages qualify and emails each. Fail-soft on an unconfigured database (returns
+ * `[]`), and degrades to `[]` (with a warn) when the reminder setup properties
+ * aren't added yet — a query error otherwise throws so the caller logs and retries.
+ */
+export async function findInvoicesNeedingPaymentReminder(
+  params: { onOrBefore: string },
+  client: NotionClient = getInvoicesNotionClient(),
+): Promise<PaymentReminderInvoice[]> {
+  if (!client.databaseId) {
+    return [];
+  }
+
+  const stageFilter = {
+    or: PAYMENT_STAGES.map((stage) => {
+      const f = PAYMENT_STAGE_REMINDER_FIELDS[stage];
+      return {
+        and: [
+          { property: f.paidProp, checkbox: { equals: false } },
+          { property: f.dueProp, date: { on_or_before: params.onOrBefore } },
+          { property: f.remindedProp, checkbox: { equals: false } },
+        ],
+      };
+    }),
+  };
+
+  const invoices: PaymentReminderInvoice[] = [];
+  let cursor: string | null = null;
+
+  do {
+    const response = await client.fetch(
+      `/v1/databases/${client.databaseId}/query`,
+      {
+        method: "POST",
+        body: JSON.stringify({
+          filter: stageFilter,
+          page_size: 100,
+          ...(cursor ? { start_cursor: cursor } : {}),
+        }),
+      },
+    );
+
+    if (!response.ok) {
+      const body = await response.text();
+      if (isMissingReminderProperty(response.status, body)) {
+        logger.warn(
+          `Payment reminders skipped: the invoice due-date / "Reminded" ` +
+            `properties are missing from the invoices & payments database. ` +
+            `Add them to enable payment reminders (see CLAUDE.md "Payment & ` +
+            `deposit due reminders").`,
+        );
+        return [];
+      }
+      throw new Error(
+        `Notion query failed with status ${response.status}: ${body}`,
+      );
+    }
+
+    const data = (await response.json()) as PaymentReminderQueryResponse;
+    for (const page of data.results) {
+      invoices.push(extractPaymentReminderInvoice(page));
+    }
+    cursor = data.has_more ? data.next_cursor : null;
+  } while (cursor);
+
+  return invoices;
+}
+
+/** Mark one payment stage's due reminder as sent (flips its `Reminded` checkbox),
+ * so the nightly reconciliation doesn't re-send it. Touches only that one field. */
+export async function markPaymentStageReminded(
+  invoicePageId: string,
+  stage: PaymentStage,
+  client: NotionClient = getInvoicesNotionClient(),
+): Promise<void> {
+  assertConfigured(client, "NOTION_INVOICES_DATABASE_ID");
+
+  const { remindedProp } = PAYMENT_STAGE_REMINDER_FIELDS[stage];
+  const response = await client.fetch(`/v1/pages/${invoicePageId}`, {
+    method: "PATCH",
+    body: JSON.stringify({
+      properties: { [remindedProp]: { checkbox: true } },
+    }),
+  });
+
+  if (!response.ok) {
+    const errorText = await response.text();
+    throw new Error(
+      `Notion invoice ${stage} reminder marker update failed with status ${response.status}: ${errorText}`,
     );
   }
 }

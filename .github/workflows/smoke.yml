@@ -9,8 +9,12 @@ name: Production smoke tests
 # updates) a GitHub issue so a regression is visible, not buried in an inbox.
 on:
   schedule:
-    # Mondays at 13:00 UTC (~7-8am US Central, the atelier's timezone).
-    - cron: "0 13 * * 1"
+    # Daily at 13:00 UTC (~7-8am US Central, the atelier's timezone). Running
+    # daily (not weekly) cuts worst-case detection latency for a production break
+    # from ~7 days to ~1. The suite is read-only, so daily runs are safe; the
+    # summary EMAIL still goes out only on Mondays (see "Email smoke report"),
+    # and a failure opens/updates a single dedup'd issue rather than spamming.
+    - cron: "0 13 * * *"
   # Manual runs, optionally against a Vercel preview instead of production.
   workflow_dispatch:
     inputs:
@@ -72,6 +76,12 @@ jobs:
         run: pnpm --filter @workspace/tests exec playwright install-deps chromium
 
       - name: Run production smoke tests
+        env:
+          # Optional sentinel order for the known-good success-render smoke
+          # (tests/smoke/order-success.smoke.ts). Set it as a repo VARIABLE
+          # (an order number isn't sensitive) or a secret — either is picked up
+          # here. Unset ⇒ that one spec skips itself; every other spec runs.
+          SMOKE_KNOWN_ORDER_NUMBER: ${{ vars.SMOKE_KNOWN_ORDER_NUMBER || secrets.SMOKE_KNOWN_ORDER_NUMBER }}
         run: pnpm test:smoke
 
       - name: Upload smoke report
@@ -82,15 +92,23 @@ jobs:
           path: tests/smoke-report/
           retention-days: 30
 
-      # Email a pass/fail summary to the atelier via Resend (the same mailer the
-      # app uses) after every weekly run — a green "all clear" is as useful as a
-      # red alarm for a synthetic monitor. Runs on both pass and fail, and is
-      # itself best-effort: the script self-gates when Resend isn't configured and
-      # never exits non-zero, so a mail hiccup can't turn a green run red. Skipped
-      # for manual preview runs (those are exploratory). The failure GitHub issue
-      # below is unchanged.
-      - name: Email smoke report
+      # Day-of-week (1 = Monday) so the summary email stays a WEEKLY digest even
+      # though the suite now runs daily — a daily green "all clear" would be
+      # noise. Always runs on a scheduled build so its output is available below.
+      - name: Compute weekday
+        id: date
         if: ${{ !cancelled() && github.event_name == 'schedule' }}
+        run: echo "dow=$(date -u +%u)" >> "$GITHUB_OUTPUT"
+
+      # Email a pass/fail summary to the atelier via Resend (the same mailer the
+      # app uses). To keep the daily cadence quiet, the "all clear" digest goes
+      # out only on Mondays; a FAILURE emails immediately on any day (so a break
+      # isn't silent until the next Monday). Best-effort: the script self-gates
+      # when Resend isn't configured and never exits non-zero, so a mail hiccup
+      # can't turn a green run red. Skipped for manual preview runs (exploratory).
+      # The failure GitHub issue below still fires on every failure.
+      - name: Email smoke report
+        if: ${{ !cancelled() && github.event_name == 'schedule' && (steps.date.outputs.dow == '1' || failure()) }}
         working-directory: tests
         env:
           RESEND_API_KEY: ${{ secrets.RESEND_API_KEY }}

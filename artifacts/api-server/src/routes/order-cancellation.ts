@@ -19,20 +19,20 @@ import {
   processCancellation,
   type CancellationResult,
 } from "../services/order-cancellation.service.js";
+import {
+  htmlPage,
+  orderParam,
+  hasCronBearer,
+  hasCronQuerySecret,
+} from "../lib/cron-route.js";
 import { NotFoundError, BadRequestError } from "../lib/errors.js";
 import { logger } from "../lib/logger.js";
-
-function orderParam(req: Request): string {
-  const order = req.query.order;
-  return typeof order === "string" ? order.trim() : "";
-}
 
 export async function processCancellationHandler(
   req: Request,
   res: Response,
 ): Promise<void> {
-  const secret = process.env.CRON_SECRET;
-  if (!secret || req.headers.authorization !== `Bearer ${secret}`) {
+  if (!hasCronBearer(req)) {
     res.status(401).json({ error: "Unauthorized" });
     return;
   }
@@ -58,26 +58,6 @@ export async function processCancellationHandler(
     }
     throw err;
   }
-}
-
-/** Escape text interpolated into the confirmation HTML. The order number reaches
- * this page from the `?order=` query param, so it must be neutralized at the sink
- * (the query param is attacker-controlled — reflected XSS otherwise). */
-function escapeHtml(value: string): string {
-  return value
-    .replace(/&/g, "&amp;")
-    .replace(/</g, "&lt;")
-    .replace(/>/g, "&gt;")
-    .replace(/"/g, "&quot;")
-    .replace(/'/g, "&#39;");
-}
-
-/** A minimal self-contained HTML confirmation page for the Notion link's tab.
- * Both fields are escaped, so any dynamic value (e.g. the order number) is inert. */
-function htmlPage(title: string, message: string): string {
-  const t = escapeHtml(title);
-  const m = escapeHtml(message);
-  return `<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>${t}</title><style>body{margin:0;min-height:100vh;display:flex;align-items:center;justify-content:center;font-family:ui-serif,Georgia,serif;background:#faf8f5;color:#2b2b2b}main{max-width:26rem;padding:2.5rem;text-align:center}h1{font-size:1.5rem;font-weight:500;margin:0 0 .75rem}p{color:#6b6b6b;line-height:1.5;margin:0}</style></head><body><main><h1>${t}</h1><p>${m}</p></main></body></html>`;
 }
 
 /** Compose the atelier-facing summary line from a cancellation result. */
@@ -107,8 +87,7 @@ export async function processCancellationButtonHandler(
   req: Request,
   res: Response,
 ): Promise<void> {
-  const secret = process.env.CRON_SECRET;
-  if (!secret || req.query.secret !== secret) {
+  if (!hasCronQuerySecret(req)) {
     res
       .status(401)
       .type("html")

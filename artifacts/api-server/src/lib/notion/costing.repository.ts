@@ -9,6 +9,7 @@ import {
   getCostingNotionClient,
   getMaterialUsageNotionClient,
   type NotionClient,
+  assertDatabaseConfigured,
 } from "./client.js";
 import {
   extractCostingItem,
@@ -20,9 +21,10 @@ import {
 } from "./costing.schema.js";
 
 function assertConfigured(client: NotionClient, envVar: string): void {
-  if (!client.databaseId) {
-    throw new Error(`${envVar} is not configured for the costing databases`);
-  }
+  assertDatabaseConfigured(
+    client,
+    `${envVar} is not configured for the costing databases`,
+  );
 }
 
 /**

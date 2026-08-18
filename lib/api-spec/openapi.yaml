@@ -25,7 +25,7 @@ tags:
   - name: appointments
     description: Customer appointment scheduling with atelier staff
   - name: account
-    description: Passwordless customer account portal (magic-link sign-in)
+    description: Customer account portal (Supabase Auth; Bearer access token)
 paths:
   /health:
     get:
@@ -922,42 +922,6 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/ErrorEnvelope"
-  /account/login:
-    post:
-      operationId: requestMagicLink
-      tags: [account]
-      summary: Request a passwordless sign-in link
-      description: >-
-        Emails the customer a one-time magic link that signs them into the
-        account portal. Always responds 200 regardless of whether any orders
-        exist for the address — identity is the email itself, so there is no
-        account to enumerate. The email is sent best-effort; a mail outage never
-        fails the request.
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              $ref: "#/components/schemas/MagicLinkRequest"
-      responses:
-        "200":
-          description: Sign-in link sent (if the mailer is configured)
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/MessageResponse"
-        "400":
-          description: Validation error
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/ErrorEnvelope"
-        "500":
-          description: Server error
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/ErrorEnvelope"
   /account/overview:
     get:
       operationId: getAccountOverview
@@ -965,9 +929,11 @@ paths:
       summary: The signed-in customer's orders and shop orders
       description: >-
         Returns everything tied to the signed-in customer's email — their custom
-        orders and their ready-to-wear shop orders — for the account dashboard.
-        Requires a valid session cookie (set by the magic-link verify step);
-        responds 401 when the caller isn't signed in.
+        orders, ready-to-wear shop orders, and upcoming appointments — for the
+        account dashboard. Requires a valid Supabase access token supplied as a
+        Bearer credential; responds 401 when the caller isn't signed in.
+      security:
+        - bearerAuth: []
       responses:
         "200":
           description: The customer's account overview
@@ -987,26 +953,36 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/ErrorEnvelope"
-  /account/logout:
-    post:
-      operationId: logoutAccount
-      tags: [account]
-      summary: Sign out of the account portal
-      description: Clears the session cookie. Idempotent — safe to call when already signed out.
-      responses:
-        "200":
-          description: Signed out
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/MessageResponse"
 components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+      description: >-
+        A Supabase Auth access token (JWT). The browser supabase-js client holds
+        the session and the generated API client sends the token as
+        `Authorization: Bearer <jwt>`; the server verifies it against the
+        Supabase project's JWKS.
   schemas:
     HealthStatus:
       type: object
       properties:
         status:
           type: string
+        commit:
+          type: string
+          description: >-
+            Short git SHA of the deployed build (from VERCEL_GIT_COMMIT_SHA).
+            Omitted when unknown (e.g. local dev). Lets a monitor confirm which
+            build is live.
+        buildTime:
+          type: string
+          format: date-time
+          description: >-
+            When the running bundle was built, injected at build time. Omitted
+            when unknown. Lets a monitor flag a deploy that is unexpectedly old
+            (a stale function serving a months-old build).
       required:
         - status
     OrderStatus:
@@ -1196,6 +1172,28 @@ components:
             marker on the Notion order). When true the tracking page shows a
             cancelled banner and suppresses the request affordance. Absent/false
             for an active order.
+        tracking:
+          type: object
+          description: >-
+            The carrier tracking details, surfaced once the atelier fills them in
+            on the Notion order (a `Tracking Number`, an optional `Carrier` label,
+            and an optional `Tracking URL`). Absent until a tracking number is
+            set. When present the tracking page shows the number, linked to the
+            URL when one is given.
+          properties:
+            number:
+              type: string
+              description: The carrier tracking number, shown to the customer.
+            carrier:
+              type: string
+              description: An optional human carrier label, e.g. "USPS" or "UPS".
+            url:
+              type: string
+              description: >-
+                An optional carrier tracking URL; when present the number is
+                rendered as a link to it.
+          required:
+            - number
       required:
         - orderNumber
         - status
@@ -1458,6 +1456,19 @@ components:
         message:
           type: string
           minLength: 1
+        website:
+          type: string
+          description: >-
+            Anti-spam honeypot. A hidden field that real visitors never see or
+            fill; a non-empty value marks the submission as spam and it is
+            silently dropped. Always send empty (or omit).
+        elapsedMs:
+          type: integer
+          minimum: 0
+          description: >-
+            Anti-spam timing signal: milliseconds the visitor spent on the form
+            before submitting. Implausibly fast submissions are dropped. Omit
+            when the client can't measure it (treated as human).
     NewContactResponse:
       type: object
       required:
@@ -1483,6 +1494,19 @@ components:
           description: >-
             Set only when the customer asked about one specific sold-out size
             band; absent when the whole variant is sold out.
+        website:
+          type: string
+          description: >-
+            Anti-spam honeypot. A hidden field that real visitors never fill; a
+            non-empty value marks the submission as spam and it is silently
+            dropped. Always send empty (or omit).
+        elapsedMs:
+          type: integer
+          minimum: 0
+          description: >-
+            Anti-spam timing signal: milliseconds the visitor spent on the form
+            before submitting. Implausibly fast submissions are dropped. Omit
+            when unmeasurable (treated as human).
     NewNotifyResponse:
       type: object
       required:
@@ -1503,6 +1527,19 @@ components:
           description: >-
             Where the opt-in came from, e.g. "footer" or "order form". Recorded
             for the atelier's own segmentation; the customer never sees it.
+        website:
+          type: string
+          description: >-
+            Anti-spam honeypot. A hidden field that real visitors never fill; a
+            non-empty value marks the submission as spam and it is silently
+            dropped. Always send empty (or omit).
+        elapsedMs:
+          type: integer
+          minimum: 0
+          description: >-
+            Anti-spam timing signal: milliseconds the visitor spent on the form
+            before submitting. Implausibly fast submissions are dropped. Omit
+            when unmeasurable (treated as human).
     NewNewsletterResponse:
       type: object
       required:
@@ -1839,6 +1876,19 @@ components:
           items:
             type: string
             enum: [in-person, virtual]
+        requiresOrder:
+          type: boolean
+          description: >-
+            When true, this type may only be booked against an existing order —
+            the request must carry an orderNumber that matches a real order (and
+            the booking email must match the one on that order). Order-scoped
+            types like fittings and design reviews set this.
+        requiresProjectDetails:
+          type: boolean
+          description: >-
+            When true, the request must include a non-empty projectDetails
+            describing what the customer wants made. New-customer types like
+            consultations set this to filter out uncertain requests.
     AppointmentOptions:
       type: object
       required:
@@ -1918,6 +1968,17 @@ components:
           enum: [email, phone, text]
         notes:
           type: string
+        orderNumber:
+          type: string
+          description: >-
+            The customer's order number. Required for order-scoped types
+            (requiresOrder) — the server verifies it against a real order whose
+            email matches the booking email. Ignored for other types.
+        projectDetails:
+          type: string
+          description: >-
+            A short description of what the customer wants made. Required for
+            new-customer types (requiresProjectDetails); ignored otherwise.
     NewAppointmentResponse:
       type: object
       required:
@@ -2043,14 +2104,6 @@ components:
       properties:
         message:
           type: string
-    MagicLinkRequest:
-      type: object
-      required: [email]
-      properties:
-        email:
-          type: string
-          format: email
-          description: The email to send the one-time sign-in link to.
     AccountOverview:
       type: object
       description: >-

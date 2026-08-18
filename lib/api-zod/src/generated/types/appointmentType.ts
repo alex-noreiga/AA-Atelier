@@ -17,4 +17,8 @@ export interface AppointmentType {
   staff: string[];
   /** The locations this type is offered in. */
   locations: AppointmentTypeLocationsItem[];
+  /** When true, this type may only be booked against an existing order — the request must carry an orderNumber that matches a real order (and the booking email must match the one on that order). Order-scoped types like fittings and design reviews set this. */
+  requiresOrder?: boolean;
+  /** When true, the request must include a non-empty projectDetails describing what the customer wants made. New-customer types like consultations set this to filter out uncertain requests. */
+  requiresProjectDetails?: boolean;
 }

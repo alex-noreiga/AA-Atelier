@@ -1,7 +1,7 @@
-// Rate limiting for the account-portal auth routes. These are the app's only
-// endpoints that either send an email to an arbitrary address (sign-in link) or
-// perform authorization (magic-link verify / session-gated overview), so a brake
-// on abuse — email-bombing, token guessing — belongs here.
+// Rate limiting for the account-portal overview route. Sign-in itself runs on
+// Supabase Auth in the browser, so the one server endpoint left here just
+// performs authorization (verifying the Supabase access token before returning
+// the customer's data); a brake on abuse — token guessing, scraping — belongs here.
 //
 // The store is `express-rate-limit`'s default in-memory store: per serverless
 // instance, not shared across them (the same best-effort caveat the alert
@@ -14,7 +14,20 @@ import rateLimit from "express-rate-limit";
 
 export const accountRateLimiter = rateLimit({
   windowMs: 15 * 60 * 1000, // 15 minutes
-  limit: 30, // per IP per window across the account auth routes
+  limit: 30, // per IP per window on the account overview route
+  standardHeaders: "draft-7",
+  legacyHeaders: false,
+  message: { error: "Too many requests. Please try again in a few minutes." },
+});
+
+// A tighter brake for the public, anonymous submission forms (contact,
+// back-in-stock notify, newsletter). A real visitor submits one of these a
+// handful of times at most, so a low per-IP ceiling backstops the honeypot +
+// timing filter without ever getting in a human's way. Same in-memory /
+// per-instance caveat as above.
+export const submissionRateLimiter = rateLimit({
+  windowMs: 10 * 60 * 1000, // 10 minutes
+  limit: 5, // per IP per window across the public submission forms
   standardHeaders: "draft-7",
   legacyHeaders: false,
   message: { error: "Too many requests. Please try again in a few minutes." },

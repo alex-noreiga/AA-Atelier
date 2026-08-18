@@ -10,4 +10,11 @@ export interface NewNewsletterRequest {
   email: string;
   /** Where the opt-in came from, e.g. "footer" or "order form". Recorded for the atelier's own segmentation; the customer never sees it. */
   source?: string;
+  /** Anti-spam honeypot. A hidden field that real visitors never fill; a non-empty value marks the submission as spam and it is silently dropped. Always send empty (or omit). */
+  website?: string;
+  /**
+     * Anti-spam timing signal: milliseconds the visitor spent on the form before submitting. Implausibly fast submissions are dropped. Omit when unmeasurable (treated as human).
+     * @minimum 0
+     */
+  elapsedMs?: number;
 }

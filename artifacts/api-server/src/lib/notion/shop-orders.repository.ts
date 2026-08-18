@@ -4,7 +4,11 @@
 // re-delivered `checkout.session.completed` event does not create a duplicate.
 
 import type Stripe from "stripe";
-import { getShopOrdersNotionClient, type NotionClient } from "./client.js";
+import {
+  getShopOrdersNotionClient,
+  assertDatabaseConfigured,
+  type NotionClient,
+} from "./client.js";
 import { normalizeEmail } from "../email.js";
 import {
   buildShopOrderProperties,
@@ -15,10 +19,21 @@ import {
   SHOP_ORDER_STATUS_PROPERTY,
   SHOP_ORDER_TOTAL_PROPERTY,
   SHOP_ORDER_CANCELLED_PROPERTY,
+  SHOP_ORDER_TRACKING_NUMBER_PROPERTY,
+  SHOP_ORDER_TRACKING_CARRIER_PROPERTY,
+  SHOP_ORDER_TRACKING_URL_PROPERTY,
 } from "./shop-orders.blocks.js";
 
 interface NotionQueryResponse {
   results: Array<{ id: string }>;
+}
+
+/** Carrier tracking details for a shipped shop order, present only once the
+ * atelier has filled in a tracking number. `carrier`/`url` are optional. */
+export interface ShopOrderTracking {
+  number: string;
+  carrier?: string;
+  url?: string;
 }
 
 /** A shop order as read back for the customer-facing tracking lookup. */
@@ -28,6 +43,8 @@ export interface ShopOrderRecord {
   total?: number;
   /** True once the atelier has cancelled the order (`Cancelled` checkbox). */
   cancelled?: boolean;
+  /** Carrier tracking, once the atelier fills in a tracking number. */
+  tracking?: ShopOrderTracking;
 }
 
 // Raw Notion property shapes we read back (only the types we touch).
@@ -36,7 +53,8 @@ type NotionReadProperty =
   | { type: "status"; status: { name: string } | null }
   | { type: "number"; number: number | null }
   | { type: "email"; email: string | null }
-  | { type: "checkbox"; checkbox: boolean };
+  | { type: "checkbox"; checkbox: boolean }
+  | { type: "url"; url: string | null };
 
 interface NotionLookupResponse {
   results: Array<{
@@ -56,11 +74,10 @@ const STATUS_CACHE_TTL_MS = 60_000;
 let cachedStatuses: { statuses: string[]; fetchedAt: number } | null = null;
 
 function assertConfigured(client: NotionClient): void {
-  if (!client.databaseId) {
-    throw new Error(
-      "NOTION_SHOP_ORDERS_DATABASE_ID is not configured for the shop-orders database",
-    );
-  }
+  assertDatabaseConfigured(
+    client,
+    "NOTION_SHOP_ORDERS_DATABASE_ID is not configured for the shop-orders database",
+  );
 }
 
 function readRichText(prop: NotionReadProperty | undefined): string {
@@ -91,11 +108,36 @@ function readCheckbox(prop: NotionReadProperty | undefined): boolean {
   return prop.checkbox;
 }
 
+function readUrl(prop: NotionReadProperty | undefined): string {
+  if (prop?.type !== "url") return "";
+  return (prop.url ?? "").trim();
+}
+
+/** Read the carrier tracking off a page, or undefined when no tracking number
+ * is set yet (the number gates the whole block — carrier/url are display extras
+ * that make no sense on their own). */
+function readTracking(
+  properties: Record<string, NotionReadProperty | undefined>,
+): ShopOrderTracking | undefined {
+  const number = readRichText(properties[SHOP_ORDER_TRACKING_NUMBER_PROPERTY]);
+  if (!number) return undefined;
+  const carrier = readRichText(
+    properties[SHOP_ORDER_TRACKING_CARRIER_PROPERTY],
+  );
+  const url = readUrl(properties[SHOP_ORDER_TRACKING_URL_PROPERTY]);
+  return {
+    number,
+    ...(carrier ? { carrier } : {}),
+    ...(url ? { url } : {}),
+  };
+}
+
 /** What a shop-order-scoped gate needs: the email to verify the requester
  * against. Kept separate from {@link ShopOrderRecord} (the public tracking view)
  * so the email is never returned by the status lookup — the shop-order analogue
  * of the custom order's {@link findOrderVerification}. */
 export interface ShopOrderVerification {
+  pageId: string;
   email: string;
 }
 
@@ -138,7 +180,10 @@ export async function findShopOrderVerification(
   const page = data.results[0];
   if (!page) return null;
 
-  return { email: readEmail(page.properties[SHOP_ORDER_EMAIL_PROPERTY]) };
+  return {
+    pageId: page.id,
+    email: readEmail(page.properties[SHOP_ORDER_EMAIL_PROPERTY]),
+  };
 }
 
 /** Whether an order has already been recorded for this Stripe session. */
@@ -176,12 +221,13 @@ export async function createShopOrder(
   session: Stripe.Checkout.Session,
   client: NotionClient = getShopOrdersNotionClient(),
   clientPageId?: string,
-): Promise<void> {
+  itemPageIds?: string[],
+): Promise<string> {
   assertConfigured(client);
 
   const body: Record<string, unknown> = {
     parent: { database_id: client.databaseId },
-    properties: buildShopOrderProperties(session, clientPageId),
+    properties: buildShopOrderProperties(session, clientPageId, itemPageIds),
     children: buildShopOrderPageBlocks(session),
   };
 
@@ -196,6 +242,9 @@ export async function createShopOrder(
       `Notion shop-order creation failed with status ${response.status}: ${errorText}`,
     );
   }
+
+  const created = (await response.json()) as { id: string };
+  return created.id;
 }
 
 /**
@@ -235,6 +284,7 @@ export async function findShopOrderByNumber(
   if (!page) return null;
 
   const total = readNumber(page.properties[SHOP_ORDER_TOTAL_PROPERTY]);
+  const tracking = readTracking(page.properties);
   return {
     orderNumber:
       readRichText(page.properties[SHOP_ORDER_NUMBER_PROPERTY]) || trimmed,
@@ -243,6 +293,7 @@ export async function findShopOrderByNumber(
     ...(readCheckbox(page.properties[SHOP_ORDER_CANCELLED_PROPERTY])
       ? { cancelled: true }
       : {}),
+    ...(tracking ? { tracking } : {}),
   };
 }
 
@@ -370,22 +421,80 @@ export async function findShopOrdersByEmail(
     };
 
     for (const page of data.results) {
-      const orderNumber = readRichText(
-        page.properties[SHOP_ORDER_NUMBER_PROPERTY],
-      );
-      if (!orderNumber) continue;
-      const total = readNumber(page.properties[SHOP_ORDER_TOTAL_PROPERTY]);
-      orders.push({
-        orderNumber,
-        status: readStatus(page.properties[SHOP_ORDER_STATUS_PROPERTY]),
-        ...(total !== null ? { total } : {}),
-      });
+      const record = pageToShopOrder(page);
+      if (record) orders.push(record);
     }
 
     cursor = data.has_more && data.next_cursor ? data.next_cursor : undefined;
   } while (cursor);
 
   return orders;
+}
+
+/** Map a Notion shop-order page to a tracking record, or null when it has no
+ * order number (placed before that property shipped — nothing to link to). */
+function pageToShopOrder(
+  page: NotionLookupResponse["results"][number],
+): ShopOrderRecord | null {
+  const orderNumber = readRichText(page.properties[SHOP_ORDER_NUMBER_PROPERTY]);
+  if (!orderNumber) return null;
+  const total = readNumber(page.properties[SHOP_ORDER_TOTAL_PROPERTY]);
+  return {
+    orderNumber,
+    status: readStatus(page.properties[SHOP_ORDER_STATUS_PROPERTY]),
+    ...(total !== null ? { total } : {}),
+  };
+}
+
+/**
+ * Fetch shop-order records for a set of order numbers in a single query (one
+ * Notion `or` filter, chunked at 100), preserving the input order. The account
+ * portal discovers the numbers from the Postgres index, then calls this for the
+ * live fulfilment `Status`.
+ */
+export async function findShopOrdersByNumbers(
+  numbers: string[],
+  client: NotionClient = getShopOrdersNotionClient(),
+): Promise<ShopOrderRecord[]> {
+  assertConfigured(client);
+
+  const unique = [...new Set(numbers.map((n) => n.trim()).filter(Boolean))];
+  if (unique.length === 0) return [];
+
+  const byNumber = new Map<string, ShopOrderRecord>();
+
+  for (let i = 0; i < unique.length; i += 100) {
+    const chunk = unique.slice(i, i + 100);
+    const response = await client.fetch(
+      `/v1/databases/${client.databaseId}/query`,
+      {
+        method: "POST",
+        body: JSON.stringify({
+          filter: {
+            or: chunk.map((n) => ({
+              property: SHOP_ORDER_NUMBER_PROPERTY,
+              rich_text: { equals: n },
+            })),
+          },
+          page_size: 100,
+        }),
+      },
+    );
+
+    if (!response.ok) {
+      throw new Error(`Notion query failed with status ${response.status}`);
+    }
+
+    const data = (await response.json()) as NotionLookupResponse;
+    for (const page of data.results) {
+      const record = pageToShopOrder(page);
+      if (record) byNumber.set(record.orderNumber, record);
+    }
+  }
+
+  return unique
+    .map((n) => byNumber.get(n))
+    .filter((r): r is ShopOrderRecord => r !== undefined);
 }
 
 /**

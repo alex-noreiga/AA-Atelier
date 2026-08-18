@@ -2,18 +2,21 @@
 // Notion database. Mirrors the orders repository create path, minus the
 // order-number generation and stage cache.
 
-import { getContactNotionClient, type NotionClient } from "./client.js";
+import {
+  getContactNotionClient,
+  assertDatabaseConfigured,
+  type NotionClient,
+} from "./client.js";
 import {
   buildContactProperties,
   type CreateContactInput,
 } from "./contact.blocks.js";
 
 function assertConfigured(client: NotionClient): void {
-  if (!client.databaseId) {
-    throw new Error(
-      "NOTION_CONTACT_DATABASE_ID is not configured for the contact database",
-    );
-  }
+  assertDatabaseConfigured(
+    client,
+    "NOTION_CONTACT_DATABASE_ID is not configured for the contact database",
+  );
 }
 
 export async function createContactMessage(

@@ -18,6 +18,7 @@ import {
   getAppointmentType,
   isAppointmentLocation,
   type AppointmentLocation,
+  type AppointmentTypeDef,
 } from "../lib/appointments/catalog.js";
 import { computeSlots } from "../lib/appointments/availability.js";
 import {
@@ -46,7 +47,13 @@ import {
 import { sendEmailBestEffort } from "../lib/resend/send.js";
 import { fromAddress, atelierInbox } from "../lib/resend/config.js";
 import { buildManageUrl } from "./appointment-manage.service.js";
-import { BadRequestError } from "../lib/errors.js";
+import { findOrderVerification } from "../lib/notion/orders.repository.js";
+import { normalizeEmail } from "../lib/email.js";
+import {
+  BadRequestError,
+  NotFoundError,
+  ForbiddenError,
+} from "../lib/errors.js";
 
 const DEFAULT_WINDOW_DAYS = 14;
 
@@ -62,6 +69,8 @@ interface OptionsResult {
     description: string;
     staff: string[];
     locations: AppointmentLocation[];
+    requiresOrder?: boolean;
+    requiresProjectDetails?: boolean;
   }>;
 }
 
@@ -76,6 +85,8 @@ export function getAppointmentOptions(): OptionsResult {
       description: type.description,
       staff: type.staff,
       locations: type.locations,
+      ...(type.requiresOrder ? { requiresOrder: true } : {}),
+      ...(type.requiresProjectDetails ? { requiresProjectDetails: true } : {}),
     })),
   };
 }
@@ -148,6 +159,52 @@ export async function getAppointmentAvailability(
   };
 }
 
+/**
+ * Enforce a type's booking gate before any calendar work:
+ *   - `requiresOrder` (fittings, design reviews): the request must carry an
+ *     `orderNumber` that resolves to a real order whose stored email matches the
+ *     booking email — the same verification the measurement-change/review flows
+ *     use. A missing number → 400, an unknown order → 404, a mismatched email →
+ *     403. A legacy order with no stored email is accepted (can't lock those
+ *     customers out), mirroring the measurement-change flow.
+ *   - `requiresProjectDetails` (consultations, general): the request must
+ *     include a non-empty `projectDetails` — a light screen on the new-customer
+ *     funnel. Missing/blank → 400.
+ * Types with neither flag are unrestricted.
+ */
+async function enforceBookingGate(
+  type: AppointmentTypeDef,
+  input: BookInput,
+): Promise<void> {
+  if (type.requiresProjectDetails && !input.projectDetails?.trim()) {
+    throw new BadRequestError(
+      "Please tell us a little about what you'd like made so we can prepare.",
+    );
+  }
+
+  if (type.requiresOrder) {
+    const orderNumber = input.orderNumber?.trim();
+    if (!orderNumber) {
+      throw new BadRequestError(
+        "This appointment is for existing orders — please enter your order number.",
+      );
+    }
+    const order = await findOrderVerification(orderNumber);
+    if (!order) {
+      throw new NotFoundError("We couldn't find an order with that number.");
+    }
+    // Identity gate. A legacy order with no stored email is accepted (we can't
+    // verify it, but we won't lock the customer out); a present-but-different
+    // email is rejected. Same policy as the measurement-change flow.
+    const storedEmail = normalizeEmail(order.email);
+    if (storedEmail && storedEmail !== normalizeEmail(input.email)) {
+      throw new ForbiddenError(
+        "That email doesn't match the one on this order.",
+      );
+    }
+  }
+}
+
 function generateConfirmationCode(): string {
   const random = Math.random().toString(36).substring(2, 6).toUpperCase();
   const stamp = Date.now().toString(36).slice(-4).toUpperCase();
@@ -185,6 +242,10 @@ export async function bookAppointment(input: BookInput): Promise<BookResult> {
       "That staff member doesn't offer this appointment type.",
     );
   }
+
+  // Enforce the type's booking gate (order-scoped vs new-customer funnel) before
+  // any calendar work, so a gated request fails fast without touching Google.
+  await enforceBookingGate(type, input);
 
   const start = input.start;
   if (Number.isNaN(start.getTime())) {
@@ -237,6 +298,9 @@ export async function bookAppointment(input: BookInput): Promise<BookResult> {
   const when = formatInZone(start, timeZone);
   const title = `${type.name} — ${input.fullName} — ${when}`;
 
+  const orderNumber = input.orderNumber?.trim() || undefined;
+  const projectDetails = input.projectDetails?.trim() || undefined;
+
   const appointment: BookedAppointment = {
     customerName: input.fullName,
     email: input.email,
@@ -252,6 +316,8 @@ export async function bookAppointment(input: BookInput): Promise<BookResult> {
     confirmationCode,
     notes: input.notes,
     preferredContact: input.preferredContact,
+    ...(orderNumber ? { orderNumber } : {}),
+    ...(projectDetails ? { projectDetails } : {}),
   };
   const { eventId, meetingUrl, calendarLink } = await createCalendarEvent(
     appointment,
@@ -278,6 +344,8 @@ export async function bookAppointment(input: BookInput): Promise<BookResult> {
     notes: input.notes,
     meetingUrl,
     ...(manageUrl ? { manageUrl } : {}),
+    ...(orderNumber ? { orderNumber } : {}),
+    ...(projectDetails ? { projectDetails } : {}),
   };
   const from = fromAddress("appointments");
   await sendEmailBestEffort({ ...appointmentConfirmationEmail(details), from });

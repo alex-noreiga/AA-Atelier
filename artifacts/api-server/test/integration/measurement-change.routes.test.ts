@@ -4,7 +4,7 @@ import { describe, it, expect, vi } from "vitest";
 // gates → response schema parse → error handler) runs end-to-end without the
 // network. The service's gate logic runs for real.
 vi.mock("../../src/lib/notion/orders.repository.js", () => ({
-  findOrderForMeasurementChange: vi.fn(),
+  findOrderVerification: vi.fn(),
 }));
 vi.mock("../../src/lib/notion/measurement-change.repository.js", () => ({
   createMeasurementChangeRequest: vi.fn(),
@@ -13,10 +13,10 @@ vi.mock("../../src/lib/notion/measurement-change.repository.js", () => ({
 import request from "supertest";
 import { measurementChangeInput } from "@workspace/test-fixtures";
 import app from "../../src/app.js";
-import { findOrderForMeasurementChange } from "../../src/lib/notion/orders.repository.js";
+import { findOrderVerification } from "../../src/lib/notion/orders.repository.js";
 import { createMeasurementChangeRequest } from "../../src/lib/notion/measurement-change.repository.js";
 
-const mockFind = vi.mocked(findOrderForMeasurementChange);
+const mockFind = vi.mocked(findOrderVerification);
 const mockWrite = vi.mocked(createMeasurementChangeRequest);
 
 const STAGES = ["Consultation", "Sketching", "Cutting/Pinning", "Delivery"];
@@ -27,6 +27,7 @@ describe("POST /api/orders/:orderNumber/measurement-change-requests", () => {
   it("returns 201 when the email matches and the order is pre-production", async () => {
     mockFind.mockResolvedValue({
       email: "ada@example.com",
+      pageId: "page-order-test",
       currentStage: "Consultation",
       stages: STAGES,
     });
@@ -52,6 +53,7 @@ describe("POST /api/orders/:orderNumber/measurement-change-requests", () => {
   it("returns 403 when the email doesn't match the order", async () => {
     mockFind.mockResolvedValue({
       email: "someone-else@example.com",
+      pageId: "page-order-test",
       currentStage: "Consultation",
       stages: STAGES,
     });
@@ -66,6 +68,7 @@ describe("POST /api/orders/:orderNumber/measurement-change-requests", () => {
   it("returns 409 when measurements are locked in production", async () => {
     mockFind.mockResolvedValue({
       email: "ada@example.com",
+      pageId: "page-order-test",
       currentStage: "Cutting/Pinning",
       stages: STAGES,
     });
@@ -98,6 +101,7 @@ describe("POST /api/orders/:orderNumber/measurement-change-requests", () => {
   it("returns 201 for an appointment request with no measurement values", async () => {
     mockFind.mockResolvedValue({
       email: "ada@example.com",
+      pageId: "page-order-test",
       currentStage: "Consultation",
       stages: STAGES,
     });

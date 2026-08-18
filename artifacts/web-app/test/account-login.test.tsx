@@ -9,60 +9,120 @@ vi.mock("wouter", async (importOriginal) => {
   return { ...actual, useSearch: () => mockSearch };
 });
 
-vi.mock("@workspace/api-client-react", () => ({
-  useRequestMagicLink: vi.fn(),
+// Fake Supabase auth surface — the page calls these directly. Hoisted so the
+// vi.mock factory (which runs before top-level init) can close over it.
+const { auth } = vi.hoisted(() => ({
+  auth: {
+    signInWithPassword: vi.fn(),
+    signUp: vi.fn(),
+    signInWithOtp: vi.fn(),
+    signInWithOAuth: vi.fn(),
+    resetPasswordForEmail: vi.fn(),
+  },
+}));
+vi.mock("@/lib/supabase", () => ({
+  supabase: { auth },
+  supabaseConfigured: true,
+}));
+vi.mock("@/lib/auth-context", () => ({
+  useAuth: () => ({
+    session: null,
+    user: null,
+    loading: false,
+    configured: true,
+    signOut: vi.fn(),
+  }),
 }));
 
-import { useRequestMagicLink } from "@workspace/api-client-react";
 import AccountLogin from "@/pages/account-login";
-
-const mockUse = vi.mocked(useRequestMagicLink);
-const mutate = vi.fn();
 
 beforeEach(() => {
   mockSearch = "";
-  mutate.mockReset();
-  // Invoke onSuccess synchronously so the "check your inbox" state is reachable.
-  mockUse.mockImplementation(
-    (opts) =>
-      ({
-        mutate: (vars: { data: { email: string } }) => {
-          mutate(vars);
-          opts?.mutation?.onSuccess?.(
-            { message: "ok" } as never,
-            vars as never,
-            undefined as never,
-            undefined as never,
-          );
-        },
-        isPending: false,
-      }) as never,
-  );
+  Object.values(auth).forEach((fn) => fn.mockReset());
+  auth.signInWithPassword.mockResolvedValue({
+    data: { session: {} },
+    error: null,
+  });
+  auth.signUp.mockResolvedValue({
+    data: { session: null, user: {} },
+    error: null,
+  });
+  auth.signInWithOtp.mockResolvedValue({ error: null });
+  auth.signInWithOAuth.mockResolvedValue({ error: null });
+  auth.resetPasswordForEmail.mockResolvedValue({ error: null });
 });
 
 describe("Account login", () => {
-  it("submits the entered email to the magic-link mutation", async () => {
+  it("signs in with email + password", async () => {
     const user = userEvent.setup();
     render(<AccountLogin />);
 
     await user.type(screen.getByTestId("input-email"), "skater@example.com");
-    await user.click(screen.getByTestId("button-send-link"));
+    await user.type(screen.getByTestId("input-password"), "hunter2000");
+    await user.click(screen.getByTestId("button-submit"));
 
-    expect(mutate).toHaveBeenCalledWith({
-      data: { email: "skater@example.com" },
+    expect(auth.signInWithPassword).toHaveBeenCalledWith({
+      email: "skater@example.com",
+      password: "hunter2000",
     });
   });
 
-  it("shows a confirmation once the link has been sent", async () => {
+  it("requests a magic link and shows the confirmation", async () => {
     const user = userEvent.setup();
     render(<AccountLogin />);
 
     await user.type(screen.getByTestId("input-email"), "skater@example.com");
-    await user.click(screen.getByTestId("button-send-link"));
+    await user.click(screen.getByTestId("button-magic-link"));
 
-    expect(screen.getByTestId("login-sent")).toBeInTheDocument();
-    expect(screen.getByTestId("login-sent")).toHaveTextContent(
+    expect(auth.signInWithOtp).toHaveBeenCalledWith(
+      expect.objectContaining({ email: "skater@example.com" }),
+    );
+    expect(await screen.findByTestId("login-notice")).toHaveTextContent(
       "skater@example.com",
+    );
+  });
+
+  it("creates an account and shows the verify-your-email notice", async () => {
+    const user = userEvent.setup();
+    render(<AccountLogin />);
+
+    await user.click(screen.getByTestId("tab-signup"));
+    await user.type(screen.getByTestId("input-email"), "new@example.com");
+    await user.type(screen.getByTestId("input-password"), "hunter2000");
+    await user.click(screen.getByTestId("button-submit"));
+
+    expect(auth.signUp).toHaveBeenCalledWith(
+      expect.objectContaining({
+        email: "new@example.com",
+        password: "hunter2000",
+      }),
+    );
+    expect(await screen.findByTestId("login-notice")).toBeInTheDocument();
+  });
+
+  it("sends a password reset from the forgot-password action", async () => {
+    const user = userEvent.setup();
+    render(<AccountLogin />);
+
+    await user.type(screen.getByTestId("input-email"), "skater@example.com");
+    await user.click(screen.getByTestId("button-forgot"));
+
+    expect(auth.resetPasswordForEmail).toHaveBeenCalledWith(
+      "skater@example.com",
+      expect.objectContaining({
+        redirectTo: expect.stringContaining("/account/reset"),
+      }),
+    );
+  });
+
+  it("starts Google OAuth", async () => {
+    const user = userEvent.setup();
+    render(<AccountLogin />);
+
+    await user.click(screen.getByTestId("button-google"));
+
+    expect(auth.signInWithOAuth).toHaveBeenCalledWith(
+      expect.objectContaining({ provider: "google" }),
     );
   });
 

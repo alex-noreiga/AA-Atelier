@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useRef, useState } from "react";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
@@ -20,6 +20,8 @@ import { SuccessScreen } from "@/components/success-screen";
 import { Seo } from "@/components/seo";
 import { ROUTE_SEO } from "@/lib/seo-routes";
 import { isRushNeededBy, RUSH_SURCHARGE_NOTE } from "@/lib/rush";
+import { useAnalytics, AnalyticsEvent } from "@/lib/analytics";
+import { useSubmitTimer } from "@/lib/anti-spam";
 import { useToast } from "@/hooks/use-toast";
 import {
   ArrowLeft,
@@ -169,6 +171,16 @@ export default function OrderForm() {
   // ticks the box. Independent of the order write: a failure here is swallowed
   // (the server flow is best-effort too) and never blocks the order confirmation.
   const subscribeNewsletter = useSubscribeNewsletter();
+  const newsletterElapsedMs = useSubmitTimer();
+
+  const analytics = useAnalytics();
+  // Funnel-start fires once, on the customer's first interaction with the form.
+  const formStarted = useRef(false);
+  const onFormStart = () => {
+    if (formStarted.current) return;
+    formStarted.current = true;
+    analytics(AnalyticsEvent.OrderFormStart);
+  };
 
   // The studio's color palette (a built-in primary set, atelier-overridable via
   // the COLOR_PALETTE Studio Settings value). Best-effort: if the fetch errors,
@@ -235,12 +247,26 @@ export default function OrderForm() {
     // guarantees the surcharge was acknowledged when this is true).
     const rush = isRushNeededBy(neededBy);
 
+    // Funnel-submit: non-identifying shape of the order only (no name/email/
+    // phone/measurements). Fired client-side before the network call.
+    analytics(AnalyticsEvent.OrderFormSubmit, {
+      rush,
+      measurementMode,
+      hasReferral: Boolean(referralCode?.trim()),
+      hasReferenceImages: referenceImageIds.length > 0,
+      subscribeNewsletter: Boolean(optIn),
+    });
+
     // Opt-in rides alongside the order rather than through it: a separate,
     // best-effort call keyed to the same email, so the order contract stays
     // unchanged and the marketing capture lives in one place.
     if (optIn) {
       subscribeNewsletter.mutate({
-        data: { email: contact.email, source: "order form" },
+        data: {
+          email: contact.email,
+          source: "order form",
+          elapsedMs: newsletterElapsedMs(),
+        },
       });
     }
 
@@ -376,6 +402,8 @@ export default function OrderForm() {
                 }
               : handleSubmit(onSubmit, () => setStep(0))
           }
+          onFocusCapture={onFormStart}
+          onChangeCapture={onFormStart}
           className="space-y-12"
         >
           {/* Step indicator */}

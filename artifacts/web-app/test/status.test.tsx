@@ -223,6 +223,23 @@ describe("Status deposits", () => {
       screen.queryByTestId("link-deposit-receipt-first_deposit"),
     ).not.toBeInTheDocument();
   });
+
+  it("shows no receipt link for a deposit marked paid in person (non-Stripe session id)", async () => {
+    // The atelier records an in-person payment with a non-Stripe marker in the
+    // invoice's Session Id field; a receipt only exists for a `cs_…` session.
+    setHook({
+      data: orderRecord({
+        deposits: [{ ...firstDue, paid: true, sessionId: "IN_PERSON" }],
+      }),
+    });
+    await submitLookup();
+    expect(
+      screen.getByTestId("deposit-paid-first_deposit"),
+    ).toBeInTheDocument();
+    expect(
+      screen.queryByTestId("link-deposit-receipt-first_deposit"),
+    ).not.toBeInTheDocument();
+  });
 });
 
 describe("Status cancellation", () => {

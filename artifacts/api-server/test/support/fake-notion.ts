@@ -294,6 +294,14 @@ export function invoicePage(opts: {
   secondDepositAmount?: number | null;
   secondDepositPaid?: boolean;
   secondDepositSessionId?: string;
+  // Payment-reminder fields (per-stage due dates + `Reminded` markers + the
+  // `Order` relation used to resolve the customer email).
+  firstDepositDue?: string | null;
+  secondDepositDue?: string | null;
+  firstDepositReminded?: boolean;
+  secondDepositReminded?: boolean;
+  balanceReminded?: boolean;
+  orderPageId?: string;
 }) {
   return {
     id: opts.id ?? "invoice-page",
@@ -354,6 +362,36 @@ export function invoicePage(opts: {
         rich_text: opts.secondDepositSessionId
           ? [{ plain_text: opts.secondDepositSessionId }]
           : [],
+      },
+      "First Deposit Due": {
+        type: "date",
+        date:
+          opts.firstDepositDue === null || opts.firstDepositDue === undefined
+            ? null
+            : { start: opts.firstDepositDue, end: null },
+      },
+      "Second Deposit Due": {
+        type: "date",
+        date:
+          opts.secondDepositDue === null || opts.secondDepositDue === undefined
+            ? null
+            : { start: opts.secondDepositDue, end: null },
+      },
+      "First Deposit Reminded": {
+        type: "checkbox",
+        checkbox: opts.firstDepositReminded ?? false,
+      },
+      "Second Deposit Reminded": {
+        type: "checkbox",
+        checkbox: opts.secondDepositReminded ?? false,
+      },
+      "Balance Reminded": {
+        type: "checkbox",
+        checkbox: opts.balanceReminded ?? false,
+      },
+      Order: {
+        type: "relation",
+        relation: opts.orderPageId ? [{ id: opts.orderPageId }] : [],
       },
     },
   };

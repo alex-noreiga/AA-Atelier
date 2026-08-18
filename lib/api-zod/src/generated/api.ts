@@ -13,7 +13,9 @@ import * as zod from 'zod';
  * @summary Health check
  */
 export const HealthCheckResponse = zod.object({
-  "status": zod.string()
+  "status": zod.string(),
+  "commit": zod.string().optional().describe('Short git SHA of the deployed build (from VERCEL_GIT_COMMIT_SHA). Omitted when unknown (e.g. local dev). Lets a monitor confirm which build is live.'),
+  "buildTime": zod.coerce.date().optional().describe('When the running bundle was built, injected at build time. Omitted when unknown. Lets a monitor flag a deploy that is unexpectedly old (a stale function serving a months-old build).')
 })
 
 
@@ -213,13 +215,17 @@ export const CreateOrderCancellationRequestResponse = zod.object({
  */
 
 
+export const createContactMessageBodyElapsedMsMin = 0;
+
 
 
 export const CreateContactMessageBody = zod.object({
   "name": zod.string().min(1),
   "email": zod.string().email(),
   "phone": zod.string().optional(),
-  "message": zod.string().min(1)
+  "message": zod.string().min(1),
+  "website": zod.string().optional().describe('Anti-spam honeypot. A hidden field that real visitors never see or fill; a non-empty value marks the submission as spam and it is silently dropped. Always send empty (or omit).'),
+  "elapsedMs": zod.number().int().min(createContactMessageBodyElapsedMsMin).optional().describe('Anti-spam timing signal: milliseconds the visitor spent on the form before submitting. Implausibly fast submissions are dropped. Omit when the client can\'t measure it (treated as human).')
 })
 
 export const CreateContactMessageResponse = zod.object({
@@ -232,12 +238,16 @@ export const CreateContactMessageResponse = zod.object({
  * @summary Request a back-in-stock notification
  */
 
+export const createBackInStockRequestBodyElapsedMsMin = 0;
+
 
 
 export const CreateBackInStockRequestBody = zod.object({
   "email": zod.string().email(),
   "item": zod.string().min(1).describe('The sold-out variant\'s name, e.g. \"Bow Fleece Soaker — Black\".'),
-  "size": zod.string().optional().describe('Set only when the customer asked about one specific sold-out size band; absent when the whole variant is sold out.')
+  "size": zod.string().optional().describe('Set only when the customer asked about one specific sold-out size band; absent when the whole variant is sold out.'),
+  "website": zod.string().optional().describe('Anti-spam honeypot. A hidden field that real visitors never fill; a non-empty value marks the submission as spam and it is silently dropped. Always send empty (or omit).'),
+  "elapsedMs": zod.number().int().min(createBackInStockRequestBodyElapsedMsMin).optional().describe('Anti-spam timing signal: milliseconds the visitor spent on the form before submitting. Implausibly fast submissions are dropped. Omit when unmeasurable (treated as human).')
 })
 
 export const CreateBackInStockRequestResponse = zod.object({
@@ -249,9 +259,15 @@ export const CreateBackInStockRequestResponse = zod.object({
  * Records a customer's opt-in to the studio's marketing mailing list as a tagged row in the Notion contact-messages inbox (and a best-effort Client CRM lead), and sends a best-effort welcome email. Separate from the transactional-only capture: this is explicit marketing consent.
  * @summary Opt in to the marketing newsletter
  */
+export const subscribeNewsletterBodyElapsedMsMin = 0;
+
+
+
 export const SubscribeNewsletterBody = zod.object({
   "email": zod.string().email(),
-  "source": zod.string().optional().describe('Where the opt-in came from, e.g. \"footer\" or \"order form\". Recorded for the atelier\'s own segmentation; the customer never sees it.')
+  "source": zod.string().optional().describe('Where the opt-in came from, e.g. \"footer\" or \"order form\". Recorded for the atelier\'s own segmentation; the customer never sees it.'),
+  "website": zod.string().optional().describe('Anti-spam honeypot. A hidden field that real visitors never fill; a non-empty value marks the submission as spam and it is silently dropped. Always send empty (or omit).'),
+  "elapsedMs": zod.number().int().min(subscribeNewsletterBodyElapsedMsMin).optional().describe('Anti-spam timing signal: milliseconds the visitor spent on the form before submitting. Implausibly fast submissions are dropped. Omit when unmeasurable (treated as human).')
 })
 
 export const SubscribeNewsletterResponse = zod.object({
@@ -362,7 +378,12 @@ export const GetShopOrderStatusResponse = zod.object({
   "status": zod.string().describe('The order\'s current fulfilment status.'),
   "statuses": zod.array(zod.string()).describe('The live ordered list of possible fulfilment statuses (read from the Notion \"Status\" workflow options), so the client can render a progress timeline. Never hardcode this list.'),
   "total": zod.number().optional().describe('The order total in dollars.'),
-  "cancelled": zod.boolean().optional().describe('True once the atelier has cancelled the shop order (the `Cancelled` marker on the Notion order). When true the tracking page shows a cancelled banner and suppresses the request affordance. Absent\/false for an active order.')
+  "cancelled": zod.boolean().optional().describe('True once the atelier has cancelled the shop order (the `Cancelled` marker on the Notion order). When true the tracking page shows a cancelled banner and suppresses the request affordance. Absent\/false for an active order.'),
+  "tracking": zod.object({
+  "number": zod.string().describe('The carrier tracking number, shown to the customer.'),
+  "carrier": zod.string().optional().describe('An optional human carrier label, e.g. \"USPS\" or \"UPS\".'),
+  "url": zod.string().optional().describe('An optional carrier tracking URL; when present the number is rendered as a link to it.')
+}).optional().describe('The carrier tracking details, surfaced once the atelier fills them in on the Notion order (a `Tracking Number`, an optional `Carrier` label, and an optional `Tracking URL`). Absent until a tracking number is set. When present the tracking page shows the number, linked to the URL when one is given.')
 })
 
 
@@ -422,7 +443,9 @@ export const GetAppointmentOptionsResponse = zod.object({
   "durationMinutes": zod.number().int().describe('How long the appointment runs, in minutes.'),
   "description": zod.string().optional(),
   "staff": zod.array(zod.string()).describe('The staff members who offer this appointment type.'),
-  "locations": zod.array(zod.enum(['in-person', 'virtual'])).describe('The locations this type is offered in.')
+  "locations": zod.array(zod.enum(['in-person', 'virtual'])).describe('The locations this type is offered in.'),
+  "requiresOrder": zod.boolean().optional().describe('When true, this type may only be booked against an existing order — the request must carry an orderNumber that matches a real order (and the booking email must match the one on that order). Order-scoped types like fittings and design reviews set this.'),
+  "requiresProjectDetails": zod.boolean().optional().describe('When true, the request must include a non-empty projectDetails describing what the customer wants made. New-customer types like consultations set this to filter out uncertain requests.')
 }))
 })
 
@@ -470,7 +493,9 @@ export const CreateAppointmentBody = zod.object({
   "email": zod.string().email(),
   "phone": zod.string().optional(),
   "preferredContact": zod.enum(['email', 'phone', 'text']).optional(),
-  "notes": zod.string().optional()
+  "notes": zod.string().optional(),
+  "orderNumber": zod.string().optional().describe('The customer\'s order number. Required for order-scoped types (requiresOrder) — the server verifies it against a real order whose email matches the booking email. Ignored for other types.'),
+  "projectDetails": zod.string().optional().describe('A short description of what the customer wants made. Required for new-customer types (requiresProjectDetails); ignored otherwise.')
 })
 
 export const CreateAppointmentResponse = zod.object({
@@ -548,20 +573,7 @@ export const CancelAppointmentResponse = zod.object({
 
 
 /**
- * Emails the customer a one-time magic link that signs them into the account portal. Always responds 200 regardless of whether any orders exist for the address — identity is the email itself, so there is no account to enumerate. The email is sent best-effort; a mail outage never fails the request.
- * @summary Request a passwordless sign-in link
- */
-export const RequestMagicLinkBody = zod.object({
-  "email": zod.string().email().describe('The email to send the one-time sign-in link to.')
-})
-
-export const RequestMagicLinkResponse = zod.object({
-  "message": zod.string()
-}).describe('A generic human-readable acknowledgement.')
-
-
-/**
- * Returns everything tied to the signed-in customer's email — their custom orders and their ready-to-wear shop orders — for the account dashboard. Requires a valid session cookie (set by the magic-link verify step); responds 401 when the caller isn't signed in.
+ * Returns everything tied to the signed-in customer's email — their custom orders, ready-to-wear shop orders, and upcoming appointments — for the account dashboard. Requires a valid Supabase access token supplied as a Bearer credential; responds 401 when the caller isn't signed in.
  * @summary The signed-in customer's orders and shop orders
  */
 export const GetAccountOverviewResponse = zod.object({
@@ -607,14 +619,5 @@ export const GetAccountOverviewResponse = zod.object({
   "returningCode": zod.string().optional().describe('A standing personal discount code for this returning customer, present once they\'ve earned it (a qualifying repeat order). Absent otherwise.')
 }).optional().describe('The signed-in customer\'s referral-program state. Present only when the Client CRM is configured (omitted entirely otherwise, so the dashboard\'s referral card simply doesn\'t render).')
 }).describe('Everything tied to the signed-in customer\'s email — the data the account dashboard renders.')
-
-
-/**
- * Clears the session cookie. Idempotent — safe to call when already signed out.
- * @summary Sign out of the account portal
- */
-export const LogoutAccountResponse = zod.object({
-  "message": zod.string()
-}).describe('A generic human-readable acknowledgement.')
 
 

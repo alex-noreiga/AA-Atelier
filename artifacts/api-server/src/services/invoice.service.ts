@@ -35,6 +35,7 @@ import {
 } from "../lib/notion/invoice.schema.js";
 import type { OrderRecord } from "../lib/notion/orders.schema.js";
 import { getStripeClient } from "../lib/stripe/client.js";
+import { bnplPaymentMethodTypes } from "../lib/stripe/payment-methods.js";
 import { siteBaseUrl } from "../lib/site.js";
 import { BadRequestError, NotFoundError } from "../lib/errors.js";
 
@@ -165,9 +166,17 @@ export async function createPaymentCheckout(
     productName = `${deposit.label} — ${order.orderName}`;
   }
 
+  // Offer buy-now-pay-later (Klarna / Affirm / Afterpay) on the final BALANCE
+  // only, when STRIPE_BNPL_METHODS is configured. The balance collects a billing
+  // address (below) that BNPL needs, and it's a real invoiceable amount — deposits
+  // are partial pre-payments and stay card-only. Unset ⇒ undefined ⇒ dynamic
+  // payment methods, unchanged. See lib/stripe/payment-methods.ts.
+  const paymentMethodTypes = taxed ? bnplPaymentMethodTypes() : undefined;
+
   const base = siteBaseUrl();
   const session = await stripe.checkout.sessions.create({
     mode: "payment",
+    ...(paymentMethodTypes ? { payment_method_types: paymentMethodTypes } : {}),
     line_items: [
       {
         quantity: 1,

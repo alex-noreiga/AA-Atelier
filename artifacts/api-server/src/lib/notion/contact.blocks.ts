@@ -25,6 +25,15 @@ const CONTACT_REQUEST_TYPE = "Inquiry";
 // database (like CONTACT_EMAIL_PROPERTY) so the row links to the canonical
 // customer record instead of only re-typing name/email as free text.
 export const CONTACT_CLIENT_PROPERTY = "Client"; // relation -> Client CRM
+// Relations to the order a request concerns, so the atelier can click straight
+// through from the inbox to the order (and the order can roll up its own open
+// requests). Two properties because a Notion relation targets one database: a
+// custom-order request (measurement change / custom cancellation) links `Order`
+// -> Custom Orders, a shop-order request (return / shop cancellation) links
+// `Shop Order` -> shop orders. Shared by the contact-inbox writers, like
+// CONTACT_CLIENT_PROPERTY, so they can't drift.
+export const CONTACT_ORDER_PROPERTY = "Order"; // relation -> Custom Orders
+export const CONTACT_SHOP_ORDER_PROPERTY = "Shop Order"; // relation -> shop orders
 
 /**
  * The `Client` relation property for a contact-message row, or `{}` when no CRM
@@ -37,6 +46,29 @@ export function contactClientRelation(
   return clientPageId
     ? { [CONTACT_CLIENT_PROPERTY]: { relation: [{ id: clientPageId }] } }
     : {};
+}
+
+/**
+ * The order relation for a contact-message row — `Order` for a custom order,
+ * `Shop Order` for a shop order — or `{}` when no order page id was supplied
+ * (the `NOTION_RELATION_LINKS` gate is off, or the relation properties don't
+ * exist yet). Spread into a writer's properties like {@link contactClientRelation}.
+ */
+export function contactOrderRelation(
+  orderType: "custom" | "shop",
+  orderPageId?: string,
+): Record<string, unknown> {
+  if (!orderPageId) return {};
+  const property =
+    orderType === "shop" ? CONTACT_SHOP_ORDER_PROPERTY : CONTACT_ORDER_PROPERTY;
+  return { [property]: { relation: [{ id: orderPageId }] } };
+}
+
+/** The "Email verified: …" body line shared by the order-scoped contact writers
+ * (cancellation / measurement-change / return). A legacy order with no stored
+ * email reads "no (confirm requester)", the atelier's cue to vet the requester. */
+export function emailVerifiedLine(verified: boolean, email: string): string {
+  return `Email verified: ${verified ? "yes" : "no (confirm requester)"} (${email})`;
 }
 
 /** Validated contact-message payload, derived from the OpenAPI contract. */

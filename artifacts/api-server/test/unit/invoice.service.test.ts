@@ -95,6 +95,7 @@ function fakeStripe(url = "https://checkout.stripe.test/pay") {
 
 beforeEach(() => {
   process.env.PUBLIC_BASE_URL = "https://shop.test";
+  delete process.env.STRIPE_BNPL_METHODS;
 });
 
 describe("buildInvoiceView", () => {
@@ -220,6 +221,46 @@ describe("createPaymentCheckout", () => {
     // recomputes tax on the discounted amount.
     expect(params.allow_promotion_codes).toBe(true);
     expect(params.metadata.stage).toBe("balance");
+    // No BNPL configured -> payment methods stay dynamic.
+    expect(params.payment_method_types).toBeUndefined();
+  });
+
+  it("offers buy-now-pay-later on the balance when configured", async () => {
+    process.env.STRIPE_BNPL_METHODS = "klarna,affirm";
+    mockFindOrder.mockResolvedValue(order());
+    mockFindInvoice.mockResolvedValue(invoice());
+    mockListLines.mockResolvedValue(LINES);
+    const { stripe, create } = fakeStripe();
+
+    await createPaymentCheckout("ORD-1", "balance", stripe);
+
+    expect(create.mock.calls[0][0].payment_method_types).toEqual([
+      "card",
+      "klarna",
+      "affirm",
+    ]);
+  });
+
+  it("never offers BNPL on a deposit, even when configured (deposits stay card-only)", async () => {
+    process.env.STRIPE_BNPL_METHODS = "klarna,affirm";
+    mockFindOrder.mockResolvedValue(order());
+    mockFindInvoice.mockResolvedValue(
+      invoice({
+        deposits: [
+          {
+            stage: "first_deposit",
+            label: "First deposit",
+            amount: 100,
+            paid: false,
+          },
+        ],
+      }),
+    );
+    const { stripe, create } = fakeStripe();
+
+    await createPaymentCheckout("ORD-1", "first_deposit", stripe);
+
+    expect(create.mock.calls[0][0].payment_method_types).toBeUndefined();
   });
 
   it("404s when the order doesn't exist", async () => {

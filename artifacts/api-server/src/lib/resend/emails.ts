@@ -321,6 +321,92 @@ export function fittingReminderEmail(
 }
 
 // ---------------------------------------------------------------------------
+// Payment & deposit due reminder (see services/schedule.service.ts +
+// services/payment-reminder.ts). Emailed from the nightly reconciliation when a
+// deposit or the final balance is coming due — or overdue — using the due dates
+// on the order's invoice. Like the fitting reminder its source isn't a
+// `CreateXInput`; the caller hands this builder an already-formatted struct.
+// ---------------------------------------------------------------------------
+
+/** The details needed to render a payment-reminder email. */
+export interface PaymentReminderEmailDetails {
+  email: string;
+  orderNumber: string;
+  /** The stage label — "First deposit" / "Second deposit" / "Final balance". */
+  stageLabel: string;
+  /** The stage's due date (ISO `yyyy-mm-dd`). */
+  dueDate: string;
+  /** True when the due date has already passed (drives the "overdue" wording). */
+  overdue: boolean;
+  /** The amount owed for this stage, in dollars, when known. */
+  amount?: number;
+  /** Absolute URL to the customer's order/payment page (`/track?orderNumber=…`),
+   * when PUBLIC_BASE_URL is configured (omitted otherwise). */
+  payUrl?: string;
+}
+
+/** Sent to the customer when a deposit or the final balance is coming due or is
+ * overdue, nudging them to pay from their order page. */
+export function paymentReminderEmail(
+  details: PaymentReminderEmailDetails,
+): EmailMessage {
+  const { orderNumber, stageLabel, dueDate, overdue, amount, payUrl } = details;
+  const stage = stageLabel.toLowerCase();
+  const dueLabel = formatCalendarDate(dueDate);
+
+  const timingSentence = overdue
+    ? `The ${stage} for your custom order was due on ${dueLabel} and is now overdue.`
+    : `The ${stage} for your custom order is coming due on ${dueLabel}.`;
+  const amountSentence =
+    amount !== undefined ? ` The amount due is ${formatUsd(amount)}.` : "";
+
+  const ctaHtml = payUrl
+    ? `<p style="margin:28px 0;">
+         <a href="${encodeURI(payUrl)}" style="display:inline-block;background:#2b2622;color:#faf8f5;
+            text-decoration:none;padding:12px 24px;border-radius:2px;font-size:15px;">Pay now</a>
+       </p>
+       <p style="font-size:13px;color:#8a7f74;word-break:break-all;">Or paste this link
+          into your browser:<br/>${escapeHtml(payUrl)}</p>`
+    : "";
+
+  const html = layout(
+    overdue ? "A payment is overdue" : "A payment is coming due",
+    `<p>Hi there,</p>
+     <p>${escapeHtml(timingSentence)}${escapeHtml(amountSentence)}</p>
+     <p>You can pay securely online from your order page. If you've already sent
+        this payment, please disregard this note — it may have crossed with your
+        payment, and it will clear on our end shortly.</p>
+     ${ctaHtml}
+     <p style="color:#8a7f74;margin:0;">Order number: <strong>${escapeHtml(orderNumber)}</strong></p>`,
+  );
+
+  const text = [
+    `Hi there,`,
+    ``,
+    `${timingSentence}${amountSentence}`,
+    ``,
+    `You can pay securely online from your order page. If you've already sent this`,
+    `payment, please disregard this note — it may have crossed with your payment,`,
+    `and it will clear on our end shortly.`,
+    ...(payUrl ? [``, `Pay now: ${payUrl}`] : []),
+    ``,
+    `Order number: ${orderNumber}`,
+    ``,
+    `Thank you,`,
+    `The ${ATELIER_NAME} team`,
+  ].join("\n");
+
+  return {
+    to: details.email,
+    subject: overdue
+      ? `Payment overdue: ${stageLabel} (${orderNumber})`
+      : `Payment reminder: ${stageLabel} (${orderNumber})`,
+    html,
+    text,
+  };
+}
+
+// ---------------------------------------------------------------------------
 // Referral & returning-skater rewards (see services/rewards.service.ts). Each
 // carries a promo code the customer redeems in Stripe's checkout box.
 // ---------------------------------------------------------------------------
@@ -584,52 +670,9 @@ export function newsletterWelcomeEmail(
   };
 }
 
-/**
- * The passwordless sign-in link for the account portal. The customer requested
- * it, so this is a transactional email, not marketing. `url` is app-generated
- * (a signed token appended to our own origin), so it's trusted — the only
- * customer-derived value is the recipient address, which is used solely in `to`.
- */
-export function magicLinkEmail(email: string, url: string): EmailMessage {
-  const html = layout(
-    "Your sign-in link",
-    `<p>Hi there,</p>
-     <p>Use the button below to sign in to your A.A Atelier account, where you can
-        see your orders and invoices in one place.</p>
-     <p style="margin:28px 0;">
-       <a href="${url}" style="display:inline-block;background:#2b2622;color:#faf8f5;
-          text-decoration:none;padding:12px 24px;border-radius:2px;font-size:15px;">Sign in</a>
-     </p>
-     <p style="font-size:14px;color:#8a7f74;">This link expires in 15 minutes. Keep it
-        to yourself — anyone with the link can sign in until it expires. If you didn't
-        request it, you can safely ignore this email — no one can sign in without it.</p>
-     <p style="font-size:13px;color:#8a7f74;word-break:break-all;">Or paste this link
-        into your browser:<br/>${url}</p>`,
-  );
-
-  const text = [
-    `Hi there,`,
-    ``,
-    `Use the link below to sign in to your A.A Atelier account, where you can see`,
-    `your orders and invoices in one place:`,
-    ``,
-    url,
-    ``,
-    `This link expires in 15 minutes. Keep it to yourself — anyone with the link`,
-    `can sign in until it expires. If you didn't request it, you can safely ignore`,
-    `this email — no one can sign in without it.`,
-    ``,
-    `Thank you,`,
-    `The ${ATELIER_NAME} team`,
-  ].join("\n");
-
-  return {
-    to: email,
-    subject: `Your A.A Atelier sign-in link`,
-    html,
-    text,
-  };
-}
+// Account sign-in emails (verify address, magic link, password reset) are sent
+// by Supabase Auth from its own templates (over the studio's Resend SMTP), not
+// from here — so there's no account-portal email builder in this file anymore.
 
 // ---------------------------------------------------------------------------
 // Atelier-facing notifications
@@ -994,6 +1037,12 @@ export interface AppointmentEmailDetails {
   when: string;
   confirmationCode: string;
   notes?: string;
+  /** The customer's order number, for order-scoped types (fittings, design
+   * reviews) — shown to the atelier so they know which order the booking is for. */
+  orderNumber?: string;
+  /** The customer's project description, for new-customer types (consultations,
+   * general) — shown to the atelier so they can prepare for the ask. */
+  projectDetails?: string;
   /** The Google Meet link for a virtual appointment, when one was created. */
   meetingUrl?: string;
   /** Self-service reschedule/cancel link (present when the portal secret +
@@ -1190,7 +1239,11 @@ export function appointmentNotificationEmail(
     ["Name", details.customerName],
     ["Email", details.email],
     ...(details.phone ? [["Phone", details.phone] as Field] : []),
+    ...(details.orderNumber ? [["Order", details.orderNumber] as Field] : []),
     ["Confirmation", details.confirmationCode],
+    ...(details.projectDetails
+      ? [["Project", details.projectDetails] as Field]
+      : []),
     ...(details.notes ? [["Notes", details.notes] as Field] : []),
   ];
 

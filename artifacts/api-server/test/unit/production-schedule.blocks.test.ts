@@ -1,10 +1,8 @@
 import { describe, it, expect } from "vitest";
 import {
   buildMilestoneProperties,
-  PRODUCTION_SCHEDULE_INITIAL_STATUS,
   PS_TITLE_PROPERTY,
   PS_STAGE_PROPERTY,
-  PS_STATUS_PROPERTY,
   PS_TARGET_DATE_PROPERTY,
   PS_ORDER_RELATION_PROPERTY,
   type MilestoneInput,
@@ -29,23 +27,22 @@ describe("buildMilestoneProperties", () => {
     expect(props[PS_TARGET_DATE_PROPERTY]).toEqual({
       date: { start: "2026-08-15" },
     });
-    expect(props[PS_STATUS_PROPERTY]).toEqual({
-      status: { name: PRODUCTION_SCHEDULE_INITIAL_STATUS },
-    });
+    // No completion state is written — `Milestone Status` is a derived Notion
+    // formula, so the milestone reflects the order's live stage with nothing to
+    // seed or sync.
     // The relation links the milestone back to its order page.
     expect(props[PS_ORDER_RELATION_PROPERTY]).toEqual({
       relation: [{ id: "order-page-1" }],
     });
   });
 
-  it("writes only the lean set of properties (no client name / due-date dupes)", () => {
+  it("writes only the lean set of properties (no client name / due-date dupes, no status seed)", () => {
     const props = buildMilestoneProperties(base) as Record<string, unknown>;
     expect(Object.keys(props).sort()).toEqual(
       [
         PS_TITLE_PROPERTY,
         PS_STAGE_PROPERTY,
         PS_TARGET_DATE_PROPERTY,
-        PS_STATUS_PROPERTY,
         PS_ORDER_RELATION_PROPERTY,
       ].sort(),
     );

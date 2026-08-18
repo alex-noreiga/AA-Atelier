@@ -111,6 +111,12 @@ export interface BookedAppointment {
   confirmationCode: string;
   notes?: string;
   preferredContact?: string;
+  /** The customer's order number, for order-scoped types (fittings, design
+   * reviews). Recorded on the event so the atelier sees which order it's for. */
+  orderNumber?: string;
+  /** The customer's project description, for new-customer types (consultations,
+   * general). Recorded on the event so the atelier can see the ask up front. */
+  projectDetails?: string;
 }
 
 interface CalendarEventResponse {
@@ -161,7 +167,11 @@ export async function createCalendarEvent(
     ...(appointment.preferredContact
       ? [`Preferred contact: ${appointment.preferredContact}`]
       : []),
+    ...(appointment.orderNumber ? [`Order: ${appointment.orderNumber}`] : []),
     `Confirmation: ${appointment.confirmationCode}`,
+    ...(appointment.projectDetails
+      ? ["", `Project: ${appointment.projectDetails}`]
+      : []),
     ...(appointment.notes ? ["", `Notes: ${appointment.notes}`] : []),
   ].join("\n");
 

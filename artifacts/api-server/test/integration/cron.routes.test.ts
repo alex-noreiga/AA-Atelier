@@ -26,8 +26,8 @@ describe("GET /api/cron/generate-milestones", () => {
     mockGenerate.mockResolvedValue({
       ordersProcessed: 2,
       milestonesCreated: 7,
-      milestonesUpdated: 3,
       remindersSent: 1,
+      paymentRemindersSent: 0,
     });
 
     const res = await request(app)
@@ -38,8 +38,8 @@ describe("GET /api/cron/generate-milestones", () => {
     expect(res.body).toEqual({
       ordersProcessed: 2,
       milestonesCreated: 7,
-      milestonesUpdated: 3,
       remindersSent: 1,
+      paymentRemindersSent: 0,
     });
     expect(mockGenerate).toHaveBeenCalledTimes(1);
   });
@@ -86,8 +86,8 @@ describe("GET /api/cron/generate-milestones/run (Notion button)", () => {
     mockGenerate.mockResolvedValue({
       ordersProcessed: 2,
       milestonesCreated: 7,
-      milestonesUpdated: 0,
       remindersSent: 0,
+      paymentRemindersSent: 0,
     });
 
     const res = await request(app).get(`${RUN}?secret=s3cret`);
@@ -103,8 +103,8 @@ describe("GET /api/cron/generate-milestones/run (Notion button)", () => {
     mockGenerate.mockResolvedValue({
       ordersProcessed: 0,
       milestonesCreated: 0,
-      milestonesUpdated: 0,
       remindersSent: 0,
+      paymentRemindersSent: 0,
     });
 
     const res = await request(app).get(`${RUN}?secret=s3cret`);
@@ -113,32 +113,32 @@ describe("GET /api/cron/generate-milestones/run (Notion button)", () => {
     expect(res.text).toContain("already up to date");
   });
 
-  it("notes refreshed statuses even when no new milestones were created", async () => {
-    mockGenerate.mockResolvedValue({
-      ordersProcessed: 0,
-      milestonesCreated: 0,
-      milestonesUpdated: 4,
-      remindersSent: 0,
-    });
-
-    const res = await request(app).get(`${RUN}?secret=s3cret`);
-
-    expect(res.status).toBe(200);
-    expect(res.text).toContain("Refreshed the status of 4 existing milestones");
-  });
-
   it("notes fitting reminders sent", async () => {
     mockGenerate.mockResolvedValue({
       ordersProcessed: 0,
       milestonesCreated: 0,
-      milestonesUpdated: 0,
       remindersSent: 2,
+      paymentRemindersSent: 0,
     });
 
     const res = await request(app).get(`${RUN}?secret=s3cret`);
 
     expect(res.status).toBe(200);
     expect(res.text).toContain("Sent 2 fitting reminders");
+  });
+
+  it("notes payment reminders sent", async () => {
+    mockGenerate.mockResolvedValue({
+      ordersProcessed: 0,
+      milestonesCreated: 0,
+      remindersSent: 0,
+      paymentRemindersSent: 3,
+    });
+
+    const res = await request(app).get(`${RUN}?secret=s3cret`);
+
+    expect(res.status).toBe(200);
+    expect(res.text).toContain("Sent 3 payment reminders");
   });
 
   it("returns 401 (HTML) for a wrong secret and does not run", async () => {

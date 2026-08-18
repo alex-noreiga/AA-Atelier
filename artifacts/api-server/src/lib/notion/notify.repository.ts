@@ -3,18 +3,21 @@
 // "Request type" property — so this reuses the contact client and needs no
 // database id of its own.
 
-import { getContactNotionClient, type NotionClient } from "./client.js";
+import {
+  getContactNotionClient,
+  assertDatabaseConfigured,
+  type NotionClient,
+} from "./client.js";
 import {
   buildNotifyProperties,
   type CreateNotifyInput,
 } from "./notify.blocks.js";
 
 function assertConfigured(client: NotionClient): void {
-  if (!client.databaseId) {
-    throw new Error(
-      "NOTION_CONTACT_DATABASE_ID is not configured for the contact database",
-    );
-  }
+  assertDatabaseConfigured(
+    client,
+    "NOTION_CONTACT_DATABASE_ID is not configured for the contact database",
+  );
 }
 
 export async function createBackInStockRequest(

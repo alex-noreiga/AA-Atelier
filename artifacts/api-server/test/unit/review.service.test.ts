@@ -37,6 +37,7 @@ const STAGES = ["Consultation", "Sketching", "Cutting/Pinning", "Delivery"];
 /** A delivered order (final stage) whose email matches the fixture by default. */
 const delivered = (email = "ada@example.com") => ({
   email,
+  pageId: "page-order-test",
   currentStage: "Delivery",
   stages: STAGES,
 });
@@ -58,6 +59,7 @@ describe("submitOrderReview — delivery gate", () => {
   it("throws ConflictError (and never writes) when the order isn't delivered", async () => {
     mockFind.mockResolvedValue({
       email: "ada@example.com",
+      pageId: "page-order-test",
       currentStage: "Sketching",
       stages: STAGES,
     });
@@ -97,6 +99,7 @@ describe("submitOrderReview — identity gate", () => {
   it("accepts a legacy order (no stored email) but flags it unverified", async () => {
     mockFind.mockResolvedValue({
       email: "",
+      pageId: "page-order-test",
       currentStage: "Delivery",
       stages: STAGES,
     });

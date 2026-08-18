@@ -16,9 +16,24 @@ vi.mock("wouter", async (importOriginal) => {
   };
 });
 
+// Mutable auth state the mocked useAuth reads (set per test).
+const h = vi.hoisted(() => ({
+  session: null as unknown,
+  loading: false,
+  signOut: vi.fn(),
+}));
+vi.mock("@/lib/auth-context", () => ({
+  useAuth: () => ({
+    session: h.session,
+    user: null,
+    loading: h.loading,
+    configured: true,
+    signOut: h.signOut,
+  }),
+}));
+
 vi.mock("@workspace/api-client-react", () => ({
   useGetAccountOverview: vi.fn(),
-  useLogoutAccount: vi.fn(),
   getGetAccountOverviewQueryKey: () => ["account-overview"],
   // The appointment card mounts the shared manage panel, which calls these.
   useGetAppointmentAvailability: () => ({
@@ -32,15 +47,10 @@ vi.mock("@workspace/api-client-react", () => ({
   useCancelAppointment: () => ({ mutate: vi.fn(), isPending: false }),
 }));
 
-import {
-  useGetAccountOverview,
-  useLogoutAccount,
-} from "@workspace/api-client-react";
+import { useGetAccountOverview } from "@workspace/api-client-react";
 import Account from "@/pages/account";
 
 const mockOverview = vi.mocked(useGetAccountOverview);
-const mockLogout = vi.mocked(useLogoutAccount);
-const logoutMutate = vi.fn();
 
 function renderPage() {
   const client = new QueryClient();
@@ -92,11 +102,11 @@ const overview = {
 };
 
 beforeEach(() => {
-  logoutMutate.mockReset();
-  mockLogout.mockReturnValue({
-    mutate: logoutMutate,
-    isPending: false,
-  } as never);
+  // Default: a signed-in customer. Individual tests override.
+  h.session = { user: { email: "skater@example.com" } };
+  h.loading = false;
+  h.signOut.mockReset();
+  h.signOut.mockResolvedValue(undefined);
 });
 
 describe("Account dashboard", () => {
@@ -106,7 +116,14 @@ describe("Account dashboard", () => {
     expect(screen.getByTestId("account-loading")).toBeInTheDocument();
   });
 
-  it("redirects to sign-in on a 401", () => {
+  it("redirects to sign-in when there is no session", () => {
+    h.session = null;
+    stubHook(mockOverview, {});
+    renderPage();
+    expect(screen.getByTestId("redirect")).toHaveTextContent("/account/login");
+  });
+
+  it("redirects to sign-in on a 401 (token rejected server-side)", () => {
     stubHook(mockOverview, { isError: true, error: { status: 401 } });
     renderPage();
     expect(screen.getByTestId("redirect")).toHaveTextContent("/account/login");
@@ -157,7 +174,12 @@ describe("Account dashboard", () => {
 
   it("shows an empty state when there are no orders", () => {
     stubHook(mockOverview, {
-      data: { email: "new@example.com", customOrders: [], shopOrders: [] },
+      data: {
+        email: "new@example.com",
+        customOrders: [],
+        shopOrders: [],
+        appointments: [],
+      },
     });
     renderPage();
     expect(screen.getByTestId("account-empty")).toBeInTheDocument();
@@ -203,12 +225,12 @@ describe("Account dashboard", () => {
     expect(screen.queryByTestId("referral-card")).not.toBeInTheDocument();
   });
 
-  it("signs out via the logout mutation", async () => {
+  it("signs out via the auth context", async () => {
     const user = userEvent.setup();
     stubHook(mockOverview, { data: overview });
     renderPage();
 
     await user.click(screen.getByTestId("button-sign-out"));
-    expect(logoutMutate).toHaveBeenCalled();
+    expect(h.signOut).toHaveBeenCalled();
   });
 });

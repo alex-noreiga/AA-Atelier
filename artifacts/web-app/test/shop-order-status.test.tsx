@@ -93,6 +93,59 @@ describe("ShopOrderStatus render states", () => {
     expect(within(success).getByText(/Completed/i)).toBeInTheDocument();
   });
 
+  it("shows a linked tracking number when carrier tracking is present", async () => {
+    setHook({
+      data: {
+        orderNumber: "SHP-1",
+        status: "Shipped",
+        statuses: ["Payment Confirmed", "Processing", "Shipped"],
+        tracking: {
+          number: "9400111899",
+          carrier: "USPS",
+          url: "https://tools.usps.com/track?t=9400111899",
+        },
+      },
+    });
+    await submitLookup("SHP-1");
+
+    const link = screen.getByTestId("tracking-link");
+    expect(link).toHaveTextContent("9400111899");
+    expect(link).toHaveAttribute(
+      "href",
+      "https://tools.usps.com/track?t=9400111899",
+    );
+    expect(screen.getByTestId("tracking-details")).toHaveTextContent("USPS");
+  });
+
+  it("shows the tracking number as plain text when no url is given", async () => {
+    setHook({
+      data: {
+        orderNumber: "SHP-1",
+        status: "Shipped",
+        statuses: ["Payment Confirmed", "Processing", "Shipped"],
+        tracking: { number: "9400111899" },
+      },
+    });
+    await submitLookup("SHP-1");
+
+    expect(screen.getByTestId("tracking-number")).toHaveTextContent(
+      "9400111899",
+    );
+    expect(screen.queryByTestId("tracking-link")).not.toBeInTheDocument();
+  });
+
+  it("hides tracking details when no tracking is present", async () => {
+    setHook({
+      data: {
+        orderNumber: "SHP-1",
+        status: "Processing",
+        statuses: ["Payment Confirmed", "Processing", "Shipped"],
+      },
+    });
+    await submitLookup("SHP-1");
+    expect(screen.queryByTestId("tracking-details")).not.toBeInTheDocument();
+  });
+
   it("offers the cancellation request for an active shop order", async () => {
     setHook({
       data: {

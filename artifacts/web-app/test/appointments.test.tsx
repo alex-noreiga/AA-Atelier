@@ -29,6 +29,7 @@ const OPTIONS = {
       description: "Talk through ideas.",
       staff: ["Alexandra", "Alayna"],
       locations: ["in-person", "virtual"],
+      requiresProjectDetails: true,
     },
     {
       id: "fitting",
@@ -37,6 +38,7 @@ const OPTIONS = {
       description: "In person only.",
       staff: ["Alexandra"],
       locations: ["in-person"],
+      requiresOrder: true,
     },
   ],
 };
@@ -123,6 +125,11 @@ describe("Appointments booking flow", () => {
     expect(details).toBeInTheDocument();
     await user.type(document.getElementById("fullName")!, "Ada Lovelace");
     await user.type(document.getElementById("email")!, "ada@example.com");
+    // Consultation requires project details (the funnel gate).
+    await user.type(
+      document.getElementById("projectDetails")!,
+      "A competition dress in navy.",
+    );
     await user.click(screen.getByRole("button", { name: "Confirm Booking" }));
 
     await waitFor(() => expect(mutate).toHaveBeenCalledTimes(1));
@@ -133,7 +140,62 @@ describe("Appointments booking flow", () => {
       start: SLOT_ISO,
       fullName: "Ada Lovelace",
       email: "ada@example.com",
+      projectDetails: "A competition dress in navy.",
     });
     expect(data).not.toHaveProperty("staff");
+  });
+
+  it("blocks a consultation with no project details (funnel gate)", async () => {
+    const user = userEvent.setup();
+    render(<Appointments />);
+
+    await user.click(screen.getByTestId("type-consultation"));
+    await user.click(screen.getByRole("button", { name: "In person" }));
+    await user.click(screen.getByRole("button", { name: "No preference" }));
+    await user.click(screen.getByRole("button", { name: "Continue" }));
+    await user.click(await screen.findByTestId(`slot-${SLOT_ISO}`));
+
+    await screen.findByTestId("step-details");
+    await user.type(document.getElementById("fullName")!, "Ada Lovelace");
+    await user.type(document.getElementById("email")!, "ada@example.com");
+    // Leave project details blank.
+    await user.click(screen.getByRole("button", { name: "Confirm Booking" }));
+
+    expect(
+      await screen.findByText("Please tell us a little about your project."),
+    ).toBeInTheDocument();
+    expect(mutate).not.toHaveBeenCalled();
+  });
+
+  it("requires an order number for a fitting and sends it (order gate)", async () => {
+    const user = userEvent.setup();
+    render(<Appointments />);
+
+    // Fitting is single-staff + single-location → straight to the time step.
+    await user.click(screen.getByTestId("type-fitting"));
+    await user.click(await screen.findByTestId(`slot-${SLOT_ISO}`));
+
+    await screen.findByTestId("step-details");
+    await user.type(document.getElementById("fullName")!, "Ada Lovelace");
+    await user.type(document.getElementById("email")!, "ada@example.com");
+    // Submit with no order number → blocked.
+    await user.click(screen.getByRole("button", { name: "Confirm Booking" }));
+    expect(
+      await screen.findByText(
+        "Your order number is required for this appointment.",
+      ),
+    ).toBeInTheDocument();
+    expect(mutate).not.toHaveBeenCalled();
+
+    // Provide it, and the booking goes through with orderNumber in the payload.
+    await user.type(document.getElementById("orderNumber")!, "000123");
+    await user.click(screen.getByRole("button", { name: "Confirm Booking" }));
+
+    await waitFor(() => expect(mutate).toHaveBeenCalledTimes(1));
+    const { data } = mutate.mock.calls[0][0];
+    expect(data).toMatchObject({
+      typeId: "fitting",
+      orderNumber: "000123",
+    });
   });
 });

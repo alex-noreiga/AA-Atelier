@@ -14,6 +14,7 @@ import {
   SHOP_ORDER_STATUS_PROPERTY,
   SHOP_ORDER_SHIPPING_PROPERTY,
   SHOP_ORDER_CLIENT_PROPERTY,
+  SHOP_ORDER_ITEMS_PROPERTY,
 } from "../../src/lib/notion/shop-orders.blocks.js";
 
 function session(
@@ -111,6 +112,26 @@ describe("buildShopOrderProperties", () => {
       unknown
     >;
     expect(props[SHOP_ORDER_CLIENT_PROPERTY]).toBeUndefined();
+  });
+
+  it("relates the purchased inventory rows when item page ids are given", () => {
+    const props = buildShopOrderProperties(session(), undefined, [
+      "inv-a",
+      "inv-b",
+    ]) as Record<string, any>;
+    expect(props[SHOP_ORDER_ITEMS_PROPERTY]).toEqual({
+      relation: [{ id: "inv-a" }, { id: "inv-b" }],
+    });
+  });
+
+  it("omits the inventory relation when no / empty item page ids are given", () => {
+    const none = buildShopOrderProperties(session()) as Record<string, unknown>;
+    expect(none[SHOP_ORDER_ITEMS_PROPERTY]).toBeUndefined();
+    const empty = buildShopOrderProperties(session(), undefined, []) as Record<
+      string,
+      unknown
+    >;
+    expect(empty[SHOP_ORDER_ITEMS_PROPERTY]).toBeUndefined();
   });
 
   it("omits optional properties (email, name, shipping) when Stripe didn't collect them", () => {

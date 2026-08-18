@@ -1,50 +1,96 @@
-# Customer account portal (passwordless magic-link)
+# Customer account portal (Supabase Auth)
 
 A signed-in home base gathering a customer's custom orders + shop orders in one
 place, keyed by their email instead of an order-number-per-garment. It's an
 **identity layer over the existing lookups**, not new order/invoice logic —
 Phase-1 roadmap item #2.
 
+## Phase 3 — auth on Supabase (shipped; the "Supabase accounts" card, auth half)
+
+The original passwordless-magic-link auth (stateless HMAC `SESSION_SECRET`
+tokens + an httpOnly `aa_session` cookie) was **replaced by Supabase Auth** —
+the customer-facing half of the Phase-3 "Supabase: accounts + a real database"
+card. Notion + Google Calendar stay the system of record, still matched by
+**email**. This is an authentication-vendor swap, not new order/invoice logic.
+
+The **"real database" half shipped narrowly**: a small optional Postgres
+integrity layer (same Supabase project) now backs **Stripe payment idempotency**
+(`processed_payments`) — see `postgres-integrity-layer.md`. The broader
+**data migration is still deferred**: the `clients` / `order_index` tables are
+provisioned in the migration but not yet wired, so the account overview still
+reads orders live from Notion by email (`findOrdersByEmail`).
+
+- **Sign-in methods:** email+password (Supabase-managed hashing + email
+  verification + forgot-password), Google OAuth, and passwordless magic link —
+  all Supabase-native. The frontend calls supabase-js directly
+  (`signInWithPassword` / `signUp` / `signInWithOtp` / `signInWithOAuth` /
+  `resetPasswordForEmail` / `updateUser`); there is **no** server login/verify/
+  logout route anymore.
+- **Web session transport = Bearer, not cookie.** supabase-js holds the session
+  in the browser (localStorage, auto-refreshed) and the generated API client
+  sends the access token via the **existing `setAuthTokenGetter` seam** in
+  `custom-fetch.ts` (was reserved for mobile). Tradeoff: the token is now
+  JS-readable (XSS-exposed) vs the old httpOnly cookie — accepted for the
+  standard Bearer model.
+- **Server verifies the JWT locally.** `middlewares/auth.ts` `requireCustomer`
+  reads the Bearer token and verifies it with `getSupabaseClient().auth
+.getClaims(token)` (cached JWKS, no per-request round-trip; supports the ES256
+  asymmetric keys new projects default to). It sets `res.locals.customer =
+{ email: normalizeEmail(claims.email), userId: claims.sub }` — **normalizing
+  at the gate** so Notion lookups match. Adapter: `lib/supabase/client.ts`
+  (factory + memoized getter + `supabaseConfigured()`, first-use env read, test
+  seams `__setSupabaseClientForTests` / `__resetSupabaseClient`).
+- **`SESSION_SECRET` is NOT retired.** `lib/auth/tokens.ts` still signs/verifies
+  the **`appointment`**-purpose manage-link token (the only remaining purpose;
+  `magic`/`session` are gone). `lib/auth/cookies.ts` and `routes/account-verify.ts`
+  were deleted; `magicLinkEmail` was removed (Supabase sends branded auth mail via
+  **custom SMTP = Resend**, configured in the dashboard, not code).
+- **Contract:** `/account/login` + `/account/logout` ops and `MagicLinkRequest`
+  were removed from `openapi.yaml`; `/account/overview` gained a `bearerAuth`
+  security scheme. Only `getAccountOverview` survives (unchanged — still
+  email-keyed). Frontend: `lib/supabase.ts` (browser client), `lib/auth-context.tsx`
+  (`AuthProvider` + `useAuth`, wires the token getter once), `pages/account-login.tsx`
+  (tabbed sign-in/create + Google + magic-link + forgot), `pages/account-callback.tsx`
+  (OAuth/magic-link redirect target), `pages/account-reset.tsx` (password reset).
+- **New env:** `SUPABASE_URL` + `SUPABASE_ANON_KEY` (backend) and
+  `VITE_SUPABASE_URL` + `VITE_SUPABASE_ANON_KEY` (frontend). Unset ⇒ portal
+  inert (login shows "unavailable", overview 401s), same degrade pattern as
+  before. One-time Supabase setup: create the project, enable Email+password
+  (confirm-email) + Magic Link + Google, custom SMTP = Resend, Site URL +
+  redirect allow-list (`${PUBLIC_BASE_URL}/account/callback`, `/account/reset`).
+
 ## Why it's shaped this way
 
 - **No user table, no session store.** Identity IS the email (the CRM already
-  dedupes on it). The app has no relational DB and runs on serverless, so auth is
-  **stateless signed tokens**, not server sessions:
-  - `lib/auth/tokens.ts` — `base64url(payload).base64url(HMAC-SHA256)` signed with
-    `SESSION_SECRET` (Node `crypto`, **no new dep**). Payload `{ email, purpose,
-exp }`; purposes `magic` (15 min) / `session` (30 days). `verifyToken` never
-    throws (bad sig / wrong purpose / expiry ⇒ null). Unset secret ⇒ portal inert.
-  - `lib/auth/cookies.ts` — httpOnly `aa_session` cookie (`secure` outside dev,
-    `sameSite:"lax"` so it survives the magic-link navigation). Set via Express's
-    native `res.cookie`; read by hand-parsing the header (no `cookie-parser`).
-  - `middlewares/auth.ts` `requireCustomer` → `res.locals.customer={email}` or
-    `UnauthorizedError` (→ 401, added to `middlewares/error.ts`).
-  - `custom-fetch.ts` now sends `credentials:"include"` (the intended web-app auth
-    path — the bearer getter stays for the mobile bundle).
-  - **Rate limiting** (`middlewares/rate-limit.ts`, `express-rate-limit`) on all
-    four auth routes — the one justified new dep, because CodeQL's rate-limit query
-    only recognises known limiter libraries (a hand-rolled one wouldn't clear the
-    alert). Default in-memory store ⇒ per serverless instance/best-effort (same
-    caveat as the alert de-dupe); brakes sign-in email-spam + token guessing.
-  - `parseCookies` returns a **`Map`** (not a plain object) — the attacker-
-    controlled cookie name is a Map key, so it can't pollute a prototype or clobber
-    object properties. Fixes CodeQL remote-property-injection (a Set-based guard +
-    null-proto object did **not** satisfy the query; a Map does).
-
-- **Flow.** `POST /account/login` (contract) emails a magic link →
-  `GET /api/account/verify?token=` (**outside the contract**, hand-mounted in
-  `app.ts` like the Stripe webhook / cron buttons, because it's a browser
-  navigation that sets a cookie + 302s to `/account`, not a JSON call) →
-  `GET /account/overview` (contract, `requireCustomer`) → `POST /account/logout`.
-  Login always 200s (identity is the email — nothing to enumerate). Invalid/expired
-  verify → `/account/login?error=expired`.
-
-- **New Notion reads: by email.** `findOrdersByEmail` (orders `Email` prop) and
+  dedupes on it); Supabase owns the credential store (`auth.users`), the app
+  persists no user record. `requireCustomer` (`middlewares/auth.ts`) verifies the
+  Bearer JWT with `auth.getClaims` and **normalizes the email at the gate**
+  (`normalizeEmail`) so the Notion lookups key on the same canonical form.
+- **The web session is a Bearer JWT, not a cookie.** supabase-js holds the session
+  in browser localStorage (auto-refreshed) and the generated client attaches the
+  access token via the `setAuthTokenGetter` seam in `custom-fetch.ts`. Tradeoff vs
+  the deleted httpOnly cookie: the token is JS-readable (XSS-exposed) — accepted for
+  the standard Bearer model.
+- **Notion reads: by email.** `findOrdersByEmail` (orders `Email` prop) and
   `findShopOrdersByEmail` (shop `Customer Email` prop), paginated, returning
   lightweight summaries; cards link out to the existing `/track` + `/invoice/:n`
   pages (no per-order milestone/invoice fan-out). **Caveat:** Notion email
-  `equals` is case-exact, and orders predating the `Email`/`Customer Email`
-  property are invisible — those are still trackable by number.
+  `equals` is case-exact (hence the gate-side `normalizeEmail`), and orders
+  predating the `Email`/`Customer Email` property are invisible — those are still
+  trackable by number.
+
+### History (the deleted magic-link design)
+
+Before Supabase, auth was **hand-rolled stateless HMAC tokens**: `lib/auth/tokens.ts`
+signed a `magic` (15 min) and `session` (30 day) token with `SESSION_SECRET`, the
+session rode in an httpOnly `aa_session` cookie (`lib/auth/cookies.ts`, `parseCookies`
+returning a `Map` to dodge CodeQL prototype-pollution), and the flow was
+`POST /account/login` → `GET /api/account/verify` (hand-mounted, set-cookie + 302) →
+`POST /account/logout`, all four routes rate-limited. **All of that is gone**:
+`cookies.ts`, `routes/account-verify.ts`, `magicLinkEmail`, the `magic`/`session`
+token purposes, and the login/logout/verify ops were deleted. Only `SESSION_SECRET`
+(now appointment-token-only), `findOrdersByEmail`/`findShopOrdersByEmail`, and the
+`accountRateLimiter` (now on `/account/overview` alone) survive.
 
 ## Scope and follow-ons
 
@@ -87,10 +133,15 @@ appointment history beyond the upcoming window.
 
 ## One-time setup
 
-`SESSION_SECRET` (long random string) + `PUBLIC_BASE_URL` (already set for Stripe —
-the magic-link origin) + the Resend vars for the sign-in email. **No new database.**
-Magic-link copy: `lib/resend/emails.ts` `magicLinkEmail`, sent from the `orders`
-sender.
+Create a Supabase project; set `SUPABASE_URL` + `SUPABASE_ANON_KEY` (backend) and
+`VITE_PUBLIC_SUPABASE_URL` + `VITE_PUBLIC_SUPABASE_ANON_KEY` (frontend) — on Vercel
+these come from the Supabase integration. In the Supabase Auth dashboard: enable
+Email+password (confirm-email) + Magic Link + Google, point custom SMTP at Resend
+(it sends the branded auth mail — copy in `supabase-auth-emails.md`), and add
+`${PUBLIC_BASE_URL}/account/callback` + `/account/reset` to the redirect allow-list.
+`SESSION_SECRET` + `PUBLIC_BASE_URL` are still needed (now only for the appointment
+manage-link). **No database of our own for the portal** — it reads the customer's
+existing Notion orders by email.
 
 For Phase 2, no new env var. Appointments reuse the existing Google Calendar
 integration (`GOOGLE_SERVICE_ACCOUNT_KEY` + `APPOINTMENT_SHEET_ID`) — unset ⇒
@@ -102,16 +153,23 @@ readable measurements.
 
 ## Files
 
-Frontend: `pages/account-login.tsx`, `pages/account.tsx` (with `AppointmentCard` +
-`MeasurementsBlock`), `components/appointment-manage-panel.tsx` (shared with
+Frontend: `pages/account-login.tsx` (tabbed sign-in/create + Google + magic-link +
+forgot), `pages/account-callback.tsx` (OAuth/magic-link redirect landing),
+`pages/account-reset.tsx` (password reset), `pages/account.tsx` (with
+`AppointmentCard` + `MeasurementsBlock`), `lib/supabase.ts` (browser client),
+`lib/auth-context.tsx` (`AuthProvider`/`useAuth`, wires the Bearer token getter
+once), `components/appointment-manage-panel.tsx` (shared with
 `pages/appointment-manage.tsx`), route in `App.tsx`, `Account` in `navbar.tsx`
 `NAV_LINKS`, noindex entries in `lib/seo-routes.ts`.
-Backend: `services/account.service.ts` (`upcomingAppointments`), `routes/account.ts`,
-`routes/account-verify.ts`, `middlewares/auth.ts`, `lib/auth/*`,
-`findOrdersByEmail` / `findShopOrdersByEmail` in the order/shop-order repos,
-`extractMeasurements` + `OrderSummary` in `orders.schema.ts`,
-`listUpcomingAppointmentsByEmail` in `lib/google/calendar.repository.ts`, the shared
-`lib/appointments/event-details.ts`. Contract: three ops + `MagicLinkRequest` /
-`AccountOverview` (now with `appointments`) / `AccountOrderSummary` (now with
-`measurements`) / `AccountShopOrderSummary` / `AccountAppointmentSummary` /
-`AccountMeasurements` / `MessageResponse` schemas in `lib/api-spec/openapi.yaml`.
+Backend: `services/account.service.ts` (`getAccountOverview` + `upcomingAppointments`),
+`routes/account.ts` (only `GET /account/overview` now), `middlewares/auth.ts`
+(`requireCustomer` verifies the Supabase JWT), `lib/supabase/client.ts`,
+`lib/auth/tokens.ts` (appointment purpose only), `findOrdersByEmail` /
+`findShopOrdersByEmail` in the order/shop-order repos, `extractMeasurements` +
+`OrderSummary` in `orders.schema.ts`, `listUpcomingAppointmentsByEmail` in
+`lib/google/calendar.repository.ts`, the shared `lib/appointments/event-details.ts`.
+Contract: one op (`getAccountOverview`, `bearerAuth`) + `AccountOverview` (email +
+`customOrders` + `shopOrders` + `appointments` + optional `referral`) /
+`AccountOrderSummary` (with `measurements`) / `AccountShopOrderSummary` /
+`AccountAppointmentSummary` / `AccountMeasurements` / `AccountReferral` schemas in
+`lib/api-spec/openapi.yaml` (`MagicLinkRequest` + the login/logout ops removed).

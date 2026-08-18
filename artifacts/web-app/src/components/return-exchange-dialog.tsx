@@ -1,4 +1,3 @@
-import { useState } from "react";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
@@ -15,7 +14,11 @@ import {
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
-import { useToast } from "@/hooks/use-toast";
+import {
+  useRequestDialog,
+  REQUEST_FORM_INPUT_CLASS,
+  REQUEST_FORM_TEXTAREA_CLASS,
+} from "@/hooks/use-request-dialog";
 
 // The reason values mirror the OpenAPI `reason` enum; labels are the customer's
 // wording. Keep the value list in step with `NewReturnRequest.reason` in the
@@ -66,41 +69,6 @@ interface ReturnExchangeDialogProps {
 export function ReturnExchangeDialog({
   orderNumber,
 }: ReturnExchangeDialogProps) {
-  const [open, setOpen] = useState(false);
-  const [submitted, setSubmitted] = useState<{ exchange: boolean } | null>(
-    null,
-  );
-  const [formError, setFormError] = useState<string | null>(null);
-  const { toast } = useToast();
-
-  const createRequest = useCreateReturnRequest({
-    mutation: {
-      onSuccess: (_data, variables) =>
-        setSubmitted({ exchange: variables.data.kind === "exchange" }),
-      onError: (error) => {
-        // error.data is ErrorEnvelope { error } (400/403/500) or
-        // OrderNotFound { message } (404) — read whichever field is present.
-        const data = error.data;
-        const message =
-          (data && ("error" in data ? data.error : data.message)) ||
-          error.message ||
-          "Something went wrong. Please try again.";
-        // 403 (email mismatch) is an expected, actionable outcome — show it in
-        // the form. Anything else is unexpected, so raise a toast.
-        if (error.status === 403) {
-          setFormError(message);
-        } else {
-          setFormError(null);
-          toast({
-            variant: "destructive",
-            title: "Couldn't submit your request",
-            description: message,
-          });
-        }
-      },
-    },
-  });
-
   const {
     register,
     handleSubmit,
@@ -114,6 +82,31 @@ export function ReturnExchangeDialog({
   });
 
   const kind = watch("kind");
+
+  // 403 (email mismatch) is an expected, actionable outcome shown inline;
+  // anything else raises a toast.
+  const {
+    open,
+    setOpen,
+    submitted,
+    setSubmitted,
+    formError,
+    setFormError,
+    handleError,
+    onOpenChange,
+  } = useRequestDialog<{ exchange: boolean }>({
+    reset,
+    inlineStatuses: [403],
+    toastTitle: "Couldn't submit your request",
+  });
+
+  const createRequest = useCreateReturnRequest({
+    mutation: {
+      onSuccess: (_data, variables) =>
+        setSubmitted({ exchange: variables.data.kind === "exchange" }),
+      onError: handleError,
+    },
+  });
 
   const onSubmit = (values: FormValues) => {
     setFormError(null);
@@ -133,16 +126,6 @@ export function ReturnExchangeDialog({
         ...(note?.trim() ? { note: note.trim() } : {}),
       },
     });
-  };
-
-  const onOpenChange = (next: boolean) => {
-    setOpen(next);
-    if (!next) {
-      // Closing discards the previous attempt, so reopening starts clean.
-      setSubmitted(null);
-      setFormError(null);
-      reset();
-    }
   };
 
   return (
@@ -226,7 +209,7 @@ export function ReturnExchangeDialog({
                     {...register("email")}
                     placeholder="you@example.com"
                     data-testid="return-exchange-email"
-                    className="mt-1.5 bg-transparent border-0 border-b border-border rounded-none px-0 py-3 focus-visible:ring-0 focus-visible:border-primary transition-colors shadow-none"
+                    className={REQUEST_FORM_INPUT_CLASS}
                   />
                   {errors.email && (
                     <p className="text-destructive text-xs mt-1">
@@ -294,7 +277,7 @@ export function ReturnExchangeDialog({
                     {...register("items")}
                     placeholder="e.g. Bow Fleece Soaker — Black, size M"
                     data-testid="return-exchange-items"
-                    className="mt-1.5 bg-transparent border-0 border-b border-border rounded-none px-0 py-3 focus-visible:ring-0 focus-visible:border-primary transition-colors shadow-none"
+                    className={REQUEST_FORM_INPUT_CLASS}
                   />
                 </div>
 
@@ -314,7 +297,7 @@ export function ReturnExchangeDialog({
                       {...register("exchangeFor")}
                       placeholder="e.g. the same soaker in size L"
                       data-testid="return-exchange-exchange-for"
-                      className="mt-1.5 bg-transparent border-0 border-b border-border rounded-none px-0 py-3 focus-visible:ring-0 focus-visible:border-primary transition-colors shadow-none"
+                      className={REQUEST_FORM_INPUT_CLASS}
                     />
                   </div>
                 )}
@@ -335,7 +318,7 @@ export function ReturnExchangeDialog({
                     placeholder="Anything else the atelier should know..."
                     rows={3}
                     data-testid="return-exchange-note"
-                    className="mt-1.5 bg-transparent border border-border rounded-lg px-3 py-2 text-sm focus-visible:ring-0 focus-visible:border-primary transition-colors resize-none shadow-none"
+                    className={REQUEST_FORM_TEXTAREA_CLASS}
                   />
                 </div>
 

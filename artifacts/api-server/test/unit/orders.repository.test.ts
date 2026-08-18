@@ -32,15 +32,16 @@ describe("createOrder", () => {
     );
   });
 
-  it("POSTs a page and returns an ORD- order number", async () => {
+  it("POSTs a page and returns the ORD- order number + created page id", async () => {
     const client = makeFakeClient((path) => {
       if (path === "/v1/pages") return jsonResponse({ id: "new-page" }, 200);
       throw new Error(`unexpected path ${path}`);
     });
 
-    const orderNumber = await repo.createOrder(validOrder, client);
+    const { orderNumber, pageId } = await repo.createOrder(validOrder, client);
 
     expect(orderNumber).toMatch(/^ORD-[A-Z0-9]+-[A-Z0-9]+$/);
+    expect(pageId).toBe("new-page");
     expect(client.calls).toHaveLength(1);
     const call = client.calls[0];
     expect(call.path).toBe("/v1/pages");
@@ -182,12 +183,12 @@ describe("invoice relation mapping", () => {
   });
 });
 
-describe("findOrderForMeasurementChange", () => {
+describe("findOrderVerification", () => {
   it("returns null for an empty/whitespace number without calling Notion", async () => {
     const client = makeFakeClient(() => {
       throw new Error("should not fetch");
     });
-    expect(await repo.findOrderForMeasurementChange("   ", client)).toBeNull();
+    expect(await repo.findOrderVerification("   ", client)).toBeNull();
     expect(client.calls).toHaveLength(0);
   });
 
@@ -212,12 +213,10 @@ describe("findOrderForMeasurementChange", () => {
       throw new Error(`unexpected path ${path}`);
     });
 
-    const verification = await repo.findOrderForMeasurementChange(
-      "  000002  ",
-      client,
-    );
+    const verification = await repo.findOrderVerification("  000002  ", client);
 
     expect(verification).toEqual({
+      pageId: "page-id",
       email: "ada@example.com",
       currentStage: "Consultation",
       stages: ["Consultation", "Sewing", "Delivery"],
@@ -232,10 +231,7 @@ describe("findOrderForMeasurementChange", () => {
       });
     });
 
-    const verification = await repo.findOrderForMeasurementChange(
-      "000002",
-      client,
-    );
+    const verification = await repo.findOrderVerification("000002", client);
     expect(verification?.email).toBe("");
   });
 
@@ -244,9 +240,7 @@ describe("findOrderForMeasurementChange", () => {
       if (isSchema(path)) return jsonResponse(databaseSchemaWithStages([]));
       return jsonResponse({ results: [] });
     });
-    expect(
-      await repo.findOrderForMeasurementChange("ORD-NOPE", client),
-    ).toBeNull();
+    expect(await repo.findOrderVerification("ORD-NOPE", client)).toBeNull();
   });
 });
 
@@ -592,54 +586,6 @@ describe("findOrdersNeedingMilestones", () => {
   });
 });
 
-describe("findOrdersWithMilestones", () => {
-  it("filters on due-date-set AND milestones-generated, and attaches the live stage list", async () => {
-    const client = makeFakeClient((path) => {
-      if (isSchema(path)) {
-        return jsonResponse(
-          databaseSchemaWithStages(["Consultation", "Fitting", "Delivery"]),
-        );
-      }
-      if (isQuery(path)) {
-        return jsonResponse({
-          results: [
-            orderPage({
-              id: "page-9",
-              orderNumber: "000009",
-              orderName: "Cyd – Custom Dress",
-              currentStage: "Fitting",
-              dueDate: "2026-09-01",
-            }),
-          ],
-        });
-      }
-      throw new Error(`unexpected path ${path}`);
-    });
-
-    const orders = await repo.findOrdersWithMilestones(client);
-
-    expect(orders).toEqual([
-      {
-        pageId: "page-9",
-        orderNumber: "000009",
-        orderName: "Cyd – Custom Dress",
-        currentStage: "Fitting",
-        dueDate: "2026-09-01",
-        stages: ["Consultation", "Fitting", "Delivery"],
-      },
-    ]);
-
-    const queryCall = client.calls.find((c) => isQuery(c.path))!;
-    const filter = JSON.parse(queryCall.init!.body as string).filter;
-    expect(filter).toEqual({
-      and: [
-        { property: "Due Date", date: { is_not_empty: true } },
-        { property: "Milestones Generated", checkbox: { equals: true } },
-      ],
-    });
-  });
-});
-
 describe("markMilestonesGenerated", () => {
   it("PATCHes the order page with the checkbox set", async () => {
     const client = makeFakeClient((path) => {
@@ -727,5 +673,52 @@ describe("fetchLiveOrderStages caching (through findOrderByNumber)", () => {
     await expect(repo.findOrderByNumber("ORD-1", client)).rejects.toThrow(
       /database schema fetch failed with status 503/,
     );
+  });
+});
+
+describe("findOrdersByNumbers", () => {
+  const isQ = (p: string) => p.endsWith("/query");
+  const isS = (p: string) => /\/v1\/databases\/[^/]+$/.test(p);
+
+  it("returns [] without querying for an empty list", async () => {
+    const client = makeFakeClient(() => {
+      throw new Error("should not fetch");
+    });
+    expect(await repo.findOrdersByNumbers([], client)).toEqual([]);
+    expect(client.calls).toHaveLength(0);
+  });
+
+  it("fetches by an OR filter and preserves the input order", async () => {
+    const client = makeFakeClient((path) => {
+      if (isS(path)) return jsonResponse(databaseSchemaWithStages(["A", "B"]));
+      if (isQ(path)) {
+        return jsonResponse({
+          results: [
+            // Notion returns them in its own order; the function reorders to input.
+            orderPage({
+              orderNumber: "ORD-1",
+              orderName: "One",
+              currentStage: "A",
+            }),
+            orderPage({
+              orderNumber: "ORD-2",
+              orderName: "Two",
+              currentStage: "B",
+            }),
+          ],
+        });
+      }
+      throw new Error(`unexpected path ${path}`);
+    });
+
+    const result = await repo.findOrdersByNumbers(["ORD-2", "ORD-1"], client);
+
+    expect(result.map((o) => o.orderNumber)).toEqual(["ORD-2", "ORD-1"]);
+    const query = client.calls.find((c) => isQ(c.path));
+    const body = JSON.parse(query!.init!.body as string);
+    expect(body.filter.or).toEqual([
+      { property: "Order Number", rich_text: { equals: "ORD-2" } },
+      { property: "Order Number", rich_text: { equals: "ORD-1" } },
+    ]);
   });
 });
