@@ -13,7 +13,6 @@ import { notifyOrderStageChange } from "../../src/services/order-notification.se
 const mockNotify = vi.mocked(notifyOrderStageChange);
 
 const WEBHOOK = "/api/webhooks/notion-stage-change";
-const RUN = "/api/webhooks/notion-stage-change/run";
 
 beforeEach(() => {
   process.env.CRON_SECRET = "s3cret";
@@ -146,96 +145,5 @@ describe("POST /api/webhooks/notion-stage-change (Notion automation)", () => {
       .send({ orderNumber: "000002" });
 
     expect(res.status).toBe(500);
-  });
-});
-
-describe("GET /api/webhooks/notion-stage-change/run (on-demand link)", () => {
-  it("sends and returns an HTML confirmation naming the order + stage", async () => {
-    mockNotify.mockResolvedValue({
-      orderNumber: "000002",
-      status: "sent",
-      currentStage: "Sketching",
-    });
-
-    const res = await request(app).get(`${RUN}?secret=s3cret&order=000002`);
-
-    expect(res.status).toBe(200);
-    expect(res.headers["content-type"]).toMatch(/text\/html/);
-    expect(res.text).toContain("000002");
-    expect(res.text).toContain("Sketching");
-    expect(mockNotify).toHaveBeenCalledWith(
-      { orderNumber: "000002" },
-      { force: false },
-    );
-  });
-
-  it("passes force through when ?force=1 is set (a manual resend)", async () => {
-    mockNotify.mockResolvedValue({
-      orderNumber: "000002",
-      status: "sent",
-      currentStage: "Sketching",
-    });
-
-    const res = await request(app).get(
-      `${RUN}?secret=s3cret&order=000002&force=1`,
-    );
-
-    expect(res.status).toBe(200);
-    expect(mockNotify).toHaveBeenCalledWith(
-      { orderNumber: "000002" },
-      { force: true },
-    );
-  });
-
-  it("reports a not-found order in the HTML", async () => {
-    mockNotify.mockResolvedValue({
-      orderNumber: "ORD-NOPE",
-      status: "not_found",
-    });
-
-    const res = await request(app).get(`${RUN}?secret=s3cret&order=ORD-NOPE`);
-
-    expect(res.status).toBe(200);
-    expect(res.text).toContain("No order found");
-  });
-
-  it("reports a skipped send (e.g. no email) in the HTML", async () => {
-    mockNotify.mockResolvedValue({
-      orderNumber: "000002",
-      status: "skipped",
-      reason: "no email on order",
-    });
-
-    const res = await request(app).get(`${RUN}?secret=s3cret&order=000002`);
-
-    expect(res.status).toBe(200);
-    expect(res.text).toContain("no email on order");
-  });
-
-  it("returns 400 (HTML) when no order is given", async () => {
-    const res = await request(app).get(`${RUN}?secret=s3cret`);
-
-    expect(res.status).toBe(400);
-    expect(res.headers["content-type"]).toMatch(/text\/html/);
-    expect(mockNotify).not.toHaveBeenCalled();
-  });
-
-  it("returns 401 (HTML) for a wrong secret and does not run", async () => {
-    const res = await request(app).get(`${RUN}?secret=nope&order=000002`);
-
-    expect(res.status).toBe(401);
-    expect(res.headers["content-type"]).toMatch(/text\/html/);
-    expect(res.text).toContain("Not authorized");
-    expect(mockNotify).not.toHaveBeenCalled();
-  });
-
-  it("renders an HTML error page (not JSON) if the service throws", async () => {
-    mockNotify.mockRejectedValue(new Error("Notion is down"));
-
-    const res = await request(app).get(`${RUN}?secret=s3cret&order=000002`);
-
-    expect(res.status).toBe(500);
-    expect(res.headers["content-type"]).toMatch(/text\/html/);
-    expect(res.text).toContain("Something went wrong");
   });
 });

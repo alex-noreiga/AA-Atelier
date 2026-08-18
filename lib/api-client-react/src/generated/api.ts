@@ -58,7 +58,10 @@ import type {
   ProductList,
   RescheduleAppointmentRequest,
   ShopOrderStatus,
-  StudioAnalytics
+  StudioAnalytics,
+  StudioTool,
+  StudioToolRequest,
+  StudioToolRun
 } from './api.schemas';
 
 import { customFetch } from '../custom-fetch';
@@ -1974,4 +1977,78 @@ export function useGetStudioAnalytics<TData = Awaited<ReturnType<typeof getStudi
 
 
 
+
+export const getRunStudioToolUrl = (tool: StudioTool,) => {
+
+
+
+
+  return `/api/studio/tools/${tool}`
+}
+
+/**
+ * Runs one of the atelier's internal actions — milestone reconciliation, invoice line-item generation, an order status-change email, a cancellation refund, or a return refund — from the signed-in studio dashboard. Each was previously triggered by opening a link that carried a shared secret in its query string; the work is unchanged, the authorization is not: this requires the same Supabase access token as the rest of the studio surface, with the caller's email on the staff allowlist. 401 when not signed in, 403 when signed in but not staff.
+ * Every tool is idempotent — a repeat run reports `noop` rather than doing the work twice — but two of them move money, so the dashboard confirms before calling those.
+ * @summary Run an internal atelier tool
+ */
+export const runStudioTool = async (tool: StudioTool,
+    studioToolRequest: StudioToolRequest, options?: Parameters<typeof customFetch>[1]): Promise<StudioToolRun> => {
+
+  return customFetch<StudioToolRun>(getRunStudioToolUrl(tool),
+  {
+    ...options,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    body: JSON.stringify(studioToolRequest)
+  }
+);}
+
+
+
+
+
+export const getRunStudioToolMutationOptions = <TError = ErrorType<ErrorEnvelope>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof runStudioTool>>, TError,{tool: StudioTool;data: BodyType<StudioToolRequest>}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof runStudioTool>>, TError,{tool: StudioTool;data: BodyType<StudioToolRequest>}, TContext> => {
+
+const mutationKey = ['runStudioTool'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof runStudioTool>>, {tool: StudioTool;data: BodyType<StudioToolRequest>}> = (props) => {
+          const {tool,data} = props ?? {};
+
+          return  runStudioTool(tool,data,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type RunStudioToolMutationResult = NonNullable<Awaited<ReturnType<typeof runStudioTool>>>
+    export type RunStudioToolMutationBody = BodyType<StudioToolRequest>
+    export type RunStudioToolMutationError = ErrorType<ErrorEnvelope>
+
+    /**
+ * @summary Run an internal atelier tool
+ */
+export const useRunStudioTool = <TError = ErrorType<ErrorEnvelope>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof runStudioTool>>, TError,{tool: StudioTool;data: BodyType<StudioToolRequest>}, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof runStudioTool>>,
+        TError,
+        {tool: StudioTool;data: BodyType<StudioToolRequest>},
+        TContext
+      > => {
+      return useMutation(getRunStudioToolMutationOptions(options));
+    }
 

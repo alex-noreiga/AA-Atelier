@@ -30,6 +30,9 @@ vi.mock("@/lib/auth-context", () => ({
 vi.mock("@workspace/api-client-react", () => ({
   useGetStudioAnalytics: vi.fn(),
   getGetStudioAnalyticsQueryKey: () => ["studio-analytics"],
+  // The internal tools panel rides along at the bottom of the dashboard; it has
+  // its own test file, so here it just needs an inert mutation to render.
+  useRunStudioTool: () => ({ mutate: vi.fn(), isPending: false }),
 }));
 
 // The 403 panel offers a Google re-sign-in, which drives supabase-js directly.

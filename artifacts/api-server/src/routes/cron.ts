@@ -7,24 +7,18 @@
 //
 // Auth: Vercel sends `Authorization: Bearer $CRON_SECRET` on cron invocations
 // when CRON_SECRET is configured. We require it, so the endpoint can't be
-// triggered by an anonymous request.
+// triggered by an anonymous request. The header form is the only one accepted —
+// the `?secret=` query token this route once took existed for a Notion "Open
+// link" button, and that button is gone: the atelier now runs the same
+// reconciliation on demand from the studio dashboard (`POST /api/studio/tools/
+// milestones`), signed in, with no secret in a URL. See services/studio-tools.
 //
-// There are two triggers for the SAME reconciliation (`generatePendingMilestones`):
-//   1. `GET /api/cron/generate-milestones` — Vercel Cron (Bearer header, JSON).
-//   2. `GET /api/cron/generate-milestones/run` — a Notion "Open link" button the
-//      atelier presses on demand. A native Notion button can only open a URL (no
-//      custom headers), so this one authenticates with a `?secret=` query token
-//      (same CRON_SECRET) and returns a small HTML confirmation page for the tab
-//      it opens. The request logger strips the query string, so the token isn't
-//      logged; it is still visible in the button's config + browser history.
+// So there remains exactly one caller: Vercel Cron, nightly, on the schedule in
+// `vercel.json`.
 
 import type { Request, Response } from "express";
 import { reconcileMilestones } from "../services/schedule.service.js";
-import {
-  htmlPage,
-  hasCronBearer,
-  hasCronQuerySecret,
-} from "../lib/cron-route.js";
+import { hasCronBearer } from "../lib/cron-route.js";
 import { logger } from "../lib/logger.js";
 
 export async function generateMilestonesHandler(
@@ -39,67 +33,4 @@ export async function generateMilestonesHandler(
   const result = await reconcileMilestones();
   logger.info(result, "Milestone reconciliation complete");
   res.json(result);
-}
-
-export async function generateMilestonesButtonHandler(
-  req: Request,
-  res: Response,
-): Promise<void> {
-  if (!hasCronQuerySecret(req)) {
-    res
-      .status(401)
-      .type("html")
-      .send(
-        htmlPage(
-          "Not authorized",
-          "This milestone-generation link is missing a valid access token.",
-        ),
-      );
-    return;
-  }
-
-  try {
-    const result = await reconcileMilestones();
-    logger.info(result, "Milestone reconciliation complete (button)");
-    const {
-      ordersProcessed,
-      milestonesCreated,
-      remindersSent,
-      paymentRemindersSent,
-    } = result;
-    const reminderNote =
-      remindersSent === 0
-        ? ""
-        : ` Sent ${remindersSent} fitting reminder${remindersSent === 1 ? "" : "s"}.`;
-    const paymentReminderNote =
-      paymentRemindersSent === 0
-        ? ""
-        : ` Sent ${paymentRemindersSent} payment reminder${paymentRemindersSent === 1 ? "" : "s"}.`;
-    const summary =
-      milestonesCreated === 0
-        ? `Everything was already up to date — no new milestones were needed.${reminderNote}${paymentReminderNote}`
-        : `Generated ${milestonesCreated} milestone${milestonesCreated === 1 ? "" : "s"} across ${ordersProcessed} order${ordersProcessed === 1 ? "" : "s"}.${reminderNote}${paymentReminderNote}`;
-    res
-      .status(200)
-      .type("html")
-      .send(
-        htmlPage(
-          "✅ Milestones generated",
-          `${summary} You can close this tab.`,
-        ),
-      );
-  } catch (err) {
-    // The service swallows per-order failures, so this is belt-and-suspenders.
-    // Render HTML here rather than rethrow — the shared error handler emits JSON.
-    logger.error({ err }, "Milestone reconciliation (button) failed");
-    res
-      .status(500)
-      .type("html")
-      .send(
-        htmlPage(
-          "Something went wrong",
-          "We couldn't generate the milestones just now. Please try again in a moment.",
-        ),
-      );
-  }
 }

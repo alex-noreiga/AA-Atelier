@@ -11,6 +11,7 @@ import {
 } from "@workspace/api-client-react";
 import { Button } from "@/components/ui/button";
 import { PageShell } from "@/components/page-shell";
+import { StudioTools } from "@/components/studio-tools";
 import { Seo } from "@/components/seo";
 import { useAuth } from "@/lib/auth-context";
 import { supabase } from "@/lib/supabase";
@@ -252,6 +253,8 @@ function Dashboard({ data }: { data: StudioAnalytics }) {
       <PaymentsPanel payments={data.payments} />
 
       <TopItemsPanel items={data.topItems} />
+
+      <StudioTools />
     </div>
   );
 }

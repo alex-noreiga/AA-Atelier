@@ -241,93 +241,35 @@ Express app (artifacts/api-server)  ──►  Notion REST API (orders database)
   │                                  doesn't email. Auth is a Bearer CRON_SECRET
   │                                  header (or a `?secret=` query token). NOT part
   │                                  of the OpenAPI contract.
-  ├─ GET  /api/webhooks/notion-stage-change/run
-  │                                → the SAME send, on demand: a link the atelier
-  │                                  opens (`?secret=<CRON_SECRET>&order=<ORD>`) to
-  │                                  send one order's update by hand — the way to
-  │                                  test in production against a single order
-  │                                  without wiring up the automation. Returns an
-  │                                  HTML confirmation page. NOT part of the
-  │                                  OpenAPI contract.
   ├─ GET  /api/cron/generate-milestones
   │                                → Vercel Cron reconciliation (CRON_SECRET-
   │                                  guarded, Bearer header, JSON). Finds orders
   │                                  with a "Due Date" but no milestones and writes
   │                                  one per-stage milestone row to the Notion
-  │                                  "Production Schedule" database, then re-syncs
-  │                                  every existing milestone's Status from its
-  │                                  order's live stage (so the calendar reflects
-  │                                  real progress, not a frozen "Not Started").
-  │                                  Also emails a best-effort fitting reminder for
-  │                                  any "Fitting" milestone due within the lead
-  │                                  window (see "Automated fitting reminders") and
-  │                                  a best-effort payment reminder for any invoice
+  │                                  "Production Schedule" database. Also emails a
+  │                                  best-effort fitting reminder for any "Fitting"
+  │                                  milestone due within the lead window (see
+  │                                  "Automated fitting reminders") and a
+  │                                  best-effort payment reminder for any invoice
   │                                  deposit/balance coming due or overdue (see
   │                                  "Payment & deposit due reminders").
   │                                  NOT part of the OpenAPI contract.
-  ├─ GET  /api/cron/generate-milestones/run
-  │                                → the SAME reconciliation, on demand: a Notion
-  │                                  "Open link" button the atelier presses. Auth
-  │                                  is a `?secret=<CRON_SECRET>` query token
-  │                                  (a button can't send a Bearer header) and it
-  │                                  returns a small HTML confirmation page. NOT
-  │                                  part of the OpenAPI contract.
-  ├─ GET  /api/invoices/generate-line-items
-  │                                → itemize a custom order's invoice from its
-  │                                  costing (CRON_SECRET Bearer, JSON, `?order=`).
-  │                                  Mirrors the order's costing items into
-  │                                  "Invoice Line Items": one Material line per
-  │                                  non-packaging usage line (at cost), one Labor
-  │                                  line, and one reconciling "Design & finishing"
-  │                                  Adjustment line = Σ(Suggested Price) −
-  │                                  (materials + labor) so the total lands on the
-  │                                  costing's margin-loaded price. Also names the
-  │                                  invoice after the ORD- number. Idempotent
-  │                                  (skips an invoice that already has lines). NOT
-  │                                  part of the OpenAPI contract.
-  ├─ GET  /api/invoices/generate-line-items/run
-  │                                → the SAME generation, on demand: a Notion link
-  │                                  the atelier clicks (a formula-built URL
-  │                                  carrying the row's Order Number). Auth is a
-  │                                  `?secret=<CRON_SECRET>&order=<ORD>` query
-  │                                  token; returns an HTML confirmation page. NOT
-  │                                  part of the OpenAPI contract.
-  ├─ GET  /api/orders/process-cancellation
-  │                                → the atelier's cancellation-refund action
-  │                                  (CRON_SECRET Bearer, JSON, `?order=<ORD or
-  │                                  SHP>`). Refunds every paid Stripe payment on
-  │                                  the order (custom: each paid deposit + the
-  │                                  balance from the invoice; shop: the single
-  │                                  checkout session) and sets a `Cancelled`
-  │                                  marker. Idempotent (skips a payment that
-  │                                  already has a refund) and marks cancelled only
-  │                                  after all refunds succeed. NOT part of the
-  │                                  OpenAPI contract.
-  ├─ GET  /api/orders/process-cancellation/run
-  │                                → the SAME action, on demand: a Notion link the
-  │                                  atelier clicks (a formula-built URL carrying
-  │                                  the row's Order Number). Auth is a
-  │                                  `?secret=<CRON_SECRET>&order=<ORD>` query
-  │                                  token; returns an HTML confirmation page. NOT
-  │                                  part of the OpenAPI contract.
-  ├─ GET  /api/shop-orders/process-return
-  │                                → the atelier's return/exchange refund action
-  │                                  (CRON_SECRET Bearer, JSON, `?order=<SHP>`
-  │                                  + optional `?amount=`). Refunds the shop
-  │                                  order's Stripe payment up to a TARGET total
-  │                                  (omit `amount` ⇒ refund in full; `amount=0`
-  │                                  ⇒ an even exchange, refund nothing), so a
-  │                                  re-press can never double-refund. Records
-  │                                  `Refunded Amount` + `Return Processed` on the
-  │                                  order (best-effort) + emails the customer.
-  │                                  NOT part of the OpenAPI contract.
-  └─ GET  /api/shop-orders/process-return/run
-                                   → the SAME action, on demand: a Notion link the
-                                     atelier clicks. Auth is a
-                                     `?secret=<CRON_SECRET>&order=<SHP>` query
-                                     token (plus optional `&amount=`); returns an
-                                     HTML confirmation page. NOT part of the
-                                     OpenAPI contract.
+  └─ POST /api/studio/tools/:tool  → the atelier's five internal actions, run from
+                                     the signed-in studio dashboard: milestone
+                                     reconciliation (`milestones`, the same sweep
+                                     the cron runs, on demand), invoice
+                                     itemization from the costing
+                                     (`invoice-lines`), an order status-change
+                                     email (`status-email`, with a `force`
+                                     resend), the cancellation refund
+                                     (`cancellation-refund`) and the return /
+                                     exchange refund (`return-refund`, with an
+                                     optional `amount` TARGET total). Staff-gated
+                                     (`requireStaff`) — see "Internal tools on the
+                                     studio dashboard". Each returns a composed
+                                     `{ status, title, message, details }` the
+                                     dashboard renders. IS part of the OpenAPI
+                                     contract, unlike the links it replaced.
 ```
 
 The customer-notification POST endpoints (`/api/orders`, `/api/contact`,
@@ -826,7 +768,7 @@ set the two env vars. Code: `services/invoice.service.ts`, `routes/orders.ts`,
 `routes/stripe-webhook.ts`, `lib/notion/invoice.{schema,repository}.ts`,
 `pages/track.tsx` (via `components/custom-order-result.tsx`), and `pages/invoice.tsx`.
 
-### Generating invoice line items from the costing (button)
+### Generating invoice line items from the costing
 
 Itemizing an invoice by hand is where a **double charge** used to creep in: the
 `costing (custom orders)` item is a _whole-garment aggregate_ (its `Suggested
@@ -835,10 +777,10 @@ that costing item prices at the aggregate — so a costing-item line **plus**
 separate material/labor lines counts the same money twice (the `Unit Price`
 formula resolves the costing item ahead of the material usage line, so even a
 "Material" line linked to both silently bills the whole garment). The generator
-removes the foot-gun by owning the itemization:
-`GET /api/invoices/generate-line-items` (`?order=<ORD>`, CRON_SECRET-guarded,
-outside the OpenAPI contract like the milestone button) reads the order's costing
-and writes the lines itself —
+removes the foot-gun by owning the itemization: the studio dashboard's
+**Itemize an invoice** tool (`POST /api/studio/tools/invoice-lines` with
+`{ orderNumber }`, staff-gated) reads the order's costing and writes the lines
+itself —
 
 1. **one Material line per non-packaging material usage line**, priced at that
    line's `Line Material Cost` (at cost);
@@ -853,33 +795,31 @@ price is blank; avoiding it makes the aggregate-vs-components double charge
 structurally impossible). It also sets the invoice title (`Invoice ID`) to the
 order's `ORD-` number (display-only — lookup is by the order's `Invoices`
 relation, never the title). **Idempotent**: it skips an invoice that already has
-line items (a re-press only reconciles the title); to regenerate after changing
-the costing, delete the existing lines and press again. **Packaging** usage lines
-(`Usage Type = "Packaging"`, `USAGE_TYPE_PACKAGING`) are internal cost and never
-itemized. Code: `services/invoice-generator.service.ts`,
-`routes/invoice-generator.ts`, `lib/notion/costing.{schema,repository}.ts`,
+line items (a repeat run only reconciles the title, and reports that it did
+nothing); to regenerate after changing the costing, delete the existing lines and
+run it again. **Packaging** usage lines (`Usage Type = "Packaging"`,
+`USAGE_TYPE_PACKAGING`) are internal cost and never itemized. Code:
+`services/invoice-generator.service.ts`, `services/studio-tools.service.ts`,
+`lib/notion/costing.{schema,repository}.ts`,
 `lib/notion/invoice-line-items.blocks.ts`, and the `createInvoiceLineItem` /
 `setInvoiceTitle` writers in `lib/notion/invoice.repository.ts`.
 
 The atelier must, one time: share the Notion integration with **costing (custom
-orders)** and the **material usage database**; set `NOTION_COSTING_DATABASE_ID` +
-`NOTION_MATERIAL_USAGE_DATABASE_ID`; and add the on-demand trigger — a **formula
-property** on invoices & payments (or on the order, which already has `Order
-Number`) that builds the clickable URL
-`https://<PUBLIC_BASE_URL>/api/invoices/generate-line-items/run?secret=<CRON_SECRET>&order=` +
-the order number (a formula that returns a URL renders as a link; a native Button
-can't interpolate the row's order number into its URL, which is why this is a
-formula link rather than a Button). The `Suggested Price` costing formula is the
-source of truth for the invoice total; its Notion _description_ text is stale
-("Break-even price + labor cost") but the **formula is correct**: it marks up the
-break-even cost by the profit margin and grosses up for selling fees —
-`round(base × (1 + margin) / (1 − sellingFees), 2)` with **no `Channel` branch**.
-The fee is **data-driven**: `Pricing Settings` has a **Custom / Direct** row (fees
-0%) and a **Production / Marketplace** row (6.5%), and each costing item relates to
-the right one, so one formula prices every channel (Custom ÷1, Production ÷0.935).
-This is the "one costing engine" standardized model (Phase-2 card ①) — don't "fix"
-the formula to match the stale description, and don't add a `Channel` branch (it
-would duplicate the Pricing Settings relation). See `.agents/memory/invoice-building.md`.
+orders)** and the **material usage database**; and set `NOTION_COSTING_DATABASE_ID`
+
+- `NOTION_MATERIAL_USAGE_DATABASE_ID`. There is no Notion trigger to add — the
+  generator is run from `/studio`, which is what retired the formula-property link
+  this used to need. The `Suggested Price` costing formula is the
+  source of truth for the invoice total; its Notion _description_ text is stale
+  ("Break-even price + labor cost") but the **formula is correct**: it marks up the
+  break-even cost by the profit margin and grosses up for selling fees —
+  `round(base × (1 + margin) / (1 − sellingFees), 2)` with **no `Channel` branch**.
+  The fee is **data-driven**: `Pricing Settings` has a **Custom / Direct** row (fees
+  0%) and a **Production / Marketplace** row (6.5%), and each costing item relates to
+  the right one, so one formula prices every channel (Custom ÷1, Production ÷0.935).
+  This is the "one costing engine" standardized model (Phase-2 card ①) — don't "fix"
+  the formula to match the stale description, and don't add a `Channel` branch (it
+  would duplicate the Pricing Settings relation). See `.agents/memory/invoice-building.md`.
 
 ### Order cancellation & refunds
 
@@ -900,16 +840,17 @@ an **atelier button**. Load-bearing points:
    `services/cancellation.service.ts`, `routes/orders.ts` + `routes/shop-orders.ts`,
    `lib/notion/cancellation.{blocks,repository}.ts`.
 
-2. **Atelier refund button (CRON_SECRET, outside the OpenAPI contract).**
-   `GET /api/orders/process-cancellation[/run]?order=<ORD or SHP>` (Bearer JSON +
-   `?secret=` HTML link, mounted directly in `app.ts` **before** the `/api` router
-   so it isn't captured by `/orders/:orderNumber`). It detects custom vs shop by
-   the number prefix, refunds each paid Stripe payment, and sets a `Cancelled`
-   checkbox on the order. Custom orders refund each paid deposit + the balance,
-   read off the invoice (`invoice.schema` now reads `balanceSessionId` back — a
-   read-only add, no new Notion field); shop orders refund the single stored
+2. **Atelier refund action, from the studio dashboard.**
+   `POST /api/studio/tools/cancellation-refund` with `{ orderNumber }` (staff-
+   gated — see "Internal tools on the studio dashboard"). It detects custom vs
+   shop by the number prefix, refunds each paid Stripe payment, and sets a
+   `Cancelled` checkbox on the order. Custom orders refund each paid deposit + the
+   balance, read off the invoice (`invoice.schema` reads `balanceSessionId` back —
+   a read-only add, no new Notion field); shop orders refund the single stored
    checkout session. Code: `services/order-cancellation.service.ts`,
-   `routes/order-cancellation.ts`.
+   `services/studio-tools.service.ts`. (This was a `?secret=` link opened from a
+   Notion formula property, `GET /api/orders/process-cancellation[/run]`, until the
+   dashboard took it over; the refund logic is unchanged.)
 
 3. **Refunds are idempotent + degrade, never double-charge.** Stripe does **not**
    dedupe `refunds.create` (unlike charges), so `refundCheckoutSession`
@@ -921,9 +862,9 @@ an **atelier button**. Load-bearing points:
    test-mode session id under a live key) is caught, logged at `error`, recorded in
    the summary, and the run continues. The `Cancelled` marker is set **only after
    every attempted refund succeeded**, so a partial failure leaves the order
-   uncancelled and a re-press retries safely (the refund pass is idempotent). The
+   uncancelled and a re-run retries safely (the refund pass is idempotent). The
    customer refund-confirmation email sends **only when something new happened**
-   (a refund issued, or the order newly cancelled) — a no-op re-press is silent.
+   (a refund issued, or the order newly cancelled) — a no-op re-run is silent.
 
 4. **State stays in sync.** `cancelled` is surfaced on both status responses
    (`OrderStatus` / `ShopOrderStatus`), read from the `Cancelled` checkbox, so the
@@ -932,11 +873,12 @@ an **atelier button**. Load-bearing points:
    `shop-order-result.tsx`). The request dialog is the shared
    `components/cancellation-request-dialog.tsx`.
 
-The atelier's one-time setup (no new env vars — reuses `CRON_SECRET`,
-`STRIPE_SECRET_KEY`, Resend, the contact DB): add a **`Cancelled` checkbox** to the
-**Order Tracking Pipeline** and **Shop Orders** databases; and add a formula-property
-link on both — `"https://<PUBLIC_BASE_URL>/api/orders/process-cancellation/run?secret=<CRON_SECRET>&order=" + prop("Order Number")`.
-The `Cancellation` `Request type` option auto-creates on first write.
+The atelier's one-time setup (no new env vars — reuses `STRIPE_SECRET_KEY`, Resend,
+the contact DB): add a **`Cancelled` checkbox** to the **Order Tracking Pipeline**
+and **Shop Orders** databases. Nothing else — the refund is run from the studio
+dashboard's **Cancel & refund an order** tool, which is what retired the
+formula-property link both databases used to carry. The `Cancellation`
+`Request type` option auto-creates on first write.
 
 ## Return & exchange refunds (the atelier-facing half)
 
@@ -981,20 +923,19 @@ refund **arithmetic** is deliberately different. Load-bearing points:
    (paid offline / legacy) and a `$0`/fully-promo session are **skipped** and
    surfaced as "refund manually", not failures. A Stripe throw is caught, logged
    at `error`, and returned as `status: "error"` with nothing refunded and no
-   marker written — the button says so plainly rather than claiming success, and
-   a re-press is safe because the target is recomputed from Stripe every time.
+   marker written — the dashboard says so plainly rather than claiming success,
+   and a re-run is safe because the target is recomputed from Stripe every time.
    The customer refund email (`returnRefundEmail`, **orders** sender) sends only
    when money actually moved, and is best-effort like every other customer mail.
 
-The atelier's one-time setup (**no new env vars** — reuses `CRON_SECRET`,
-`STRIPE_SECRET_KEY`, Resend): add **`Refunded Amount`** (number) and
-**`Return Processed`** (checkbox) to the **Shop Orders** database (optional — the
-refund works without them, they're just the visible record), and add a
-formula-property link
-`"https://<PUBLIC_BASE_URL>/api/shop-orders/process-return/run?secret=<CRON_SECRET>&order=" + prop("Order Number")`.
-For a partial refund the atelier appends `&amount=180` to that URL by hand (a
-formula can't prompt for a figure); the bare link refunds in full. Code:
-`services/return-refund.service.ts`, `routes/return-refund.ts`,
+The atelier's one-time setup (**no new env vars** — reuses `STRIPE_SECRET_KEY` +
+Resend): add **`Refunded Amount`** (number) and **`Return Processed`** (checkbox)
+to the **Shop Orders** database (optional — the refund works without them, they're
+just the visible record). The refund is run from the studio dashboard's
+**Refund a return** tool (`POST /api/studio/tools/return-refund`), which takes the
+order number and an optional amount — so a partial refund is a form field rather
+than the `&amount=180` a formula link had to have hand-edited onto its URL. Code:
+`services/return-refund.service.ts`, `services/studio-tools.service.ts`,
 `lib/stripe/refunds.ts` (the shared Stripe refund primitives), and
 `recordShopOrderRefund` in `lib/notion/shop-orders.repository.ts`.
 
@@ -1006,22 +947,21 @@ Calendar views keyed on `Target Completion Date`. To fill it, the app
 **auto-generates one dated milestone row per remaining stage** for any custom
 order that has a firm due date. The load-bearing points:
 
-1. **Trigger is a reconciliation cron (plus an on-demand button), not a Notion
+1. **Trigger is a reconciliation cron (plus an on-demand run), not a Notion
    push.** There is no Notion→app trigger (see the deposits/status notes), so the
    atelier sets a `Due Date` on the order in the Order Tracking Pipeline and the
    reconciliation later scans for orders that have a due date but whose
    `Milestones Generated` checkbox is unset, and generates their milestones. It
    runs two ways, both calling `reconcileMilestones` (generation + reminder
-   passes; milestone completion state is a live Notion formula now, see point 4): a **Vercel Cron** job
-   nightly (`GET /api/cron/generate-milestones`, Bearer `CRON_SECRET`, JSON; in
-   `vercel.json` `crons`) and an on-demand **Notion "Open link" button**
-   (`GET /api/cron/generate-milestones/run?secret=<CRON_SECRET>`, query token,
-   returns an HTML confirmation — a native button can't send a Bearer header). The
-   query token sits in the button config + browser history (the request logger
-   strips it), so it's a low-stakes reuse of `CRON_SECRET` for an idempotent
-   internal action; rotate it or add a dedicated token if that matters. Both
-   endpoints are CRON_SECRET-guarded and, like the Stripe webhook, **deliberately
-   outside the OpenAPI contract** (mounted in `app.ts`, not the `/api` router).
+   passes; milestone completion state is a live Notion formula now, see point 4):
+   a **Vercel Cron** job nightly (`GET /api/cron/generate-milestones`, Bearer
+   `CRON_SECRET`, JSON; in `vercel.json` `crons`) and on demand from the **studio
+   dashboard** (`POST /api/studio/tools/milestones`, staff-gated), for catching up
+   sooner than the next night. The cron endpoint is CRON_SECRET-guarded and, like
+   the Stripe webhook, **deliberately outside the OpenAPI contract** (mounted in
+   `app.ts`, not the `/api` router); the dashboard tool is contract-first. (The
+   `…/generate-milestones/run?secret=` Notion button the dashboard replaced is
+   gone — see "Internal tools on the studio dashboard".)
    Code: `routes/cron.ts` → `services/schedule.service.ts` →
    `lib/notion/orders.repository.ts`
    (`findOrdersNeedingMilestones`/`markMilestonesGenerated`) +
@@ -1071,11 +1011,10 @@ The atelier must, one time: add `Due Date` (date) + `Milestones Generated`
 (checkbox) to the Order Tracking Pipeline; add `Production Stage` (select) +
 `Order` (relation → Order Tracking Pipeline) to the Production Schedule; share the
 Notion integration with the Production Schedule database; set
-`NOTION_PRODUCTION_SCHEDULE_DATABASE_ID` + `CRON_SECRET`; and (optional) add a
-Notion **Button** → "Open link" →
-`https://<PUBLIC_BASE_URL>/api/cron/generate-milestones/run?secret=<CRON_SECRET>`
-on a dashboard page to generate milestones on demand. Property names live in
-`orders.schema.ts` (orders) and `production-schedule.blocks.ts` (schedule).
+`NOTION_PRODUCTION_SCHEDULE_DATABASE_ID` + `CRON_SECRET`. Nothing needs adding in
+Notion to run it on demand — that's the **Reconcile production milestones** tool
+on `/studio`. Property names live in `orders.schema.ts` (orders) and
+`production-schedule.blocks.ts` (schedule).
 
 ## Automated fitting reminders
 
@@ -1489,25 +1428,23 @@ Stage` **rich_text** property on the order: it reads the marker, sends only when
    (`order-notification.service.ts`); the marker write is best-effort (a write hiccup at
    worst risks one duplicate on a later double-fire, never a wrong-direction email).
 
-4. **On-demand + test trigger.** `GET /api/webhooks/notion-stage-change/run?secret=
-<CRON_SECRET>&order=<ORD>` runs the same send from a browser and returns an HTML
-   confirmation. This is how the atelier **tests in production** — hit the link for
-   one test order (their own email) and no customer is touched, because no automation
-   is firing for real orders until it's wired up. It's also a manual "notify now";
-   append **`&force=1`** to resend even when the order hasn't moved forward (a forced
-   resend never rewinds the high-water marker). The automation itself never forces.
+4. **On-demand send, test trigger, and fallback to the automation — all one tool.**
+   The studio dashboard's **Send a status update** (`POST
+/api/studio/tools/status-email` with `{ orderNumber, force? }`) runs the same send
+   by hand. Three jobs in one place: it's how the atelier **tests in production**
+   (run it against one test order of their own and no customer is touched, because
+   no automation is firing for real orders until it's wired up); it's the manual
+   "notify now" — tick **resend anyway** (`force: true`) to send even when the order
+   hasn't moved forward, and a forced resend never rewinds the high-water marker;
+   and because it's forward-only like everything else (running it again at the same
+   stage does nothing), it's a reliable **alternative to the automation entirely**
+   when that can't be used — e.g. a Notion plan without webhook actions. The
+   automation itself never forces.
 
-5. **Per-order button (fallback to the automation).** The `…/run` link doubles as a
-   one-click **per-order button**: a `Send Status Update` **formula property** on the
-   Order Tracking Pipeline builds the clickable URL
-   `"https://<PUBLIC_BASE_URL>/api/webhooks/notion-stage-change/run?secret=<CRON_SECRET>&order=" + prop("Order Number")`
-   (a formula returning a URL renders as a link — same pattern as the invoice-generator
-   button). The atelier advances the `Stage`, then clicks the link to email the
-   customer — no automation needed. It's forward-only like everything else (clicking
-   again at the same stage is a no-op), so it's a reliable alternative when the Notion
-   `Stage`-change automation can't be used (e.g. a Notion plan without webhook actions).
-   Reuses `CRON_SECRET`; the token sits in the formula + browser history (low-stakes,
-   same tradeoff as the milestone/invoice buttons).
+   This replaced a `Send Status Update` **formula property** on the Order Tracking
+   Pipeline that built a `…/notion-stage-change/run?secret=<CRON_SECRET>&order=` URL
+   per row. That property (and the `…/run` route) is gone; delete it in Notion —
+   see "Internal tools on the studio dashboard".
 
 There are **no new env vars** (it reuses `CRON_SECRET` for auth, `RESEND_FROM_EMAIL`
 for the `orders@` sender via `fromAddress("orders")`, and `PUBLIC_BASE_URL` for the
@@ -1847,8 +1784,10 @@ Load-bearing decisions:
    tunable, and anyone who could edit the settings database could otherwise grant
    themselves the studio's revenue figures. It **fails closed**: unset ⇒ nobody is
    staff and the dashboard is inert, the opposite of the optional integrations'
-   degrade-to-off. This is the cheap slice of the roadmap's "Staff authentication
-   for internal tools"; the CRON_SECRET-in-a-URL atelier buttons are untouched.
+   degrade-to-off. The same gate now carries the atelier's internal **actions**
+   too — see "Internal tools on the studio dashboard" below, which is what
+   finished the roadmap's "Staff authentication for internal tools" and retired
+   the CRON_SECRET-in-a-URL buttons.
 
 2. **Staff must sign in with Google — the method is checked, not just the
    identity.** The studio's addresses are published on the site, so an allowlist
@@ -1939,6 +1878,78 @@ address, and a private one removes the enumeration angle entirely. Also confirm
 address without ever touching its inbox. Everything else is already configured —
 it reads the orders, shop-orders, invoices, and inventory databases the app
 already uses.
+
+## Internal tools on the studio dashboard
+
+The atelier's five internal actions — **reconcile production milestones**,
+**itemize an invoice**, **send a status update**, **cancel & refund an order**,
+**refund a return** — are run from the signed-in `/studio` page, through
+`POST /api/studio/tools/:tool`. None of the underlying work changed; who is
+allowed to trigger it did. This is the roadmap's "Staff authentication for
+internal tools" + "Retire the copy-a-secret buttons". Code:
+`services/studio-tools.service.ts` (the dispatcher + the wording),
+`routes/studio.ts`, and `web-app/src/components/studio-tools.tsx` (rendered at the
+bottom of `pages/studio.tsx`). Load-bearing decisions:
+
+1. **What replaced what.** Each tool used to be a `GET` link authenticating with
+   `?secret=<CRON_SECRET>`, built by a **Notion formula property** on the relevant
+   row and opened in a browser tab that rendered an HTML confirmation page. Those
+   routes are **deleted**, not deprecated: `…/cron/generate-milestones/run`,
+   `…/webhooks/notion-stage-change/run`, `/api/invoices/generate-line-items[/run]`,
+   `/api/orders/process-cancellation[/run]`, and
+   `/api/shop-orders/process-return[/run]`. The Bearer halves went too — nothing
+   machine-driven called them. `test/integration/retired-secret-links.routes.test.ts`
+   asserts they stay gone, because re-mounting one would put a
+   money-moving credential back into URLs and browser history.
+
+2. **What deliberately survives on `CRON_SECRET`.** Two callers are machines that
+   can send a header, so they keep it: **Vercel Cron** →
+   `GET /api/cron/generate-milestones` (the nightly reconciliation in
+   `vercel.json`), and the **Notion stage-change automation** →
+   `POST /api/webhooks/notion-stage-change`. The webhook still also accepts
+   `?secret=` — the one place left that reads the secret from a URL — kept only
+   because a live automation may already be configured that way; it should use the
+   `Authorization` header. `lib/cron-route.ts` is now just those two auth checks.
+
+3. **Contract-first, unlike the links it replaced.** The retired routes were
+   outside the OpenAPI contract because they were browser tabs, not API calls.
+   This is an ordinary SPA JSON call, so it lives in `openapi.yaml` with a
+   generated `useRunStudioTool` hook: the tool name is a **path-param enum** (an
+   unknown tool is a 400 from the generated schema, not a route that quietly
+   doesn't exist) and `amount` is validated as a non-negative number before any
+   service sees it.
+
+4. **The server owns the wording; the page renders it.** Every tool returns the
+   same `{ tool, status, title, message, details[] }` — the summary sentences the
+   HTML confirmation pages used to compose, moved into
+   `studio-tools.service.ts`. So the dashboard renders one shape instead of five,
+   and a result reads as it always did. `status` is the part that carries meaning:
+   **`ok`** (it did something), **`noop`** (there was nothing to do — every action
+   is idempotent, so this is the normal result of a repeat run and must not read as
+   success), **`attention`** (it ran but left work for a human, e.g. a refund
+   Stripe rejected, which leaves the order uncancelled precisely so a re-run can
+   retry). Something the tool couldn't even start — a missing order number, an
+   unknown order, an invoice that isn't ready — is thrown as
+   `BadRequestError`/`NotFoundError` and surfaces as a 400/404 with its own
+   message, which the panel shows verbatim.
+
+5. **The two refunds confirm before running.** `cancellation-refund` and
+   `return-refund` move real money against a hand-typed order number, so the UI
+   asks again with the number echoed back, and editing the field re-arms the
+   question. Editing an order number is also the fix for the one thing a formula
+   link did better — it could never be typed wrong. That trade buys the thing a
+   link could never do: a **partial** return refund is a form field rather than an
+   `&amount=180` hand-appended to a URL.
+
+**Atelier setup (one time, after this deploys):** delete the four formula-property
+link fields in Notion — `Send Status Update` on Order Tracking Pipeline, the
+invoice-generator link on invoices & payments, and the cancellation / return refund
+links on Order Tracking Pipeline and Shop Orders — plus any "Open link" button
+pointing at `…/generate-milestones/run`. Then **rotate `CRON_SECRET`**: it has sat
+in Notion formulas and browser history, and now that nothing but Vercel Cron and
+the Notion automation sends it, rotating costs one env var and one automation
+header. No new env var is needed — the tools reuse the `STUDIO_STAFF_EMAILS`
+allowlist the dashboard already has.
 
 ## Postgres (payment idempotency + a provisioned read-model)
 
@@ -2354,9 +2365,11 @@ and in the maintainer's env without edits.
   review endpoint errors if unset).
   The Notion integration must be shared with each database or queries 404. The
   production-schedule cron also needs `CRON_SECRET` (the bearer token Vercel Cron
-  sends to `GET /api/cron/generate-milestones`; unset ⇒ that endpoint 401s). The
-  same secret doubles as the `?secret=` query token for the on-demand Notion
-  button (`GET /api/cron/generate-milestones/run`).
+  sends to `GET /api/cron/generate-milestones`; unset ⇒ that endpoint 401s). It is
+  also accepted on the Notion stage-change automation webhook. It is no longer
+  pasted into any Notion formula link — those became studio-dashboard tools, so the
+  secret is now only ever sent as a header by a machine, and can be rotated without
+  editing Notion.
   Optionally `NOTION_CLIENT_CRM_DATABASE_ID` (the "Client CRM" database): when set,
   every customer touchpoint **best-effort** upserts a client record there (deduped by
   email) and links back to it — a new custom order, a paid **shop order**, and the
@@ -2606,54 +2619,55 @@ keys on exact property names). Recorded here only because two facts are
 
 ## Quick reference — where things live
 
-| I want to…                                             | Go to                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                         |
-| ------------------------------------------------------ | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Change an API request/response shape                   | `lib/api-spec/openapi.yaml` → run codegen                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                     |
-| Change order use-case logic                            | `artifacts/api-server/src/services/orders.service.ts`                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                         |
-| Change Notion I/O                                      | `artifacts/api-server/src/lib/notion/*`                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                       |
-| Change a customer email / template                     | `artifacts/api-server/src/lib/resend/*` (`emails.ts` copy, `send.ts` transport, `client.ts` config)                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                           |
-| Add/modify an API route                                | `artifacts/api-server/src/routes/*`                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                           |
-| Add request validation / error mapping                 | `artifacts/api-server/src/middlewares/*`                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                      |
-| Change the order-tracking UI (custom + shop)           | `artifacts/web-app/src/pages/track.tsx` (unified lookup) + `components/custom-order-result.tsx` + `components/shop-order-result.tsx`                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                          |
-| Change the order intake form                           | `artifacts/web-app/src/pages/order-form.tsx`                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                  |
-| Change the color selector (intake)                     | `artifacts/web-app/src/components/color-picker.tsx` + `pages/order-form.tsx` (frontend, step 2 of the two-step flow); `api-server/src/services/colors.ts` (`intakeColorPalette`/`parseColorPalette` + the built-in default) + `routes/colors.ts` (`GET /api/colors`, the `COLOR_PALETTE` Studio Settings value); `lib/notion/orders.{schema,blocks}.ts` (write-back to the order's `Colors` + `Color Usage`)                                                                                                                                                                                                                                                                                  |
-| Change the rush order surcharge                        | `artifacts/web-app/src/lib/rush.ts` (window + disclosure) + `pages/order-form.tsx` (detect/acknowledge/send); `api-server/src/lib/notion/orders.blocks.ts` + `orders.schema.ts` (`Rush Order` record); `api-server/src/services/rush.ts` + `services/invoice-generator.service.ts` (server-priced "Surcharge" line); `web-app/src/lib/invoice-format.ts` ("Surcharge" line display)                                                                                                                                                                                                                                                                                                           |
-| Change referral & returning-skater rewards             | `api-server/src/services/rewards.service.ts` (engine + amount getters) + `lib/stripe/promotions.ts` (`createDiscountCode`) + `lib/notion/clients.repository.ts` (reward reads + `patchClientProperties`); wired from `submitOrder` (capture) + `recordPaidOrder` / `recordPayment` (issue); reward emails in `lib/resend/emails.ts`; `services/account.service.ts` + `web-app/src/pages/account.tsx` (referral card) + `pages/order-form.tsx` (`referralCode` field)                                                                                                                                                                                                                          |
-| Add/read an atelier-editable live setting              | `api-server/src/lib/settings/store.ts` (`SETTING_KEYS` + `settingValue`) + `lib/notion/settings.{schema,repository}.ts` (Notion read); consume with `settingValue(KEY) ?? process.env[KEY] ?? default` (see `services/rush.ts`); primed by the middleware in `app.ts`. Notion "Studio Settings" DB, `NOTION_SETTINGS_DATABASE_ID`                                                                                                                                                                                                                                                                                                                                                             |
-| Change the measurement-change request                  | `artifacts/web-app/src/components/measurement-change-dialog.tsx` (opened from `components/custom-order-result.tsx`); `api-server/src/services/measurement-change.service.ts` + `routes/orders.ts` + `lib/notion/measurement-change.{blocks,repository}.ts` (writes to the **contact** database)                                                                                                                                                                                                                                                                                                                                                                                               |
-| Change post-delivery review capture                    | `artifacts/web-app/src/components/review-dialog.tsx` (opened from `components/custom-order-result.tsx` for delivered orders); `api-server/src/services/review.service.ts` + `services/delivery.ts` + `routes/orders.ts` + `lib/notion/reviews.{blocks,repository}.ts` (writes to the **Reviews** database)                                                                                                                                                                                                                                                                                                                                                                                    |
-| Change order cancellation & refunds                    | `artifacts/web-app/src/components/cancellation-request-dialog.tsx` (rendered by `components/custom-order-result.tsx` + `shop-order-result.tsx`); customer request in `api-server/src/services/cancellation.service.ts` + `routes/orders.ts` + `routes/shop-orders.ts` + `lib/notion/cancellation.{blocks,repository}.ts` (writes to the **contact** database); atelier refund in `services/order-cancellation.service.ts` + `routes/order-cancellation.ts` (button, `?order=`) + the `Cancelled`/`setOrderCancelled`/`setShopOrderCancelled` writers                                                                                                                                          |
-| Change the landing page                                | `artifacts/web-app/src/pages/home.tsx`                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                        |
-| Change the shop (live Notion inventory)                | `artifacts/web-app/src/pages/shop.tsx` + `services/products.service.ts` + `lib/notion/products.*`                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                             |
-| Change the back-in-stock notify dialog                 | `artifacts/web-app/src/components/notify-dialog.tsx` + `services/notify.service.ts` + `lib/notion/notify.*` (writes to the **contact** database — see below)                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                  |
-| Change shop checkout / payments                        | `artifacts/web-app/src/lib/cart.tsx` + `components/cart-drawer.tsx` + `components/add-to-cart.tsx` (frontend); `api-server/src/services/checkout.service.ts` + `routes/checkout.ts` + `routes/stripe-webhook.ts` + `lib/stripe/*` + `lib/notion/shop-orders.*` (backend)                                                                                                                                                                                                                                                                                                                                                                                                                      |
-| Change shop-order tracking                             | `artifacts/web-app/src/components/shop-order-result.tsx` (rendered by `pages/track.tsx`; + order number on `pages/shop-success.tsx`); `api-server/src/services/shop-orders.service.ts` + `routes/shop-orders.ts` + `lib/notion/shop-orders.{blocks,repository}.ts` + `services/checkout.service.ts` (mints the number)                                                                                                                                                                                                                                                                                                                                                                        |
-| Change the return / exchange request                   | `artifacts/web-app/src/components/return-exchange-dialog.tsx` (opened from `components/shop-order-result.tsx`); `api-server/src/services/return-request.service.ts` + `routes/shop-orders.ts` (`POST /shop-orders/:n/return-requests`) + `lib/notion/return-request.{blocks,repository}.ts` (writes to the **contact** database) + `findShopOrderVerification` in `lib/notion/shop-orders.repository.ts`; policy copy in `pages/shipping-returns.tsx`                                                                                                                                                                                                                                         |
-| Change return / exchange refunds (atelier button)      | `api-server/src/services/return-refund.service.ts` (the target-total refund engine + `parseRefundTarget`) + `routes/return-refund.ts` (button, `?order=` + optional `?amount=`) + `lib/stripe/refunds.ts` (shared Stripe refund primitives) + `recordShopOrderRefund` / `SHOP_ORDER_REFUNDED_PROPERTY` / `SHOP_ORDER_RETURN_PROCESSED_PROPERTY` in `lib/notion/shop-orders.{repository,blocks}.ts` + `returnRefundEmail` in `lib/resend/emails.ts`                                                                                                                                                                                                                                            |
-| Change the footer / legal pages                        | `artifacts/web-app/src/components/footer.tsx` (global, in `App.tsx`) + `pages/{privacy,terms,shipping-returns}.tsx` + `components/legal-page.tsx`; shared studio contact details in `lib/contact-info.ts`                                                                                                                                                                                                                                                                                                                                                                                                                                                                                     |
-| Change custom-order payments (deposits + balance)      | `artifacts/web-app/src/components/custom-order-result.tsx` (`DepositsSection`, rendered by `pages/track.tsx`) + `pages/invoice.tsx`; `api-server/src/services/invoice.service.ts` (`createPaymentCheckout`/`recordPayment`) + `routes/orders.ts` (`POST /orders/:n/payments/:stage`) + `lib/notion/invoice.{schema,repository}.ts` + `routes/stripe-webhook.ts`                                                                                                                                                                                                                                                                                                                               |
-| Change invoice line-item generation (from costing)     | `api-server/src/services/invoice-generator.service.ts` + `routes/invoice-generator.ts` (button, `?order=`) + `lib/notion/costing.{schema,repository}.ts` + `lib/notion/invoice-line-items.blocks.ts` + `createInvoiceLineItem`/`setInvoiceTitle` in `lib/notion/invoice.repository.ts`                                                                                                                                                                                                                                                                                                                                                                                                        |
-| Change production-schedule milestones                  | `api-server/src/services/schedule.service.ts` + `routes/cron.ts` + `lib/notion/production-schedule.{blocks,repository}.ts` + `lib/notion/orders.repository.ts` (`findOrdersNeedingMilestones`/`markMilestonesGenerated`); cron in `vercel.json`                                                                                                                                                                                                                                                                                                                                                                                                                                               |
-| Change order status-change emails (+ pipeline graphic) | `api-server/src/lib/resend/emails.ts` (`orderStageChangeEmail`) + `services/order-notification.service.ts` + `routes/order-notification.ts` + `lib/notion/orders.repository.ts` (`findOrderForStageNotification`); Notion automation → `POST /api/webhooks/notion-stage-change`                                                                                                                                                                                                                                                                                                                                                                                                               |
-| Change automated fitting reminders                     | `api-server/src/services/schedule.service.ts` (`sendDueFittingReminders`) + `services/fitting-reminder.ts` (env business rule) + `lib/notion/production-schedule.{blocks,repository}.ts` (`findMilestonesNeedingFittingReminder`/`markFittingReminderSent`, `Reminder Sent` prop) + `fittingReminderEmail` in `lib/resend/emails.ts`; runs in the milestone cron                                                                                                                                                                                                                                                                                                                              |
-| Change payment & deposit due reminders                 | `api-server/src/services/schedule.service.ts` (`sendDuePaymentReminders`) + `services/payment-reminder.ts` (env business rule) + `lib/notion/invoice.repository.ts` (`findInvoicesNeedingPaymentReminder`/`markPaymentStageReminded`) + `extractPaymentReminderInvoice` + `PAYMENT_STAGE_REMINDER_FIELDS` in `lib/notion/invoice.schema.ts` + `paymentReminderEmail` in `lib/resend/emails.ts`; runs in the milestone cron                                                                                                                                                                                                                                                                    |
-| Change appointment booking (UI)                        | `artifacts/web-app/src/pages/appointments.tsx`                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                |
-| Change appointment reschedule / cancel                 | `artifacts/web-app/src/pages/appointment-manage.tsx` (+ shared `lib/appointment-format.ts`); `api-server/src/services/appointment-manage.service.ts` + `routes/appointments.ts` (`/appointments/manage`, `/reschedule`, `/cancel`) + `lib/google/calendar.repository.ts` (`getCalendarEvent`/`updateCalendarEvent`/`cancelCalendarEvent`) + the reschedule/cancel builders in `lib/resend/emails.ts`; token `"appointment"` purpose in `lib/auth/tokens.ts`                                                                                                                                                                                                                                   |
-| Change appointment types / routing rules               | `api-server/src/lib/appointments/catalog.ts` (targeted business rule — durations, which staff, which locations)                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                               |
-| Change staff working hours / calendars                 | The working-hours **Google Sheet** (`APPOINTMENT_SHEET_ID`); read in `api-server/src/lib/google/sheets.repository.ts`, parsed by `lib/appointments/staff.ts`                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                  |
-| Change appointment slot logic / policy                 | `api-server/src/lib/appointments/availability.ts` (`computeSlots`) + `time.ts` + `settings.ts`; `services/appointments.service.ts` + `routes/appointments.ts` + `lib/google/*` (Calendar free/busy + event insert)                                                                                                                                                                                                                                                                                                                                                                                                                                                                            |
-| Change the customer account portal (Supabase Auth)     | `artifacts/web-app/src/pages/account.tsx` (+ `components/appointment-manage-panel.tsx`, shared with `pages/appointment-manage.tsx`) + `pages/account-login.tsx` / `account-callback.tsx` / `account-reset.tsx` + `lib/supabase.ts` + `lib/auth-context.tsx` (frontend); `api-server/src/services/account.service.ts` + `routes/account.ts` + `middlewares/auth.ts` + `lib/supabase/client.ts`; queries `findOrdersByEmail` / `findShopOrdersByEmail` + `listUpcomingAppointmentsByEmail` (`lib/google/calendar.repository.ts`, mapped via `lib/appointments/event-details.ts`) + `extractMeasurements` (`lib/notion/orders.schema.ts`). Auth emails: `.agents/memory/supabase-auth-emails.md` |
-| Change the internal studio dashboard                   | `artifacts/web-app/src/pages/studio.tsx` (+ the `/studio` route in `App.tsx`, `noindex` entry in `lib/seo-routes.ts`); `api-server/src/services/studio-analytics.service.ts` (the pure `aggregateStudioAnalytics` + the cached use-case) + `routes/studio.ts` + `requireStaff` in `middlewares/auth.ts` + `lib/staff.ts` (the `STUDIO_STAFF_EMAILS` allowlist + the `amr` Google check); the 403 panel's re-sign-in lands back via `web-app/src/lib/post-signin.ts` (read by `pages/account-callback.tsx`); reads via `lib/notion/scan.ts` + `listOrdersForAnalytics` / `listShopOrdersForAnalytics` / `listInvoicesForAnalytics`                                                             |
-| Change the Postgres integrity layer / payment dedup    | `api-server/src/lib/db/client.ts` (`DbClient` seam + `postgresConfigured`) + `lib/db/processed-payments.repository.ts` (`claimPayment` / `confirmPayment` / `releasePayment`); consumed by `services/checkout.service.ts` (`recordPaidOrder`). Schema in `supabase/migrations/*.sql`, applied by `src/scripts/migrate.ts` (`pnpm db:migrate`, `.github/workflows/migrate.yml`)                                                                                                                                                                                                                                                                                                                |
-| Change the newsletter opt-in                           | `artifacts/web-app/src/components/newsletter-signup.tsx` (footer field, in `footer.tsx`) + the intake checkbox in `pages/order-form.tsx`; `api-server/src/services/newsletter.service.ts` + `routes/newsletter.ts` + `lib/notion/newsletter.{blocks,repository}.ts` (writes to the **contact** database) + `newsletterWelcomeEmail` in `lib/resend/emails.ts`                                                                                                                                                                                                                                                                                                                                 |
-| Change invisible anti-spam (honeypot/timing/limit)     | `api-server/src/middlewares/spam-filter.ts` (`isLikelySpam` + `spamFilter`) + `submissionRateLimiter` in `middlewares/rate-limit.ts`; applied in `routes/{contact,notify,newsletter}.ts`; frontend `web-app/src/lib/anti-spam.tsx` (`HoneypotField` / `honeypotSchema` / `useSubmitTimer`) wired into `pages/contact.tsx` + `components/{notify-dialog,newsletter-signup}.tsx` + `pages/order-form.tsx`. Fields `website` + `elapsedMs` on the contact/notify/newsletter request schemas in `openapi.yaml`                                                                                                                                                                                    |
-| Change the mailing-list / Resend audience sync         | `api-server/src/lib/resend/audience.ts` (`upsertAudienceContact` → Resend Contacts API) + `audienceId()` in `lib/resend/config.ts`; wired best-effort from `services/newsletter.service.ts`. Campaigns are sent as Resend **Broadcasts** from the dashboard (no in-app sender). Marketing-email disclosure in `pages/privacy.tsx`                                                                                                                                                                                                                                                                                                                                                             |
-| Add a page / route                                     | new `src/pages/*.tsx` + `<Route>` in `src/App.tsx`                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                            |
-| Add or rename a nav link                               | `NAV_LINKS` in `artifacts/web-app/src/components/navbar.tsx`                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                  |
-| Add a shared UI component                              | `artifacts/web-app/src/components/ui/`                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                        |
-| Add/change a shared test fixture                       | `lib/test-fixtures/src/index.ts` (read its guardrail first)                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                   |
-| Understand a past decision / gotcha                    | `.agents/memory/`                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                             |
-| Adjust the Vercel serverless entrypoint                | `api/index.ts` + `vercel.json`                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                |
+| I want to…                                               | Go to                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                         |
+| -------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Change an API request/response shape                     | `lib/api-spec/openapi.yaml` → run codegen                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                     |
+| Change order use-case logic                              | `artifacts/api-server/src/services/orders.service.ts`                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                         |
+| Change Notion I/O                                        | `artifacts/api-server/src/lib/notion/*`                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                       |
+| Change a customer email / template                       | `artifacts/api-server/src/lib/resend/*` (`emails.ts` copy, `send.ts` transport, `client.ts` config)                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                           |
+| Add/modify an API route                                  | `artifacts/api-server/src/routes/*`                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                           |
+| Add request validation / error mapping                   | `artifacts/api-server/src/middlewares/*`                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                      |
+| Change the order-tracking UI (custom + shop)             | `artifacts/web-app/src/pages/track.tsx` (unified lookup) + `components/custom-order-result.tsx` + `components/shop-order-result.tsx`                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                          |
+| Change the order intake form                             | `artifacts/web-app/src/pages/order-form.tsx`                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                  |
+| Change the color selector (intake)                       | `artifacts/web-app/src/components/color-picker.tsx` + `pages/order-form.tsx` (frontend, step 2 of the two-step flow); `api-server/src/services/colors.ts` (`intakeColorPalette`/`parseColorPalette` + the built-in default) + `routes/colors.ts` (`GET /api/colors`, the `COLOR_PALETTE` Studio Settings value); `lib/notion/orders.{schema,blocks}.ts` (write-back to the order's `Colors` + `Color Usage`)                                                                                                                                                                                                                                                                                  |
+| Change the rush order surcharge                          | `artifacts/web-app/src/lib/rush.ts` (window + disclosure) + `pages/order-form.tsx` (detect/acknowledge/send); `api-server/src/lib/notion/orders.blocks.ts` + `orders.schema.ts` (`Rush Order` record); `api-server/src/services/rush.ts` + `services/invoice-generator.service.ts` (server-priced "Surcharge" line); `web-app/src/lib/invoice-format.ts` ("Surcharge" line display)                                                                                                                                                                                                                                                                                                           |
+| Change referral & returning-skater rewards               | `api-server/src/services/rewards.service.ts` (engine + amount getters) + `lib/stripe/promotions.ts` (`createDiscountCode`) + `lib/notion/clients.repository.ts` (reward reads + `patchClientProperties`); wired from `submitOrder` (capture) + `recordPaidOrder` / `recordPayment` (issue); reward emails in `lib/resend/emails.ts`; `services/account.service.ts` + `web-app/src/pages/account.tsx` (referral card) + `pages/order-form.tsx` (`referralCode` field)                                                                                                                                                                                                                          |
+| Add/read an atelier-editable live setting                | `api-server/src/lib/settings/store.ts` (`SETTING_KEYS` + `settingValue`) + `lib/notion/settings.{schema,repository}.ts` (Notion read); consume with `settingValue(KEY) ?? process.env[KEY] ?? default` (see `services/rush.ts`); primed by the middleware in `app.ts`. Notion "Studio Settings" DB, `NOTION_SETTINGS_DATABASE_ID`                                                                                                                                                                                                                                                                                                                                                             |
+| Change the measurement-change request                    | `artifacts/web-app/src/components/measurement-change-dialog.tsx` (opened from `components/custom-order-result.tsx`); `api-server/src/services/measurement-change.service.ts` + `routes/orders.ts` + `lib/notion/measurement-change.{blocks,repository}.ts` (writes to the **contact** database)                                                                                                                                                                                                                                                                                                                                                                                               |
+| Change post-delivery review capture                      | `artifacts/web-app/src/components/review-dialog.tsx` (opened from `components/custom-order-result.tsx` for delivered orders); `api-server/src/services/review.service.ts` + `services/delivery.ts` + `routes/orders.ts` + `lib/notion/reviews.{blocks,repository}.ts` (writes to the **Reviews** database)                                                                                                                                                                                                                                                                                                                                                                                    |
+| Change order cancellation & refunds                      | `artifacts/web-app/src/components/cancellation-request-dialog.tsx` (rendered by `components/custom-order-result.tsx` + `shop-order-result.tsx`); customer request in `api-server/src/services/cancellation.service.ts` + `routes/orders.ts` + `routes/shop-orders.ts` + `lib/notion/cancellation.{blocks,repository}.ts` (writes to the **contact** database); atelier refund in `services/order-cancellation.service.ts` + the `cancellation-refund` studio tool (`services/studio-tools.service.ts`) + the `Cancelled`/`setOrderCancelled`/`setShopOrderCancelled` writers                                                                                                                  |
+| Change the landing page                                  | `artifacts/web-app/src/pages/home.tsx`                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                        |
+| Change the shop (live Notion inventory)                  | `artifacts/web-app/src/pages/shop.tsx` + `services/products.service.ts` + `lib/notion/products.*`                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                             |
+| Change the back-in-stock notify dialog                   | `artifacts/web-app/src/components/notify-dialog.tsx` + `services/notify.service.ts` + `lib/notion/notify.*` (writes to the **contact** database — see below)                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                  |
+| Change shop checkout / payments                          | `artifacts/web-app/src/lib/cart.tsx` + `components/cart-drawer.tsx` + `components/add-to-cart.tsx` (frontend); `api-server/src/services/checkout.service.ts` + `routes/checkout.ts` + `routes/stripe-webhook.ts` + `lib/stripe/*` + `lib/notion/shop-orders.*` (backend)                                                                                                                                                                                                                                                                                                                                                                                                                      |
+| Change shop-order tracking                               | `artifacts/web-app/src/components/shop-order-result.tsx` (rendered by `pages/track.tsx`; + order number on `pages/shop-success.tsx`); `api-server/src/services/shop-orders.service.ts` + `routes/shop-orders.ts` + `lib/notion/shop-orders.{blocks,repository}.ts` + `services/checkout.service.ts` (mints the number)                                                                                                                                                                                                                                                                                                                                                                        |
+| Change the return / exchange request                     | `artifacts/web-app/src/components/return-exchange-dialog.tsx` (opened from `components/shop-order-result.tsx`); `api-server/src/services/return-request.service.ts` + `routes/shop-orders.ts` (`POST /shop-orders/:n/return-requests`) + `lib/notion/return-request.{blocks,repository}.ts` (writes to the **contact** database) + `findShopOrderVerification` in `lib/notion/shop-orders.repository.ts`; policy copy in `pages/shipping-returns.tsx`                                                                                                                                                                                                                                         |
+| Change return / exchange refunds (atelier action)        | `api-server/src/services/return-refund.service.ts` (the target-total refund engine + `parseRefundTarget`) + the `return-refund` studio tool (`services/studio-tools.service.ts`) + `lib/stripe/refunds.ts` (shared Stripe refund primitives) + `recordShopOrderRefund` / `SHOP_ORDER_REFUNDED_PROPERTY` / `SHOP_ORDER_RETURN_PROCESSED_PROPERTY` in `lib/notion/shop-orders.{repository,blocks}.ts` + `returnRefundEmail` in `lib/resend/emails.ts`                                                                                                                                                                                                                                           |
+| Change the footer / legal pages                          | `artifacts/web-app/src/components/footer.tsx` (global, in `App.tsx`) + `pages/{privacy,terms,shipping-returns}.tsx` + `components/legal-page.tsx`; shared studio contact details in `lib/contact-info.ts`                                                                                                                                                                                                                                                                                                                                                                                                                                                                                     |
+| Change custom-order payments (deposits + balance)        | `artifacts/web-app/src/components/custom-order-result.tsx` (`DepositsSection`, rendered by `pages/track.tsx`) + `pages/invoice.tsx`; `api-server/src/services/invoice.service.ts` (`createPaymentCheckout`/`recordPayment`) + `routes/orders.ts` (`POST /orders/:n/payments/:stage`) + `lib/notion/invoice.{schema,repository}.ts` + `routes/stripe-webhook.ts`                                                                                                                                                                                                                                                                                                                               |
+| Change invoice line-item generation (from costing)       | `api-server/src/services/invoice-generator.service.ts` + the `invoice-lines` studio tool (`services/studio-tools.service.ts`) + `lib/notion/costing.{schema,repository}.ts` + `lib/notion/invoice-line-items.blocks.ts` + `createInvoiceLineItem`/`setInvoiceTitle` in `lib/notion/invoice.repository.ts`                                                                                                                                                                                                                                                                                                                                                                                     |
+| Change production-schedule milestones                    | `api-server/src/services/schedule.service.ts` + `routes/cron.ts` + `lib/notion/production-schedule.{blocks,repository}.ts` + `lib/notion/orders.repository.ts` (`findOrdersNeedingMilestones`/`markMilestonesGenerated`); cron in `vercel.json`                                                                                                                                                                                                                                                                                                                                                                                                                                               |
+| Change order status-change emails (+ pipeline graphic)   | `api-server/src/lib/resend/emails.ts` (`orderStageChangeEmail`) + `services/order-notification.service.ts` + `routes/order-notification.ts` + `lib/notion/orders.repository.ts` (`findOrderForStageNotification`); Notion automation → `POST /api/webhooks/notion-stage-change`; on-demand send via the `status-email` studio tool                                                                                                                                                                                                                                                                                                                                                            |
+| Change automated fitting reminders                       | `api-server/src/services/schedule.service.ts` (`sendDueFittingReminders`) + `services/fitting-reminder.ts` (env business rule) + `lib/notion/production-schedule.{blocks,repository}.ts` (`findMilestonesNeedingFittingReminder`/`markFittingReminderSent`, `Reminder Sent` prop) + `fittingReminderEmail` in `lib/resend/emails.ts`; runs in the milestone cron                                                                                                                                                                                                                                                                                                                              |
+| Change payment & deposit due reminders                   | `api-server/src/services/schedule.service.ts` (`sendDuePaymentReminders`) + `services/payment-reminder.ts` (env business rule) + `lib/notion/invoice.repository.ts` (`findInvoicesNeedingPaymentReminder`/`markPaymentStageReminded`) + `extractPaymentReminderInvoice` + `PAYMENT_STAGE_REMINDER_FIELDS` in `lib/notion/invoice.schema.ts` + `paymentReminderEmail` in `lib/resend/emails.ts`; runs in the milestone cron                                                                                                                                                                                                                                                                    |
+| Change appointment booking (UI)                          | `artifacts/web-app/src/pages/appointments.tsx`                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                |
+| Change appointment reschedule / cancel                   | `artifacts/web-app/src/pages/appointment-manage.tsx` (+ shared `lib/appointment-format.ts`); `api-server/src/services/appointment-manage.service.ts` + `routes/appointments.ts` (`/appointments/manage`, `/reschedule`, `/cancel`) + `lib/google/calendar.repository.ts` (`getCalendarEvent`/`updateCalendarEvent`/`cancelCalendarEvent`) + the reschedule/cancel builders in `lib/resend/emails.ts`; token `"appointment"` purpose in `lib/auth/tokens.ts`                                                                                                                                                                                                                                   |
+| Change appointment types / routing rules                 | `api-server/src/lib/appointments/catalog.ts` (targeted business rule — durations, which staff, which locations)                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                               |
+| Change staff working hours / calendars                   | The working-hours **Google Sheet** (`APPOINTMENT_SHEET_ID`); read in `api-server/src/lib/google/sheets.repository.ts`, parsed by `lib/appointments/staff.ts`                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                  |
+| Change appointment slot logic / policy                   | `api-server/src/lib/appointments/availability.ts` (`computeSlots`) + `time.ts` + `settings.ts`; `services/appointments.service.ts` + `routes/appointments.ts` + `lib/google/*` (Calendar free/busy + event insert)                                                                                                                                                                                                                                                                                                                                                                                                                                                                            |
+| Change the customer account portal (Supabase Auth)       | `artifacts/web-app/src/pages/account.tsx` (+ `components/appointment-manage-panel.tsx`, shared with `pages/appointment-manage.tsx`) + `pages/account-login.tsx` / `account-callback.tsx` / `account-reset.tsx` + `lib/supabase.ts` + `lib/auth-context.tsx` (frontend); `api-server/src/services/account.service.ts` + `routes/account.ts` + `middlewares/auth.ts` + `lib/supabase/client.ts`; queries `findOrdersByEmail` / `findShopOrdersByEmail` + `listUpcomingAppointmentsByEmail` (`lib/google/calendar.repository.ts`, mapped via `lib/appointments/event-details.ts`) + `extractMeasurements` (`lib/notion/orders.schema.ts`). Auth emails: `.agents/memory/supabase-auth-emails.md` |
+| Change the internal studio dashboard                     | `artifacts/web-app/src/pages/studio.tsx` (+ the `/studio` route in `App.tsx`, `noindex` entry in `lib/seo-routes.ts`); `api-server/src/services/studio-analytics.service.ts` (the pure `aggregateStudioAnalytics` + the cached use-case) + `routes/studio.ts` + `requireStaff` in `middlewares/auth.ts` + `lib/staff.ts` (the `STUDIO_STAFF_EMAILS` allowlist + the `amr` Google check); the 403 panel's re-sign-in lands back via `web-app/src/lib/post-signin.ts` (read by `pages/account-callback.tsx`); reads via `lib/notion/scan.ts` + `listOrdersForAnalytics` / `listShopOrdersForAnalytics` / `listInvoicesForAnalytics`                                                             |
+| Change the studio's internal tools (generators, refunds) | `api-server/src/services/studio-tools.service.ts` (the dispatcher + the composed result wording) + `routes/studio.ts` (`POST /studio/tools/:tool`, `requireStaff`) + `web-app/src/components/studio-tools.tsx` (rendered by `pages/studio.tsx`); the underlying work stays in `services/{schedule,invoice-generator,order-notification,order-cancellation,return-refund}.service.ts`. Contract in `openapi.yaml` (`StudioTool` / `StudioToolRequest` / `StudioToolRun`)                                                                                                                                                                                                                       |
+| Change the Postgres integrity layer / payment dedup      | `api-server/src/lib/db/client.ts` (`DbClient` seam + `postgresConfigured`) + `lib/db/processed-payments.repository.ts` (`claimPayment` / `confirmPayment` / `releasePayment`); consumed by `services/checkout.service.ts` (`recordPaidOrder`). Schema in `supabase/migrations/*.sql`, applied by `src/scripts/migrate.ts` (`pnpm db:migrate`, `.github/workflows/migrate.yml`)                                                                                                                                                                                                                                                                                                                |
+| Change the newsletter opt-in                             | `artifacts/web-app/src/components/newsletter-signup.tsx` (footer field, in `footer.tsx`) + the intake checkbox in `pages/order-form.tsx`; `api-server/src/services/newsletter.service.ts` + `routes/newsletter.ts` + `lib/notion/newsletter.{blocks,repository}.ts` (writes to the **contact** database) + `newsletterWelcomeEmail` in `lib/resend/emails.ts`                                                                                                                                                                                                                                                                                                                                 |
+| Change invisible anti-spam (honeypot/timing/limit)       | `api-server/src/middlewares/spam-filter.ts` (`isLikelySpam` + `spamFilter`) + `submissionRateLimiter` in `middlewares/rate-limit.ts`; applied in `routes/{contact,notify,newsletter}.ts`; frontend `web-app/src/lib/anti-spam.tsx` (`HoneypotField` / `honeypotSchema` / `useSubmitTimer`) wired into `pages/contact.tsx` + `components/{notify-dialog,newsletter-signup}.tsx` + `pages/order-form.tsx`. Fields `website` + `elapsedMs` on the contact/notify/newsletter request schemas in `openapi.yaml`                                                                                                                                                                                    |
+| Change the mailing-list / Resend audience sync           | `api-server/src/lib/resend/audience.ts` (`upsertAudienceContact` → Resend Contacts API) + `audienceId()` in `lib/resend/config.ts`; wired best-effort from `services/newsletter.service.ts`. Campaigns are sent as Resend **Broadcasts** from the dashboard (no in-app sender). Marketing-email disclosure in `pages/privacy.tsx`                                                                                                                                                                                                                                                                                                                                                             |
+| Add a page / route                                       | new `src/pages/*.tsx` + `<Route>` in `src/App.tsx`                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                            |
+| Add or rename a nav link                                 | `NAV_LINKS` in `artifacts/web-app/src/components/navbar.tsx`                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                  |
+| Add a shared UI component                                | `artifacts/web-app/src/components/ui/`                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                        |
+| Add/change a shared test fixture                         | `lib/test-fixtures/src/index.ts` (read its guardrail first)                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                   |
+| Understand a past decision / gotcha                      | `.agents/memory/`                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                             |
+| Adjust the Vercel serverless entrypoint                  | `api/index.ts` + `vercel.json`                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                |
 
 ```
 

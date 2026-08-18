@@ -166,23 +166,22 @@ future Rhinestone item). The relation IS the source of truth for the per-channel
   Price), and **formula values are not API-readable** — so any real change to this
   formula must be made + verified in the Notion UI, never blind via the API.
 
-## ② Retire the copy-a-secret buttons — OWNER RUNBOOK (not app-executable)
+## ② Retire the copy-a-secret buttons — DONE (superseded)
 
-Two Custom Orders **formula properties** — `Generate Invoice API Call`,
-`Send Status Update` — paste `CRON_SECRET` into a URL. Two hard limits:
+**Resolved** by the Phase-3 "Staff authentication for internal tools" card rather
+than by moving to native Notion buttons: every `?secret=<CRON_SECRET>` link became
+a tool on the signed-in `/studio` dashboard, and the routes behind them were
+deleted. See [studio-internal-tools.md](studio-internal-tools.md) for what
+replaced what, and for the remaining owner runbook (delete the four formula-link
+properties in Notion, then rotate `CRON_SECRET`).
+
+Two findings from this investigation are still worth keeping, because they are why
+"move to native buttons" was never the answer:
 
 - **Native Notion "button" properties can't be created via the API** (no BUTTON
   type in the schema DDL; button actions are UI-only), and a native button can't
-  interpolate the row's Order Number into its URL — the very reason these are
-  formula-links today. So the "move to native buttons" half is a **Notion UI job**.
-- **Rotating `CRON_SECRET` is a Vercel dashboard action.** The app is unaffected —
-  the env-var name stays and the `/run` endpoints still accept `?secret=` (see
-  `lib/cron-route.ts`). No repo code change.
-
-**Runbook (owner):** (1) generate a fresh secret — `openssl rand -hex 32`; (2) set
-`CRON_SECRET` to it in Vercel → the project's Environment Variables and redeploy;
-(3) update the two Custom Orders formula-link properties (and the milestone / invoice
-/ cancellation formula-links that reuse the same secret) to the new value. Keeping
-the formula-link pattern is fine; the durable fix is the Phase-3 "Staff
-authentication for internal tools" card (a real signed-in staff role instead of a
-shared URL secret). Do **not** commit an actual secret to the repo.
+  interpolate the row's Order Number into its URL — the very reason these were
+  formula-links. So that half was always a Notion UI job.
+- **Rotating `CRON_SECRET` is a Vercel dashboard action** (`openssl rand -hex 32`
+  → the project's Environment Variables → redeploy). No repo code change. Do
+  **not** commit an actual secret to the repo.
