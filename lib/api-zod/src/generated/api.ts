@@ -96,6 +96,8 @@ export const CreateOrderBody = zod.object({
   "neededBy": zod.coerce.date().optional(),
   "rush": zod.boolean().optional().describe('True when the customer confirmed a rush order — a neededBy date inside the studio\'s rush window, acknowledged with the disclosed surcharge. Recorded on the Notion order (a \"Rush Order\" checkbox + a page note) so the atelier prices the rush surcharge into the invoice; the app does not compute the fee itself. Optional; omitted for standard-timeline orders.'),
   "referenceImageIds": zod.array(zod.string()).optional().describe('Notion file_upload ids for customer-supplied reference \/ inspiration images, each obtained by first POSTing the image bytes to POST \/orders\/reference-images (a binary endpoint outside this contract, mounted like the Stripe webhook). They are attached to the order\'s Notion page as image blocks. Optional; omitted when the customer uploaded none.'),
+  "colors": zod.array(zod.string()).optional().describe('Names of the colors the customer picked from the studio palette (the live `GET \/colors` list) — a multi-select. This is a starting point for the consultation, not a final spec: the atelier finalizes the exact fabric + finish together with the customer. Recorded on the Notion order for the atelier (the app never reads it back). Optional; omitted when the customer picked none.'),
+  "colorUsage": zod.string().optional().describe('The customer\'s free-text note on how they\'d like their chosen colors used (e.g. \"emerald as the main color with gold accents on the collar, and a blush skirt\"). Optional; omitted when blank.'),
   "referralCode": zod.string().optional().describe('An optional referral code the customer received from another skater. The server looks it up against the Client CRM (best-effort): a valid code — not the customer\'s own — earns the new customer a welcome discount code now and credits the referrer once this order is first paid. An unknown or self-referring code is ignored, and referral capture never blocks the order. Optional.')
 }).describe('A new custom-dress order. Measurements are optional: the customer either supplies all five now (with a measurementUnit), or sets measurementAppointment=true to have them taken at a scheduled fitting or consultation. The server rejects a body with neither.')
 
@@ -300,6 +302,19 @@ export const GetProductsResponse = zod.object({
 }))
 })),
   "categories": zod.array(zod.string()).describe('The shop\'s category filters, read live from the Notion \"Product Categories\" database and returned in the order the atelier arranged them (its `Sort` field). Each inventory item links to its category through a `Category` relation. Editing the categories in Notion changes this list without a redeploy, so clients must not hardcode it.')
+})
+
+
+/**
+ * Returns the studio's color palette for the custom-order intake form's color picker. The palette is an atelier-editable "Studio Settings" value (`COLOR_PALETTE`), falling back to a built-in primary-color palette, so this always returns a non-empty list.
+ * @summary List custom-order palette colors
+ */
+export const GetColorsResponse = zod.object({
+  "colors": zod.array(zod.object({
+  "id": zod.string().describe('A stable slug of the name (\"Rose Gold\" → \"rose-gold\").'),
+  "name": zod.string(),
+  "hex": zod.string().describe('Hex color fill for the chip, e.g. \"#2E5CB8\".')
+})).describe('The studio\'s intake color palette — the atelier-editable `COLOR_PALETTE` Studio Settings value, or a built-in primary-color palette when unset. Always non-empty.')
 })
 
 

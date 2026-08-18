@@ -239,3 +239,43 @@ describe("buildOrderPageBlocks", () => {
     expect(pairs["Needed By"]).toBe("2026-09-01");
   });
 });
+
+describe("color selections", () => {
+  const withColors: CreateOrderInput = {
+    ...baseOrder,
+    colors: ["Emerald", "Blush", "Gold Foil"],
+    colorUsage: "Emerald bodice, gold accents on the collar, blush skirt.",
+  };
+
+  it("writes the picked colors as a multi_select and the usage as rich_text", () => {
+    const props = buildOrderProperties(withColors, "ORD-1") as any;
+    expect(props["Colors"].multi_select).toEqual([
+      { name: "Emerald" },
+      { name: "Blush" },
+      { name: "Gold Foil" },
+    ]);
+    expect(props["Color Usage"].rich_text[0].text.content).toBe(
+      "Emerald bodice, gold accents on the collar, blush skirt.",
+    );
+  });
+
+  it("omits the color properties when nothing was picked", () => {
+    const props = buildOrderProperties(baseOrder, "ORD-1") as any;
+    expect(props).not.toHaveProperty("Colors");
+    expect(props).not.toHaveProperty("Color Usage");
+  });
+
+  it("renders the colors + usage as page-body blocks", () => {
+    const pairs = textPairs(buildOrderPageBlocks(withColors));
+    expect(pairs["Colors"]).toBe("Emerald, Blush, Gold Foil");
+    expect(pairs["Color Usage"]).toBe(
+      "Emerald bodice, gold accents on the collar, blush skirt.",
+    );
+  });
+
+  it("adds no color blocks when nothing was picked", () => {
+    const pairs = textPairs(buildOrderPageBlocks(baseOrder));
+    expect(pairs).not.toHaveProperty("Colors");
+    expect(pairs).not.toHaveProperty("Color Usage");
+  });
+});

@@ -451,6 +451,29 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/ErrorEnvelope"
+  /colors:
+    get:
+      operationId: getColors
+      tags: [colors]
+      summary: List custom-order palette colors
+      description: >-
+        Returns the studio's color palette for the custom-order intake form's
+        color picker. The palette is an atelier-editable "Studio Settings" value
+        (`COLOR_PALETTE`), falling back to a built-in primary-color palette, so
+        this always returns a non-empty list.
+      responses:
+        "200":
+          description: Color palette
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ColorList"
+        "500":
+          description: Server error
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorEnvelope"
   /checkout:
     post:
       operationId: createCheckoutSession
@@ -1249,6 +1272,23 @@ components:
             contract, mounted like the Stripe webhook). They are attached to the
             order's Notion page as image blocks. Optional; omitted when the
             customer uploaded none.
+        colors:
+          type: array
+          items:
+            type: string
+          description: >-
+            Names of the colors the customer picked from the studio palette (the
+            live `GET /colors` list) — a multi-select. This is a starting point
+            for the consultation, not a final spec: the atelier finalizes the
+            exact fabric + finish together with the customer. Recorded on the
+            Notion order for the atelier (the app never reads it back). Optional;
+            omitted when the customer picked none.
+        colorUsage:
+          type: string
+          description: >-
+            The customer's free-text note on how they'd like their chosen colors
+            used (e.g. "emerald as the main color with gold accents on the collar,
+            and a blush skirt"). Optional; omitted when blank.
         referralCode:
           type: string
           description: >-
@@ -1674,6 +1714,34 @@ components:
             changes this list without a redeploy, so clients must not hardcode it.
           items:
             type: string
+    Color:
+      type: object
+      required:
+        - id
+        - name
+        - hex
+      properties:
+        id:
+          type: string
+          description: A stable slug of the name ("Rose Gold" → "rose-gold").
+        name:
+          type: string
+        hex:
+          type: string
+          description: Hex color fill for the chip, e.g. "#2E5CB8".
+    ColorList:
+      type: object
+      required:
+        - colors
+      properties:
+        colors:
+          type: array
+          description: >-
+            The studio's intake color palette — the atelier-editable
+            `COLOR_PALETTE` Studio Settings value, or a built-in primary-color
+            palette when unset. Always non-empty.
+          items:
+            $ref: "#/components/schemas/Color"
     CheckoutItem:
       type: object
       required:

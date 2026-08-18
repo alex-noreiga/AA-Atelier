@@ -27,6 +27,7 @@ import type {
   CancelAppointmentRequest,
   CheckoutSessionResponse,
   CheckoutSessionStatus,
+  ColorList,
   CreateCheckoutSessionRequest,
   ErrorEnvelope,
   GetAppointmentAvailabilityParams,
@@ -889,6 +890,84 @@ export function useGetProducts<TData = Awaited<ReturnType<typeof getProducts>>, 
  ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
 
   const queryOptions = getGetProductsQueryOptions(options)
+
+  const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
+
+  return withQueryKey(query, queryOptions.queryKey);
+}
+
+
+
+
+
+
+
+export const getGetColorsUrl = () => {
+
+
+
+
+  return `/api/colors`
+}
+
+/**
+ * Returns the studio's color palette for the custom-order intake form's color picker. The palette is an atelier-editable "Studio Settings" value (`COLOR_PALETTE`), falling back to a built-in primary-color palette, so this always returns a non-empty list.
+ * @summary List custom-order palette colors
+ */
+export const getColors = async ( options?: Parameters<typeof customFetch>[1]): Promise<ColorList> => {
+
+  return customFetch<ColorList>(getGetColorsUrl(),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
+
+
+
+
+export const getGetColorsQueryKey = () => {
+    return [
+    `/api/colors`
+    ] as const;
+    }
+
+
+export const getGetColorsQueryOptions = <TData = Awaited<ReturnType<typeof getColors>>, TError = ErrorType<ErrorEnvelope>>( options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getColors>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getGetColorsQueryKey();
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof getColors>>> = ({ signal }) => getColors({ signal, ...requestOptions });
+
+
+
+
+
+   return  { queryKey, queryFn, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof getColors>>, TError, TData> & { queryKey: QueryKey }
+}
+
+export type GetColorsQueryResult = NonNullable<Awaited<ReturnType<typeof getColors>>>
+export type GetColorsQueryError = ErrorType<ErrorEnvelope>
+
+
+/**
+ * @summary List custom-order palette colors
+ */
+
+export function useGetColors<TData = Awaited<ReturnType<typeof getColors>>, TError = ErrorType<ErrorEnvelope>>(
+  options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getColors>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+
+ ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+
+  const queryOptions = getGetColorsQueryOptions(options)
 
   const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
 

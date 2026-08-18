@@ -27,6 +27,8 @@ export * from './cancelAppointmentRequest';
 export * from './checkoutItem';
 export * from './checkoutSessionResponse';
 export * from './checkoutSessionStatus';
+export * from './color';
+export * from './colorList';
 export * from './createCheckoutSessionRequest';
 export * from './errorEnvelope';
 export * from './getAppointmentAvailabilityLocation';
