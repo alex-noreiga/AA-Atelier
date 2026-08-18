@@ -99,6 +99,7 @@ describe("POST /api/shop-orders/:orderNumber/cancellation-requests (shop)", () =
       sessionId: "cs_1",
       status: "Shipped",
       cancelled: false,
+      refundedAmount: 0,
     });
     mockWrite.mockResolvedValue();
 
@@ -124,6 +125,7 @@ describe("POST /api/shop-orders/:orderNumber/cancellation-requests (shop)", () =
       sessionId: "cs_1",
       status: "Payment Confirmed",
       cancelled: false,
+      refundedAmount: 0,
     });
     const res = await request(app).post(shopUrl).send(validBody);
     expect(res.status).toBe(403);

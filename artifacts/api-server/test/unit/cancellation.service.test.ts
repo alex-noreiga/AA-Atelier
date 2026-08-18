@@ -56,6 +56,7 @@ const shopOrder = (overrides: Record<string, unknown> = {}) => ({
   sessionId: "cs_1",
   status: "Payment Confirmed",
   cancelled: false,
+  refundedAmount: 0,
   ...overrides,
 });
 

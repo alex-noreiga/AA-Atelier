@@ -19,10 +19,13 @@ import {
   SHOP_ORDER_STATUS_PROPERTY,
   SHOP_ORDER_TOTAL_PROPERTY,
   SHOP_ORDER_CANCELLED_PROPERTY,
+  SHOP_ORDER_REFUNDED_PROPERTY,
+  SHOP_ORDER_RETURN_PROCESSED_PROPERTY,
   SHOP_ORDER_TRACKING_NUMBER_PROPERTY,
   SHOP_ORDER_TRACKING_CARRIER_PROPERTY,
   SHOP_ORDER_TRACKING_URL_PROPERTY,
 } from "./shop-orders.blocks.js";
+import { logger } from "../logger.js";
 
 interface NotionQueryResponse {
   results: Array<{ id: string }>;
@@ -308,6 +311,11 @@ export interface ShopOrderCancellationTarget {
   sessionId: string;
   status: string;
   cancelled: boolean;
+  /** Dollars recorded as refunded by a previous run of either atelier refund
+   * flow. DISPLAY ONLY — the return-refund service always re-reads the real
+   * total from Stripe, so a stale/absent value here can't cause a double
+   * refund. Absent (or the property not added yet) reads as 0. */
+  refundedAmount: number;
 }
 
 export async function findShopOrderForCancellation(
@@ -349,7 +357,59 @@ export async function findShopOrderForCancellation(
     sessionId: readRichText(page.properties[SHOP_ORDER_SESSION_PROPERTY]),
     status: readStatus(page.properties[SHOP_ORDER_STATUS_PROPERTY]),
     cancelled: readCheckbox(page.properties[SHOP_ORDER_CANCELLED_PROPERTY]),
+    refundedAmount:
+      readNumber(page.properties[SHOP_ORDER_REFUNDED_PROPERTY]) ?? 0,
   };
+}
+
+/**
+ * Record the outcome of a return/exchange refund on the shop order: the
+ * cumulative dollars refunded and a `Return Processed` marker.
+ *
+ * BEST-EFFORT BY DESIGN — unlike {@link setShopOrderCancelled}, this resolves to
+ * `false` instead of throwing when the write fails. The refund has already been
+ * issued in Stripe by the time this runs, and Stripe (not this marker) is what
+ * the next run reads to decide whether anything is owed, so a failed write costs
+ * the atelier visibility, never correctness. This is also what lets the flow work
+ * before the two properties are added to the database (Notion 400s a PATCH that
+ * names an unknown property).
+ *
+ * @returns true when the properties were written, false when the write failed.
+ */
+export async function recordShopOrderRefund(
+  pageId: string,
+  refundedAmount: number,
+  client: NotionClient = getShopOrdersNotionClient(),
+): Promise<boolean> {
+  assertConfigured(client);
+
+  try {
+    const response = await client.fetch(`/v1/pages/${pageId}`, {
+      method: "PATCH",
+      body: JSON.stringify({
+        properties: {
+          [SHOP_ORDER_REFUNDED_PROPERTY]: { number: refundedAmount },
+          [SHOP_ORDER_RETURN_PROCESSED_PROPERTY]: { checkbox: true },
+        },
+      }),
+    });
+
+    if (!response.ok) {
+      const errorText = await response.text();
+      logger.warn(
+        { pageId, status: response.status, errorText },
+        "Could not record the refund on the shop order (refund itself succeeded)",
+      );
+      return false;
+    }
+    return true;
+  } catch (err) {
+    logger.warn(
+      { err, pageId },
+      "Could not record the refund on the shop order (refund itself succeeded)",
+    );
+    return false;
+  }
 }
 
 /** Mark a shop order cancelled by setting its `Cancelled` checkbox. Idempotent,

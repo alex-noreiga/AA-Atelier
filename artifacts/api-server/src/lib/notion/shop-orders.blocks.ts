@@ -34,6 +34,13 @@ export const SHOP_ORDER_ITEMS_PROPERTY = "Inventory Items"; // relation -> inven
 // order's `Cancelled` checkbox — read back so the tracking page shows a
 // cancelled state. See `services/order-cancellation.service.ts`.
 export const SHOP_ORDER_CANCELLED_PROPERTY = "Cancelled"; // checkbox
+// Set by the return/exchange refund flow (`services/return-refund.service.ts`)
+// after a refund succeeds. Both are ATELIER VISIBILITY ONLY — correctness rests
+// entirely on Stripe's own refund total, so the write is best-effort and a
+// database that doesn't have these properties yet still refunds correctly
+// (writing a property that doesn't exist 400s the PATCH). Absent ⇒ 0 / false.
+export const SHOP_ORDER_REFUNDED_PROPERTY = "Refunded Amount"; // number (dollars)
+export const SHOP_ORDER_RETURN_PROCESSED_PROPERTY = "Return Processed"; // checkbox
 // Carrier tracking, filled in by the atelier once the order ships. All three are
 // additive and optional (absent until set): the number is what's shown to the
 // customer, the URL makes it a clickable link, and the carrier is a display

@@ -294,13 +294,31 @@ Express app (artifacts/api-server)  ──►  Notion REST API (orders database)
   │                                  already has a refund) and marks cancelled only
   │                                  after all refunds succeed. NOT part of the
   │                                  OpenAPI contract.
-  └─ GET  /api/orders/process-cancellation/run
+  ├─ GET  /api/orders/process-cancellation/run
+  │                                → the SAME action, on demand: a Notion link the
+  │                                  atelier clicks (a formula-built URL carrying
+  │                                  the row's Order Number). Auth is a
+  │                                  `?secret=<CRON_SECRET>&order=<ORD>` query
+  │                                  token; returns an HTML confirmation page. NOT
+  │                                  part of the OpenAPI contract.
+  ├─ GET  /api/shop-orders/process-return
+  │                                → the atelier's return/exchange refund action
+  │                                  (CRON_SECRET Bearer, JSON, `?order=<SHP>`
+  │                                  + optional `?amount=`). Refunds the shop
+  │                                  order's Stripe payment up to a TARGET total
+  │                                  (omit `amount` ⇒ refund in full; `amount=0`
+  │                                  ⇒ an even exchange, refund nothing), so a
+  │                                  re-press can never double-refund. Records
+  │                                  `Refunded Amount` + `Return Processed` on the
+  │                                  order (best-effort) + emails the customer.
+  │                                  NOT part of the OpenAPI contract.
+  └─ GET  /api/shop-orders/process-return/run
                                    → the SAME action, on demand: a Notion link the
-                                     atelier clicks (a formula-built URL carrying
-                                     the row's Order Number). Auth is a
-                                     `?secret=<CRON_SECRET>&order=<ORD>` query
-                                     token; returns an HTML confirmation page. NOT
-                                     part of the OpenAPI contract.
+                                     atelier clicks. Auth is a
+                                     `?secret=<CRON_SECRET>&order=<SHP>` query
+                                     token (plus optional `&amount=`); returns an
+                                     HTML confirmation page. NOT part of the
+                                     OpenAPI contract.
 ```
 
 The customer-notification POST endpoints (`/api/orders`, `/api/contact`,
@@ -910,6 +928,66 @@ The atelier's one-time setup (no new env vars — reuses `CRON_SECRET`,
 **Order Tracking Pipeline** and **Shop Orders** databases; and add a formula-property
 link on both — `"https://<PUBLIC_BASE_URL>/api/orders/process-cancellation/run?secret=<CRON_SECRET>&order=" + prop("Order Number")`.
 The `Cancellation` `Request type` option auto-creates on first write.
+
+## Return & exchange refunds (the atelier-facing half)
+
+A customer files a return/exchange request from shop-order tracking (see
+`POST /shop-orders/:n/return-requests` above — Approach A, the request never
+refunds anything); the atelier reviews it and processes the refund in one click.
+It's the same "customer requests, atelier actions a CRON_SECRET button" split as
+order cancellation, and it reuses that flow's `Cancelled`-marker shape — but the
+refund **arithmetic** is deliberately different. Load-bearing points:
+
+1. **`?amount=` is a TARGET TOTAL, not an increment.** `?amount=X` means "the
+   total refunded on this order should be $X", and the service issues
+   `max(0, X − what Stripe says is already refunded)`. This is the whole design,
+   because a return can't use the cancellation flow's "any refund exists ⇒ skip"
+   guard: a restocking fee is a deliberate **partial** refund, an even exchange
+   refunds **nothing**, and the atelier may **top a partial up to full** later.
+   Under the cancellation guard the first partial would permanently block the
+   top-up; under a naive "refund this increment" model a re-pressed Notion link
+   would refund twice. The declarative target gives all of it at once:
+   - **Idempotent for the life of the order.** A re-press refunds $0 because the
+     target is already met. A Stripe `idempotencyKey` can't do this job alone —
+     those expire after 24h and the atelier may click the same link a week later
+     (the key is still passed, keyed on the target, for concurrent-press safety).
+   - **Can never over-refund.** The delta is computed against Stripe's own refund
+     total and the target is clamped to the amount actually captured.
+   - Omit `amount` ⇒ refund in full; `amount=0` ⇒ even exchange (refunds nothing,
+     still marks the return processed).
+
+2. **Stripe is the source of truth for money — the Notion markers are not.** The
+   already-refunded total is read from `refunds.list` on the payment intent, so a
+   refund the atelier issued **by hand in the Dashboard** counts against the
+   target exactly like one the app issued. The ceiling is the intent's
+   `amount_received` (not the session total, which can include an uncaptured
+   promo). Consequently the `Refunded Amount` / `Return Processed` writes are
+   **atelier visibility only** and **best-effort** (`recordShopOrderRefund`
+   resolves `false` instead of throwing): the money has already moved by then, a
+   failed write can't cause a double refund on the next run, and the flow works
+   before those two properties are added to the database — writing a property
+   Notion doesn't have would 400 the whole PATCH.
+
+3. **Degrades, never double-charges.** A shop order with no recorded session
+   (paid offline / legacy) and a `$0`/fully-promo session are **skipped** and
+   surfaced as "refund manually", not failures. A Stripe throw is caught, logged
+   at `error`, and returned as `status: "error"` with nothing refunded and no
+   marker written — the button says so plainly rather than claiming success, and
+   a re-press is safe because the target is recomputed from Stripe every time.
+   The customer refund email (`returnRefundEmail`, **orders** sender) sends only
+   when money actually moved, and is best-effort like every other customer mail.
+
+The atelier's one-time setup (**no new env vars** — reuses `CRON_SECRET`,
+`STRIPE_SECRET_KEY`, Resend): add **`Refunded Amount`** (number) and
+**`Return Processed`** (checkbox) to the **Shop Orders** database (optional — the
+refund works without them, they're just the visible record), and add a
+formula-property link
+`"https://<PUBLIC_BASE_URL>/api/shop-orders/process-return/run?secret=<CRON_SECRET>&order=" + prop("Order Number")`.
+For a partial refund the atelier appends `&amount=180` to that URL by hand (a
+formula can't prompt for a figure); the bare link refunds in full. Code:
+`services/return-refund.service.ts`, `routes/return-refund.ts`,
+`lib/stripe/refunds.ts` (the shared Stripe refund primitives), and
+`recordShopOrderRefund` in `lib/notion/shop-orders.repository.ts`.
 
 ## Production schedule (auto-generated stage milestones)
 
@@ -2384,6 +2462,7 @@ keys on exact property names). Recorded here only because two facts are
 | Change shop checkout / payments                        | `artifacts/web-app/src/lib/cart.tsx` + `components/cart-drawer.tsx` + `components/add-to-cart.tsx` (frontend); `api-server/src/services/checkout.service.ts` + `routes/checkout.ts` + `routes/stripe-webhook.ts` + `lib/stripe/*` + `lib/notion/shop-orders.*` (backend)                                                                                                                                                                                                                                                                                                                                                                                                                      |
 | Change shop-order tracking                             | `artifacts/web-app/src/components/shop-order-result.tsx` (rendered by `pages/track.tsx`; + order number on `pages/shop-success.tsx`); `api-server/src/services/shop-orders.service.ts` + `routes/shop-orders.ts` + `lib/notion/shop-orders.{blocks,repository}.ts` + `services/checkout.service.ts` (mints the number)                                                                                                                                                                                                                                                                                                                                                                        |
 | Change the return / exchange request                   | `artifacts/web-app/src/components/return-exchange-dialog.tsx` (opened from `components/shop-order-result.tsx`); `api-server/src/services/return-request.service.ts` + `routes/shop-orders.ts` (`POST /shop-orders/:n/return-requests`) + `lib/notion/return-request.{blocks,repository}.ts` (writes to the **contact** database) + `findShopOrderVerification` in `lib/notion/shop-orders.repository.ts`; policy copy in `pages/shipping-returns.tsx`                                                                                                                                                                                                                                         |
+| Change return / exchange refunds (atelier button)      | `api-server/src/services/return-refund.service.ts` (the target-total refund engine + `parseRefundTarget`) + `routes/return-refund.ts` (button, `?order=` + optional `?amount=`) + `lib/stripe/refunds.ts` (shared Stripe refund primitives) + `recordShopOrderRefund` / `SHOP_ORDER_REFUNDED_PROPERTY` / `SHOP_ORDER_RETURN_PROCESSED_PROPERTY` in `lib/notion/shop-orders.{repository,blocks}.ts` + `returnRefundEmail` in `lib/resend/emails.ts`                                                                                                                                                                                                                                            |
 | Change the footer / legal pages                        | `artifacts/web-app/src/components/footer.tsx` (global, in `App.tsx`) + `pages/{privacy,terms,shipping-returns}.tsx` + `components/legal-page.tsx`; shared studio contact details in `lib/contact-info.ts`                                                                                                                                                                                                                                                                                                                                                                                                                                                                                     |
 | Change custom-order payments (deposits + balance)      | `artifacts/web-app/src/components/custom-order-result.tsx` (`DepositsSection`, rendered by `pages/track.tsx`) + `pages/invoice.tsx`; `api-server/src/services/invoice.service.ts` (`createPaymentCheckout`/`recordPayment`) + `routes/orders.ts` (`POST /orders/:n/payments/:stage`) + `lib/notion/invoice.{schema,repository}.ts` + `routes/stripe-webhook.ts`                                                                                                                                                                                                                                                                                                                               |
 | Change invoice line-item generation (from costing)     | `api-server/src/services/invoice-generator.service.ts` + `routes/invoice-generator.ts` (button, `?order=`) + `lib/notion/costing.{schema,repository}.ts` + `lib/notion/invoice-line-items.blocks.ts` + `createInvoiceLineItem`/`setInvoiceTitle` in `lib/notion/invoice.repository.ts`                                                                                                                                                                                                                                                                                                                                                                                                        |
