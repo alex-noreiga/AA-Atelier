@@ -28,6 +28,7 @@ import AccountLogin from "@/pages/account-login";
 import AccountCallback from "@/pages/account-callback";
 import AccountReset from "@/pages/account-reset";
 import Account from "@/pages/account";
+import Studio from "@/pages/studio";
 import Privacy from "@/pages/privacy";
 import Terms from "@/pages/terms";
 import ShippingReturns from "@/pages/shipping-returns";
@@ -77,6 +78,10 @@ function Router() {
       <Route path="/account/callback" component={AccountCallback} />
       <Route path="/account/reset" component={AccountReset} />
       <Route path="/account" component={Account} />
+      {/* Internal studio dashboard. Not in the navbar and noindexed — the gate
+          that matters is server-side (a staff allowlist on top of the same
+          Supabase session), this route just renders what it's given. */}
+      <Route path="/studio" component={Studio} />
       <Route path="/contact" component={Contact} />
       <Route path="/privacy" component={Privacy} />
       <Route path="/terms" component={Terms} />

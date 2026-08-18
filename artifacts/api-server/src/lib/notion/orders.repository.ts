@@ -11,6 +11,7 @@ import {
   type NotionClient,
 } from "./client.js";
 import { buildOrderProperties, buildOrderPageBlocks } from "./orders.blocks.js";
+import { scanDatabase } from "./scan.js";
 import { normalizeEmail } from "../email.js";
 import {
   ORDER_NUMBER_PROPERTY,
@@ -31,12 +32,14 @@ import {
   extractOrderEmail,
   extractMeasurements,
   extractLastNotifiedStage,
+  extractOrderAnalytics,
   type CreateOrderInput,
   type NotionDatabaseSchema,
   type NotionOrderPage,
   type NotionQueryResponse,
   type OrderRecord,
   type OrderSummary,
+  type OrderAnalyticsRecord,
 } from "./orders.schema.js";
 
 const STAGE_CACHE_TTL_MS = 60_000;
@@ -239,6 +242,7 @@ function pageToOrderSummary(
     orderName: extractOrderName(page),
     currentStage: extractCurrentStage(page),
     stages,
+    cancelled: extractCancelled(page),
     ...(estimatedCompletion !== undefined ? { estimatedCompletion } : {}),
     ...(measurements !== undefined ? { measurements } : {}),
   };
@@ -694,4 +698,25 @@ export async function setOrderCancelled(
       `Notion order cancelled update failed with status ${response.status}: ${errorText}`,
     );
   }
+}
+
+/**
+ * Read every custom order for the studio analytics, alongside the live stage
+ * list they're placed in (fetched once, shared — the same never-hardcode-stages
+ * rule as everywhere else). This is a full-database scan, bounded by
+ * {@link scanDatabase}: the analytics summarize the whole book of work, so there
+ * is no filter to narrow it with, and cancelled/finished orders still count
+ * toward their own totals.
+ */
+export async function listOrdersForAnalytics(
+  client: NotionClient = getNotionClient(),
+): Promise<{ orders: OrderAnalyticsRecord[]; stages: string[] }> {
+  assertConfigured(client);
+
+  const [pages, stages] = await Promise.all([
+    scanDatabase<NotionOrderPage>(client, "custom orders"),
+    fetchLiveOrderStages(client),
+  ]);
+
+  return { orders: pages.map(extractOrderAnalytics), stages };
 }

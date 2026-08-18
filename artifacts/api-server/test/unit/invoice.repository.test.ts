@@ -14,6 +14,7 @@ import {
   setInvoiceTitle,
   findInvoicesNeedingPaymentReminder,
   markPaymentStageReminded,
+  listInvoicesForAnalytics,
 } from "../../src/lib/notion/invoice.repository.js";
 
 const isQuery = (path: string) => path.endsWith("/query");
@@ -319,5 +320,46 @@ describe("markPaymentStageReminded", () => {
     await expect(
       markPaymentStageReminded("inv-1", "first_deposit", client),
     ).rejects.toThrow(/status 500: boom/);
+  });
+});
+
+describe("listInvoicesForAnalytics", () => {
+  it("scans the invoices database and maps every invoice", async () => {
+    const client = makeFakeClient((path) => {
+      if (isQuery(path)) {
+        return jsonResponse({
+          results: [
+            invoicePage({
+              id: "inv-1",
+              orderPageId: "order-1",
+              finalBalance: 800,
+              firstDepositAmount: 200,
+              firstDepositPaid: true,
+            }),
+          ],
+          has_more: false,
+          next_cursor: null,
+        });
+      }
+      throw new Error(`unexpected path ${path}`);
+    });
+
+    expect(await listInvoicesForAnalytics(client)).toEqual([
+      {
+        pageId: "inv-1",
+        orderPageId: "order-1",
+        finalBalance: 800,
+        depositsPaid: 200,
+        depositsUnpaid: 0,
+        balancePaid: false,
+      },
+    ]);
+  });
+
+  it("throws when the invoices database id is not configured", async () => {
+    const client = makeFakeClient(() => jsonResponse({}), "");
+    await expect(listInvoicesForAnalytics(client)).rejects.toThrow(
+      /NOTION_INVOICES_DATABASE_ID is not configured/,
+    );
   });
 });

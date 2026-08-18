@@ -161,6 +161,15 @@ export const ROUTE_SEO: Record<string, RouteSeo> = {
       "Your A.A Atelier account — custom orders, shop orders, and invoices gathered in one place.",
     noindex: true,
   },
+  // Internal, staff-only. Noindex keeps it out of the sitemap and the prerender
+  // pass as well as out of search results — the gate is server-side, but there's
+  // no reason to advertise the page at all.
+  "/studio": {
+    path: "/studio",
+    title: "Studio Dashboard | A.A Atelier",
+    description: "Internal studio dashboard.",
+    noindex: true,
+  },
 };
 
 /** Indexable routes, in declaration order — drives prerendering + the sitemap. */

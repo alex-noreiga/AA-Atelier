@@ -5,6 +5,7 @@
  * API specification
  * OpenAPI spec version: 0.1.0
  */
+import type { AccountOrderState } from './accountOrderState';
 
 /**
  * A ready-to-wear shop order as shown on the account dashboard.
@@ -13,6 +14,7 @@ export interface AccountShopOrderSummary {
   orderNumber: string;
   /** The order's current fulfilment status. */
   status: string;
+  state: AccountOrderState;
   /** The order total in dollars, when recorded. */
   total?: number;
 }

@@ -1,0 +1,298 @@
+import { describe, it, expect, vi, beforeEach } from "vitest";
+import { render, screen } from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
+import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
+import type { Mock } from "vitest";
+
+// Render <Redirect> as a marker so the unauthenticated bounce is assertable.
+vi.mock("wouter", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("wouter")>();
+  return {
+    ...actual,
+    Redirect: ({ to }: { to: string }) => (
+      <div data-testid="redirect">{to}</div>
+    ),
+  };
+});
+
+// Mutable auth state the mocked useAuth reads (set per test).
+const h = vi.hoisted(() => ({ session: null as unknown, loading: false }));
+vi.mock("@/lib/auth-context", () => ({
+  useAuth: () => ({
+    session: h.session,
+    user: null,
+    loading: h.loading,
+    configured: true,
+    signOut: vi.fn(),
+  }),
+}));
+
+vi.mock("@workspace/api-client-react", () => ({
+  useGetStudioAnalytics: vi.fn(),
+  getGetStudioAnalyticsQueryKey: () => ["studio-analytics"],
+}));
+
+// The 403 panel offers a Google re-sign-in, which drives supabase-js directly.
+const sb = vi.hoisted(() => ({
+  signOut: vi.fn().mockResolvedValue({ error: null }),
+  signInWithOAuth: vi.fn().mockResolvedValue({ error: null }),
+}));
+vi.mock("@/lib/supabase", () => ({
+  supabaseConfigured: true,
+  supabase: { auth: sb },
+}));
+
+import { useGetStudioAnalytics } from "@workspace/api-client-react";
+import Studio from "@/pages/studio";
+
+const mockAnalytics = vi.mocked(useGetStudioAnalytics) as unknown as Mock;
+
+const refetch = vi.fn();
+
+/** The handful of query fields the page reads. */
+function stubAnalytics(state: {
+  data?: unknown;
+  isLoading?: boolean;
+  isError?: boolean;
+  error?: unknown;
+  isFetching?: boolean;
+}): void {
+  mockAnalytics.mockReturnValue({
+    data: state.data,
+    isLoading: state.isLoading ?? false,
+    isError: state.isError ?? false,
+    error: state.error ?? null,
+    isFetching: state.isFetching ?? false,
+    refetch,
+  } as never);
+}
+
+function renderPage() {
+  const client = new QueryClient();
+  return render(
+    <QueryClientProvider client={client}>
+      <Studio />
+    </QueryClientProvider>,
+  );
+}
+
+const analytics = {
+  generatedAt: "2026-08-18T15:04:00.000Z",
+  customOrders: {
+    total: 5,
+    active: 3,
+    completed: 1,
+    cancelled: 1,
+    stages: [
+      { stage: "Consultation", count: 1 },
+      { stage: "Sewing", count: 2 },
+      { stage: "Delivered", count: 0 },
+    ],
+  },
+  shopOrders: {
+    total: 4,
+    active: 2,
+    completed: 2,
+    cancelled: 0,
+    stages: [
+      { stage: "Payment Confirmed", count: 1 },
+      { stage: "Shipped", count: 1 },
+    ],
+  },
+  production: {
+    activeOrders: 3,
+    scheduled: 2,
+    unscheduled: 1,
+    overdue: 1,
+    dueThisWeek: 1,
+    dueThisMonth: 2,
+    rush: 1,
+    upcoming: [
+      {
+        orderNumber: "ORD-1",
+        orderName: "Aurora — Custom Dress",
+        stage: "Sewing",
+        dueDate: "2026-08-01",
+        overdue: true,
+        rush: true,
+      },
+      {
+        orderNumber: "ORD-2",
+        orderName: "Juniper — Custom Dress",
+        stage: "Consultation",
+        dueDate: "2026-08-22",
+        overdue: false,
+      },
+    ],
+  },
+  revenue: [
+    {
+      month: "2026-07",
+      shopRevenue: 120,
+      shopOrders: 3,
+      customBooked: 800,
+      customOrders: 1,
+    },
+    {
+      month: "2026-08",
+      shopRevenue: 240,
+      shopOrders: 4,
+      customBooked: 1600,
+      customOrders: 2,
+    },
+  ],
+  payments: {
+    invoicedTotal: 2400,
+    collectedTotal: 900,
+    outstandingTotal: 1500,
+    depositsCollected: 900,
+    depositsOutstanding: 300,
+    balancesCollected: 0,
+    balancesOutstanding: 1200,
+    invoiceCount: 3,
+    unpaidInvoiceCount: 2,
+  },
+  topItems: [
+    { name: "Bow Soaker", orders: 6 },
+    { name: "Blade Towel", orders: 2 },
+  ],
+};
+
+beforeEach(() => {
+  h.session = { access_token: "jwt" };
+  h.loading = false;
+});
+
+describe("studio dashboard — access", () => {
+  it("redirects to sign-in when there's no session", () => {
+    h.session = null;
+    stubAnalytics({});
+    renderPage();
+    expect(screen.getByTestId("redirect")).toHaveTextContent("/account/login");
+  });
+
+  it("redirects to sign-in on a 401", () => {
+    stubAnalytics({ isError: true, error: { status: 401 } });
+    renderPage();
+    expect(screen.getByTestId("redirect")).toHaveTextContent("/account/login");
+  });
+
+  it("tells a signed-in customer they aren't studio staff, without redirecting", () => {
+    stubAnalytics({ isError: true, error: { status: 403 } });
+    renderPage();
+    expect(screen.getByTestId("studio-forbidden")).toBeInTheDocument();
+    expect(screen.queryByTestId("redirect")).not.toBeInTheDocument();
+  });
+
+  it("shows the server's own reason for a 403, so a wrong sign-in method says so", () => {
+    stubAnalytics({
+      isError: true,
+      error: {
+        status: 403,
+        data: {
+          error:
+            "Studio access requires signing in with Google. Please sign out and use Continue with Google.",
+        },
+      },
+    });
+    renderPage();
+    expect(screen.getByTestId("studio-forbidden")).toHaveTextContent(
+      /requires signing in with Google/,
+    );
+  });
+
+  it("re-signs-in with Google from the 403 panel, dropping the stale session first", async () => {
+    stubAnalytics({ isError: true, error: { status: 403 } });
+    renderPage();
+
+    await userEvent.click(screen.getByTestId("button-studio-google"));
+
+    expect(sb.signOut).toHaveBeenCalled();
+    expect(sb.signInWithOAuth).toHaveBeenCalledWith(
+      expect.objectContaining({ provider: "google" }),
+    );
+    // And it comes back here rather than the customer dashboard.
+    expect(window.sessionStorage.getItem("aa-post-signin")).toBe("/studio");
+  });
+
+  it("shows a spinner while loading", () => {
+    stubAnalytics({ isLoading: true });
+    renderPage();
+    expect(screen.getByTestId("studio-loading")).toBeInTheDocument();
+  });
+
+  it("shows an error state on any other failure", () => {
+    stubAnalytics({ isError: true, error: { status: 500 } });
+    renderPage();
+    expect(screen.getByTestId("studio-error")).toBeInTheDocument();
+  });
+});
+
+describe("studio dashboard — figures", () => {
+  beforeEach(() => stubAnalytics({ data: analytics }));
+
+  it("leads with the headline numbers", () => {
+    renderPage();
+    expect(screen.getByTestId("stat-active")).toHaveTextContent("3");
+    expect(screen.getByTestId("stat-overdue")).toHaveTextContent("1");
+    expect(screen.getByTestId("stat-outstanding")).toHaveTextContent("$1,500");
+    // The most recent month in the series is "this month".
+    expect(screen.getByTestId("stat-shop-month")).toHaveTextContent("$240");
+  });
+
+  it("lists the nearest-due orders and marks the overdue one", () => {
+    renderPage();
+    const upcoming = screen.getByTestId("upcoming-orders");
+    expect(upcoming).toHaveTextContent("Aurora — Custom Dress");
+    expect(upcoming).toHaveTextContent("Overdue");
+    expect(upcoming).toHaveTextContent("Juniper — Custom Dress");
+  });
+
+  it("renders both pipelines with their stage counts", () => {
+    renderPage();
+    expect(screen.getByTestId("pipeline-custom")).toHaveTextContent(
+      "Consultation",
+    );
+    expect(screen.getByTestId("pipeline-custom")).toHaveTextContent(
+      "5 on record",
+    );
+    expect(screen.getByTestId("pipeline-shop")).toHaveTextContent("Shipped");
+  });
+
+  it("shows the two revenue series separately, never summed", () => {
+    renderPage();
+    const panel = screen.getByTestId("panel-revenue");
+    expect(panel).toHaveTextContent("Shop taken $360");
+    expect(panel).toHaveTextContent("Custom booked $2,400");
+  });
+
+  it("breaks payments into deposits and balances", () => {
+    renderPage();
+    const panel = screen.getByTestId("panel-payments");
+    expect(panel).toHaveTextContent("Deposits collected");
+    expect(panel).toHaveTextContent("$900");
+    expect(panel).toHaveTextContent("Balances due");
+    expect(panel).toHaveTextContent("$1,200");
+  });
+
+  it("lists the best sellers", () => {
+    renderPage();
+    expect(screen.getByTestId("panel-top-items")).toHaveTextContent(
+      "Bow Soaker",
+    );
+  });
+
+  it("explains an empty best-seller list rather than showing a blank panel", () => {
+    stubAnalytics({ data: { ...analytics, topItems: [] } });
+    renderPage();
+    expect(screen.getByTestId("panel-top-items")).toHaveTextContent(
+      /No item-level figures yet/,
+    );
+  });
+
+  it("refetches on demand", async () => {
+    renderPage();
+    await userEvent.click(screen.getByTestId("button-refresh"));
+    expect(refetch).toHaveBeenCalled();
+  });
+});

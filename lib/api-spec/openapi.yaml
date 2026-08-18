@@ -26,6 +26,10 @@ tags:
     description: Customer appointment scheduling with atelier staff
   - name: account
     description: Customer account portal (Supabase Auth; Bearer access token)
+  - name: studio
+    description: >-
+      Internal atelier surfaces, gated to signed-in studio staff (the same
+      Supabase Auth Bearer token, plus a staff allowlist)
 paths:
   /health:
     get:
@@ -943,6 +947,45 @@ paths:
                 $ref: "#/components/schemas/AccountOverview"
         "401":
           description: Not signed in (missing or expired session)
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorEnvelope"
+        "500":
+          description: Server error
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorEnvelope"
+  /studio/analytics:
+    get:
+      operationId: getStudioAnalytics
+      tags: [studio]
+      summary: Studio analytics for the internal dashboard
+      description: >-
+        Aggregates the atelier's own numbers — custom and shop orders by stage,
+        production load against due dates, revenue by month, deposits vs.
+        balances, and the best-selling shop pieces — for the internal studio
+        dashboard. Requires a valid Supabase access token supplied as a Bearer
+        credential whose email is on the studio staff allowlist: 401 when the
+        caller isn't signed in, 403 when they are but aren't staff.
+      security:
+        - bearerAuth: []
+      responses:
+        "200":
+          description: The studio's aggregated figures
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/StudioAnalytics"
+        "401":
+          description: Not signed in (missing or expired session)
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorEnvelope"
+        "403":
+          description: Signed in, but not a studio staff account
           content:
             application/json:
               schema:
@@ -2163,10 +2206,23 @@ components:
             A standing personal discount code for this returning customer,
             present once they've earned it (a qualifying repeat order). Absent
             otherwise.
+    AccountOrderState:
+      type: string
+      enum:
+        - active
+        - completed
+        - cancelled
+      description: >-
+        Where an order sits in its lifecycle, derived server-side so the
+        dashboard never has to infer it from a stage/status name. "completed"
+        means the order has reached the final stage/status in its live list
+        (delivered for a custom order, fulfilled for a shop order); "cancelled"
+        means the atelier has cancelled it (and takes precedence over
+        "completed"); everything else is "active".
     AccountOrderSummary:
       type: object
       description: A custom order as shown on the account dashboard (links out to the full tracking + invoice views).
-      required: [orderNumber, orderName, currentStage, stages]
+      required: [orderNumber, orderName, currentStage, stages, state]
       properties:
         orderNumber:
           type: string
@@ -2174,6 +2230,8 @@ components:
           type: string
         currentStage:
           type: string
+        state:
+          $ref: "#/components/schemas/AccountOrderState"
         stages:
           type: array
           description: The live ordered stage list, so the dashboard can show progress (e.g. "3 of 6").
@@ -2190,13 +2248,15 @@ components:
     AccountShopOrderSummary:
       type: object
       description: A ready-to-wear shop order as shown on the account dashboard.
-      required: [orderNumber, status]
+      required: [orderNumber, status, state]
       properties:
         orderNumber:
           type: string
         status:
           type: string
           description: The order's current fulfilment status.
+        state:
+          $ref: "#/components/schemas/AccountOrderState"
         total:
           type: number
           description: The order total in dollars, when recorded.
@@ -2284,3 +2344,235 @@ components:
             A signed token (the same one the confirmation email's manage link
             carries) authorizing reschedule/cancel of this specific appointment
             via the appointment-manage endpoints.
+    StudioAnalytics:
+      type: object
+      description: >-
+        The atelier's own figures, aggregated from the live Notion databases for
+        the internal studio dashboard. Every money value is US dollars.
+      required:
+        [
+          generatedAt,
+          customOrders,
+          shopOrders,
+          production,
+          revenue,
+          payments,
+          topItems,
+        ]
+      properties:
+        generatedAt:
+          type: string
+          format: date-time
+          description: >-
+            When these figures were computed. The server caches an aggregation
+            briefly, so this can trail the request by up to a minute.
+        customOrders:
+          $ref: "#/components/schemas/StudioPipeline"
+        shopOrders:
+          $ref: "#/components/schemas/StudioPipeline"
+        production:
+          $ref: "#/components/schemas/StudioProductionLoad"
+        revenue:
+          type: array
+          description: >-
+            One entry per month over the trailing window, oldest first. Months
+            with no activity are included as zeroes so a chart has no gaps.
+          items:
+            $ref: "#/components/schemas/StudioRevenueMonth"
+        payments:
+          $ref: "#/components/schemas/StudioPaymentTotals"
+        topItems:
+          type: array
+          description: >-
+            The shop's best sellers, most-ordered first. Empty when no shop
+            order carries its inventory relation (legacy orders, or the
+            relation-links flag being off) — item-level figures are only as good
+            as that link.
+          items:
+            $ref: "#/components/schemas/StudioTopItem"
+    StudioPipeline:
+      type: object
+      description: >-
+        How a set of orders is distributed across its live workflow — the custom
+        order Stage list, or the shop order fulfilment Status list.
+      required: [total, active, completed, cancelled, stages]
+      properties:
+        total:
+          type: integer
+          description: Every order of this kind on record.
+        active:
+          type: integer
+          description: Orders neither cancelled nor at the final stage.
+        completed:
+          type: integer
+          description: Orders sitting at the last stage in the live list.
+        cancelled:
+          type: integer
+        stages:
+          type: array
+          description: >-
+            Active orders per stage, in the live stage order (stages with no
+            orders are included as zeroes, so the pipeline reads end to end).
+          items:
+            $ref: "#/components/schemas/StudioStageCount"
+    StudioStageCount:
+      type: object
+      required: [stage, count]
+      properties:
+        stage:
+          type: string
+        count:
+          type: integer
+    StudioProductionLoad:
+      type: object
+      description: >-
+        The making-side workload: active custom orders measured against the due
+        dates the atelier has set.
+      required:
+        [
+          activeOrders,
+          scheduled,
+          unscheduled,
+          overdue,
+          dueThisWeek,
+          dueThisMonth,
+          rush,
+          upcoming,
+        ]
+      properties:
+        activeOrders:
+          type: integer
+          description: Custom orders in progress (not cancelled, not delivered).
+        scheduled:
+          type: integer
+          description: Of those, the ones carrying a Due Date.
+        unscheduled:
+          type: integer
+          description: >-
+            Active orders with no Due Date — invisible to the production
+            schedule until the atelier sets one.
+        overdue:
+          type: integer
+          description: Active orders whose due date has passed.
+        dueThisWeek:
+          type: integer
+          description: Active orders due within the next 7 days (today included).
+        dueThisMonth:
+          type: integer
+          description: Active orders due within the next 30 days (today included).
+        rush:
+          type: integer
+          description: Active orders flagged as rush at intake.
+        upcoming:
+          type: array
+          description: >-
+            The nearest-due active orders, soonest first (overdue ones lead),
+            capped to a short list for the dashboard.
+          items:
+            $ref: "#/components/schemas/StudioScheduledOrder"
+    StudioScheduledOrder:
+      type: object
+      required: [orderNumber, orderName, stage, dueDate, overdue]
+      properties:
+        orderNumber:
+          type: string
+        orderName:
+          type: string
+        stage:
+          type: string
+        dueDate:
+          type: string
+          description: The order's Due Date as YYYY-MM-DD.
+        overdue:
+          type: boolean
+        rush:
+          type: boolean
+    StudioRevenueMonth:
+      type: object
+      description: >-
+        A month of trade. The two money figures are deliberately NOT summed:
+        shop revenue is money actually collected, while the custom figure is
+        work booked (Notion holds no per-payment dates, so a custom payment
+        can't be attributed to the month it was made).
+      required: [month, shopRevenue, shopOrders, customBooked, customOrders]
+      properties:
+        month:
+          type: string
+          description: The month as YYYY-MM.
+        shopRevenue:
+          type: number
+          description: >-
+            Dollars taken on shop orders placed that month (order totals,
+            including shipping and tax; cancelled orders excluded).
+        shopOrders:
+          type: integer
+          description: Shop orders placed that month (cancelled excluded).
+        customBooked:
+          type: number
+          description: >-
+            Dollars invoiced on custom orders placed that month (each order's
+            invoice Final Balance). Zero for orders not yet itemized.
+        customOrders:
+          type: integer
+          description: Custom orders placed that month (cancelled excluded).
+    StudioPaymentTotals:
+      type: object
+      description: >-
+        Deposits against balances across every custom-order invoice on a live
+        (non-cancelled) order — what has been collected and what is still out.
+      required:
+        [
+          invoicedTotal,
+          collectedTotal,
+          outstandingTotal,
+          depositsCollected,
+          depositsOutstanding,
+          balancesCollected,
+          balancesOutstanding,
+          invoiceCount,
+          unpaidInvoiceCount,
+        ]
+      properties:
+        invoicedTotal:
+          type: number
+          description: The sum of every invoice's Final Balance.
+        collectedTotal:
+          type: number
+          description: Deposits plus balances marked paid.
+        outstandingTotal:
+          type: number
+          description: Deposits plus balances still to collect.
+        depositsCollected:
+          type: number
+        depositsOutstanding:
+          type: number
+          description: Deposit amounts set on an invoice but not yet paid.
+        balancesCollected:
+          type: number
+          description: >-
+            Final balances marked paid, net of the deposits already credited
+            against them (that is what the balance stage actually charges).
+        balancesOutstanding:
+          type: number
+          description: >-
+            What is still owed on unpaid balances beyond every deposit scheduled
+            against them — so this and depositsOutstanding add up to
+            outstandingTotal without counting the same dollar twice. A paid
+            balance settles its invoice outright and leaves nothing here.
+        invoiceCount:
+          type: integer
+        unpaidInvoiceCount:
+          type: integer
+          description: Invoices with money still outstanding.
+    StudioTopItem:
+      type: object
+      description: >-
+        One best-selling shop piece. The count is orders containing the piece,
+        not units — the order's inventory relation records which pieces were
+        bought, not how many of each.
+      required: [name, orders]
+      properties:
+        name:
+          type: string
+        orders:
+          type: integer

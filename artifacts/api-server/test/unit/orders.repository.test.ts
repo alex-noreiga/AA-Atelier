@@ -722,3 +722,81 @@ describe("findOrdersByNumbers", () => {
     ]);
   });
 });
+
+describe("listOrdersForAnalytics", () => {
+  const isQ = (p: string) => p.endsWith("/query");
+
+  it("scans the whole database and maps each order for the studio figures", async () => {
+    const client = makeFakeClient((path) => {
+      if (isSchema(path)) {
+        return jsonResponse(databaseSchemaWithStages(["Design", "Delivered"]));
+      }
+      if (isQ(path)) {
+        return jsonResponse({
+          results: [
+            orderPage({
+              id: "page-1",
+              orderNumber: "ORD-1",
+              orderName: "Aurora",
+              currentStage: "Design",
+              dueDate: "2026-09-01",
+              invoicePageId: "inv-1",
+              rush: true,
+              cancelled: false,
+              createdTime: "2026-08-01T10:00:00.000Z",
+            }),
+          ],
+          has_more: false,
+          next_cursor: null,
+        });
+      }
+      throw new Error(`unexpected path ${path}`);
+    });
+
+    const { orders, stages } = await repo.listOrdersForAnalytics(client);
+
+    expect(stages).toEqual(["Design", "Delivered"]);
+    expect(orders).toEqual([
+      {
+        pageId: "page-1",
+        orderNumber: "ORD-1",
+        orderName: "Aurora",
+        stage: "Design",
+        createdTime: "2026-08-01T10:00:00.000Z",
+        dueDate: "2026-09-01",
+        cancelled: false,
+        rush: true,
+        invoicePageId: "inv-1",
+      },
+    ]);
+  });
+
+  it("follows the cursor across pages", async () => {
+    let queries = 0;
+    const client = makeFakeClient((path) => {
+      if (isSchema(path)) {
+        return jsonResponse(databaseSchemaWithStages(["Design"]));
+      }
+      if (isQ(path)) {
+        queries += 1;
+        return jsonResponse({
+          results: [orderPage({ orderNumber: `ORD-${queries}` })],
+          has_more: queries === 1,
+          next_cursor: queries === 1 ? "cursor-1" : null,
+        });
+      }
+      throw new Error(`unexpected path ${path}`);
+    });
+
+    const { orders } = await repo.listOrdersForAnalytics(client);
+
+    expect(orders.map((o) => o.orderNumber)).toEqual(["ORD-1", "ORD-2"]);
+  });
+
+  it("throws when the database id is not configured", async () => {
+    const client = makeFakeClient(() => jsonResponse({}), "");
+    await expect(repo.listOrdersForAnalytics(client)).rejects.toThrow(
+      /NOTION_ORDERS_DATABASE_ID is not configured/,
+    );
+  });
+});
