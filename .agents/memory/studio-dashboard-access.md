@@ -23,6 +23,31 @@ before debugging the thing that would have refused it.
 the same `requireStaff` gate). See CLAUDE.md → "Studio analytics dashboard",
 point 9. `/studio` still isn't in `NAV_LINKS` and is still `noindex`.
 
+## Then: for staff it replaced the account portal, and became "Dashboard"
+
+The follow-up (point 10) is that the link doesn't sit _beside_ Account — it
+takes its place, and `/account` redirects a confirmed staff session to
+`/studio`. The reason is the same one behind the original report: a staff
+member's customer portal has nothing in it (they don't place orders through the
+shop), so both entries led somewhere blank. One signed-in destination, labelled
+**Dashboard**.
+
+Three things worth remembering:
+
+- **The URL is still `/studio`.** Only the UI label is "Dashboard" — the API
+  routes, `post-signin.ts`, `ROUTE_SEO["/studio"]`'s key, and this note all
+  still say studio. Renaming the route would mean touching all of them for no
+  user-visible gain.
+- **`useStudioAccess()` returns `{ staff, loading }`**, not a bare boolean.
+  Anything that _routes_ on the answer must wait for `loading` to clear or a
+  staff member sees the empty portal flash past on the way to the dashboard;
+  anything that merely _offers_ something can ignore it. `loading` is false
+  when the probe is disabled (signed out), so a caller can't be left waiting on
+  a request that is never made.
+- **`/account` is a one-way door for staff, so sign-out had to move.** It lives
+  in the dashboard header _and_ its error state — a failed analytics read with
+  no sign-out and `/account` bouncing back here is a trap with no way out.
+
 ## The three gates, in the order they bite
 
 1. **A session.** Signed out, the page redirects to `/account/login`.
@@ -58,7 +83,7 @@ The branch preview lives at
 
 ## Note on branches
 
-The dashboard exists **only on `development`** (PRs #181 and #182 merged there,
-not to `main`), so it is not on the production site. Anything touching it must
-be based on `development` — a branch cut from `main` has no `pages/studio.tsx`
-at all.
+The dashboard exists **only on `development`** (PRs #181, #182 and #187 merged
+there, not to `main`), so it is not on the production site. Anything touching it
+must be based on `development` — a branch cut from `main` has no
+`pages/studio.tsx` at all, and `main`'s `navbar.tsx` has no staff link.

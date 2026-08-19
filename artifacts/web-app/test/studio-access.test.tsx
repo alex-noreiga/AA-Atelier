@@ -26,8 +26,11 @@ const { useGetStudioAccess } = await import("@workspace/api-client-react");
 const mockAccess = vi.mocked(useGetStudioAccess);
 
 /** The subset of the query result the hook reads. */
-function stub(state: { data?: unknown }) {
-  mockAccess.mockReturnValue({ data: state.data } as never);
+function stub(state: { data?: unknown; isLoading?: boolean }) {
+  mockAccess.mockReturnValue({
+    data: state.data,
+    isLoading: state.isLoading ?? false,
+  } as never);
 }
 
 /** The options the hook passed to the generated query hook. */
@@ -78,7 +81,7 @@ describe("useStudioAccess", () => {
 
     const { result } = renderHook(() => useStudioAccess());
 
-    expect(result.current).toBe(true);
+    expect(result.current.staff).toBe(true);
   });
 
   it("fails closed on a refusal, an outage, or an unanswered probe", () => {
@@ -87,7 +90,34 @@ describe("useStudioAccess", () => {
     for (const data of [undefined, null, {}, { staff: false }]) {
       stub({ data });
       const { result } = renderHook(() => useStudioAccess());
-      expect(result.current).toBe(false);
+      expect(result.current.staff).toBe(false);
     }
+  });
+
+  it("reports the answer as pending while the probe is in flight", () => {
+    h.session = { access_token: "jwt" };
+    stub({ isLoading: true });
+
+    const { result } = renderHook(() => useStudioAccess());
+
+    expect(result.current.loading).toBe(true);
+    expect(result.current.staff).toBe(false);
+  });
+
+  it("answers a signed-out visitor at once, with no probe to wait on", () => {
+    // The query is disabled, so nothing is in flight — a caller that routes on
+    // the answer must not be left holding a loader forever.
+    const { result } = renderHook(() => useStudioAccess());
+
+    expect(result.current.loading).toBe(false);
+    expect(result.current.staff).toBe(false);
+  });
+
+  it("is pending while the session itself is still resolving", () => {
+    h.loading = true;
+
+    const { result } = renderHook(() => useStudioAccess());
+
+    expect(result.current.loading).toBe(true);
   });
 });
