@@ -1431,6 +1431,17 @@ Locations`. `lib/google/sheets.repository.ts` reads it (`APPOINTMENT_SHEET_ID`,
    `lib/appointments/time.ts`, built on `Intl` — no date library); busy/bookings
    are UTC instants.
 
+   **The Sheets read is hardened against Google's transient 503s** (its backend
+   returns them intermittently, and a cold serverless instance has no warm cache
+   to fall back on): the read retries a bounded 3 attempts with a short backoff
+   (`lib/google/retry.ts` — idempotent **reads only**, never an event write), then
+   serves the cached schedule however stale, and only with nothing cached at all
+   throws a `ServiceUnavailableError` → **503** with a retriable customer message.
+   That 503 is deliberately **not** alert-emailed (a Google outage isn't a defect
+   here); a non-transient status — 401/403 (key wrong / sheet not shared) or 404
+   (bad sheet id) — is **not** retried and still surfaces as a 500 + alert, because
+   it is a real misconfiguration.
+
 3. **Never trust a client-sent slot.** `POST /appointments` re-derives the type
    from the catalog and re-runs the _same_ `computeSlots` for the requested day
    (with fresh free/busy) before writing; a `start` that isn't currently an open

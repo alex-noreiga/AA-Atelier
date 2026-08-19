@@ -72,3 +72,18 @@ export class ConflictError extends Error {
     this.name = "ConflictError";
   }
 }
+
+/**
+ * A required upstream service is temporarily unreachable and the request can't
+ * be served from cache — today: the Google Sheet holding staff working hours,
+ * which Google's backend intermittently 503s. Maps to a 503 response carrying a
+ * retriable, customer-safe message, and is deliberately NOT reported as an
+ * unhandled 500 (a transient Google outage isn't a bug in this app, and would
+ * otherwise fire an alert email per request).
+ */
+export class ServiceUnavailableError extends Error {
+  constructor(message: string, options?: { cause?: unknown }) {
+    super(message, options);
+    this.name = "ServiceUnavailableError";
+  }
+}

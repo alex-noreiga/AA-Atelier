@@ -9,8 +9,18 @@
 // email), so no domain-wide delegation is needed here. Cached in memory for a
 // short TTL, falling back to the cached value on error — mirroring
 // `products.repository.ts`.
+//
+// Google's Sheets backend intermittently 503s. Three layers keep that from
+// taking the booking flow down: the read is retried a couple of times
+// (`fetchWithRetry`), a stale cached schedule is served if one exists (even
+// past the TTL), and only if there is nothing cached at all — a cold serverless
+// instance during a Google blip — does it fail, as a retriable 503 rather than
+// an unhandled 500.
 
 import { getGoogleSheetsClient, type GoogleSheetsClient } from "./client.js";
+import { fetchWithRetry, isRetryableStatus } from "./retry.js";
+import { ServiceUnavailableError } from "../errors.js";
+import { logger } from "../logger.js";
 import {
   parseScheduleRows,
   type ParsedSchedule,
@@ -18,6 +28,11 @@ import {
 } from "../appointments/staff.js";
 
 const DEFAULT_RANGE = "A2:F";
+
+/** Customer-facing copy for a Sheets outage with no cached schedule to serve. */
+const SCHEDULE_UNAVAILABLE_MESSAGE =
+  "Appointment availability is temporarily unavailable. Please try again in a few minutes.";
+
 const SCHEDULE_CACHE_TTL_MS = 60_000;
 let cached: { schedule: ParsedSchedule; fetchedAt: number } | null = null;
 
@@ -51,13 +66,24 @@ async function fetchSchedule(
   const sheetId = assertConfigured();
   const range = process.env.APPOINTMENT_SHEET_RANGE || DEFAULT_RANGE;
 
-  const response = await client.fetch(
-    `/spreadsheets/${encodeURIComponent(sheetId)}/values/${encodeURIComponent(range)}`,
+  const response = await fetchWithRetry(() =>
+    client.fetch(
+      `/spreadsheets/${encodeURIComponent(sheetId)}/values/${encodeURIComponent(range)}`,
+    ),
   );
   if (!response.ok) {
-    throw new Error(
-      `Google Sheets values fetch failed with status ${response.status}`,
-    );
+    const message = `Google Sheets values fetch failed with status ${response.status}`;
+    // A transient status survived the retries: report it as "temporarily
+    // unavailable". Anything else (401/403 — the sheet isn't shared, the key is
+    // wrong; 404 — bad sheet id) is a real misconfiguration and stays a 500 so
+    // it raises an alert.
+    if (isRetryableStatus(response.status)) {
+      logger.error({ status: response.status }, `${message} after retries`);
+      throw new ServiceUnavailableError(SCHEDULE_UNAVAILABLE_MESSAGE, {
+        cause: new Error(message),
+      });
+    }
+    throw new Error(message);
   }
 
   const data = (await response.json()) as SheetValuesResponse;
@@ -67,7 +93,9 @@ async function fetchSchedule(
 /**
  * The parsed schedule (weekly hours + staff→email map). Cached for
  * {@link SCHEDULE_CACHE_TTL_MS}; on a Sheets error, falls back to the cached
- * value, or rethrows if nothing has been fetched yet.
+ * value (however stale), and only when nothing has ever been fetched does it
+ * throw — a `ServiceUnavailableError` (→ 503) for a transient Google failure,
+ * the underlying error for a misconfiguration.
  */
 export async function getStaffSchedule(
   client: GoogleSheetsClient = getGoogleSheetsClient(),
@@ -80,7 +108,16 @@ export async function getStaffSchedule(
     cached = { schedule, fetchedAt: Date.now() };
     return schedule;
   } catch (error) {
-    if (cached) return cached.schedule;
+    // Serve the last known schedule rather than failing the request — stale
+    // working hours beat no booking flow at all. Logged so a persistent outage
+    // is visible even while requests keep succeeding.
+    if (cached) {
+      logger.warn(
+        { err: error },
+        "Google Sheets read failed; serving the cached working-hours schedule",
+      );
+      return cached.schedule;
+    }
     throw error;
   }
 }

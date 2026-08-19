@@ -73,26 +73,58 @@ describe("getStaffSchedule", () => {
     expect(client.paths).toHaveLength(1);
   });
 
+  it("retries a transient failure and succeeds", async () => {
+    let calls = 0;
+    const client = fakeClient(() => {
+      calls += 1;
+      // Google's Sheets backend 503s intermittently; the second call works.
+      return calls === 1
+        ? jsonResponse({}, 503)
+        : jsonResponse({ values: VALUES });
+    });
+
+    const schedule = await repo.getStaffSchedule(client);
+
+    expect(client.paths).toHaveLength(2);
+    expect(schedule.calendars.get("Alayna")).toBe("alayna@atelier.test");
+  });
+
   it("falls back to the cached value when a later fetch fails", async () => {
     vi.useFakeTimers();
     try {
       let ok = true;
       const client = fakeClient(() =>
-        ok ? jsonResponse({ values: VALUES }) : jsonResponse({}, 500),
+        ok ? jsonResponse({ values: VALUES }) : jsonResponse({}, 503),
       );
       const first = await repo.getStaffSchedule(client);
       ok = false;
-      vi.advanceTimersByTime(61_000); // past the 60s TTL
-      const second = await repo.getStaffSchedule(client);
-      expect(second).toEqual(first);
+      await vi.advanceTimersByTimeAsync(61_000); // past the 60s TTL
+      // Drive the retry backoff too, so the fallback is reached deterministically.
+      const pending = repo.getStaffSchedule(client);
+      await vi.advanceTimersByTimeAsync(5_000);
+      expect(await pending).toEqual(first);
     } finally {
       vi.useRealTimers();
     }
   });
 
-  it("throws on error when nothing is cached yet", async () => {
-    const client = fakeClient(() => jsonResponse({}, 500));
-    await expect(repo.getStaffSchedule(client)).rejects.toThrow(/status 500/);
+  it("throws a 503-mapped ServiceUnavailableError when Sheets is down and nothing is cached", async () => {
+    const client = fakeClient(() => jsonResponse({}, 503));
+    // Asserted by name, not `instanceof`: the `vi.resetModules()` above gives
+    // the repository its own copy of the errors module, so the classes differ.
+    const error = await repo
+      .getStaffSchedule(client)
+      .then(() => null)
+      .catch((e: Error) => e);
+    expect(error?.name).toBe("ServiceUnavailableError");
+    expect(error?.message).toMatch(/temporarily unavailable/);
+    expect(client.paths).toHaveLength(3); // the initial call + two retries
+  });
+
+  it("rethrows a non-transient failure (a misconfigured or unshared sheet)", async () => {
+    const client = fakeClient(() => jsonResponse({}, 403));
+    await expect(repo.getStaffSchedule(client)).rejects.toThrow(/status 403/);
+    expect(client.paths).toHaveLength(1); // not retried — it won't fix itself
   });
 
   it("throws when APPOINTMENT_SHEET_ID is unset", async () => {
