@@ -263,6 +263,30 @@ export interface NewReviewResponse {
   received: boolean;
 }
 
+/**
+ * One curated testimonial, as shown on the site. Deliberately narrow: the author's email, order number, and verification flag stay in Notion and are never served here.
+ */
+export interface PublishedReview {
+  /** The review's Notion page id, used only as a render key. */
+  id: string;
+  /**
+     * The star rating, 1 (poor) to 5 (excellent).
+     * @minimum 1
+     * @maximum 5
+     */
+  rating: number;
+  /** The customer's testimonial. */
+  comment: string;
+  /** How the customer asked to be credited. Omitted when they left the credit blank, in which case the testimonial is shown unattributed. */
+  customerName?: string;
+  /** When the review was submitted (its Notion created time), used to order the list and to date the testimonial. */
+  publishedAt?: string;
+}
+
+export interface ReviewList {
+  reviews: PublishedReview[];
+}
+
 export interface NewContactRequest {
   /** @minLength 1 */
   name: string;
@@ -951,6 +975,15 @@ export interface StudioToolRun {
   /** Any per-item notes worth showing under the message — payments that were skipped, reasons a send was suppressed. Empty when there is nothing to add. */
   details: string[];
 }
+
+export type GetPublishedReviewsParams = {
+/**
+ * Maximum number of testimonials to return, newest first. Defaults to 12 when omitted.
+ * @minimum 1
+ * @maximum 50
+ */
+limit?: number;
+};
 
 export type GetAppointmentAvailabilityParams = {
 typeId: string;

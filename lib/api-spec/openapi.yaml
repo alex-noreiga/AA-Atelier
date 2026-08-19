@@ -30,6 +30,8 @@ tags:
     description: >-
       Internal atelier surfaces, gated to signed-in studio staff (the same
       Supabase Auth Bearer token, plus a staff allowlist)
+  - name: reviews
+    description: Published customer testimonials, curated by the atelier
 paths:
   /health:
     get:
@@ -472,6 +474,48 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/ColorList"
+        "500":
+          description: Server error
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorEnvelope"
+  /reviews:
+    get:
+      operationId: getPublishedReviews
+      tags: [reviews]
+      summary: List published customer testimonials
+      description: >-
+        Returns the reviews the atelier has curated for public display: only
+        rows whose Status is the published option AND whose author consented to
+        publication. Read-only and anonymous — no email or order number is ever
+        returned. When the reviews database is not configured the list is empty
+        rather than an error, so a site that never collected a review simply
+        shows no testimonials.
+      parameters:
+        - name: limit
+          in: query
+          required: false
+          description: >-
+            Maximum number of testimonials to return, newest first. Defaults to
+            12 when omitted.
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 50
+      responses:
+        "200":
+          description: Published testimonials, newest first
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ReviewList"
+        "400":
+          description: Validation error
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorEnvelope"
         "500":
           description: Server error
           content:
@@ -1626,6 +1670,48 @@ components:
       properties:
         received:
           type: boolean
+    PublishedReview:
+      type: object
+      required:
+        - id
+        - rating
+        - comment
+      description: >-
+        One curated testimonial, as shown on the site. Deliberately narrow: the
+        author's email, order number, and verification flag stay in Notion and
+        are never served here.
+      properties:
+        id:
+          type: string
+          description: The review's Notion page id, used only as a render key.
+        rating:
+          type: integer
+          minimum: 1
+          maximum: 5
+          description: The star rating, 1 (poor) to 5 (excellent).
+        comment:
+          type: string
+          description: The customer's testimonial.
+        customerName:
+          type: string
+          description: >-
+            How the customer asked to be credited. Omitted when they left the
+            credit blank, in which case the testimonial is shown unattributed.
+        publishedAt:
+          type: string
+          format: date-time
+          description: >-
+            When the review was submitted (its Notion created time), used to
+            order the list and to date the testimonial.
+    ReviewList:
+      type: object
+      required:
+        - reviews
+      properties:
+        reviews:
+          type: array
+          items:
+            $ref: "#/components/schemas/PublishedReview"
     NewContactRequest:
       type: object
       required:

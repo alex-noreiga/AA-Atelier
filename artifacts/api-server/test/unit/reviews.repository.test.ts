@@ -1,11 +1,16 @@
-import { describe, it, expect } from "vitest";
+import { describe, it, expect, beforeEach, vi, afterEach } from "vitest";
 import { reviewInput } from "@workspace/test-fixtures";
-import { createReview } from "../../src/lib/notion/reviews.repository.js";
+import {
+  createReview,
+  listPublishedReviews,
+  __resetPublishedReviewsCache,
+} from "../../src/lib/notion/reviews.repository.js";
 import type { ReviewRow } from "../../src/lib/notion/reviews.blocks.js";
 import {
   makeFakeClient,
   jsonResponse,
   errorResponse,
+  reviewPage,
 } from "../support/fake-notion.js";
 
 function row(overrides: Partial<ReviewRow> = {}): ReviewRow {
@@ -56,6 +61,113 @@ describe("createReview", () => {
     );
     await expect(createReview(row(), client)).rejects.toThrow(
       /Notion review creation failed with status 400: validation_error: bad property/,
+    );
+  });
+});
+
+// The read half: the testimonials the site renders. Everything here is about
+// what a Notion hiccup or a missing database does to a marketing page.
+describe("listPublishedReviews", () => {
+  beforeEach(() => {
+    __resetPublishedReviewsCache();
+  });
+
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  function queryClient(pages: unknown[], databaseId = "test-db-id") {
+    return makeFakeClient((path) => {
+      if (path.endsWith("/query")) {
+        return jsonResponse({
+          results: pages,
+          has_more: false,
+          next_cursor: null,
+        });
+      }
+      throw new Error(`unexpected path ${path}`);
+    }, databaseId);
+  }
+
+  it("returns an empty list — not an error — when the database is unconfigured", async () => {
+    const client = queryClient([], "");
+    await expect(listPublishedReviews(3, client)).resolves.toEqual([]);
+    // No request is even attempted.
+    expect(client.calls).toHaveLength(0);
+  });
+
+  it("pushes both publish gates into the Notion filter, newest first", async () => {
+    const client = queryClient([reviewPage({ id: "rev-1" })]);
+
+    await listPublishedReviews(3, client);
+
+    const body = JSON.parse(client.calls[0].init!.body as string);
+    expect(body.filter.and).toEqual([
+      { property: "Status", select: { equals: "Published" } },
+      { property: "Consent to Publish", checkbox: { equals: true } },
+    ]);
+    expect(body.sorts).toEqual([
+      { timestamp: "created_time", direction: "descending" },
+    ]);
+  });
+
+  it("caps the returned list at the requested limit", async () => {
+    const client = queryClient([
+      reviewPage({ id: "a" }),
+      reviewPage({ id: "b" }),
+      reviewPage({ id: "c" }),
+    ]);
+
+    const records = await listPublishedReviews(2, client);
+
+    expect(records.map((r) => r.id)).toEqual(["a", "b"]);
+  });
+
+  it("serves a second call from the cache without re-querying Notion", async () => {
+    const client = queryClient([reviewPage({ id: "a" })]);
+
+    await listPublishedReviews(3, client);
+    await listPublishedReviews(3, client);
+
+    expect(client.calls).toHaveLength(1);
+  });
+
+  it("re-queries once the cache TTL has elapsed", async () => {
+    vi.useFakeTimers();
+    const client = queryClient([reviewPage({ id: "a" })]);
+
+    await listPublishedReviews(3, client);
+    vi.advanceTimersByTime(61_000);
+    await listPublishedReviews(3, client);
+
+    expect(client.calls).toHaveLength(2);
+  });
+
+  it("falls back to the cached list when a later query fails", async () => {
+    let fail = false;
+    const client = makeFakeClient(() =>
+      fail
+        ? errorResponse(502, "bad gateway")
+        : jsonResponse({
+            results: [reviewPage({ id: "a" })],
+            has_more: false,
+            next_cursor: null,
+          }),
+    );
+
+    vi.useFakeTimers();
+    const first = await listPublishedReviews(3, client);
+    fail = true;
+    vi.advanceTimersByTime(61_000);
+
+    await expect(listPublishedReviews(3, client)).resolves.toEqual(first);
+  });
+
+  it("throws when the very first query fails and nothing is cached", async () => {
+    const client = makeFakeClient(() => errorResponse(502, "bad gateway"));
+
+    await expect(listPublishedReviews(3, client)).rejects.toThrow(
+      /Notion published-reviews query failed with status 502/,
     );
   });
 });

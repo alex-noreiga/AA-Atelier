@@ -4,6 +4,7 @@ import {
   mockAppointmentOptions,
   mockAppointmentAvailability,
   mockCreateAppointment,
+  mockPublishedReviews,
 } from "./support/mock-api";
 
 // The API is fully mocked, so slot instants are arbitrary; UTC keeps the
@@ -106,6 +107,8 @@ test.describe("Appointment booking", () => {
 
   test("is reachable from the Services nav menu", async ({ page }) => {
     await mockAppointmentOptions(page, { body: OPTIONS });
+    // The home page fetches its testimonial strip on the way through.
+    await mockPublishedReviews(page);
     await page.goto("/");
     // Desktop dropdown under Services (Radix opens on click).
     await page.getByTestId("nav-services").click();

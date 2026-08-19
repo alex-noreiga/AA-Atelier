@@ -18,9 +18,18 @@
 // thank-you + atelier notification), the same convention every other submission
 // flow follows; the Notion row stays the source of truth, so a mail failure
 // never fails the request.
+//
+// The read half of that loop — `getPublishedReviews`, at the bottom of this
+// file — serves the testimonials the site renders. It lives here so the two
+// gates that decide what becomes public (the atelier's curation and the
+// customer's consent) sit next to the flow that captures them.
 
 import { findOrderVerification } from "../lib/notion/orders.repository.js";
-import { createReview } from "../lib/notion/reviews.repository.js";
+import {
+  createReview,
+  listPublishedReviews,
+} from "../lib/notion/reviews.repository.js";
+import type { PublishedReviewRecord } from "../lib/notion/reviews.schema.js";
 import type { CreateReviewInput } from "../lib/notion/reviews.blocks.js";
 import { upsertClientByEmail } from "../lib/notion/clients.repository.js";
 import { orderDelivered } from "./delivery.js";
@@ -101,4 +110,25 @@ export async function submitOrderReview(
   }
 
   return { received: true };
+}
+
+/**
+ * How many testimonials a caller gets when it doesn't ask for a number. Sized
+ * for the site's testimonial strips (home and about show a handful), not for
+ * exhaustiveness — a customer scrolling the whole review history is the
+ * portfolio gallery's job, not this endpoint's.
+ */
+export const DEFAULT_PUBLISHED_REVIEW_LIMIT = 12;
+
+/**
+ * The curated testimonials the site shows, newest first.
+ *
+ * Everything that decides *whether* a review is public happens in the Notion
+ * read (the `Status` = published and consent gates); this adds only the
+ * default limit, so there is one place to reason about publication.
+ */
+export async function getPublishedReviews(
+  limit: number = DEFAULT_PUBLISHED_REVIEW_LIMIT,
+): Promise<PublishedReviewRecord[]> {
+  return listPublishedReviews(limit);
 }

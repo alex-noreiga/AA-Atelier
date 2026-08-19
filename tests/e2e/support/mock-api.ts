@@ -226,3 +226,18 @@ export async function mockCreateNotify(
   });
   return { requests };
 }
+
+/**
+ * Mock `GET /api/reviews` (the curated testimonial strip on the home and about
+ * pages). Every spec that lands on either page needs this — an empty
+ * `{ reviews: [] }` is the right default, since the strip then renders nothing.
+ */
+export async function mockPublishedReviews(
+  page: Page,
+  opts: { status?: number; body: unknown } = { body: { reviews: [] } },
+): Promise<void> {
+  await page.route("**/api/reviews*", async (route) => {
+    if (route.request().method() !== "GET") return route.fallback();
+    await json(route, opts.status ?? 200, opts.body);
+  });
+}

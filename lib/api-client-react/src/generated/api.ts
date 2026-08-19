@@ -32,6 +32,7 @@ import type {
   ErrorEnvelope,
   GetAppointmentAvailabilityParams,
   GetAppointmentParams,
+  GetPublishedReviewsParams,
   HealthStatus,
   MessageResponse,
   NewAppointmentRequest,
@@ -57,6 +58,7 @@ import type {
   PaymentSessionResponse,
   ProductList,
   RescheduleAppointmentRequest,
+  ReviewList,
   ShopOrderStatus,
   StudioAccess,
   StudioAnalytics,
@@ -973,6 +975,91 @@ export function useGetColors<TData = Awaited<ReturnType<typeof getColors>>, TErr
  ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
 
   const queryOptions = getGetColorsQueryOptions(options)
+
+  const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
+
+  return withQueryKey(query, queryOptions.queryKey);
+}
+
+
+
+
+
+
+
+export const getGetPublishedReviewsUrl = (params?: GetPublishedReviewsParams,) => {
+  const normalizedParams = new URLSearchParams();
+
+  Object.entries(params || {}).forEach(([key, value]) => {
+
+    if (value !== undefined) {
+      normalizedParams.append(key, value === null ? 'null' : String(value))
+    }
+  });
+
+  const stringifiedParams = normalizedParams.toString();
+
+  return stringifiedParams.length > 0 ? `/api/reviews?${stringifiedParams}` : `/api/reviews`
+}
+
+/**
+ * Returns the reviews the atelier has curated for public display: only rows whose Status is the published option AND whose author consented to publication. Read-only and anonymous — no email or order number is ever returned. When the reviews database is not configured the list is empty rather than an error, so a site that never collected a review simply shows no testimonials.
+ * @summary List published customer testimonials
+ */
+export const getPublishedReviews = async (params?: GetPublishedReviewsParams, options?: Parameters<typeof customFetch>[1]): Promise<ReviewList> => {
+
+  return customFetch<ReviewList>(getGetPublishedReviewsUrl(params),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
+
+
+
+
+export const getGetPublishedReviewsQueryKey = (params?: GetPublishedReviewsParams,) => {
+    return [
+    `/api/reviews`, ...(params ? [params] : [])
+    ] as const;
+    }
+
+
+export const getGetPublishedReviewsQueryOptions = <TData = Awaited<ReturnType<typeof getPublishedReviews>>, TError = ErrorType<ErrorEnvelope>>(params?: GetPublishedReviewsParams, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getPublishedReviews>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getGetPublishedReviewsQueryKey(params);
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof getPublishedReviews>>> = ({ signal }) => getPublishedReviews(params, { signal, ...requestOptions });
+
+
+
+
+
+   return  { queryKey, queryFn, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof getPublishedReviews>>, TError, TData> & { queryKey: QueryKey }
+}
+
+export type GetPublishedReviewsQueryResult = NonNullable<Awaited<ReturnType<typeof getPublishedReviews>>>
+export type GetPublishedReviewsQueryError = ErrorType<ErrorEnvelope>
+
+
+/**
+ * @summary List published customer testimonials
+ */
+
+export function useGetPublishedReviews<TData = Awaited<ReturnType<typeof getPublishedReviews>>, TError = ErrorType<ErrorEnvelope>>(
+ params?: GetPublishedReviewsParams, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getPublishedReviews>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+
+ ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+
+  const queryOptions = getGetPublishedReviewsQueryOptions(params,options)
 
   const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
 
