@@ -3,9 +3,10 @@
 // A custom order counts as a "rush" when the customer's needed-by date falls
 // inside the studio's rush window (sooner than the standard lead time). The
 // order form then discloses that a surcharge applies and requires the customer
-// to acknowledge it before submitting. The app never prices the fee itself — it
-// records the rush flag on the order (a "Rush Order" checkbox + a page note) and
-// the atelier adds a "Surcharge" invoice line, which flows into the balance.
+// to acknowledge it before submitting, and the order records a rush flag (a
+// "Rush Order" checkbox + a page note). The fee itself is priced server-side:
+// the invoice line-item generator appends a "Surcharge" line at
+// RUSH_SURCHARGE_RATE of the garment subtotal, which flows into the balance.
 //
 // Both knobs are build-time overridable (Vite env) so the atelier can retune the
 // window and the disclosure copy without a code change; the defaults apply when

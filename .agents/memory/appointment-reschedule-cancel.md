@@ -79,12 +79,14 @@ is simply omitted (reply-to-us fallback). Nothing to add in Notion or Google.
 ## Deferred (rest of the roadmap card)
 
 - **Day-before reminder email.** Not built. Google Calendar is write + free/busy
-  only today, so a reminder needs a **new cron** (`GET /api/cron/appointment-reminders`,
-  CRON*SECRET) doing a net-new `events.list` over a `[now, now+lead]` window across
-  staff calendars, filtering our appointment events (they carry the `EVENT_PROP*\*`private props + the customer email) that aren't reminded yet, sending the mail, and
-  marking a per-event`aptReminded`extended property for idempotency (the analogue of
-  the milestone`Reminder Sent` checkbox). The extended-property model added here is
-  the groundwork for it.
+  only today, so a reminder needs a **new cron**
+  (`GET /api/cron/appointment-reminders`, `CRON_SECRET`) doing a net-new
+  `events.list` over a `[now, now+lead]` window across staff calendars, filtering
+  our appointment events (they carry the `EVENT_PROP_*` private props + the customer
+  email) that aren't reminded yet, sending the mail, and marking a per-event
+  `aptReminded` extended property for idempotency (the analogue of the milestone
+  `Reminder Sent` checkbox). The extended-property model added here is the
+  groundwork for it.
 
 ## Files
 

@@ -98,7 +98,9 @@ Messages re-typed name/email as free text with no CRM link.
     when `NOTION_CLIENT_CRM_DATABASE_ID` is unset. New-client status is only set on
     creation; an existing client's status is left as the atelier maintains it.
     Shared property name: `CONTACT_CLIENT_PROPERTY = "Client"` (contact.blocks.ts,
-    shared by the three contact writers); `SHOP_ORDER_CLIENT_PROPERTY = "Client"`.
+    shared by the contact-DB writers — three at the time of this pass, six today:
+    inquiry / back-in-stock / measurement-change / newsletter / cancellation /
+    return-exchange); `SHOP_ORDER_CLIENT_PROPERTY = "Client"`.
 - **Do NOT remove** the free-text email fields: `Orders.Email` is read back (identity
   gate); the Shop Orders / Contact Messages emails are the only customer record on a
   row until the CRM link is populated, and removing a write target would need the
@@ -189,9 +191,10 @@ What was applied here:
 - **Email casing — FIXED (code).** Notion's email `equals` is exact and the CRM /
   account portal treat the address as identity, so mixed case split a customer.
   Added `lib/email.ts` `normalizeEmail` (trim + lowercase), applied at every Notion
-  email **write** (orders, shop orders, reviews, and the four contact-DB writers)
-  and every email **lookup** (`findOrdersByEmail`, `findShopOrdersByEmail`, CRM
-  upsert). Identity gates already compared case-insensitively. Canonicalizes _new_
+  email **write** (orders, shop orders, reviews, and the contact-DB writers — four
+  at the time, six today) and every email **lookup** (`findOrdersByEmail`,
+  `findShopOrdersByEmail`, CRM upsert). Identity gates already compared
+  case-insensitively. Canonicalizes _new_
   data; existing mixed-case rows would need a one-time backfill.
 - **Stage vs Fulfilment (#—, Custom Orders):** decided "keep both, redefine the
   boundary." No code change — see `order-stage-vs-fulfilment.md`.

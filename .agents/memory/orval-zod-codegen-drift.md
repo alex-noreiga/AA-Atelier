@@ -3,7 +3,7 @@ name: orval codegen emits zod v4 syntax the pinned zod v3 can't run
 description: Running the api-spec codegen regenerates generated zod with `zod.email()` (v4), which fails to typecheck against the repo's pinned zod 3.25 — restore `zod.string().email()` after any codegen run until the version mismatch is fixed at the root.
 ---
 
-Running `pnpm --filter @workspace/api-spec run codegen` (orval **v8.22.0**) regenerates
+Running `pnpm --filter @workspace/api-spec run codegen` (orval **v8**, seen on 8.22–8.23) regenerates
 `lib/api-zod/src/generated/api.ts` with **zod v4** email syntax — `zod.email()` — on every
 `email` field. The repo pins **zod 3.25.76**, whose top-level export has **no** `z.email()`,
 so the post-codegen `typecheck:libs` fails with:
