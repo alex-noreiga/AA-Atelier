@@ -95,6 +95,66 @@ it, because the portal is **email-keyed** end to end (`middlewares/auth.ts`
 normalizes the token's email and every Notion lookup filters on it), so a
 duplicate user would mean a customer seeing an empty dashboard.
 
+## Troubleshooting (from the live setup, 19 Aug 2026)
+
+**Read the Supabase auth logs first.** Dashboard → Logs → Auth, or via MCP:
+
+```sql
+select timestamp, log_attributes['path'] as path, log_attributes['msg'] as msg,
+       log_attributes['error'] as error
+from logs where source = 'auth_logs' order by timestamp desc limit 30
+```
+
+The `/callback` line carries the real reason. This matters because the app's
+`pages/account-callback.tsx` reports **every** failed return as *"That sign-in link
+has expired or already been used"* — it only checks whether a session exists and
+discards the error Supabase sends back in the URL. That copy was written for magic
+links; for OAuth it is nearly always wrong about the cause.
+
+Two failures actually hit during setup, in order:
+
+1. `provider is not enabled` on `/authorize` — the Google provider hadn't been
+   toggled on yet. Fixed by step 6.
+2. `oauth2: "invalid_client" "The provided client secret is invalid."` on
+   `/callback`, i.e. a 500 on **`Unable to exchange external code`**. Google had
+   already accepted the sign-in and issued a code; only the token exchange failed.
+
+For (2), note what the error does **not** mean. Google says "client secret" but the
+condition is that the **client_id + client_secret pair** does not authenticate, so a
+wrong ID, a pair drawn from two different clients, or the wrong Google Cloud project
+all produce it identically. Re-pasting the secret alone did not fix it.
+
+**The diagnostic that settles it:** start a sign-in and read `client_id` out of the
+URL on Google's own screen. If Google renders a sign-in/consent page at all, the
+client ID is valid, the client is a Web application, and its authorized redirect URI
+is correct — Google resolves all of that before showing anything (an unknown client
+returns `401: invalid_client / deleted_client` instead). That narrows the fault to
+the secret with certainty.
+
+**The fix that avoids the whole class:** on that exact client in Google Cloud
+Console, use the **download icon (⬇) on the Credentials/Clients _list_ row** — not
+the edit screen — to get a JSON carrying a matched `client_id` + `client_secret`,
+and paste both. Copying the two values separately is what lets them drift apart. On
+the current console the edit screen shows a **Secret ID** next to each secret, which
+is not the secret; a secret's value is visible only in the panel shown at creation
+(**+ Add secret**).
+
+Config saves take effect on the next `reloading api with new configuration` line in
+the logs (seconds), with no redeploy.
+
+## Verified working
+
+Live since 2026-08-19 15:00 UTC — `/callback` 302 clean, `/token` 200,
+`Login provider=google`, and a `google` row in `auth.identities`. Sign-ins from
+Vercel **preview** hostnames completed too, so the wildcard concern in step 10 did
+not bite in practice.
+
+Note the identity model this exposed: Google created a **separate user** for
+`alexandra@a3iceanddance.com` alongside the existing password user
+`alexandra.noreiga@gmail.com`. That is correct — Supabase links identities only when
+the email matches — but because the portal is email-keyed, each account sees only the
+Notion orders carrying its own address.
+
 ## What is deliberately not here
 
 - **No code change.** Do not add a provider list, an env var, or a "Google
