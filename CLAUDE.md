@@ -1721,6 +1721,19 @@ conflict (stripe_session_id) do nothing`, returning `claimed` / `done` /
    deliberately kept out of `build:vercel` and cold starts. `postgres` (porsager)
    is a prod dependency.
 
+4. **These tables are closed to the Data API — keep them that way.** Supabase serves
+   the `public` schema through PostgREST, and the `anon` key is public (it ships in
+   the browser bundle as `VITE_PUBLIC_SUPABASE_ANON_KEY`), so a table left at
+   Supabase's defaults is world-readable **and world-writable** by anyone who reads
+   the JS. `0002_lock_down_public_tables.sql` closes that: RLS on with **no
+   policies** (deny-all), all grants revoked from `anon`/`authenticated`, and the
+   schema's `ALTER DEFAULT PRIVILEGES` reset so a future `create table` doesn't
+   silently reopen it. The app is untouched by this because it never uses PostgREST —
+   it connects directly as `postgres`, which **owns** these tables and so bypasses
+   RLS. Two rules follow: a new table in `public` needs the same `enable row level
+   security` + `revoke` pair in its migration, and a PostgREST RPC (there are none
+   today) would need an explicit `grant execute`.
+
 The atelier's one-time setup (all optional — unset ⇒ the layer no-ops): on Vercel
 the Supabase integration provides `POSTGRES_URL` + `POSTGRES_URL_NON_POOLING`; run
 `db:migrate` once against the non-pooled URL to create the tables. Tests:
