@@ -11,9 +11,9 @@
 // `requireStaff` layers the studio gate (see `lib/staff.ts`) on top of the same
 // verification, so the internal dashboard needs no second auth vendor: a staff
 // member signs in exactly like a customer, and their email plus *how they signed
-// in* is what grants access. A valid session that fails either check is a 403,
-// not a 401 — they *are* signed in, so bouncing them to the sign-in page would
-// just loop; the message tells them which of the two it was.
+// in* is what grants access. A valid session that fails either check is never a
+// 401 — they *are* signed in, so bouncing them to the sign-in page would just
+// loop — but the two failures answer differently, on purpose (see below).
 
 import type { Request, RequestHandler } from "express";
 import {
@@ -27,7 +27,11 @@ import {
   signedInWithGoogle,
   staffRequiresGoogle,
 } from "../lib/staff.js";
-import { ForbiddenError, UnauthorizedError } from "../lib/errors.js";
+import {
+  ForbiddenError,
+  NotFoundError,
+  UnauthorizedError,
+} from "../lib/errors.js";
 import { logger } from "../lib/logger.js";
 
 /** The authenticated customer resolved from the Supabase access token. */
@@ -115,10 +119,18 @@ export const requireCustomer: RequestHandler = async (req, res, next) => {
  *     requiring the method means a leaked password or an intercepted magic link
  *     can't reach the studio's figures.
  *
- * Not signed in → 401 (the frontend sends them to sign in). Signed in but
- * failing either check → 403, carrying a message the page shows verbatim, so a
- * staff member who signed in the wrong way is told to use Google rather than
- * being told they aren't staff.
+ * Not signed in → 401 (the frontend sends them to sign in). Past that, the two
+ * checks answer **differently**, which is the load-bearing part:
+ *
+ *  - **Not on the allowlist → 404**, the same answer any URL that doesn't exist
+ *    gets. `/studio` is `noindex` and unlinked for everyone but staff, so the
+ *    only way a customer reaches it is by typing it — and a 403 would confirm
+ *    to them that an internal dashboard is there to be found. There is nothing
+ *    such a caller can do about the refusal, so there is nothing to tell them.
+ *  - **Allowlisted but wrong sign-in method → 403**, carrying a message the
+ *    page shows verbatim. Here there *is* something to do — sign in again with
+ *    Google — and only someone who already controls that mailbox can provoke
+ *    it, so it discloses nothing they didn't already know.
  */
 export const requireStaff: RequestHandler = async (req, res, next) => {
   const customer = await resolveSessionCustomer(req);
@@ -127,11 +139,9 @@ export const requireStaff: RequestHandler = async (req, res, next) => {
     return;
   }
   if (!isStaffEmail(customer.email)) {
-    next(
-      new ForbiddenError(
-        "This account doesn't have access to the studio dashboard.",
-      ),
-    );
+    // Deliberately indistinguishable from a mistyped URL — see above. The
+    // message is what an API client sees; the SPA renders its own 404 page.
+    next(new NotFoundError("Not found."));
     return;
   }
   if (staffRequiresGoogle() && !signedInWithGoogle(customer.authMethods)) {

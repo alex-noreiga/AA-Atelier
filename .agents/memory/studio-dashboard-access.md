@@ -59,8 +59,26 @@ Three things worth remembering:
    button is the fix (it signs out first, or Supabase hands back the same
    session).
 
-Gates 2 and 3 both render as a 403 with the server's message shown verbatim, so
-the page tells you which one you failed.
+Gates 2 and 3 **answer differently**, and that difference is deliberate:
+
+- **Gate 2 (not on the allowlist) → 404.** `/studio` renders the ordinary Not
+  Found page, byte for byte what a mistyped URL renders — it returns the real
+  `<NotFound />`, not a copy. The dashboard is unlinked and `noindex`, so the
+  only way a customer gets there is by typing it, and a 403 would confirm to
+  them that something is there to find. There is nothing such a caller can do
+  about the refusal, so there is nothing to tell them.
+- **Gate 3 (wrong sign-in method) → 403**, with the server's message shown
+  verbatim and the **Continue with Google** button that fixes it. Here there
+  _is_ something to do, and only someone who already controls a staff mailbox
+  can provoke it, so it discloses nothing they didn't know.
+
+Two consequences worth keeping in mind when debugging: a 404 on `/studio` means
+**the allowlist**, not a routing bug — check `STUDIO_STAFF_EMAILS` for that
+exact address; and the 403 panel now has exactly one cause, so seeing it at all
+tells you the allowlist is fine and only the sign-in method is wrong.
+
+Note the allowlist is **exact addresses, not a domain**. An `@a3iceanddance.com`
+address that isn't listed in `STUDIO_STAFF_EMAILS` is refused like any customer.
 
 ## Preview-deployment specifics (all three have bitten)
 

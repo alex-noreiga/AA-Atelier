@@ -94,9 +94,9 @@ Express app (artifacts/api-server)  ──►  Notion REST API (orders database)
   │                                  navbar's staff-only Dashboard link, so the
   │                                  dashboard has a way in without the URL being
   │                                  published. Runs the SAME requireStaff gate as
-  │                                  the figures below (401 / 403 / 200 { staff:
-  │                                  true }) and reads nothing — reaching the
-  │                                  handler IS the answer
+  │                                  the figures below (401 / 404 / 403 / 200 {
+  │                                  staff: true }) and reads nothing — reaching
+  │                                  the handler IS the answer
   ├─ GET  /api/studio/analytics    → the INTERNAL studio dashboard's figures:
   │                                  custom + shop orders by stage, production
   │                                  load against due dates, revenue by month,
@@ -104,8 +104,10 @@ Express app (artifacts/api-server)  ──►  Notion REST API (orders database)
   │                                  shop pieces. Aggregated live from Notion
   │                                  (bounded full-database scans, 60s cached).
   │                                  Same Bearer JWT as the portal PLUS a staff
-  │                                  allowlist: 401 not signed in, 403 signed in
-  │                                  but not staff
+  │                                  allowlist: 401 not signed in, 404 signed in
+  │                                  but not staff (indistinguishable from a URL
+  │                                  that doesn't exist, by design), 403 staff
+  │                                  but not signed in with Google
   ├─ GET  /api/orders/:orderNumber → order status + stage list
   ├─ POST /api/orders              → creates a Notion page, returns order number
   │                                  + sends an order-confirmation email
@@ -1784,8 +1786,16 @@ Load-bearing decisions:
    `requireStaff` verifies the same Bearer JWT `requireCustomer` does (both share
    one `resolveSessionCustomer`) and then checks the email against
    `STUDIO_STAFF_EMAILS` (`lib/staff.ts`). Not signed in ⇒ **401** (the page
-   redirects to sign-in); signed in but failing the gate ⇒ **403** (bouncing them
-   to sign-in would just loop, so the page shows the reason instead). The
+   redirects to sign-in). Past that the two checks answer **differently, on
+   purpose**: an email that isn't on the allowlist ⇒ **404**, and the page
+   renders the ordinary Not Found — the same thing a mistyped URL renders,
+   because `/studio` is unlinked and `noindex` and a 403 would confirm to a
+   customer who typed it that a dashboard is there to find (there is nothing
+   they can do about the refusal, so there is nothing to tell them). An
+   allowlisted email whose session came the wrong way ⇒ **403** with the
+   server's reason shown verbatim, because there _is_ something to do about it
+   and only someone already holding that mailbox can provoke it. Neither is a
+   401 — they _are_ signed in, so bouncing them to sign-in would just loop. The
    allowlist is
    **env-only and NOT a Studio Setting** — access control isn't a business
    tunable, and anyone who could edit the settings database could otherwise grant
@@ -1813,7 +1823,9 @@ Load-bearing decisions:
    have to remember isn't one; it **fails closed** when a token carries no
    readable `amr`; the refusal is logged at `warn` with the email and methods (a
    staff address failing only on method is worth seeing); and the 403 message is
-   rendered verbatim by the page, which offers a **Continue with Google** button
+   rendered verbatim by the page — this is now the **only** thing that reaches
+   that panel, so its **Continue with Google** button is always the actual fix —
+   a button
    that signs out first (Supabase would otherwise hand back the same session) and
    returns to `/studio` via `lib/post-signin.ts` — a `sessionStorage` hop rather
    than a `?next=` on the redirect URL, which would need its own Supabase
@@ -2558,7 +2570,7 @@ and in the maintainer's env without edits.
   allowlist of the email addresses that may reach the internal studio dashboard
   (`/studio` + `GET /api/studio/analytics`). Staff sign in through the same
   Supabase Auth flow customers use; this promotes their address to studio access.
-  **Fails closed:** unset ⇒ nobody is staff and the dashboard 403s for everyone.
+  **Fails closed:** unset ⇒ nobody is staff and the dashboard 404s for everyone.
   Matching is case-insensitive. Deliberately env-only (**not** a Studio Settings
   key) — it's access control, not a business tunable. Read fresh from env in
   `lib/staff.ts`. See "Studio analytics dashboard" above.

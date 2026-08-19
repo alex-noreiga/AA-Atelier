@@ -967,9 +967,11 @@ paths:
         without every signed-in customer being shown a link that would refuse
         them. It runs the SAME gate as the figures below — allowlisted email
         plus (by default) a session established with Google — so a 200 here and
-        a 200 there can't disagree: 401 when the caller isn't signed in, 403
-        when they are but aren't staff. It reads nothing and aggregates nothing;
-        reaching the handler at all IS the answer.
+        a 200 there can't disagree: 401 when the caller isn't signed in, 404
+        when they are but aren't staff (the dashboard doesn't exist as far as
+        they're concerned), 403 when they are staff but didn't sign in with
+        Google. It reads nothing and aggregates nothing; reaching the handler at
+        all IS the answer.
       security:
         - bearerAuth: []
       responses:
@@ -986,11 +988,23 @@ paths:
               schema:
                 $ref: "#/components/schemas/ErrorEnvelope"
         "403":
-          description: Signed in, but not a studio staff account
+          description: >-
+            A studio account whose session wasn't established with Google (the
+            default policy). Unlike the 404 below there is something to act on,
+            and only someone already holding that mailbox can provoke it.
           content:
             application/json:
               schema:
                 $ref: "#/components/schemas/ErrorEnvelope"
+        "404":
+          description: >-
+            Signed in, but not a studio account. Deliberately the same answer a
+            URL that doesn't exist gets: the dashboard is unlinked and noindexed,
+            so a 403 here would only confirm to a customer that it is there.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/OrderNotFound"
         "500":
           description: Server error
           content:
@@ -1008,7 +1022,8 @@ paths:
         balances, and the best-selling shop pieces — for the internal studio
         dashboard. Requires a valid Supabase access token supplied as a Bearer
         credential whose email is on the studio staff allowlist: 401 when the
-        caller isn't signed in, 403 when they are but aren't staff.
+        caller isn't signed in, 404 when they are but aren't staff, and 403
+        when they are staff but didn't sign in with Google.
       security:
         - bearerAuth: []
       responses:
@@ -1025,11 +1040,23 @@ paths:
               schema:
                 $ref: "#/components/schemas/ErrorEnvelope"
         "403":
-          description: Signed in, but not a studio staff account
+          description: >-
+            A studio account whose session wasn't established with Google (the
+            default policy). Unlike the 404 below there is something to act on,
+            and only someone already holding that mailbox can provoke it.
           content:
             application/json:
               schema:
                 $ref: "#/components/schemas/ErrorEnvelope"
+        "404":
+          description: >-
+            Signed in, but not a studio account. Deliberately the same answer a
+            URL that doesn't exist gets: the dashboard is unlinked and noindexed,
+            so a 403 here would only confirm to a customer that it is there.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/OrderNotFound"
         "500":
           description: Server error
           content:
@@ -1049,7 +1076,8 @@ paths:
         a shared secret in its query string; the work is unchanged, the
         authorization is not: this requires the same Supabase access token as
         the rest of the studio surface, with the caller's email on the staff
-        allowlist. 401 when not signed in, 403 when signed in but not staff.
+        allowlist. 401 when not signed in, 404 when signed in but not staff,
+        403 when staff but not signed in with Google.
 
         Every tool is idempotent — a repeat run reports `noop` rather than
         doing the work twice — but two of them move money, so the dashboard
@@ -1090,17 +1118,23 @@ paths:
               schema:
                 $ref: "#/components/schemas/ErrorEnvelope"
         "403":
-          description: Signed in, but not a studio staff account
+          description: >-
+            A studio account whose session wasn't established with Google (the
+            default policy). Unlike the 404 below there is something to act on,
+            and only someone already holding that mailbox can provoke it.
           content:
             application/json:
               schema:
                 $ref: "#/components/schemas/ErrorEnvelope"
         "404":
-          description: No order matches the supplied order number
+          description: >-
+            No order matches the supplied order number — or the caller isn't a
+            studio account, which answers identically by design (see the other
+            studio operations).
           content:
             application/json:
               schema:
-                $ref: "#/components/schemas/ErrorEnvelope"
+                $ref: "#/components/schemas/OrderNotFound"
         "500":
           description: Server error
           content:

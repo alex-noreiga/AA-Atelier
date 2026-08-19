@@ -192,7 +192,29 @@ describe("studio dashboard — access", () => {
     expect(screen.getByTestId("redirect")).toHaveTextContent("/account/login");
   });
 
-  it("tells a signed-in customer they aren't studio staff, without redirecting", () => {
+  it("shows a signed-in customer the ordinary Not Found page, not a refusal", () => {
+    // The server answers 404 for a non-staff account on purpose; anything that
+    // reads as "access denied" would confirm the dashboard exists to someone
+    // who only typed the URL.
+    stubAnalytics({ isError: true, error: { status: 404 } });
+    renderPage();
+
+    expect(screen.getByTestId("link-home")).toBeInTheDocument();
+    expect(
+      screen.getByRole("heading", { level: 1, name: "Page not found" }),
+    ).toBeInTheDocument();
+    expect(screen.queryByTestId("studio-forbidden")).not.toBeInTheDocument();
+    expect(screen.queryByTestId("redirect")).not.toBeInTheDocument();
+  });
+
+  it("leaks nothing about the studio on that page", () => {
+    stubAnalytics({ isError: true, error: { status: 404 } });
+    const { container } = renderPage();
+
+    expect(container.textContent ?? "").not.toMatch(/studio|dashboard|staff/i);
+  });
+
+  it("tells a staff member who used the wrong sign-in method, without redirecting", () => {
     stubAnalytics({ isError: true, error: { status: 403 } });
     renderPage();
     expect(screen.getByTestId("studio-forbidden")).toBeInTheDocument();

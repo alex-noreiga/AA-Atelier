@@ -11,6 +11,7 @@ import {
 } from "@workspace/api-client-react";
 import { Button } from "@/components/ui/button";
 import { PageShell } from "@/components/page-shell";
+import NotFound from "@/pages/not-found";
 import { StudioTools } from "@/components/studio-tools";
 import { Seo } from "@/components/seo";
 import { useAuth } from "@/lib/auth-context";
@@ -78,6 +79,16 @@ export default function Studio() {
   // Signed out (or the session expired) → sign in, same as the account portal.
   if ((!loading && !session) || (analytics.isError && status === 401)) {
     return <Redirect to="/account/login" replace />;
+  }
+
+  // Not a studio account → render exactly what a mistyped URL renders. The
+  // server answers 404 rather than 403 for this precisely so the page can (see
+  // `requireStaff`): the dashboard is unlinked and noindexed, and telling a
+  // customer who typed `/studio` that access was *refused* would confirm there
+  // is something here to find. Returning the real page, not a copy of it, is
+  // what keeps the two indistinguishable.
+  if (analytics.isError && status === 404) {
+    return <NotFound />;
   }
 
   return (
@@ -173,12 +184,12 @@ function SignOutButton({ onSignOut }: { onSignOut: () => Promise<void> }) {
 }
 
 /**
- * A signed-in session the server refused. Two things land here — an account
- * that isn't on the staff allowlist, and a staff account that signed in with a
- * password or magic link when Google is required — so the server's own message
- * is shown rather than a guess. Both get the Google button: for the second case
- * it's the fix, and for the first it changes nothing (the same 403 comes back),
- * so no one is told which side of the gate they failed on by what's offered.
+ * A studio account whose session wasn't established with Google — since the
+ * allowlist failure now answers 404, this is the only thing that lands here.
+ * That makes the Google button the actual fix rather than a shot in the dark,
+ * and it means only someone already holding a staff mailbox can see this panel
+ * at all. The server's own message is still shown verbatim rather than guessed
+ * at, so a future refusal reason needs no change here.
  */
 function AccessDenied({ reason }: { reason?: string }) {
   const [busy, setBusy] = useState(false);
@@ -213,7 +224,7 @@ function AccessDenied({ reason }: { reason?: string }) {
       <h1 className="text-3xl font-serif mb-4">Dashboard access only</h1>
       <p className="text-muted-foreground max-w-md mx-auto">
         {reason ??
-          "This page is for the atelier team. Your account is signed in, but it isn't a studio account."}
+          "Studio access requires signing in with Google. Please sign out and use Continue with Google."}
       </p>
       {supabase && (
         <Button
