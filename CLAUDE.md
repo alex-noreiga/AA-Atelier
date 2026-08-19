@@ -1668,7 +1668,8 @@ The atelier must, one time: create a Supabase project and set `SUPABASE_URL` +
 `SUPABASE_ANON_KEY` (backend) and `VITE_PUBLIC_SUPABASE_URL` +
 `VITE_PUBLIC_SUPABASE_ANON_KEY` (frontend) — on Vercel these come from the
 Supabase integration; enable Email+password (confirm-email) + Magic Link + Google
-in the Supabase Auth dashboard, point custom SMTP at Resend, and add
+in the Supabase Auth dashboard (the Google OAuth-client + consent-screen steps are
+the runbook in `.agents/memory/supabase-google-signin.md`), point custom SMTP at Resend, and add
 `${PUBLIC_BASE_URL}/account/callback` + `/account/reset` to the redirect
 allow-list. `SESSION_SECRET` is still needed for the appointment manage-link, and
 `PUBLIC_BASE_URL` for the redirect origin. **No new database of our own** — the

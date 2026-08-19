@@ -2,7 +2,7 @@ import { describe, it, expect, vi, beforeEach } from "vitest";
 import { render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 
-// Control the query string the page reads for the ?error=expired banner.
+// Control the query string the page reads for the ?error=... notice.
 let mockSearch = "";
 vi.mock("wouter", async (importOriginal) => {
   const actual = await importOriginal<typeof import("wouter")>();
@@ -129,6 +129,27 @@ describe("Account login", () => {
   it("shows an expired-link notice when arriving with ?error=expired", () => {
     mockSearch = "error=expired";
     render(<AccountLogin />);
-    expect(screen.getByTestId("login-expired")).toBeInTheDocument();
+    expect(screen.getByTestId("login-error")).toHaveTextContent(
+      /expired or already been used/i,
+    );
+    // Nothing to quote back to us — the customer can resolve this one.
+    expect(screen.queryByTestId("login-error-reference")).toBeNull();
+  });
+
+  it("blames our side, not the link, for a provider failure", () => {
+    mockSearch = "error=server_error";
+    render(<AccountLogin />);
+    const notice = screen.getByTestId("login-error");
+    expect(notice).toHaveTextContent(/on our end/i);
+    expect(notice).not.toHaveTextContent(/expired/i);
+    expect(screen.getByTestId("login-error-reference")).toHaveTextContent(
+      "server_error",
+    );
+  });
+
+  it("shows no notice when arriving without an error", () => {
+    mockSearch = "";
+    render(<AccountLogin />);
+    expect(screen.queryByTestId("login-error")).toBeNull();
   });
 });
