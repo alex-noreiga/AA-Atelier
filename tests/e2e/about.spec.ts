@@ -1,11 +1,17 @@
 import { test, expect } from "./support/test";
+import { mockPublishedReviews } from "./support/mock-api";
 
 const FIRST_QUESTION = "How long does a custom costume take?";
 const SECOND_QUESTION = "How do I get measured?";
 
-// The About page fetches nothing, so no API mocking is needed here.
+// The page's copy is static; the one thing it fetches is the curated
+// testimonial strip, stubbed empty for the FAQ cases below.
 
 test.describe("About FAQ", () => {
+  test.beforeEach(async ({ page }) => {
+    await mockPublishedReviews(page);
+  });
+
   test("expands an answer when its question is clicked", async ({ page }) => {
     await page.goto("/about");
     await expect(page.getByRole("heading", { name: "About" })).toBeVisible();
@@ -34,5 +40,40 @@ test.describe("About FAQ", () => {
     await expect(
       page.getByRole("region", { name: FIRST_QUESTION }),
     ).toBeHidden();
+  });
+});
+
+test.describe("About testimonials", () => {
+  test("shows the reviews the atelier has published", async ({ page }) => {
+    await mockPublishedReviews(page, {
+      body: {
+        reviews: [
+          {
+            id: "rev-1",
+            rating: 5,
+            comment: "The fit was perfect the first time on the ice.",
+            customerName: "Ada L.",
+            publishedAt: "2026-07-04T09:30:00.000Z",
+          },
+        ],
+      },
+    });
+    await page.goto("/about");
+
+    const testimonial = page.getByTestId("testimonial");
+    await expect(testimonial).toHaveCount(1);
+    await expect(testimonial).toContainText("The fit was perfect");
+    await expect(testimonial).toContainText("Ada L. \u00b7 July 2026");
+  });
+
+  test("omits the section entirely when nothing is published", async ({
+    page,
+  }) => {
+    await mockPublishedReviews(page);
+    await page.goto("/about");
+
+    // The page still renders; only the strip is absent.
+    await expect(page.getByRole("heading", { name: "About" })).toBeVisible();
+    await expect(page.getByTestId("testimonials")).toHaveCount(0);
   });
 });

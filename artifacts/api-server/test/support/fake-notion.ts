@@ -486,3 +486,47 @@ export function lineItemPage(opts: {
     },
   };
 }
+
+/**
+ * Minimal Reviews page as returned by a query on the reviews database — only
+ * the properties the READ side maps (`reviews.schema.ts`). Defaults are the
+ * publishable combination, so a test names only the field it wants to break.
+ */
+export function reviewPage(opts: {
+  id?: string;
+  rating?: number | null;
+  comment?: string;
+  customerName?: string;
+  status?: string | null;
+  consent?: boolean;
+  createdTime?: string | null;
+}) {
+  const rt = (value?: string) => ({
+    type: "rich_text",
+    rich_text: value ? [{ plain_text: value }] : [],
+  });
+  return {
+    id: opts.id ?? "review-page",
+    // `createdTime: null` models a page Notion returned without the timestamp.
+    ...(opts.createdTime === null
+      ? {}
+      : { created_time: opts.createdTime ?? "2026-08-01T12:00:00.000Z" }),
+    properties: {
+      Rating: {
+        type: "number",
+        number: opts.rating === undefined ? 5 : opts.rating,
+      },
+      Review: rt(opts.comment ?? "Beautiful work."),
+      "Customer Name": rt(opts.customerName),
+      Status: {
+        type: "select",
+        select:
+          opts.status === null ? null : { name: opts.status ?? "Published" },
+      },
+      "Consent to Publish": {
+        type: "checkbox",
+        checkbox: opts.consent ?? true,
+      },
+    },
+  };
+}

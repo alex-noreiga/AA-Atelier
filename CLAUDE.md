@@ -168,6 +168,12 @@ Express app (artifacts/api-server)  ──►  Notion REST API (orders database)
   │                                  `COLOR_PALETTE` Studio Settings value, falling
   │                                  back to a built-in primary palette, so it's
   │                                  always non-empty. No dedicated Notion database
+  ├─ GET  /api/reviews             → the curated testimonials the marketing pages
+  │                                  show, from the Notion "Reviews" database.
+  │                                  Anonymous + read-only: only rows the atelier
+  │                                  published AND the customer consented to,
+  │                                  and never the email / order number. Unset
+  │                                  database ⇒ an empty list, not an error
   ├─ GET  /api/shop-orders/:orderNumber
   │                                → a ready-to-wear shop order's current
   │                                  fulfillment Status + the live status list
@@ -1148,7 +1154,7 @@ database: add the per-stage due dates **`First Deposit Due`** / **`Second Deposi
 Reminded`** / **`Second Deposit Reminded`** / **`Balance Reminded`** (the app writes them; leave
 unchecked). Until those exist the pass is a no-op.
 
-## Post-delivery review capture
+## Post-delivery reviews (capture, then publish)
 
 Once a custom order reaches its **final (delivered) stage**, the tracking page
 invites the customer to leave a review — a star rating, a short testimonial, an
@@ -1160,6 +1166,8 @@ in the OpenAPI spec + generated client, unlike the raw upload/cron routes). Code
 `lib/notion/reviews.{blocks,repository}.ts`, and on the frontend
 `components/review-dialog.tsx` (rendered by `components/custom-order-result.tsx`
 only for delivered orders). Load-bearing decisions:
+The **read** half — the testimonials the site shows — is `GET /api/reviews`, at the
+bottom of this section.
 
 1. **"Delivered" is positional, not a flag — don't hardcode a stage.** There is
    no "delivered" field on an order; the review gate (`orderDelivered` in
@@ -1204,7 +1212,51 @@ only for delivered orders). Load-bearing decisions:
 
 The atelier must, one time: create the "Reviews" database with the properties
 above, share the Notion integration with it, set `NOTION_REVIEWS_DATABASE_ID`,
-and (optionally) add a `Client` relation to Client CRM.
+and (optionally) add a `Client` relation to Client CRM. To feature a review, set its `Status` to
+**"Published"** — the site picks it up within a minute (60s cache), or a few
+minutes behind the edge cache.
+
+### Showing the curated reviews (GET /reviews)
+
+`GET /api/reviews` (contract-first) serves the testimonials rendered on the **home** and
+**about** pages by `components/testimonials.tsx`. Code:
+`getPublishedReviews` in `services/review.service.ts`, `routes/reviews.ts`,
+`lib/notion/reviews.schema.ts` (the read-side mapping) + `listPublishedReviews` in
+`lib/notion/reviews.repository.ts`.
+
+1. **Two gates decide what is public, and both must pass.** A row is served only when
+   its `Status` **select** is `REVIEW_STATUS_PUBLISHED` (`"Published"`, in
+   `reviews.schema.ts`) **and** its `Consent to Publish` checkbox is ticked. Curation
+   alone is not enough — the consent is the customer's, and the atelier moving a row
+   along its triage flow can't stand in for it. Both gates are pushed into the Notion
+   **filter** _and_ re-checked in the pure extractor, so neither layer alone can leak a
+   review. Everything fails **closed**: an unset select or an absent property reads as
+   "not public". `"Published"` is a **targeted business rule** naming one live Notion
+   option value (like `STATUS_IN_STOCK` / `SIZE_GUIDE_TYPE_SOAKER`) — rename that option
+   in Notion and it must change here too, or every testimonial silently vanishes.
+   `Email Verified` is deliberately **not** a third gate: the atelier setting
+   `Status = Published` _is_ the vetting step it was added for, so gating on it as well
+   would hide a review the atelier had knowingly published.
+
+2. **The response is a narrow projection.** `PublishedReview` carries only `id`,
+   `rating`, `comment`, an optional `customerName`, and an optional `publishedAt` (the
+   page's Notion `created_time`). The author's **email, order number, and
+   `Email Verified` flag never leave the server** — they aren't in the contract and
+   aren't mapped. A blank credit name is omitted rather than defaulted, and the frontend
+   then renders the quote unattributed instead of inventing a byline.
+
+3. **Degrade-safe in both directions, unlike the write.** `createReview` throws when
+   `NOTION_REVIEWS_DATABASE_ID` is unset; `listPublishedReviews` returns `[]` instead —
+   a marketing page must not 500 over a missing database id. The read is cached 60s with
+   the usual **fall back to the cached list on error** (same as inventory/categories),
+   and the route sets an edge `Cache-Control` (`s-maxage=300`) like `/products`, set only
+   after the read resolves so an error is never cached. On the frontend the strip renders
+   **nothing at all** while loading, on error, or with nothing published — no empty state
+   and no skeleton, so the section is simply absent rather than advertising a hole.
+
+4. **Review photos are not served here.** They live as image **blocks** on each review's
+   Notion page, so reading them would mean a per-review blocks fetch. The testimonial
+   strip is text + rating only; the photographs are the portfolio gallery's job.
 
 ## Rush order surcharge
 
@@ -2700,6 +2752,8 @@ keys on exact property names). Recorded here only because two facts are
 | Add/read an atelier-editable live setting                | `api-server/src/lib/settings/store.ts` (`SETTING_KEYS` + `settingValue`) + `lib/notion/settings.{schema,repository}.ts` (Notion read); consume with `settingValue(KEY) ?? process.env[KEY] ?? default` (see `services/rush.ts`); primed by the middleware in `app.ts`. Notion "Studio Settings" DB, `NOTION_SETTINGS_DATABASE_ID`                                                                                                                                                                                                                                                                                                                                                             |
 | Change the measurement-change request                    | `artifacts/web-app/src/components/measurement-change-dialog.tsx` (opened from `components/custom-order-result.tsx`); `api-server/src/services/measurement-change.service.ts` + `routes/orders.ts` + `lib/notion/measurement-change.{blocks,repository}.ts` (writes to the **contact** database)                                                                                                                                                                                                                                                                                                                                                                                               |
 | Change post-delivery review capture                      | `artifacts/web-app/src/components/review-dialog.tsx` (opened from `components/custom-order-result.tsx` for delivered orders); `api-server/src/services/review.service.ts` + `services/delivery.ts` + `routes/orders.ts` + `lib/notion/reviews.{blocks,repository}.ts` (writes to the **Reviews** database)                                                                                                                                                                                                                                                                                                                                                                                    |
+| Change the published testimonials                        | `artifacts/web-app/src/components/testimonials.tsx` (rendered by `pages/home.tsx` + `pages/about.tsx`); `getPublishedReviews` in `api-server/src/services/review.service.ts` + `routes/reviews.ts` + `lib/notion/reviews.schema.ts` |
+| Curate which reviews show on the site                     | The **Reviews** Notion database's saved views (Curate / Live on the site / Awaiting curation / Published but not showing) — no code; see `.agents/memory/reviews-curation-views.md` |
 | Change order cancellation & refunds                      | `artifacts/web-app/src/components/cancellation-request-dialog.tsx` (rendered by `components/custom-order-result.tsx` + `shop-order-result.tsx`); customer request in `api-server/src/services/cancellation.service.ts` + `routes/orders.ts` + `routes/shop-orders.ts` + `lib/notion/cancellation.{blocks,repository}.ts` (writes to the **contact** database); atelier refund in `services/order-cancellation.service.ts` + the `cancellation-refund` studio tool (`services/studio-tools.service.ts`) + the `Cancelled`/`setOrderCancelled`/`setShopOrderCancelled` writers                                                                                                                  |
 | Change the landing page                                  | `artifacts/web-app/src/pages/home.tsx`                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                        |
 | Change the shop (live Notion inventory)                  | `artifacts/web-app/src/pages/shop.tsx` + `services/products.service.ts` + `lib/notion/products.*`                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                             |

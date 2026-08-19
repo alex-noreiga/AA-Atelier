@@ -319,6 +319,33 @@ export const GetColorsResponse = zod.object({
 
 
 /**
+ * Returns the reviews the atelier has curated for public display: only rows whose Status is the published option AND whose author consented to publication. Read-only and anonymous — no email or order number is ever returned. When the reviews database is not configured the list is empty rather than an error, so a site that never collected a review simply shows no testimonials.
+ * @summary List published customer testimonials
+ */
+export const getPublishedReviewsQueryLimitMax = 50;
+
+
+
+export const GetPublishedReviewsQueryParams = zod.object({
+  "limit": zod.coerce.number().int().min(1).max(getPublishedReviewsQueryLimitMax).optional().describe('Maximum number of testimonials to return, newest first. Defaults to 12 when omitted.')
+})
+
+export const getPublishedReviewsResponseReviewsItemRatingMax = 5;
+
+
+
+export const GetPublishedReviewsResponse = zod.object({
+  "reviews": zod.array(zod.object({
+  "id": zod.string().describe('The review\'s Notion page id, used only as a render key.'),
+  "rating": zod.number().int().min(1).max(getPublishedReviewsResponseReviewsItemRatingMax).describe('The star rating, 1 (poor) to 5 (excellent).'),
+  "comment": zod.string().describe('The customer\'s testimonial.'),
+  "customerName": zod.string().optional().describe('How the customer asked to be credited. Omitted when they left the credit blank, in which case the testimonial is shown unattributed.'),
+  "publishedAt": zod.coerce.date().optional().describe('When the review was submitted (its Notion created time), used to order the list and to date the testimonial.')
+}).describe('One curated testimonial, as shown on the site. Deliberately narrow: the author\'s email, order number, and verification flag stay in Notion and are never served here.'))
+})
+
+
+/**
  * Validates the requested in-stock shop items against live Notion inventory, prices them server-side (the client never sends prices), and creates a Stripe Checkout session. Returns the hosted-checkout URL for the browser to redirect to.
  * @summary Create a Stripe Checkout session for shop items
  */
