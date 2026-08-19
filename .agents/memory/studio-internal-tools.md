@@ -74,19 +74,53 @@ Load-bearing decisions:
    the generated schema, not a route that quietly doesn't exist) and `amount` is
    schema-validated as non-negative before any service sees it.
 
-## Notion clean-up the code can't do (after deploy)
+## OUTSTANDING — atelier steps the code can't do
 
-- Delete the four formula-property link fields: `Send Status Update` (Order
-  Tracking Pipeline), the invoice-generator link (invoices & payments), and the
-  cancellation / return refund links (Order Tracking Pipeline, Shop Orders).
-- Delete any "Open link" button pointing at `…/generate-milestones/run`.
-- **Rotate `CRON_SECRET`** and update the one Notion automation header. This is
-  the point of the exercise — the secret has been sitting in formulas and browser
-  history, and nothing but Vercel Cron and that automation sends it now.
+Merged to `development` in PR #182 (2026-08-19). These are **not done** and
+nothing in the app will do them. Until step 1, the atelier's old Notion buttons
+are dead links (a 404, not a silent failure) — the work is run from `/studio`
+instead.
 
-Order matters: deploy first, then delete the fields. Deleting a formula property
-before deploy just leaves the atelier without a button; deploying first means the
-links 404 rather than working with a secret you're about to rotate.
+Do them in this order. Deleting a formula property before the deploy just leaves
+the atelier without a button; deploying first means the old links 404 rather than
+still working with a secret you are about to rotate.
+
+- [ ] **1. Deploy `development` to production.**
+- [ ] **2. Delete the four formula-property link fields in Notion:**
+  - `Send Status Update` — Order Tracking Pipeline
+  - the invoice-generator link — invoices & payments
+  - the cancellation refund link — Order Tracking Pipeline
+  - the return refund link — Shop Orders
+- [ ] **3. Delete any "Open link" button** pointing at `…/generate-milestones/run`.
+- [ ] **4. Rotate `CRON_SECRET`** (`openssl rand -hex 32` → Vercel → the project's
+      Environment Variables → redeploy) **and update the Notion stage-change
+      automation's `Authorization: Bearer <CRON_SECRET>` header to match.** This is
+      the point of the whole exercise: the old value sat in four Notion formulas
+      and in the browser history of everyone who ever pressed one. Nothing but
+      Vercel Cron and that one automation sends it now, so rotating costs one env
+      var and one automation header.
+
+**Rotation gotcha:** the Notion stage-change automation is the one caller that may
+still be configured with `?secret=` in its URL rather than the `Authorization`
+header (the app still accepts both — see point 2 above). If it is, rotating breaks
+it **silently**, and the symptom is customers quietly no longer receiving order
+status-change emails. Move that automation to the header as part of rotating.
+
+## NOT YET VERIFIED AGAINST LIVE NOTION / STRIPE
+
+The test suites mock Notion and Stripe entirely, and the underlying services were
+carried over unchanged — so what shipped is verified as _wiring_, not as a live
+run. The first real use of each tool is its first live exercise.
+
+**Run the two money tools against a known test order first.** `cancellation-refund`
+and `return-refund` call Stripe for real; a wrong order number refunds a real
+customer. Both are idempotent and safe to re-run, which is the mitigation, but a
+refund that has already gone out cannot be un-sent.
+
+The three non-money tools are lower stakes but still worth one deliberate run each:
+`milestones` (writes Production Schedule rows and can send reminder emails),
+`invoice-lines` (writes invoice line items), `status-email` (emails a customer —
+run it against an order whose email is the studio's own).
 
 ## No new env var
 
