@@ -10,20 +10,26 @@ Live ids (this workspace):
   data source `collection://4e8a7e79-e556-4f78-b511-3fa246712294`
   (lives under **{ A.A. Atelier } → orders**)
 
-## There are TWO "Reviews" databases — only one is wired up
+## A second "Reviews" database used to exist — deleted 2026-08-19
 
-A stale **`⭐ Reviews`** database sits under **{ A.A. Atelier } → website**
-(`83e71f14-f33f-489a-a4b7-f5c921d35a6b`,
-data source `collection://6a859f4a-5960-4da9-a2ee-59d9ba46415a`). It is an
-**abandoned earlier design** with a different schema — a `Published` **checkbox**
-(not a Status select), `Verified`, and a `Name` title — and **nothing in the app
-reads or writes it**. `NOTION_REVIEWS_DATABASE_ID` points at the `orders → Reviews`
-one above.
+There were **two**. A stale **`⭐ Reviews`** database sat inline under
+**{ A.A. Atelier } → website** (`83e71f14-f33f-489a-a4b7-f5c921d35a6b`,
+data source `collection://6a859f4a-5960-4da9-a2ee-59d9ba46415a`) — an abandoned
+earlier design with a different schema (a `Published` **checkbox** rather than a
+`Status` select, plus `Verified` and a `Name` title) that **nothing in the app ever
+read or wrote**. Curating there (ticking `Published`) did nothing to the website,
+and nothing surfaced that it was inert.
 
-This is a live trap: curating in `⭐ Reviews` (ticking its `Published` box) does
-**nothing** to the website. It was left in place rather than deleted — deleting a
-database is the atelier's call — but it should be archived or renamed
-"(unused — see orders → Reviews)". Check the id before configuring anything here.
+**It was moved to Notion's trash on 2026-08-19**, at the atelier's request, after
+confirming it held **0 rows** and that its id appeared nowhere in the repo. It is
+recoverable from Notion's trash for ~30 days; after that it is gone. Because it was
+an _inline_ database on the `website` page, that page lost the embedded block.
+
+Why this is recorded rather than dropped: if a `⭐ Reviews` database reappears under
+`website` — restored from trash, or recreated from an old template — it is **not**
+the app's database and curating in it will silently do nothing. The live one is
+`orders → Reviews` above, and `NOTION_REVIEWS_DATABASE_ID` points at it. Check the
+id before configuring anything named "Reviews".
 
 ## What makes a review public (unchanged by this note)
 
@@ -99,4 +105,5 @@ Worst case is a few minutes. That is expected, not a bug.
 
 The Reviews database is **empty** — no customer has left a review yet, so the
 testimonial strip renders nothing on both pages. First review requires a custom
-order at its final (delivered) stage.
+order at its final (delivered) stage. The workspace now has exactly **one**
+database named "Reviews" (plus an unrelated "Monthly Reviews").
