@@ -3,10 +3,10 @@ import { test, expect } from "@playwright/test";
 // The DEEP appointment smoke: unlike `appointments.smoke.ts` (which only proves
 // the static `/api/appointments/options` catalog rendered), this exercises
 // `GET /api/appointments/availability` — the endpoint that actually reads each
-// staff member's Google Calendar free/busy AND the working-hours Google Sheet.
+// staff member's Google Calendar free/busy AND the working-hours database.
 // That's exactly where a Google outage, an expired/mis-scoped service-account
-// key, an unshared Sheet, or a lapsed domain-wide delegation surfaces, and none
-// of the other specs touch it.
+// key, an unshared Notion database, or a lapsed domain-wide delegation surfaces,
+// and none of the other specs touch it.
 //
 // Driven through the API request context (no browser) rather than the fragile
 // four-step booking UI, and strictly READ-ONLY: it lists open times but never

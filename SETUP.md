@@ -1,9 +1,10 @@
-# Setup guide — appointment scheduling (Google Calendar + Sheet)
+# Setup guide — appointment scheduling (Google Calendar + working hours)
 
-This walks through everything needed to turn on **appointment booking**. It runs
-on Google: each staff member's Google Calendar free/busy is the conflict source,
-bookings are written as calendar events (with a Google Meet link for virtual),
-and the bookable **working hours** live in a Google Sheet the atelier edits live.
+This walks through everything needed to turn on **appointment booking**. Conflicts
+come from Google: each staff member's Google Calendar free/busy is subtracted
+from their working hours, and bookings are written as calendar events (with a
+Google Meet link for virtual). The bookable **working hours** themselves live in a
+Notion database you edit from the **studio dashboard**, no redeploy needed.
 
 You do this once. Plan ~20 minutes. You'll need:
 
@@ -20,16 +21,15 @@ You do this once. Plan ~20 minutes. You'll need:
 
 1. Go to **[console.cloud.google.com](https://console.cloud.google.com)** and
    select (or create) a project.
-2. **Enable two APIs** — search each in the top bar and click **Enable**:
+2. **Enable the API** — search it in the top bar and click **Enable**:
    - **Google Calendar API**
-   - **Google Sheets API**
 3. **Create a service account:** _APIs & Services → Credentials → Create
    credentials → Service account_. Name it (e.g. `atelier-scheduler`) and click
    **Done**. It needs no roles.
 4. Open the service account and note two things:
    - its **email** — looks like
-     `atelier-scheduler@your-project.iam.gserviceaccount.com` (you'll share the
-     Sheet with this, and it's also the `client_email` in the key file);
+     `atelier-scheduler@your-project.iam.gserviceaccount.com` (the `client_email`
+     in the key file);
    - its **Unique ID** (a long number) — the "Client ID" for Part B.
 5. **Create a JSON key:** on the service account, open the **Keys** tab →
    _Add key → Create new key → JSON_. A `.json` file downloads. **Its entire
@@ -61,63 +61,68 @@ this at **[admin.google.com](https://admin.google.com)** as a Workspace admin.
    ```
 5. **Authorize.**
 
-> This delegation is **only** for Calendar. The Sheet (Part C) does not use it —
-> it's shared directly instead.
+> This delegation is **only** for Calendar. The working hours (Part C) live in
+> Notion and don't involve Google at all.
 
 ---
 
-## Part C — Create the working-hours Google Sheet
+## Part C — Create the working-hours database
 
-This is the "when are we open" schedule. The atelier edits it any time; the site
-picks up changes within about a minute, with no redeploy.
+This is the "when are we open" schedule. You edit it on the studio dashboard any
+time; the site picks up changes within about a minute, with no redeploy.
 
-### 1. Create the sheet
+### 1. Create the Notion database
 
-Make a new Google Sheet. In the **first tab**, put these headers in **row 1**,
-then one row per working block starting at **row 2**:
+In Notion, create a database called **Staff Availability** with these six
+properties (the names and types must match — the app reads them by name):
 
-| A: Staff  | B: Email                    | C: Day  | D: Start | E: End | F: Locations       |
-| --------- | --------------------------- | ------- | -------- | ------ | ------------------ |
-| Alexandra | alexandra@a3iceanddance.com | Mon-Fri | 10:00    | 17:00  | in-person, virtual |
-| Alayna    | alayna@a3iceanddance.com    | Sat     | 11:00    | 16:00  | virtual            |
+| Property           | Type         | What it holds                             |
+| ------------------ | ------------ | ----------------------------------------- |
+| **Staff**          | Title        | The person's name (`Alexandra`, `Alayna`) |
+| **Calendar Email** | Email        | That person's Workspace calendar          |
+| **Weekdays**       | Multi-select | `Monday` … `Sunday`                       |
+| **Start**          | Text         | 24-hour `HH:MM`, e.g. `10:00`             |
+| **End**            | Text         | 24-hour `HH:MM`, e.g. `17:00`             |
+| **Locations**      | Multi-select | `In person` and/or `Virtual`              |
 
-- **Staff** — must match the names in the app's catalog (currently `Alexandra`
-  and `Alayna`).
-- **Email** — that person's Google Workspace calendar (the one read/written).
-- **Day** — a single day, a comma list (`Mon,Wed`), or a range (`Mon-Fri`);
-  `Mon` or `Monday` both work.
-- **Start / End** — 24-hour `HH:MM`, in your booking timezone.
-- **Locations** — comma-separated: `in-person`, `virtual` (a `virtual`-only block
-  won't offer in-person slots).
+Leave it empty — you'll fill it in from the dashboard in step 3, which is what
+checks the values are ones the booking flow can actually use.
 
-Add as many rows as you need (split shifts, different hours per day, etc.).
+> **Why text for the times?** Notion has no time-of-day property. `10:00` reads
+> as a time in Notion and parses the same way every other clock value in the app
+> does.
 
-### 2. Share the sheet with the service account
+### 2. Share it with the integration + copy the id
 
-The service account reads the sheet as _itself_, so you grant it access by simply
-sharing the sheet with its email:
-
-1. Open the sheet and click the green **Share** button (top-right).
-2. In **Add people and groups**, paste the service account's email — the
-   `atelier-scheduler@your-project.iam.gserviceaccount.com` address from Part A.
-   (It's also the `client_email` in your JSON key file.)
-3. Set its role to **Viewer** (read-only is all it needs).
-4. **Uncheck "Notify people"** — a service account has no inbox, so there's
-   nobody to email.
-5. Click **Share** (or **Done**).
-
-That's it — no domain-wide delegation for the Sheet; the direct share is enough.
-
-### 3. Copy the sheet ID
-
-The ID is the long token in the sheet's URL, between `/d/` and `/edit`:
+1. Open the database → **⋯ → Connections → Connect to** → your existing atelier
+   integration (the same one every other database uses). Without this, queries 404.
+2. Copy the database id: it's the 32-character token in the URL between the
+   workspace name and the `?`:
 
 ```
-https://docs.google.com/spreadsheets/d/1AbC…long…XyZ/edit#gid=0
-                                        └──────── this ────────┘
+https://www.notion.so/your-workspace/1AbC…32 chars…XyZ?v=…
+                                     └──────── this ────────┘
 ```
 
-You'll paste it into `APPOINTMENT_SHEET_ID` next.
+You'll paste it into `NOTION_STAFF_AVAILABILITY_DATABASE_ID` next.
+
+### 3. Enter the hours on the dashboard
+
+Once the env var is set (Part D) and the site has redeployed, sign in and open
+**/studio → Working hours**, then **Add hours** for each block someone works:
+
+| Who       | Booking calendar            | Days    | From  | To    | Bookable for       |
+| --------- | --------------------------- | ------- | ----- | ----- | ------------------ |
+| Alexandra | alexandra@a3iceanddance.com | Mon–Fri | 10:00 | 17:00 | In person, Virtual |
+| Alayna    | alayna@a3iceanddance.com    | Sat     | 11:00 | 16:00 | Virtual            |
+
+Add as many blocks as you need — split shifts, different hours per day, a
+Saturday that's virtual-only. Two things the editor won't let you save, because
+they'd produce hours nothing could be booked into: a person the studio doesn't
+book, and an end time before the start time.
+
+**A day off is not an edit here.** Block it on the staff member's Google Calendar
+and it's subtracted automatically — this database is the standing week.
 
 ---
 
@@ -131,17 +136,16 @@ You'll paste it into `APPOINTMENT_SHEET_ID` next.
 
    **Required**
 
-   | Key                          | Value                                                                                                                                 |
-   | ---------------------------- | ------------------------------------------------------------------------------------------------------------------------------------- |
-   | `GOOGLE_SERVICE_ACCOUNT_KEY` | The **entire contents** of the JSON key file from Part A. Paste it verbatim — the escaped `\n` newlines inside are handled correctly. |
-   | `APPOINTMENT_SHEET_ID`       | The sheet ID you copied in Part C, step 3 (just the token, e.g. `1AbC…XyZ` — not the full URL).                                       |
+   | Key                                     | Value                                                                                                                                 |
+   | --------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------- |
+   | `GOOGLE_SERVICE_ACCOUNT_KEY`            | The **entire contents** of the JSON key file from Part A. Paste it verbatim — the escaped `\n` newlines inside are handled correctly. |
+   | `NOTION_STAFF_AVAILABILITY_DATABASE_ID` | The database id you copied in Part C, step 2 (just the token, not the full URL).                                                      |
 
    **Optional (sensible defaults if unset)**
 
    | Key                                | Default                             | Notes                                                                                                 |
    | ---------------------------------- | ----------------------------------- | ----------------------------------------------------------------------------------------------------- |
    | `APPOINTMENT_TIMEZONE`             | `America/Chicago`                   | Set your actual IANA zone (e.g. `America/Toronto`). Working hours + slot times are read in this zone. |
-   | `APPOINTMENT_SHEET_RANGE`          | `A2:F`                              | Only if your data isn't on the first tab / standard columns, e.g. `Schedule!A2:F`.                    |
    | `APPOINTMENT_MIN_LEAD_HOURS`       | `24`                                | How far ahead a slot must be to be bookable.                                                          |
    | `APPOINTMENT_MAX_ADVANCE_DAYS`     | `45`                                | How far into the future booking is allowed.                                                           |
    | `APPOINTMENT_SLOT_STEP_MINUTES`    | `15`                                | The grid slots snap to within working hours.                                                          |
@@ -154,7 +158,8 @@ You'll paste it into `APPOINTMENT_SHEET_ID` next.
    - push any commit to the branch Vercel deploys.
 
 > For **local development**, put `GOOGLE_SERVICE_ACCOUNT_KEY` and
-> `APPOINTMENT_SHEET_ID` in your repo-root `.env` (see `.env.example`).
+> `NOTION_STAFF_AVAILABILITY_DATABASE_ID` in your repo-root `.env` (see
+> `.env.example`).
 
 ---
 
@@ -168,15 +173,18 @@ You'll paste it into `APPOINTMENT_SHEET_ID` next.
 3. **Prove booking works:** book a slot, then check that the event lands on the
    staff calendar, the customer receives a Google Calendar invite, and a virtual
    booking includes a Google Meet link.
-4. **Prove the sheet is live:** change a time in the Google Sheet and confirm the
-   offered slots shift within about a minute — no redeploy needed.
+4. **Prove the hours are live:** change a time under **/studio → Working hours**
+   and confirm the offered slots shift within about a minute — no redeploy
+   needed.
 
 ### If no slots show up
 
 - The domain-wide-delegation scope must be **exactly**
   `https://www.googleapis.com/auth/calendar` (a typo or a narrower scope silently
   blocks it).
-- The **Staff** names in the Sheet must match the app's catalog names exactly
-  (`Alexandra`, `Alayna`).
-- Confirm the sheet is **shared with the service-account email**, and that both
-  the **Calendar API and Sheets API** are enabled on the project.
+- There must be **working hours on record** — an empty schedule offers no times.
+  Check **/studio → Working hours**; the dashboard says so plainly when it's
+  empty.
+- Confirm the **Staff Availability** database is **connected to the Notion
+  integration** (an unshared database 404s), and that the **Calendar API** is
+  enabled on the project.
