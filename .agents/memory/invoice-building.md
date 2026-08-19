@@ -52,7 +52,7 @@ finance system under the "finances" page:
   status property is **gone** — superseded by the `Payment Status` formula, see
   the 2026-07-19 note below.)
 - **`Invoice Line Items`**: `Line Item` (title), `Line Type` (select: **Garment /
-  Material / Labor / Adjustment**), `Quantity`, `Manual Unit Price`,
+  Material / Labor / Adjustment / Surcharge**), `Quantity`, `Manual Unit Price`,
   `Unit Price` (formula), `Line Total` (formula), relations to Order / Invoice /
   Costing Item / Material Usage Line. ("Deposit" was retired as a line type —
   deposits live on the invoice head.)
@@ -154,7 +154,9 @@ one **Material** line per non-packaging material usage line (at its `Line Materi
 Cost`), one **Labor** line (summed costing `Labor Cost`), and one reconciling
 **Adjustment** line "Design & finishing" = Σ(`Suggested Price`) − (materials +
 labor). The adjustment folds the margin in so the itemized total lands exactly on
-the costing's `Suggested Price`, regardless of what that formula includes.
+the costing's `Suggested Price`, regardless of what that formula includes. A rush
+order gets one further **Surcharge** line at `RUSH_SURCHARGE_RATE` of that subtotal
+(`services/rush.ts`; see the "Rush order surcharge" section in `CLAUDE.md`).
 
 Load-bearing:
 

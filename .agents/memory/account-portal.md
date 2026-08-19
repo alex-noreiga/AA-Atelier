@@ -13,12 +13,12 @@ the customer-facing half of the Phase-3 "Supabase: accounts + a real database"
 card. Notion + Google Calendar stay the system of record, still matched by
 **email**. This is an authentication-vendor swap, not new order/invoice logic.
 
-The **"real database" half shipped narrowly**: a small optional Postgres
-integrity layer (same Supabase project) now backs **Stripe payment idempotency**
-(`processed_payments`) — see `postgres-integrity-layer.md`. The broader
-**data migration is still deferred**: the `clients` / `order_index` tables are
-provisioned in the migration but not yet wired, so the account overview still
-reads orders live from Notion by email (`findOrdersByEmail`).
+The **"real database" half** is a small optional Postgres integrity layer (same
+Supabase project) backing **Stripe payment idempotency** (`processed_payments`)
+and the **email-keyed order discovery index** (`clients` / `order_index`) — see
+`postgres-integrity-layer.md`. Notion stays the record: the overview reads orders
+from Notion by email and merely **unions in** whatever the index finds that the
+exact-email match missed.
 
 - **Sign-in methods:** email+password (Supabase-managed hashing + email
   verification + forgot-password), Google OAuth, and passwordless magic link —
@@ -26,12 +26,6 @@ reads orders live from Notion by email (`findOrdersByEmail`).
   (`signInWithPassword` / `signUp` / `signInWithOtp` / `signInWithOAuth` /
   `resetPasswordForEmail` / `updateUser`); there is **no** server login/verify/
   logout route anymore.
-- **Web session transport = Bearer, not cookie.** supabase-js holds the session
-  in the browser (localStorage, auto-refreshed) and the generated API client
-  sends the access token via the **existing `setAuthTokenGetter` seam** in
-  `custom-fetch.ts` (was reserved for mobile). Tradeoff: the token is now
-  JS-readable (XSS-exposed) vs the old httpOnly cookie — accepted for the
-  standard Bearer model.
 - **Server verifies the JWT locally.** `middlewares/auth.ts` `requireCustomer`
   reads the Bearer token and verifies it with `getSupabaseClient().auth
 .getClaims(token)` (cached JWKS, no per-request round-trip; supports the ES256
@@ -53,7 +47,9 @@ reads orders live from Notion by email (`findOrdersByEmail`).
   (tabbed sign-in/create + Google + magic-link + forgot), `pages/account-callback.tsx`
   (OAuth/magic-link redirect target), `pages/account-reset.tsx` (password reset).
 - **New env:** `SUPABASE_URL` + `SUPABASE_ANON_KEY` (backend) and
-  `VITE_SUPABASE_URL` + `VITE_SUPABASE_ANON_KEY` (frontend). Unset ⇒ portal
+  `VITE_PUBLIC_SUPABASE_URL` + `VITE_PUBLIC_SUPABASE_ANON_KEY` (frontend — the
+  names the Supabase→Vercel integration sets; `lib/supabase.ts` also accepts a
+  plain `VITE_SUPABASE_*` pair as a local-dev fallback). Unset ⇒ portal
   inert (login shows "unavailable", overview 401s), same degrade pattern as
   before. One-time Supabase setup: create the project, enable Email+password
   (confirm-email) + Magic Link + Google, custom SMTP = Resend, Site URL +
@@ -63,34 +59,36 @@ reads orders live from Notion by email (`findOrdersByEmail`).
 
 - **No user table, no session store.** Identity IS the email (the CRM already
   dedupes on it); Supabase owns the credential store (`auth.users`), the app
-  persists no user record. `requireCustomer` (`middlewares/auth.ts`) verifies the
-  Bearer JWT with `auth.getClaims` and **normalizes the email at the gate**
-  (`normalizeEmail`) so the Notion lookups key on the same canonical form.
+  persists no user record. That is what makes the portal an identity layer rather
+  than a new subsystem.
 - **The web session is a Bearer JWT, not a cookie.** supabase-js holds the session
   in browser localStorage (auto-refreshed) and the generated client attaches the
   access token via the `setAuthTokenGetter` seam in `custom-fetch.ts`. Tradeoff vs
   the deleted httpOnly cookie: the token is JS-readable (XSS-exposed) — accepted for
   the standard Bearer model.
-- **Notion reads: by email.** `findOrdersByEmail` (orders `Email` prop) and
-  `findShopOrdersByEmail` (shop `Customer Email` prop), paginated, returning
-  lightweight summaries; cards link out to the existing `/track` + `/invoice/:n`
-  pages (no per-order milestone/invoice fan-out). **Caveat:** Notion email
-  `equals` is case-exact (hence the gate-side `normalizeEmail`), and orders
-  predating the `Email`/`Customer Email` property are invisible — those are still
-  trackable by number.
+- **Notion reads: by email, index-augmented.** `findOrdersByEmail` (orders `Email`
+  prop) and `findShopOrdersByEmail` (shop `Customer Email` prop) are the
+  never-regress baseline — paginated, returning lightweight summaries; cards link
+  out to the existing `/track` + `/invoice/:n` pages (no per-order milestone/invoice
+  fan-out). Notion email `equals` is case-exact (hence the gate-side
+  `normalizeEmail`), so when Postgres is configured the service unions in any order
+  numbers `findOrderRefsByEmail` turns up that the exact match missed
+  (case-insensitive `citext`, legacy orders joined by client id) and reads those back
+  from Notion by number. Best-effort — a DB failure degrades to Notion-only.
+  **Caveat:** orders predating the `Email`/`Customer Email` property are invisible to
+  the Notion path; they are still trackable by number, and `db:backfill-legacy`
+  recovers the address from the page body.
 
 ### History (the deleted magic-link design)
 
-Before Supabase, auth was **hand-rolled stateless HMAC tokens**: `lib/auth/tokens.ts`
-signed a `magic` (15 min) and `session` (30 day) token with `SESSION_SECRET`, the
-session rode in an httpOnly `aa_session` cookie (`lib/auth/cookies.ts`, `parseCookies`
-returning a `Map` to dodge CodeQL prototype-pollution), and the flow was
-`POST /account/login` → `GET /api/account/verify` (hand-mounted, set-cookie + 302) →
-`POST /account/logout`, all four routes rate-limited. **All of that is gone**:
-`cookies.ts`, `routes/account-verify.ts`, `magicLinkEmail`, the `magic`/`session`
-token purposes, and the login/logout/verify ops were deleted. Only `SESSION_SECRET`
-(now appointment-token-only), `findOrdersByEmail`/`findShopOrdersByEmail`, and the
-`accountRateLimiter` (now on `/account/overview` alone) survive.
+Before Supabase, auth was hand-rolled stateless HMAC tokens — a `magic` (15 min) and
+`session` (30 day) token signed with `SESSION_SECRET`, the session riding in an
+httpOnly `aa_session` cookie, over `POST /account/login` → `GET /api/account/verify`
+→ `POST /account/logout`. **All of it is deleted** (`lib/auth/cookies.ts`,
+`routes/account-verify.ts`, `magicLinkEmail`, the `magic`/`session` token purposes,
+the three ops). Worth knowing only because it explains the leftovers:
+`SESSION_SECRET` survives for the appointment manage-link, and `accountRateLimiter`
+survives on `/account/overview` alone.
 
 ## Scope and follow-ons
 
@@ -125,8 +123,10 @@ now land in the overview:
   `OrderSummary.measurements`, surfaced on `AccountOrderSummary.measurements` and
   rendered read-only under each custom order (`MeasurementsBlock`). Editing still
   goes through the measurement-change request (Approach A). **Caveat:** only orders
-  placed **after** the migration have readable measurements — earlier orders' values
-  remain only in the (unread) body blocks, so they show none.
+  placed **after** the migration have readable measurements out of the box; for
+  earlier ones the values live only in the body blocks, which
+  `db:backfill-legacy` (`src/scripts/backfill-legacy-fields.ts`) parses back into the
+  typed properties.
 
 **Still deferred:** in-place measurement _editing_ (Approach B PATCH), and any
 appointment history beyond the upcoming window.
