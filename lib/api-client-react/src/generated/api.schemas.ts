@@ -771,6 +771,14 @@ export interface AccountOverview {
   referral?: AccountReferral;
 }
 
+/**
+ * The answer to "may this account use the studio dashboard?". Only ever returned to a caller the staff gate has already admitted, so `staff` is always true — the field exists so the response is self-describing rather than an empty body, and so a client reads a value instead of inferring from a status code.
+ */
+export interface StudioAccess {
+  /** Always true. A non-staff caller receives 401/403 instead. */
+  staff: boolean;
+}
+
 export interface StudioStageCount {
   stage: string;
   count: number;

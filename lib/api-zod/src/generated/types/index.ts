@@ -79,6 +79,7 @@ export * from './rescheduleAppointmentRequest';
 export * from './shopOrderStatus';
 export * from './shopOrderStatusTracking';
 export * from './sizeOption';
+export * from './studioAccess';
 export * from './studioAnalytics';
 export * from './studioPaymentTotals';
 export * from './studioPipeline';

@@ -14,6 +14,7 @@ import {
   SheetClose,
 } from "@/components/ui/sheet";
 import { CartButton } from "@/components/cart-drawer";
+import { useStudioAccess } from "@/lib/studio-access";
 
 type NavLink = {
   to: string;
@@ -39,6 +40,20 @@ const NAV_LINKS: readonly NavLink[] = [
   { to: "/contact", label: "Contact" },
 ];
 
+// Appended to the list above only for a signed-in studio account (see
+// `lib/studio-access.ts`). It lives here rather than in `NAV_LINKS` so the
+// public nav stays one flat, unconditional array — and so nothing renders it by
+// accident: every consumer below maps the `links` returned by `useNavLinks()`,
+// which is `NAV_LINKS` verbatim for everyone else.
+const STUDIO_LINK: NavLink = { to: "/studio", label: "Studio" };
+
+/** The nav links for the current visitor — the public set, plus Studio when the
+ * server confirms this session is staff. */
+function useNavLinks(): readonly NavLink[] {
+  const staff = useStudioAccess();
+  return staff ? [...NAV_LINKS, STUDIO_LINK] : NAV_LINKS;
+}
+
 const testId = (label: string) => label.toLowerCase().replace(/\s+/g, "-");
 
 // Exact match only: /track belongs to the Services group, so a prefix
@@ -53,6 +68,7 @@ function isActive(current: string, link: NavLink) {
 export default function Navbar() {
   const [location] = useLocation();
   const [open, setOpen] = useState(false);
+  const links = useNavLinks();
 
   return (
     <header className="fixed top-0 inset-x-0 z-50 bg-background/70 backdrop-blur-md border-b border-border/60">
@@ -69,7 +85,7 @@ export default function Navbar() {
         <div className="flex items-center gap-1 md:gap-5">
           {/* Desktop links */}
           <div className="hidden md:flex items-center gap-6">
-            {NAV_LINKS.map((link) => {
+            {links.map((link) => {
               const active = isActive(location, link);
               const linkClass = `text-xs tracking-[0.15em] uppercase transition-colors relative group ${
                 active
@@ -168,7 +184,7 @@ export default function Navbar() {
                   </SheetClose>
                 </div>
                 <div className="flex flex-col gap-8">
-                  {NAV_LINKS.map((link) =>
+                  {links.map((link) =>
                     link.children ? (
                       <div key={link.to} className="flex flex-col gap-4">
                         <span

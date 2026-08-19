@@ -1,5 +1,6 @@
 import { Router } from "express";
 import {
+  GetStudioAccessResponse,
   GetStudioAnalyticsResponse,
   RunStudioToolBody,
   RunStudioToolParams,
@@ -16,6 +17,19 @@ import {
 } from "../services/studio-tools.service.js";
 
 const router = Router();
+
+// "May I use the studio dashboard?" — the probe behind the staff-only entry
+// point in the navbar, so a way in exists without publishing the URL to every
+// visitor (it was previously reachable only by typing `/studio`).
+//
+// It deliberately runs the SAME `requireStaff` gate as the two routes below
+// rather than re-deriving the answer from the allowlist: one decision, so the
+// link can never be offered to someone the figures would refuse. Reaching this
+// handler IS the answer, which is why the body is a constant — there is nothing
+// to read and nothing to compute, and a non-staff caller never gets here.
+router.get("/studio/access", accountRateLimiter, requireStaff, (_req, res) => {
+  res.json(GetStudioAccessResponse.parse({ staff: true }));
+});
 
 // The internal studio dashboard's figures. `requireStaff` verifies the same
 // Supabase access token the customer portal uses and additionally requires the
