@@ -922,7 +922,7 @@ export interface StudioAnalytics {
  */
 export interface StudioToolRequest {
   /**
-     * The order the tool acts on — `ORD-…` for a custom order, `SHP-…` for a shop order. Required by every tool except `milestones`, which sweeps the whole pipeline.
+     * The order the tool acts on — `ORD-…` for a custom order, `SHP-…` for a shop order. Required by `invoice-lines`, `status-email` and the two refunds; `milestones` sweeps the whole pipeline and `restock-alert` takes an optional `item` instead.
      * @maxLength 64
      */
   orderNumber?: string;
@@ -933,6 +933,11 @@ export interface StudioToolRequest {
      * @minimum 0
      */
   amount?: number;
+  /**
+     * `restock-alert` only, and optional even there. The exact `Item Name` of one inventory row to alert on, as it appears in Notion — the same text a back-in-stock request stores. Omit it to sweep every piece that is currently in stock, which is what the nightly run does.
+     * @maxLength 200
+     */
+  item?: string;
 }
 
 /**
@@ -948,7 +953,7 @@ export const StudioToolRunStatus = {
 } as const;
 
 /**
- * Which internal tool to run. Each names an action the atelier used to trigger by opening a shared-secret link from Notion.
+ * Which internal tool to run. Each names an action the atelier used to trigger by opening a shared-secret link from Notion — or, for `restock-alert`, one that would have needed such a link.
  */
 export type StudioTool = typeof StudioTool[keyof typeof StudioTool];
 
@@ -959,6 +964,7 @@ export const StudioTool = {
   'status-email': 'status-email',
   'cancellation-refund': 'cancellation-refund',
   'return-refund': 'return-refund',
+  'restock-alert': 'restock-alert',
 } as const;
 
 /**

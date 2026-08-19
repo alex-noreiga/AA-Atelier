@@ -11,7 +11,7 @@
  */
 export interface StudioToolRequest {
   /**
-     * The order the tool acts on — `ORD-…` for a custom order, `SHP-…` for a shop order. Required by every tool except `milestones`, which sweeps the whole pipeline.
+     * The order the tool acts on — `ORD-…` for a custom order, `SHP-…` for a shop order. Required by `invoice-lines`, `status-email` and the two refunds; `milestones` sweeps the whole pipeline and `restock-alert` takes an optional `item` instead.
      * @maxLength 64
      */
   orderNumber?: string;
@@ -22,4 +22,9 @@ export interface StudioToolRequest {
      * @minimum 0
      */
   amount?: number;
+  /**
+     * `restock-alert` only, and optional even there. The exact `Item Name` of one inventory row to alert on, as it appears in Notion — the same text a back-in-stock request stores. Omit it to sweep every piece that is currently in stock, which is what the nightly run does.
+     * @maxLength 200
+     */
+  item?: string;
 }

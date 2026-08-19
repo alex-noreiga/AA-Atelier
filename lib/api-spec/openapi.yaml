@@ -1115,13 +1115,13 @@ paths:
       description: >-
         Runs one of the atelier's internal actions — milestone reconciliation,
         invoice line-item generation, an order status-change email, a
-        cancellation refund, or a return refund — from the signed-in studio
-        dashboard. Each was previously triggered by opening a link that carried
-        a shared secret in its query string; the work is unchanged, the
-        authorization is not: this requires the same Supabase access token as
-        the rest of the studio surface, with the caller's email on the staff
-        allowlist. 401 when not signed in, 404 when signed in but not staff,
-        403 when staff but not signed in with Google.
+        cancellation refund, a return refund, or a back-in-stock alert — from
+        the signed-in studio dashboard. Most were previously triggered by
+        opening a link that carried a shared secret in its query string; the
+        work is unchanged, the authorization is not: this requires the same
+        Supabase access token as the rest of the studio surface, with the
+        caller's email on the staff allowlist. 401 when not signed in, 404 when
+        signed in but not staff, 403 when staff but not signed in with Google.
 
         Every tool is idempotent — a repeat run reports `noop` rather than
         doing the work twice — but two of them move money, so the dashboard
@@ -1172,9 +1172,10 @@ paths:
                 $ref: "#/components/schemas/ErrorEnvelope"
         "404":
           description: >-
-            No order matches the supplied order number — or the caller isn't a
-            studio account, which answers identically by design (see the other
-            studio operations).
+            No order matches the supplied order number (or, for
+            `restock-alert`, no shop piece matches the supplied name) — or the
+            caller isn't a studio account, which answers identically by design
+            (see the other studio operations).
           content:
             application/json:
               schema:
@@ -2833,8 +2834,9 @@ components:
           maxLength: 64
           description: >-
             The order the tool acts on — `ORD-…` for a custom order, `SHP-…` for
-            a shop order. Required by every tool except `milestones`, which
-            sweeps the whole pipeline.
+            a shop order. Required by `invoice-lines`, `status-email` and the
+            two refunds; `milestones` sweeps the whole pipeline and
+            `restock-alert` takes an optional `item` instead.
         force:
           type: boolean
           description: >-
@@ -2848,6 +2850,14 @@ components:
             `return-refund` only. The TARGET total to have refunded on the
             order, in dollars — not an increment, so a repeated run can't
             double-refund. Omit to refund in full.
+        item:
+          type: string
+          maxLength: 200
+          description: >-
+            `restock-alert` only, and optional even there. The exact `Item Name`
+            of one inventory row to alert on, as it appears in Notion — the same
+            text a back-in-stock request stores. Omit it to sweep every piece
+            that is currently in stock, which is what the nightly run does.
     StudioToolRun:
       type: object
       description: >-
@@ -2887,10 +2897,12 @@ components:
       type: string
       description: >-
         Which internal tool to run. Each names an action the atelier used to
-        trigger by opening a shared-secret link from Notion.
+        trigger by opening a shared-secret link from Notion — or, for
+        `restock-alert`, one that would have needed such a link.
       enum:
         - milestones
         - invoice-lines
         - status-email
         - cancellation-refund
         - return-refund
+        - restock-alert

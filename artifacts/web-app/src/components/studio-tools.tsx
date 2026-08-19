@@ -36,14 +36,35 @@ import {
   MinusCircle,
 } from "lucide-react";
 
+/** The one free-text thing a tool acts on — an order number for most, an
+ * inventory item name for the restock alert. Absent ⇒ the tool takes nothing. */
+interface ToolField {
+  /** The `StudioToolRequest` field it fills. */
+  key: "orderNumber" | "item";
+  label: string;
+  placeholder: string;
+  /** Suffix for the input's data-testid. */
+  testId: string;
+  /** May be left blank — the tool has a meaningful "all of them" mode. */
+  optional?: boolean;
+}
+
+/** Every order-scoped tool asks the same way, so the descriptor is shared. */
+const orderField = (placeholder: string): ToolField => ({
+  key: "orderNumber",
+  label: "Order number",
+  placeholder,
+  testId: "order",
+});
+
 /** What a tool asks the atelier for before it can run. */
 interface ToolSpec {
   tool: StudioTool;
   name: string;
   /** What pressing it does, in the atelier's terms. */
   description: string;
-  /** Placeholder for the order field; absent ⇒ the tool takes no order. */
-  orderPlaceholder?: string;
+  /** The field to collect before running; absent ⇒ the tool takes none. */
+  field?: ToolField;
   /** Offer the "resend anyway" override (status-email only). */
   offersForce?: boolean;
   /** Offer a partial-refund amount (return refund only). */
@@ -67,7 +88,7 @@ const TOOLS: ToolSpec[] = [
     name: "Itemize an invoice",
     description:
       "Writes the invoice's material, labor, and design & finishing lines from the order's costing. Skips an invoice that already has lines — to rebuild one, delete its lines in Notion first.",
-    orderPlaceholder: "ORD-000002",
+    field: orderField("ORD-000002"),
     action: "Itemize",
   },
   {
@@ -75,7 +96,7 @@ const TOOLS: ToolSpec[] = [
     name: "Send a status update",
     description:
       "Emails the customer their order's current stage with the pipeline graphic. Sends only when the order has moved forward since the last one, unless you resend.",
-    orderPlaceholder: "ORD-000002",
+    field: orderField("ORD-000002"),
     offersForce: true,
     action: "Send",
   },
@@ -84,7 +105,7 @@ const TOOLS: ToolSpec[] = [
     name: "Cancel & refund an order",
     description:
       "Refunds every payment on a custom or shop order and marks it cancelled. Payments already refunded are left alone, so re-running is safe.",
-    orderPlaceholder: "ORD-000002 or SHP-…",
+    field: orderField("ORD-000002 or SHP-…"),
     destructive: true,
     action: "Refund & cancel",
   },
@@ -93,10 +114,24 @@ const TOOLS: ToolSpec[] = [
     name: "Refund a return",
     description:
       "Refunds a shop order for a return or exchange. Leave the amount blank to refund in full; an amount is the total that should end up refunded, not an extra refund on top.",
-    orderPlaceholder: "SHP-…",
+    field: orderField("SHP-…"),
     offersAmount: true,
     destructive: true,
     action: "Refund",
+  },
+  {
+    tool: "restock-alert",
+    name: "Send back-in-stock alerts",
+    description:
+      "Emails everyone waiting on a piece that's come back in stock. This runs itself nightly — press it to go out the same day you restock. Leave the item blank to cover everything currently in stock, or name one piece. It reads live inventory first, and nobody is emailed twice.",
+    field: {
+      key: "item",
+      label: "Item name (optional)",
+      placeholder: "All pieces in stock",
+      testId: "item",
+      optional: true,
+    },
+    action: "Send alerts",
   },
 ];
 
@@ -121,7 +156,7 @@ export function StudioTools() {
 }
 
 function ToolCard({ spec }: { spec: ToolSpec }) {
-  const [orderNumber, setOrderNumber] = useState("");
+  const [subject, setSubject] = useState("");
   const [amount, setAmount] = useState("");
   const [force, setForce] = useState(false);
   const [confirming, setConfirming] = useState(false);
@@ -129,8 +164,9 @@ function ToolCard({ spec }: { spec: ToolSpec }) {
   const [error, setError] = useState<string | null>(null);
 
   const mutation = useRunStudioTool();
-  const needsOrder = Boolean(spec.orderPlaceholder);
-  const missingOrder = needsOrder && orderNumber.trim() === "";
+  const field = spec.field;
+  const missingSubject =
+    Boolean(field) && !field?.optional && subject.trim() === "";
 
   const execute = () => {
     setConfirming(false);
@@ -140,7 +176,9 @@ function ToolCard({ spec }: { spec: ToolSpec }) {
       {
         tool: spec.tool,
         data: {
-          ...(needsOrder ? { orderNumber: orderNumber.trim() } : {}),
+          // A blank optional field is omitted rather than sent empty — for the
+          // restock sweep that's the difference between "this piece" and "all".
+          ...(field && subject.trim() ? { [field.key]: subject.trim() } : {}),
           ...(spec.offersForce && force ? { force: true } : {}),
           // A blank amount means "in full", which the contract expresses by
           // omitting the field — deliberately distinct from 0 (an even exchange).
@@ -157,7 +195,7 @@ function ToolCard({ spec }: { spec: ToolSpec }) {
   };
 
   const start = () => {
-    if (missingOrder) return;
+    if (missingSubject) return;
     if (spec.destructive) {
       setConfirming(true);
       return;
@@ -178,25 +216,25 @@ function ToolCard({ spec }: { spec: ToolSpec }) {
       </p>
 
       <div className="mt-4 flex flex-wrap items-end gap-3">
-        {needsOrder && (
+        {field && (
           <div className="flex-1 min-w-[12rem]">
             <Label
               htmlFor={fieldId}
               className="text-[10px] tracking-[0.15em] uppercase text-muted-foreground"
             >
-              Order number
+              {field.label}
             </Label>
             <Input
               id={fieldId}
-              value={orderNumber}
+              value={subject}
               onChange={(event) => {
-                setOrderNumber(event.target.value);
+                setSubject(event.target.value);
                 setConfirming(false);
               }}
-              placeholder={spec.orderPlaceholder}
+              placeholder={field.placeholder}
               autoComplete="off"
               className="mt-1"
-              data-testid={`tool-${spec.tool}-order`}
+              data-testid={`tool-${spec.tool}-${field.testId}`}
             />
           </div>
         )}
@@ -228,7 +266,7 @@ function ToolCard({ spec }: { spec: ToolSpec }) {
         <Button
           variant={spec.destructive ? "outline" : "default"}
           onClick={start}
-          disabled={missingOrder || mutation.isPending}
+          disabled={missingSubject || mutation.isPending}
           className="gap-2"
           data-testid={`tool-${spec.tool}-run`}
         >
@@ -267,7 +305,7 @@ function ToolCard({ spec }: { spec: ToolSpec }) {
         >
           <p className="text-sm text-foreground">
             This refunds real money on order{" "}
-            <span className="font-medium">{orderNumber.trim()}</span>
+            <span className="font-medium">{subject.trim()}</span>
             {spec.offersAmount && amount.trim() !== ""
               ? `, up to a total of $${amount.trim()}`
               : " in full"}

@@ -76,13 +76,21 @@ async function queryAllPublishedPages(
 /**
  * List all published inventory variants, newest-Notion-order preserved. Cached
  * for {@link PRODUCTS_CACHE_TTL_MS}; falls back to the cached list on error.
+ *
+ * `fresh` skips the cache READ (the result still refreshes it). The back-in-stock
+ * sweep passes it: the whole point of that run is to act on a stock change the
+ * atelier just made, and a cached read could report the piece still sold out for
+ * up to a minute after they restocked it — which on a manual run reads as the
+ * feature being broken.
  */
 export async function listVariants(
   client: NotionClient = getInventoryNotionClient(),
+  options: { fresh?: boolean } = {},
 ): Promise<VariantRecord[]> {
   assertConfigured(client);
 
   if (
+    !options.fresh &&
     cachedVariants &&
     Date.now() - cachedVariants.fetchedAt < PRODUCTS_CACHE_TTL_MS
   ) {

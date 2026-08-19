@@ -180,3 +180,42 @@ describe("listVariants", () => {
     });
   });
 });
+
+// The back-in-stock sweep passes `fresh` because it runs right after the atelier
+// restocks something — a cached read would report the piece still sold out.
+describe("listVariants — fresh reads", () => {
+  it("serves the cache on a second call by default", async () => {
+    const client = makeFakeClient((path) => {
+      if (isQuery(path))
+        return queryResponse([inventoryPage({ id: "inv-1", name: "Soaker" })]);
+      throw new Error(`unexpected path ${path}`);
+    });
+
+    await repo.listVariants(client);
+    await repo.listVariants(client);
+
+    expect(client.calls).toHaveLength(1);
+  });
+
+  it("bypasses the cache when asked, and refreshes it", async () => {
+    let stock = "Sold Out";
+    const client = makeFakeClient((path) => {
+      if (isQuery(path))
+        return queryResponse([
+          inventoryPage({ id: "inv-1", name: "Soaker", status: stock }),
+        ]);
+      throw new Error(`unexpected path ${path}`);
+    });
+
+    await repo.listVariants(client);
+    stock = "In Stock";
+    const fresh = await repo.listVariants(client, { fresh: true });
+
+    expect(client.calls).toHaveLength(2);
+    expect(fresh[0].available).toBe(true);
+    // The fresh read replaced the cache, so the next cached call agrees.
+    const cached = await repo.listVariants(client);
+    expect(client.calls).toHaveLength(2);
+    expect(cached[0].available).toBe(true);
+  });
+});

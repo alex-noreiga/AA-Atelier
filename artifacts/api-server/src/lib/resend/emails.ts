@@ -631,6 +631,78 @@ export function backInStockConfirmationEmail(
   };
 }
 
+// ---------------------------------------------------------------------------
+// Back-in-stock alert
+//
+// The other half of the request above: sent when the atelier puts the piece back
+// in stock. Like the order status-change email, its source isn't a
+// `CreateXInput` — the restock happens inside Notion, so the caller
+// (restock-notification.service) reads the inventory row back and hands this
+// builder an already-formatted struct.
+// ---------------------------------------------------------------------------
+
+/** The details needed to render a back-in-stock alert. */
+export interface BackInStockAlertDetails {
+  email: string;
+  /** The inventory row's name, e.g. "Bow Fleece Soaker — Black". */
+  item: string;
+  /** The size band the customer asked about, when they asked about one. */
+  size?: string;
+  /** Absolute URL of the piece's shop card, when PUBLIC_BASE_URL is configured. */
+  productUrl?: string;
+}
+
+/** Sent to a waiting customer when the piece they asked about is back in stock. */
+export function backInStockAlertEmail(
+  details: BackInStockAlertDetails,
+): EmailMessage {
+  // Mirror the phrasing of the request confirmation, so the two read as a pair.
+  const piece = details.size
+    ? `${details.item} — ${details.size}`
+    : details.item;
+  const { productUrl } = details;
+
+  const ctaHtml = productUrl
+    ? `<p style="margin:28px 0;">
+         <a href="${encodeURI(productUrl)}" style="display:inline-block;background:#2b2622;color:#faf8f5;
+            text-decoration:none;padding:12px 24px;border-radius:2px;font-size:15px;">View it in the shop</a>
+       </p>
+       <p style="font-size:13px;color:#8a7f74;word-break:break-all;">Or paste this link
+          into your browser:<br/>${escapeHtml(productUrl)}</p>`
+    : "";
+
+  const html = layout(
+    "It’s back in stock",
+    `<p>Hi there,</p>
+     <p>Good news — <strong>${escapeHtml(piece)}</strong> is back in stock. You asked
+        us to let you know when it returned, so here we are.</p>
+     ${ctaHtml}
+     <p>Our ready-to-wear pieces are made in small numbers, so it may not stay on the
+        shelf for long.</p>`,
+  );
+
+  const text = [
+    `Hi there,`,
+    ``,
+    `Good news — ${piece} is back in stock. You asked us to let you know when it`,
+    `returned, so here we are.`,
+    ...(productUrl ? [``, `View it in the shop: ${productUrl}`] : []),
+    ``,
+    `Our ready-to-wear pieces are made in small numbers, so it may not stay on the`,
+    `shelf for long.`,
+    ``,
+    `Thank you,`,
+    `The ${ATELIER_NAME} team`,
+  ].join("\n");
+
+  return {
+    to: details.email,
+    subject: `Back in stock: ${piece}`,
+    html,
+    text,
+  };
+}
+
 /**
  * Welcome sent when a customer opts in to the marketing newsletter. Unlike the
  * back-in-stock note there's nothing to "wait" on — it just confirms the opt-in

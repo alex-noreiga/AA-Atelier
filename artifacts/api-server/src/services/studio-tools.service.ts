@@ -10,6 +10,12 @@
 // re-pasted every time a new button is added. See the roadmap's "Staff
 // authentication for internal tools" / "Retire the copy-a-secret buttons".
 //
+// `restock-alert` is the first tool that never had a link to retire: it landed
+// here directly, because adding a sixth `?secret=` Notion formula property would
+// have been adding to the very thing this page replaced. Its scheduled twin is a
+// pass in the nightly reconciliation cron — so between the two, back-in-stock
+// alerts need nothing configured in Notion at all.
+//
 // Three things are deliberate:
 //
 //  1. **This layer owns the wording.** The retired `/run` links each rendered an
@@ -43,6 +49,10 @@ import {
   parseRefundTarget,
   type ReturnRefundResult,
 } from "./return-refund.service.js";
+import {
+  notifyRestock,
+  type RestockNotificationResult,
+} from "./restock-notification.service.js";
 import { BadRequestError, NotFoundError } from "../lib/errors.js";
 import { logger } from "../lib/logger.js";
 
@@ -52,7 +62,8 @@ export type StudioToolName =
   | "invoice-lines"
   | "status-email"
   | "cancellation-refund"
-  | "return-refund";
+  | "return-refund"
+  | "restock-alert";
 
 /** What a run did. See the spec's `StudioToolRun.status` for the contract. */
 export type StudioToolStatus = "ok" | "noop" | "attention";
@@ -64,6 +75,7 @@ export interface StudioToolArgs {
   orderNumber?: string;
   force?: boolean;
   amount?: number;
+  item?: string;
 }
 
 /** One run's outcome, already composed for display. */
@@ -113,6 +125,7 @@ async function runMilestones(): Promise<StudioToolRunResult> {
     milestonesCreated,
     remindersSent,
     paymentRemindersSent,
+    restockAlertsSent,
   } = result;
 
   const details: string[] = [];
@@ -122,9 +135,15 @@ async function runMilestones(): Promise<StudioToolRunResult> {
   if (paymentRemindersSent > 0) {
     details.push(`Sent ${plural(paymentRemindersSent, "payment reminder")}.`);
   }
+  if (restockAlertsSent > 0) {
+    details.push(`Sent ${plural(restockAlertsSent, "back-in-stock alert")}.`);
+  }
 
   const didSomething =
-    milestonesCreated > 0 || remindersSent > 0 || paymentRemindersSent > 0;
+    milestonesCreated > 0 ||
+    remindersSent > 0 ||
+    paymentRemindersSent > 0 ||
+    restockAlertsSent > 0;
 
   return {
     tool: "milestones",
@@ -323,6 +342,76 @@ async function runReturnRefund(
   };
 }
 
+/** Alert everyone waiting on a piece that has come back in stock — the same sweep
+ * the nightly reconciliation runs, for when the atelier would rather not wait for
+ * it. With no item name it covers everything currently in stock. */
+async function runRestockAlert(
+  args: StudioToolArgs,
+): Promise<StudioToolRunResult> {
+  const item = args.item?.trim();
+  const result: RestockNotificationResult = await notifyRestock(
+    item ? { item } : {},
+  );
+
+  // The sweep reports a miss rather than throwing, because the nightly run would
+  // rather log it. From the dashboard a name that matches nothing is a plain 404,
+  // like an unknown order number.
+  if (result.status === "not_found") {
+    throw new NotFoundError(
+      "We couldn't find a shop piece with that name. It must match the Item Name in Notion exactly.",
+    );
+  }
+
+  // Not a failure of this run, but nothing will ever send until it's fixed.
+  if (result.status === "unconfigured") {
+    return {
+      tool: "restock-alert",
+      status: "attention",
+      title: "Alerts aren't configured",
+      message: "No back-in-stock alerts can be sent yet.",
+      details: [
+        result.reason ?? "The database connection isn't configured.",
+        "Set POSTGRES_URL and run the database migrations, then try again.",
+      ],
+    };
+  }
+
+  const notes: string[] = [];
+  if (result.alreadyAlerted > 0) {
+    notes.push(
+      `${plural(result.alreadyAlerted, "request")} had already been answered.`,
+    );
+  }
+  if (result.unmatched > 0) {
+    notes.push(
+      `${plural(result.unmatched, "request")} still waiting — they asked about a size that isn't back yet.`,
+    );
+  }
+
+  if (result.status === "skipped") {
+    return {
+      tool: "restock-alert",
+      status: "noop",
+      title: "Nothing sent",
+      message: item ? `No alerts went out for ${item}.` : "No alerts went out.",
+      details: [result.reason ?? "There was nobody to tell.", ...notes],
+    };
+  }
+
+  return {
+    tool: "restock-alert",
+    status: "ok",
+    title: "Back-in-stock alerts sent",
+    message: `Emailed ${plural(result.notified, "customer")} across ${plural(result.items.length, "piece")}.`,
+    details: [
+      ...result.items.map(
+        (entry) => `${entry.item}: ${plural(entry.notified, "customer")}.`,
+      ),
+      ...notes,
+    ],
+  };
+}
+
 /**
  * Run one internal tool and compose its result.
  *
@@ -336,7 +425,12 @@ export async function runStudioTool(
 ): Promise<StudioToolRunResult> {
   const result = await dispatch(tool, args);
   logger.info(
-    { tool, status: result.status, orderNumber: args.orderNumber },
+    {
+      tool,
+      status: result.status,
+      orderNumber: args.orderNumber,
+      item: args.item,
+    },
     "Studio tool run",
   );
   return result;
@@ -357,5 +451,7 @@ function dispatch(
       return runCancellationRefund(args);
     case "return-refund":
       return runReturnRefund(args);
+    case "restock-alert":
+      return runRestockAlert(args);
   }
 }

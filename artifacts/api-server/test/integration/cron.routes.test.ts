@@ -28,6 +28,7 @@ describe("GET /api/cron/generate-milestones", () => {
       milestonesCreated: 7,
       remindersSent: 1,
       paymentRemindersSent: 0,
+      restockAlertsSent: 0,
     });
 
     const res = await request(app)
@@ -40,6 +41,7 @@ describe("GET /api/cron/generate-milestones", () => {
       milestonesCreated: 7,
       remindersSent: 1,
       paymentRemindersSent: 0,
+      restockAlertsSent: 0,
     });
     expect(mockGenerate).toHaveBeenCalledTimes(1);
   });

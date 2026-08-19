@@ -8,6 +8,7 @@
 // duplicates, mirroring the shop-orders webhook's idempotency.
 
 import { reportError } from "./alert.service.js";
+import { notifyRestock } from "./restock-notification.service.js";
 import {
   fittingReminderLeadDays,
   fittingReminderStages,
@@ -53,6 +54,7 @@ export interface MilestoneGenerationResult {
 export interface MilestoneReconcileResult extends MilestoneGenerationResult {
   remindersSent: number;
   paymentRemindersSent: number;
+  restockAlertsSent: number;
 }
 
 /** Format a Date as an ISO calendar date (`yyyy-mm-dd`), in UTC. */
@@ -336,12 +338,39 @@ export async function sendDuePaymentReminders(
 }
 
 /**
- * The full nightly reconciliation the cron and on-demand button run: generate
+ * Alert everyone waiting on a shop piece that has come back in stock.
+ *
+ * A restock is an edit inside Notion with no trigger to hang off, so — like the
+ * fitting and payment reminders above — it rides this nightly run rather than
+ * asking the atelier to wire a webhook. `notifyRestock` reads live inventory
+ * itself and claims each request in Postgres, so this pass is just the schedule:
+ * it neither decides what is in stock nor tracks who has been told. The atelier's
+ * "now, not tonight" path is the studio dashboard's own tool, which calls the
+ * same function.
+ *
+ * Swallows its own failure (alerting instead) so one bad sweep can't fail the
+ * whole reconciliation — the next run retries, and nothing was marked sent.
+ */
+export async function sendDueRestockAlerts(): Promise<number> {
+  try {
+    const result = await notifyRestock();
+    return result.notified;
+  } catch (err) {
+    await reportError(
+      { err },
+      "Failed to send back-in-stock alerts; will retry next run",
+    );
+    return 0;
+  }
+}
+
+/**
+ * The full nightly reconciliation the cron and the dashboard's tool run: generate
  * milestones for orders that just got a due date, then email customers whose
- * fitting is approaching and whose deposit/balance is coming due. Milestone
- * completion state needs no pass here — it's the live `Milestone Status` Notion
- * formula, derived from the order's stage, so the "Coming Up" calendar reflects
- * real progress on its own.
+ * fitting is approaching, whose deposit/balance is coming due, and who is waiting
+ * on a shop piece that has come back in stock. Milestone completion state needs
+ * no pass here — it's the live `Milestone Status` Notion formula, derived from
+ * the order's stage, so the "Coming Up" calendar reflects real progress on its own.
  */
 export async function reconcileMilestones(
   now: Date = new Date(),
@@ -349,9 +378,11 @@ export async function reconcileMilestones(
   const generation = await generatePendingMilestones(now);
   const remindersSent = await sendDueFittingReminders(now);
   const paymentRemindersSent = await sendDuePaymentReminders(now);
+  const restockAlertsSent = await sendDueRestockAlerts();
   return {
     ...generation,
     remindersSent,
     paymentRemindersSent,
+    restockAlertsSent,
   };
 }
