@@ -1258,6 +1258,52 @@ minutes behind the edge cache.
    Notion page, so reading them would mean a per-review blocks fetch. The testimonial
    strip is text + rating only; the photographs are the portfolio gallery's job.
 
+5. **Curating happens in Notion, in saved views — there is no in-app admin.** The
+   Reviews database carries a **Curate** board (grouped by `Status`) plus three
+   filtered tables — **Live on the site**, **Awaiting curation**, and **Published but
+   not showing** — and an **`On the Website`** formula that renders the two gates
+   per row. See "Curating which reviews show" below and
+   `.agents/memory/reviews-curation-views.md`.
+
+### Curating which reviews show (Notion views)
+
+Selecting a testimonial is a **Notion action, not an app action** — there is no
+studio admin screen for it. The atelier drags a card from **New** to **Published** on
+the **Curate** board (or flips the `Status` select); the site picks it up within a
+minute (60s repository cache), or a few minutes behind the edge cache.
+
+| View                           | What it answers                                  |
+| ------------------------------ | ------------------------------------------------ |
+| **Curate** (board by `Status`) | The selection surface — drag New → Published     |
+| **Live on the site**           | Exactly what `GET /api/reviews` serves right now |
+| **Awaiting curation**          | The inbox: everything still at `Status = New`    |
+| **Published but not showing**  | Published, but the customer never consented      |
+| **All reviews**                | Everything, `On the Website` first               |
+
+Three things about this are load-bearing:
+
+- **"Published but not showing" surfaces an otherwise silent state.** Because the app
+  requires **both** gates, a review the atelier published whose `Consent to Publish`
+  is unticked appears nowhere and raises nothing — no error, no log, no empty state.
+  That view is the only place it is visible. Don't delete it as redundant.
+- **The `On the Website` formula mirrors the code; it is not the source.** It reads
+  `Status` + `Consent to Publish` and renders "✅ Live on the site" / "⛔ No consent —
+  hidden" / "◽ Awaiting curation" / "◽ Not published". The app **never reads it**.
+  Rename the `"Published"` option and you must update `REVIEW_STATUS_PUBLISHED` **and**
+  the formula, or the column starts lying.
+- **The view sort does not affect the site.** Views sort by `Rating` for the atelier's
+  benefit; the site's order is always newest-first, fixed in `listPublishedReviews`.
+  Ordering and count are deliberately not atelier-editable — both would need a new
+  property and a read path, not a view.
+
+`Status` also has an **`Archived`** option that predates the app. It isn't
+`"Published"`, so archiving is how a testimonial is retired from the site.
+
+⚠️ **There are two "Reviews" databases in the workspace.** A stale **`⭐ Reviews`**
+under `website` (a `Published` checkbox, `Verified`, `Name` title) is an abandoned
+earlier design that **nothing in the app reads**. Curating there has no effect on the
+site. The live one is under **orders**. See the memory note before touching either.
+
 ## Rush order surcharge
 
 A custom order whose **needed-by date is sooner than the studio's standard lead
