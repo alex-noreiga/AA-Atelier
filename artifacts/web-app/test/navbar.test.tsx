@@ -1,4 +1,4 @@
-import { describe, it, expect } from "vitest";
+import { describe, it, expect, vi, beforeEach } from "vitest";
 import { render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { Router } from "wouter";
@@ -6,6 +6,19 @@ import { memoryLocation } from "wouter/memory-location";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import Navbar from "@/components/navbar";
 import { CartProvider } from "@/lib/cart";
+
+// Whether the signed-in account is studio staff is the server's answer, fetched
+// through the generated client; the navbar only decides what to do with it. The
+// hook is mocked so each test states the answer outright — the fetch itself is
+// covered in studio-access.test.tsx.
+const h = vi.hoisted(() => ({ staff: false }));
+vi.mock("@/lib/studio-access", () => ({
+  useStudioAccess: () => h.staff,
+}));
+
+beforeEach(() => {
+  h.staff = false;
+});
 
 // Navbar fetches nothing itself, but it renders the cart button, which reads the
 // cart context and instantiates a react-query mutation — so it needs a
@@ -80,6 +93,36 @@ describe("Navbar", () => {
 
     expect(isHighlighted(desktop("shop"))).toBe(true);
     expect(isHighlighted(desktop("services"))).toBe(false);
+  });
+
+  it("hides the studio link from a visitor the server hasn't confirmed", async () => {
+    renderAt("/");
+
+    expect(screen.queryByTestId("nav-studio")).not.toBeInTheDocument();
+
+    await userEvent.click(screen.getByTestId("button-menu"));
+    expect(screen.queryByTestId("nav-mobile-studio")).not.toBeInTheDocument();
+  });
+
+  it("offers the studio link to a confirmed staff account", async () => {
+    h.staff = true;
+    renderAt("/");
+
+    expect(desktop("studio")).toHaveAttribute("href", "/studio");
+
+    await userEvent.click(screen.getByTestId("button-menu"));
+    expect(screen.getByTestId("nav-mobile-studio")).toHaveAttribute(
+      "href",
+      "/studio",
+    );
+  });
+
+  it("marks Studio active on the dashboard itself", () => {
+    h.staff = true;
+    renderAt("/studio");
+
+    expect(isHighlighted(desktop("studio"))).toBe(true);
+    expect(isHighlighted(desktop("account"))).toBe(false);
   });
 
   it("lists the Services children inline in the mobile menu", async () => {

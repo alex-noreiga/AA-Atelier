@@ -957,6 +957,46 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/ErrorEnvelope"
+  /studio/access:
+    get:
+      operationId: getStudioAccess
+      tags: [studio]
+      summary: Whether the caller may use the studio dashboard
+      description: >-
+        A cheap "am I staff?" probe, so the app can offer a way in to `/studio`
+        without every signed-in customer being shown a link that would refuse
+        them. It runs the SAME gate as the figures below — allowlisted email
+        plus (by default) a session established with Google — so a 200 here and
+        a 200 there can't disagree: 401 when the caller isn't signed in, 403
+        when they are but aren't staff. It reads nothing and aggregates nothing;
+        reaching the handler at all IS the answer.
+      security:
+        - bearerAuth: []
+      responses:
+        "200":
+          description: The caller is studio staff
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/StudioAccess"
+        "401":
+          description: Not signed in (missing or expired session)
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorEnvelope"
+        "403":
+          description: Signed in, but not a studio staff account
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorEnvelope"
+        "500":
+          description: Server error
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorEnvelope"
   /studio/analytics:
     get:
       operationId: getStudioAnalytics
@@ -2415,6 +2455,19 @@ components:
             A signed token (the same one the confirmation email's manage link
             carries) authorizing reschedule/cancel of this specific appointment
             via the appointment-manage endpoints.
+    StudioAccess:
+      type: object
+      description: >-
+        The answer to "may this account use the studio dashboard?". Only ever
+        returned to a caller the staff gate has already admitted, so `staff` is
+        always true — the field exists so the response is self-describing rather
+        than an empty body, and so a client reads a value instead of inferring
+        from a status code.
+      required: [staff]
+      properties:
+        staff:
+          type: boolean
+          description: Always true. A non-staff caller receives 401/403 instead.
     StudioAnalytics:
       type: object
       description: >-

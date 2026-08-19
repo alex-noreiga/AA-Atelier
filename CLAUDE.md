@@ -90,6 +90,13 @@ Express app (artifacts/api-server)  ──►  Notion REST API (orders database)
   │                                  a calendar outage). Bearer-JWT gated (401).
   │                                  Sign-in runs on Supabase Auth in the browser —
   │                                  there is NO server login/logout/verify route
+  ├─ GET  /api/studio/access       → "am I studio staff?" — the probe behind the
+  │                                  navbar's staff-only Studio link, so the
+  │                                  dashboard has a way in without the URL being
+  │                                  published. Runs the SAME requireStaff gate as
+  │                                  the figures below (401 / 403 / 200 { staff:
+  │                                  true }) and reads nothing — reaching the
+  │                                  handler IS the answer
   ├─ GET  /api/studio/analytics    → the INTERNAL studio dashboard's figures:
   │                                  custom + shop orders by stage, production
   │                                  load against due dates, revenue by month,
@@ -1863,9 +1870,30 @@ Load-bearing decisions:
 
 8. **No charting dependency.** The panels are plain CSS bars. A charting library
    would be the largest dependency in the app for six panels of numbers, against
-   the repo's pruned-dependencies rule. The page is **not in `NAV_LINKS`** and is
-   `noindex` (so it's out of the sitemap and the prerender pass) — the gate that
-   matters is server-side, but there's no reason to advertise it.
+   the repo's pruned-dependencies rule. The page is `noindex` (so it's out of
+   the sitemap and the prerender pass) — the gate that matters is server-side,
+   but there's no reason to advertise it.
+
+9. **The way in is a staff-only nav link, gated by the server's own answer.**
+   `/studio` was originally reachable _only_ by typing the URL, which is what
+   made it invisible in practice — a staff member on a preview deployment had no
+   way to find it. It is still **not in `NAV_LINKS`** (the public array stays
+   flat and unconditional): `useNavLinks()` in `navbar.tsx` appends a separate
+   `STUDIO_LINK` when — and only when — `useStudioAccess()`
+   (`web-app/src/lib/studio-access.ts`) says so. That hook asks
+   **`GET /api/studio/access`**, which is mounted behind the **same
+   `requireStaff`** as the figures rather than re-deriving the answer
+   client-side — one decision, so the link can never be offered to an account
+   the dashboard would then refuse. The allowlist is deliberately never shipped
+   to the browser, so asking the server is the only honest test. It **fails
+   closed**: signed out it doesn't ask at all (an anonymous probe can only be a
+   401), a 401/403/outage renders no link, and a refusal is **not retried**
+   (`retry: false`) — a 403 is an answer, and the shared `accountRateLimiter`
+   counts these against the account overview's budget. The answer is cached for
+   the session (`staleTime: Infinity`; staff membership changes when an env var
+   does, not mid-browse) and dropped on **any** auth-state change in
+   `lib/auth-context.tsx` alongside the overview — otherwise a customer signing
+   in after a staff member on the same tab would keep being offered the link.
 
 The atelier's one-time setup: set **`STUDIO_STAFF_EMAILS`** (comma-separated);
 make sure **Google sign-in is enabled** in Supabase Auth and each staff address
@@ -2655,6 +2683,7 @@ keys on exact property names). Recorded here only because two facts are
 | Change appointment types / routing rules                 | `api-server/src/lib/appointments/catalog.ts` (targeted business rule — durations, which staff, which locations)                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                               |
 | Change staff working hours / calendars                   | The working-hours **Google Sheet** (`APPOINTMENT_SHEET_ID`); read in `api-server/src/lib/google/sheets.repository.ts`, parsed by `lib/appointments/staff.ts`                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                  |
 | Change appointment slot logic / policy                   | `api-server/src/lib/appointments/availability.ts` (`computeSlots`) + `time.ts` + `settings.ts`; `services/appointments.service.ts` + `routes/appointments.ts` + `lib/google/*` (Calendar free/busy + event insert)                                                                                                                                                                                                                                                                                                                                                                                                                                                                            |
+| Change who can see the Studio nav link                   | `web-app/src/lib/studio-access.ts` (the probe) + `useNavLinks()` / `STUDIO_LINK` in `components/navbar.tsx` (where it renders) + the `/studio/access` route in `api-server/src/routes/studio.ts`; the gate itself is `requireStaff` (`middlewares/auth.ts`) + `lib/staff.ts`                                                                                                                                                                                                                                                                                                                                                                                                                  |
 | Change the customer account portal (Supabase Auth)       | `artifacts/web-app/src/pages/account.tsx` (+ `components/appointment-manage-panel.tsx`, shared with `pages/appointment-manage.tsx`) + `pages/account-login.tsx` / `account-callback.tsx` / `account-reset.tsx` + `lib/supabase.ts` + `lib/auth-context.tsx` (frontend); `api-server/src/services/account.service.ts` + `routes/account.ts` + `middlewares/auth.ts` + `lib/supabase/client.ts`; queries `findOrdersByEmail` / `findShopOrdersByEmail` + `listUpcomingAppointmentsByEmail` (`lib/google/calendar.repository.ts`, mapped via `lib/appointments/event-details.ts`) + `extractMeasurements` (`lib/notion/orders.schema.ts`). Auth emails: `.agents/memory/supabase-auth-emails.md` |
 | Change the internal studio dashboard                     | `artifacts/web-app/src/pages/studio.tsx` (+ the `/studio` route in `App.tsx`, `noindex` entry in `lib/seo-routes.ts`); `api-server/src/services/studio-analytics.service.ts` (the pure `aggregateStudioAnalytics` + the cached use-case) + `routes/studio.ts` + `requireStaff` in `middlewares/auth.ts` + `lib/staff.ts` (the `STUDIO_STAFF_EMAILS` allowlist + the `amr` Google check); the 403 panel's re-sign-in lands back via `web-app/src/lib/post-signin.ts` (read by `pages/account-callback.tsx`); reads via `lib/notion/scan.ts` + `listOrdersForAnalytics` / `listShopOrdersForAnalytics` / `listInvoicesForAnalytics`                                                             |
 | Change the studio's internal tools (generators, refunds) | `api-server/src/services/studio-tools.service.ts` (the dispatcher + the composed result wording) + `routes/studio.ts` (`POST /studio/tools/:tool`, `requireStaff`) + `web-app/src/components/studio-tools.tsx` (rendered by `pages/studio.tsx`); the underlying work stays in `services/{schedule,invoice-generator,order-notification,order-cancellation,return-refund}.service.ts`. Contract in `openapi.yaml` (`StudioTool` / `StudioToolRequest` / `StudioToolRun`)                                                                                                                                                                                                                       |

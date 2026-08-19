@@ -58,6 +58,7 @@ import type {
   ProductList,
   RescheduleAppointmentRequest,
   ShopOrderStatus,
+  StudioAccess,
   StudioAnalytics,
   StudioTool,
   StudioToolRequest,
@@ -1888,6 +1889,84 @@ export function useGetAccountOverview<TData = Awaited<ReturnType<typeof getAccou
  ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
 
   const queryOptions = getGetAccountOverviewQueryOptions(options)
+
+  const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
+
+  return withQueryKey(query, queryOptions.queryKey);
+}
+
+
+
+
+
+
+
+export const getGetStudioAccessUrl = () => {
+
+
+
+
+  return `/api/studio/access`
+}
+
+/**
+ * A cheap "am I staff?" probe, so the app can offer a way in to `/studio` without every signed-in customer being shown a link that would refuse them. It runs the SAME gate as the figures below — allowlisted email plus (by default) a session established with Google — so a 200 here and a 200 there can't disagree: 401 when the caller isn't signed in, 403 when they are but aren't staff. It reads nothing and aggregates nothing; reaching the handler at all IS the answer.
+ * @summary Whether the caller may use the studio dashboard
+ */
+export const getStudioAccess = async ( options?: Parameters<typeof customFetch>[1]): Promise<StudioAccess> => {
+
+  return customFetch<StudioAccess>(getGetStudioAccessUrl(),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
+
+
+
+
+export const getGetStudioAccessQueryKey = () => {
+    return [
+    `/api/studio/access`
+    ] as const;
+    }
+
+
+export const getGetStudioAccessQueryOptions = <TData = Awaited<ReturnType<typeof getStudioAccess>>, TError = ErrorType<ErrorEnvelope>>( options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getStudioAccess>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getGetStudioAccessQueryKey();
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof getStudioAccess>>> = ({ signal }) => getStudioAccess({ signal, ...requestOptions });
+
+
+
+
+
+   return  { queryKey, queryFn, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof getStudioAccess>>, TError, TData> & { queryKey: QueryKey }
+}
+
+export type GetStudioAccessQueryResult = NonNullable<Awaited<ReturnType<typeof getStudioAccess>>>
+export type GetStudioAccessQueryError = ErrorType<ErrorEnvelope>
+
+
+/**
+ * @summary Whether the caller may use the studio dashboard
+ */
+
+export function useGetStudioAccess<TData = Awaited<ReturnType<typeof getStudioAccess>>, TError = ErrorType<ErrorEnvelope>>(
+  options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getStudioAccess>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+
+ ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+
+  const queryOptions = getGetStudioAccessQueryOptions(options)
 
   const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
 

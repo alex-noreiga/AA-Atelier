@@ -624,6 +624,15 @@ export const GetAccountOverviewResponse = zod.object({
 
 
 /**
+ * A cheap "am I staff?" probe, so the app can offer a way in to `/studio` without every signed-in customer being shown a link that would refuse them. It runs the SAME gate as the figures below — allowlisted email plus (by default) a session established with Google — so a 200 here and a 200 there can't disagree: 401 when the caller isn't signed in, 403 when they are but aren't staff. It reads nothing and aggregates nothing; reaching the handler at all IS the answer.
+ * @summary Whether the caller may use the studio dashboard
+ */
+export const GetStudioAccessResponse = zod.object({
+  "staff": zod.boolean().describe('Always true. A non-staff caller receives 401\/403 instead.')
+}).describe('The answer to \"may this account use the studio dashboard?\". Only ever returned to a caller the staff gate has already admitted, so `staff` is always true — the field exists so the response is self-describing rather than an empty body, and so a client reads a value instead of inferring from a status code.')
+
+
+/**
  * Aggregates the atelier's own numbers — custom and shop orders by stage, production load against due dates, revenue by month, deposits vs. balances, and the best-selling shop pieces — for the internal studio dashboard. Requires a valid Supabase access token supplied as a Bearer credential whose email is on the studio staff allowlist: 401 when the caller isn't signed in, 403 when they are but aren't staff.
  * @summary Studio analytics for the internal dashboard
  */
