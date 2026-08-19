@@ -4,7 +4,9 @@ import userEvent from "@testing-library/user-event";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import type { Mock } from "vitest";
 
-// Render <Redirect> as a marker so the unauthenticated bounce is assertable.
+// Render <Redirect> as a marker so the unauthenticated bounce is assertable,
+// and capture the imperative navigation the sign-out does.
+const navigate = vi.hoisted(() => vi.fn());
 vi.mock("wouter", async (importOriginal) => {
   const actual = await importOriginal<typeof import("wouter")>();
   return {
@@ -12,18 +14,24 @@ vi.mock("wouter", async (importOriginal) => {
     Redirect: ({ to }: { to: string }) => (
       <div data-testid="redirect">{to}</div>
     ),
+    useLocation: () => ["/studio", navigate],
   };
 });
 
 // Mutable auth state the mocked useAuth reads (set per test).
-const h = vi.hoisted(() => ({ session: null as unknown, loading: false }));
+const h = vi.hoisted(() => ({
+  session: null as unknown,
+  user: null as unknown,
+  loading: false,
+  signOut: vi.fn(),
+}));
 vi.mock("@/lib/auth-context", () => ({
   useAuth: () => ({
     session: h.session,
-    user: null,
+    user: h.user,
     loading: h.loading,
     configured: true,
-    signOut: vi.fn(),
+    signOut: h.signOut,
   }),
 }));
 
@@ -163,7 +171,11 @@ const analytics = {
 
 beforeEach(() => {
   h.session = { access_token: "jwt" };
+  h.user = { email: "alexandra@a3iceanddance.com" };
   h.loading = false;
+  h.signOut.mockReset();
+  h.signOut.mockResolvedValue(undefined);
+  navigate.mockReset();
 });
 
 describe("studio dashboard — access", () => {
@@ -180,7 +192,29 @@ describe("studio dashboard — access", () => {
     expect(screen.getByTestId("redirect")).toHaveTextContent("/account/login");
   });
 
-  it("tells a signed-in customer they aren't studio staff, without redirecting", () => {
+  it("shows a signed-in customer the ordinary Not Found page, not a refusal", () => {
+    // The server answers 404 for a non-staff account on purpose; anything that
+    // reads as "access denied" would confirm the dashboard exists to someone
+    // who only typed the URL.
+    stubAnalytics({ isError: true, error: { status: 404 } });
+    renderPage();
+
+    expect(screen.getByTestId("link-home")).toBeInTheDocument();
+    expect(
+      screen.getByRole("heading", { level: 1, name: "Page not found" }),
+    ).toBeInTheDocument();
+    expect(screen.queryByTestId("studio-forbidden")).not.toBeInTheDocument();
+    expect(screen.queryByTestId("redirect")).not.toBeInTheDocument();
+  });
+
+  it("leaks nothing about the studio on that page", () => {
+    stubAnalytics({ isError: true, error: { status: 404 } });
+    const { container } = renderPage();
+
+    expect(container.textContent ?? "").not.toMatch(/studio|dashboard|staff/i);
+  });
+
+  it("tells a staff member who used the wrong sign-in method, without redirecting", () => {
     stubAnalytics({ isError: true, error: { status: 403 } });
     renderPage();
     expect(screen.getByTestId("studio-forbidden")).toBeInTheDocument();
@@ -297,5 +331,37 @@ describe("studio dashboard — figures", () => {
     renderPage();
     await userEvent.click(screen.getByTestId("button-refresh"));
     expect(refetch).toHaveBeenCalled();
+  });
+
+  it("is titled Dashboard, and names who is signed in", () => {
+    renderPage();
+
+    expect(
+      screen.getByRole("heading", { level: 1, name: "Dashboard" }),
+    ).toBeInTheDocument();
+    expect(screen.getByTestId("studio-email")).toHaveTextContent(
+      "alexandra@a3iceanddance.com",
+    );
+  });
+
+  it("signs out from here — staff have no account portal to do it from", async () => {
+    renderPage();
+
+    await userEvent.click(screen.getByTestId("button-sign-out"));
+
+    expect(h.signOut).toHaveBeenCalled();
+    expect(navigate).toHaveBeenCalledWith("/account/login");
+  });
+
+  it("still offers sign-out when the figures fail to load", async () => {
+    // `/account` sends staff back here, so an unreadable dashboard without this
+    // is a dead end.
+    stubAnalytics({ isError: true, error: { status: 500 } });
+    renderPage();
+
+    expect(screen.getByTestId("studio-error")).toBeInTheDocument();
+    await userEvent.click(screen.getByTestId("button-sign-out"));
+
+    expect(h.signOut).toHaveBeenCalled();
   });
 });

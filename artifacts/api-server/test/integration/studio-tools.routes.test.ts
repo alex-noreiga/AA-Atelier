@@ -97,7 +97,9 @@ describe("POST /api/studio/tools/:tool — the gate", () => {
     expect(mockRun).not.toHaveBeenCalled();
   });
 
-  it("403s a signed-in customer who isn't on the staff allowlist", async () => {
+  it("404s a signed-in customer who isn't on the staff allowlist", async () => {
+    // Same answer a URL that doesn't exist gets — the tools must not confirm
+    // the studio surface to a customer any more than the figures do.
     acceptToken(TOKEN, {
       email: "skater@example.com",
       sub: "user-2",
@@ -109,7 +111,7 @@ describe("POST /api/studio/tools/:tool — the gate", () => {
       .set("Authorization", `Bearer ${TOKEN}`)
       .send({});
 
-    expect(res.status).toBe(403);
+    expect(res.status).toBe(404);
     expect(mockRun).not.toHaveBeenCalled();
   });
 
@@ -126,7 +128,7 @@ describe("POST /api/studio/tools/:tool — the gate", () => {
     expect(mockRun).not.toHaveBeenCalled();
   });
 
-  it("403s everyone when no allowlist is configured (fails closed)", async () => {
+  it("404s everyone when no allowlist is configured (fails closed)", async () => {
     delete process.env.STUDIO_STAFF_EMAILS;
 
     const res = await request(app)
@@ -134,7 +136,7 @@ describe("POST /api/studio/tools/:tool — the gate", () => {
       .set("Authorization", `Bearer ${TOKEN}`)
       .send({});
 
-    expect(res.status).toBe(403);
+    expect(res.status).toBe(404);
     expect(mockRun).not.toHaveBeenCalled();
   });
 

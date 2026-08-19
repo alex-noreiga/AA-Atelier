@@ -19,8 +19,22 @@ import {
 } from "@workspace/api-client-react";
 import { useAuth } from "./auth-context";
 
+export interface StudioAccess {
+  /** True once the server has confirmed the current session is studio staff. */
+  staff: boolean;
+  /**
+   * True while the answer is still unknown — the session hasn't resolved, or
+   * the probe is in flight. Callers that *route* on staffhood (the account
+   * portal, which hands a staff member to the dashboard instead) must wait for
+   * this to clear, or a staff member sees a flash of the customer portal on
+   * the way past. Callers that merely *offer* something (the navbar) can
+   * ignore it and render the public set until the answer lands.
+   */
+  loading: boolean;
+}
+
 /**
- * True once the server has confirmed the current session is studio staff.
+ * Ask the server whether this session is studio staff.
  *
  * Signed out it never asks — an anonymous probe can only ever be a 401, and the
  * navbar renders on every page. For the same reason the answer is treated as
@@ -29,13 +43,14 @@ import { useAuth } from "./auth-context";
  * `accountRateLimiter` counts this against the account overview's budget. A
  * refusal is not retried — a 403 is an answer, not a failure.
  */
-export function useStudioAccess(): boolean {
+export function useStudioAccess(): StudioAccess {
   const { session, loading } = useAuth();
+  const signedIn = !loading && Boolean(session);
 
-  const { data } = useGetStudioAccess({
+  const access = useGetStudioAccess({
     query: {
       queryKey: getGetStudioAccessQueryKey(),
-      enabled: !loading && Boolean(session),
+      enabled: signedIn,
       retry: false,
       staleTime: Infinity,
       // A refused probe must not surface as an app-level error anywhere.
@@ -43,5 +58,11 @@ export function useStudioAccess(): boolean {
     },
   });
 
-  return data?.staff === true;
+  return {
+    staff: access.data?.staff === true,
+    // `isLoading` is the first fetch in flight, and is false while the query is
+    // disabled — so a signed-out visitor is answered immediately (not staff)
+    // rather than left waiting on a request that will never be made.
+    loading: loading || (signedIn && access.isLoading),
+  };
 }

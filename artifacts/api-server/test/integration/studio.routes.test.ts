@@ -100,7 +100,9 @@ describe("GET /api/studio/analytics", () => {
     expect(mockOrders).not.toHaveBeenCalled();
   });
 
-  it("returns 403 for a signed-in customer who isn't studio staff", async () => {
+  it("returns 404 — not 403 — for a signed-in customer who isn't studio staff", async () => {
+    // A 403 would confirm to anyone who typed /studio that a dashboard is
+    // there; the dashboard is unlinked and noindexed precisely so it doesn't.
     acceptToken("customer-token", {
       email: "skater@example.com",
       sub: "user-2",
@@ -110,11 +112,24 @@ describe("GET /api/studio/analytics", () => {
       .get("/api/studio/analytics")
       .set("Authorization", "Bearer customer-token");
 
-    expect(res.status).toBe(403);
+    expect(res.status).toBe(404);
     expect(mockOrders).not.toHaveBeenCalled();
   });
 
-  it("returns 403 for everyone when no allowlist is configured", async () => {
+  it("says nothing about the studio in the customer's 404", async () => {
+    acceptToken("customer-token", {
+      email: "skater@example.com",
+      sub: "user-2",
+      amr: ["oauth"],
+    });
+    const res = await request(app)
+      .get("/api/studio/analytics")
+      .set("Authorization", "Bearer customer-token");
+
+    expect(JSON.stringify(res.body)).not.toMatch(/studio|staff|access/i);
+  });
+
+  it("returns 404 for everyone when no allowlist is configured", async () => {
     delete process.env.STUDIO_STAFF_EMAILS;
     acceptToken("staff-token", GOOGLE_STAFF);
 
@@ -122,7 +137,7 @@ describe("GET /api/studio/analytics", () => {
       .get("/api/studio/analytics")
       .set("Authorization", "Bearer staff-token");
 
-    expect(res.status).toBe(403);
+    expect(res.status).toBe(404);
     expect(mockOrders).not.toHaveBeenCalled();
   });
 
@@ -270,8 +285,10 @@ describe("GET /api/studio/analytics — sign-in method", () => {
       .get("/api/studio/analytics")
       .set("Authorization", "Bearer customer-token");
 
-    expect(res.status).toBe(403);
-    expect(res.body.error).not.toMatch(/Google/);
+    // Still a 404 — the recovery hatch relaxes *how* staff sign in, never who
+    // counts as staff.
+    expect(res.status).toBe(404);
+    expect(JSON.stringify(res.body)).not.toMatch(/Google/);
   });
 });
 
@@ -286,7 +303,7 @@ describe("GET /api/studio/access", () => {
     expect(res.status).toBe(401);
   });
 
-  it("returns 403 for a signed-in customer who isn't studio staff", async () => {
+  it("returns 404 for a signed-in customer who isn't studio staff", async () => {
     acceptToken("customer-token", {
       email: "skater@example.com",
       sub: "user-2",
@@ -297,10 +314,10 @@ describe("GET /api/studio/access", () => {
       .get("/api/studio/access")
       .set("Authorization", "Bearer customer-token");
 
-    expect(res.status).toBe(403);
+    expect(res.status).toBe(404);
   });
 
-  it("returns 403 for everyone when no allowlist is configured", async () => {
+  it("returns 404 for everyone when no allowlist is configured", async () => {
     delete process.env.STUDIO_STAFF_EMAILS;
     acceptToken("staff-token", GOOGLE_STAFF);
 
@@ -308,7 +325,7 @@ describe("GET /api/studio/access", () => {
       .get("/api/studio/access")
       .set("Authorization", "Bearer staff-token");
 
-    expect(res.status).toBe(403);
+    expect(res.status).toBe(404);
   });
 
   it("refuses a staff address whose session didn't come through Google", async () => {
