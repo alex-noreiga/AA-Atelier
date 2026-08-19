@@ -885,6 +885,65 @@ export interface StudioAnalytics {
   topItems: StudioTopItem[];
 }
 
+/**
+ * The arguments for one internal tool run. Every field is optional here because each tool takes a different subset; the server rejects a run that is missing what its own tool needs. This replaces the query string of the retired `?secret=` links, so the argument names mirror them.
+ */
+export interface StudioToolRequest {
+  /**
+     * The order the tool acts on — `ORD-…` for a custom order, `SHP-…` for a shop order. Required by every tool except `milestones`, which sweeps the whole pipeline.
+     * @maxLength 64
+     */
+  orderNumber?: string;
+  /** `status-email` only. Resend the status update even when the order hasn't moved forward since the customer was last emailed. A forced resend never rewinds the high-water marker. */
+  force?: boolean;
+  /**
+     * `return-refund` only. The TARGET total to have refunded on the order, in dollars — not an increment, so a repeated run can't double-refund. Omit to refund in full.
+     * @minimum 0
+     */
+  amount?: number;
+}
+
+/**
+ * `ok` — the tool did something. `noop` — there was nothing to do (every tool is idempotent, so this is the normal result of a repeat run). `attention` — the run completed but left something for the atelier to fix, e.g. a refund Stripe rejected, which leaves the order uncancelled so a re-run can retry it. A failure the tool couldn't start at all is an HTTP error, not a status here.
+ */
+export type StudioToolRunStatus = typeof StudioToolRunStatus[keyof typeof StudioToolRunStatus];
+
+
+export const StudioToolRunStatus = {
+  ok: 'ok',
+  noop: 'noop',
+  attention: 'attention',
+} as const;
+
+/**
+ * Which internal tool to run. Each names an action the atelier used to trigger by opening a shared-secret link from Notion.
+ */
+export type StudioTool = typeof StudioTool[keyof typeof StudioTool];
+
+
+export const StudioTool = {
+  milestones: 'milestones',
+  'invoice-lines': 'invoice-lines',
+  'status-email': 'status-email',
+  'cancellation-refund': 'cancellation-refund',
+  'return-refund': 'return-refund',
+} as const;
+
+/**
+ * The outcome of one internal tool run, already composed for display. The server owns the wording — it is the same summary the retired confirmation pages rendered — so the dashboard renders the result rather than re-deriving it from per-tool fields.
+ */
+export interface StudioToolRun {
+  tool: StudioTool;
+  /** `ok` — the tool did something. `noop` — there was nothing to do (every tool is idempotent, so this is the normal result of a repeat run). `attention` — the run completed but left something for the atelier to fix, e.g. a refund Stripe rejected, which leaves the order uncancelled so a re-run can retry it. A failure the tool couldn't start at all is an HTTP error, not a status here. */
+  status: StudioToolRunStatus;
+  /** A short headline for the result, e.g. "Invoice itemized". */
+  title: string;
+  /** One sentence summarizing what happened. */
+  message: string;
+  /** Any per-item notes worth showing under the message — payments that were skipped, reasons a send was suppressed. Empty when there is nothing to add. */
+  details: string[];
+}
+
 export type GetAppointmentAvailabilityParams = {
 typeId: string;
 location: GetAppointmentAvailabilityLocation;

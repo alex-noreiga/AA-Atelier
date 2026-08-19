@@ -3,23 +3,24 @@
 // part of the OpenAPI contract or the generated client, so it's mounted directly
 // on the app (see app.ts) rather than in the /api router.
 //
-// Two triggers for the SAME send (`notifyOrderStageChange`):
-//   1. POST /api/webhooks/notion-stage-change — a Notion database automation
-//      ("when Stage changes, send webhook"). Notion's default payload carries the
-//      triggering page under `data.id`, so no hand-authored body is needed; if an
-//      authored body `{ "orderNumber": "…" }` is present it's preferred.
-//   2. GET  /api/webhooks/notion-stage-change/run?order=<n> — a link the atelier
-//      opens by hand to send an update on demand (and to test in production
-//      against one order without wiring up the automation). Returns a small HTML
-//      confirmation page for the tab it opens. Add `&force=1` to resend even when
-//      the order hasn't moved forward (the automation never forces).
+// One trigger: POST /api/webhooks/notion-stage-change — a Notion database
+// automation ("when Stage changes, send webhook"). Notion's default payload
+// carries the triggering page under `data.id`, so no hand-authored body is
+// needed; if an authored body `{ "orderNumber": "…" }` is present it's preferred.
 //
-// Auth (both) reuses `CRON_SECRET`, accepted two ways: an `Authorization: Bearer
+// The `…/run` link that used to sit alongside it — the atelier's way to send or
+// re-send one order's update by hand — is gone. That job now belongs to the
+// signed-in studio dashboard (`POST /api/studio/tools/status-email`, which also
+// carries the `force` resend), so a per-order button no longer means a formula
+// property with the shared secret baked into its URL.
+//
+// Auth reuses `CRON_SECRET`, accepted two ways: an `Authorization: Bearer
 // <CRON_SECRET>` header (preferred — keeps the token out of the URL, referrers,
 // and logs; use it on the Notion automation, which supports custom headers) OR a
-// `?secret=<CRON_SECRET>` query token (the fallback for the browser `/run` link,
-// which can't send headers). The request logger strips the query string, so the
-// query token isn't logged; it is still visible in the URL / browser history.
+// `?secret=<CRON_SECRET>` query token. The query form is kept only because a
+// live automation may already be configured with it; it is the one remaining
+// place the app accepts the secret in a URL, and the automation should use the
+// header. The request logger strips the query string, so the token isn't logged.
 //
 // The POST is mounted with `express.raw` (see app.ts), so its body arrives as a
 // Buffer we JSON-parse here — this way it's read regardless of the Content-Type
@@ -30,16 +31,10 @@ import {
   notifyOrderStageChange,
   type OrderLocator,
 } from "../services/order-notification.service.js";
-import {
-  htmlPage,
-  hasCronBearer,
-  hasCronQuerySecret,
-} from "../lib/cron-route.js";
+import { hasCronBearer, hasCronQuerySecret } from "../lib/cron-route.js";
 import { logger } from "../lib/logger.js";
 
-/** Authorized when the Bearer header OR the ?secret= query matches CRON_SECRET.
- * The header is preferred (token stays out of the URL); the query token is the
- * fallback for the browser `/run` link, which can't set a custom header. */
+/** Authorized when the Bearer header OR the ?secret= query matches CRON_SECRET. */
 function isAuthorized(req: Request): boolean {
   return hasCronBearer(req) || hasCronQuerySecret(req);
 }
@@ -76,10 +71,10 @@ function bodyObject(req: Request): {
 
 /**
  * Locate the order to notify. Prefers an explicit order number — an authored body
- * `{ orderNumber }` or the `?order=` link/test param. Otherwise falls back to the
- * Notion automation's default payload, which carries the triggering page under
- * `data.id` (so the atelier doesn't have to hand-author a webhook body). Returns
- * null when neither is present.
+ * `{ orderNumber }` or an `?order=` param. Otherwise falls back to the Notion
+ * automation's default payload, which carries the triggering page under `data.id`
+ * (so the atelier doesn't have to hand-author a webhook body). Returns null when
+ * neither is present.
  */
 function locatorFrom(req: Request): OrderLocator | null {
   const body = bodyObject(req);
@@ -92,14 +87,6 @@ function locatorFrom(req: Request): OrderLocator | null {
   if (pageId) return { pageId };
 
   return null;
-}
-
-/** The human order number to show in the on-demand link's HTML, when we have one. */
-function shownOrder(locator: OrderLocator | null): string {
-  if (locator && typeof locator === "object" && "orderNumber" in locator) {
-    return locator.orderNumber;
-  }
-  return "";
 }
 
 /** Notion automation webhook (POST, JSON). */
@@ -125,64 +112,5 @@ export async function notionStageChangeHandler(
   } catch (err) {
     logger.error({ err, locator }, "Order status-change webhook failed");
     res.status(500).json({ error: "Internal error" });
-  }
-}
-
-/** On-demand / test trigger the atelier opens in a browser (GET, HTML page). */
-export async function notionStageChangeButtonHandler(
-  req: Request,
-  res: Response,
-): Promise<void> {
-  if (!isAuthorized(req)) {
-    res
-      .status(401)
-      .type("html")
-      .send(
-        htmlPage(
-          "Not authorized",
-          "This order-update link is missing a valid access token.",
-        ),
-      );
-    return;
-  }
-
-  const locator = locatorFrom(req);
-  if (!locator) {
-    res
-      .status(400)
-      .type("html")
-      .send(
-        htmlPage(
-          "Missing order",
-          "Add ?order=<order number> to this link to send its status update.",
-        ),
-      );
-    return;
-  }
-
-  // `&force=1` resends even when the order hasn't moved forward (a manual notify).
-  const force = req.query.force === "1" || req.query.force === "true";
-
-  try {
-    const result = await notifyOrderStageChange(locator, { force });
-    logger.info(result, "Order status-change link processed");
-    const message =
-      result.status === "sent"
-        ? `A status update for order ${result.orderNumber} (now at ${result.currentStage ?? ""}) is on its way. You can close this tab.`
-        : result.status === "not_found"
-          ? `No order found for "${shownOrder(locator)}". You can close this tab.`
-          : `Nothing sent for order ${result.orderNumber} — ${result.reason ?? "skipped"}. You can close this tab.`;
-    res.status(200).type("html").send(htmlPage("Order update", message));
-  } catch (err) {
-    logger.error({ err, locator }, "Order status-change link failed");
-    res
-      .status(500)
-      .type("html")
-      .send(
-        htmlPage(
-          "Something went wrong",
-          "We couldn't send that update just now. Please try again in a moment.",
-        ),
-      );
   }
 }

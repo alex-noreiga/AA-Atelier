@@ -86,4 +86,8 @@ export * from './studioProductionLoad';
 export * from './studioRevenueMonth';
 export * from './studioScheduledOrder';
 export * from './studioStageCount';
+export * from './studioTool';
+export * from './studioToolRequest';
+export * from './studioToolRun';
+export * from './studioToolRunStatus';
 export * from './studioTopItem';

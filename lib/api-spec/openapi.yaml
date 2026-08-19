@@ -996,6 +996,77 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/ErrorEnvelope"
+  /studio/tools/{tool}:
+    post:
+      operationId: runStudioTool
+      tags: [studio]
+      summary: Run an internal atelier tool
+      description: >-
+        Runs one of the atelier's internal actions — milestone reconciliation,
+        invoice line-item generation, an order status-change email, a
+        cancellation refund, or a return refund — from the signed-in studio
+        dashboard. Each was previously triggered by opening a link that carried
+        a shared secret in its query string; the work is unchanged, the
+        authorization is not: this requires the same Supabase access token as
+        the rest of the studio surface, with the caller's email on the staff
+        allowlist. 401 when not signed in, 403 when signed in but not staff.
+
+        Every tool is idempotent — a repeat run reports `noop` rather than
+        doing the work twice — but two of them move money, so the dashboard
+        confirms before calling those.
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: tool
+          in: path
+          required: true
+          schema:
+            $ref: "#/components/schemas/StudioTool"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/StudioToolRequest"
+      responses:
+        "200":
+          description: The tool ran; the body describes what it did
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/StudioToolRun"
+        "400":
+          description: >-
+            An argument the tool needs is missing or invalid, or the order isn't
+            in a state the tool can act on
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorEnvelope"
+        "401":
+          description: Not signed in (missing or expired session)
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorEnvelope"
+        "403":
+          description: Signed in, but not a studio staff account
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorEnvelope"
+        "404":
+          description: No order matches the supplied order number
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorEnvelope"
+        "500":
+          description: Server error
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorEnvelope"
 components:
   securitySchemes:
     bearerAuth:
@@ -2576,3 +2647,77 @@ components:
           type: string
         orders:
           type: integer
+    StudioToolRequest:
+      type: object
+      description: >-
+        The arguments for one internal tool run. Every field is optional here
+        because each tool takes a different subset; the server rejects a run that
+        is missing what its own tool needs. This replaces the query string of the
+        retired `?secret=` links, so the argument names mirror them.
+      properties:
+        orderNumber:
+          type: string
+          maxLength: 64
+          description: >-
+            The order the tool acts on — `ORD-…` for a custom order, `SHP-…` for
+            a shop order. Required by every tool except `milestones`, which
+            sweeps the whole pipeline.
+        force:
+          type: boolean
+          description: >-
+            `status-email` only. Resend the status update even when the order
+            hasn't moved forward since the customer was last emailed. A forced
+            resend never rewinds the high-water marker.
+        amount:
+          type: number
+          minimum: 0
+          description: >-
+            `return-refund` only. The TARGET total to have refunded on the
+            order, in dollars — not an increment, so a repeated run can't
+            double-refund. Omit to refund in full.
+    StudioToolRun:
+      type: object
+      description: >-
+        The outcome of one internal tool run, already composed for display. The
+        server owns the wording — it is the same summary the retired
+        confirmation pages rendered — so the dashboard renders the result rather
+        than re-deriving it from per-tool fields.
+      required: [tool, status, title, message, details]
+      properties:
+        tool:
+          $ref: "#/components/schemas/StudioTool"
+        status:
+          type: string
+          enum: [ok, noop, attention]
+          description: >-
+            `ok` — the tool did something. `noop` — there was nothing to do
+            (every tool is idempotent, so this is the normal result of a repeat
+            run). `attention` — the run completed but left something for the
+            atelier to fix, e.g. a refund Stripe rejected, which leaves the order
+            uncancelled so a re-run can retry it. A failure the tool couldn't
+            start at all is an HTTP error, not a status here.
+        title:
+          type: string
+          description: A short headline for the result, e.g. "Invoice itemized".
+        message:
+          type: string
+          description: One sentence summarizing what happened.
+        details:
+          type: array
+          description: >-
+            Any per-item notes worth showing under the message — payments that
+            were skipped, reasons a send was suppressed. Empty when there is
+            nothing to add.
+          items:
+            type: string
+    StudioTool:
+      type: string
+      description: >-
+        Which internal tool to run. Each names an action the atelier used to
+        trigger by opening a shared-secret link from Notion.
+      enum:
+        - milestones
+        - invoice-lines
+        - status-email
+        - cancellation-refund
+        - return-refund

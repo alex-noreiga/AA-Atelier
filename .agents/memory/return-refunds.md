@@ -3,8 +3,14 @@
 Phase-2 Product card "Return & exchange refund processing". The customer-facing
 half already shipped (`POST /shop-orders/:n/return-requests` files a
 `Request type = "Return / exchange"` row into the contact inbox and refunds
-nothing — Approach A). This is the atelier-facing half: a CRON_SECRET-gated
-button that issues the Stripe refund, mirroring the cancellation-refund flow.
+nothing — Approach A). This is the atelier-facing half: the action that issues
+the Stripe refund, mirroring the cancellation-refund flow.
+
+> **Superseded (routes only):** this shipped as a CRON_SECRET-gated `?secret=`
+> link, `GET /api/shop-orders/process-return[/run]`. Both routes are now deleted —
+> the refund runs from the studio dashboard's `return-refund` tool. See
+> [studio-internal-tools.md](studio-internal-tools.md). The refund _engine_ below
+> is unchanged and still the thing worth remembering.
 
 ## The one decision worth remembering
 
@@ -71,31 +77,30 @@ _is_ the state, so a silent failure would matter.
   dereferenced.
 - Stripe throws (mode-mismatched session id, deleted session, hiccup) ⇒ caught,
   logged at `error`, returned as `status: "error"` with **nothing refunded and no
-  marker written**. The button says so plainly instead of claiming success; a
-  re-press is safe because the target is recomputed from Stripe every time.
+  marker written**. The dashboard says so plainly instead of claiming success; a
+  re-run is safe because the target is recomputed from Stripe every time.
 
-## Mounting gotcha
+## Mounting gotcha (historical)
 
-Both routes are registered **before** `app.use("/api", router)` in `app.ts` —
-otherwise `/api/shop-orders/process-return` is swallowed by the router's
-`/shop-orders/:orderNumber` status lookup. Exactly the same reason the
-cancellation routes sit there.
+While they existed, both routes had to be registered **before**
+`app.use("/api", router)` in `app.ts` — otherwise
+`/api/shop-orders/process-return` was swallowed by the router's
+`/shop-orders/:orderNumber` status lookup. Worth remembering if a single-segment
+`/shop-orders/…` or `/orders/…` path is ever added again.
 
 ## Atelier setup
 
-No new env vars (reuses `CRON_SECRET`, `STRIPE_SECRET_KEY`, Resend). Optional on
-the **Shop Orders** database: `Refunded Amount` (number) + `Return Processed`
-(checkbox). Formula-property link:
+No new env vars (reuses `STRIPE_SECRET_KEY`, Resend, and the studio staff
+allowlist). Optional on the **Shop Orders** database: `Refunded Amount` (number) +
+`Return Processed` (checkbox).
 
-```
-"https://<PUBLIC_BASE_URL>/api/shop-orders/process-return/run?secret=<CRON_SECRET>&order=" + prop("Order Number")
-```
-
-The bare link refunds in full; for a partial the atelier appends `&amount=180` by
-hand (a Notion formula can't prompt for a figure). That hand-editing is the known
-rough edge — a real internal admin UI is the fix, and it lands naturally with the
-Phase-3 "Staff authentication for internal tools" card, which is also what retires
-the `?secret=` token in the URL.
+Run it from `/studio` → **Refund a return**: the order number and an optional
+amount are form fields, and leaving the amount blank refunds in full. The known
+rough edge this note originally flagged — a partial refund meant hand-appending
+`&amount=180` to a formula-built URL, because a Notion formula can't prompt for a
+figure — is gone. The internal admin UI it predicted is what fixed it, delivered
+with the "Staff authentication for internal tools" card. Delete the old
+formula-property link in Notion.
 
 ## Not built here
 
