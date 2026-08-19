@@ -58,6 +58,7 @@ import type {
   ProductList,
   RescheduleAppointmentRequest,
   ShopOrderStatus,
+  StudioAccess,
   StudioAnalytics,
   StudioTool,
   StudioToolRequest,
@@ -1900,6 +1901,84 @@ export function useGetAccountOverview<TData = Awaited<ReturnType<typeof getAccou
 
 
 
+export const getGetStudioAccessUrl = () => {
+
+
+
+
+  return `/api/studio/access`
+}
+
+/**
+ * A cheap "am I staff?" probe, so the app can offer a way in to `/studio` without every signed-in customer being shown a link that would refuse them. It runs the SAME gate as the figures below — allowlisted email plus (by default) a session established with Google — so a 200 here and a 200 there can't disagree: 401 when the caller isn't signed in, 404 when they are but aren't staff (the dashboard doesn't exist as far as they're concerned), 403 when they are staff but didn't sign in with Google. It reads nothing and aggregates nothing; reaching the handler at all IS the answer.
+ * @summary Whether the caller may use the studio dashboard
+ */
+export const getStudioAccess = async ( options?: Parameters<typeof customFetch>[1]): Promise<StudioAccess> => {
+
+  return customFetch<StudioAccess>(getGetStudioAccessUrl(),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
+
+
+
+
+export const getGetStudioAccessQueryKey = () => {
+    return [
+    `/api/studio/access`
+    ] as const;
+    }
+
+
+export const getGetStudioAccessQueryOptions = <TData = Awaited<ReturnType<typeof getStudioAccess>>, TError = ErrorType<ErrorEnvelope | OrderNotFound>>( options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getStudioAccess>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getGetStudioAccessQueryKey();
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof getStudioAccess>>> = ({ signal }) => getStudioAccess({ signal, ...requestOptions });
+
+
+
+
+
+   return  { queryKey, queryFn, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof getStudioAccess>>, TError, TData> & { queryKey: QueryKey }
+}
+
+export type GetStudioAccessQueryResult = NonNullable<Awaited<ReturnType<typeof getStudioAccess>>>
+export type GetStudioAccessQueryError = ErrorType<ErrorEnvelope | OrderNotFound>
+
+
+/**
+ * @summary Whether the caller may use the studio dashboard
+ */
+
+export function useGetStudioAccess<TData = Awaited<ReturnType<typeof getStudioAccess>>, TError = ErrorType<ErrorEnvelope | OrderNotFound>>(
+  options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getStudioAccess>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+
+ ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+
+  const queryOptions = getGetStudioAccessQueryOptions(options)
+
+  const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
+
+  return withQueryKey(query, queryOptions.queryKey);
+}
+
+
+
+
+
+
+
 export const getGetStudioAnalyticsUrl = () => {
 
 
@@ -1909,7 +1988,7 @@ export const getGetStudioAnalyticsUrl = () => {
 }
 
 /**
- * Aggregates the atelier's own numbers — custom and shop orders by stage, production load against due dates, revenue by month, deposits vs. balances, and the best-selling shop pieces — for the internal studio dashboard. Requires a valid Supabase access token supplied as a Bearer credential whose email is on the studio staff allowlist: 401 when the caller isn't signed in, 403 when they are but aren't staff.
+ * Aggregates the atelier's own numbers — custom and shop orders by stage, production load against due dates, revenue by month, deposits vs. balances, and the best-selling shop pieces — for the internal studio dashboard. Requires a valid Supabase access token supplied as a Bearer credential whose email is on the studio staff allowlist: 401 when the caller isn't signed in, 404 when they are but aren't staff, and 403 when they are staff but didn't sign in with Google.
  * @summary Studio analytics for the internal dashboard
  */
 export const getStudioAnalytics = async ( options?: Parameters<typeof customFetch>[1]): Promise<StudioAnalytics> => {
@@ -1934,7 +2013,7 @@ export const getGetStudioAnalyticsQueryKey = () => {
     }
 
 
-export const getGetStudioAnalyticsQueryOptions = <TData = Awaited<ReturnType<typeof getStudioAnalytics>>, TError = ErrorType<ErrorEnvelope>>( options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getStudioAnalytics>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+export const getGetStudioAnalyticsQueryOptions = <TData = Awaited<ReturnType<typeof getStudioAnalytics>>, TError = ErrorType<ErrorEnvelope | OrderNotFound>>( options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getStudioAnalytics>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
 ) => {
 
 const {query: queryOptions, request: requestOptions} = options ?? {};
@@ -1953,14 +2032,14 @@ const {query: queryOptions, request: requestOptions} = options ?? {};
 }
 
 export type GetStudioAnalyticsQueryResult = NonNullable<Awaited<ReturnType<typeof getStudioAnalytics>>>
-export type GetStudioAnalyticsQueryError = ErrorType<ErrorEnvelope>
+export type GetStudioAnalyticsQueryError = ErrorType<ErrorEnvelope | OrderNotFound>
 
 
 /**
  * @summary Studio analytics for the internal dashboard
  */
 
-export function useGetStudioAnalytics<TData = Awaited<ReturnType<typeof getStudioAnalytics>>, TError = ErrorType<ErrorEnvelope>>(
+export function useGetStudioAnalytics<TData = Awaited<ReturnType<typeof getStudioAnalytics>>, TError = ErrorType<ErrorEnvelope | OrderNotFound>>(
   options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getStudioAnalytics>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
 
  ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
@@ -1987,7 +2066,7 @@ export const getRunStudioToolUrl = (tool: StudioTool,) => {
 }
 
 /**
- * Runs one of the atelier's internal actions — milestone reconciliation, invoice line-item generation, an order status-change email, a cancellation refund, or a return refund — from the signed-in studio dashboard. Each was previously triggered by opening a link that carried a shared secret in its query string; the work is unchanged, the authorization is not: this requires the same Supabase access token as the rest of the studio surface, with the caller's email on the staff allowlist. 401 when not signed in, 403 when signed in but not staff.
+ * Runs one of the atelier's internal actions — milestone reconciliation, invoice line-item generation, an order status-change email, a cancellation refund, or a return refund — from the signed-in studio dashboard. Each was previously triggered by opening a link that carried a shared secret in its query string; the work is unchanged, the authorization is not: this requires the same Supabase access token as the rest of the studio surface, with the caller's email on the staff allowlist. 401 when not signed in, 404 when signed in but not staff, 403 when staff but not signed in with Google.
  * Every tool is idempotent — a repeat run reports `noop` rather than doing the work twice — but two of them move money, so the dashboard confirms before calling those.
  * @summary Run an internal atelier tool
  */
@@ -2007,7 +2086,7 @@ export const runStudioTool = async (tool: StudioTool,
 
 
 
-export const getRunStudioToolMutationOptions = <TError = ErrorType<ErrorEnvelope>,
+export const getRunStudioToolMutationOptions = <TError = ErrorType<ErrorEnvelope | OrderNotFound>,
     TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof runStudioTool>>, TError,{tool: StudioTool;data: BodyType<StudioToolRequest>}, TContext>, request?: SecondParameter<typeof customFetch>}
 ): UseMutationOptions<Awaited<ReturnType<typeof runStudioTool>>, TError,{tool: StudioTool;data: BodyType<StudioToolRequest>}, TContext> => {
 
@@ -2036,12 +2115,12 @@ const {mutation: mutationOptions, request: requestOptions} = options ?
 
     export type RunStudioToolMutationResult = NonNullable<Awaited<ReturnType<typeof runStudioTool>>>
     export type RunStudioToolMutationBody = BodyType<StudioToolRequest>
-    export type RunStudioToolMutationError = ErrorType<ErrorEnvelope>
+    export type RunStudioToolMutationError = ErrorType<ErrorEnvelope | OrderNotFound>
 
     /**
  * @summary Run an internal atelier tool
  */
-export const useRunStudioTool = <TError = ErrorType<ErrorEnvelope>,
+export const useRunStudioTool = <TError = ErrorType<ErrorEnvelope | OrderNotFound>,
     TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof runStudioTool>>, TError,{tool: StudioTool;data: BodyType<StudioToolRequest>}, TContext>, request?: SecondParameter<typeof customFetch>}
  ): UseMutationResult<
         Awaited<ReturnType<typeof runStudioTool>>,

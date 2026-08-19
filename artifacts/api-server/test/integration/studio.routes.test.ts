@@ -100,7 +100,9 @@ describe("GET /api/studio/analytics", () => {
     expect(mockOrders).not.toHaveBeenCalled();
   });
 
-  it("returns 403 for a signed-in customer who isn't studio staff", async () => {
+  it("returns 404 — not 403 — for a signed-in customer who isn't studio staff", async () => {
+    // A 403 would confirm to anyone who typed /studio that a dashboard is
+    // there; the dashboard is unlinked and noindexed precisely so it doesn't.
     acceptToken("customer-token", {
       email: "skater@example.com",
       sub: "user-2",
@@ -110,11 +112,24 @@ describe("GET /api/studio/analytics", () => {
       .get("/api/studio/analytics")
       .set("Authorization", "Bearer customer-token");
 
-    expect(res.status).toBe(403);
+    expect(res.status).toBe(404);
     expect(mockOrders).not.toHaveBeenCalled();
   });
 
-  it("returns 403 for everyone when no allowlist is configured", async () => {
+  it("says nothing about the studio in the customer's 404", async () => {
+    acceptToken("customer-token", {
+      email: "skater@example.com",
+      sub: "user-2",
+      amr: ["oauth"],
+    });
+    const res = await request(app)
+      .get("/api/studio/analytics")
+      .set("Authorization", "Bearer customer-token");
+
+    expect(JSON.stringify(res.body)).not.toMatch(/studio|staff|access/i);
+  });
+
+  it("returns 404 for everyone when no allowlist is configured", async () => {
     delete process.env.STUDIO_STAFF_EMAILS;
     acceptToken("staff-token", GOOGLE_STAFF);
 
@@ -122,7 +137,7 @@ describe("GET /api/studio/analytics", () => {
       .get("/api/studio/analytics")
       .set("Authorization", "Bearer staff-token");
 
-    expect(res.status).toBe(403);
+    expect(res.status).toBe(404);
     expect(mockOrders).not.toHaveBeenCalled();
   });
 
@@ -270,7 +285,77 @@ describe("GET /api/studio/analytics — sign-in method", () => {
       .get("/api/studio/analytics")
       .set("Authorization", "Bearer customer-token");
 
+    // Still a 404 — the recovery hatch relaxes *how* staff sign in, never who
+    // counts as staff.
+    expect(res.status).toBe(404);
+    expect(JSON.stringify(res.body)).not.toMatch(/Google/);
+  });
+});
+
+// The probe behind the navbar's staff-only link. What matters is that it agrees
+// with the figures route on every input — offering the link to someone the
+// dashboard would refuse is the whole failure mode — and that answering costs
+// nothing, since the navbar asks on every signed-in session.
+describe("GET /api/studio/access", () => {
+  it("returns 401 without a Bearer token", async () => {
+    acceptToken("good-token", GOOGLE_STAFF);
+    const res = await request(app).get("/api/studio/access");
+    expect(res.status).toBe(401);
+  });
+
+  it("returns 404 for a signed-in customer who isn't studio staff", async () => {
+    acceptToken("customer-token", {
+      email: "skater@example.com",
+      sub: "user-2",
+      amr: ["oauth"],
+    });
+
+    const res = await request(app)
+      .get("/api/studio/access")
+      .set("Authorization", "Bearer customer-token");
+
+    expect(res.status).toBe(404);
+  });
+
+  it("returns 404 for everyone when no allowlist is configured", async () => {
+    delete process.env.STUDIO_STAFF_EMAILS;
+    acceptToken("staff-token", GOOGLE_STAFF);
+
+    const res = await request(app)
+      .get("/api/studio/access")
+      .set("Authorization", "Bearer staff-token");
+
+    expect(res.status).toBe(404);
+  });
+
+  it("refuses a staff address whose session didn't come through Google", async () => {
+    acceptToken("password-token", {
+      email: STAFF,
+      sub: "user-1",
+      amr: ["password"],
+    });
+
+    const res = await request(app)
+      .get("/api/studio/access")
+      .set("Authorization", "Bearer password-token");
+
     expect(res.status).toBe(403);
-    expect(res.body.error).not.toMatch(/Google/);
+    expect(res.body.error).toMatch(/Google/);
+  });
+
+  it("confirms access for a staff account, without reading Notion", async () => {
+    acceptToken("staff-token", GOOGLE_STAFF);
+
+    const res = await request(app)
+      .get("/api/studio/access")
+      .set("Authorization", "Bearer staff-token");
+
+    expect(res.status).toBe(200);
+    expect(res.body).toEqual({ staff: true });
+    // The navbar asks this on every signed-in page load, so it must not drag
+    // the full-database analytics scans along with it.
+    expect(mockOrders).not.toHaveBeenCalled();
+    expect(mockShop).not.toHaveBeenCalled();
+    expect(mockInvoices).not.toHaveBeenCalled();
   });
 });

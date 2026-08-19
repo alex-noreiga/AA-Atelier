@@ -90,6 +90,13 @@ Express app (artifacts/api-server)  ──►  Notion REST API (orders database)
   │                                  a calendar outage). Bearer-JWT gated (401).
   │                                  Sign-in runs on Supabase Auth in the browser —
   │                                  there is NO server login/logout/verify route
+  ├─ GET  /api/studio/access       → "am I studio staff?" — the probe behind the
+  │                                  navbar's staff-only Dashboard link, so the
+  │                                  dashboard has a way in without the URL being
+  │                                  published. Runs the SAME requireStaff gate as
+  │                                  the figures below (401 / 404 / 403 / 200 {
+  │                                  staff: true }) and reads nothing — reaching
+  │                                  the handler IS the answer
   ├─ GET  /api/studio/analytics    → the INTERNAL studio dashboard's figures:
   │                                  custom + shop orders by stage, production
   │                                  load against due dates, revenue by month,
@@ -97,8 +104,10 @@ Express app (artifacts/api-server)  ──►  Notion REST API (orders database)
   │                                  shop pieces. Aggregated live from Notion
   │                                  (bounded full-database scans, 60s cached).
   │                                  Same Bearer JWT as the portal PLUS a staff
-  │                                  allowlist: 401 not signed in, 403 signed in
-  │                                  but not staff
+  │                                  allowlist: 401 not signed in, 404 signed in
+  │                                  but not staff (indistinguishable from a URL
+  │                                  that doesn't exist, by design), 403 staff
+  │                                  but not signed in with Google
   ├─ GET  /api/orders/:orderNumber → order status + stage list
   ├─ POST /api/orders              → creates a Notion page, returns order number
   │                                  + sends an order-confirmation email
@@ -1777,8 +1786,16 @@ Load-bearing decisions:
    `requireStaff` verifies the same Bearer JWT `requireCustomer` does (both share
    one `resolveSessionCustomer`) and then checks the email against
    `STUDIO_STAFF_EMAILS` (`lib/staff.ts`). Not signed in ⇒ **401** (the page
-   redirects to sign-in); signed in but failing the gate ⇒ **403** (bouncing them
-   to sign-in would just loop, so the page shows the reason instead). The
+   redirects to sign-in). Past that the two checks answer **differently, on
+   purpose**: an email that isn't on the allowlist ⇒ **404**, and the page
+   renders the ordinary Not Found — the same thing a mistyped URL renders,
+   because `/studio` is unlinked and `noindex` and a 403 would confirm to a
+   customer who typed it that a dashboard is there to find (there is nothing
+   they can do about the refusal, so there is nothing to tell them). An
+   allowlisted email whose session came the wrong way ⇒ **403** with the
+   server's reason shown verbatim, because there _is_ something to do about it
+   and only someone already holding that mailbox can provoke it. Neither is a
+   401 — they _are_ signed in, so bouncing them to sign-in would just loop. The
    allowlist is
    **env-only and NOT a Studio Setting** — access control isn't a business
    tunable, and anyone who could edit the settings database could otherwise grant
@@ -1806,7 +1823,9 @@ Load-bearing decisions:
    have to remember isn't one; it **fails closed** when a token carries no
    readable `amr`; the refusal is logged at `warn` with the email and methods (a
    staff address failing only on method is worth seeing); and the 403 message is
-   rendered verbatim by the page, which offers a **Continue with Google** button
+   rendered verbatim by the page — this is now the **only** thing that reaches
+   that panel, so its **Continue with Google** button is always the actual fix —
+   a button
    that signs out first (Supabase would otherwise hand back the same session) and
    returns to `/studio` via `lib/post-signin.ts` — a `sessionStorage` hop rather
    than a `?next=` on the redirect URL, which would need its own Supabase
@@ -1863,9 +1882,55 @@ Load-bearing decisions:
 
 8. **No charting dependency.** The panels are plain CSS bars. A charting library
    would be the largest dependency in the app for six panels of numbers, against
-   the repo's pruned-dependencies rule. The page is **not in `NAV_LINKS`** and is
-   `noindex` (so it's out of the sitemap and the prerender pass) — the gate that
-   matters is server-side, but there's no reason to advertise it.
+   the repo's pruned-dependencies rule. The page is `noindex` (so it's out of
+   the sitemap and the prerender pass) — the gate that matters is server-side,
+   but there's no reason to advertise it.
+
+9. **The way in is a staff-only nav link, gated by the server's own answer —
+   and it takes Account's place.** `/studio` was originally reachable _only_ by
+   typing the URL, which is what made it invisible in practice — a staff member
+   on a preview deployment had no way to find it. It is still **not in
+   `NAV_LINKS`** (the public array stays flat and unconditional):
+   `useNavLinks()` in `navbar.tsx` swaps the `/account` entry for a separate
+   `DASHBOARD_LINK` when — and only when — `useStudioAccess()`
+   (`web-app/src/lib/studio-access.ts`) says so. That hook asks
+   **`GET /api/studio/access`**, which is mounted behind the **same
+   `requireStaff`** as the figures rather than re-deriving the answer
+   client-side — one decision, so the link can never be offered to an account
+   the dashboard would then refuse. The allowlist is deliberately never shipped
+   to the browser, so asking the server is the only honest test. It **fails
+   closed**: signed out it doesn't ask at all (an anonymous probe can only be a
+   401), a 401/403/outage renders no link, and a refusal is **not retried**
+   (`retry: false`) — a 403 is an answer, and the shared `accountRateLimiter`
+   counts these against the account overview's budget. The answer is cached for
+   the session (`staleTime: Infinity`; staff membership changes when an env var
+   does, not mid-browse) and dropped on **any** auth-state change in
+   `lib/auth-context.tsx` alongside the overview — otherwise a customer signing
+   in after a staff member on the same tab would keep being offered the link.
+
+10. **For staff the dashboard REPLACES the account portal, and is labelled
+    "Dashboard".** A staff member doesn't place orders through the shop, so the
+    customer portal is empty by construction for them — offering both only ever
+    led somewhere blank. So `pages/account.tsx` hands a confirmed staff session
+    on to `/studio` (`<Redirect>`), the navbar swaps the link rather than adding
+    one, and the page's own H1 (and the `/studio` SEO title, and the 403 panel's
+    heading) reads **Dashboard**. The **route is still `/studio`** — only the UI
+    label changed, so the server routes, `post-signin.ts`, and the memory notes
+    all still say studio. Three things make it hold together:
+    - **The hand-off is at one door.** Sign-in (`account-login.tsx`) and the
+      OAuth callback (`account-callback.tsx`) both default to `/account`, so
+      redirecting there covers every way in without touching either.
+    - **`useStudioAccess()` returns `{ staff, loading }`.** A caller that
+      _routes_ on staffhood has to wait for a settled answer or a staff member
+      sees a flash of the empty portal on the way past — so `/account`'s loader
+      waits on `loading` too. (The navbar only _offers_ a link, so it ignores
+      it and renders the public set until the answer lands.) `loading` is false
+      while the probe is disabled, so a signed-out visitor is answered at once
+      rather than held on a request that will never be made. The sign-in bounce
+      still comes first: a pending staff answer never delays it.
+    - **Sign-out moved onto the dashboard**, in the header _and_ the error
+      state. With `/account` bouncing staff back to `/studio`, a dashboard with
+      no sign-out is a dead end — a failed analytics read especially.
 
 The atelier's one-time setup: set **`STUDIO_STAFF_EMAILS`** (comma-separated);
 make sure **Google sign-in is enabled** in Supabase Auth and each staff address
@@ -2505,7 +2570,7 @@ and in the maintainer's env without edits.
   allowlist of the email addresses that may reach the internal studio dashboard
   (`/studio` + `GET /api/studio/analytics`). Staff sign in through the same
   Supabase Auth flow customers use; this promotes their address to studio access.
-  **Fails closed:** unset ⇒ nobody is staff and the dashboard 403s for everyone.
+  **Fails closed:** unset ⇒ nobody is staff and the dashboard 404s for everyone.
   Matching is case-insensitive. Deliberately env-only (**not** a Studio Settings
   key) — it's access control, not a business tunable. Read fresh from env in
   `lib/staff.ts`. See "Studio analytics dashboard" above.
@@ -2655,6 +2720,7 @@ keys on exact property names). Recorded here only because two facts are
 | Change appointment types / routing rules                 | `api-server/src/lib/appointments/catalog.ts` (targeted business rule — durations, which staff, which locations)                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                               |
 | Change staff working hours / calendars                   | The working-hours **Google Sheet** (`APPOINTMENT_SHEET_ID`); read in `api-server/src/lib/google/sheets.repository.ts`, parsed by `lib/appointments/staff.ts`                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                  |
 | Change appointment slot logic / policy                   | `api-server/src/lib/appointments/availability.ts` (`computeSlots`) + `time.ts` + `settings.ts`; `services/appointments.service.ts` + `routes/appointments.ts` + `lib/google/*` (Calendar free/busy + event insert)                                                                                                                                                                                                                                                                                                                                                                                                                                                                            |
+| Change who can see the Dashboard nav link                | `web-app/src/lib/studio-access.ts` (the probe) + `useNavLinks()` / `DASHBOARD_LINK` in `components/navbar.tsx` (where it renders, in Account's place) + the staff hand-off in `pages/account.tsx` + the `/studio/access` route in `api-server/src/routes/studio.ts`; the gate itself is `requireStaff` (`middlewares/auth.ts`) + `lib/staff.ts`                                                                                                                                                                                                                                                                                                                                               |
 | Change the customer account portal (Supabase Auth)       | `artifacts/web-app/src/pages/account.tsx` (+ `components/appointment-manage-panel.tsx`, shared with `pages/appointment-manage.tsx`) + `pages/account-login.tsx` / `account-callback.tsx` / `account-reset.tsx` + `lib/supabase.ts` + `lib/auth-context.tsx` (frontend); `api-server/src/services/account.service.ts` + `routes/account.ts` + `middlewares/auth.ts` + `lib/supabase/client.ts`; queries `findOrdersByEmail` / `findShopOrdersByEmail` + `listUpcomingAppointmentsByEmail` (`lib/google/calendar.repository.ts`, mapped via `lib/appointments/event-details.ts`) + `extractMeasurements` (`lib/notion/orders.schema.ts`). Auth emails: `.agents/memory/supabase-auth-emails.md` |
 | Change the internal studio dashboard                     | `artifacts/web-app/src/pages/studio.tsx` (+ the `/studio` route in `App.tsx`, `noindex` entry in `lib/seo-routes.ts`); `api-server/src/services/studio-analytics.service.ts` (the pure `aggregateStudioAnalytics` + the cached use-case) + `routes/studio.ts` + `requireStaff` in `middlewares/auth.ts` + `lib/staff.ts` (the `STUDIO_STAFF_EMAILS` allowlist + the `amr` Google check); the 403 panel's re-sign-in lands back via `web-app/src/lib/post-signin.ts` (read by `pages/account-callback.tsx`); reads via `lib/notion/scan.ts` + `listOrdersForAnalytics` / `listShopOrdersForAnalytics` / `listInvoicesForAnalytics`                                                             |
 | Change the studio's internal tools (generators, refunds) | `api-server/src/services/studio-tools.service.ts` (the dispatcher + the composed result wording) + `routes/studio.ts` (`POST /studio/tools/:tool`, `requireStaff`) + `web-app/src/components/studio-tools.tsx` (rendered by `pages/studio.tsx`); the underlying work stays in `services/{schedule,invoice-generator,order-notification,order-cancellation,return-refund}.service.ts`. Contract in `openapi.yaml` (`StudioTool` / `StudioToolRequest` / `StudioToolRun`)                                                                                                                                                                                                                       |

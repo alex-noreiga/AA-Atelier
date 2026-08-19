@@ -1,4 +1,4 @@
-import { Redirect } from "wouter";
+import { Redirect, useLocation } from "wouter";
 import {
   useGetStudioAnalytics,
   getGetStudioAnalyticsQueryKey,
@@ -11,6 +11,7 @@ import {
 } from "@workspace/api-client-react";
 import { Button } from "@/components/ui/button";
 import { PageShell } from "@/components/page-shell";
+import NotFound from "@/pages/not-found";
 import { StudioTools } from "@/components/studio-tools";
 import { Seo } from "@/components/seo";
 import { useAuth } from "@/lib/auth-context";
@@ -21,6 +22,7 @@ import { formatPrice, formatDate } from "@/lib/format";
 import { useState } from "react";
 import {
   Loader2,
+  LogOut,
   RefreshCw,
   Lock,
   Package,
@@ -45,12 +47,18 @@ import {
  * staff member arrived with a password session. The gate that matters is the
  * server's — this page just renders what it's given.
  *
+ * It is titled "Dashboard" and *is* the signed-in destination for staff:
+ * `/account` hands them here rather than showing a customer portal they'd
+ * never have anything in. That's why sign-out lives in this header too — with
+ * the account portal out of reach, there'd otherwise be no way out.
+ *
  * The charts are deliberately plain CSS bars. A charting library would be the
  * largest dependency in the app for six panels of numbers, and the repo keeps
  * its dependencies pruned on purpose.
  */
 export default function Studio() {
-  const { session, loading } = useAuth();
+  const [, navigate] = useLocation();
+  const { session, user, loading, signOut } = useAuth();
 
   const analytics = useGetStudioAnalytics({
     query: {
@@ -63,9 +71,24 @@ export default function Studio() {
 
   const status = (analytics.error as { status?: number } | null)?.status;
 
+  const handleSignOut = async () => {
+    await signOut();
+    navigate("/account/login");
+  };
+
   // Signed out (or the session expired) → sign in, same as the account portal.
   if ((!loading && !session) || (analytics.isError && status === 401)) {
     return <Redirect to="/account/login" replace />;
+  }
+
+  // Not a studio account → render exactly what a mistyped URL renders. The
+  // server answers 404 rather than 403 for this precisely so the page can (see
+  // `requireStaff`): the dashboard is unlinked and noindexed, and telling a
+  // customer who typed `/studio` that access was *refused* would confirm there
+  // is something here to find. Returning the real page, not a copy of it, is
+  // what keeps the two indistinguishable.
+  if (analytics.isError && status === 404) {
+    return <NotFound />;
   }
 
   return (
@@ -91,31 +114,48 @@ export default function Studio() {
               We couldn&apos;t load the studio figures just now. Please try
               again in a moment.
             </p>
+            {/* Sign-out lives on the dashboard, and `/account` sends staff back
+                here — so without it in this branch too, a failed read is a dead
+                end with no way off the page. */}
+            <div className="mt-8 flex justify-center">
+              <SignOutButton onSignOut={handleSignOut} />
+            </div>
           </div>
         ) : (
           <>
             <header className="flex items-start justify-between gap-4 mb-12">
-              <div>
+              <div className="min-w-0">
                 <h1 className="text-4xl md:text-5xl font-serif text-foreground mb-2">
-                  Studio
+                  Dashboard
                 </h1>
                 <p className="text-muted-foreground font-light text-sm">
                   Figures as of {formatDateTime(analytics.data.generatedAt)}
                 </p>
+                {user?.email && (
+                  <p
+                    className="mt-1 text-xs text-muted-foreground/80 font-light break-all"
+                    data-testid="studio-email"
+                  >
+                    Signed in as {user.email}
+                  </p>
+                )}
               </div>
-              <Button
-                variant="ghost"
-                onClick={() => void analytics.refetch()}
-                disabled={analytics.isFetching}
-                className="text-muted-foreground hover:text-primary shrink-0 gap-2 text-xs tracking-widest uppercase"
-                data-testid="button-refresh"
-              >
-                <RefreshCw
-                  className={`w-4 h-4 ${analytics.isFetching ? "animate-spin" : ""}`}
-                  strokeWidth={1.5}
-                />
-                Refresh
-              </Button>
+              <div className="flex items-center gap-1 shrink-0">
+                <Button
+                  variant="ghost"
+                  onClick={() => void analytics.refetch()}
+                  disabled={analytics.isFetching}
+                  className="text-muted-foreground hover:text-primary gap-2 text-xs tracking-widest uppercase"
+                  data-testid="button-refresh"
+                >
+                  <RefreshCw
+                    className={`w-4 h-4 ${analytics.isFetching ? "animate-spin" : ""}`}
+                    strokeWidth={1.5}
+                  />
+                  Refresh
+                </Button>
+                <SignOutButton onSignOut={handleSignOut} />
+              </div>
             </header>
 
             <Dashboard data={analytics.data} />
@@ -126,13 +166,30 @@ export default function Studio() {
   );
 }
 
+/** The way off the dashboard. Staff have no account portal to sign out from —
+ * `/account` hands them back here — so every state this page can be in has to
+ * carry one. */
+function SignOutButton({ onSignOut }: { onSignOut: () => Promise<void> }) {
+  return (
+    <Button
+      variant="ghost"
+      onClick={() => void onSignOut()}
+      className="text-muted-foreground hover:text-primary gap-2 text-xs tracking-widest uppercase"
+      data-testid="button-sign-out"
+    >
+      <LogOut className="w-4 h-4" strokeWidth={1.5} />
+      Sign out
+    </Button>
+  );
+}
+
 /**
- * A signed-in session the server refused. Two things land here — an account
- * that isn't on the staff allowlist, and a staff account that signed in with a
- * password or magic link when Google is required — so the server's own message
- * is shown rather than a guess. Both get the Google button: for the second case
- * it's the fix, and for the first it changes nothing (the same 403 comes back),
- * so no one is told which side of the gate they failed on by what's offered.
+ * A studio account whose session wasn't established with Google — since the
+ * allowlist failure now answers 404, this is the only thing that lands here.
+ * That makes the Google button the actual fix rather than a shot in the dark,
+ * and it means only someone already holding a staff mailbox can see this panel
+ * at all. The server's own message is still shown verbatim rather than guessed
+ * at, so a future refusal reason needs no change here.
  */
 function AccessDenied({ reason }: { reason?: string }) {
   const [busy, setBusy] = useState(false);
@@ -164,10 +221,10 @@ function AccessDenied({ reason }: { reason?: string }) {
         className="w-6 h-6 mx-auto mb-4 text-muted-foreground"
         strokeWidth={1}
       />
-      <h1 className="text-3xl font-serif mb-4">Studio access only</h1>
+      <h1 className="text-3xl font-serif mb-4">Dashboard access only</h1>
       <p className="text-muted-foreground max-w-md mx-auto">
         {reason ??
-          "This page is for the atelier team. Your account is signed in, but it isn't a studio account."}
+          "Studio access requires signing in with Google. Please sign out and use Continue with Google."}
       </p>
       {supabase && (
         <Button

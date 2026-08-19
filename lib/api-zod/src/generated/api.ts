@@ -624,7 +624,16 @@ export const GetAccountOverviewResponse = zod.object({
 
 
 /**
- * Aggregates the atelier's own numbers — custom and shop orders by stage, production load against due dates, revenue by month, deposits vs. balances, and the best-selling shop pieces — for the internal studio dashboard. Requires a valid Supabase access token supplied as a Bearer credential whose email is on the studio staff allowlist: 401 when the caller isn't signed in, 403 when they are but aren't staff.
+ * A cheap "am I staff?" probe, so the app can offer a way in to `/studio` without every signed-in customer being shown a link that would refuse them. It runs the SAME gate as the figures below — allowlisted email plus (by default) a session established with Google — so a 200 here and a 200 there can't disagree: 401 when the caller isn't signed in, 404 when they are but aren't staff (the dashboard doesn't exist as far as they're concerned), 403 when they are staff but didn't sign in with Google. It reads nothing and aggregates nothing; reaching the handler at all IS the answer.
+ * @summary Whether the caller may use the studio dashboard
+ */
+export const GetStudioAccessResponse = zod.object({
+  "staff": zod.boolean().describe('Always true. A non-staff caller receives 401\/403 instead.')
+}).describe('The answer to \"may this account use the studio dashboard?\". Only ever returned to a caller the staff gate has already admitted, so `staff` is always true — the field exists so the response is self-describing rather than an empty body, and so a client reads a value instead of inferring from a status code.')
+
+
+/**
+ * Aggregates the atelier's own numbers — custom and shop orders by stage, production load against due dates, revenue by month, deposits vs. balances, and the best-selling shop pieces — for the internal studio dashboard. Requires a valid Supabase access token supplied as a Bearer credential whose email is on the studio staff allowlist: 401 when the caller isn't signed in, 404 when they are but aren't staff, and 403 when they are staff but didn't sign in with Google.
  * @summary Studio analytics for the internal dashboard
  */
 export const GetStudioAnalyticsResponse = zod.object({
@@ -692,7 +701,7 @@ export const GetStudioAnalyticsResponse = zod.object({
 
 
 /**
- * Runs one of the atelier's internal actions — milestone reconciliation, invoice line-item generation, an order status-change email, a cancellation refund, or a return refund — from the signed-in studio dashboard. Each was previously triggered by opening a link that carried a shared secret in its query string; the work is unchanged, the authorization is not: this requires the same Supabase access token as the rest of the studio surface, with the caller's email on the staff allowlist. 401 when not signed in, 403 when signed in but not staff.
+ * Runs one of the atelier's internal actions — milestone reconciliation, invoice line-item generation, an order status-change email, a cancellation refund, or a return refund — from the signed-in studio dashboard. Each was previously triggered by opening a link that carried a shared secret in its query string; the work is unchanged, the authorization is not: this requires the same Supabase access token as the rest of the studio surface, with the caller's email on the staff allowlist. 401 when not signed in, 404 when signed in but not staff, 403 when staff but not signed in with Google.
  * Every tool is idempotent — a repeat run reports `noop` rather than doing the work twice — but two of them move money, so the dashboard confirms before calling those.
  * @summary Run an internal atelier tool
  */

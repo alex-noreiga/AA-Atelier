@@ -166,7 +166,7 @@ export const ROUTE_SEO: Record<string, RouteSeo> = {
   // no reason to advertise the page at all.
   "/studio": {
     path: "/studio",
-    title: "Studio Dashboard | A.A Atelier",
+    title: "Dashboard | A.A Atelier",
     description: "Internal studio dashboard.",
     noindex: true,
   },

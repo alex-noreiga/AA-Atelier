@@ -16,6 +16,7 @@ import { useQueryClient } from "@tanstack/react-query";
 import {
   setAuthTokenGetter,
   getGetAccountOverviewQueryKey,
+  getGetStudioAccessQueryKey,
 } from "@workspace/api-client-react";
 import { supabase, supabaseConfigured } from "./supabase";
 
@@ -61,8 +62,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     const { data: sub } = supabase.auth.onAuthStateChange((_event, next) => {
       setSession(next);
       // Identity may have changed (sign in/out/token refresh across accounts) —
-      // drop any cached overview so one customer's data can't leak to another.
+      // drop any cached overview so one customer's data can't leak to another,
+      // and the staff answer with it, or a customer signing in after a staff
+      // member on the same tab would keep being offered the studio link.
       queryClient.removeQueries({ queryKey: getGetAccountOverviewQueryKey() });
+      queryClient.removeQueries({ queryKey: getGetStudioAccessQueryKey() });
     });
 
     return () => {
@@ -74,6 +78,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const signOut = async () => {
     if (supabase) await supabase.auth.signOut();
     queryClient.removeQueries({ queryKey: getGetAccountOverviewQueryKey() });
+    queryClient.removeQueries({ queryKey: getGetStudioAccessQueryKey() });
   };
 
   return (
