@@ -7,6 +7,7 @@ import { Seo } from "@/components/seo";
 import { ROUTE_SEO } from "@/lib/seo-routes";
 import { supabase, supabaseConfigured } from "@/lib/supabase";
 import { useAuth } from "@/lib/auth-context";
+import { authErrorMessage, showsAuthErrorReference } from "@/lib/auth-errors";
 import { Loader2, MailCheck } from "lucide-react";
 
 /**
@@ -32,7 +33,9 @@ function callbackUrl(path = "/account/callback"): string {
 
 export default function AccountLogin() {
   const search = useSearch();
-  const linkExpired = new URLSearchParams(search).get("error") === "expired";
+  // Why the callback turned the customer away, if it did. The callback page
+  // forwards Supabase's own reason code so the notice can be specific.
+  const errorCode = new URLSearchParams(search).get("error");
   const { session, loading } = useAuth();
 
   const [mode, setMode] = useState<Mode>("signin");
@@ -247,14 +250,20 @@ export default function AccountLogin() {
               </button>
             </div>
 
-            {linkExpired && (
-              <p
-                className="text-center text-sm text-destructive font-light"
-                data-testid="login-expired"
-              >
-                That sign-in link has expired or already been used. Sign in
-                again below.
-              </p>
+            {errorCode && (
+              <div className="text-center space-y-1" data-testid="login-error">
+                <p className="text-sm text-destructive font-light">
+                  {authErrorMessage(errorCode)}
+                </p>
+                {showsAuthErrorReference(errorCode) && (
+                  <p
+                    className="text-xs text-muted-foreground/70 font-light"
+                    data-testid="login-error-reference"
+                  >
+                    Reference: {errorCode}
+                  </p>
+                )}
+              </div>
             )}
 
             <form onSubmit={handlePasswordSubmit} className="space-y-4">

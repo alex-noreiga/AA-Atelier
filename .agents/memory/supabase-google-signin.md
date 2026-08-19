@@ -12,14 +12,14 @@ the version-controlled runbook — the same pattern as `supabase-auth-emails.md`
 
 ## Project facts (fill these in verbatim)
 
-| Thing                                    | Value                                                     |
-| ---------------------------------------- | --------------------------------------------------------- |
-| Supabase project                         | `supabase-atelier`, ref `nrxfyhootpklhugegzsq`             |
-| Supabase URL                             | `https://nrxfyhootpklhugegzsq.supabase.co`                 |
-| **Google "Authorized redirect URI"**     | `https://nrxfyhootpklhugegzsq.supabase.co/auth/v1/callback` |
-| Google "Authorized JavaScript origin"    | `https://a3iceanddance.com` (+ `http://localhost:5173` for dev) |
-| Supabase **Site URL**                    | `https://a3iceanddance.com` (the apex — see below)          |
-| Supabase **Redirect URLs** (allow-list)  | `https://a3iceanddance.com/account/callback`, `https://a3iceanddance.com/account/reset`, `http://localhost:5173/**` |
+| Thing                                   | Value                                                                                                               |
+| --------------------------------------- | ------------------------------------------------------------------------------------------------------------------- |
+| Supabase project                        | `supabase-atelier`, ref `nrxfyhootpklhugegzsq`                                                                      |
+| Supabase URL                            | `https://nrxfyhootpklhugegzsq.supabase.co`                                                                          |
+| **Google "Authorized redirect URI"**    | `https://nrxfyhootpklhugegzsq.supabase.co/auth/v1/callback`                                                         |
+| Google "Authorized JavaScript origin"   | `https://a3iceanddance.com` (+ `http://localhost:5173` for dev)                                                     |
+| Supabase **Site URL**                   | `https://a3iceanddance.com` (the apex — see below)                                                                  |
+| Supabase **Redirect URLs** (allow-list) | `https://a3iceanddance.com/account/callback`, `https://a3iceanddance.com/account/reset`, `http://localhost:5173/**` |
 
 ## Step 1 — Google Cloud Console
 
@@ -39,14 +39,14 @@ the version-controlled runbook — the same pattern as `supabase-auth-emails.md`
    a Google review.
 4. **Credentials → Create credentials → OAuth client ID**, type **Web
    application**:
-   - *Authorized JavaScript origins* → the origins in the table above.
-   - *Authorized redirect URIs* → **the Supabase callback**
+   - _Authorized JavaScript origins_ → the origins in the table above.
+   - _Authorized redirect URIs_ → **the Supabase callback**
      `https://nrxfyhootpklhugegzsq.supabase.co/auth/v1/callback`.
 5. Copy the **Client ID** and **Client secret**.
 
 > **The single most common mistake** is putting the app's own
-> `https://a3iceanddance.com/account/callback` into Google's *Authorized redirect
-> URIs*. Google redirects to **Supabase**, and Supabase then redirects to the
+> `https://a3iceanddance.com/account/callback` into Google's _Authorized redirect
+> URIs_. Google redirects to **Supabase**, and Supabase then redirects to the
 > app. The app callback belongs in Supabase's allow-list (step 2), never in
 > Google's.
 
@@ -105,11 +105,16 @@ select timestamp, log_attributes['path'] as path, log_attributes['msg'] as msg,
 from logs where source = 'auth_logs' order by timestamp desc limit 30
 ```
 
-The `/callback` line carries the real reason. This matters because the app's
-`pages/account-callback.tsx` reports **every** failed return as *"That sign-in link
-has expired or already been used"* — it only checks whether a session exists and
-discards the error Supabase sends back in the URL. That copy was written for magic
-links; for OAuth it is nearly always wrong about the cause.
+The `/callback` line carries the real reason, and the sign-in page now shows it too.
+It did not during this setup: `pages/account-callback.tsx` reported **every** failed
+return as _"That sign-in link has expired or already been used"_, because it only
+tested whether a session existed and discarded the error Supabase sends back in the
+URL — copy written for magic links, and nearly always wrong about the cause for
+OAuth. That is fixed (`lib/auth-errors.ts` parses the redirect's `error` /
+`error_code` / `error_description`, the callback forwards the code to
+`/account/login?error=<code>`, and the sign-in page maps it to customer-facing copy
+plus a quotable reference). The logs remain the place to read
+`error_description`, which is deliberately not shown to customers.
 
 Two failures actually hit during setup, in order:
 
