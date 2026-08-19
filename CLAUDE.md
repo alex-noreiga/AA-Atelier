@@ -1730,9 +1730,10 @@ conflict (stripe_session_id) do nothing`, returning `claimed` / `done` /
    schema's `ALTER DEFAULT PRIVILEGES` reset so a future `create table` doesn't
    silently reopen it. The app is untouched by this because it never uses PostgREST —
    it connects directly as `postgres`, which **owns** these tables and so bypasses
-   RLS. Two rules follow: a new table in `public` needs the same `enable row level
-   security` + `revoke` pair in its migration, and a PostgREST RPC (there are none
-   today) would need an explicit `grant execute`.
+   RLS. Two rules follow: a new table in `public` needs its own
+   `enable row level security` + `revoke` pair in the migration that creates it,
+   and a PostgREST RPC (there are none today) would need an explicit
+   `grant execute`.
 
 The atelier's one-time setup (all optional — unset ⇒ the layer no-ops): on Vercel
 the Supabase integration provides `POSTGRES_URL` + `POSTGRES_URL_NON_POOLING`; run
