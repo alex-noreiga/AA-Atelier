@@ -736,6 +736,15 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/ErrorEnvelope"
+        "503":
+          description: >-
+            Scheduling is temporarily unavailable — the working-hours Google
+            Sheet could not be read (a transient Google outage) and no cached
+            copy was available. Retriable.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorEnvelope"
   /appointments:
     post:
       operationId: createAppointment
@@ -769,6 +778,15 @@ paths:
                 $ref: "#/components/schemas/ErrorEnvelope"
         "500":
           description: Server error
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorEnvelope"
+        "503":
+          description: >-
+            Scheduling is temporarily unavailable — the working-hours Google
+            Sheet could not be read (a transient Google outage) and no cached
+            copy was available. Retriable.
           content:
             application/json:
               schema:
@@ -812,6 +830,15 @@ paths:
                 $ref: "#/components/schemas/ErrorEnvelope"
         "500":
           description: Server error
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorEnvelope"
+        "503":
+          description: >-
+            Scheduling is temporarily unavailable — the working-hours Google
+            Sheet could not be read (a transient Google outage) and no cached
+            copy was available. Retriable.
           content:
             application/json:
               schema:
@@ -864,6 +891,15 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/ErrorEnvelope"
+        "503":
+          description: >-
+            Scheduling is temporarily unavailable — the working-hours Google
+            Sheet could not be read (a transient Google outage) and no cached
+            copy was available. Retriable.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorEnvelope"
   /appointments/cancel:
     post:
       operationId: cancelAppointment
@@ -895,6 +931,15 @@ paths:
                 $ref: "#/components/schemas/ErrorEnvelope"
         "500":
           description: Server error
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorEnvelope"
+        "503":
+          description: >-
+            Scheduling is temporarily unavailable — the working-hours Google
+            Sheet could not be read (a transient Google outage) and no cached
+            copy was available. Retriable.
           content:
             application/json:
               schema:
