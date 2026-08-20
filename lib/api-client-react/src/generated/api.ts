@@ -27,10 +27,12 @@ import type {
   CancelAppointmentRequest,
   CheckoutSessionResponse,
   CheckoutSessionStatus,
+  ColorList,
   CreateCheckoutSessionRequest,
   ErrorEnvelope,
   GetAppointmentAvailabilityParams,
   GetAppointmentParams,
+  GetPublishedReviewsParams,
   HealthStatus,
   MessageResponse,
   NewAppointmentRequest,
@@ -56,7 +58,19 @@ import type {
   PaymentSessionResponse,
   ProductList,
   RescheduleAppointmentRequest,
-  ShopOrderStatus
+  ReviewList,
+  ReviewStatusRequest,
+  ShopOrderStatus,
+  StaffAvailabilityEntry,
+  StaffAvailabilityList,
+  StaffAvailabilityRequest,
+  StudioAccess,
+  StudioAnalytics,
+  StudioReview,
+  StudioReviewList,
+  StudioTool,
+  StudioToolRequest,
+  StudioToolRun
 } from './api.schemas';
 
 import { customFetch } from '../custom-fetch';
@@ -889,6 +903,169 @@ export function useGetProducts<TData = Awaited<ReturnType<typeof getProducts>>, 
  ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
 
   const queryOptions = getGetProductsQueryOptions(options)
+
+  const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
+
+  return withQueryKey(query, queryOptions.queryKey);
+}
+
+
+
+
+
+
+
+export const getGetColorsUrl = () => {
+
+
+
+
+  return `/api/colors`
+}
+
+/**
+ * Returns the studio's color palette for the custom-order intake form's color picker. The palette is an atelier-editable "Studio Settings" value (`COLOR_PALETTE`), falling back to a built-in primary-color palette, so this always returns a non-empty list.
+ * @summary List custom-order palette colors
+ */
+export const getColors = async ( options?: Parameters<typeof customFetch>[1]): Promise<ColorList> => {
+
+  return customFetch<ColorList>(getGetColorsUrl(),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
+
+
+
+
+export const getGetColorsQueryKey = () => {
+    return [
+    `/api/colors`
+    ] as const;
+    }
+
+
+export const getGetColorsQueryOptions = <TData = Awaited<ReturnType<typeof getColors>>, TError = ErrorType<ErrorEnvelope>>( options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getColors>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getGetColorsQueryKey();
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof getColors>>> = ({ signal }) => getColors({ signal, ...requestOptions });
+
+
+
+
+
+   return  { queryKey, queryFn, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof getColors>>, TError, TData> & { queryKey: QueryKey }
+}
+
+export type GetColorsQueryResult = NonNullable<Awaited<ReturnType<typeof getColors>>>
+export type GetColorsQueryError = ErrorType<ErrorEnvelope>
+
+
+/**
+ * @summary List custom-order palette colors
+ */
+
+export function useGetColors<TData = Awaited<ReturnType<typeof getColors>>, TError = ErrorType<ErrorEnvelope>>(
+  options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getColors>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+
+ ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+
+  const queryOptions = getGetColorsQueryOptions(options)
+
+  const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
+
+  return withQueryKey(query, queryOptions.queryKey);
+}
+
+
+
+
+
+
+
+export const getGetPublishedReviewsUrl = (params?: GetPublishedReviewsParams,) => {
+  const normalizedParams = new URLSearchParams();
+
+  Object.entries(params || {}).forEach(([key, value]) => {
+
+    if (value !== undefined) {
+      normalizedParams.append(key, value === null ? 'null' : String(value))
+    }
+  });
+
+  const stringifiedParams = normalizedParams.toString();
+
+  return stringifiedParams.length > 0 ? `/api/reviews?${stringifiedParams}` : `/api/reviews`
+}
+
+/**
+ * Returns the reviews the atelier has curated for public display: only rows whose Status is the published option AND whose author consented to publication. Read-only and anonymous — no email or order number is ever returned. When the reviews database is not configured the list is empty rather than an error, so a site that never collected a review simply shows no testimonials.
+ * @summary List published customer testimonials
+ */
+export const getPublishedReviews = async (params?: GetPublishedReviewsParams, options?: Parameters<typeof customFetch>[1]): Promise<ReviewList> => {
+
+  return customFetch<ReviewList>(getGetPublishedReviewsUrl(params),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
+
+
+
+
+export const getGetPublishedReviewsQueryKey = (params?: GetPublishedReviewsParams,) => {
+    return [
+    `/api/reviews`, ...(params ? [params] : [])
+    ] as const;
+    }
+
+
+export const getGetPublishedReviewsQueryOptions = <TData = Awaited<ReturnType<typeof getPublishedReviews>>, TError = ErrorType<ErrorEnvelope>>(params?: GetPublishedReviewsParams, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getPublishedReviews>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getGetPublishedReviewsQueryKey(params);
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof getPublishedReviews>>> = ({ signal }) => getPublishedReviews(params, { signal, ...requestOptions });
+
+
+
+
+
+   return  { queryKey, queryFn, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof getPublishedReviews>>, TError, TData> & { queryKey: QueryKey }
+}
+
+export type GetPublishedReviewsQueryResult = NonNullable<Awaited<ReturnType<typeof getPublishedReviews>>>
+export type GetPublishedReviewsQueryError = ErrorType<ErrorEnvelope>
+
+
+/**
+ * @summary List published customer testimonials
+ */
+
+export function useGetPublishedReviews<TData = Awaited<ReturnType<typeof getPublishedReviews>>, TError = ErrorType<ErrorEnvelope>>(
+ params?: GetPublishedReviewsParams, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getPublishedReviews>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+
+ ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+
+  const queryOptions = getGetPublishedReviewsQueryOptions(params,options)
 
   const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
 
@@ -1816,4 +1993,686 @@ export function useGetAccountOverview<TData = Awaited<ReturnType<typeof getAccou
 
 
 
+
+export const getListStaffAvailabilityUrl = () => {
+
+
+
+
+  return `/api/studio/availability`
+}
+
+/**
+ * The standing working hours the slot calculator uses as its positive availability grid — one entry per staff member per block of hours, with the weekdays it repeats on and the locations it can be booked for. This is the schedule the atelier edits on the dashboard; it used to live in a Google Sheet. Same staff gate as the rest of the studio surface: 401 when not signed in, 404 when signed in but not staff, 403 when staff but not signed in with Google.
+ * @summary The staff working-hours schedule
+ */
+export const listStaffAvailability = async ( options?: Parameters<typeof customFetch>[1]): Promise<StaffAvailabilityList> => {
+
+  return customFetch<StaffAvailabilityList>(getListStaffAvailabilityUrl(),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
+
+
+
+
+export const getListStaffAvailabilityQueryKey = () => {
+    return [
+    `/api/studio/availability`
+    ] as const;
+    }
+
+
+export const getListStaffAvailabilityQueryOptions = <TData = Awaited<ReturnType<typeof listStaffAvailability>>, TError = ErrorType<ErrorEnvelope | OrderNotFound>>( options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof listStaffAvailability>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getListStaffAvailabilityQueryKey();
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof listStaffAvailability>>> = ({ signal }) => listStaffAvailability({ signal, ...requestOptions });
+
+
+
+
+
+   return  { queryKey, queryFn, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof listStaffAvailability>>, TError, TData> & { queryKey: QueryKey }
+}
+
+export type ListStaffAvailabilityQueryResult = NonNullable<Awaited<ReturnType<typeof listStaffAvailability>>>
+export type ListStaffAvailabilityQueryError = ErrorType<ErrorEnvelope | OrderNotFound>
+
+
+/**
+ * @summary The staff working-hours schedule
+ */
+
+export function useListStaffAvailability<TData = Awaited<ReturnType<typeof listStaffAvailability>>, TError = ErrorType<ErrorEnvelope | OrderNotFound>>(
+  options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof listStaffAvailability>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+
+ ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+
+  const queryOptions = getListStaffAvailabilityQueryOptions(options)
+
+  const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
+
+  return withQueryKey(query, queryOptions.queryKey);
+}
+
+
+
+
+
+
+
+export const getCreateStaffAvailabilityUrl = () => {
+
+
+
+
+  return `/api/studio/availability`
+}
+
+/**
+ * Adds one recurring block of working hours for a staff member. The staff name must be one the studio books (the appointment catalog's list, also returned by the GET above) and the hours must be a real range, so an entry can't be saved that the slot calculator would silently ignore.
+ * @summary Add a block of working hours
+ */
+export const createStaffAvailability = async (staffAvailabilityRequest: StaffAvailabilityRequest, options?: Parameters<typeof customFetch>[1]): Promise<StaffAvailabilityEntry> => {
+
+  return customFetch<StaffAvailabilityEntry>(getCreateStaffAvailabilityUrl(),
+  {
+    ...options,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    body: JSON.stringify(staffAvailabilityRequest)
+  }
+);}
+
+
+
+
+
+export const getCreateStaffAvailabilityMutationOptions = <TError = ErrorType<ErrorEnvelope | OrderNotFound>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof createStaffAvailability>>, TError,{data: BodyType<StaffAvailabilityRequest>}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof createStaffAvailability>>, TError,{data: BodyType<StaffAvailabilityRequest>}, TContext> => {
+
+const mutationKey = ['createStaffAvailability'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof createStaffAvailability>>, {data: BodyType<StaffAvailabilityRequest>}> = (props) => {
+          const {data} = props ?? {};
+
+          return  createStaffAvailability(data,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type CreateStaffAvailabilityMutationResult = NonNullable<Awaited<ReturnType<typeof createStaffAvailability>>>
+    export type CreateStaffAvailabilityMutationBody = BodyType<StaffAvailabilityRequest>
+    export type CreateStaffAvailabilityMutationError = ErrorType<ErrorEnvelope | OrderNotFound>
+
+    /**
+ * @summary Add a block of working hours
+ */
+export const useCreateStaffAvailability = <TError = ErrorType<ErrorEnvelope | OrderNotFound>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof createStaffAvailability>>, TError,{data: BodyType<StaffAvailabilityRequest>}, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof createStaffAvailability>>,
+        TError,
+        {data: BodyType<StaffAvailabilityRequest>},
+        TContext
+      > => {
+      return useMutation(getCreateStaffAvailabilityMutationOptions(options));
+    }
+
+export const getUpdateStaffAvailabilityUrl = (entryId: string,) => {
+
+
+
+
+  return `/api/studio/availability/${entryId}`
+}
+
+/**
+ * Replaces one entry's hours, days, locations, staff member, or calendar address. The whole entry is sent, so the same validation the create path applies holds here too.
+ * @summary Change a block of working hours
+ */
+export const updateStaffAvailability = async (entryId: string,
+    staffAvailabilityRequest: StaffAvailabilityRequest, options?: Parameters<typeof customFetch>[1]): Promise<StaffAvailabilityEntry> => {
+
+  return customFetch<StaffAvailabilityEntry>(getUpdateStaffAvailabilityUrl(entryId),
+  {
+    ...options,
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    body: JSON.stringify(staffAvailabilityRequest)
+  }
+);}
+
+
+
+
+
+export const getUpdateStaffAvailabilityMutationOptions = <TError = ErrorType<ErrorEnvelope | OrderNotFound>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof updateStaffAvailability>>, TError,{entryId: string;data: BodyType<StaffAvailabilityRequest>}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof updateStaffAvailability>>, TError,{entryId: string;data: BodyType<StaffAvailabilityRequest>}, TContext> => {
+
+const mutationKey = ['updateStaffAvailability'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof updateStaffAvailability>>, {entryId: string;data: BodyType<StaffAvailabilityRequest>}> = (props) => {
+          const {entryId,data} = props ?? {};
+
+          return  updateStaffAvailability(entryId,data,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type UpdateStaffAvailabilityMutationResult = NonNullable<Awaited<ReturnType<typeof updateStaffAvailability>>>
+    export type UpdateStaffAvailabilityMutationBody = BodyType<StaffAvailabilityRequest>
+    export type UpdateStaffAvailabilityMutationError = ErrorType<ErrorEnvelope | OrderNotFound>
+
+    /**
+ * @summary Change a block of working hours
+ */
+export const useUpdateStaffAvailability = <TError = ErrorType<ErrorEnvelope | OrderNotFound>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof updateStaffAvailability>>, TError,{entryId: string;data: BodyType<StaffAvailabilityRequest>}, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof updateStaffAvailability>>,
+        TError,
+        {entryId: string;data: BodyType<StaffAvailabilityRequest>},
+        TContext
+      > => {
+      return useMutation(getUpdateStaffAvailabilityMutationOptions(options));
+    }
+
+export const getDeleteStaffAvailabilityUrl = (entryId: string,) => {
+
+
+
+
+  return `/api/studio/availability/${entryId}`
+}
+
+/**
+ * Removes one entry from the schedule. Those hours stop being offered as soon as the change is picked up; appointments already booked inside them are untouched (they live on the staff calendar).
+ * @summary Remove a block of working hours
+ */
+export const deleteStaffAvailability = async (entryId: string, options?: Parameters<typeof customFetch>[1]): Promise<MessageResponse> => {
+
+  return customFetch<MessageResponse>(getDeleteStaffAvailabilityUrl(entryId),
+  {
+    ...options,
+    method: 'DELETE'
+
+
+  }
+);}
+
+
+
+
+
+export const getDeleteStaffAvailabilityMutationOptions = <TError = ErrorType<ErrorEnvelope | OrderNotFound>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof deleteStaffAvailability>>, TError,{entryId: string}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof deleteStaffAvailability>>, TError,{entryId: string}, TContext> => {
+
+const mutationKey = ['deleteStaffAvailability'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof deleteStaffAvailability>>, {entryId: string}> = (props) => {
+          const {entryId} = props ?? {};
+
+          return  deleteStaffAvailability(entryId,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type DeleteStaffAvailabilityMutationResult = NonNullable<Awaited<ReturnType<typeof deleteStaffAvailability>>>
+
+    export type DeleteStaffAvailabilityMutationError = ErrorType<ErrorEnvelope | OrderNotFound>
+
+    /**
+ * @summary Remove a block of working hours
+ */
+export const useDeleteStaffAvailability = <TError = ErrorType<ErrorEnvelope | OrderNotFound>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof deleteStaffAvailability>>, TError,{entryId: string}, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof deleteStaffAvailability>>,
+        TError,
+        {entryId: string},
+        TContext
+      > => {
+      return useMutation(getDeleteStaffAvailabilityMutationOptions(options));
+    }
+
+export const getGetStudioAccessUrl = () => {
+
+
+
+
+  return `/api/studio/access`
+}
+
+/**
+ * A cheap "am I staff?" probe, so the app can offer a way in to `/studio` without every signed-in customer being shown a link that would refuse them. It runs the SAME gate as the figures below — allowlisted email plus (by default) a session established with Google — so a 200 here and a 200 there can't disagree: 401 when the caller isn't signed in, 404 when they are but aren't staff (the dashboard doesn't exist as far as they're concerned), 403 when they are staff but didn't sign in with Google. It reads nothing and aggregates nothing; reaching the handler at all IS the answer.
+ * @summary Whether the caller may use the studio dashboard
+ */
+export const getStudioAccess = async ( options?: Parameters<typeof customFetch>[1]): Promise<StudioAccess> => {
+
+  return customFetch<StudioAccess>(getGetStudioAccessUrl(),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
+
+
+
+
+export const getGetStudioAccessQueryKey = () => {
+    return [
+    `/api/studio/access`
+    ] as const;
+    }
+
+
+export const getGetStudioAccessQueryOptions = <TData = Awaited<ReturnType<typeof getStudioAccess>>, TError = ErrorType<ErrorEnvelope | OrderNotFound>>( options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getStudioAccess>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getGetStudioAccessQueryKey();
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof getStudioAccess>>> = ({ signal }) => getStudioAccess({ signal, ...requestOptions });
+
+
+
+
+
+   return  { queryKey, queryFn, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof getStudioAccess>>, TError, TData> & { queryKey: QueryKey }
+}
+
+export type GetStudioAccessQueryResult = NonNullable<Awaited<ReturnType<typeof getStudioAccess>>>
+export type GetStudioAccessQueryError = ErrorType<ErrorEnvelope | OrderNotFound>
+
+
+/**
+ * @summary Whether the caller may use the studio dashboard
+ */
+
+export function useGetStudioAccess<TData = Awaited<ReturnType<typeof getStudioAccess>>, TError = ErrorType<ErrorEnvelope | OrderNotFound>>(
+  options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getStudioAccess>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+
+ ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+
+  const queryOptions = getGetStudioAccessQueryOptions(options)
+
+  const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
+
+  return withQueryKey(query, queryOptions.queryKey);
+}
+
+
+
+
+
+
+
+export const getGetStudioAnalyticsUrl = () => {
+
+
+
+
+  return `/api/studio/analytics`
+}
+
+/**
+ * Aggregates the atelier's own numbers — custom and shop orders by stage, production load against due dates, revenue by month, deposits vs. balances, and the best-selling shop pieces — for the internal studio dashboard. Requires a valid Supabase access token supplied as a Bearer credential whose email is on the studio staff allowlist: 401 when the caller isn't signed in, 404 when they are but aren't staff, and 403 when they are staff but didn't sign in with Google.
+ * @summary Studio analytics for the internal dashboard
+ */
+export const getStudioAnalytics = async ( options?: Parameters<typeof customFetch>[1]): Promise<StudioAnalytics> => {
+
+  return customFetch<StudioAnalytics>(getGetStudioAnalyticsUrl(),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
+
+
+
+
+export const getGetStudioAnalyticsQueryKey = () => {
+    return [
+    `/api/studio/analytics`
+    ] as const;
+    }
+
+
+export const getGetStudioAnalyticsQueryOptions = <TData = Awaited<ReturnType<typeof getStudioAnalytics>>, TError = ErrorType<ErrorEnvelope | OrderNotFound>>( options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getStudioAnalytics>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getGetStudioAnalyticsQueryKey();
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof getStudioAnalytics>>> = ({ signal }) => getStudioAnalytics({ signal, ...requestOptions });
+
+
+
+
+
+   return  { queryKey, queryFn, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof getStudioAnalytics>>, TError, TData> & { queryKey: QueryKey }
+}
+
+export type GetStudioAnalyticsQueryResult = NonNullable<Awaited<ReturnType<typeof getStudioAnalytics>>>
+export type GetStudioAnalyticsQueryError = ErrorType<ErrorEnvelope | OrderNotFound>
+
+
+/**
+ * @summary Studio analytics for the internal dashboard
+ */
+
+export function useGetStudioAnalytics<TData = Awaited<ReturnType<typeof getStudioAnalytics>>, TError = ErrorType<ErrorEnvelope | OrderNotFound>>(
+  options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getStudioAnalytics>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+
+ ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+
+  const queryOptions = getGetStudioAnalyticsQueryOptions(options)
+
+  const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
+
+  return withQueryKey(query, queryOptions.queryKey);
+}
+
+
+
+
+
+
+
+export const getRunStudioToolUrl = (tool: StudioTool,) => {
+
+
+
+
+  return `/api/studio/tools/${tool}`
+}
+
+/**
+ * Runs one of the atelier's internal actions — milestone reconciliation, invoice line-item generation, an order status-change email, a cancellation refund, a return refund, or a back-in-stock alert — from the signed-in studio dashboard. Most were previously triggered by opening a link that carried a shared secret in its query string; the work is unchanged, the authorization is not: this requires the same Supabase access token as the rest of the studio surface, with the caller's email on the staff allowlist. 401 when not signed in, 404 when signed in but not staff, 403 when staff but not signed in with Google.
+ * Every tool is idempotent — a repeat run reports `noop` rather than doing the work twice — but two of them move money, so the dashboard confirms before calling those.
+ * @summary Run an internal atelier tool
+ */
+export const runStudioTool = async (tool: StudioTool,
+    studioToolRequest: StudioToolRequest, options?: Parameters<typeof customFetch>[1]): Promise<StudioToolRun> => {
+
+  return customFetch<StudioToolRun>(getRunStudioToolUrl(tool),
+  {
+    ...options,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    body: JSON.stringify(studioToolRequest)
+  }
+);}
+
+
+
+
+
+export const getRunStudioToolMutationOptions = <TError = ErrorType<ErrorEnvelope | OrderNotFound>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof runStudioTool>>, TError,{tool: StudioTool;data: BodyType<StudioToolRequest>}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof runStudioTool>>, TError,{tool: StudioTool;data: BodyType<StudioToolRequest>}, TContext> => {
+
+const mutationKey = ['runStudioTool'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof runStudioTool>>, {tool: StudioTool;data: BodyType<StudioToolRequest>}> = (props) => {
+          const {tool,data} = props ?? {};
+
+          return  runStudioTool(tool,data,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type RunStudioToolMutationResult = NonNullable<Awaited<ReturnType<typeof runStudioTool>>>
+    export type RunStudioToolMutationBody = BodyType<StudioToolRequest>
+    export type RunStudioToolMutationError = ErrorType<ErrorEnvelope | OrderNotFound>
+
+    /**
+ * @summary Run an internal atelier tool
+ */
+export const useRunStudioTool = <TError = ErrorType<ErrorEnvelope | OrderNotFound>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof runStudioTool>>, TError,{tool: StudioTool;data: BodyType<StudioToolRequest>}, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof runStudioTool>>,
+        TError,
+        {tool: StudioTool;data: BodyType<StudioToolRequest>},
+        TContext
+      > => {
+      return useMutation(getRunStudioToolMutationOptions(options));
+    }
+
+export const getListStudioReviewsUrl = () => {
+
+
+
+
+  return `/api/studio/reviews`
+}
+
+/**
+ * Every review the atelier hasn't decided on yet, plus the ones it has, newest first — the read half of the loop the app has only ever written to. A review is captured at delivery with its Notion `Status` set to "New" and had to be promoted by hand in Notion for the site to show it; this is that same decision, made where the rest of the studio work happens.
+ *
+ * The three moderation states are DERIVED from the `Status` select rather than enumerated from it: `published` and `rejected` name the two values the app writes, and everything else — "New", a blank select, or any value the atelier invented — reads as `pending`. So an unrecognized status asks for a decision rather than silently publishing.
+ *
+ * Photos are fetched only for the pending rows (they are what a decision is made on) and their URLs are short-lived Notion-signed links, good for this page load and not for storing. Same staff gate as the rest of the studio surface: 401 when not signed in, 404 when signed in but not staff, 403 when staff but not signed in with Google.
+ * @summary The review moderation queue
+ */
+export const listStudioReviews = async ( options?: Parameters<typeof customFetch>[1]): Promise<StudioReviewList> => {
+
+  return customFetch<StudioReviewList>(getListStudioReviewsUrl(),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
+
+
+
+
+export const getListStudioReviewsQueryKey = () => {
+    return [
+    `/api/studio/reviews`
+    ] as const;
+    }
+
+
+export const getListStudioReviewsQueryOptions = <TData = Awaited<ReturnType<typeof listStudioReviews>>, TError = ErrorType<ErrorEnvelope | OrderNotFound>>( options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof listStudioReviews>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getListStudioReviewsQueryKey();
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof listStudioReviews>>> = ({ signal }) => listStudioReviews({ signal, ...requestOptions });
+
+
+
+
+
+   return  { queryKey, queryFn, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof listStudioReviews>>, TError, TData> & { queryKey: QueryKey }
+}
+
+export type ListStudioReviewsQueryResult = NonNullable<Awaited<ReturnType<typeof listStudioReviews>>>
+export type ListStudioReviewsQueryError = ErrorType<ErrorEnvelope | OrderNotFound>
+
+
+/**
+ * @summary The review moderation queue
+ */
+
+export function useListStudioReviews<TData = Awaited<ReturnType<typeof listStudioReviews>>, TError = ErrorType<ErrorEnvelope | OrderNotFound>>(
+  options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof listStudioReviews>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+
+ ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+
+  const queryOptions = getListStudioReviewsQueryOptions(options)
+
+  const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
+
+  return withQueryKey(query, queryOptions.queryKey);
+}
+
+
+
+
+
+
+
+export const getSetStudioReviewStatusUrl = (reviewId: string,) => {
+
+
+
+
+  return `/api/studio/reviews/${reviewId}/status`
+}
+
+/**
+ * Writes one review's moderation decision to its Notion `Status`. `published` is what puts a testimonial on the site, `rejected` takes it off (and keeps it out of the queue), and `pending` returns it to the queue — so a decision made in error is undone the same way it was made.
+ *
+ * Publishing requires the customer's own consent to publish, which the atelier cannot supply: without it the request is refused with 409 rather than writing a status the site would then decline to honour. Consent is on the review (`consentToPublish`), so the dashboard can say so before the button is pressed.
+ * @summary Publish, reject, or re-queue a review
+ */
+export const setStudioReviewStatus = async (reviewId: string,
+    reviewStatusRequest: ReviewStatusRequest, options?: Parameters<typeof customFetch>[1]): Promise<StudioReview> => {
+
+  return customFetch<StudioReview>(getSetStudioReviewStatusUrl(reviewId),
+  {
+    ...options,
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    body: JSON.stringify(reviewStatusRequest)
+  }
+);}
+
+
+
+
+
+export const getSetStudioReviewStatusMutationOptions = <TError = ErrorType<ErrorEnvelope | OrderNotFound>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof setStudioReviewStatus>>, TError,{reviewId: string;data: BodyType<ReviewStatusRequest>}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof setStudioReviewStatus>>, TError,{reviewId: string;data: BodyType<ReviewStatusRequest>}, TContext> => {
+
+const mutationKey = ['setStudioReviewStatus'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof setStudioReviewStatus>>, {reviewId: string;data: BodyType<ReviewStatusRequest>}> = (props) => {
+          const {reviewId,data} = props ?? {};
+
+          return  setStudioReviewStatus(reviewId,data,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type SetStudioReviewStatusMutationResult = NonNullable<Awaited<ReturnType<typeof setStudioReviewStatus>>>
+    export type SetStudioReviewStatusMutationBody = BodyType<ReviewStatusRequest>
+    export type SetStudioReviewStatusMutationError = ErrorType<ErrorEnvelope | OrderNotFound>
+
+    /**
+ * @summary Publish, reject, or re-queue a review
+ */
+export const useSetStudioReviewStatus = <TError = ErrorType<ErrorEnvelope | OrderNotFound>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof setStudioReviewStatus>>, TError,{reviewId: string;data: BodyType<ReviewStatusRequest>}, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof setStudioReviewStatus>>,
+        TError,
+        {reviewId: string;data: BodyType<ReviewStatusRequest>},
+        TContext
+      > => {
+      return useMutation(getSetStudioReviewStatusMutationOptions(options));
+    }
 

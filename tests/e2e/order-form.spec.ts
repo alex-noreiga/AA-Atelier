@@ -1,6 +1,6 @@
 import { test, expect } from "./support/test";
 import { createOrderInput, GENERIC_ERROR } from "@workspace/test-fixtures";
-import { mockCreateOrder } from "./support/mock-api";
+import { mockCreateOrder, mockColors } from "./support/mock-api";
 
 // Measurements come from the shared fixture, but the *identity* stays
 // Playwright-specific on purpose: the opt-in live-Notion test below submits
@@ -21,10 +21,41 @@ async function fillValidOrder(page: import("@playwright/test").Page) {
   await page.locator("#hips").fill(String(E2E_ORDER.hips));
   await page.locator("#height").fill(String(E2E_ORDER.height));
   await page.locator("#bodyGirth").fill(String(E2E_ORDER.bodyGirth));
+}
+
+// The intake is a three-step flow: your details, then the optional design step
+// (colors + costume details), then the optional timeline step where the order
+// is placed. Advance from step 0 to the design step.
+async function continueToDesign(page: import("@playwright/test").Page) {
+  await page.getByRole("button", { name: /Continue to your design/i }).click();
+  await expect(
+    page.getByRole("button", { name: /Continue to timeline/i }),
+  ).toBeVisible();
+}
+
+// Advance from the design step to the final (timeline) step.
+async function continueToTimeline(page: import("@playwright/test").Page) {
+  await page.getByRole("button", { name: /Continue to timeline/i }).click();
+  await expect(
+    page.getByRole("button", { name: "Submit Order" }),
+  ).toBeVisible();
+}
+
+// Walk from step 0 to the final step, filling the one design field the fixture
+// carries (the description) on the way through.
+async function continueToSubmit(page: import("@playwright/test").Page) {
+  await continueToDesign(page);
   await page.locator("#description").fill("A-line silhouette, ivory chiffon");
+  await continueToTimeline(page);
 }
 
 test.describe("Order form", () => {
+  // The intake form loads its color palette on mount; mock it so the
+  // unmocked-/api guard stays satisfied on every page load in this suite.
+  test.beforeEach(async ({ page }) => {
+    await mockColors(page);
+  });
+
   test("submits a valid order and shows the returned order number (API mocked)", async ({
     page,
   }) => {
@@ -36,6 +67,7 @@ test.describe("Order form", () => {
     ).toBeVisible();
 
     await fillValidOrder(page);
+    await continueToSubmit(page);
     await page.getByRole("button", { name: "Submit Order" }).click();
 
     await expect(
@@ -65,6 +97,7 @@ test.describe("Order form", () => {
     // The measurement inputs are hidden in appointment mode.
     await expect(page.locator("#waist")).toHaveCount(0);
 
+    await continueToSubmit(page);
     await page.getByRole("button", { name: "Submit Order" }).click();
 
     await expect(
@@ -86,6 +119,7 @@ test.describe("Order form", () => {
 
     await page.goto("/order");
     await fillValidOrder(page);
+    await continueToSubmit(page);
     await page.getByRole("button", { name: "Submit Order" }).click();
 
     // `exact` avoids matching sonner's aria-live announcement span, which
@@ -109,13 +143,20 @@ test.describe("Order form", () => {
     });
 
     await page.goto("/order");
-    await page.getByRole("button", { name: "Submit Order" }).click();
+    // Advancing runs validation; an empty form is blocked on step 0.
+    await page
+      .getByRole("button", { name: /Continue to your design/i })
+      .click();
 
     await expect(page.getByText("Full name is required")).toBeVisible();
     await expect(
       page.getByText("Please enter a valid email address"),
     ).toBeVisible();
     expect(apiCalled).toBe(false);
+    // Never advanced to the design step.
+    await expect(
+      page.getByRole("button", { name: /Continue to timeline/i }),
+    ).toHaveCount(0);
   });
 });
 
@@ -133,6 +174,7 @@ test.describe("Order form — live Notion (opt-in)", () => {
   }) => {
     await page.goto("/order");
     await fillValidOrder(page);
+    await continueToSubmit(page);
     await page.getByRole("button", { name: "Submit Order" }).click();
 
     await expect(

@@ -3,6 +3,7 @@ import { PageShell } from "@/components/page-shell";
 import { CtaLink } from "@/components/cta";
 import { SectionHeader } from "@/components/section-header";
 import { Seo, StructuredData } from "@/components/seo";
+import { Testimonials } from "@/components/testimonials";
 import { ROUTE_SEO } from "@/lib/seo-routes";
 import {
   Accordion,
@@ -121,6 +122,10 @@ export default function About() {
             Come with a vision and leave with confidence.
           </p>
         </div>
+
+        {/* Testimonials — curated reviews, following the studio story and
+            preceding the practical questions. Absent until one is published. */}
+        <Testimonials eyebrow="In Their Words" title="What skaters say" />
 
         {/* FAQ */}
         <div className="mt-24" data-testid="faq-section">

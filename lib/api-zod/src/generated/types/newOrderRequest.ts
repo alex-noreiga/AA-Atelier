@@ -37,6 +37,10 @@ export interface NewOrderRequest {
   rush?: boolean;
   /** Notion file_upload ids for customer-supplied reference / inspiration images, each obtained by first POSTing the image bytes to POST /orders/reference-images (a binary endpoint outside this contract, mounted like the Stripe webhook). They are attached to the order's Notion page as image blocks. Optional; omitted when the customer uploaded none. */
   referenceImageIds?: string[];
+  /** Names of the colors the customer picked from the studio palette (the live `GET /colors` list) — a multi-select. This is a starting point for the consultation, not a final spec: the atelier finalizes the exact fabric + finish together with the customer. Recorded on the Notion order for the atelier (the app never reads it back). Optional; omitted when the customer picked none. */
+  colors?: string[];
+  /** The customer's free-text note on how they'd like their chosen colors used (e.g. "emerald as the main color with gold accents on the collar, and a blush skirt"). Optional; omitted when blank. */
+  colorUsage?: string;
   /** An optional referral code the customer received from another skater. The server looks it up against the Client CRM (best-effort): a valid code — not the customer's own — earns the new customer a welcome discount code now and credits the referrer once this order is first paid. An unknown or self-referring code is ignored, and referral capture never blocks the order. Optional. */
   referralCode?: string;
 }

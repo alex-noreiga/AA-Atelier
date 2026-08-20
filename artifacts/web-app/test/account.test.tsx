@@ -32,6 +32,14 @@ vi.mock("@/lib/auth-context", () => ({
   }),
 }));
 
+// Whether this session is studio staff is the server's answer (covered in
+// studio-access.test.tsx); here it's stated outright, because the portal routes
+// on it — staff are handed to the dashboard rather than shown an empty account.
+const staffState = vi.hoisted(() => ({ staff: false, loading: false }));
+vi.mock("@/lib/studio-access", () => ({
+  useStudioAccess: () => staffState,
+}));
+
 vi.mock("@workspace/api-client-react", () => ({
   useGetAccountOverview: vi.fn(),
   getGetAccountOverviewQueryKey: () => ["account-overview"],
@@ -113,6 +121,8 @@ beforeEach(() => {
   h.loading = false;
   h.signOut.mockReset();
   h.signOut.mockResolvedValue(undefined);
+  staffState.staff = false;
+  staffState.loading = false;
 });
 
 describe("Account dashboard", () => {
@@ -132,6 +142,36 @@ describe("Account dashboard", () => {
   it("redirects to sign-in on a 401 (token rejected server-side)", () => {
     stubHook(mockOverview, { isError: true, error: { status: 401 } });
     renderPage();
+    expect(screen.getByTestId("redirect")).toHaveTextContent("/account/login");
+  });
+
+  it("hands a studio staff account to the dashboard", () => {
+    staffState.staff = true;
+    stubHook(mockOverview, { data: overview });
+    renderPage();
+
+    expect(screen.getByTestId("redirect")).toHaveTextContent("/studio");
+  });
+
+  it("waits for the staff answer before showing a customer portal", () => {
+    // Otherwise a staff member sees a flash of their (empty) account on the way
+    // to the dashboard.
+    staffState.loading = true;
+    stubHook(mockOverview, { data: overview });
+    renderPage();
+
+    expect(screen.getByTestId("account-loading")).toBeInTheDocument();
+    expect(screen.queryByTestId("custom-order-000002")).not.toBeInTheDocument();
+  });
+
+  it("still sends a signed-out visitor to sign in, staff answer or not", () => {
+    // Sign-in comes first: the probe is never made without a session, so a
+    // pending staff answer must not hold the bounce.
+    h.session = null;
+    staffState.loading = true;
+    stubHook(mockOverview, {});
+    renderPage();
+
     expect(screen.getByTestId("redirect")).toHaveTextContent("/account/login");
   });
 

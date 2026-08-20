@@ -96,6 +96,8 @@ export const CreateOrderBody = zod.object({
   "neededBy": zod.coerce.date().optional(),
   "rush": zod.boolean().optional().describe('True when the customer confirmed a rush order — a neededBy date inside the studio\'s rush window, acknowledged with the disclosed surcharge. Recorded on the Notion order (a \"Rush Order\" checkbox + a page note) so the atelier prices the rush surcharge into the invoice; the app does not compute the fee itself. Optional; omitted for standard-timeline orders.'),
   "referenceImageIds": zod.array(zod.string()).optional().describe('Notion file_upload ids for customer-supplied reference \/ inspiration images, each obtained by first POSTing the image bytes to POST \/orders\/reference-images (a binary endpoint outside this contract, mounted like the Stripe webhook). They are attached to the order\'s Notion page as image blocks. Optional; omitted when the customer uploaded none.'),
+  "colors": zod.array(zod.string()).optional().describe('Names of the colors the customer picked from the studio palette (the live `GET \/colors` list) — a multi-select. This is a starting point for the consultation, not a final spec: the atelier finalizes the exact fabric + finish together with the customer. Recorded on the Notion order for the atelier (the app never reads it back). Optional; omitted when the customer picked none.'),
+  "colorUsage": zod.string().optional().describe('The customer\'s free-text note on how they\'d like their chosen colors used (e.g. \"emerald as the main color with gold accents on the collar, and a blush skirt\"). Optional; omitted when blank.'),
   "referralCode": zod.string().optional().describe('An optional referral code the customer received from another skater. The server looks it up against the Client CRM (best-effort): a valid code — not the customer\'s own — earns the new customer a welcome discount code now and credits the referrer once this order is first paid. An unknown or self-referring code is ignored, and referral capture never blocks the order. Optional.')
 }).describe('A new custom-dress order. Measurements are optional: the customer either supplies all five now (with a measurementUnit), or sets measurementAppointment=true to have them taken at a scheduled fitting or consultation. The server rejects a body with neither.')
 
@@ -300,6 +302,46 @@ export const GetProductsResponse = zod.object({
 }))
 })),
   "categories": zod.array(zod.string()).describe('The shop\'s category filters, read live from the Notion \"Product Categories\" database and returned in the order the atelier arranged them (its `Sort` field). Each inventory item links to its category through a `Category` relation. Editing the categories in Notion changes this list without a redeploy, so clients must not hardcode it.')
+})
+
+
+/**
+ * Returns the studio's color palette for the custom-order intake form's color picker. The palette is an atelier-editable "Studio Settings" value (`COLOR_PALETTE`), falling back to a built-in primary-color palette, so this always returns a non-empty list.
+ * @summary List custom-order palette colors
+ */
+export const GetColorsResponse = zod.object({
+  "colors": zod.array(zod.object({
+  "id": zod.string().describe('A stable slug of the name (\"Rose Gold\" → \"rose-gold\").'),
+  "name": zod.string(),
+  "hex": zod.string().describe('Hex color fill for the chip, e.g. \"#2E5CB8\".')
+})).describe('The studio\'s intake color palette — the atelier-editable `COLOR_PALETTE` Studio Settings value, or a built-in primary-color palette when unset. Always non-empty.')
+})
+
+
+/**
+ * Returns the reviews the atelier has curated for public display: only rows whose Status is the published option AND whose author consented to publication. Read-only and anonymous — no email or order number is ever returned. When the reviews database is not configured the list is empty rather than an error, so a site that never collected a review simply shows no testimonials.
+ * @summary List published customer testimonials
+ */
+export const getPublishedReviewsQueryLimitMax = 50;
+
+
+
+export const GetPublishedReviewsQueryParams = zod.object({
+  "limit": zod.coerce.number().int().min(1).max(getPublishedReviewsQueryLimitMax).optional().describe('Maximum number of testimonials to return, newest first. Defaults to 12 when omitted.')
+})
+
+export const getPublishedReviewsResponseReviewsItemRatingMax = 5;
+
+
+
+export const GetPublishedReviewsResponse = zod.object({
+  "reviews": zod.array(zod.object({
+  "id": zod.string().describe('The review\'s Notion page id, used only as a render key.'),
+  "rating": zod.number().int().min(1).max(getPublishedReviewsResponseReviewsItemRatingMax).describe('The star rating, 1 (poor) to 5 (excellent).'),
+  "comment": zod.string().describe('The customer\'s testimonial.'),
+  "customerName": zod.string().optional().describe('How the customer asked to be credited. Omitted when they left the credit blank, in which case the testimonial is shown unattributed.'),
+  "publishedAt": zod.coerce.date().optional().describe('When the review was submitted (its Notion created time), used to order the list and to date the testimonial.')
+}).describe('One curated testimonial, as shown on the site. Deliberately narrow: the author\'s email, order number, and verification flag stay in Notion and are never served here.'))
 })
 
 
@@ -606,5 +648,302 @@ export const GetAccountOverviewResponse = zod.object({
   "returningCode": zod.string().optional().describe('A standing personal discount code for this returning customer, present once they\'ve earned it (a qualifying repeat order). Absent otherwise.')
 }).optional().describe('The signed-in customer\'s referral-program state. Present only when the Client CRM is configured (omitted entirely otherwise, so the dashboard\'s referral card simply doesn\'t render).')
 }).describe('Everything tied to the signed-in customer\'s email — the data the account dashboard renders.')
+
+
+/**
+ * The standing working hours the slot calculator uses as its positive availability grid — one entry per staff member per block of hours, with the weekdays it repeats on and the locations it can be booked for. This is the schedule the atelier edits on the dashboard; it used to live in a Google Sheet. Same staff gate as the rest of the studio surface: 401 when not signed in, 404 when signed in but not staff, 403 when staff but not signed in with Google.
+ * @summary The staff working-hours schedule
+ */
+export const ListStaffAvailabilityResponse = zod.object({
+  "entries": zod.array(zod.object({
+  "id": zod.string().describe('Identifies the entry for an update or a delete.'),
+  "staff": zod.string().describe('The staff member these hours belong to. Always one of the names the studio books (see `staff` on the list response).'),
+  "calendarEmail": zod.string().email().describe('The Google Calendar this person\'s bookings are read from and written to. The same address is expected on every entry for one person; if they differ, the first one read wins.'),
+  "weekdays": zod.array(zod.enum(['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday']).describe('A day of the week a block of working hours repeats on.')).describe('The weekdays this block repeats on.'),
+  "start": zod.string().describe('When the block starts, as 24-hour `HH:MM` local studio time.'),
+  "end": zod.string().describe('When the block ends, as 24-hour `HH:MM` local studio time. Always later than `start` — an entry that ends before it begins is rejected rather than silently ignored.'),
+  "locations": zod.array(zod.enum(['in-person', 'virtual'])).describe('Which locations may be booked inside this block.')
+}).describe('One recurring block of a staff member\'s standing working hours — the POSITIVE availability the slot calculator starts from, before it subtracts whatever their Google Calendar says they are busy with. A day off is a calendar event, not an edit here.')).describe('Every block of hours on record, grouped by nothing in particular.'),
+  "staff": zod.array(zod.string()).describe('The staff members the studio books appointments with.')
+}).describe('The whole standing schedule, plus the staff it may be assigned to — so the editor offers the names the booking catalog actually knows instead of a free-text field that has to match one exactly.')
+
+
+/**
+ * Adds one recurring block of working hours for a staff member. The staff name must be one the studio books (the appointment catalog's list, also returned by the GET above) and the hours must be a real range, so an entry can't be saved that the slot calculator would silently ignore.
+ * @summary Add a block of working hours
+ */
+export const createStaffAvailabilityBodyStaffMax = 120;
+
+export const createStaffAvailabilityBodyCalendarEmailMax = 254;
+
+
+export const createStaffAvailabilityBodyStartRegExp = new RegExp('^([01][0-9]|2[0-3]):[0-5][0-9]$');
+export const createStaffAvailabilityBodyEndRegExp = new RegExp('^([01][0-9]|2[0-3]):[0-5][0-9]$');
+
+
+
+export const CreateStaffAvailabilityBody = zod.object({
+  "staff": zod.string().min(1).max(createStaffAvailabilityBodyStaffMax).describe('Must be a staff member the studio books — the appointment catalog\'s list, returned as `staff` by the list operation. A name outside it would produce hours nothing could ever be booked into.'),
+  "calendarEmail": zod.string().email().max(createStaffAvailabilityBodyCalendarEmailMax),
+  "weekdays": zod.array(zod.enum(['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday']).describe('A day of the week a block of working hours repeats on.')).min(1),
+  "start": zod.string().regex(createStaffAvailabilityBodyStartRegExp).describe('24-hour `HH:MM`.'),
+  "end": zod.string().regex(createStaffAvailabilityBodyEndRegExp).describe('24-hour `HH:MM`, later than `start`.'),
+  "locations": zod.array(zod.enum(['in-person', 'virtual'])).min(1)
+}).describe('One block of working hours to save. The whole entry is sent on both create and update, so the two paths validate identically.')
+
+export const CreateStaffAvailabilityResponse = zod.object({
+  "id": zod.string().describe('Identifies the entry for an update or a delete.'),
+  "staff": zod.string().describe('The staff member these hours belong to. Always one of the names the studio books (see `staff` on the list response).'),
+  "calendarEmail": zod.string().email().describe('The Google Calendar this person\'s bookings are read from and written to. The same address is expected on every entry for one person; if they differ, the first one read wins.'),
+  "weekdays": zod.array(zod.enum(['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday']).describe('A day of the week a block of working hours repeats on.')).describe('The weekdays this block repeats on.'),
+  "start": zod.string().describe('When the block starts, as 24-hour `HH:MM` local studio time.'),
+  "end": zod.string().describe('When the block ends, as 24-hour `HH:MM` local studio time. Always later than `start` — an entry that ends before it begins is rejected rather than silently ignored.'),
+  "locations": zod.array(zod.enum(['in-person', 'virtual'])).describe('Which locations may be booked inside this block.')
+}).describe('One recurring block of a staff member\'s standing working hours — the POSITIVE availability the slot calculator starts from, before it subtracts whatever their Google Calendar says they are busy with. A day off is a calendar event, not an edit here.')
+
+
+/**
+ * Replaces one entry's hours, days, locations, staff member, or calendar address. The whole entry is sent, so the same validation the create path applies holds here too.
+ * @summary Change a block of working hours
+ */
+export const UpdateStaffAvailabilityParams = zod.object({
+  "entryId": zod.coerce.string().describe('The entry\'s id, as returned by the list operation.')
+})
+
+export const updateStaffAvailabilityBodyStaffMax = 120;
+
+export const updateStaffAvailabilityBodyCalendarEmailMax = 254;
+
+
+export const updateStaffAvailabilityBodyStartRegExp = new RegExp('^([01][0-9]|2[0-3]):[0-5][0-9]$');
+export const updateStaffAvailabilityBodyEndRegExp = new RegExp('^([01][0-9]|2[0-3]):[0-5][0-9]$');
+
+
+
+export const UpdateStaffAvailabilityBody = zod.object({
+  "staff": zod.string().min(1).max(updateStaffAvailabilityBodyStaffMax).describe('Must be a staff member the studio books — the appointment catalog\'s list, returned as `staff` by the list operation. A name outside it would produce hours nothing could ever be booked into.'),
+  "calendarEmail": zod.string().email().max(updateStaffAvailabilityBodyCalendarEmailMax),
+  "weekdays": zod.array(zod.enum(['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday']).describe('A day of the week a block of working hours repeats on.')).min(1),
+  "start": zod.string().regex(updateStaffAvailabilityBodyStartRegExp).describe('24-hour `HH:MM`.'),
+  "end": zod.string().regex(updateStaffAvailabilityBodyEndRegExp).describe('24-hour `HH:MM`, later than `start`.'),
+  "locations": zod.array(zod.enum(['in-person', 'virtual'])).min(1)
+}).describe('One block of working hours to save. The whole entry is sent on both create and update, so the two paths validate identically.')
+
+export const UpdateStaffAvailabilityResponse = zod.object({
+  "id": zod.string().describe('Identifies the entry for an update or a delete.'),
+  "staff": zod.string().describe('The staff member these hours belong to. Always one of the names the studio books (see `staff` on the list response).'),
+  "calendarEmail": zod.string().email().describe('The Google Calendar this person\'s bookings are read from and written to. The same address is expected on every entry for one person; if they differ, the first one read wins.'),
+  "weekdays": zod.array(zod.enum(['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday']).describe('A day of the week a block of working hours repeats on.')).describe('The weekdays this block repeats on.'),
+  "start": zod.string().describe('When the block starts, as 24-hour `HH:MM` local studio time.'),
+  "end": zod.string().describe('When the block ends, as 24-hour `HH:MM` local studio time. Always later than `start` — an entry that ends before it begins is rejected rather than silently ignored.'),
+  "locations": zod.array(zod.enum(['in-person', 'virtual'])).describe('Which locations may be booked inside this block.')
+}).describe('One recurring block of a staff member\'s standing working hours — the POSITIVE availability the slot calculator starts from, before it subtracts whatever their Google Calendar says they are busy with. A day off is a calendar event, not an edit here.')
+
+
+/**
+ * Removes one entry from the schedule. Those hours stop being offered as soon as the change is picked up; appointments already booked inside them are untouched (they live on the staff calendar).
+ * @summary Remove a block of working hours
+ */
+export const DeleteStaffAvailabilityParams = zod.object({
+  "entryId": zod.coerce.string().describe('The entry\'s id, as returned by the list operation.')
+})
+
+export const DeleteStaffAvailabilityResponse = zod.object({
+  "message": zod.string()
+}).describe('A generic human-readable acknowledgement.')
+
+
+/**
+ * A cheap "am I staff?" probe, so the app can offer a way in to `/studio` without every signed-in customer being shown a link that would refuse them. It runs the SAME gate as the figures below — allowlisted email plus (by default) a session established with Google — so a 200 here and a 200 there can't disagree: 401 when the caller isn't signed in, 404 when they are but aren't staff (the dashboard doesn't exist as far as they're concerned), 403 when they are staff but didn't sign in with Google. It reads nothing and aggregates nothing; reaching the handler at all IS the answer.
+ * @summary Whether the caller may use the studio dashboard
+ */
+export const GetStudioAccessResponse = zod.object({
+  "staff": zod.boolean().describe('Always true. A non-staff caller receives 401\/403 instead.')
+}).describe('The answer to \"may this account use the studio dashboard?\". Only ever returned to a caller the staff gate has already admitted, so `staff` is always true — the field exists so the response is self-describing rather than an empty body, and so a client reads a value instead of inferring from a status code.')
+
+
+/**
+ * Aggregates the atelier's own numbers — custom and shop orders by stage, production load against due dates, revenue by month, deposits vs. balances, and the best-selling shop pieces — for the internal studio dashboard. Requires a valid Supabase access token supplied as a Bearer credential whose email is on the studio staff allowlist: 401 when the caller isn't signed in, 404 when they are but aren't staff, and 403 when they are staff but didn't sign in with Google.
+ * @summary Studio analytics for the internal dashboard
+ */
+export const GetStudioAnalyticsResponse = zod.object({
+  "generatedAt": zod.coerce.date().describe('When these figures were computed. The server caches an aggregation briefly, so this can trail the request by up to a minute.'),
+  "customOrders": zod.object({
+  "total": zod.number().int().describe('Every order of this kind on record.'),
+  "active": zod.number().int().describe('Orders neither cancelled nor at the final stage.'),
+  "completed": zod.number().int().describe('Orders sitting at the last stage in the live list.'),
+  "cancelled": zod.number().int(),
+  "stages": zod.array(zod.object({
+  "stage": zod.string(),
+  "count": zod.number().int()
+})).describe('Active orders per stage, in the live stage order (stages with no orders are included as zeroes, so the pipeline reads end to end).')
+}).describe('How a set of orders is distributed across its live workflow — the custom order Stage list, or the shop order fulfilment Status list.'),
+  "shopOrders": zod.object({
+  "total": zod.number().int().describe('Every order of this kind on record.'),
+  "active": zod.number().int().describe('Orders neither cancelled nor at the final stage.'),
+  "completed": zod.number().int().describe('Orders sitting at the last stage in the live list.'),
+  "cancelled": zod.number().int(),
+  "stages": zod.array(zod.object({
+  "stage": zod.string(),
+  "count": zod.number().int()
+})).describe('Active orders per stage, in the live stage order (stages with no orders are included as zeroes, so the pipeline reads end to end).')
+}).describe('How a set of orders is distributed across its live workflow — the custom order Stage list, or the shop order fulfilment Status list.'),
+  "production": zod.object({
+  "activeOrders": zod.number().int().describe('Custom orders in progress (not cancelled, not delivered).'),
+  "scheduled": zod.number().int().describe('Of those, the ones carrying a Due Date.'),
+  "unscheduled": zod.number().int().describe('Active orders with no Due Date — invisible to the production schedule until the atelier sets one.'),
+  "overdue": zod.number().int().describe('Active orders whose due date has passed.'),
+  "dueThisWeek": zod.number().int().describe('Active orders due within the next 7 days (today included).'),
+  "dueThisMonth": zod.number().int().describe('Active orders due within the next 30 days (today included).'),
+  "rush": zod.number().int().describe('Active orders flagged as rush at intake.'),
+  "upcoming": zod.array(zod.object({
+  "orderNumber": zod.string(),
+  "orderName": zod.string(),
+  "stage": zod.string(),
+  "dueDate": zod.string().describe('The order\'s Due Date as YYYY-MM-DD.'),
+  "overdue": zod.boolean(),
+  "rush": zod.boolean().optional()
+})).describe('The nearest-due active orders, soonest first (overdue ones lead), capped to a short list for the dashboard.')
+}).describe('The making-side workload: active custom orders measured against the due dates the atelier has set.'),
+  "revenue": zod.array(zod.object({
+  "month": zod.string().describe('The month as YYYY-MM.'),
+  "shopRevenue": zod.number().describe('Dollars taken on shop orders placed that month (order totals, including shipping and tax; cancelled orders excluded).'),
+  "shopOrders": zod.number().int().describe('Shop orders placed that month (cancelled excluded).'),
+  "customBooked": zod.number().describe('Dollars invoiced on custom orders placed that month (each order\'s invoice Final Balance). Zero for orders not yet itemized.'),
+  "customOrders": zod.number().int().describe('Custom orders placed that month (cancelled excluded).')
+}).describe('A month of trade. The two money figures are deliberately NOT summed: shop revenue is money actually collected, while the custom figure is work booked (Notion holds no per-payment dates, so a custom payment can\'t be attributed to the month it was made).')).describe('One entry per month over the trailing window, oldest first. Months with no activity are included as zeroes so a chart has no gaps.'),
+  "payments": zod.object({
+  "invoicedTotal": zod.number().describe('The sum of every invoice\'s Final Balance.'),
+  "collectedTotal": zod.number().describe('Deposits plus balances marked paid.'),
+  "outstandingTotal": zod.number().describe('Deposits plus balances still to collect.'),
+  "depositsCollected": zod.number(),
+  "depositsOutstanding": zod.number().describe('Deposit amounts set on an invoice but not yet paid.'),
+  "balancesCollected": zod.number().describe('Final balances marked paid, net of the deposits already credited against them (that is what the balance stage actually charges).'),
+  "balancesOutstanding": zod.number().describe('What is still owed on unpaid balances beyond every deposit scheduled against them — so this and depositsOutstanding add up to outstandingTotal without counting the same dollar twice. A paid balance settles its invoice outright and leaves nothing here.'),
+  "invoiceCount": zod.number().int(),
+  "unpaidInvoiceCount": zod.number().int().describe('Invoices with money still outstanding.')
+}).describe('Deposits against balances across every custom-order invoice on a live (non-cancelled) order — what has been collected and what is still out.'),
+  "topItems": zod.array(zod.object({
+  "name": zod.string(),
+  "orders": zod.number().int()
+}).describe('One best-selling shop piece. The count is orders containing the piece, not units — the order\'s inventory relation records which pieces were bought, not how many of each.')).describe('The shop\'s best sellers, most-ordered first. Empty when no shop order carries its inventory relation (legacy orders, or the relation-links flag being off) — item-level figures are only as good as that link.')
+}).describe('The atelier\'s own figures, aggregated from the live Notion databases for the internal studio dashboard. Every money value is US dollars.')
+
+
+/**
+ * Runs one of the atelier's internal actions — milestone reconciliation, invoice line-item generation, an order status-change email, a cancellation refund, a return refund, or a back-in-stock alert — from the signed-in studio dashboard. Most were previously triggered by opening a link that carried a shared secret in its query string; the work is unchanged, the authorization is not: this requires the same Supabase access token as the rest of the studio surface, with the caller's email on the staff allowlist. 401 when not signed in, 404 when signed in but not staff, 403 when staff but not signed in with Google.
+ * Every tool is idempotent — a repeat run reports `noop` rather than doing the work twice — but two of them move money, so the dashboard confirms before calling those.
+ * @summary Run an internal atelier tool
+ */
+export const RunStudioToolParams = zod.object({
+  "tool": zod.enum(['milestones', 'invoice-lines', 'status-email', 'cancellation-refund', 'return-refund', 'restock-alert'])
+})
+
+export const runStudioToolBodyOrderNumberMax = 64;
+
+export const runStudioToolBodyAmountMin = 0;
+
+export const runStudioToolBodyItemMax = 200;
+
+
+
+export const RunStudioToolBody = zod.object({
+  "orderNumber": zod.string().max(runStudioToolBodyOrderNumberMax).optional().describe('The order the tool acts on — `ORD-…` for a custom order, `SHP-…` for a shop order. Required by `invoice-lines`, `status-email` and the two refunds; `milestones` sweeps the whole pipeline and `restock-alert` takes an optional `item` instead.'),
+  "force": zod.boolean().optional().describe('`status-email` only. Resend the status update even when the order hasn\'t moved forward since the customer was last emailed. A forced resend never rewinds the high-water marker.'),
+  "amount": zod.number().min(runStudioToolBodyAmountMin).optional().describe('`return-refund` only. The TARGET total to have refunded on the order, in dollars — not an increment, so a repeated run can\'t double-refund. Omit to refund in full.'),
+  "item": zod.string().max(runStudioToolBodyItemMax).optional().describe('`restock-alert` only, and optional even there. The exact `Item Name` of one inventory row to alert on, as it appears in Notion — the same text a back-in-stock request stores. Omit it to sweep every piece that is currently in stock, which is what the nightly run does.')
+}).describe('The arguments for one internal tool run. Every field is optional here because each tool takes a different subset; the server rejects a run that is missing what its own tool needs. This replaces the query string of the retired `?secret=` links, so the argument names mirror them.')
+
+export const RunStudioToolResponse = zod.object({
+  "tool": zod.enum(['milestones', 'invoice-lines', 'status-email', 'cancellation-refund', 'return-refund', 'restock-alert']).describe('Which internal tool to run. Each names an action the atelier used to trigger by opening a shared-secret link from Notion — or, for `restock-alert`, one that would have needed such a link.'),
+  "status": zod.enum(['ok', 'noop', 'attention']).describe('`ok` — the tool did something. `noop` — there was nothing to do (every tool is idempotent, so this is the normal result of a repeat run). `attention` — the run completed but left something for the atelier to fix, e.g. a refund Stripe rejected, which leaves the order uncancelled so a re-run can retry it. A failure the tool couldn\'t start at all is an HTTP error, not a status here.'),
+  "title": zod.string().describe('A short headline for the result, e.g. \"Invoice itemized\".'),
+  "message": zod.string().describe('One sentence summarizing what happened.'),
+  "details": zod.array(zod.string()).describe('Any per-item notes worth showing under the message — payments that were skipped, reasons a send was suppressed. Empty when there is nothing to add.')
+}).describe('The outcome of one internal tool run, already composed for display. The server owns the wording — it is the same summary the retired confirmation pages rendered — so the dashboard renders the result rather than re-deriving it from per-tool fields.')
+
+
+/**
+ * Every review the atelier hasn't decided on yet, plus the ones it has, newest first — the read half of the loop the app has only ever written to. A review is captured at delivery with its Notion `Status` set to "New" and had to be promoted by hand in Notion for the site to show it; this is that same decision, made where the rest of the studio work happens.
+ *
+ * The three moderation states are DERIVED from the `Status` select rather than enumerated from it: `published` and `rejected` name the two values the app writes, and everything else — "New", a blank select, or any value the atelier invented — reads as `pending`. So an unrecognized status asks for a decision rather than silently publishing.
+ *
+ * Photos are fetched only for the pending rows (they are what a decision is made on) and their URLs are short-lived Notion-signed links, good for this page load and not for storing. Same staff gate as the rest of the studio surface: 401 when not signed in, 404 when signed in but not staff, 403 when staff but not signed in with Google.
+ * @summary The review moderation queue
+ */
+export const listStudioReviewsResponsePendingItemRatingMax = 5;
+
+export const listStudioReviewsResponseDecidedItemRatingMax = 5;
+
+
+
+export const ListStudioReviewsResponse = zod.object({
+  "pending": zod.array(zod.object({
+  "id": zod.string().describe('The review\'s Notion page id; also what a decision is addressed to.'),
+  "rating": zod.number().int().min(1).max(listStudioReviewsResponsePendingItemRatingMax).describe('The star rating, 1 (poor) to 5 (excellent).'),
+  "comment": zod.string().describe('The customer\'s testimonial, as written.'),
+  "customerName": zod.string().optional().describe('How the customer asked to be credited. Omitted when they left it blank, in which case a published testimonial is unattributed.'),
+  "orderNumber": zod.string().optional().describe('The order the review is for. Omitted on a row that carries none.'),
+  "email": zod.string().optional().describe('The address the review was submitted from. Shown so the atelier can recognize the customer; never served publicly.'),
+  "emailVerified": zod.boolean().describe('Whether that address matched the one stored on the order. False on a legacy order that has no email stored — accepted at capture, but worth vetting before it goes on the site.'),
+  "consentToPublish": zod.boolean().describe('Whether the customer agreed to their words being published. Publishing without it is refused, so this is what the dashboard reads to know whether the button can be offered at all.'),
+  "status": zod.enum(['pending', 'published', 'rejected']).describe('Where a review stands with the atelier. `pending` is anything not yet decided — including the \"New\" it is captured with — so a review can only ever be waiting, shown, or set aside.'),
+  "rawStatus": zod.string().optional().describe('The `Status` select exactly as Notion holds it, when it is set. Shown for a row whose value the app doesn\'t recognize, so \"why is this still pending?\" is answerable without opening Notion.'),
+  "submittedAt": zod.coerce.date().optional().describe('When the review was submitted (its Notion created time).'),
+  "photos": zod.array(zod.string()).describe('Photographs of the finished piece, as URLs. Notion-signed and short-lived, so they are for rendering this page and nothing else. Empty for a decided review — photos are fetched only for the rows still awaiting a decision.'),
+  "notionUrl": zod.string().optional().describe('The review\'s page in Notion, for anything this queue doesn\'t show.')
+}).describe('One review as the moderation queue shows it. Unlike the public `PublishedReview`, this is the whole row: the atelier is deciding whether to put it on the site, and who wrote it and whether their email matched the order are part of that judgement. Staff-only.')).describe('Awaiting a decision, oldest submission first — the queue proper.'),
+  "decided": zod.array(zod.object({
+  "id": zod.string().describe('The review\'s Notion page id; also what a decision is addressed to.'),
+  "rating": zod.number().int().min(1).max(listStudioReviewsResponseDecidedItemRatingMax).describe('The star rating, 1 (poor) to 5 (excellent).'),
+  "comment": zod.string().describe('The customer\'s testimonial, as written.'),
+  "customerName": zod.string().optional().describe('How the customer asked to be credited. Omitted when they left it blank, in which case a published testimonial is unattributed.'),
+  "orderNumber": zod.string().optional().describe('The order the review is for. Omitted on a row that carries none.'),
+  "email": zod.string().optional().describe('The address the review was submitted from. Shown so the atelier can recognize the customer; never served publicly.'),
+  "emailVerified": zod.boolean().describe('Whether that address matched the one stored on the order. False on a legacy order that has no email stored — accepted at capture, but worth vetting before it goes on the site.'),
+  "consentToPublish": zod.boolean().describe('Whether the customer agreed to their words being published. Publishing without it is refused, so this is what the dashboard reads to know whether the button can be offered at all.'),
+  "status": zod.enum(['pending', 'published', 'rejected']).describe('Where a review stands with the atelier. `pending` is anything not yet decided — including the \"New\" it is captured with — so a review can only ever be waiting, shown, or set aside.'),
+  "rawStatus": zod.string().optional().describe('The `Status` select exactly as Notion holds it, when it is set. Shown for a row whose value the app doesn\'t recognize, so \"why is this still pending?\" is answerable without opening Notion.'),
+  "submittedAt": zod.coerce.date().optional().describe('When the review was submitted (its Notion created time).'),
+  "photos": zod.array(zod.string()).describe('Photographs of the finished piece, as URLs. Notion-signed and short-lived, so they are for rendering this page and nothing else. Empty for a decided review — photos are fetched only for the rows still awaiting a decision.'),
+  "notionUrl": zod.string().optional().describe('The review\'s page in Notion, for anything this queue doesn\'t show.')
+}).describe('One review as the moderation queue shows it. Unlike the public `PublishedReview`, this is the whole row: the atelier is deciding whether to put it on the site, and who wrote it and whether their email matched the order are part of that judgement. Staff-only.')).describe('Already published or rejected, newest first. Capped, and carrying no photos — it is a record of what was decided, not a second queue.'),
+  "truncated": zod.boolean().optional().describe('True when there are more reviews than one read covers, so the queue says it is partial instead of looking complete. Older rows are still in Notion.')
+}).describe('The moderation queue: the pending reviews the atelier still owes a decision, and the decided ones for reference, newest first in both cases.')
+
+
+/**
+ * Writes one review's moderation decision to its Notion `Status`. `published` is what puts a testimonial on the site, `rejected` takes it off (and keeps it out of the queue), and `pending` returns it to the queue — so a decision made in error is undone the same way it was made.
+ *
+ * Publishing requires the customer's own consent to publish, which the atelier cannot supply: without it the request is refused with 409 rather than writing a status the site would then decline to honour. Consent is on the review (`consentToPublish`), so the dashboard can say so before the button is pressed.
+ * @summary Publish, reject, or re-queue a review
+ */
+export const SetStudioReviewStatusParams = zod.object({
+  "reviewId": zod.coerce.string().describe('The review\'s id, as returned by the list operation.')
+})
+
+export const SetStudioReviewStatusBody = zod.object({
+  "status": zod.enum(['pending', 'published', 'rejected']).describe('Where a review stands with the atelier. `pending` is anything not yet decided — including the \"New\" it is captured with — so a review can only ever be waiting, shown, or set aside.')
+}).describe('The moderation decision to record against a review.')
+
+export const setStudioReviewStatusResponseRatingMax = 5;
+
+
+
+export const SetStudioReviewStatusResponse = zod.object({
+  "id": zod.string().describe('The review\'s Notion page id; also what a decision is addressed to.'),
+  "rating": zod.number().int().min(1).max(setStudioReviewStatusResponseRatingMax).describe('The star rating, 1 (poor) to 5 (excellent).'),
+  "comment": zod.string().describe('The customer\'s testimonial, as written.'),
+  "customerName": zod.string().optional().describe('How the customer asked to be credited. Omitted when they left it blank, in which case a published testimonial is unattributed.'),
+  "orderNumber": zod.string().optional().describe('The order the review is for. Omitted on a row that carries none.'),
+  "email": zod.string().optional().describe('The address the review was submitted from. Shown so the atelier can recognize the customer; never served publicly.'),
+  "emailVerified": zod.boolean().describe('Whether that address matched the one stored on the order. False on a legacy order that has no email stored — accepted at capture, but worth vetting before it goes on the site.'),
+  "consentToPublish": zod.boolean().describe('Whether the customer agreed to their words being published. Publishing without it is refused, so this is what the dashboard reads to know whether the button can be offered at all.'),
+  "status": zod.enum(['pending', 'published', 'rejected']).describe('Where a review stands with the atelier. `pending` is anything not yet decided — including the \"New\" it is captured with — so a review can only ever be waiting, shown, or set aside.'),
+  "rawStatus": zod.string().optional().describe('The `Status` select exactly as Notion holds it, when it is set. Shown for a row whose value the app doesn\'t recognize, so \"why is this still pending?\" is answerable without opening Notion.'),
+  "submittedAt": zod.coerce.date().optional().describe('When the review was submitted (its Notion created time).'),
+  "photos": zod.array(zod.string()).describe('Photographs of the finished piece, as URLs. Notion-signed and short-lived, so they are for rendering this page and nothing else. Empty for a decided review — photos are fetched only for the rows still awaiting a decision.'),
+  "notionUrl": zod.string().optional().describe('The review\'s page in Notion, for anything this queue doesn\'t show.')
+}).describe('One review as the moderation queue shows it. Unlike the public `PublishedReview`, this is the whole row: the atelier is deciding whether to put it on the site, and who wrote it and whether their email matched the order are part of that judgement. Staff-only.')
 
 

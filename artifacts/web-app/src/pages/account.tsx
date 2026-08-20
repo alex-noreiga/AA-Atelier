@@ -17,6 +17,7 @@ import { PageShell } from "@/components/page-shell";
 import { Seo } from "@/components/seo";
 import { AppointmentManagePanel } from "@/components/appointment-manage-panel";
 import { useAuth } from "@/lib/auth-context";
+import { useStudioAccess } from "@/lib/studio-access";
 import { ROUTE_SEO } from "@/lib/seo-routes";
 import { formatPrice, formatDate } from "@/lib/format";
 import { fmtWhen } from "@/lib/appointment-format";
@@ -50,10 +51,16 @@ import {
  * by supabase-js in the browser; its access token rides every API call as a
  * Bearer credential. An unauthenticated visit is redirected to the sign-in page
  * — driven off the client-side session, with the overview's 401 as a fallback.
+ *
+ * A *studio staff* session is handed on to `/studio` instead. Staff don't place
+ * orders through the shop, so this page is empty by construction for them —
+ * and since sign-in and the OAuth callback both land here by default, doing the
+ * hand-off at this one door covers every way in rather than each of them.
  */
 export default function Account() {
   const [, navigate] = useLocation();
   const { session, loading, signOut } = useAuth();
+  const { staff, loading: staffLoading } = useStudioAccess();
 
   const overview = useGetAccountOverview({
     query: {
@@ -77,11 +84,19 @@ export default function Account() {
     return <Redirect to="/account/login" replace />;
   }
 
+  // Studio staff get the dashboard, not a customer portal with nothing in it.
+  // The loader below waits on the staff answer as well as the overview, so this
+  // is reached with a settled answer and no flash of the wrong page in between.
+  if (staff) {
+    return <Redirect to="/studio" replace />;
+  }
+
   return (
     <PageShell align="top" className="pt-28 pb-20">
       <Seo {...ROUTE_SEO["/account"]} />
       <div className="w-full max-w-2xl z-10 mx-auto px-6 animate-in fade-in duration-700">
         {loading ||
+        staffLoading ||
         overview.isLoading ||
         (Boolean(session) && overview.isPending) ? (
           <div

@@ -1,9 +1,22 @@
-import { describe, it, expect } from "vitest";
+import { describe, it, expect, vi, beforeEach } from "vitest";
 import { render, screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
+import { useGetPublishedReviews } from "@workspace/api-client-react";
 import About from "@/pages/about";
+import { stubHook } from "./support/mock-hook";
 
-// About is static — it fetches nothing, so there is no hook to mock here.
+// The page's own copy is static; the one thing it fetches is the curated
+// testimonial strip. Stubbed empty here so these cases stay about the story and
+// the FAQ — the strip's own behavior is covered in testimonials.test.tsx.
+vi.mock("@workspace/api-client-react", () => ({
+  useGetPublishedReviews: vi.fn(),
+}));
+
+beforeEach(() => {
+  stubHook(vi.mocked(useGetPublishedReviews) as never, {
+    data: { reviews: [] },
+  });
+});
 
 const FIRST_QUESTION = "How long does a custom costume take?";
 const SECOND_QUESTION = "How do I get measured?";

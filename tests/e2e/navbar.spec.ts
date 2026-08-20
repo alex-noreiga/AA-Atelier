@@ -1,12 +1,20 @@
 import { test, expect } from "./support/test";
+import { mockColors, mockPublishedReviews } from "./support/mock-api";
 
-// The navbar fetches nothing, and neither the order form nor the status page
-// calls the API until it is submitted — so no API mocking is needed here.
+// The navbar fetches nothing, and the status page calls the API only on submit.
+// Two endpoints still need stubbing to satisfy the unmocked-/api guard: the home
+// page these specs start from fetches its testimonial strip, and the order form
+// loads its color palette (GET /api/colors) on mount.
 
 test.describe("Navbar", () => {
+  test.beforeEach(async ({ page }) => {
+    await mockPublishedReviews(page);
+  });
+
   test("reaches the order form through the Services dropdown", async ({
     page,
   }) => {
+    await mockColors(page);
     await page.goto("/");
 
     await expect(page.getByTestId("nav-place-an-order")).toBeHidden();

@@ -1,6 +1,6 @@
 ---
 name: Appointment scheduling — Google Calendar integration + design decisions
-description: Real-time appointment booking backed by Google Calendar free/busy (conflicts) + a Google Sheet working-hours grid, writing each booking as a calendar event via a Workspace service account with domain-wide delegation. Records the setup and the trust/timezone rules.
+description: Real-time appointment booking backed by Google Calendar free/busy (conflicts) + a working-hours grid edited on the studio dashboard, writing each booking as a calendar event via a Workspace service account with domain-wide delegation. Records the setup and the trust/timezone rules.
 ---
 
 The site lets customers book appointments (consultations, fittings, design
@@ -17,17 +17,20 @@ slots from a **positive** weekly working-hours grid and **subtracts** busy
 intervals. Google free/busy only provides the subtractive half (when someone is
 busy), so the two halves come from two places:
 
-- **Working hours (positive grid)** → a **Google Sheet** the atelier edits live
-  (no redeploy), read by `lib/google/sheets.repository.ts` (`APPOINTMENT_SHEET_ID`,
-  60s cache + fallback) and parsed by the pure `parseScheduleRows` in
-  `lib/appointments/staff.ts`. Columns `Staff | Email | Day | Start | End |
-Locations` (row 1 header, data from `A2:F`); `Day` accepts `Mon`/`Monday`, comma
-  lists, and `Mon-Fri` ranges. `Staff` must match the catalog staff names; `Email`
-  is the Workspace calendar. The SA reads the sheet as _itself_ (sheet shared with
-  the SA email), so no domain-wide delegation for Sheets. (Earlier this was an
-  `APPOINTMENT_STAFF` JSON env var; moved to a Sheet so standing hours are easy to
-  edit without touching JSON/env or redeploying. Reading it makes the schedule
-  lookup async — `getScheduleConfig`/`calendarEmailFor` are async.)
+- **Working hours (positive grid)** → the **`staff_availability` Postgres table**,
+  edited on `/studio` → **Working hours**. Read through
+  `lib/appointments/schedule.ts` (the seam) over
+  `lib/db/staff-availability.repository.ts` (60s cache + fallback) and mapped
+  by the pure `buildSchedule` in `lib/appointments/staff.ts`. One row is one block:
+  `staff | calendar_email | weekdays | start_time | end_time | locations`. `staff`
+  must be a catalog staff name — the editor enforces it now rather than failing
+  silently; `calendar_email` is the Workspace calendar. **Booking hard-requires
+  `POSTGRES_URL`**: this table is the record, with no fallback. (History: an
+  `APPOINTMENT_STAFF` JSON
+  env var → a **Google Sheet** shared with the service account → this. The sheet
+  made hours editable without a redeploy but validated nothing, and needed the
+  Sheets API + a second share; see `staff-availability-dashboard.md`. Reading it
+  is async either way — `getScheduleConfig`/`calendarEmailFor` are async.)
 - **Busy (subtractive)** → the Google **FreeBusy API** per staff calendar
   (`lib/google/calendar.repository.ts` → `listBusyInRange`), fed into
   `computeSlots` as `bookings`. Because booked appointments are themselves
@@ -46,21 +49,21 @@ The client is injectable (`GoogleCalendarClient`) so tests pass a fake.
 
 Setup the atelier must do once:
 
-1. GCP project → enable **Google Calendar API** and **Google Sheets API** →
-   create a **service account** + JSON key → set `GOOGLE_SERVICE_ACCOUNT_KEY`.
+1. GCP project → enable the **Google Calendar API** → create a **service
+   account** + JSON key → set `GOOGLE_SERVICE_ACCOUNT_KEY`.
 2. Workspace **Admin → Security → API controls → Domain-wide delegation**:
    authorize the service account's client id for scope
    `https://www.googleapis.com/auth/calendar` (calendar impersonation only).
-3. Create the working-hours **Google Sheet**, share it with the service-account
-   email (Viewer), and set `APPOINTMENT_SHEET_ID`.
+3. Run `db:migrate` once (creates `staff_availability`), then enter the hours on
+   `/studio` → **Working hours**. No Notion database and no env var of its own.
 
 ## Load-bearing rules (don't regress these)
 
 - **The type catalog stays in code** (`lib/appointments/catalog.ts`): the four
   types, durations, and routing (consultations: Alayna only; fittings, design
   reviews, general: either Alexandra or Alayna; fittings in-person only). Targeted business rule, like
-  `STATUS_IN_STOCK`. Staff `name`s here must equal the `Staff` column in the
-  working-hours Sheet.
+  `STATUS_IN_STOCK`. Staff `name`s here are the list the working-hours editor
+  offers and validates against, so the two can't drift.
 - **Never trust a client-sent slot.** `POST /appointments` re-runs the same
   `computeSlots` with **fresh** free/busy for the requested day before writing;
   a `start` that isn't currently open → `BadRequestError` (400). One function

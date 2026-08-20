@@ -16,6 +16,7 @@ vi.mock("@workspace/api-client-react", () => ({
       opts?.mutation?.onSuccess?.({ orderNumber: "000042" }, variables),
   }),
   useSubscribeNewsletter: () => ({ mutate: vi.fn(), isPending: false }),
+  useGetColors: () => ({ data: undefined }),
 }));
 
 import OrderForm from "@/pages/order-form";
@@ -43,12 +44,25 @@ async function fillMeasurements(user: ReturnType<typeof userEvent.setup>) {
   await user.type(byId("bodyGirth"), String(order.bodyGirth));
 }
 
+// The intake is a three-step flow; the final "Submit Order" lives on the last
+// (timeline) step, so skip past the two optional steps first.
+async function continueToSubmit(user: ReturnType<typeof userEvent.setup>) {
+  await user.click(
+    screen.getByRole("button", { name: /continue to your design/i }),
+  );
+  await user.click(
+    await screen.findByRole("button", { name: /continue to timeline/i }),
+  );
+  await screen.findByRole("button", { name: "Submit Order" });
+}
+
 describe("OrderForm confirmation screen", () => {
   it("offers a consultation booking on every order confirmation", async () => {
     const user = userEvent.setup();
     render(<OrderForm />);
     await fillContact(user);
     await fillMeasurements(user);
+    await continueToSubmit(user);
     await user.click(screen.getByRole("button", { name: "Submit Order" }));
 
     await waitFor(() =>
@@ -72,6 +86,7 @@ describe("OrderForm confirmation screen", () => {
     await user.click(
       screen.getByRole("button", { name: "Take them at an appointment" }),
     );
+    await continueToSubmit(user);
     await user.click(screen.getByRole("button", { name: "Submit Order" }));
 
     await waitFor(() =>

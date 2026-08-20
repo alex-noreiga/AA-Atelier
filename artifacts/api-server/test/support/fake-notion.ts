@@ -134,6 +134,46 @@ export function inventoryPage(opts: {
 /** Minimal "Product Categories" page as returned by a query — a category name,
  * its "Show size guide" checkbox, an optional "Size Guide Type" select, and an
  * optional "Sort" number. */
+/**
+ * Minimal "Staff Availability" page as returned by a query or a page write. The
+ * repository reads six properties; anything omitted here is simply absent, which
+ * is what a row missing that property in Notion looks like.
+ */
+export function availabilityPage(opts: {
+  id?: string;
+  staff?: string;
+  email?: string;
+  weekdays?: string[];
+  start?: string;
+  end?: string;
+  locations?: string[];
+}) {
+  const richText = (value?: string) => ({
+    type: "rich_text",
+    rich_text: value ? [{ plain_text: value }] : [],
+  });
+  return {
+    id: opts.id ?? "availability-page",
+    properties: {
+      Staff: {
+        type: "title",
+        title: opts.staff ? [{ plain_text: opts.staff }] : [],
+      },
+      "Calendar Email": { type: "email", email: opts.email ?? null },
+      Weekdays: {
+        type: "multi_select",
+        multi_select: (opts.weekdays ?? []).map((name) => ({ name })),
+      },
+      Start: richText(opts.start),
+      End: richText(opts.end),
+      Locations: {
+        type: "multi_select",
+        multi_select: (opts.locations ?? []).map((name) => ({ name })),
+      },
+    },
+  };
+}
+
 export function categoryPage(opts: {
   id?: string;
   name?: string;
@@ -222,10 +262,19 @@ export function orderPage(opts: {
   milestonesGenerated?: boolean;
   lastNotifiedStage?: string;
   cancelled?: boolean;
+  rush?: boolean;
+  /** Notion's page-creation timestamp, read by the studio analytics. */
+  createdTime?: string;
 }) {
   return {
     id: opts.id ?? "page-id",
+    ...(opts.createdTime !== undefined
+      ? { created_time: opts.createdTime }
+      : {}),
     properties: {
+      ...(opts.rush !== undefined
+        ? { "Rush Order": { type: "checkbox", checkbox: opts.rush } }
+        : {}),
       "Costing Items": {
         type: "relation",
         relation: (opts.costingItemIds ?? []).map((id) => ({ id })),
@@ -473,6 +522,69 @@ export function lineItemPage(opts: {
       "Line Total": {
         type: "formula",
         formula: { type: "number", number: opts.total ?? null },
+      },
+    },
+  };
+}
+
+/**
+ * Minimal Reviews page as returned by a query on the reviews database — only
+ * the properties the READ side maps (`reviews.schema.ts`). Defaults are the
+ * publishable combination, so a test names only the field it wants to break.
+ */
+export function reviewPage(opts: {
+  id?: string;
+  rating?: number | null;
+  comment?: string;
+  customerName?: string;
+  orderNumber?: string;
+  email?: string | null;
+  emailVerified?: boolean;
+  status?: string | null;
+  consent?: boolean;
+  createdTime?: string | null;
+  url?: string | null;
+}) {
+  const rt = (value?: string) => ({
+    type: "rich_text",
+    rich_text: value ? [{ plain_text: value }] : [],
+  });
+  return {
+    id: opts.id ?? "review-page",
+    // `createdTime: null` models a page Notion returned without the timestamp.
+    ...(opts.createdTime === null
+      ? {}
+      : { created_time: opts.createdTime ?? "2026-08-01T12:00:00.000Z" }),
+    ...(opts.url === null
+      ? {}
+      : { url: opts.url ?? "https://notion.so/review-page" }),
+    properties: {
+      Rating: {
+        type: "number",
+        number: opts.rating === undefined ? 5 : opts.rating,
+      },
+      Review: rt(opts.comment ?? "Beautiful work."),
+      "Customer Name": rt(opts.customerName),
+      Status: {
+        type: "select",
+        select:
+          opts.status === null ? null : { name: opts.status ?? "Published" },
+      },
+      "Consent to Publish": {
+        type: "checkbox",
+        checkbox: opts.consent ?? true,
+      },
+      // Read only by the staff (moderation) projection; the public one never
+      // touches these.
+      "Order Number": rt(opts.orderNumber ?? "000002"),
+      Email: {
+        type: "email",
+        email:
+          opts.email === null ? null : (opts.email ?? "skater@example.com"),
+      },
+      "Email Verified": {
+        type: "checkbox",
+        checkbox: opts.emailVerified ?? true,
       },
     },
   };

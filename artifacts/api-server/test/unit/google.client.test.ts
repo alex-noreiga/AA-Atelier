@@ -72,31 +72,3 @@ describe("getGoogleCalendarClient", () => {
     expect(getGoogleCalendarClient()).toBe(client);
   });
 });
-
-describe("getGoogleSheetsClient", () => {
-  it("throws when GOOGLE_SERVICE_ACCOUNT_KEY is not set", async () => {
-    const { getGoogleSheetsClient } = await importClient();
-    expect(() => getGoogleSheetsClient()).toThrow(
-      /GOOGLE_SERVICE_ACCOUNT_KEY environment variable is not set/,
-    );
-  });
-
-  it("throws when the key is missing private_key", async () => {
-    process.env.GOOGLE_SERVICE_ACCOUNT_KEY = JSON.stringify({
-      client_email: "sa@project.iam.gserviceaccount.com",
-    });
-    const { getGoogleSheetsClient } = await importClient();
-    expect(() => getGoogleSheetsClient()).toThrow(
-      /missing client_email or private_key/,
-    );
-  });
-
-  it("constructs a client with a fetch method for a valid key, and caches it", async () => {
-    process.env.GOOGLE_SERVICE_ACCOUNT_KEY = VALID_KEY;
-    const { getGoogleSheetsClient } = await importClient();
-
-    const client = getGoogleSheetsClient();
-    expect(typeof client.fetch).toBe("function");
-    expect(getGoogleSheetsClient()).toBe(client);
-  });
-});

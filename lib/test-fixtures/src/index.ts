@@ -20,6 +20,8 @@
 // contract), so a fixture cannot silently drift from the API it stands in for.
 
 import type {
+  CheckoutSessionStatus,
+  ColorList,
   NewCancellationRequest,
   NewContactRequest,
   NewMeasurementChangeRequest,
@@ -193,6 +195,42 @@ export function productList(overrides: Partial<ProductList> = {}): ProductList {
         ],
       },
     ],
+    ...overrides,
+  };
+}
+
+/**
+ * A `GET /api/colors` response — the studio's intake color palette for the order
+ * form's color picker. Two solid colors by default; pass `colors` to reshape it.
+ * Used as the mocked HTTP response / hook result in the order-form + picker tests.
+ */
+export function colorList(overrides: Partial<ColorList> = {}): ColorList {
+  return {
+    colors: [
+      { id: "ivory", name: "Ivory", hex: "#F3ECE2" },
+      { id: "emerald", name: "Emerald", hex: "#0B6E4F" },
+    ],
+    ...overrides,
+  };
+}
+
+/**
+ * A `GET /api/checkout/session/:id` response — the paid, itemized receipt the
+ * shop success page renders. Used as the mocked HTTP response in the checkout
+ * e2e spec.
+ */
+export function checkoutSession(
+  overrides: Partial<CheckoutSessionStatus> = {},
+): CheckoutSessionStatus {
+  return {
+    status: "paid",
+    email: "grace@example.com",
+    currency: "usd",
+    lineItems: [{ description: "Bow Fleece Soaker", quantity: 1, amount: 22 }],
+    amountSubtotal: 22,
+    amountShipping: 8,
+    amountTax: 0,
+    amountTotal: 30,
     ...overrides,
   };
 }

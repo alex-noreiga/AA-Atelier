@@ -16,6 +16,8 @@ import {
   ORDER_HEIGHT_PROPERTY,
   ORDER_BODY_GIRTH_PROPERTY,
   ORDER_MEASUREMENT_UNIT_PROPERTY,
+  ORDER_COLORS_PROPERTY,
+  ORDER_COLOR_USAGE_PROPERTY,
   type CreateOrderInput,
 } from "./orders.schema.js";
 import { normalizeEmail } from "../email.js";
@@ -122,6 +124,19 @@ export function buildOrderProperties(
       select: { name: data.measurementUnit },
     };
   }
+  // The customer's color choices from the intake palette — a multi_select of the
+  // picked color names (filterable) + a free-text usage note. Write-only; the app
+  // never reads them back. Each written only when supplied.
+  if (data.colors && data.colors.length > 0) {
+    properties[ORDER_COLORS_PROPERTY] = {
+      multi_select: data.colors.map((name) => ({ name })),
+    };
+  }
+  if (data.colorUsage) {
+    properties[ORDER_COLOR_USAGE_PROPERTY] = {
+      rich_text: [{ text: { content: data.colorUsage } }],
+    };
+  }
   if (clientPageId) {
     properties[ORDER_CLIENT_PROPERTY] = {
       relation: [{ id: clientPageId }],
@@ -181,6 +196,14 @@ export function buildOrderPageBlocks(data: CreateOrderInput): unknown[] {
     costumeSection.push(
       textBlock("Rush Order", "Yes — rush surcharge applies"),
     );
+  }
+  // The customer's color choices from the intake palette + how they'd like them
+  // used, each omitted when not supplied.
+  if (data.colors && data.colors.length > 0) {
+    costumeSection.push(textBlock("Colors", data.colors.join(", ")));
+  }
+  if (data.colorUsage) {
+    costumeSection.push(textBlock("Color Usage", data.colorUsage));
   }
   costumeSection.push(dividerBlock());
 

@@ -1,10 +1,11 @@
 import { useRef, useState } from "react";
-import { useForm } from "react-hook-form";
+import { useForm, type FieldErrors } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
 import { Link } from "wouter";
 import {
   useCreateOrder,
+  useGetColors,
   useSubscribeNewsletter,
 } from "@workspace/api-client-react";
 import { Button } from "@/components/ui/button";
@@ -14,6 +15,7 @@ import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { PageShell } from "@/components/page-shell";
 import { ReferenceImageUpload } from "@/components/reference-image-upload";
+import { ColorPicker } from "@/components/color-picker";
 import { SuccessScreen } from "@/components/success-screen";
 import { Seo } from "@/components/seo";
 import { ROUTE_SEO } from "@/lib/seo-routes";
@@ -23,7 +25,9 @@ import { useSubmitTimer } from "@/lib/anti-spam";
 import { useToast } from "@/hooks/use-toast";
 import {
   ArrowLeft,
+  ArrowRight,
   CalendarCheck,
+  Check,
   CheckCircle,
   Loader2,
   Zap,
@@ -37,6 +41,35 @@ const MEASUREMENT_FIELDS = [
   { key: "height", label: "Height" },
   { key: "bodyGirth", label: "Body Girth" },
 ] as const;
+
+// The intake is a three-step flow, so no one page carries the whole form: who
+// the customer is, then what they want made, then when they need it. Step 0
+// carries every required field; steps 1 and 2 are entirely optional, and the
+// order is placed from step 2.
+const STEPS = ["Your details", "Your design", "Timeline"] as const;
+
+// Which fields live on which step. Two things read this: advancing validates
+// only the step being left (so an error further on can't block it), and a
+// failed final submit jumps back to the earliest step that owns an error
+// instead of stranding the customer on a page with nothing marked. Keep it in
+// step with the sections rendered below.
+const STEP_FIELDS = [
+  [
+    "fullName",
+    "email",
+    "phone",
+    "preferredContact",
+    "measurementMode",
+    "measurementUnit",
+    "waist",
+    "bust",
+    "hips",
+    "height",
+    "bodyGirth",
+  ],
+  ["colors", "colorUsage", "description"],
+  ["neededBy", "rushAcknowledged", "referralCode", "subscribeNewsletter"],
+] as const satisfies readonly (readonly (keyof FormInput)[])[];
 
 // Form-friendly schema (string inputs, friendly messages). Its output is mapped
 // to the generated `NewOrderRequest` contract where it is handed to the
@@ -63,6 +96,11 @@ const formSchema = z
     height: z.string().optional(),
     bodyGirth: z.string().optional(),
     description: z.string().optional(),
+    // The colors the customer picked from the studio palette (multi-select,
+    // driven by <ColorPicker/> via setValue) + a free-text note on how they'd
+    // like them used. Both optional — exact fabric is settled at consultation.
+    colors: z.array(z.string()).default([]),
+    colorUsage: z.string().optional(),
     neededBy: z.string().optional(),
     // Optional referral code from another skater. Validated server-side against
     // the CRM (an unknown/self code is silently ignored), so no client checks.
@@ -128,6 +166,9 @@ export default function OrderForm() {
   // Notion file_upload ids for reference images the customer uploaded (managed
   // by <ReferenceImageUpload/>, which uploads each as it's chosen).
   const [referenceImageIds, setReferenceImageIds] = useState<string[]>([]);
+  // Which step of the three-step flow is showing (0 = details, 1 = design,
+  // 2 = timeline).
+  const [step, setStep] = useState(0);
   const { toast } = useToast();
 
   const createOrder = useCreateOrder({
@@ -166,11 +207,19 @@ export default function OrderForm() {
     analytics(AnalyticsEvent.OrderFormStart);
   };
 
+  // The studio's color palette (a built-in primary set, atelier-overridable via
+  // the COLOR_PALETTE Studio Settings value). Best-effort: if the fetch errors,
+  // the chips just don't render and the customer still describes what they want
+  // in the usage note — it never blocks the order form.
+  const { data: colorsData } = useGetColors();
+  const palette = colorsData?.colors ?? [];
+
   const {
     register,
     handleSubmit,
     watch,
     setValue,
+    trigger,
     formState: { errors },
   } = useForm<FormInput, any, FormValues>({
     resolver: zodResolver(formSchema),
@@ -178,6 +227,7 @@ export default function OrderForm() {
       measurementMode: "self",
       measurementUnit: "inches",
       preferredContact: undefined,
+      colors: [],
     },
   });
 
@@ -185,12 +235,29 @@ export default function OrderForm() {
   const measurementMode = watch("measurementMode");
   const measurementUnit = watch("measurementUnit");
   const preferredContact = watch("preferredContact");
+  const colors = watch("colors") ?? [];
   // A needed-by date inside the rush window surfaces the surcharge disclosure
   // and requires an acknowledgement before the order can be placed.
   const neededByValue = watch("neededBy");
   const isRush = isRushNeededBy(neededByValue);
   // Floor the "needed by" picker at today, so a past date can't be picked.
   const todayIso = new Date().toISOString().split("T")[0];
+
+  // Advance a step only once the step being left validates. Validation is
+  // scoped to that step's own fields, so an unfinished later step (an
+  // unacknowledged rush surcharge on step 2, say) can't block step 0.
+  const goToNextStep = async () => {
+    if (await trigger(STEP_FIELDS[step])) setStep((current) => current + 1);
+  };
+
+  // A failed submit sends the customer to the earliest step that owns an
+  // error, so the messages they're told about are on the page they land on.
+  const onInvalid = (formErrors: FieldErrors<FormInput>) => {
+    const firstBadStep = STEP_FIELDS.findIndex((fields) =>
+      fields.some((field) => formErrors[field]),
+    );
+    if (firstBadStep >= 0) setStep(firstBadStep);
+  };
 
   const onSubmit = (values: FormValues) => {
     const {
@@ -206,6 +273,8 @@ export default function OrderForm() {
       hips,
       height,
       bodyGirth,
+      colors: pickedColors,
+      colorUsage,
       ...contact
     } = values;
 
@@ -262,6 +331,8 @@ export default function OrderForm() {
         ...(rush ? { rush: true } : {}),
         ...(referralCode?.trim() ? { referralCode: referralCode.trim() } : {}),
         ...(referenceImageIds.length ? { referenceImageIds } : {}),
+        ...(pickedColors.length ? { colors: pickedColors } : {}),
+        ...(colorUsage ? { colorUsage } : {}),
       },
     });
   };
@@ -354,393 +425,548 @@ export default function OrderForm() {
 
         {/* noValidate: zod owns validation (incl. the needed-by floor), so the
             browser's native constraint bubble can't pre-empt our inline
-            messages — the `min` on the date input stays a picker-UI hint. */}
+            messages. On every step but the last, a submit (button or Enter)
+            advances after validating that step; on the last it places the
+            order. */}
         <form
           noValidate
-          onSubmit={handleSubmit(onSubmit)}
+          onSubmit={
+            step < STEPS.length - 1
+              ? (e) => {
+                  e.preventDefault();
+                  void goToNextStep();
+                }
+              : handleSubmit(onSubmit, onInvalid)
+          }
           onFocusCapture={onFormStart}
           onChangeCapture={onFormStart}
           className="space-y-12"
         >
-          <section>
-            <h2 className="text-xs tracking-[0.2em] uppercase text-muted-foreground mb-6 pb-2 border-b border-border">
-              Contact Information
-            </h2>
-            <div className="space-y-5">
-              <div>
-                <Label
-                  htmlFor="fullName"
-                  className="text-sm font-light tracking-wide"
-                >
-                  Full Name <span className="text-primary">*</span>
-                </Label>
-                <Input
-                  id="fullName"
-                  {...register("fullName")}
-                  placeholder="Your full name"
-                  className="mt-1.5 bg-transparent border-0 border-b border-border rounded-none px-0 py-3 focus-visible:ring-0 focus-visible:border-primary transition-colors shadow-none"
-                />
-                {errors.fullName && (
-                  <p className="text-destructive text-xs mt-1">
-                    {errors.fullName.message}
-                  </p>
-                )}
-              </div>
-
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
-                <div>
-                  <Label
-                    htmlFor="email"
-                    className="text-sm font-light tracking-wide"
-                  >
-                    Email <span className="text-primary">*</span>
-                  </Label>
-                  <Input
-                    id="email"
-                    type="email"
-                    {...register("email")}
-                    placeholder="you@example.com"
-                    className="mt-1.5 bg-transparent border-0 border-b border-border rounded-none px-0 py-3 focus-visible:ring-0 focus-visible:border-primary transition-colors shadow-none"
-                  />
-                  {errors.email && (
-                    <p className="text-destructive text-xs mt-1">
-                      {errors.email.message}
-                    </p>
-                  )}
-                </div>
-                <div>
-                  <Label
-                    htmlFor="phone"
-                    className="text-sm font-light tracking-wide"
-                  >
-                    Phone Number <span className="text-primary">*</span>
-                  </Label>
-                  <Input
-                    id="phone"
-                    type="tel"
-                    {...register("phone")}
-                    placeholder="+1 (555) 000-0000"
-                    className="mt-1.5 bg-transparent border-0 border-b border-border rounded-none px-0 py-3 focus-visible:ring-0 focus-visible:border-primary transition-colors shadow-none"
-                  />
-                  {errors.phone && (
-                    <p className="text-destructive text-xs mt-1">
-                      {errors.phone.message}
-                    </p>
-                  )}
-                </div>
-              </div>
-
-              <div>
-                <Label className="text-sm font-light tracking-wide">
-                  Preferred Contact Method{" "}
-                  <span className="text-primary">*</span>
-                </Label>
-                <div className="flex gap-3 mt-2">
-                  {(["email", "phone", "text"] as const).map((method) => (
-                    <button
-                      key={method}
-                      type="button"
-                      onClick={() =>
-                        setValue("preferredContact", method, {
-                          shouldValidate: true,
-                        })
-                      }
-                      className={`px-4 py-2 rounded-full text-xs tracking-widest uppercase border transition-all ${
-                        preferredContact === method
-                          ? "border-primary bg-primary/10 text-primary"
-                          : "border-border text-muted-foreground hover:border-primary/50"
-                      }`}
-                    >
-                      {method.charAt(0).toUpperCase() + method.slice(1)}
-                    </button>
-                  ))}
-                </div>
-                {errors.preferredContact && (
-                  <p className="text-destructive text-xs mt-1">
-                    {errors.preferredContact.message}
-                  </p>
-                )}
-              </div>
-            </div>
-          </section>
-
-          <section>
-            <div className="flex items-center justify-between mb-6 pb-2 border-b border-border">
-              <h2 className="text-xs tracking-[0.2em] uppercase text-muted-foreground">
-                Measurements
-              </h2>
-              {measurementMode === "self" && (
-                <div className="flex gap-2">
-                  {(["inches", "cm"] as const).map((unit) => (
-                    <button
-                      key={unit}
-                      type="button"
-                      onClick={() => setValue("measurementUnit", unit)}
-                      className={`px-3 py-1 rounded-full text-xs tracking-wider border transition-all ${
-                        measurementUnit === unit
-                          ? "border-primary bg-primary/10 text-primary"
-                          : "border-border text-muted-foreground hover:border-primary/50"
-                      }`}
-                    >
-                      {unit}
-                    </button>
-                  ))}
-                </div>
-              )}
-            </div>
-
-            <div className="flex flex-col sm:flex-row gap-3 mb-8">
-              {(
-                [
-                  { mode: "self", label: "I'll enter my measurements" },
-                  {
-                    mode: "appointment",
-                    label: "Take them at an appointment",
-                  },
-                ] as const
-              ).map(({ mode, label }) => (
-                <button
-                  key={mode}
-                  type="button"
-                  onClick={() =>
-                    setValue("measurementMode", mode, { shouldValidate: true })
-                  }
-                  className={`flex-1 px-4 py-3 rounded-lg text-sm tracking-wide border transition-all ${
-                    measurementMode === mode
-                      ? "border-primary bg-primary/10 text-primary"
-                      : "border-border text-muted-foreground hover:border-primary/50"
+          {/* Step indicator */}
+          <ol className="flex items-center gap-2 text-[11px] tracking-[0.15em] uppercase">
+            {STEPS.map((label, i) => (
+              <li key={label} className="flex items-center gap-2">
+                <span
+                  className={`flex items-center gap-1.5 ${
+                    i === step
+                      ? "text-primary"
+                      : i < step
+                        ? "text-foreground"
+                        : "text-muted-foreground/50"
                   }`}
                 >
-                  {label}
-                </button>
-              ))}
-            </div>
+                  <span
+                    className={`w-5 h-5 rounded-full border flex items-center justify-center text-[10px] ${
+                      i < step
+                        ? "border-primary bg-primary/10 text-primary"
+                        : i === step
+                          ? "border-primary text-primary"
+                          : "border-border"
+                    }`}
+                  >
+                    {i < step ? <Check className="w-3 h-3" /> : i + 1}
+                  </span>
+                  <span className="hidden sm:inline">{label}</span>
+                </span>
+                {i < STEPS.length - 1 && (
+                  <span className="w-4 h-px bg-border" aria-hidden />
+                )}
+              </li>
+            ))}
+          </ol>
 
-            {measurementMode === "self" ? (
-              <div className="grid grid-cols-2 md:grid-cols-3 gap-5">
-                {MEASUREMENT_FIELDS.map(({ key, label }) => (
-                  <div key={key}>
+          {step === 0 && (
+            <div className="space-y-12">
+              <section>
+                <h2 className="text-xs tracking-[0.2em] uppercase text-muted-foreground mb-6 pb-2 border-b border-border">
+                  Contact Information
+                </h2>
+                <div className="space-y-5">
+                  <div>
                     <Label
-                      htmlFor={key}
+                      htmlFor="fullName"
                       className="text-sm font-light tracking-wide"
                     >
-                      {label}
-                      <span className="text-muted-foreground/60 ml-1 text-xs">
-                        ({measurementUnit})
-                      </span>
+                      Full Name <span className="text-primary">*</span>
                     </Label>
                     <Input
-                      id={key}
-                      type="number"
-                      step="0.1"
-                      min="0"
-                      {...register(key)}
-                      placeholder="0.0"
+                      id="fullName"
+                      {...register("fullName")}
+                      placeholder="Your full name"
                       className="mt-1.5 bg-transparent border-0 border-b border-border rounded-none px-0 py-3 focus-visible:ring-0 focus-visible:border-primary transition-colors shadow-none"
                     />
-                    {errors[key] && (
+                    {errors.fullName && (
                       <p className="text-destructive text-xs mt-1">
-                        {errors[key]?.message}
+                        {errors.fullName.message}
                       </p>
                     )}
                   </div>
-                ))}
-              </div>
-            ) : (
-              <div className="border border-border rounded-lg p-6 bg-muted/20">
-                <p className="text-sm font-light text-foreground/90 leading-relaxed">
-                  No problem — we'll take your measurements for you. Book a
-                  fitting now and we'll take them then, or we'll arrange it when
-                  you place your order.
-                </p>
-                <CtaLink
-                  to="/appointments?type=fitting"
-                  variant="outline"
-                  className="mt-5"
-                  data-testid="link-book-fitting"
-                >
-                  <CalendarCheck className="w-4 h-4" />
-                  Book your fitting
-                </CtaLink>
-              </div>
-            )}
-          </section>
 
-          <section>
-            <h2 className="text-xs tracking-[0.2em] uppercase text-muted-foreground mb-6 pb-2 border-b border-border">
-              Costume Details
-            </h2>
-            <div className="space-y-6">
-              <div>
-                <Label
-                  htmlFor="description"
-                  className="text-sm font-light tracking-wide"
-                >
-                  Description / Notes
-                  <span className="text-muted-foreground/60 ml-1 text-xs">
-                    (optional)
-                  </span>
-                </Label>
-                <Textarea
-                  id="description"
-                  {...register("description")}
-                  placeholder="Tell us about your vision — style, fabric preferences, special requirements..."
-                  rows={4}
-                  className="mt-1.5 bg-transparent border border-border rounded-lg px-3 py-2 text-sm focus-visible:ring-0 focus-visible:border-primary transition-colors resize-none shadow-none"
-                />
-              </div>
-
-              <div>
-                <Label
-                  htmlFor="neededBy"
-                  className="text-sm font-light tracking-wide"
-                >
-                  Needed By
-                  <span className="text-muted-foreground/60 ml-1 text-xs">
-                    (optional)
-                  </span>
-                </Label>
-                <Input
-                  id="neededBy"
-                  type="date"
-                  min={todayIso}
-                  {...register("neededBy")}
-                  className="mt-1.5 bg-transparent border-0 border-b border-border rounded-none px-0 py-3 focus-visible:ring-0 focus-visible:border-primary transition-colors shadow-none w-48"
-                />
-                {errors.neededBy ? (
-                  <p className="text-destructive text-xs mt-1">
-                    {errors.neededBy.message}
-                  </p>
-                ) : (
-                  <p className="text-muted-foreground/60 text-xs mt-1.5">
-                    Custom pieces typically take 4-8 weeks. If you have an event
-                    date, let us know and we'll advise on timing.
-                  </p>
-                )}
-              </div>
-
-              {isRush && (
-                <div
-                  className="border border-primary/40 bg-primary/5 rounded-lg p-5"
-                  data-testid="rush-notice"
-                >
-                  <div className="flex items-center gap-2 mb-2">
-                    <Zap className="w-4 h-4 text-primary" />
-                    <p className="text-sm tracking-wide text-foreground font-medium">
-                      Rush order
-                    </p>
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
+                    <div>
+                      <Label
+                        htmlFor="email"
+                        className="text-sm font-light tracking-wide"
+                      >
+                        Email <span className="text-primary">*</span>
+                      </Label>
+                      <Input
+                        id="email"
+                        type="email"
+                        {...register("email")}
+                        placeholder="you@example.com"
+                        className="mt-1.5 bg-transparent border-0 border-b border-border rounded-none px-0 py-3 focus-visible:ring-0 focus-visible:border-primary transition-colors shadow-none"
+                      />
+                      {errors.email && (
+                        <p className="text-destructive text-xs mt-1">
+                          {errors.email.message}
+                        </p>
+                      )}
+                    </div>
+                    <div>
+                      <Label
+                        htmlFor="phone"
+                        className="text-sm font-light tracking-wide"
+                      >
+                        Phone Number <span className="text-primary">*</span>
+                      </Label>
+                      <Input
+                        id="phone"
+                        type="tel"
+                        {...register("phone")}
+                        placeholder="+1 (555) 000-0000"
+                        className="mt-1.5 bg-transparent border-0 border-b border-border rounded-none px-0 py-3 focus-visible:ring-0 focus-visible:border-primary transition-colors shadow-none"
+                      />
+                      {errors.phone && (
+                        <p className="text-destructive text-xs mt-1">
+                          {errors.phone.message}
+                        </p>
+                      )}
+                    </div>
                   </div>
-                  <p className="text-sm font-light text-muted-foreground leading-relaxed mb-4">
-                    Your date is sooner than our standard timeline, so this is a
-                    rush order. Rush pieces carry {RUSH_SURCHARGE_NOTE}. We'll
-                    confirm we can meet your date before any work begins.
-                  </p>
-                  <label
-                    htmlFor="rushAcknowledged"
-                    className="flex items-start gap-3 cursor-pointer group"
-                  >
-                    <input
-                      id="rushAcknowledged"
-                      type="checkbox"
-                      {...register("rushAcknowledged")}
-                      data-testid="rush-acknowledge"
-                      className="mt-1 h-4 w-4 shrink-0 rounded-sm border-border text-primary accent-primary focus-visible:ring-primary"
-                    />
-                    <span className="text-sm font-light text-foreground/90 group-hover:text-foreground transition-colors">
-                      I understand a rush surcharge applies to my order.
-                    </span>
-                  </label>
-                  {errors.rushAcknowledged && (
-                    <p className="text-destructive text-xs mt-2">
-                      {errors.rushAcknowledged.message}
-                    </p>
+
+                  <div>
+                    <Label className="text-sm font-light tracking-wide">
+                      Preferred Contact Method{" "}
+                      <span className="text-primary">*</span>
+                    </Label>
+                    <div className="flex gap-3 mt-2">
+                      {(["email", "phone", "text"] as const).map((method) => (
+                        <button
+                          key={method}
+                          type="button"
+                          onClick={() =>
+                            setValue("preferredContact", method, {
+                              shouldValidate: true,
+                            })
+                          }
+                          className={`px-4 py-2 rounded-full text-xs tracking-widest uppercase border transition-all ${
+                            preferredContact === method
+                              ? "border-primary bg-primary/10 text-primary"
+                              : "border-border text-muted-foreground hover:border-primary/50"
+                          }`}
+                        >
+                          {method.charAt(0).toUpperCase() + method.slice(1)}
+                        </button>
+                      ))}
+                    </div>
+                    {errors.preferredContact && (
+                      <p className="text-destructive text-xs mt-1">
+                        {errors.preferredContact.message}
+                      </p>
+                    )}
+                  </div>
+                </div>
+              </section>
+
+              <section>
+                <div className="flex items-center justify-between mb-6 pb-2 border-b border-border">
+                  <h2 className="text-xs tracking-[0.2em] uppercase text-muted-foreground">
+                    Measurements
+                  </h2>
+                  {measurementMode === "self" && (
+                    <div className="flex gap-2">
+                      {(["inches", "cm"] as const).map((unit) => (
+                        <button
+                          key={unit}
+                          type="button"
+                          onClick={() => setValue("measurementUnit", unit)}
+                          className={`px-3 py-1 rounded-full text-xs tracking-wider border transition-all ${
+                            measurementUnit === unit
+                              ? "border-primary bg-primary/10 text-primary"
+                              : "border-border text-muted-foreground hover:border-primary/50"
+                          }`}
+                        >
+                          {unit}
+                        </button>
+                      ))}
+                    </div>
                   )}
                 </div>
-              )}
 
-              <div>
-                <Label className="text-sm font-light tracking-wide">
-                  Reference Images
-                  <span className="text-muted-foreground/60 ml-1 text-xs">
-                    (optional)
-                  </span>
-                </Label>
-                <div className="mt-2">
-                  <ReferenceImageUpload
-                    onChange={setReferenceImageIds}
-                    disabled={submitting}
-                  />
+                <div className="flex flex-col sm:flex-row gap-3 mb-8">
+                  {(
+                    [
+                      { mode: "self", label: "I'll enter my measurements" },
+                      {
+                        mode: "appointment",
+                        label: "Take them at an appointment",
+                      },
+                    ] as const
+                  ).map(({ mode, label }) => (
+                    <button
+                      key={mode}
+                      type="button"
+                      onClick={() =>
+                        setValue("measurementMode", mode, {
+                          shouldValidate: true,
+                        })
+                      }
+                      className={`flex-1 px-4 py-3 rounded-lg text-sm tracking-wide border transition-all ${
+                        measurementMode === mode
+                          ? "border-primary bg-primary/10 text-primary"
+                          : "border-border text-muted-foreground hover:border-primary/50"
+                      }`}
+                    >
+                      {label}
+                    </button>
+                  ))}
                 </div>
-              </div>
 
-              <div>
-                <Label
-                  htmlFor="referralCode"
-                  className="text-sm font-light tracking-wide"
+                {measurementMode === "self" ? (
+                  <div className="grid grid-cols-2 md:grid-cols-3 gap-5">
+                    {MEASUREMENT_FIELDS.map(({ key, label }) => (
+                      <div key={key}>
+                        <Label
+                          htmlFor={key}
+                          className="text-sm font-light tracking-wide"
+                        >
+                          {label}
+                          <span className="text-muted-foreground/60 ml-1 text-xs">
+                            ({measurementUnit})
+                          </span>
+                        </Label>
+                        <Input
+                          id={key}
+                          type="number"
+                          step="0.1"
+                          min="0"
+                          {...register(key)}
+                          placeholder="0.0"
+                          className="mt-1.5 bg-transparent border-0 border-b border-border rounded-none px-0 py-3 focus-visible:ring-0 focus-visible:border-primary transition-colors shadow-none"
+                        />
+                        {errors[key] && (
+                          <p className="text-destructive text-xs mt-1">
+                            {errors[key]?.message}
+                          </p>
+                        )}
+                      </div>
+                    ))}
+                  </div>
+                ) : (
+                  <div className="border border-border rounded-lg p-6 bg-muted/20">
+                    <p className="text-sm font-light text-foreground/90 leading-relaxed">
+                      No problem — we'll take your measurements for you. Book a
+                      fitting now and we'll take them then, or we'll arrange it
+                      when you place your order.
+                    </p>
+                    <CtaLink
+                      to="/appointments?type=fitting"
+                      variant="outline"
+                      className="mt-5"
+                      data-testid="link-book-fitting"
+                    >
+                      <CalendarCheck className="w-4 h-4" />
+                      Book your fitting
+                    </CtaLink>
+                  </div>
+                )}
+              </section>
+
+              <div className="flex justify-center pt-4 pb-8">
+                <Button
+                  type="submit"
+                  className={ctaVariants({ variant: "primary", size: "lg" })}
+                  data-testid="continue-to-design"
                 >
-                  Referral Code
-                  <span className="text-muted-foreground/60 ml-1 text-xs">
-                    (optional)
-                  </span>
-                </Label>
-                <Input
-                  id="referralCode"
-                  {...register("referralCode")}
-                  placeholder="e.g. AA-XXXXXX"
-                  data-testid="input-referral-code"
-                  className="mt-1.5 bg-transparent border-0 border-b border-border rounded-none px-0 py-3 focus-visible:ring-0 focus-visible:border-primary transition-colors shadow-none w-64"
-                />
-                <p className="text-muted-foreground/60 text-xs mt-1.5">
-                  Referred by another skater? Enter their code and we'll send
-                  you a welcome discount.
-                </p>
+                  Continue to your design
+                  <ArrowRight className="w-4 h-4 ml-2" />
+                </Button>
               </div>
             </div>
-          </section>
+          )}
 
-          <label
-            htmlFor="subscribeNewsletter"
-            className="flex items-start gap-3 max-w-md mx-auto cursor-pointer group"
-          >
-            <input
-              id="subscribeNewsletter"
-              type="checkbox"
-              {...register("subscribeNewsletter")}
-              data-testid="subscribe-newsletter"
-              className="mt-1 h-4 w-4 shrink-0 rounded-sm border-border text-primary accent-primary focus-visible:ring-primary"
-            />
-            <span className="text-sm font-light text-muted-foreground group-hover:text-foreground transition-colors">
-              Keep me posted with new collections and studio notes. No noise,
-              and you can unsubscribe anytime.
-            </span>
-          </label>
+          {step === 1 && (
+            <div className="space-y-12">
+              <button
+                type="button"
+                onClick={() => setStep(0)}
+                className="inline-flex items-center gap-2 text-xs text-muted-foreground hover:text-primary transition-colors tracking-widest uppercase group"
+                data-testid="button-back-to-details"
+              >
+                <ArrowLeft className="w-4 h-4 group-hover:-translate-x-1 transition-transform" />
+                Back to your details
+              </button>
 
-          <p
-            className="text-center text-xs font-light text-muted-foreground/70 max-w-md mx-auto"
-            data-testid="deposit-note"
-          >
-            This starts your order — it isn't a payment. Once we've reviewed
-            your details and quoted your piece, we'll send a deposit to reserve
-            your place in the atelier's schedule.
-          </p>
+              <section>
+                <h2 className="text-xs tracking-[0.2em] uppercase text-muted-foreground mb-2 pb-2 border-b border-border">
+                  Colors
+                </h2>
+                <p className="text-muted-foreground font-light text-sm mb-6">
+                  Optional — pick the colors you're picturing (choose as many as
+                  you like), or skip this and we'll settle it together at your
+                  consultation.
+                </p>
+                <div className="space-y-6">
+                  <ColorPicker
+                    palette={palette}
+                    value={colors}
+                    onChange={(next) =>
+                      setValue("colors", next, { shouldValidate: false })
+                    }
+                    disabled={submitting}
+                  />
 
-          <div className="flex justify-center pt-4 pb-8">
-            <Button
-              type="submit"
-              disabled={submitting}
-              className={ctaVariants({ variant: "primary", size: "lg" })}
-              data-testid="submit-order"
-            >
-              {submitting ? (
-                <>
-                  <Loader2 className="w-4 h-4 mr-2 animate-spin" />
-                  Submitting...
-                </>
-              ) : (
-                "Submit Order"
-              )}
-            </Button>
-          </div>
+                  <div>
+                    <Label
+                      htmlFor="colorUsage"
+                      className="text-sm font-light tracking-wide"
+                    >
+                      How would you like these colors used?
+                      <span className="text-muted-foreground/60 ml-1 text-xs">
+                        (optional)
+                      </span>
+                    </Label>
+                    <Textarea
+                      id="colorUsage"
+                      {...register("colorUsage")}
+                      placeholder="e.g. emerald as the main color with gold accents on the collar, and a blush skirt."
+                      rows={3}
+                      className="mt-1.5 bg-transparent border border-border rounded-lg px-3 py-2 text-sm focus-visible:ring-0 focus-visible:border-primary transition-colors resize-none shadow-none"
+                    />
+                  </div>
+                </div>
+              </section>
+
+              <section>
+                <h2 className="text-xs tracking-[0.2em] uppercase text-muted-foreground mb-6 pb-2 border-b border-border">
+                  Costume Details
+                </h2>
+                <div className="space-y-6">
+                  <div>
+                    <Label
+                      htmlFor="description"
+                      className="text-sm font-light tracking-wide"
+                    >
+                      Description / Notes
+                      <span className="text-muted-foreground/60 ml-1 text-xs">
+                        (optional)
+                      </span>
+                    </Label>
+                    <Textarea
+                      id="description"
+                      {...register("description")}
+                      placeholder="Tell us about your vision — style, silhouette, special requirements..."
+                      rows={4}
+                      className="mt-1.5 bg-transparent border border-border rounded-lg px-3 py-2 text-sm focus-visible:ring-0 focus-visible:border-primary transition-colors resize-none shadow-none"
+                    />
+                  </div>
+
+                  <div>
+                    <Label className="text-sm font-light tracking-wide">
+                      Reference Images
+                      <span className="text-muted-foreground/60 ml-1 text-xs">
+                        (optional)
+                      </span>
+                    </Label>
+                    <div className="mt-2">
+                      <ReferenceImageUpload
+                        onChange={setReferenceImageIds}
+                        disabled={submitting}
+                        helpText="Inspiration photos, fabric swatches, or a custom print you'd like us to work from."
+                      />
+                    </div>
+                  </div>
+                </div>
+              </section>
+
+              <div className="flex justify-center pt-4 pb-8">
+                <Button
+                  type="submit"
+                  className={ctaVariants({ variant: "primary", size: "lg" })}
+                  data-testid="continue-to-timeline"
+                >
+                  Continue to timeline
+                  <ArrowRight className="w-4 h-4 ml-2" />
+                </Button>
+              </div>
+            </div>
+          )}
+
+          {step === 2 && (
+            <div className="space-y-10">
+              <button
+                type="button"
+                onClick={() => setStep(1)}
+                className="inline-flex items-center gap-2 text-xs text-muted-foreground hover:text-primary transition-colors tracking-widest uppercase group"
+                data-testid="button-back-to-design"
+              >
+                <ArrowLeft className="w-4 h-4 group-hover:-translate-x-1 transition-transform" />
+                Back to your design
+              </button>
+
+              <section>
+                <h2 className="text-xs tracking-[0.2em] uppercase text-muted-foreground mb-2 pb-2 border-b border-border">
+                  Timeline
+                </h2>
+                <p className="text-muted-foreground font-light text-sm mb-6">
+                  Last step, and all of it is optional.
+                </p>
+                <div className="space-y-6">
+                  <div>
+                    <Label
+                      htmlFor="neededBy"
+                      className="text-sm font-light tracking-wide"
+                    >
+                      Needed By
+                      <span className="text-muted-foreground/60 ml-1 text-xs">
+                        (optional)
+                      </span>
+                    </Label>
+                    <Input
+                      id="neededBy"
+                      type="date"
+                      min={todayIso}
+                      {...register("neededBy")}
+                      className="mt-1.5 bg-transparent border-0 border-b border-border rounded-none px-0 py-3 focus-visible:ring-0 focus-visible:border-primary transition-colors shadow-none w-48"
+                    />
+                    {errors.neededBy ? (
+                      <p className="text-destructive text-xs mt-1">
+                        {errors.neededBy.message}
+                      </p>
+                    ) : (
+                      <p className="text-muted-foreground/60 text-xs mt-1.5">
+                        Custom pieces typically take 4-8 weeks. If you have an
+                        event date, let us know and we'll advise on timing.
+                      </p>
+                    )}
+                  </div>
+
+                  {isRush && (
+                    <div
+                      className="border border-primary/40 bg-primary/5 rounded-lg p-5"
+                      data-testid="rush-notice"
+                    >
+                      <div className="flex items-center gap-2 mb-2">
+                        <Zap className="w-4 h-4 text-primary" />
+                        <p className="text-sm tracking-wide text-foreground font-medium">
+                          Rush order
+                        </p>
+                      </div>
+                      <p className="text-sm font-light text-muted-foreground leading-relaxed mb-4">
+                        Your date is sooner than our standard timeline, so this
+                        is a rush order. Rush pieces carry {RUSH_SURCHARGE_NOTE}
+                        . We'll confirm we can meet your date before any work
+                        begins.
+                      </p>
+                      <label
+                        htmlFor="rushAcknowledged"
+                        className="flex items-start gap-3 cursor-pointer group"
+                      >
+                        <input
+                          id="rushAcknowledged"
+                          type="checkbox"
+                          {...register("rushAcknowledged")}
+                          data-testid="rush-acknowledge"
+                          className="mt-1 h-4 w-4 shrink-0 rounded-sm border-border text-primary accent-primary focus-visible:ring-primary"
+                        />
+                        <span className="text-sm font-light text-foreground/90 group-hover:text-foreground transition-colors">
+                          I understand a rush surcharge applies to my order.
+                        </span>
+                      </label>
+                      {errors.rushAcknowledged && (
+                        <p className="text-destructive text-xs mt-2">
+                          {errors.rushAcknowledged.message}
+                        </p>
+                      )}
+                    </div>
+                  )}
+                </div>
+              </section>
+
+              <section>
+                <h2 className="text-xs tracking-[0.2em] uppercase text-muted-foreground mb-6 pb-2 border-b border-border">
+                  Referral
+                </h2>
+                <div>
+                  <Label
+                    htmlFor="referralCode"
+                    className="text-sm font-light tracking-wide"
+                  >
+                    Referral Code
+                    <span className="text-muted-foreground/60 ml-1 text-xs">
+                      (optional)
+                    </span>
+                  </Label>
+                  <Input
+                    id="referralCode"
+                    {...register("referralCode")}
+                    placeholder="e.g. AA-XXXXXX"
+                    data-testid="input-referral-code"
+                    className="mt-1.5 bg-transparent border-0 border-b border-border rounded-none px-0 py-3 focus-visible:ring-0 focus-visible:border-primary transition-colors shadow-none w-64"
+                  />
+                  <p className="text-muted-foreground/60 text-xs mt-1.5">
+                    Referred by another skater? Enter their code and we'll send
+                    you a welcome discount.
+                  </p>
+                </div>
+              </section>
+
+              <label
+                htmlFor="subscribeNewsletter"
+                className="flex items-start gap-3 max-w-md mx-auto cursor-pointer group"
+              >
+                <input
+                  id="subscribeNewsletter"
+                  type="checkbox"
+                  {...register("subscribeNewsletter")}
+                  data-testid="subscribe-newsletter"
+                  className="mt-1 h-4 w-4 shrink-0 rounded-sm border-border text-primary accent-primary focus-visible:ring-primary"
+                />
+                <span className="text-sm font-light text-muted-foreground group-hover:text-foreground transition-colors">
+                  Keep me posted with new collections and studio notes. No
+                  noise, and you can unsubscribe anytime.
+                </span>
+              </label>
+
+              <p
+                className="text-center text-xs font-light text-muted-foreground/70 max-w-md mx-auto"
+                data-testid="deposit-note"
+              >
+                This starts your order — it isn't a payment. Once we've reviewed
+                your details and quoted your piece, we'll send a deposit to
+                reserve your place in the atelier's schedule.
+              </p>
+
+              <div className="flex justify-center pt-4 pb-8">
+                <Button
+                  type="submit"
+                  disabled={submitting}
+                  className={ctaVariants({ variant: "primary", size: "lg" })}
+                  data-testid="submit-order"
+                >
+                  {submitting ? (
+                    <>
+                      <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                      Submitting...
+                    </>
+                  ) : (
+                    "Submit Order"
+                  )}
+                </Button>
+              </div>
+            </div>
+          )}
         </form>
       </div>
     </PageShell>

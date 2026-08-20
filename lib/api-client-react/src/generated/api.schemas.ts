@@ -166,6 +166,10 @@ export interface NewOrderRequest {
   rush?: boolean;
   /** Notion file_upload ids for customer-supplied reference / inspiration images, each obtained by first POSTing the image bytes to POST /orders/reference-images (a binary endpoint outside this contract, mounted like the Stripe webhook). They are attached to the order's Notion page as image blocks. Optional; omitted when the customer uploaded none. */
   referenceImageIds?: string[];
+  /** Names of the colors the customer picked from the studio palette (the live `GET /colors` list) — a multi-select. This is a starting point for the consultation, not a final spec: the atelier finalizes the exact fabric + finish together with the customer. Recorded on the Notion order for the atelier (the app never reads it back). Optional; omitted when the customer picked none. */
+  colors?: string[];
+  /** The customer's free-text note on how they'd like their chosen colors used (e.g. "emerald as the main color with gold accents on the collar, and a blush skirt"). Optional; omitted when blank. */
+  colorUsage?: string;
   /** An optional referral code the customer received from another skater. The server looks it up against the Client CRM (best-effort): a valid code — not the customer's own — earns the new customer a welcome discount code now and credits the referrer once this order is first paid. An unknown or self-referring code is ignored, and referral capture never blocks the order. Optional. */
   referralCode?: string;
 }
@@ -257,6 +261,96 @@ export interface NewReviewRequest {
 
 export interface NewReviewResponse {
   received: boolean;
+}
+
+/**
+ * One curated testimonial, as shown on the site. Deliberately narrow: the author's email, order number, and verification flag stay in Notion and are never served here.
+ */
+export interface PublishedReview {
+  /** The review's Notion page id, used only as a render key. */
+  id: string;
+  /**
+     * The star rating, 1 (poor) to 5 (excellent).
+     * @minimum 1
+     * @maximum 5
+     */
+  rating: number;
+  /** The customer's testimonial. */
+  comment: string;
+  /** How the customer asked to be credited. Omitted when they left the credit blank, in which case the testimonial is shown unattributed. */
+  customerName?: string;
+  /** When the review was submitted (its Notion created time), used to order the list and to date the testimonial. */
+  publishedAt?: string;
+}
+
+export interface ReviewList {
+  reviews: PublishedReview[];
+}
+
+/**
+ * Where a review stands with the atelier. `pending` is anything not yet decided — including the "New" it is captured with — so a review can only ever be waiting, shown, or set aside.
+ */
+export type ReviewModerationStatus = typeof ReviewModerationStatus[keyof typeof ReviewModerationStatus];
+
+
+export const ReviewModerationStatus = {
+  pending: 'pending',
+  published: 'published',
+  rejected: 'rejected',
+} as const;
+
+/**
+ * One review as the moderation queue shows it. Unlike the public `PublishedReview`, this is the whole row: the atelier is deciding whether to put it on the site, and who wrote it and whether their email matched the order are part of that judgement. Staff-only.
+ */
+export interface StudioReview {
+  /** The review's Notion page id; also what a decision is addressed to. */
+  id: string;
+  /**
+     * The star rating, 1 (poor) to 5 (excellent).
+     * @minimum 1
+     * @maximum 5
+     */
+  rating: number;
+  /** The customer's testimonial, as written. */
+  comment: string;
+  /** How the customer asked to be credited. Omitted when they left it blank, in which case a published testimonial is unattributed. */
+  customerName?: string;
+  /** The order the review is for. Omitted on a row that carries none. */
+  orderNumber?: string;
+  /** The address the review was submitted from. Shown so the atelier can recognize the customer; never served publicly. */
+  email?: string;
+  /** Whether that address matched the one stored on the order. False on a legacy order that has no email stored — accepted at capture, but worth vetting before it goes on the site. */
+  emailVerified: boolean;
+  /** Whether the customer agreed to their words being published. Publishing without it is refused, so this is what the dashboard reads to know whether the button can be offered at all. */
+  consentToPublish: boolean;
+  status: ReviewModerationStatus;
+  /** The `Status` select exactly as Notion holds it, when it is set. Shown for a row whose value the app doesn't recognize, so "why is this still pending?" is answerable without opening Notion. */
+  rawStatus?: string;
+  /** When the review was submitted (its Notion created time). */
+  submittedAt?: string;
+  /** Photographs of the finished piece, as URLs. Notion-signed and short-lived, so they are for rendering this page and nothing else. Empty for a decided review — photos are fetched only for the rows still awaiting a decision. */
+  photos: string[];
+  /** The review's page in Notion, for anything this queue doesn't show. */
+  notionUrl?: string;
+}
+
+/**
+ * The moderation queue: the pending reviews the atelier still owes a decision, and the decided ones for reference, newest first in both cases.
+ */
+export interface StudioReviewList {
+  /** Awaiting a decision, oldest submission first — the queue proper. */
+  pending: StudioReview[];
+  /** Already published or rejected, newest first. Capped, and carrying no photos — it is a record of what was decided, not a second queue. */
+  decided: StudioReview[];
+  /** True when there are more reviews than one read covers, so the queue says it is partial instead of looking complete. Older rows are still in Notion. */
+  truncated?: boolean;
+}
+
+/**
+ * The moderation decision to record against a review.
+ */
+export interface ReviewStatusRequest {
+  status: ReviewModerationStatus;
 }
 
 export interface NewContactRequest {
@@ -412,6 +506,19 @@ export interface ProductList {
   products: Product[];
   /** The shop's category filters, read live from the Notion "Product Categories" database and returned in the order the atelier arranged them (its `Sort` field). Each inventory item links to its category through a `Category` relation. Editing the categories in Notion changes this list without a redeploy, so clients must not hardcode it. */
   categories: string[];
+}
+
+export interface Color {
+  /** A stable slug of the name ("Rose Gold" → "rose-gold"). */
+  id: string;
+  name: string;
+  /** Hex color fill for the chip, e.g. "#2E5CB8". */
+  hex: string;
+}
+
+export interface ColorList {
+  /** The studio's intake color palette — the atelier-editable `COLOR_PALETTE` Studio Settings value, or a built-in primary-color palette when unset. Always non-empty. */
+  colors: Color[];
 }
 
 export interface CheckoutItem {
@@ -753,6 +860,292 @@ export interface AccountOverview {
   appointments: AccountAppointmentSummary[];
   referral?: AccountReferral;
 }
+
+/**
+ * A day of the week a block of working hours repeats on.
+ */
+export type StaffWeekday = typeof StaffWeekday[keyof typeof StaffWeekday];
+
+
+export const StaffWeekday = {
+  Monday: 'Monday',
+  Tuesday: 'Tuesday',
+  Wednesday: 'Wednesday',
+  Thursday: 'Thursday',
+  Friday: 'Friday',
+  Saturday: 'Saturday',
+  Sunday: 'Sunday',
+} as const;
+
+export type StaffAvailabilityEntryLocationsItem = typeof StaffAvailabilityEntryLocationsItem[keyof typeof StaffAvailabilityEntryLocationsItem];
+
+
+export const StaffAvailabilityEntryLocationsItem = {
+  'in-person': 'in-person',
+  virtual: 'virtual',
+} as const;
+
+/**
+ * One recurring block of a staff member's standing working hours — the POSITIVE availability the slot calculator starts from, before it subtracts whatever their Google Calendar says they are busy with. A day off is a calendar event, not an edit here.
+ */
+export interface StaffAvailabilityEntry {
+  /** Identifies the entry for an update or a delete. */
+  id: string;
+  /** The staff member these hours belong to. Always one of the names the studio books (see `staff` on the list response). */
+  staff: string;
+  /** The Google Calendar this person's bookings are read from and written to. The same address is expected on every entry for one person; if they differ, the first one read wins. */
+  calendarEmail: string;
+  /** The weekdays this block repeats on. */
+  weekdays: StaffWeekday[];
+  /** When the block starts, as 24-hour `HH:MM` local studio time. */
+  start: string;
+  /** When the block ends, as 24-hour `HH:MM` local studio time. Always later than `start` — an entry that ends before it begins is rejected rather than silently ignored. */
+  end: string;
+  /** Which locations may be booked inside this block. */
+  locations: StaffAvailabilityEntryLocationsItem[];
+}
+
+export type StaffAvailabilityRequestLocationsItem = typeof StaffAvailabilityRequestLocationsItem[keyof typeof StaffAvailabilityRequestLocationsItem];
+
+
+export const StaffAvailabilityRequestLocationsItem = {
+  'in-person': 'in-person',
+  virtual: 'virtual',
+} as const;
+
+/**
+ * One block of working hours to save. The whole entry is sent on both create and update, so the two paths validate identically.
+ */
+export interface StaffAvailabilityRequest {
+  /**
+     * Must be a staff member the studio books — the appointment catalog's list, returned as `staff` by the list operation. A name outside it would produce hours nothing could ever be booked into.
+     * @minLength 1
+     * @maxLength 120
+     */
+  staff: string;
+  /** @maxLength 254 */
+  calendarEmail: string;
+  /** @minItems 1 */
+  weekdays: StaffWeekday[];
+  /**
+     * 24-hour `HH:MM`.
+     * @pattern ^([01][0-9]|2[0-3]):[0-5][0-9]$
+     */
+  start: string;
+  /**
+     * 24-hour `HH:MM`, later than `start`.
+     * @pattern ^([01][0-9]|2[0-3]):[0-5][0-9]$
+     */
+  end: string;
+  /** @minItems 1 */
+  locations: StaffAvailabilityRequestLocationsItem[];
+}
+
+/**
+ * The whole standing schedule, plus the staff it may be assigned to — so the editor offers the names the booking catalog actually knows instead of a free-text field that has to match one exactly.
+ */
+export interface StaffAvailabilityList {
+  /** Every block of hours on record, grouped by nothing in particular. */
+  entries: StaffAvailabilityEntry[];
+  /** The staff members the studio books appointments with. */
+  staff: string[];
+}
+
+/**
+ * The answer to "may this account use the studio dashboard?". Only ever returned to a caller the staff gate has already admitted, so `staff` is always true — the field exists so the response is self-describing rather than an empty body, and so a client reads a value instead of inferring from a status code.
+ */
+export interface StudioAccess {
+  /** Always true. A non-staff caller receives 401/403 instead. */
+  staff: boolean;
+}
+
+export interface StudioStageCount {
+  stage: string;
+  count: number;
+}
+
+/**
+ * How a set of orders is distributed across its live workflow — the custom order Stage list, or the shop order fulfilment Status list.
+ */
+export interface StudioPipeline {
+  /** Every order of this kind on record. */
+  total: number;
+  /** Orders neither cancelled nor at the final stage. */
+  active: number;
+  /** Orders sitting at the last stage in the live list. */
+  completed: number;
+  cancelled: number;
+  /** Active orders per stage, in the live stage order (stages with no orders are included as zeroes, so the pipeline reads end to end). */
+  stages: StudioStageCount[];
+}
+
+export interface StudioScheduledOrder {
+  orderNumber: string;
+  orderName: string;
+  stage: string;
+  /** The order's Due Date as YYYY-MM-DD. */
+  dueDate: string;
+  overdue: boolean;
+  rush?: boolean;
+}
+
+/**
+ * The making-side workload: active custom orders measured against the due dates the atelier has set.
+ */
+export interface StudioProductionLoad {
+  /** Custom orders in progress (not cancelled, not delivered). */
+  activeOrders: number;
+  /** Of those, the ones carrying a Due Date. */
+  scheduled: number;
+  /** Active orders with no Due Date — invisible to the production schedule until the atelier sets one. */
+  unscheduled: number;
+  /** Active orders whose due date has passed. */
+  overdue: number;
+  /** Active orders due within the next 7 days (today included). */
+  dueThisWeek: number;
+  /** Active orders due within the next 30 days (today included). */
+  dueThisMonth: number;
+  /** Active orders flagged as rush at intake. */
+  rush: number;
+  /** The nearest-due active orders, soonest first (overdue ones lead), capped to a short list for the dashboard. */
+  upcoming: StudioScheduledOrder[];
+}
+
+/**
+ * A month of trade. The two money figures are deliberately NOT summed: shop revenue is money actually collected, while the custom figure is work booked (Notion holds no per-payment dates, so a custom payment can't be attributed to the month it was made).
+ */
+export interface StudioRevenueMonth {
+  /** The month as YYYY-MM. */
+  month: string;
+  /** Dollars taken on shop orders placed that month (order totals, including shipping and tax; cancelled orders excluded). */
+  shopRevenue: number;
+  /** Shop orders placed that month (cancelled excluded). */
+  shopOrders: number;
+  /** Dollars invoiced on custom orders placed that month (each order's invoice Final Balance). Zero for orders not yet itemized. */
+  customBooked: number;
+  /** Custom orders placed that month (cancelled excluded). */
+  customOrders: number;
+}
+
+/**
+ * Deposits against balances across every custom-order invoice on a live (non-cancelled) order — what has been collected and what is still out.
+ */
+export interface StudioPaymentTotals {
+  /** The sum of every invoice's Final Balance. */
+  invoicedTotal: number;
+  /** Deposits plus balances marked paid. */
+  collectedTotal: number;
+  /** Deposits plus balances still to collect. */
+  outstandingTotal: number;
+  depositsCollected: number;
+  /** Deposit amounts set on an invoice but not yet paid. */
+  depositsOutstanding: number;
+  /** Final balances marked paid, net of the deposits already credited against them (that is what the balance stage actually charges). */
+  balancesCollected: number;
+  /** What is still owed on unpaid balances beyond every deposit scheduled against them — so this and depositsOutstanding add up to outstandingTotal without counting the same dollar twice. A paid balance settles its invoice outright and leaves nothing here. */
+  balancesOutstanding: number;
+  invoiceCount: number;
+  /** Invoices with money still outstanding. */
+  unpaidInvoiceCount: number;
+}
+
+/**
+ * One best-selling shop piece. The count is orders containing the piece, not units — the order's inventory relation records which pieces were bought, not how many of each.
+ */
+export interface StudioTopItem {
+  name: string;
+  orders: number;
+}
+
+/**
+ * The atelier's own figures, aggregated from the live Notion databases for the internal studio dashboard. Every money value is US dollars.
+ */
+export interface StudioAnalytics {
+  /** When these figures were computed. The server caches an aggregation briefly, so this can trail the request by up to a minute. */
+  generatedAt: string;
+  customOrders: StudioPipeline;
+  shopOrders: StudioPipeline;
+  production: StudioProductionLoad;
+  /** One entry per month over the trailing window, oldest first. Months with no activity are included as zeroes so a chart has no gaps. */
+  revenue: StudioRevenueMonth[];
+  payments: StudioPaymentTotals;
+  /** The shop's best sellers, most-ordered first. Empty when no shop order carries its inventory relation (legacy orders, or the relation-links flag being off) — item-level figures are only as good as that link. */
+  topItems: StudioTopItem[];
+}
+
+/**
+ * The arguments for one internal tool run. Every field is optional here because each tool takes a different subset; the server rejects a run that is missing what its own tool needs. This replaces the query string of the retired `?secret=` links, so the argument names mirror them.
+ */
+export interface StudioToolRequest {
+  /**
+     * The order the tool acts on — `ORD-…` for a custom order, `SHP-…` for a shop order. Required by `invoice-lines`, `status-email` and the two refunds; `milestones` sweeps the whole pipeline and `restock-alert` takes an optional `item` instead.
+     * @maxLength 64
+     */
+  orderNumber?: string;
+  /** `status-email` only. Resend the status update even when the order hasn't moved forward since the customer was last emailed. A forced resend never rewinds the high-water marker. */
+  force?: boolean;
+  /**
+     * `return-refund` only. The TARGET total to have refunded on the order, in dollars — not an increment, so a repeated run can't double-refund. Omit to refund in full.
+     * @minimum 0
+     */
+  amount?: number;
+  /**
+     * `restock-alert` only, and optional even there. The exact `Item Name` of one inventory row to alert on, as it appears in Notion — the same text a back-in-stock request stores. Omit it to sweep every piece that is currently in stock, which is what the nightly run does.
+     * @maxLength 200
+     */
+  item?: string;
+}
+
+/**
+ * `ok` — the tool did something. `noop` — there was nothing to do (every tool is idempotent, so this is the normal result of a repeat run). `attention` — the run completed but left something for the atelier to fix, e.g. a refund Stripe rejected, which leaves the order uncancelled so a re-run can retry it. A failure the tool couldn't start at all is an HTTP error, not a status here.
+ */
+export type StudioToolRunStatus = typeof StudioToolRunStatus[keyof typeof StudioToolRunStatus];
+
+
+export const StudioToolRunStatus = {
+  ok: 'ok',
+  noop: 'noop',
+  attention: 'attention',
+} as const;
+
+/**
+ * Which internal tool to run. Each names an action the atelier used to trigger by opening a shared-secret link from Notion — or, for `restock-alert`, one that would have needed such a link.
+ */
+export type StudioTool = typeof StudioTool[keyof typeof StudioTool];
+
+
+export const StudioTool = {
+  milestones: 'milestones',
+  'invoice-lines': 'invoice-lines',
+  'status-email': 'status-email',
+  'cancellation-refund': 'cancellation-refund',
+  'return-refund': 'return-refund',
+  'restock-alert': 'restock-alert',
+} as const;
+
+/**
+ * The outcome of one internal tool run, already composed for display. The server owns the wording — it is the same summary the retired confirmation pages rendered — so the dashboard renders the result rather than re-deriving it from per-tool fields.
+ */
+export interface StudioToolRun {
+  tool: StudioTool;
+  /** `ok` — the tool did something. `noop` — there was nothing to do (every tool is idempotent, so this is the normal result of a repeat run). `attention` — the run completed but left something for the atelier to fix, e.g. a refund Stripe rejected, which leaves the order uncancelled so a re-run can retry it. A failure the tool couldn't start at all is an HTTP error, not a status here. */
+  status: StudioToolRunStatus;
+  /** A short headline for the result, e.g. "Invoice itemized". */
+  title: string;
+  /** One sentence summarizing what happened. */
+  message: string;
+  /** Any per-item notes worth showing under the message — payments that were skipped, reasons a send was suppressed. Empty when there is nothing to add. */
+  details: string[];
+}
+
+export type GetPublishedReviewsParams = {
+/**
+ * Maximum number of testimonials to return, newest first. Defaults to 12 when omitted.
+ * @minimum 1
+ * @maximum 50
+ */
+limit?: number;
+};
 
 export type GetAppointmentAvailabilityParams = {
 typeId: string;

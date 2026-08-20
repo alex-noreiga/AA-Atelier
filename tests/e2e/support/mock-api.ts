@@ -5,7 +5,7 @@
 // generated react-query client, and the rendered result).
 
 import type { Page, Route } from "@playwright/test";
-import type { OrderStatus } from "@workspace/test-fixtures";
+import { colorList, type OrderStatus } from "@workspace/test-fixtures";
 
 const json = (route: Route, status: number, body: unknown) =>
   route.fulfill({
@@ -65,6 +65,21 @@ export async function mockCreateOrder(
   await page.route("**/api/orders", async (route) => {
     if (route.request().method() !== "POST") return route.fallback();
     await json(route, opts.status ?? 201, opts.body);
+  });
+}
+
+/**
+ * Mock `GET /api/colors` (the order form's color-picker palette). Defaults to the
+ * shared `colorList()` fixture; pass `body: { colors: [] }` to exercise the
+ * degraded (empty) path.
+ */
+export async function mockColors(
+  page: Page,
+  opts: { status?: number; body?: unknown } = {},
+): Promise<void> {
+  await page.route("**/api/colors", async (route) => {
+    if (route.request().method() !== "GET") return route.fallback();
+    await json(route, opts.status ?? 200, opts.body ?? colorList());
   });
 }
 
@@ -210,4 +225,19 @@ export async function mockCreateNotify(
     await json(route, opts.status ?? 201, opts.body);
   });
   return { requests };
+}
+
+/**
+ * Mock `GET /api/reviews` (the curated testimonial strip on the home and about
+ * pages). Every spec that lands on either page needs this — an empty
+ * `{ reviews: [] }` is the right default, since the strip then renders nothing.
+ */
+export async function mockPublishedReviews(
+  page: Page,
+  opts: { status?: number; body: unknown } = { body: { reviews: [] } },
+): Promise<void> {
+  await page.route("**/api/reviews*", async (route) => {
+    if (route.request().method() !== "GET") return route.fallback();
+    await json(route, opts.status ?? 200, opts.body);
+  });
 }

@@ -4,6 +4,7 @@ import {
   extractInvoice,
   extractLineItem,
   extractPaymentReminderInvoice,
+  extractInvoiceAnalytics,
   type NotionInvoicePage,
   type NotionLineItemPage,
 } from "../../src/lib/notion/invoice.schema.js";
@@ -182,5 +183,58 @@ describe("extractPaymentReminderInvoice", () => {
     const balance = view.stages.find((s) => s.stage === "balance");
     expect(balance).toMatchObject({ stage: "balance", dueDate: "2026-09-01" });
     expect(balance?.amount).toBeUndefined();
+  });
+});
+
+describe("extractInvoiceAnalytics", () => {
+  it("splits deposits into paid and still-owed, and keeps the order link", () => {
+    const page = invoicePage({
+      id: "inv-1",
+      orderPageId: "order-1",
+      finalBalance: 1000,
+      firstDepositAmount: 200,
+      firstDepositPaid: true,
+      secondDepositAmount: 300,
+      secondDepositPaid: false,
+    }) as NotionInvoicePage;
+
+    expect(extractInvoiceAnalytics(page)).toEqual({
+      pageId: "inv-1",
+      orderPageId: "order-1",
+      finalBalance: 1000,
+      depositsPaid: 200,
+      depositsUnpaid: 300,
+      balancePaid: false,
+    });
+  });
+
+  it("omits the balance and order link when the invoice carries neither", () => {
+    const page = invoicePage({ id: "inv-2" }) as NotionInvoicePage;
+    expect(extractInvoiceAnalytics(page)).toEqual({
+      pageId: "inv-2",
+      depositsPaid: 0,
+      depositsUnpaid: 0,
+      balancePaid: false,
+    });
+  });
+
+  it("ignores a deposit with no amount set", () => {
+    const page = invoicePage({
+      firstDepositAmount: null,
+      firstDepositPaid: true,
+      secondDepositAmount: 0,
+    }) as NotionInvoicePage;
+
+    const record = extractInvoiceAnalytics(page);
+    expect(record.depositsPaid).toBe(0);
+    expect(record.depositsUnpaid).toBe(0);
+  });
+
+  it("reads the balance-paid checkbox", () => {
+    const page = invoicePage({
+      balancePaid: true,
+      finalBalance: 500,
+    }) as NotionInvoicePage;
+    expect(extractInvoiceAnalytics(page).balancePaid).toBe(true);
   });
 });

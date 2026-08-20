@@ -326,6 +326,7 @@ describe("processCancellation — shop order", () => {
       sessionId: "cs_shop",
       status: "Payment Confirmed",
       cancelled: false,
+      refundedAmount: 0,
     });
     const { stripe, create } = fakeStripe({
       sessions: { cs_shop: "pi_shop" },

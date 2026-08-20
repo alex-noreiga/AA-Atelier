@@ -8,6 +8,7 @@ vi.mock("../../src/lib/notion/orders.repository.js", () => ({
 }));
 vi.mock("../../src/lib/notion/reviews.repository.js", () => ({
   createReview: vi.fn(),
+  listPublishedReviews: vi.fn(),
 }));
 
 import request from "supertest";

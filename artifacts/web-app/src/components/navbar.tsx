@@ -14,12 +14,17 @@ import {
   SheetClose,
 } from "@/components/ui/sheet";
 import { CartButton } from "@/components/cart-drawer";
+import { useStudioAccess } from "@/lib/studio-access";
 
 type NavLink = {
   to: string;
   label: string;
   children?: readonly { to: string; label: string }[];
 };
+
+/** The customer portal's slot in the bar — the one the studio Dashboard takes
+ * over for staff (below). Named so the two can't drift apart. */
+const ACCOUNT_PATH = "/account";
 
 const NAV_LINKS: readonly NavLink[] = [
   { to: "/", label: "Home" },
@@ -35,9 +40,32 @@ const NAV_LINKS: readonly NavLink[] = [
     ],
   },
   { to: "/shop", label: "Shop" },
-  { to: "/account", label: "Account" },
+  { to: ACCOUNT_PATH, label: "Account" },
   { to: "/contact", label: "Contact" },
 ];
+
+// What a signed-in studio account gets *instead of* Account (see
+// `lib/studio-access.ts`). A staff member's customer portal is empty by
+// construction — they don't place orders through the shop — so offering both
+// only ever led somewhere blank. Taking Account's place rather than sitting
+// beside it is what makes the dashboard their one signed-in destination, and
+// keeps the bar the same length for everyone.
+//
+// It lives here rather than in `NAV_LINKS` so the public nav stays one flat,
+// unconditional array — and so nothing renders it by accident: every consumer
+// below maps the `links` returned by `useNavLinks()`, which is `NAV_LINKS`
+// verbatim for everyone else.
+const DASHBOARD_LINK: NavLink = { to: "/studio", label: "Dashboard" };
+
+/** The nav links for the current visitor — the public set, with Account swapped
+ * for the studio Dashboard when the server confirms this session is staff. */
+function useNavLinks(): readonly NavLink[] {
+  const { staff } = useStudioAccess();
+  if (!staff) return NAV_LINKS;
+  return NAV_LINKS.map((link) =>
+    link.to === ACCOUNT_PATH ? DASHBOARD_LINK : link,
+  );
+}
 
 const testId = (label: string) => label.toLowerCase().replace(/\s+/g, "-");
 
@@ -53,6 +81,7 @@ function isActive(current: string, link: NavLink) {
 export default function Navbar() {
   const [location] = useLocation();
   const [open, setOpen] = useState(false);
+  const links = useNavLinks();
 
   return (
     <header className="fixed top-0 inset-x-0 z-50 bg-background/70 backdrop-blur-md border-b border-border/60">
@@ -69,7 +98,7 @@ export default function Navbar() {
         <div className="flex items-center gap-1 md:gap-5">
           {/* Desktop links */}
           <div className="hidden md:flex items-center gap-6">
-            {NAV_LINKS.map((link) => {
+            {links.map((link) => {
               const active = isActive(location, link);
               const linkClass = `text-xs tracking-[0.15em] uppercase transition-colors relative group ${
                 active
@@ -168,7 +197,7 @@ export default function Navbar() {
                   </SheetClose>
                 </div>
                 <div className="flex flex-col gap-8">
-                  {NAV_LINKS.map((link) =>
+                  {links.map((link) =>
                     link.children ? (
                       <div key={link.to} className="flex flex-col gap-4">
                         <span

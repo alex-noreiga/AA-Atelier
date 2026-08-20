@@ -7,6 +7,7 @@ import {
   findShopOrdersByNumbers,
   findShopOrderForCancellation,
   setShopOrderCancelled,
+  recordShopOrderRefund,
   findShopOrderVerification,
 } from "../../src/lib/notion/shop-orders.repository.js";
 import {
@@ -16,6 +17,8 @@ import {
   SHOP_ORDER_TOTAL_PROPERTY,
   SHOP_ORDER_EMAIL_PROPERTY,
   SHOP_ORDER_CANCELLED_PROPERTY,
+  SHOP_ORDER_REFUNDED_PROPERTY,
+  SHOP_ORDER_RETURN_PROCESSED_PROPERTY,
   SHOP_ORDER_TRACKING_NUMBER_PROPERTY,
   SHOP_ORDER_TRACKING_CARRIER_PROPERTY,
   SHOP_ORDER_TRACKING_URL_PROPERTY,
@@ -337,12 +340,43 @@ describe("findShopOrderForCancellation", () => {
       sessionId: "cs_1",
       status: "Payment Confirmed",
       cancelled: false,
+      refundedAmount: 0,
     });
   });
 
   it("returns null when no order matches", async () => {
     const client = makeFakeClient(() => jsonResponse({ results: [] }));
     expect(await findShopOrderForCancellation("SHP-NONE", client)).toBeNull();
+  });
+});
+
+describe("recordShopOrderRefund", () => {
+  it("PATCHes the refunded amount and the Return Processed marker", async () => {
+    const client = makeFakeClient(() => jsonResponse({}));
+
+    const ok = await recordShopOrderRefund("so-page", 180, client);
+
+    expect(ok).toBe(true);
+    expect(client.calls).toHaveLength(1);
+    const { path, init } = client.calls[0];
+    expect(path).toBe("/v1/pages/so-page");
+    expect(init?.method).toBe("PATCH");
+    expect(JSON.parse(String(init?.body)).properties).toEqual({
+      [SHOP_ORDER_REFUNDED_PROPERTY]: { number: 180 },
+      [SHOP_ORDER_RETURN_PROCESSED_PROPERTY]: { checkbox: true },
+    });
+  });
+
+  // The refund has already been issued by the time this runs, so a database
+  // that doesn't have these properties yet must not surface as a failed refund.
+  it("resolves false instead of throwing when the write fails", async () => {
+    const client = makeFakeClient(() =>
+      errorResponse(400, "property does not exist"),
+    );
+
+    await expect(recordShopOrderRefund("so-page", 180, client)).resolves.toBe(
+      false,
+    );
   });
 });
 
@@ -501,5 +535,116 @@ describe("findShopOrdersByNumbers", () => {
       { property: "Order Number", rich_text: { equals: "SHP-2" } },
       { property: "Order Number", rich_text: { equals: "SHP-1" } },
     ]);
+  });
+});
+
+describe("listShopOrdersForAnalytics", () => {
+  // The live status list is TTL-cached at module level — re-import per test.
+  let repo: typeof import("../../src/lib/notion/shop-orders.repository.js");
+  beforeEach(async () => {
+    vi.resetModules();
+    repo = await import("../../src/lib/notion/shop-orders.repository.js");
+  });
+
+  const isQ = (p: string) => p.endsWith("/query");
+  const isSchema = (path: string) => /\/v1\/databases\/[^/]+$/.test(path);
+
+  /** An analytics-shaped page: the tracking fixture plus the page creation time
+   * and the purchased-inventory relation. */
+  function analyticsPage(opts: {
+    orderNumber?: string;
+    status?: string;
+    total?: number | null;
+    cancelled?: boolean;
+    createdTime?: string;
+    itemIds?: string[];
+  }) {
+    const page = shopOrderResultPage(opts) as Record<string, unknown> & {
+      properties: Record<string, unknown>;
+    };
+    page.created_time = opts.createdTime ?? "2026-08-01T10:00:00.000Z";
+    page.properties["Inventory Items"] = {
+      type: "relation",
+      relation: (opts.itemIds ?? []).map((id) => ({ id })),
+    };
+    return page;
+  }
+
+  const statusSchema = jsonResponse({
+    properties: {
+      [SHOP_ORDER_STATUS_PROPERTY]: {
+        type: "status",
+        status: { options: [{ name: "Shipped" }, { name: "Delivered" }] },
+      },
+    },
+  });
+
+  it("maps every order, including legacy ones with no order number", async () => {
+    const client = makeFakeClient((path) => {
+      if (isSchema(path)) return statusSchema.clone();
+      if (isQ(path)) {
+        return jsonResponse({
+          results: [
+            analyticsPage({
+              orderNumber: "SHP-1",
+              status: "Shipped",
+              total: 44,
+              itemIds: ["inv-1", "inv-2"],
+              createdTime: "2026-08-02T10:00:00.000Z",
+            }),
+            // No order number (placed before that property shipped) — its money
+            // and status still count toward the studio's figures.
+            analyticsPage({ status: "Delivered", total: 20 }),
+          ],
+          has_more: false,
+          next_cursor: null,
+        });
+      }
+      throw new Error(`unexpected path ${path}`);
+    });
+
+    const { orders, statuses } = await repo.listShopOrdersForAnalytics(client);
+
+    expect(statuses).toEqual(["Shipped", "Delivered"]);
+    expect(orders).toEqual([
+      {
+        orderNumber: "SHP-1",
+        status: "Shipped",
+        cancelled: false,
+        createdTime: "2026-08-02T10:00:00.000Z",
+        itemIds: ["inv-1", "inv-2"],
+        total: 44,
+      },
+      {
+        orderNumber: "",
+        status: "Delivered",
+        cancelled: false,
+        createdTime: "2026-08-01T10:00:00.000Z",
+        itemIds: [],
+        total: 20,
+      },
+    ]);
+  });
+
+  it("omits the total when the order has none", async () => {
+    const client = makeFakeClient((path) => {
+      if (isSchema(path)) return statusSchema.clone();
+      if (isQ(path)) {
+        return jsonResponse({
+          results: [analyticsPage({ orderNumber: "SHP-1", total: null })],
+        });
+      }
+      throw new Error(`unexpected path ${path}`);
+    });
+
+    const { orders } = await repo.listShopOrdersForAnalytics(client);
+    expect(orders[0]).not.toHaveProperty("total");
+  });
+
+  it("throws when the database id is not configured", async () => {
+    const client = makeFakeClient(() => jsonResponse({}), "");
+    await expect(repo.listShopOrdersForAnalytics(client)).rejects.toThrow(
+      /NOTION_SHOP_ORDERS_DATABASE_ID is not configured/,
+    );
   });
 });

@@ -26,6 +26,12 @@ tags:
     description: Customer appointment scheduling with atelier staff
   - name: account
     description: Customer account portal (Supabase Auth; Bearer access token)
+  - name: studio
+    description: >-
+      Internal atelier surfaces, gated to signed-in studio staff (the same
+      Supabase Auth Bearer token, plus a staff allowlist)
+  - name: reviews
+    description: Published customer testimonials, curated by the atelier
 paths:
   /health:
     get:
@@ -445,6 +451,71 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/ProductList"
+        "500":
+          description: Server error
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorEnvelope"
+  /colors:
+    get:
+      operationId: getColors
+      tags: [colors]
+      summary: List custom-order palette colors
+      description: >-
+        Returns the studio's color palette for the custom-order intake form's
+        color picker. The palette is an atelier-editable "Studio Settings" value
+        (`COLOR_PALETTE`), falling back to a built-in primary-color palette, so
+        this always returns a non-empty list.
+      responses:
+        "200":
+          description: Color palette
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ColorList"
+        "500":
+          description: Server error
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorEnvelope"
+  /reviews:
+    get:
+      operationId: getPublishedReviews
+      tags: [reviews]
+      summary: List published customer testimonials
+      description: >-
+        Returns the reviews the atelier has curated for public display: only
+        rows whose Status is the published option AND whose author consented to
+        publication. Read-only and anonymous — no email or order number is ever
+        returned. When the reviews database is not configured the list is empty
+        rather than an error, so a site that never collected a review simply
+        shows no testimonials.
+      parameters:
+        - name: limit
+          in: query
+          required: false
+          description: >-
+            Maximum number of testimonials to return, newest first. Defaults to
+            12 when omitted.
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 50
+      responses:
+        "200":
+          description: Published testimonials, newest first
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ReviewList"
+        "400":
+          description: Validation error
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorEnvelope"
         "500":
           description: Server error
           content:
@@ -975,6 +1046,559 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/ErrorEnvelope"
+  /studio/availability:
+    get:
+      operationId: listStaffAvailability
+      tags: [studio]
+      summary: The staff working-hours schedule
+      description: >-
+        The standing working hours the slot calculator uses as its positive
+        availability grid — one entry per staff member per block of hours, with
+        the weekdays it repeats on and the locations it can be booked for. This
+        is the schedule the atelier edits on the dashboard; it used to live in a
+        Google Sheet. Same staff gate as the rest of the studio surface: 401 when
+        not signed in, 404 when signed in but not staff, 403 when staff but not
+        signed in with Google.
+      security:
+        - bearerAuth: []
+      responses:
+        "200":
+          description: The current schedule, plus the staff it may be assigned to
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/StaffAvailabilityList"
+        "401":
+          description: Not signed in (missing or expired session)
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorEnvelope"
+        "403":
+          description: >-
+            A studio account whose session wasn't established with Google (the
+            default policy).
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorEnvelope"
+        "404":
+          description: >-
+            Signed in, but not a studio account — the same answer a URL that
+            doesn't exist gets (see the other studio operations).
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/OrderNotFound"
+        "500":
+          description: Server error
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorEnvelope"
+    post:
+      operationId: createStaffAvailability
+      tags: [studio]
+      summary: Add a block of working hours
+      description: >-
+        Adds one recurring block of working hours for a staff member. The staff
+        name must be one the studio books (the appointment catalog's list, also
+        returned by the GET above) and the hours must be a real range, so an
+        entry can't be saved that the slot calculator would silently ignore.
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/StaffAvailabilityRequest"
+      responses:
+        "201":
+          description: The entry as saved
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/StaffAvailabilityEntry"
+        "400":
+          description: The entry is incomplete or describes hours that can't be booked
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorEnvelope"
+        "401":
+          description: Not signed in (missing or expired session)
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorEnvelope"
+        "403":
+          description: >-
+            A studio account whose session wasn't established with Google (the
+            default policy).
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorEnvelope"
+        "404":
+          description: >-
+            Signed in, but not a studio account — the same answer a URL that
+            doesn't exist gets (see the other studio operations).
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/OrderNotFound"
+        "500":
+          description: Server error
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorEnvelope"
+  /studio/availability/{entryId}:
+    put:
+      operationId: updateStaffAvailability
+      tags: [studio]
+      summary: Change a block of working hours
+      description: >-
+        Replaces one entry's hours, days, locations, staff member, or calendar
+        address. The whole entry is sent, so the same validation the create path
+        applies holds here too.
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: entryId
+          in: path
+          required: true
+          schema:
+            type: string
+          description: The entry's id, as returned by the list operation.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/StaffAvailabilityRequest"
+      responses:
+        "200":
+          description: The entry as saved
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/StaffAvailabilityEntry"
+        "400":
+          description: The entry is incomplete or describes hours that can't be booked
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorEnvelope"
+        "401":
+          description: Not signed in (missing or expired session)
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorEnvelope"
+        "403":
+          description: >-
+            A studio account whose session wasn't established with Google (the
+            default policy).
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorEnvelope"
+        "404":
+          description: >-
+            No such entry — or the caller isn't a studio account, which answers
+            identically by design (see the other studio operations).
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/OrderNotFound"
+        "500":
+          description: Server error
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorEnvelope"
+    delete:
+      operationId: deleteStaffAvailability
+      tags: [studio]
+      summary: Remove a block of working hours
+      description: >-
+        Removes one entry from the schedule. Those hours stop being offered as
+        soon as the change is picked up; appointments already booked inside them
+        are untouched (they live on the staff calendar).
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: entryId
+          in: path
+          required: true
+          schema:
+            type: string
+          description: The entry's id, as returned by the list operation.
+      responses:
+        "200":
+          description: The entry was removed
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MessageResponse"
+        "401":
+          description: Not signed in (missing or expired session)
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorEnvelope"
+        "403":
+          description: >-
+            A studio account whose session wasn't established with Google (the
+            default policy).
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorEnvelope"
+        "404":
+          description: >-
+            No such entry — or the caller isn't a studio account, which answers
+            identically by design (see the other studio operations).
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/OrderNotFound"
+        "500":
+          description: Server error
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorEnvelope"
+  /studio/access:
+    get:
+      operationId: getStudioAccess
+      tags: [studio]
+      summary: Whether the caller may use the studio dashboard
+      description: >-
+        A cheap "am I staff?" probe, so the app can offer a way in to `/studio`
+        without every signed-in customer being shown a link that would refuse
+        them. It runs the SAME gate as the figures below — allowlisted email
+        plus (by default) a session established with Google — so a 200 here and
+        a 200 there can't disagree: 401 when the caller isn't signed in, 404
+        when they are but aren't staff (the dashboard doesn't exist as far as
+        they're concerned), 403 when they are staff but didn't sign in with
+        Google. It reads nothing and aggregates nothing; reaching the handler at
+        all IS the answer.
+      security:
+        - bearerAuth: []
+      responses:
+        "200":
+          description: The caller is studio staff
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/StudioAccess"
+        "401":
+          description: Not signed in (missing or expired session)
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorEnvelope"
+        "403":
+          description: >-
+            A studio account whose session wasn't established with Google (the
+            default policy). Unlike the 404 below there is something to act on,
+            and only someone already holding that mailbox can provoke it.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorEnvelope"
+        "404":
+          description: >-
+            Signed in, but not a studio account. Deliberately the same answer a
+            URL that doesn't exist gets: the dashboard is unlinked and noindexed,
+            so a 403 here would only confirm to a customer that it is there.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/OrderNotFound"
+        "500":
+          description: Server error
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorEnvelope"
+  /studio/analytics:
+    get:
+      operationId: getStudioAnalytics
+      tags: [studio]
+      summary: Studio analytics for the internal dashboard
+      description: >-
+        Aggregates the atelier's own numbers — custom and shop orders by stage,
+        production load against due dates, revenue by month, deposits vs.
+        balances, and the best-selling shop pieces — for the internal studio
+        dashboard. Requires a valid Supabase access token supplied as a Bearer
+        credential whose email is on the studio staff allowlist: 401 when the
+        caller isn't signed in, 404 when they are but aren't staff, and 403
+        when they are staff but didn't sign in with Google.
+      security:
+        - bearerAuth: []
+      responses:
+        "200":
+          description: The studio's aggregated figures
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/StudioAnalytics"
+        "401":
+          description: Not signed in (missing or expired session)
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorEnvelope"
+        "403":
+          description: >-
+            A studio account whose session wasn't established with Google (the
+            default policy). Unlike the 404 below there is something to act on,
+            and only someone already holding that mailbox can provoke it.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorEnvelope"
+        "404":
+          description: >-
+            Signed in, but not a studio account. Deliberately the same answer a
+            URL that doesn't exist gets: the dashboard is unlinked and noindexed,
+            so a 403 here would only confirm to a customer that it is there.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/OrderNotFound"
+        "500":
+          description: Server error
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorEnvelope"
+  /studio/tools/{tool}:
+    post:
+      operationId: runStudioTool
+      tags: [studio]
+      summary: Run an internal atelier tool
+      description: >-
+        Runs one of the atelier's internal actions — milestone reconciliation,
+        invoice line-item generation, an order status-change email, a
+        cancellation refund, a return refund, or a back-in-stock alert — from
+        the signed-in studio dashboard. Most were previously triggered by
+        opening a link that carried a shared secret in its query string; the
+        work is unchanged, the authorization is not: this requires the same
+        Supabase access token as the rest of the studio surface, with the
+        caller's email on the staff allowlist. 401 when not signed in, 404 when
+        signed in but not staff, 403 when staff but not signed in with Google.
+
+        Every tool is idempotent — a repeat run reports `noop` rather than
+        doing the work twice — but two of them move money, so the dashboard
+        confirms before calling those.
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: tool
+          in: path
+          required: true
+          schema:
+            $ref: "#/components/schemas/StudioTool"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/StudioToolRequest"
+      responses:
+        "200":
+          description: The tool ran; the body describes what it did
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/StudioToolRun"
+        "400":
+          description: >-
+            An argument the tool needs is missing or invalid, or the order isn't
+            in a state the tool can act on
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorEnvelope"
+        "401":
+          description: Not signed in (missing or expired session)
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorEnvelope"
+        "403":
+          description: >-
+            A studio account whose session wasn't established with Google (the
+            default policy). Unlike the 404 below there is something to act on,
+            and only someone already holding that mailbox can provoke it.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorEnvelope"
+        "404":
+          description: >-
+            No order matches the supplied order number (or, for
+            `restock-alert`, no shop piece matches the supplied name) — or the
+            caller isn't a studio account, which answers identically by design
+            (see the other studio operations).
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/OrderNotFound"
+        "500":
+          description: Server error
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorEnvelope"
+  /studio/reviews:
+    get:
+      operationId: listStudioReviews
+      tags: [studio]
+      summary: The review moderation queue
+      description: >-
+        Every review the atelier hasn't decided on yet, plus the ones it has,
+        newest first — the read half of the loop the app has only ever written
+        to. A review is captured at delivery with its Notion `Status` set to
+        "New" and had to be promoted by hand in Notion for the site to show it;
+        this is that same decision, made where the rest of the studio work
+        happens.
+
+
+        The three moderation states are DERIVED from the `Status` select rather
+        than enumerated from it: `published` and `rejected` name the two values
+        the app writes, and everything else — "New", a blank select, or any
+        value the atelier invented — reads as `pending`. So an unrecognized
+        status asks for a decision rather than silently publishing.
+
+
+        Photos are fetched only for the pending rows (they are what a decision
+        is made on) and their URLs are short-lived Notion-signed links, good for
+        this page load and not for storing. Same staff gate as the rest of the
+        studio surface: 401 when not signed in, 404 when signed in but not
+        staff, 403 when staff but not signed in with Google.
+      security:
+        - bearerAuth: []
+      responses:
+        "200":
+          description: The queue, newest first
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/StudioReviewList"
+        "401":
+          description: Not signed in (missing or expired session)
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorEnvelope"
+        "403":
+          description: >-
+            A studio account whose session wasn't established with Google (the
+            default policy).
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorEnvelope"
+        "404":
+          description: >-
+            Signed in, but not a studio account — the same answer a URL that
+            doesn't exist gets (see the other studio operations).
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/OrderNotFound"
+        "500":
+          description: Server error
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorEnvelope"
+  /studio/reviews/{reviewId}/status:
+    put:
+      operationId: setStudioReviewStatus
+      tags: [studio]
+      summary: Publish, reject, or re-queue a review
+      description: >-
+        Writes one review's moderation decision to its Notion `Status`.
+        `published` is what puts a testimonial on the site, `rejected` takes it
+        off (and keeps it out of the queue), and `pending` returns it to the
+        queue — so a decision made in error is undone the same way it was made.
+
+
+        Publishing requires the customer's own consent to publish, which the
+        atelier cannot supply: without it the request is refused with 409 rather
+        than writing a status the site would then decline to honour. Consent is
+        on the review (`consentToPublish`), so the dashboard can say so before
+        the button is pressed.
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: reviewId
+          in: path
+          required: true
+          schema:
+            type: string
+          description: The review's id, as returned by the list operation.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ReviewStatusRequest"
+      responses:
+        "200":
+          description: The review as it now stands
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/StudioReview"
+        "400":
+          description: Not a status a review can be moved to
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorEnvelope"
+        "401":
+          description: Not signed in (missing or expired session)
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorEnvelope"
+        "403":
+          description: >-
+            A studio account whose session wasn't established with Google (the
+            default policy).
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorEnvelope"
+        "404":
+          description: >-
+            No such review — or the caller isn't a studio account, which answers
+            identically by design (see the other studio operations).
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/OrderNotFound"
+        "409":
+          description: >-
+            Asked to publish a review the customer didn't consent to publishing.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorEnvelope"
+        "500":
+          description: Server error
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorEnvelope"
 components:
   securitySchemes:
     bearerAuth:
@@ -1294,6 +1918,23 @@ components:
             contract, mounted like the Stripe webhook). They are attached to the
             order's Notion page as image blocks. Optional; omitted when the
             customer uploaded none.
+        colors:
+          type: array
+          items:
+            type: string
+          description: >-
+            Names of the colors the customer picked from the studio palette (the
+            live `GET /colors` list) — a multi-select. This is a starting point
+            for the consultation, not a final spec: the atelier finalizes the
+            exact fabric + finish together with the customer. Recorded on the
+            Notion order for the atelier (the app never reads it back). Optional;
+            omitted when the customer picked none.
+        colorUsage:
+          type: string
+          description: >-
+            The customer's free-text note on how they'd like their chosen colors
+            used (e.g. "emerald as the main color with gold accents on the collar,
+            and a blush skirt"). Optional; omitted when blank.
         referralCode:
           type: string
           description: >-
@@ -1443,6 +2084,164 @@ components:
       properties:
         received:
           type: boolean
+    PublishedReview:
+      type: object
+      required:
+        - id
+        - rating
+        - comment
+      description: >-
+        One curated testimonial, as shown on the site. Deliberately narrow: the
+        author's email, order number, and verification flag stay in Notion and
+        are never served here.
+      properties:
+        id:
+          type: string
+          description: The review's Notion page id, used only as a render key.
+        rating:
+          type: integer
+          minimum: 1
+          maximum: 5
+          description: The star rating, 1 (poor) to 5 (excellent).
+        comment:
+          type: string
+          description: The customer's testimonial.
+        customerName:
+          type: string
+          description: >-
+            How the customer asked to be credited. Omitted when they left the
+            credit blank, in which case the testimonial is shown unattributed.
+        publishedAt:
+          type: string
+          format: date-time
+          description: >-
+            When the review was submitted (its Notion created time), used to
+            order the list and to date the testimonial.
+    ReviewList:
+      type: object
+      required:
+        - reviews
+      properties:
+        reviews:
+          type: array
+          items:
+            $ref: "#/components/schemas/PublishedReview"
+    ReviewModerationStatus:
+      type: string
+      enum: [pending, published, rejected]
+      description: >-
+        Where a review stands with the atelier. `pending` is anything not yet
+        decided — including the "New" it is captured with — so a review can only
+        ever be waiting, shown, or set aside.
+    StudioReview:
+      type: object
+      description: >-
+        One review as the moderation queue shows it. Unlike the public
+        `PublishedReview`, this is the whole row: the atelier is deciding
+        whether to put it on the site, and who wrote it and whether their email
+        matched the order are part of that judgement. Staff-only.
+      required:
+        - id
+        - rating
+        - comment
+        - status
+        - consentToPublish
+        - emailVerified
+        - photos
+      properties:
+        id:
+          type: string
+          description: The review's Notion page id; also what a decision is addressed to.
+        rating:
+          type: integer
+          minimum: 1
+          maximum: 5
+          description: The star rating, 1 (poor) to 5 (excellent).
+        comment:
+          type: string
+          description: The customer's testimonial, as written.
+        customerName:
+          type: string
+          description: >-
+            How the customer asked to be credited. Omitted when they left it
+            blank, in which case a published testimonial is unattributed.
+        orderNumber:
+          type: string
+          description: The order the review is for. Omitted on a row that carries none.
+        email:
+          type: string
+          description: >-
+            The address the review was submitted from. Shown so the atelier can
+            recognize the customer; never served publicly.
+        emailVerified:
+          type: boolean
+          description: >-
+            Whether that address matched the one stored on the order. False on a
+            legacy order that has no email stored — accepted at capture, but
+            worth vetting before it goes on the site.
+        consentToPublish:
+          type: boolean
+          description: >-
+            Whether the customer agreed to their words being published. Publishing
+            without it is refused, so this is what the dashboard reads to know
+            whether the button can be offered at all.
+        status:
+          $ref: "#/components/schemas/ReviewModerationStatus"
+        rawStatus:
+          type: string
+          description: >-
+            The `Status` select exactly as Notion holds it, when it is set. Shown
+            for a row whose value the app doesn't recognize, so "why is this
+            still pending?" is answerable without opening Notion.
+        submittedAt:
+          type: string
+          format: date-time
+          description: When the review was submitted (its Notion created time).
+        photos:
+          type: array
+          description: >-
+            Photographs of the finished piece, as URLs. Notion-signed and
+            short-lived, so they are for rendering this page and nothing else.
+            Empty for a decided review — photos are fetched only for the rows
+            still awaiting a decision.
+          items:
+            type: string
+        notionUrl:
+          type: string
+          description: The review's page in Notion, for anything this queue doesn't show.
+    StudioReviewList:
+      type: object
+      description: >-
+        The moderation queue: the pending reviews the atelier still owes a
+        decision, and the decided ones for reference, newest first in both
+        cases.
+      required: [pending, decided]
+      properties:
+        pending:
+          type: array
+          description: Awaiting a decision, oldest submission first — the queue proper.
+          items:
+            $ref: "#/components/schemas/StudioReview"
+        decided:
+          type: array
+          description: >-
+            Already published or rejected, newest first. Capped, and carrying no
+            photos — it is a record of what was decided, not a second queue.
+          items:
+            $ref: "#/components/schemas/StudioReview"
+        truncated:
+          type: boolean
+          description: >-
+            True when there are more reviews than one read covers, so the queue
+            says it is partial instead of looking complete. Older rows are still
+            in Notion.
+    ReviewStatusRequest:
+      type: object
+      description: The moderation decision to record against a review.
+      required: [status]
+      properties:
+        status:
+          $ref: "#/components/schemas/ReviewModerationStatus"
     NewContactRequest:
       type: object
       required:
@@ -1719,6 +2518,34 @@ components:
             changes this list without a redeploy, so clients must not hardcode it.
           items:
             type: string
+    Color:
+      type: object
+      required:
+        - id
+        - name
+        - hex
+      properties:
+        id:
+          type: string
+          description: A stable slug of the name ("Rose Gold" → "rose-gold").
+        name:
+          type: string
+        hex:
+          type: string
+          description: Hex color fill for the chip, e.g. "#2E5CB8".
+    ColorList:
+      type: object
+      required:
+        - colors
+      properties:
+        colors:
+          type: array
+          description: >-
+            The studio's intake color palette — the atelier-editable
+            `COLOR_PALETTE` Studio Settings value, or a built-in primary-color
+            palette when unset. Always non-empty.
+          items:
+            $ref: "#/components/schemas/Color"
     CheckoutItem:
       type: object
       required:
@@ -2278,3 +3105,446 @@ components:
             A signed token (the same one the confirmation email's manage link
             carries) authorizing reschedule/cancel of this specific appointment
             via the appointment-manage endpoints.
+    StaffWeekday:
+      type: string
+      description: A day of the week a block of working hours repeats on.
+      enum:
+        - Monday
+        - Tuesday
+        - Wednesday
+        - Thursday
+        - Friday
+        - Saturday
+        - Sunday
+    StaffAvailabilityEntry:
+      type: object
+      description: >-
+        One recurring block of a staff member's standing working hours — the
+        POSITIVE availability the slot calculator starts from, before it
+        subtracts whatever their Google Calendar says they are busy with. A day
+        off is a calendar event, not an edit here.
+      required: [id, staff, calendarEmail, weekdays, start, end, locations]
+      properties:
+        id:
+          type: string
+          description: Identifies the entry for an update or a delete.
+        staff:
+          type: string
+          description: >-
+            The staff member these hours belong to. Always one of the names the
+            studio books (see `staff` on the list response).
+        calendarEmail:
+          type: string
+          format: email
+          description: >-
+            The Google Calendar this person's bookings are read from and written
+            to. The same address is expected on every entry for one person; if
+            they differ, the first one read wins.
+        weekdays:
+          type: array
+          description: The weekdays this block repeats on.
+          items:
+            $ref: "#/components/schemas/StaffWeekday"
+        start:
+          type: string
+          description: When the block starts, as 24-hour `HH:MM` local studio time.
+          example: "10:00"
+        end:
+          type: string
+          description: >-
+            When the block ends, as 24-hour `HH:MM` local studio time. Always
+            later than `start` — an entry that ends before it begins is rejected
+            rather than silently ignored.
+          example: "17:00"
+        locations:
+          type: array
+          description: Which locations may be booked inside this block.
+          items:
+            type: string
+            enum: [in-person, virtual]
+    StaffAvailabilityRequest:
+      type: object
+      description: >-
+        One block of working hours to save. The whole entry is sent on both
+        create and update, so the two paths validate identically.
+      required: [staff, calendarEmail, weekdays, start, end, locations]
+      properties:
+        staff:
+          type: string
+          minLength: 1
+          maxLength: 120
+          description: >-
+            Must be a staff member the studio books — the appointment catalog's
+            list, returned as `staff` by the list operation. A name outside it
+            would produce hours nothing could ever be booked into.
+        calendarEmail:
+          type: string
+          format: email
+          maxLength: 254
+        weekdays:
+          type: array
+          minItems: 1
+          items:
+            $ref: "#/components/schemas/StaffWeekday"
+        start:
+          type: string
+          pattern: "^([01][0-9]|2[0-3]):[0-5][0-9]$"
+          description: 24-hour `HH:MM`.
+        end:
+          type: string
+          pattern: "^([01][0-9]|2[0-3]):[0-5][0-9]$"
+          description: 24-hour `HH:MM`, later than `start`.
+        locations:
+          type: array
+          minItems: 1
+          items:
+            type: string
+            enum: [in-person, virtual]
+    StaffAvailabilityList:
+      type: object
+      description: >-
+        The whole standing schedule, plus the staff it may be assigned to — so
+        the editor offers the names the booking catalog actually knows instead
+        of a free-text field that has to match one exactly.
+      required: [entries, staff]
+      properties:
+        entries:
+          type: array
+          description: Every block of hours on record, grouped by nothing in particular.
+          items:
+            $ref: "#/components/schemas/StaffAvailabilityEntry"
+        staff:
+          type: array
+          description: The staff members the studio books appointments with.
+          items:
+            type: string
+    StudioAccess:
+      type: object
+      description: >-
+        The answer to "may this account use the studio dashboard?". Only ever
+        returned to a caller the staff gate has already admitted, so `staff` is
+        always true — the field exists so the response is self-describing rather
+        than an empty body, and so a client reads a value instead of inferring
+        from a status code.
+      required: [staff]
+      properties:
+        staff:
+          type: boolean
+          description: Always true. A non-staff caller receives 401/403 instead.
+    StudioAnalytics:
+      type: object
+      description: >-
+        The atelier's own figures, aggregated from the live Notion databases for
+        the internal studio dashboard. Every money value is US dollars.
+      required:
+        [
+          generatedAt,
+          customOrders,
+          shopOrders,
+          production,
+          revenue,
+          payments,
+          topItems,
+        ]
+      properties:
+        generatedAt:
+          type: string
+          format: date-time
+          description: >-
+            When these figures were computed. The server caches an aggregation
+            briefly, so this can trail the request by up to a minute.
+        customOrders:
+          $ref: "#/components/schemas/StudioPipeline"
+        shopOrders:
+          $ref: "#/components/schemas/StudioPipeline"
+        production:
+          $ref: "#/components/schemas/StudioProductionLoad"
+        revenue:
+          type: array
+          description: >-
+            One entry per month over the trailing window, oldest first. Months
+            with no activity are included as zeroes so a chart has no gaps.
+          items:
+            $ref: "#/components/schemas/StudioRevenueMonth"
+        payments:
+          $ref: "#/components/schemas/StudioPaymentTotals"
+        topItems:
+          type: array
+          description: >-
+            The shop's best sellers, most-ordered first. Empty when no shop
+            order carries its inventory relation (legacy orders, or the
+            relation-links flag being off) — item-level figures are only as good
+            as that link.
+          items:
+            $ref: "#/components/schemas/StudioTopItem"
+    StudioPipeline:
+      type: object
+      description: >-
+        How a set of orders is distributed across its live workflow — the custom
+        order Stage list, or the shop order fulfilment Status list.
+      required: [total, active, completed, cancelled, stages]
+      properties:
+        total:
+          type: integer
+          description: Every order of this kind on record.
+        active:
+          type: integer
+          description: Orders neither cancelled nor at the final stage.
+        completed:
+          type: integer
+          description: Orders sitting at the last stage in the live list.
+        cancelled:
+          type: integer
+        stages:
+          type: array
+          description: >-
+            Active orders per stage, in the live stage order (stages with no
+            orders are included as zeroes, so the pipeline reads end to end).
+          items:
+            $ref: "#/components/schemas/StudioStageCount"
+    StudioStageCount:
+      type: object
+      required: [stage, count]
+      properties:
+        stage:
+          type: string
+        count:
+          type: integer
+    StudioProductionLoad:
+      type: object
+      description: >-
+        The making-side workload: active custom orders measured against the due
+        dates the atelier has set.
+      required:
+        [
+          activeOrders,
+          scheduled,
+          unscheduled,
+          overdue,
+          dueThisWeek,
+          dueThisMonth,
+          rush,
+          upcoming,
+        ]
+      properties:
+        activeOrders:
+          type: integer
+          description: Custom orders in progress (not cancelled, not delivered).
+        scheduled:
+          type: integer
+          description: Of those, the ones carrying a Due Date.
+        unscheduled:
+          type: integer
+          description: >-
+            Active orders with no Due Date — invisible to the production
+            schedule until the atelier sets one.
+        overdue:
+          type: integer
+          description: Active orders whose due date has passed.
+        dueThisWeek:
+          type: integer
+          description: Active orders due within the next 7 days (today included).
+        dueThisMonth:
+          type: integer
+          description: Active orders due within the next 30 days (today included).
+        rush:
+          type: integer
+          description: Active orders flagged as rush at intake.
+        upcoming:
+          type: array
+          description: >-
+            The nearest-due active orders, soonest first (overdue ones lead),
+            capped to a short list for the dashboard.
+          items:
+            $ref: "#/components/schemas/StudioScheduledOrder"
+    StudioScheduledOrder:
+      type: object
+      required: [orderNumber, orderName, stage, dueDate, overdue]
+      properties:
+        orderNumber:
+          type: string
+        orderName:
+          type: string
+        stage:
+          type: string
+        dueDate:
+          type: string
+          description: The order's Due Date as YYYY-MM-DD.
+        overdue:
+          type: boolean
+        rush:
+          type: boolean
+    StudioRevenueMonth:
+      type: object
+      description: >-
+        A month of trade. The two money figures are deliberately NOT summed:
+        shop revenue is money actually collected, while the custom figure is
+        work booked (Notion holds no per-payment dates, so a custom payment
+        can't be attributed to the month it was made).
+      required: [month, shopRevenue, shopOrders, customBooked, customOrders]
+      properties:
+        month:
+          type: string
+          description: The month as YYYY-MM.
+        shopRevenue:
+          type: number
+          description: >-
+            Dollars taken on shop orders placed that month (order totals,
+            including shipping and tax; cancelled orders excluded).
+        shopOrders:
+          type: integer
+          description: Shop orders placed that month (cancelled excluded).
+        customBooked:
+          type: number
+          description: >-
+            Dollars invoiced on custom orders placed that month (each order's
+            invoice Final Balance). Zero for orders not yet itemized.
+        customOrders:
+          type: integer
+          description: Custom orders placed that month (cancelled excluded).
+    StudioPaymentTotals:
+      type: object
+      description: >-
+        Deposits against balances across every custom-order invoice on a live
+        (non-cancelled) order — what has been collected and what is still out.
+      required:
+        [
+          invoicedTotal,
+          collectedTotal,
+          outstandingTotal,
+          depositsCollected,
+          depositsOutstanding,
+          balancesCollected,
+          balancesOutstanding,
+          invoiceCount,
+          unpaidInvoiceCount,
+        ]
+      properties:
+        invoicedTotal:
+          type: number
+          description: The sum of every invoice's Final Balance.
+        collectedTotal:
+          type: number
+          description: Deposits plus balances marked paid.
+        outstandingTotal:
+          type: number
+          description: Deposits plus balances still to collect.
+        depositsCollected:
+          type: number
+        depositsOutstanding:
+          type: number
+          description: Deposit amounts set on an invoice but not yet paid.
+        balancesCollected:
+          type: number
+          description: >-
+            Final balances marked paid, net of the deposits already credited
+            against them (that is what the balance stage actually charges).
+        balancesOutstanding:
+          type: number
+          description: >-
+            What is still owed on unpaid balances beyond every deposit scheduled
+            against them — so this and depositsOutstanding add up to
+            outstandingTotal without counting the same dollar twice. A paid
+            balance settles its invoice outright and leaves nothing here.
+        invoiceCount:
+          type: integer
+        unpaidInvoiceCount:
+          type: integer
+          description: Invoices with money still outstanding.
+    StudioTopItem:
+      type: object
+      description: >-
+        One best-selling shop piece. The count is orders containing the piece,
+        not units — the order's inventory relation records which pieces were
+        bought, not how many of each.
+      required: [name, orders]
+      properties:
+        name:
+          type: string
+        orders:
+          type: integer
+    StudioToolRequest:
+      type: object
+      description: >-
+        The arguments for one internal tool run. Every field is optional here
+        because each tool takes a different subset; the server rejects a run that
+        is missing what its own tool needs. This replaces the query string of the
+        retired `?secret=` links, so the argument names mirror them.
+      properties:
+        orderNumber:
+          type: string
+          maxLength: 64
+          description: >-
+            The order the tool acts on — `ORD-…` for a custom order, `SHP-…` for
+            a shop order. Required by `invoice-lines`, `status-email` and the
+            two refunds; `milestones` sweeps the whole pipeline and
+            `restock-alert` takes an optional `item` instead.
+        force:
+          type: boolean
+          description: >-
+            `status-email` only. Resend the status update even when the order
+            hasn't moved forward since the customer was last emailed. A forced
+            resend never rewinds the high-water marker.
+        amount:
+          type: number
+          minimum: 0
+          description: >-
+            `return-refund` only. The TARGET total to have refunded on the
+            order, in dollars — not an increment, so a repeated run can't
+            double-refund. Omit to refund in full.
+        item:
+          type: string
+          maxLength: 200
+          description: >-
+            `restock-alert` only, and optional even there. The exact `Item Name`
+            of one inventory row to alert on, as it appears in Notion — the same
+            text a back-in-stock request stores. Omit it to sweep every piece
+            that is currently in stock, which is what the nightly run does.
+    StudioToolRun:
+      type: object
+      description: >-
+        The outcome of one internal tool run, already composed for display. The
+        server owns the wording — it is the same summary the retired
+        confirmation pages rendered — so the dashboard renders the result rather
+        than re-deriving it from per-tool fields.
+      required: [tool, status, title, message, details]
+      properties:
+        tool:
+          $ref: "#/components/schemas/StudioTool"
+        status:
+          type: string
+          enum: [ok, noop, attention]
+          description: >-
+            `ok` — the tool did something. `noop` — there was nothing to do
+            (every tool is idempotent, so this is the normal result of a repeat
+            run). `attention` — the run completed but left something for the
+            atelier to fix, e.g. a refund Stripe rejected, which leaves the order
+            uncancelled so a re-run can retry it. A failure the tool couldn't
+            start at all is an HTTP error, not a status here.
+        title:
+          type: string
+          description: A short headline for the result, e.g. "Invoice itemized".
+        message:
+          type: string
+          description: One sentence summarizing what happened.
+        details:
+          type: array
+          description: >-
+            Any per-item notes worth showing under the message — payments that
+            were skipped, reasons a send was suppressed. Empty when there is
+            nothing to add.
+          items:
+            type: string
+    StudioTool:
+      type: string
+      description: >-
+        Which internal tool to run. Each names an action the atelier used to
+        trigger by opening a shared-secret link from Notion — or, for
+        `restock-alert`, one that would have needed such a link.
+      enum:
+        - milestones
+        - invoice-lines
+        - status-email
+        - cancellation-refund
+        - return-refund
+        - restock-alert

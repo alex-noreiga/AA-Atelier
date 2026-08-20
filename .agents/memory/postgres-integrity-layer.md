@@ -77,3 +77,23 @@ create the tables. Unset ⇒ the layer no-ops (Stripe dedup falls back to Notion
 the portal reads Notion only). Tests: `test/unit/db.client.test.ts`,
 `test/unit/processed-payments.repository.test.ts`, and the `checkout.service`
 dedup-branch tests, all over `test/support/fake-db.ts`.
+
+## Addendum — `restock_alerts` (0003)
+
+A fourth table joined the layer with the back-in-stock alert: `restock_alerts`, one row
+per answered restock request, keyed on the request's Notion page id. It reuses the
+`processed_payments` claim primitive (`insert … on conflict do nothing`) **without** its
+confirm/release cycle — the worst case of a claim that never leads to a send is a lost
+alert, not a swallowed payment, so failing closed is right and there is nothing to
+release.
+
+It is the layer's **one caller with no degraded fallback**. Everywhere else an unset
+`POSTGRES_URL` falls back to the pre-Postgres behavior; there is no such behavior here,
+because without somewhere to record who has been told, the nightly sweep would email the
+same people every night. Unset ⇒ the pass no-ops with a warn and the studio tool reports
+`attention`. See `back-in-stock-alerts.md`.
+
+`0003_restock_alerts.sql` carries its own RLS + revoke lock-down inline: it is numbered
+past `0002_lock_down_public_tables.sql`, which locks down the tables that existed when it
+was written and cannot cover one created later. Any future migration adding a table must
+do the same.

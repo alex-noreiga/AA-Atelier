@@ -147,9 +147,12 @@ twice. Worse, the line-item `Unit Price` formula resolves **Costing Item before
 Material Usage Line**, so a "Material" line linked to both silently pulls the
 whole-garment price (this is what the "Toothless" test invoice showed).
 
-Fix = the app owns itemization. `GET /api/invoices/generate-line-items`
-(`?order=`, CRON_SECRET, outside the OpenAPI contract; on-demand `/run` variant
-is a Notion formula-link the atelier clicks) reads the order's costing and writes:
+Fix = the app owns itemization. The generator (originally
+`GET /api/invoices/generate-line-items[/run]`, a CRON_SECRET Notion formula-link;
+now the studio dashboard's **Itemize an invoice** tool,
+`POST /api/studio/tools/invoice-lines` — see
+[studio-internal-tools.md](studio-internal-tools.md)) reads the order's costing
+and writes:
 one **Material** line per non-packaging material usage line (at its `Line Material
 Cost`), one **Labor** line (summed costing `Labor Cost`), and one reconciling
 **Adjustment** line "Design & finishing" = Σ(`Suggested Price`) − (materials +
