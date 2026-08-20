@@ -78,9 +78,7 @@ function orderDetailFields(input: CreateOrderInput): Field[] {
     ...(input.neededBy
       ? [["Needed by", formatOrderDate(input.neededBy)] as Field]
       : []),
-    ...(input.rush
-      ? [["Rush order", "Yes — a rush surcharge applies"] as Field]
-      : []),
+    ...(input.rush ? [["Rush order", "Yes"] as Field] : []),
     ...(input.referralCode
       ? [["Referral code", input.referralCode] as Field]
       : []),
