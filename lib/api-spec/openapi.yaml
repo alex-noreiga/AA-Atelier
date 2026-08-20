@@ -1001,6 +1001,231 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/ErrorEnvelope"
+  /studio/availability:
+    get:
+      operationId: listStaffAvailability
+      tags: [studio]
+      summary: The staff working-hours schedule
+      description: >-
+        The standing working hours the slot calculator uses as its positive
+        availability grid — one entry per staff member per block of hours, with
+        the weekdays it repeats on and the locations it can be booked for. This
+        is the schedule the atelier edits on the dashboard; it used to live in a
+        Google Sheet. Same staff gate as the rest of the studio surface: 401 when
+        not signed in, 404 when signed in but not staff, 403 when staff but not
+        signed in with Google.
+      security:
+        - bearerAuth: []
+      responses:
+        "200":
+          description: The current schedule, plus the staff it may be assigned to
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/StaffAvailabilityList"
+        "401":
+          description: Not signed in (missing or expired session)
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorEnvelope"
+        "403":
+          description: >-
+            A studio account whose session wasn't established with Google (the
+            default policy).
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorEnvelope"
+        "404":
+          description: >-
+            Signed in, but not a studio account — the same answer a URL that
+            doesn't exist gets (see the other studio operations).
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/OrderNotFound"
+        "500":
+          description: Server error
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorEnvelope"
+    post:
+      operationId: createStaffAvailability
+      tags: [studio]
+      summary: Add a block of working hours
+      description: >-
+        Adds one recurring block of working hours for a staff member. The staff
+        name must be one the studio books (the appointment catalog's list, also
+        returned by the GET above) and the hours must be a real range, so an
+        entry can't be saved that the slot calculator would silently ignore.
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/StaffAvailabilityRequest"
+      responses:
+        "201":
+          description: The entry as saved
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/StaffAvailabilityEntry"
+        "400":
+          description: The entry is incomplete or describes hours that can't be booked
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorEnvelope"
+        "401":
+          description: Not signed in (missing or expired session)
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorEnvelope"
+        "403":
+          description: >-
+            A studio account whose session wasn't established with Google (the
+            default policy).
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorEnvelope"
+        "404":
+          description: >-
+            Signed in, but not a studio account — the same answer a URL that
+            doesn't exist gets (see the other studio operations).
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/OrderNotFound"
+        "500":
+          description: Server error
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorEnvelope"
+  /studio/availability/{entryId}:
+    put:
+      operationId: updateStaffAvailability
+      tags: [studio]
+      summary: Change a block of working hours
+      description: >-
+        Replaces one entry's hours, days, locations, staff member, or calendar
+        address. The whole entry is sent, so the same validation the create path
+        applies holds here too.
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: entryId
+          in: path
+          required: true
+          schema:
+            type: string
+          description: The entry's id, as returned by the list operation.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/StaffAvailabilityRequest"
+      responses:
+        "200":
+          description: The entry as saved
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/StaffAvailabilityEntry"
+        "400":
+          description: The entry is incomplete or describes hours that can't be booked
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorEnvelope"
+        "401":
+          description: Not signed in (missing or expired session)
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorEnvelope"
+        "403":
+          description: >-
+            A studio account whose session wasn't established with Google (the
+            default policy).
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorEnvelope"
+        "404":
+          description: >-
+            No such entry — or the caller isn't a studio account, which answers
+            identically by design (see the other studio operations).
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/OrderNotFound"
+        "500":
+          description: Server error
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorEnvelope"
+    delete:
+      operationId: deleteStaffAvailability
+      tags: [studio]
+      summary: Remove a block of working hours
+      description: >-
+        Removes one entry from the schedule. Those hours stop being offered as
+        soon as the change is picked up; appointments already booked inside them
+        are untouched (they live on the staff calendar).
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: entryId
+          in: path
+          required: true
+          schema:
+            type: string
+          description: The entry's id, as returned by the list operation.
+      responses:
+        "200":
+          description: The entry was removed
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MessageResponse"
+        "401":
+          description: Not signed in (missing or expired session)
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorEnvelope"
+        "403":
+          description: >-
+            A studio account whose session wasn't established with Google (the
+            default policy).
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorEnvelope"
+        "404":
+          description: >-
+            No such entry — or the caller isn't a studio account, which answers
+            identically by design (see the other studio operations).
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/OrderNotFound"
+        "500":
+          description: Server error
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorEnvelope"
   /studio/access:
     get:
       operationId: getStudioAccess
@@ -2576,6 +2801,119 @@ components:
             A signed token (the same one the confirmation email's manage link
             carries) authorizing reschedule/cancel of this specific appointment
             via the appointment-manage endpoints.
+    StaffWeekday:
+      type: string
+      description: A day of the week a block of working hours repeats on.
+      enum:
+        - Monday
+        - Tuesday
+        - Wednesday
+        - Thursday
+        - Friday
+        - Saturday
+        - Sunday
+    StaffAvailabilityEntry:
+      type: object
+      description: >-
+        One recurring block of a staff member's standing working hours — the
+        POSITIVE availability the slot calculator starts from, before it
+        subtracts whatever their Google Calendar says they are busy with. A day
+        off is a calendar event, not an edit here.
+      required: [id, staff, calendarEmail, weekdays, start, end, locations]
+      properties:
+        id:
+          type: string
+          description: Identifies the entry for an update or a delete.
+        staff:
+          type: string
+          description: >-
+            The staff member these hours belong to. Always one of the names the
+            studio books (see `staff` on the list response).
+        calendarEmail:
+          type: string
+          format: email
+          description: >-
+            The Google Calendar this person's bookings are read from and written
+            to. The same address is expected on every entry for one person; if
+            they differ, the first one read wins.
+        weekdays:
+          type: array
+          description: The weekdays this block repeats on.
+          items:
+            $ref: "#/components/schemas/StaffWeekday"
+        start:
+          type: string
+          description: When the block starts, as 24-hour `HH:MM` local studio time.
+          example: "10:00"
+        end:
+          type: string
+          description: >-
+            When the block ends, as 24-hour `HH:MM` local studio time. Always
+            later than `start` — an entry that ends before it begins is rejected
+            rather than silently ignored.
+          example: "17:00"
+        locations:
+          type: array
+          description: Which locations may be booked inside this block.
+          items:
+            type: string
+            enum: [in-person, virtual]
+    StaffAvailabilityRequest:
+      type: object
+      description: >-
+        One block of working hours to save. The whole entry is sent on both
+        create and update, so the two paths validate identically.
+      required: [staff, calendarEmail, weekdays, start, end, locations]
+      properties:
+        staff:
+          type: string
+          minLength: 1
+          maxLength: 120
+          description: >-
+            Must be a staff member the studio books — the appointment catalog's
+            list, returned as `staff` by the list operation. A name outside it
+            would produce hours nothing could ever be booked into.
+        calendarEmail:
+          type: string
+          format: email
+          maxLength: 254
+        weekdays:
+          type: array
+          minItems: 1
+          items:
+            $ref: "#/components/schemas/StaffWeekday"
+        start:
+          type: string
+          pattern: "^([01][0-9]|2[0-3]):[0-5][0-9]$"
+          description: 24-hour `HH:MM`.
+        end:
+          type: string
+          pattern: "^([01][0-9]|2[0-3]):[0-5][0-9]$"
+          description: 24-hour `HH:MM`, later than `start`.
+        locations:
+          type: array
+          minItems: 1
+          items:
+            type: string
+            enum: [in-person, virtual]
+    StaffAvailabilityList:
+      type: object
+      description: >-
+        The whole standing schedule, plus the staff it may be assigned to — so
+        the editor offers the names the booking catalog actually knows instead
+        of a free-text field that has to match one exactly.
+      required: [entries, staff]
+      properties:
+        entries:
+          type: array
+          description: Every block of hours on record, grouped by nothing in particular.
+          items:
+            $ref: "#/components/schemas/StaffAvailabilityEntry"
+        staff:
+          type: array
+          description: The staff members the studio books appointments with.
+          items:
+            type: string
     StudioAccess:
       type: object
       description: >-

@@ -1,10 +1,18 @@
 import { Router } from "express";
 import {
+  CreateStaffAvailabilityBody,
+  CreateStaffAvailabilityResponse,
+  DeleteStaffAvailabilityParams,
+  DeleteStaffAvailabilityResponse,
   GetStudioAccessResponse,
   GetStudioAnalyticsResponse,
+  ListStaffAvailabilityResponse,
   RunStudioToolBody,
   RunStudioToolParams,
   RunStudioToolResponse,
+  UpdateStaffAvailabilityBody,
+  UpdateStaffAvailabilityParams,
+  UpdateStaffAvailabilityResponse,
 } from "@workspace/api-zod";
 import { requireStaff } from "../middlewares/auth.js";
 import { accountRateLimiter } from "../middlewares/rate-limit.js";
@@ -15,6 +23,13 @@ import {
   type StudioToolArgs,
   type StudioToolName,
 } from "../services/studio-tools.service.js";
+import {
+  getStaffAvailability,
+  addStaffAvailability,
+  editStaffAvailability,
+  removeStaffAvailability,
+  type StaffAvailabilityInput,
+} from "../services/staff-availability.service.js";
 
 const router = Router();
 
@@ -65,6 +80,75 @@ router.post(
     const { tool } = res.locals.params as { tool: StudioToolName };
     const result = await runStudioTool(tool, res.locals.body as StudioToolArgs);
     res.json(RunStudioToolResponse.parse(result));
+  },
+);
+
+// The staff working-hours schedule — the positive availability grid booking is
+// computed from, which the atelier used to edit in a Google Sheet. Same
+// `requireStaff` gate as everything else here: these four operations are the
+// only way the schedule is written, so the gate is also what replaced sharing a
+// spreadsheet with a service account.
+//
+// The list carries the bookable staff names alongside the entries so the editor
+// offers exactly the people the appointment catalog routes to, rather than a
+// free-text field that has to match one of them exactly.
+router.get(
+  "/studio/availability",
+  accountRateLimiter,
+  requireStaff,
+  async (_req, res) => {
+    const schedule = await getStaffAvailability();
+    res.json(ListStaffAvailabilityResponse.parse(schedule));
+  },
+);
+
+router.post(
+  "/studio/availability",
+  accountRateLimiter,
+  requireStaff,
+  validate({ body: CreateStaffAvailabilityBody }),
+  async (_req, res) => {
+    const entry = await addStaffAvailability(
+      res.locals.body as StaffAvailabilityInput,
+    );
+    res.status(201).json(CreateStaffAvailabilityResponse.parse(entry));
+  },
+);
+
+// An update replaces the whole entry rather than patching fields, so it and the
+// create above validate identically — there is no way to edit a row into a shape
+// the create path would have refused.
+router.put(
+  "/studio/availability/:entryId",
+  accountRateLimiter,
+  requireStaff,
+  validate({
+    params: UpdateStaffAvailabilityParams,
+    body: UpdateStaffAvailabilityBody,
+  }),
+  async (_req, res) => {
+    const { entryId } = res.locals.params as { entryId: string };
+    const entry = await editStaffAvailability(
+      entryId,
+      res.locals.body as StaffAvailabilityInput,
+    );
+    res.json(UpdateStaffAvailabilityResponse.parse(entry));
+  },
+);
+
+router.delete(
+  "/studio/availability/:entryId",
+  accountRateLimiter,
+  requireStaff,
+  validate({ params: DeleteStaffAvailabilityParams }),
+  async (_req, res) => {
+    const { entryId } = res.locals.params as { entryId: string };
+    await removeStaffAvailability(entryId);
+    res.json(
+      DeleteStaffAvailabilityResponse.parse({
+        message: "Those hours have been removed from the schedule.",
+      }),
+    );
   },
 );
 

@@ -27,6 +27,7 @@ import {
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { serverErrorMessage } from "@/lib/api-error";
 import {
   Loader2,
   Play,
@@ -418,8 +419,8 @@ function ToolResult({
  * for the atelier; a generic fallback covers a network drop or a 500.
  */
 function runErrorMessage(error: unknown): string {
-  const data = (error as { data?: unknown } | null)?.data;
-  const message = (data as { error?: unknown } | null)?.error;
-  if (typeof message === "string" && message.trim()) return message;
-  return "Something went wrong. Please try again in a moment.";
+  return (
+    serverErrorMessage(error) ??
+    "Something went wrong. Please try again in a moment."
+  );
 }

@@ -796,6 +796,96 @@ export interface AccountOverview {
 }
 
 /**
+ * A day of the week a block of working hours repeats on.
+ */
+export type StaffWeekday = typeof StaffWeekday[keyof typeof StaffWeekday];
+
+
+export const StaffWeekday = {
+  Monday: 'Monday',
+  Tuesday: 'Tuesday',
+  Wednesday: 'Wednesday',
+  Thursday: 'Thursday',
+  Friday: 'Friday',
+  Saturday: 'Saturday',
+  Sunday: 'Sunday',
+} as const;
+
+export type StaffAvailabilityEntryLocationsItem = typeof StaffAvailabilityEntryLocationsItem[keyof typeof StaffAvailabilityEntryLocationsItem];
+
+
+export const StaffAvailabilityEntryLocationsItem = {
+  'in-person': 'in-person',
+  virtual: 'virtual',
+} as const;
+
+/**
+ * One recurring block of a staff member's standing working hours — the POSITIVE availability the slot calculator starts from, before it subtracts whatever their Google Calendar says they are busy with. A day off is a calendar event, not an edit here.
+ */
+export interface StaffAvailabilityEntry {
+  /** Identifies the entry for an update or a delete. */
+  id: string;
+  /** The staff member these hours belong to. Always one of the names the studio books (see `staff` on the list response). */
+  staff: string;
+  /** The Google Calendar this person's bookings are read from and written to. The same address is expected on every entry for one person; if they differ, the first one read wins. */
+  calendarEmail: string;
+  /** The weekdays this block repeats on. */
+  weekdays: StaffWeekday[];
+  /** When the block starts, as 24-hour `HH:MM` local studio time. */
+  start: string;
+  /** When the block ends, as 24-hour `HH:MM` local studio time. Always later than `start` — an entry that ends before it begins is rejected rather than silently ignored. */
+  end: string;
+  /** Which locations may be booked inside this block. */
+  locations: StaffAvailabilityEntryLocationsItem[];
+}
+
+export type StaffAvailabilityRequestLocationsItem = typeof StaffAvailabilityRequestLocationsItem[keyof typeof StaffAvailabilityRequestLocationsItem];
+
+
+export const StaffAvailabilityRequestLocationsItem = {
+  'in-person': 'in-person',
+  virtual: 'virtual',
+} as const;
+
+/**
+ * One block of working hours to save. The whole entry is sent on both create and update, so the two paths validate identically.
+ */
+export interface StaffAvailabilityRequest {
+  /**
+     * Must be a staff member the studio books — the appointment catalog's list, returned as `staff` by the list operation. A name outside it would produce hours nothing could ever be booked into.
+     * @minLength 1
+     * @maxLength 120
+     */
+  staff: string;
+  /** @maxLength 254 */
+  calendarEmail: string;
+  /** @minItems 1 */
+  weekdays: StaffWeekday[];
+  /**
+     * 24-hour `HH:MM`.
+     * @pattern ^([01][0-9]|2[0-3]):[0-5][0-9]$
+     */
+  start: string;
+  /**
+     * 24-hour `HH:MM`, later than `start`.
+     * @pattern ^([01][0-9]|2[0-3]):[0-5][0-9]$
+     */
+  end: string;
+  /** @minItems 1 */
+  locations: StaffAvailabilityRequestLocationsItem[];
+}
+
+/**
+ * The whole standing schedule, plus the staff it may be assigned to — so the editor offers the names the booking catalog actually knows instead of a free-text field that has to match one exactly.
+ */
+export interface StaffAvailabilityList {
+  /** Every block of hours on record, grouped by nothing in particular. */
+  entries: StaffAvailabilityEntry[];
+  /** The staff members the studio books appointments with. */
+  staff: string[];
+}
+
+/**
  * The answer to "may this account use the studio dashboard?". Only ever returned to a caller the staff gate has already admitted, so `staff` is always true — the field exists so the response is self-describing rather than an empty body, and so a client reads a value instead of inferring from a status code.
  */
 export interface StudioAccess {

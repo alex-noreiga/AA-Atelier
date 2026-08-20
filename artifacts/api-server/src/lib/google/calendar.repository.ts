@@ -17,7 +17,10 @@ import {
   getGoogleCalendarClient,
   type GoogleCalendarClient,
 } from "./client.js";
-import { calendarEmailFor, getStaffSchedule } from "./sheets.repository.js";
+import {
+  calendarEmailFor,
+  getStaffSchedule,
+} from "../appointments/schedule.js";
 import type { AppointmentLocation } from "../appointments/catalog.js";
 import type {
   Booking,
@@ -31,7 +34,8 @@ export interface ScheduleConfig {
 }
 
 /**
- * The positive availability grid, read from the working-hours Google Sheet.
+ * The positive availability grid, read from the studio's working-hours
+ * schedule (the "Staff Availability" Notion database).
  * Time-off lives on the staff calendars (subtracted as busy), so it's always [].
  */
 export async function getScheduleConfig(): Promise<ScheduleConfig> {
