@@ -286,3 +286,84 @@ describe("StudioTools", () => {
     expect(screen.getByTestId("tool-milestones-run")).toBeDisabled();
   });
 });
+
+// The restock alert is the one tool whose subject isn't an order number, so it
+// exercises the card's generalized field: a different label, a different request
+// key, and no confirmation step (it moves no money).
+describe("StudioTools — back-in-stock alerts", () => {
+  it("sends the item name under `item`, not `orderNumber`", async () => {
+    succeedWith({
+      tool: "restock-alert",
+      status: "ok",
+      title: "Back-in-stock alerts sent",
+      message: "Emailed 2 customers waiting on Bow Fleece Soaker — Black.",
+    });
+    render(<StudioTools />);
+
+    await userEvent.type(
+      screen.getByTestId("tool-restock-alert-item"),
+      "  Bow Fleece Soaker — Black  ",
+    );
+    await userEvent.click(screen.getByTestId("tool-restock-alert-run"));
+
+    expect(mutate).toHaveBeenCalledWith(
+      {
+        tool: "restock-alert",
+        data: { item: "Bow Fleece Soaker — Black" },
+      },
+      expect.anything(),
+    );
+    expect(screen.getByTestId("tool-restock-alert-result")).toHaveTextContent(
+      "Emailed 2 customers waiting on Bow Fleece Soaker — Black.",
+    );
+  });
+
+  // Blank means "every piece currently in stock" — the only tool whose field is
+  // optional, so it must NOT be disabled the way the order-scoped ones are.
+  it("runs with the item blank, omitting the field entirely", async () => {
+    succeedWith({
+      tool: "restock-alert",
+      status: "ok",
+      title: "Back-in-stock alerts sent",
+      message: "Emailed 4 customers across 2 pieces.",
+    });
+    render(<StudioTools />);
+
+    expect(screen.getByTestId("tool-restock-alert-run")).toBeEnabled();
+    await userEvent.click(screen.getByTestId("tool-restock-alert-run"));
+
+    expect(mutate).toHaveBeenCalledWith(
+      { tool: "restock-alert", data: {} },
+      expect.anything(),
+    );
+  });
+
+  it("labels the field for an item, not an order", () => {
+    render(<StudioTools />);
+
+    expect(screen.getByLabelText("Item name (optional)")).toBeInTheDocument();
+  });
+
+  it("runs without a confirmation step — it moves no money", async () => {
+    succeedWith({
+      tool: "restock-alert",
+      status: "noop",
+      title: "Nothing sent",
+      message: "No alerts went out for Bow Fleece Soaker.",
+      details: ["not in stock"],
+    });
+    render(<StudioTools />);
+
+    await userEvent.type(
+      screen.getByTestId("tool-restock-alert-item"),
+      "Bow Fleece Soaker",
+    );
+    await userEvent.click(screen.getByTestId("tool-restock-alert-run"));
+
+    expect(screen.queryByTestId("tool-restock-alert-confirm")).toBeNull();
+    expect(mutate).toHaveBeenCalled();
+    expect(screen.getByTestId("tool-restock-alert-result")).toHaveTextContent(
+      "not in stock",
+    );
+  });
+});

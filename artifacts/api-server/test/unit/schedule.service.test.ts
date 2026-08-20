@@ -17,6 +17,9 @@ vi.mock("../../src/lib/notion/invoice.repository.js", () => ({
   findInvoicesNeedingPaymentReminder: vi.fn(),
   markPaymentStageReminded: vi.fn(),
 }));
+vi.mock("../../src/services/restock-notification.service.js", () => ({
+  notifyRestock: vi.fn(),
+}));
 vi.mock("../../src/lib/resend/send.js", () => ({
   sendEmailBestEffort: vi.fn(),
 }));
@@ -30,6 +33,7 @@ import {
   generatePendingMilestones,
   sendDueFittingReminders,
   sendDuePaymentReminders,
+  sendDueRestockAlerts,
   reconcileMilestones,
 } from "../../src/services/schedule.service.js";
 import {
@@ -49,6 +53,7 @@ import {
   markPaymentStageReminded,
 } from "../../src/lib/notion/invoice.repository.js";
 import { sendEmailBestEffort } from "../../src/lib/resend/send.js";
+import { notifyRestock } from "../../src/services/restock-notification.service.js";
 import { logger } from "../../src/lib/logger.js";
 
 const mockFind = vi.mocked(findOrdersNeedingMilestones);
@@ -61,6 +66,7 @@ const mockMarkReminded = vi.mocked(markFittingReminderSent);
 const mockFindPaymentInvoices = vi.mocked(findInvoicesNeedingPaymentReminder);
 const mockMarkPaymentReminded = vi.mocked(markPaymentStageReminded);
 const mockSend = vi.mocked(sendEmailBestEffort);
+const mockRestock = vi.mocked(notifyRestock);
 
 const from = new Date("2026-01-01T00:00:00Z");
 
@@ -494,6 +500,14 @@ describe("reconcileMilestones", () => {
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
     } as any);
 
+    mockRestock.mockResolvedValue({
+      status: "sent",
+      notified: 3,
+      unmatched: 0,
+      alreadyAlerted: 0,
+      items: [{ item: "Bow Fleece Soaker", notified: 3 }],
+    });
+
     const result = await reconcileMilestones(from);
 
     // Generation created 2 (Fitting, Delivered) for page-1; one fitting reminder
@@ -503,6 +517,31 @@ describe("reconcileMilestones", () => {
       milestonesCreated: 2,
       remindersSent: 1,
       paymentRemindersSent: 0,
+      restockAlertsSent: 3,
     });
+  });
+});
+
+// The restock pass is only the schedule — `notifyRestock` reads inventory and
+// tracks who has been told (see restock-notification.service.test.ts). What
+// matters here is that one bad sweep can't fail the whole reconciliation.
+describe("sendDueRestockAlerts", () => {
+  it("reports how many alerts the sweep sent", async () => {
+    mockRestock.mockResolvedValue({
+      status: "sent",
+      notified: 2,
+      unmatched: 1,
+      alreadyAlerted: 0,
+      items: [{ item: "Bow Fleece Soaker", notified: 2 }],
+    });
+
+    await expect(sendDueRestockAlerts()).resolves.toBe(2);
+    expect(mockRestock).toHaveBeenCalledWith();
+  });
+
+  it("swallows a failed sweep so the rest of the run still completes", async () => {
+    mockRestock.mockRejectedValue(new Error("notion down"));
+
+    await expect(sendDueRestockAlerts()).resolves.toBe(0);
   });
 });

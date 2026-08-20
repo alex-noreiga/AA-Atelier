@@ -20,6 +20,18 @@ function slugify(value: string): string {
   );
 }
 
+/**
+ * The shop card id a variant lands on — `group-<slug>` when it belongs to a
+ * `Website Group`, otherwise its own Notion page id. This is what `/shop/:productId`
+ * addresses, so it's exported for the restock alert's deep link: the two must
+ * agree or the email links to a card that doesn't exist.
+ */
+export function shopCardId(
+  variant: Pick<VariantRecord, "id" | "group">,
+): string {
+  return variant.group ? `group-${slugify(variant.group)}` : variant.id;
+}
+
 function toVariantRecord(variant: VariantRecord): ProductVariantRecord {
   const {
     category: _category,
@@ -74,7 +86,7 @@ export function groupVariants(
       let card = groups.get(variant.group);
       if (!card) {
         card = {
-          id: `group-${slugify(variant.group)}`,
+          id: shopCardId(variant),
           title: variant.group,
           category: variant.category,
           ...sizeGuideFields(
@@ -90,7 +102,7 @@ export function groupVariants(
       card.variants.push(toVariantRecord(variant));
     } else {
       cards.push({
-        id: variant.id,
+        id: shopCardId(variant),
         title: variant.name,
         category: variant.category,
         ...sizeGuideFields(variant.category, sizedCategories, soakerCategories),

@@ -7,7 +7,7 @@
  */
 
 /**
- * Which internal tool to run. Each names an action the atelier used to trigger by opening a shared-secret link from Notion.
+ * Which internal tool to run. Each names an action the atelier used to trigger by opening a shared-secret link from Notion — or, for `restock-alert`, one that would have needed such a link.
  */
 export type StudioTool = typeof StudioTool[keyof typeof StudioTool];
 
@@ -18,4 +18,5 @@ export const StudioTool = {
   'status-email': 'status-email',
   'cancellation-refund': 'cancellation-refund',
   'return-refund': 'return-refund',
+  'restock-alert': 'restock-alert',
 } as const;

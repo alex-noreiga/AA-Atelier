@@ -21,6 +21,9 @@ vi.mock("../../src/services/order-notification.service.js", () => ({
 vi.mock("../../src/services/order-cancellation.service.js", () => ({
   processCancellation: vi.fn(),
 }));
+vi.mock("../../src/services/restock-notification.service.js", () => ({
+  notifyRestock: vi.fn(),
+}));
 vi.mock("../../src/services/return-refund.service.js", async () => {
   const actual = await vi.importActual<
     typeof import("../../src/services/return-refund.service.js")
@@ -36,6 +39,7 @@ import { generateInvoiceLineItems } from "../../src/services/invoice-generator.s
 import { notifyOrderStageChange } from "../../src/services/order-notification.service.js";
 import { processCancellation } from "../../src/services/order-cancellation.service.js";
 import { processReturnRefund } from "../../src/services/return-refund.service.js";
+import { notifyRestock } from "../../src/services/restock-notification.service.js";
 import { BadRequestError, NotFoundError } from "../../src/lib/errors.js";
 
 const mockMilestones = vi.mocked(reconcileMilestones);
@@ -43,6 +47,7 @@ const mockInvoiceLines = vi.mocked(generateInvoiceLineItems);
 const mockNotify = vi.mocked(notifyOrderStageChange);
 const mockCancel = vi.mocked(processCancellation);
 const mockReturn = vi.mocked(processReturnRefund);
+const mockRestock = vi.mocked(notifyRestock);
 
 describe("runStudioTool — milestones", () => {
   it("reports what the reconciliation did, including the reminder passes", async () => {
@@ -51,6 +56,7 @@ describe("runStudioTool — milestones", () => {
       milestonesCreated: 12,
       remindersSent: 1,
       paymentRemindersSent: 2,
+      restockAlertsSent: 0,
     });
 
     const result = await runStudioTool("milestones");
@@ -64,12 +70,30 @@ describe("runStudioTool — milestones", () => {
     ]);
   });
 
+  // The reconciliation also sweeps back-in-stock alerts, so a run that did
+  // nothing but send those must still read as "ok", not "nothing to reconcile".
+  it("counts the back-in-stock sweep as work done", async () => {
+    mockMilestones.mockResolvedValue({
+      ordersProcessed: 0,
+      milestonesCreated: 0,
+      remindersSent: 0,
+      paymentRemindersSent: 0,
+      restockAlertsSent: 4,
+    });
+
+    const result = await runStudioTool("milestones");
+
+    expect(result.status).toBe("ok");
+    expect(result.details).toEqual(["Sent 4 back-in-stock alerts."]);
+  });
+
   it("is a noop when there was nothing to generate and nothing to send", async () => {
     mockMilestones.mockResolvedValue({
       ordersProcessed: 0,
       milestonesCreated: 0,
       remindersSent: 0,
       paymentRemindersSent: 0,
+      restockAlertsSent: 0,
     });
 
     const result = await runStudioTool("milestones");
@@ -84,6 +108,7 @@ describe("runStudioTool — milestones", () => {
       milestonesCreated: 0,
       remindersSent: 2,
       paymentRemindersSent: 0,
+      restockAlertsSent: 0,
     });
 
     const result = await runStudioTool("milestones");
@@ -380,5 +405,123 @@ describe("runStudioTool — return-refund", () => {
       runStudioTool("return-refund", { amount: 10 }),
     ).rejects.toBeInstanceOf(BadRequestError);
     expect(mockReturn).not.toHaveBeenCalled();
+  });
+});
+
+describe("runStudioTool — restock-alert", () => {
+  const swept = {
+    status: "sent" as const,
+    notified: 3,
+    unmatched: 0,
+    alreadyAlerted: 0,
+    items: [{ item: "Bow Fleece Soaker", notified: 3 }],
+  };
+
+  // Unlike every other tool this one takes no required argument: blank means
+  // "every piece currently in stock", which is what the nightly run does.
+  it("sweeps everything when no item is given", async () => {
+    mockRestock.mockResolvedValue(swept);
+
+    const result = await runStudioTool("restock-alert", {});
+
+    expect(mockRestock).toHaveBeenCalledWith({});
+    expect(result.status).toBe("ok");
+  });
+
+  it("scopes to one piece when named, trimming it", async () => {
+    mockRestock.mockResolvedValue({ ...swept, item: "Bow Fleece Soaker" });
+
+    await runStudioTool("restock-alert", { item: "  Bow Fleece Soaker  " });
+
+    expect(mockRestock).toHaveBeenCalledWith({ item: "Bow Fleece Soaker" });
+  });
+
+  it("reports the totals and breaks them down per piece", async () => {
+    mockRestock.mockResolvedValue({
+      ...swept,
+      notified: 4,
+      items: [
+        { item: "Bow Fleece Soaker", notified: 3 },
+        { item: "Blade Towel", notified: 1 },
+      ],
+    });
+
+    const result = await runStudioTool("restock-alert", {});
+
+    expect(result.status).toBe("ok");
+    expect(result.message).toContain("4 customers");
+    expect(result.message).toContain("2 pieces");
+    expect(result.details).toEqual([
+      "Bow Fleece Soaker: 3 customers.",
+      "Blade Towel: 1 customer.",
+    ]);
+  });
+
+  it("says who was already told and who is still waiting on a size", async () => {
+    mockRestock.mockResolvedValue({
+      ...swept,
+      notified: 1,
+      unmatched: 2,
+      alreadyAlerted: 5,
+      items: [{ item: "Bow Fleece Soaker", notified: 1 }],
+    });
+
+    const result = await runStudioTool("restock-alert", {});
+
+    expect(result.details).toEqual([
+      "Bow Fleece Soaker: 1 customer.",
+      "5 requests had already been answered.",
+      "2 requests still waiting — they asked about a size that isn't back yet.",
+    ]);
+  });
+
+  // The normal result of pressing it twice, and of a Status change that took a
+  // piece out of stock — neither must read as success.
+  it("is a noop with the reason when nothing was sent", async () => {
+    mockRestock.mockResolvedValue({
+      status: "skipped",
+      notified: 0,
+      unmatched: 0,
+      alreadyAlerted: 2,
+      items: [],
+      reason: "everyone waiting has already been told",
+    });
+
+    const result = await runStudioTool("restock-alert", {});
+
+    expect(result.status).toBe("noop");
+    expect(result.details[0]).toBe("everyone waiting has already been told");
+  });
+
+  // Nothing will ever send until someone configures it, so it isn't a noop.
+  it("asks for attention when there's nowhere to record who was told", async () => {
+    mockRestock.mockResolvedValue({
+      status: "unconfigured",
+      notified: 0,
+      unmatched: 0,
+      alreadyAlerted: 0,
+      items: [],
+      reason: "POSTGRES_URL isn't configured, so there's nowhere to record.",
+    });
+
+    const result = await runStudioTool("restock-alert", {});
+
+    expect(result.status).toBe("attention");
+    expect(result.details.join(" ")).toMatch(/POSTGRES_URL/);
+  });
+
+  it("turns a name that matches no piece into a 404", async () => {
+    mockRestock.mockResolvedValue({
+      status: "not_found",
+      notified: 0,
+      unmatched: 0,
+      alreadyAlerted: 0,
+      items: [],
+      item: "Nothing",
+    });
+
+    await expect(
+      runStudioTool("restock-alert", { item: "Nothing" }),
+    ).rejects.toBeInstanceOf(NotFoundError);
   });
 });

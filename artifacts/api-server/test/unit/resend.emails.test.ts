@@ -10,6 +10,7 @@ import {
   orderConfirmationEmail,
   contactAckEmail,
   backInStockConfirmationEmail,
+  backInStockAlertEmail,
   contactNotificationEmail,
   orderNotificationEmail,
   backInStockNotificationEmail,
@@ -759,5 +760,60 @@ describe("appointmentChangeNotificationEmail", () => {
       "cancelled",
     );
     expect(cancelled.subject).toMatch(/cancelled/i);
+  });
+});
+
+describe("backInStockAlertEmail", () => {
+  it("names the piece in the subject and body", () => {
+    const email = backInStockAlertEmail({
+      email: "grace@example.com",
+      item: "Bow Fleece Soaker — Black",
+    });
+
+    expect(email.to).toBe("grace@example.com");
+    expect(email.subject).toBe("Back in stock: Bow Fleece Soaker — Black");
+    expect(email.html).toContain("Bow Fleece Soaker — Black");
+    expect(email.text).toContain("Bow Fleece Soaker — Black");
+  });
+
+  it("appends the size the customer asked about, like the request confirmation", () => {
+    const email = backInStockAlertEmail({
+      email: "grace@example.com",
+      item: "Bow Fleece Soaker — Black",
+      size: "M",
+    });
+
+    expect(email.subject).toBe("Back in stock: Bow Fleece Soaker — Black — M");
+  });
+
+  it("renders the shop button when a product URL is supplied", () => {
+    const email = backInStockAlertEmail({
+      email: "grace@example.com",
+      item: "Soaker",
+      productUrl: "https://a3iceanddance.com/shop/inv-1",
+    });
+
+    expect(email.html).toContain("View it in the shop");
+    expect(email.html).toContain("https://a3iceanddance.com/shop/inv-1");
+    expect(email.text).toContain("https://a3iceanddance.com/shop/inv-1");
+  });
+
+  it("omits the button entirely when there is no URL", () => {
+    const email = backInStockAlertEmail({
+      email: "grace@example.com",
+      item: "Soaker",
+    });
+
+    expect(email.html).not.toContain("View it in the shop");
+    expect(email.text).not.toContain("View it in the shop");
+  });
+
+  it("escapes an item name carrying markup", () => {
+    const email = backInStockAlertEmail({
+      email: "grace@example.com",
+      item: "<b>Soaker</b>",
+    });
+
+    expect(email.html).toContain("&lt;b&gt;Soaker&lt;/b&gt;");
   });
 });

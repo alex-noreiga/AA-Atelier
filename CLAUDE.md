@@ -1578,6 +1578,91 @@ unknown stages). Code: `orderStageChangeEmail` in `lib/resend/emails.ts` (the te
   `lib/notion/orders.repository.ts`, `services/order-notification.service.ts`, and
   `routes/order-notification.ts`.
 
+## Back-in-stock alerts (nightly sweep + a studio tool)
+
+`POST /api/notify` captures a "tell me when this returns" request and acknowledges it,
+but for a long time nothing closed the loop. It now does: when a piece is back in stock,
+everyone waiting on it is emailed. The notable thing about the design is what it does
+**not** need — **no Notion automation, no webhook, and no property added to any Notion
+database.** A restock is an edit inside Notion with nothing to hang a trigger off, so
+rather than asking the atelier to wire one, this runs on the two triggers the app
+already owns.
+
+1. **Two triggers, one sweep.** `notifyRestock` (`services/restock-notification.service.ts`)
+   is called by the **nightly reconciliation cron** (`sendDueRestockAlerts` in
+   `services/schedule.service.ts`, alongside the fitting- and payment-reminder passes)
+   and by the studio dashboard's **"Send back-in-stock alerts"** tool
+   (`POST /api/studio/tools/restock-alert`, `requireStaff`), for going out the same day
+   a piece is restocked rather than waiting for the night. It is a **sweep**, not a
+   per-row handler: it reads live inventory, takes every piece currently available, and
+   answers the requests waiting on them. The tool's optional `item` only **narrows which
+   pieces are considered** — blank sweeps everything, which is exactly what the cron does.
+
+2. **Availability is read, never asserted.** No caller ever says "this is in stock"; the
+   sweep reads inventory and decides. It reads it **fresh** — `listVariants(client,
+{ fresh: true })` bypasses the shop's 60s cache read (still refreshing it), because a
+   cached read could report a piece sold out for up to a minute after the atelier
+   restocked it, which on a manual run reads as the feature being broken. A piece that
+   isn't published (`Show on website`) has no shop page to send anyone to, so it never
+   appears in the sweep at all.
+
+3. **Matching is by the inventory row's own name, and per-size.** A request stores
+   `Item` = the variant's `Item Name` (the shop passes `variant.name` into the notify
+   dialog), so `findPendingBackInStockRequests` reads every `Request type = "Back in
+stock"` row (through the bounded `scanDatabase`) and the sweep groups them by that
+   text. Consequence: **renaming an inventory item orphans requests filed under the old
+   name.** The per-request gate is the pure `restockSatisfiesRequest`
+   (`services/restock.ts`): a request with no size is answered by the piece returning; a
+   request naming a size is answered only when **that band** is back (`Sizes Available`);
+   a row that tracks no bands can only be answered whole. It **fails closed** — a band
+   that has since been dropped doesn't count — because a wrong "it's back!" sends a
+   customer to a sold-out page, while a missed one leaves the request in the queue.
+
+4. **"Already told" is an app-owned fact in Postgres, not a Notion checkbox.** The
+   `restock_alerts` table (`supabase/migrations/0003_restock_alerts.sql`,
+   `lib/db/restock-alerts.repository.ts`) holds one row per answered request, keyed on
+   the request's Notion **page id** — so someone who asked about two sizes is answered
+   about each. `claimRestockAlert` is `insert … on conflict do nothing`, the same atomic
+   claim `processed_payments` uses, so the nightly sweep and a dashboard press can
+   overlap without double-emailing. Unlike a payment there is **no confirm/release
+   cycle**: the worst case of a claim that never leads to a send is one lost alert, and
+   that is the safe direction. Consequently a claim **error** is treated as "not
+   claimed" and the send is skipped — an unrecorded alert would repeat on the next run.
+   Keeping this out of Notion is what removes the last setup step, and it can't be
+   un-ticked by hand into a second email. A request the restock doesn't answer is
+   deliberately **never claimed**, so it stays in the queue.
+
+5. **`POSTGRES_URL` is the one hard requirement, and it fails loudly.** Everywhere else
+   the Postgres layer degrades to the pre-Postgres behavior; here there is no such
+   fallback, because without somewhere to record who has been told a nightly sweep would
+   email the same people every night. Unset ⇒ the sweep no-ops with a `warn`, and the
+   studio tool reports **`attention`** (not `noop`) with what to fix — nothing will ever
+   send until it is.
+
+6. **Customer email only + best-effort.** It sends from the **orders** sender
+   (`fromAddress("orders")`, the same category as the request acknowledgement) and a
+   Resend failure is logged-and-swallowed. Deliberately **no** internal atelier
+   notification — the run reports what it did to whoever started it (the cron's JSON, or
+   the dashboard's result panel, which breaks the count down per piece). The email's shop
+   button uses `PUBLIC_BASE_URL` + `shopCardId()` (exported from `products.service.ts` so
+   the link can't drift from the id `/shop/:productId` actually addresses) and is omitted
+   when unset.
+
+**No new env vars, and nothing to configure in Notion.** The one setup step is running
+the database migrations (`pnpm --filter @workspace/api-server db:migrate`, or the
+`migrate.yml` workflow) so `restock_alerts` exists — the same out-of-band step the rest
+of the Postgres layer already needs. Known limit: because there is no marker in Notion,
+the sweep reconsiders every back-in-stock request ever filed, so a request from long ago
+is answered if its piece returns; delete stale rows in the contact inbox if that isn't
+wanted.
+
+Code: `services/restock-notification.service.ts`, `services/restock.ts`,
+`sendDueRestockAlerts` in `services/schedule.service.ts`, `backInStockAlertEmail` in
+`lib/resend/emails.ts`, `findPendingBackInStockRequests` in
+`lib/notion/notify.repository.ts`, `claimRestockAlert` in
+`lib/db/restock-alerts.repository.ts`, and the `restock-alert` runner in
+`services/studio-tools.service.ts` + its card in `web-app/src/components/studio-tools.tsx`.
+
 ## Appointment scheduling (real-time slot booking)
 
 Customers book appointments (consultations, fittings, design reviews, general)
@@ -2910,6 +2995,7 @@ keys on exact property names). Recorded here only because two facts are
 | Change invoice line-item generation (from costing)       | `api-server/src/services/invoice-generator.service.ts` + the `invoice-lines` studio tool (`services/studio-tools.service.ts`) + `lib/notion/costing.{schema,repository}.ts` + `lib/notion/invoice-line-items.blocks.ts` + `createInvoiceLineItem`/`setInvoiceTitle` in `lib/notion/invoice.repository.ts`                                                                                                                                                                                                                                                                                                                                                                                     |
 | Change production-schedule milestones                    | `api-server/src/services/schedule.service.ts` + `routes/cron.ts` + `lib/notion/production-schedule.{blocks,repository}.ts` + `lib/notion/orders.repository.ts` (`findOrdersNeedingMilestones`/`markMilestonesGenerated`); cron in `vercel.json`                                                                                                                                                                                                                                                                                                                                                                                                                                               |
 | Change order status-change emails (+ pipeline graphic)   | `api-server/src/lib/resend/emails.ts` (`orderStageChangeEmail`) + `services/order-notification.service.ts` + `routes/order-notification.ts` + `lib/notion/orders.repository.ts` (`findOrderForStageNotification`); Notion automation → `POST /api/webhooks/notion-stage-change`; on-demand send via the `status-email` studio tool                                                                                                                                                                                                                                                                                                                                                            |
+| Change back-in-stock alerts                              | `services/restock-notification.service.ts` + `services/restock.ts` + `sendDueRestockAlerts` in `services/schedule.service.ts` + `claimRestockAlert` in `lib/db/restock-alerts.repository.ts` + `findPendingBackInStockRequests` in `lib/notion/notify.repository.ts`; the on-demand run is the `restock-alert` studio tool                                                                                                                                                                                                                                                                                                                                                                    |
 | Change automated fitting reminders                       | `api-server/src/services/schedule.service.ts` (`sendDueFittingReminders`) + `services/fitting-reminder.ts` (env business rule) + `lib/notion/production-schedule.{blocks,repository}.ts` (`findMilestonesNeedingFittingReminder`/`markFittingReminderSent`, `Reminder Sent` prop) + `fittingReminderEmail` in `lib/resend/emails.ts`; runs in the milestone cron                                                                                                                                                                                                                                                                                                                              |
 | Change payment & deposit due reminders                   | `api-server/src/services/schedule.service.ts` (`sendDuePaymentReminders`) + `services/payment-reminder.ts` (env business rule) + `lib/notion/invoice.repository.ts` (`findInvoicesNeedingPaymentReminder`/`markPaymentStageReminded`) + `extractPaymentReminderInvoice` + `PAYMENT_STAGE_REMINDER_FIELDS` in `lib/notion/invoice.schema.ts` + `paymentReminderEmail` in `lib/resend/emails.ts`; runs in the milestone cron                                                                                                                                                                                                                                                                    |
 | Change appointment booking (UI)                          | `artifacts/web-app/src/pages/appointments.tsx`                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                |
