@@ -44,10 +44,15 @@ async function fillMeasurements(user: ReturnType<typeof userEvent.setup>) {
   await user.type(byId("bodyGirth"), String(order.bodyGirth));
 }
 
-// The intake is a two-step flow; the final "Submit Order" lives on the colors
-// step, so advance past the (optional) color selector first.
-async function continueToColors(user: ReturnType<typeof userEvent.setup>) {
-  await user.click(screen.getByRole("button", { name: /continue to colors/i }));
+// The intake is a three-step flow; the final "Submit Order" lives on the last
+// (timeline) step, so skip past the two optional steps first.
+async function continueToSubmit(user: ReturnType<typeof userEvent.setup>) {
+  await user.click(
+    screen.getByRole("button", { name: /continue to your design/i }),
+  );
+  await user.click(
+    await screen.findByRole("button", { name: /continue to timeline/i }),
+  );
   await screen.findByRole("button", { name: "Submit Order" });
 }
 
@@ -57,7 +62,7 @@ describe("OrderForm confirmation screen", () => {
     render(<OrderForm />);
     await fillContact(user);
     await fillMeasurements(user);
-    await continueToColors(user);
+    await continueToSubmit(user);
     await user.click(screen.getByRole("button", { name: "Submit Order" }));
 
     await waitFor(() =>
@@ -81,7 +86,7 @@ describe("OrderForm confirmation screen", () => {
     await user.click(
       screen.getByRole("button", { name: "Take them at an appointment" }),
     );
-    await continueToColors(user);
+    await continueToSubmit(user);
     await user.click(screen.getByRole("button", { name: "Submit Order" }));
 
     await waitFor(() =>
