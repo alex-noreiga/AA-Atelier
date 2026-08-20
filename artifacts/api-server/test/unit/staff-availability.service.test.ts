@@ -1,10 +1,10 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 
-vi.mock("../../src/lib/notion/staff-availability.repository.js", () => ({
+vi.mock("../../src/lib/db/staff-availability.repository.js", () => ({
   listStaffAvailability: vi.fn(),
   createStaffAvailability: vi.fn(),
   updateStaffAvailability: vi.fn(),
-  archiveStaffAvailability: vi.fn(),
+  deleteStaffAvailability: vi.fn(),
 }));
 
 import {
@@ -18,13 +18,13 @@ import {
   listStaffAvailability,
   createStaffAvailability,
   updateStaffAvailability,
-  archiveStaffAvailability,
-} from "../../src/lib/notion/staff-availability.repository.js";
+  deleteStaffAvailability,
+} from "../../src/lib/db/staff-availability.repository.js";
 
 const mockList = vi.mocked(listStaffAvailability);
 const mockCreate = vi.mocked(createStaffAvailability);
 const mockUpdate = vi.mocked(updateStaffAvailability);
-const mockArchive = vi.mocked(archiveStaffAvailability);
+const mockDelete = vi.mocked(deleteStaffAvailability);
 
 const INPUT = {
   staff: "Alexandra",
@@ -38,7 +38,7 @@ const INPUT = {
 beforeEach(() => {
   mockCreate.mockImplementation(async (entry) => ({ id: "row-1", ...entry }));
   mockUpdate.mockImplementation(async (id, entry) => ({ id, ...entry }));
-  mockArchive.mockResolvedValue(true);
+  mockDelete.mockResolvedValue(true);
 });
 
 describe("bookableStaff", () => {
@@ -57,7 +57,7 @@ describe("getStaffAvailability", () => {
         weekdays: ["Wednesday", "Monday"],
         start: "10:00",
         end: "17:00",
-        locations: ["In person"],
+        locations: ["in-person"],
       },
     ]);
 
@@ -87,7 +87,7 @@ describe("getStaffAvailability", () => {
         weekdays: ["Monday", "Someday"],
         start: "10:00",
         end: "17:00",
-        locations: ["In person", "carrier pigeon"],
+        locations: ["in-person", "carrier pigeon"],
       },
     ]);
     const { entries } = await getStaffAvailability();
@@ -110,8 +110,7 @@ describe("addStaffAvailability", () => {
       weekdays: ["Monday", "Wednesday"],
       start: "10:00",
       end: "17:00",
-      // Stored as the atelier's own labels, read back as ids.
-      locations: ["In person", "Virtual"],
+      locations: ["in-person", "virtual"],
     });
     expect(entry).toMatchObject({
       id: "row-1",
@@ -177,11 +176,11 @@ describe("editStaffAvailability", () => {
 describe("removeStaffAvailability", () => {
   it("removes the entry", async () => {
     await removeStaffAvailability("row-1");
-    expect(mockArchive).toHaveBeenCalledWith("row-1");
+    expect(mockDelete).toHaveBeenCalledWith("row-1");
   });
 
   it("reports a row that has since been deleted", async () => {
-    mockArchive.mockResolvedValue(false);
+    mockDelete.mockResolvedValue(false);
     await expect(removeStaffAvailability("row-gone")).rejects.toThrow(
       /no longer exists/,
     );

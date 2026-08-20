@@ -275,9 +275,9 @@ Express app (artifacts/api-server)  ──►  Notion REST API (orders database)
   │                                  plus the staff they may be assigned to.
   │                                  POST / PUT / DELETE the same path add,
   │                                  replace and remove one block of hours. Same
-  │                                  staff gate as the figures above; this
-  │                                  replaced the Google Sheet the schedule used
-  │                                  to live in
+  │                                  staff gate as the figures above; the
+  │                                  `staff_availability` table replaced the
+  │                                  Google Sheet the schedule used to live in
   └─ POST /api/studio/tools/:tool  → the atelier's five internal actions, run from
                                      the signed-in studio dashboard: milestone
                                      reconciliation (`milestones`, the same sweep
@@ -1625,9 +1625,9 @@ in `api-server/src/lib/appointments/*` (pure logic + config),
 2. **Working hours are edited on the dashboard; conflicts are Google free/busy.**
    `computeSlots` (`lib/appointments/availability.ts`, pure + heavily unit-tested)
    needs a _positive_ grid of open hours, which Google free/busy can't give (it
-   only says when someone is _busy_). That grid comes from the **"Staff
-   Availability" Notion database** the atelier edits on `/studio` (no redeploy) —
-   see "Staff availability, edited on the dashboard" below.
+   only says when someone is _busy_). That grid is the **`staff_availability`
+   Postgres table** the atelier edits on `/studio` (no redeploy) — see "Staff
+   availability, edited on the dashboard" below.
    `lib/appointments/schedule.ts` is the seam everything reads it through (the
    repository owns the fetch + its 60s cache + fallback; `buildSchedule` in
    `lib/appointments/staff.ts` is the pure mapper). The _subtractive_ side — every busy interval,
@@ -1725,52 +1725,56 @@ here): it needs a new cron doing a net-new `events.list`-by-window plus a per-ev
 
 The studio's **standing working hours** — the positive grid every offered
 appointment slot is computed from, before Google free/busy carves the exceptions
-out of it — live in a **"Staff Availability" Notion database**
-(`NOTION_STAFF_AVAILABILITY_DATABASE_ID`) and are edited from `/studio` →
-**Working hours**. This is the roadmap's "Staff availability on the studio
+out of it — live in the **`staff_availability` Postgres table**
+(`supabase/migrations/0002_staff_availability.sql`) and are edited from `/studio`
+→ **Working hours**. This is the roadmap's "Staff availability on the studio
 dashboard": it retired the Google **Sheet** the schedule used to live in, the
 **Sheets API**, its scope, and the **service-account share** of that sheet.
-Code: `lib/notion/staff-availability.{schema,blocks,repository}.ts`,
-`lib/appointments/schedule.ts` (the read seam), `buildSchedule` in
-`lib/appointments/staff.ts` (the pure mapper), `services/staff-availability.service.ts`,
-the four `/studio/availability` routes in `routes/studio.ts`, and
+Code: `lib/db/staff-availability.repository.ts`, `lib/appointments/schedule.ts`
+(the read seam), `buildSchedule` in `lib/appointments/staff.ts` (the pure
+mapper), `services/staff-availability.service.ts`, the four
+`/studio/availability` routes in `routes/studio.ts`, and
 `web-app/src/components/studio-availability.tsx`. Load-bearing decisions:
 
-1. **The typed editor is the point, not the storage.** A spreadsheet accepts
-   anything typed into a cell: a mistyped staff name, an end before a start, or a
-   location spelled some other way produced **no error and no hours** — the day
-   simply stopped being offered, silently. So every write goes through
+1. **The typed editor is the point.** A spreadsheet accepts anything typed into a
+   cell: a mistyped staff name, an end before a start, or a location spelled some
+   other way produced **no error and no hours** — the day simply stopped being
+   offered, silently. So every write goes through
    `staff-availability.service.ts`, which refuses (with a reason the dashboard
    shows verbatim) a staff name the appointment catalog doesn't route to, a range
    that ends before it begins, and a row left with no weekday or location after
-   normalization — and stores what it accepts **canonically** (weekdays in week
-   order, locations as the atelier's own labels). The editor asks for staff as a
-   picker fed by the server's own list, days and locations as toggles, and times
-   as `time` inputs, so most of those refusals are unreachable from the UI at all.
+   normalization. The editor asks for staff as a picker fed by the server's own
+   list, days and locations as toggles, and times as `time` inputs, so most of
+   those refusals are unreachable from the UI at all.
 
-2. **Notion, because it's the workspace the atelier already edits — but the
-   dashboard is the editor.** Storing it in Notion keeps the app's "no database
-   of our own for atelier-editable config" line (the same live-read + **60s TTL
-   cache + fall-back-to-cache-on-error** shape as stages, categories, and Studio
-   Settings), and a Notion outage degrades booking to _slightly stale hours_
-   rather than _no hours_. A row can still be hand-edited in Notion, so the mapper
-   stays tolerant — `Mon` reads as Monday, `In person` as `in-person`, and an
-   entry it can't make sense of is skipped rather than failing every other staff
-   member's hours. The dashboard shows a hand-edited row as **what it will
-   actually do**, not what it says.
+2. **Postgres, because this is app-owned config — not the atelier's workspace.**
+   It briefly lived in a Notion database (the same live-read shape as stages,
+   categories, and Studio Settings), but those are things the atelier manages as
+   part of its own Notion workflow, and this isn't: the dashboard is the only
+   writer and nothing else reads it. Moving it here also puts the rules in the
+   **DDL** rather than only in application code — `time` columns instead of
+   `HH:MM` text (Notion has no time property), `check (end_time > start_time)` so
+   inverted hours are unrepresentable, and array constraints so a row can't hold
+   a weekday or location the slot calculator would skip. It removes the Notion
+   API from the booking path (a few hundred ms and a ~3 req/s rate limit) and
+   removes the hand-edit drift the Notion version had to tolerate.
 
-3. **Required, and it fails loudly.** Unlike the optional integrations, an unset
-   `NOTION_STAFF_AVAILABILITY_DATABASE_ID` throws a pointed error rather than
-   degrading to empty — the same contract the retired `APPOINTMENT_SHEET_ID` had,
-   because "no working hours" and "no configuration" look identical from the
-   booking page and only one of them is a bug. An **empty** database is legitimate
-   (the atelier hasn't set hours yet), and the editor says plainly that no times
-   are being offered.
+3. **This is the one Postgres table the app can't degrade without.** The other
+   three hold facts with a Notion fallback; here "no working hours" and "no
+   database configured" look identical from the booking page and only one is a
+   bug — so the read **throws a pointed error** when `POSTGRES_URL` is unset,
+   the same contract the Notion database and the sheet before it had.
+   **`POSTGRES_URL` is therefore required for appointment booking**, while
+   staying optional for everything else in `lib/db/`. An **empty** table is
+   legitimate (the atelier hasn't set hours yet), and the editor says plainly
+   that no times are being offered.
 
-4. **Notion has no time property**, so `Start`/`End` are **rich_text** holding
-   24-hour `HH:MM`, parsed by the same `parseTimeToMinutes` every other clock
-   value goes through. Legible in Notion, and a minutes-past-midnight number
-   would not be.
+4. **Cached, for the reason the earlier homes were.** The schedule changes rarely
+   and is read on every availability query and booking re-check, so the
+   repository keeps the **60s TTL + fall-back-to-cache-on-error**: a database
+   blip degrades booking to _slightly stale hours_ rather than _no hours_. Writes
+   bust the cache, since editing hours and not seeing them for another minute
+   reads as the save having failed.
 
 5. **Same staff gate as the rest of the dashboard, and it replaced a share.**
    The four operations (`GET`/`POST` `/studio/availability`, `PUT`/`DELETE`
@@ -1779,27 +1783,23 @@ the four `/studio/availability` routes in `routes/studio.ts`, and
    schedule is written — which is what took the place of sharing a spreadsheet
    with a service account. Contract-first (in `openapi.yaml` + generated hooks),
    like the studio tools. An update **replaces the whole entry** rather than
-   patching fields, so it and the create validate identically. A delete
-   **archives** the Notion page (what Notion's own "Delete" does), so it lands in
-   the workspace trash and is recoverable; a write **busts the read cache**, since
-   editing hours and not seeing them for another minute reads as the save having
-   failed.
+   patching fields, so it and the create validate identically. `entryId` is a
+   `uuid`, so the repository screens the id's shape before querying — a junk id
+   is a 404 rather than a driver error surfacing as a 500.
 
-6. **A day off is still a calendar event.** This database is the standing week;
+6. **A day off is still a calendar event.** This table is the standing week;
    `timeOff` remains permanently empty and every exception comes from FreeBusy, as
    before. Bookings already made inside hours that are later removed are
-   untouched — they live on the staff calendar.
+   untouched — they live on the staff calendar, which this table never governed.
 
-The atelier's one-time setup: create the **Staff Availability** database with
-`Staff` (title), `Calendar Email` (email), `Weekdays` (multi-select), `Start`
-(text), `End` (text), `Locations` (multi-select); share the Notion integration
-with it; set `NOTION_STAFF_AVAILABILITY_DATABASE_ID`; then re-enter the hours
-from the old sheet under `/studio` → **Working hours** (a handful of rows — there
-is deliberately no importer, since keeping one would mean keeping the Sheets
-adapter this card retired). Afterwards, `APPOINTMENT_SHEET_ID` /
-`APPOINTMENT_SHEET_RANGE` can be deleted from Vercel, the Sheets API disabled on
-the Google Cloud project, and the sheet unshared from the service account. Full
-walkthrough in `SETUP.md` (Part C).
+The atelier's one-time setup: run `pnpm --filter @workspace/api-server db:migrate`
+(the manual **DB migrate** GitHub Action) against `POSTGRES_URL_NON_POOLING` to
+create the table, then enter the hours under `/studio` → **Working hours**. There
+is deliberately no importer from the old sheet — it is a handful of rows, and
+keeping one would have meant keeping the Sheets adapter this card retired.
+Afterwards, `APPOINTMENT_SHEET_ID` / `APPOINTMENT_SHEET_RANGE` can be deleted
+from Vercel, the Sheets API disabled on the Google Cloud project, and the sheet
+unshared from the service account. Full walkthrough in `SETUP.md` (Part C).
 
 ## Customer account portal (Supabase Auth)
 
@@ -2206,22 +2206,24 @@ the Notion automation sends it, rotating costs one env var and one automation
 header. No new env var is needed — the tools reuse the `STUDIO_STAFF_EMAILS`
 allowlist the dashboard already has.
 
-## Postgres (payment idempotency + a provisioned read-model)
+## Postgres (payment idempotency, the portal index, working hours)
 
 The other half of the Phase-3 "Supabase: accounts + **a real database**" work is a
 small **Postgres integrity layer**, provided by the same Supabase project. Notion
-stays the record for the order lifecycle; Postgres holds only **app-owned,
-integrity-bearing facts** that Notion can't enforce. It's **optional and
-degrade-safe**: unset `POSTGRES_URL` ⇒ `postgresConfigured()` is false and every
-caller falls back to the pre-Postgres behavior. Adapter: `lib/db/client.ts` (lazy
+stays the record for the order lifecycle; Postgres holds only **app-owned facts**
+that Notion can't enforce or shouldn't own. It is **optional and degrade-safe**
+everywhere except the working hours: unset `POSTGRES_URL` ⇒ `postgresConfigured()`
+is false and every other caller falls back to the pre-Postgres behavior, while
+`staff_availability` throws (point 3) because a silently empty schedule and an
+unconfigured database are indistinguishable from the booking page. Adapter: `lib/db/client.ts` (lazy
 first-use env read, the narrow injectable `DbClient` seam — `query` + `end` — so
 repos are driver-agnostic and fakeable like `NotionClient`; test seams
 `__setDbForTests` / `__resetDb`). Load-bearing points:
 
-1. **Three tables are wired today.** The single migration
-   (`supabase/migrations/0001_init.sql`) provisions four tables —
-   `schema_migrations`, `clients`, `order_index`, `processed_payments`. All three
-   data tables have a repository and callers: `processed_payments` for Stripe
+1. **Four tables are wired today.** `0001_init.sql` provisions
+   `schema_migrations`, `clients`, `order_index` and `processed_payments`;
+   `0002_staff_availability.sql` adds `staff_availability` (point 3). The data
+   tables all have a repository and callers: `processed_payments` for Stripe
    idempotency (below), and `clients` + `order_index` as the email-keyed
    customer/order discovery index for the account portal — written **best-effort**
    on order/checkout (`upsertClientIndex` / `writeOrderIndex`, from
@@ -2245,7 +2247,17 @@ conflict (stripe_session_id) do nothing`, returning `claimed` / `done` /
    recording a paid order. **Custom-order payments don't use it** (their
    `recordPayment` is idempotent via the Notion invoice write alone).
 
-3. **Pooled at runtime, direct for migrations; never in the deploy path.** The
+3. **`staff_availability` is the studio's standing working hours — and the one
+   table with no fallback.** It is app-owned config rather than an integrity
+   fact: the studio dashboard is its only writer, the booking slot calculator its
+   only reader, and the DDL carries the rules (`time` columns, `check (end_time >
+start_time)`, weekday/location array constraints) that used to live only in
+   application code when this was a Notion database and a Google Sheet before
+   that. Read through `lib/appointments/schedule.ts` with the usual 60s cache +
+   fall-back-to-cache-on-error, so a database blip means slightly stale hours
+   rather than none. See "Staff availability, edited on the dashboard".
+
+4. **Pooled at runtime, direct for migrations; never in the deploy path.** The
    running app reads the **pooled** `POSTGRES_URL` (Supabase PgBouncer, transaction
    mode) with `prepare: false, max: 1, idle_timeout: 20` (each warm serverless
    instance holds its own tiny pool feeding the shared pooler). Migrations run
@@ -2572,10 +2584,11 @@ and in the maintainer's env without edits.
 - **Notion is the system of record; Postgres is a thin integrity layer.** Orders,
   inventory, invoices, and the like all live in Notion — there is no ORM and no
   Drizzle (an early `drizzle-orm` scaffold was removed). The one relational store
-  is the optional Supabase Postgres layer (`lib/db/`, the porsager `postgres`
-  driver, raw SQL via the narrow `DbClient` seam), which holds only app-owned
-  integrity facts (today: `processed_payments` for Stripe idempotency) and
-  degrades to no-op when unconfigured. See "Postgres".
+  is the Supabase Postgres layer (`lib/db/`, the porsager `postgres` driver, raw
+  SQL via the narrow `DbClient` seam), which holds app-owned facts Notion can't
+  enforce or shouldn't own — Stripe payment dedup, the account portal's discovery
+  index, and the studio's working hours. It degrades to no-op when unconfigured
+  except for those working hours, which booking needs. See "Postgres".
 - **Dependencies are pruned — keep them that way.** The repo shipped an unpruned
   shadcn/Replit scaffold: 43 of 55 `ui/` components and 32 frontend deps were dead
   weight (`react-icons` alone was 85M). They were deleted. When you add a shadcn
@@ -2617,10 +2630,7 @@ and in the maintainer's env without edits.
   the invoice line-item generator reads to itemize an order from its costing —
   and `NOTION_REVIEWS_DATABASE_ID` (the "Reviews" database the post-delivery
   review capture writes customer reviews to; required for that feature — the
-  review endpoint errors if unset), and `NOTION_STAFF_AVAILABILITY_DATABASE_ID`
-  (the "Staff Availability" database holding the studio's standing working hours,
-  edited on the studio dashboard; required for appointment booking — with no
-  hours on record there are no slots to offer).
+  review endpoint errors if unset).
   The Notion integration must be shared with each database or queries 404. The
   production-schedule cron also needs `CRON_SECRET` (the bearer token Vercel Cron
   sends to `GET /api/cron/generate-milestones`; unset ⇒ that endpoint 401s). It is
@@ -2651,10 +2661,11 @@ and in the maintainer's env without edits.
   Tracking Pipeline database. **Appointment scheduling** needs `GOOGLE_SERVICE_ACCOUNT_KEY` (the full
   service-account JSON key, with domain-wide delegation authorized for the
   Calendar scope; enable the Calendar API) for conflicts and bookings, plus
-  `NOTION_STAFF_AVAILABILITY_DATABASE_ID` (the "Staff Availability" database
-  holding the standing working hours, edited on the studio dashboard — required,
-  and it replaced the Google Sheet the schedule used to live in; see "Staff
-  availability, edited on the dashboard"). Checkout also
+  **`POSTGRES_URL`** — the standing working hours are the `staff_availability`
+  table, edited on the studio dashboard, so booking is the one feature that
+  makes the otherwise-optional Postgres layer required (see "Staff availability,
+  edited on the dashboard"; it replaced the Google Sheet the schedule used to
+  live in). Checkout also
   needs `STRIPE_SECRET_KEY`, `STRIPE_WEBHOOK_SECRET` (the signing secret of the
   Stripe webhook endpoint), and `PUBLIC_BASE_URL` (the site origin Stripe
   redirects back to after payment — also the Supabase Auth redirect origin). The
@@ -2665,11 +2676,13 @@ and in the maintainer's env without edits.
     `/account/overview` 401s). `SESSION_SECRET` is still required — it now signs only
     the appointment manage-link token (unset ⇒ those links are omitted). No database
     of our own for the portal (it reads the customer's existing Notion orders by
-    email). Optionally, the **Supabase Postgres** integrity layer: `POSTGRES_URL`
+    email). The **Supabase Postgres** layer: `POSTGRES_URL`
     (pooled, runtime) + `POSTGRES_URL_NON_POOLING` (direct, migrations only) — also
-    from the Supabase integration; unset ⇒ the layer no-ops (Stripe idempotency falls
-    back to the Notion read-before-write dedup). Run `pnpm --filter
-@workspace/api-server db:migrate` once to create its tables (see "Postgres").
+    from the Supabase integration. Unset ⇒ most of the layer no-ops (Stripe
+    idempotency falls back to the Notion read-before-write dedup), but the studio's
+    working hours have no fallback, so **appointment booking requires it**. Run
+    `pnpm --filter @workspace/api-server db:migrate` once to create its tables (see
+    "Postgres").
     Optionally, `STRIPE_SHIPPING_RATE_IDS` — a
     comma-separated list of Stripe Shipping Rate ids (`shr_…`) to offer at shop
     checkout (unset ⇒ no shipping charged, i.e. no shipping options appear at
@@ -2915,7 +2928,7 @@ keys on exact property names). Recorded here only because two facts are
 | Change appointment booking (UI)                          | `artifacts/web-app/src/pages/appointments.tsx`                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                |
 | Change appointment reschedule / cancel                   | `artifacts/web-app/src/pages/appointment-manage.tsx` (+ shared `lib/appointment-format.ts`); `api-server/src/services/appointment-manage.service.ts` + `routes/appointments.ts` (`/appointments/manage`, `/reschedule`, `/cancel`) + `lib/google/calendar.repository.ts` (`getCalendarEvent`/`updateCalendarEvent`/`cancelCalendarEvent`) + the reschedule/cancel builders in `lib/resend/emails.ts`; token `"appointment"` purpose in `lib/auth/tokens.ts`                                                                                                                                                                                                                                   |
 | Change appointment types / routing rules                 | `api-server/src/lib/appointments/catalog.ts` (targeted business rule — durations, which staff, which locations)                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                               |
-| Change staff working hours / calendars                   | `/studio` → **Working hours** (`web-app/src/components/studio-availability.tsx`); `api-server/src/services/staff-availability.service.ts` + the `/studio/availability` routes in `routes/studio.ts` + `lib/notion/staff-availability.{schema,blocks,repository}.ts`, read through `lib/appointments/schedule.ts` and mapped by `buildSchedule` in `lib/appointments/staff.ts`                                                                                                                                                                                                                                                                                                                 |
+| Change staff working hours / calendars                   | `/studio` → **Working hours** (`web-app/src/components/studio-availability.tsx`); `api-server/src/services/staff-availability.service.ts` + the `/studio/availability` routes in `routes/studio.ts` + `lib/db/staff-availability.repository.ts` (table in `supabase/migrations/0002_staff_availability.sql`), read through `lib/appointments/schedule.ts` and mapped by `buildSchedule` in `lib/appointments/staff.ts`                                                                                                                                                                                                                                                                        |
 | Change appointment slot logic / policy                   | `api-server/src/lib/appointments/availability.ts` (`computeSlots`) + `time.ts` + `settings.ts`; `services/appointments.service.ts` + `routes/appointments.ts` + `lib/google/*` (Calendar free/busy + event insert)                                                                                                                                                                                                                                                                                                                                                                                                                                                                            |
 | Change who can see the Dashboard nav link                | `web-app/src/lib/studio-access.ts` (the probe) + `useNavLinks()` / `DASHBOARD_LINK` in `components/navbar.tsx` (where it renders, in Account's place) + the staff hand-off in `pages/account.tsx` + the `/studio/access` route in `api-server/src/routes/studio.ts`; the gate itself is `requireStaff` (`middlewares/auth.ts`) + `lib/staff.ts`                                                                                                                                                                                                                                                                                                                                               |
 | Change the customer account portal (Supabase Auth)       | `artifacts/web-app/src/pages/account.tsx` (+ `components/appointment-manage-panel.tsx`, shared with `pages/appointment-manage.tsx`) + `pages/account-login.tsx` / `account-callback.tsx` / `account-reset.tsx` + `lib/supabase.ts` + `lib/auth-context.tsx` (frontend); `api-server/src/services/account.service.ts` + `routes/account.ts` + `middlewares/auth.ts` + `lib/supabase/client.ts`; queries `findOrdersByEmail` / `findShopOrdersByEmail` + `listUpcomingAppointmentsByEmail` (`lib/google/calendar.repository.ts`, mapped via `lib/appointments/event-details.ts`) + `extractMeasurements` (`lib/notion/orders.schema.ts`). Auth emails: `.agents/memory/supabase-auth-emails.md` |

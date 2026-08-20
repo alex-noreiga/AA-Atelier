@@ -1,17 +1,21 @@
 # Postgres integrity layer (Phase 3 "real database")
 
 The "real database" half of the Phase-3 "Supabase: accounts + a real database"
-card. A small **optional** Postgres layer (the same Supabase project that backs
-account auth) holding only **app-owned, integrity-bearing facts** that Notion
-can't enforce. Notion stays the record for the order lifecycle. It is **entirely
-degrade-safe**: unset `POSTGRES_URL` ⇒ `postgresConfigured()` is false and every
-caller falls back to the pre-Postgres behavior.
+card. A small Postgres layer (the same Supabase project that backs account auth)
+holding **app-owned facts** Notion can't enforce or shouldn't own. Notion stays
+the record for the order lifecycle. It is **degrade-safe everywhere except the
+studio's working hours**: unset `POSTGRES_URL` ⇒ `postgresConfigured()` is false
+and every other caller falls back to the pre-Postgres behavior, while
+`staff_availability` throws — see below, and
+`staff-availability-dashboard.md`.
 
 ## What's actually wired (vs provisioned)
 
-The single migration `supabase/migrations/0001_init.sql` provisions **four**
-tables — `schema_migrations`, `clients`, `order_index`, `processed_payments` —
-but **only `processed_payments` has a repository and a caller today.**
+`supabase/migrations/0001_init.sql` provisions **four** tables —
+`schema_migrations`, `clients`, `order_index`, `processed_payments` — and
+`0002_staff_availability.sql` adds a fifth. **All of them are wired now**
+(`clients` + `order_index` gained their repositories and callers after this note
+was first written; `staff_availability` arrived with the working-hours card).
 
 - **`processed_payments` — LIVE.** Atomic Stripe idempotency for **shop orders**.
   `lib/db/processed-payments.repository.ts`: `claimPayment` (`insert … on conflict
@@ -24,6 +28,23 @@ but **only `processed_payments` has a repository and a caller today.**
   anywhere in `src/`.** The account overview still reads orders live from Notion
   (`findOrdersByEmail`). Don't document these as functional; there is also **no
   backfill script** (the word appears only in comments).
+
+## `staff_availability` — the exception to "optional"
+
+Added by `0002_staff_availability.sql` for the studio's standing working hours
+(the positive grid `computeSlots` starts from). Unlike the other tables this one
+has **no fallback**, so `lib/db/staff-availability.repository.ts` throws a
+pointed error when `POSTGRES_URL` is unset instead of returning an empty
+schedule — "no working hours" and "no database configured" look identical from
+the booking page and only one of them is a bug. **Appointment booking therefore
+requires the layer**; everything else still degrades cleanly.
+
+Two other things about it are worth carrying forward: the rules live in the
+**DDL** (`time` columns, `check (end_time > start_time)`, `<@` constraints on the
+weekday/location arrays), which is most of why it moved off a Notion database;
+and the repository keeps a **60s TTL cache with fall-back-to-cache-on-error**,
+busted on every write, so a database blip degrades booking to slightly stale
+hours rather than none. Full reasoning in `staff-availability-dashboard.md`.
 
 ## Load-bearing decisions
 

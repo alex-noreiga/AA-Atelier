@@ -27,8 +27,8 @@ import {
   listStaffAvailability,
   createStaffAvailability,
   updateStaffAvailability,
-  archiveStaffAvailability,
-} from "../lib/notion/staff-availability.repository.js";
+  deleteStaffAvailability,
+} from "../lib/db/staff-availability.repository.js";
 import {
   normalizeWeekday,
   normalizeLocation,
@@ -37,7 +37,6 @@ import {
 } from "../lib/appointments/staff.js";
 import {
   APPOINTMENT_TYPES,
-  LOCATION_LABELS,
   type AppointmentLocation,
 } from "../lib/appointments/catalog.js";
 import { parseTimeToMinutes } from "../lib/appointments/time.js";
@@ -133,9 +132,7 @@ function toScheduleEntry(input: StaffAvailabilityInput): ScheduleEntry {
     weekdays: [...weekdays],
     start: input.start.trim(),
     end: input.end.trim(),
-    // Stored as the atelier's own labels ("In person"), read back as ids — the
-    // row stays legible in Notion without the slot calculator caring.
-    locations: locations.map((id) => LOCATION_LABELS[id]),
+    locations,
   };
 }
 
@@ -193,7 +190,7 @@ export async function editStaffAvailability(
 }
 
 export async function removeStaffAvailability(entryId: string): Promise<void> {
-  const removed = await archiveStaffAvailability(entryId);
+  const removed = await deleteStaffAvailability(entryId);
   if (!removed) {
     throw new NotFoundError("That block of hours no longer exists.");
   }

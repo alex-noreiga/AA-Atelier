@@ -134,46 +134,6 @@ export function inventoryPage(opts: {
 /** Minimal "Product Categories" page as returned by a query — a category name,
  * its "Show size guide" checkbox, an optional "Size Guide Type" select, and an
  * optional "Sort" number. */
-/**
- * Minimal "Staff Availability" page as returned by a query or a page write. The
- * repository reads six properties; anything omitted here is simply absent, which
- * is what a row missing that property in Notion looks like.
- */
-export function availabilityPage(opts: {
-  id?: string;
-  staff?: string;
-  email?: string;
-  weekdays?: string[];
-  start?: string;
-  end?: string;
-  locations?: string[];
-}) {
-  const richText = (value?: string) => ({
-    type: "rich_text",
-    rich_text: value ? [{ plain_text: value }] : [],
-  });
-  return {
-    id: opts.id ?? "availability-page",
-    properties: {
-      Staff: {
-        type: "title",
-        title: opts.staff ? [{ plain_text: opts.staff }] : [],
-      },
-      "Calendar Email": { type: "email", email: opts.email ?? null },
-      Weekdays: {
-        type: "multi_select",
-        multi_select: (opts.weekdays ?? []).map((name) => ({ name })),
-      },
-      Start: richText(opts.start),
-      End: richText(opts.end),
-      Locations: {
-        type: "multi_select",
-        multi_select: (opts.locations ?? []).map((name) => ({ name })),
-      },
-    },
-  };
-}
-
 export function categoryPage(opts: {
   id?: string;
   name?: string;

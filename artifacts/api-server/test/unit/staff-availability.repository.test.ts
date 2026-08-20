@@ -1,177 +1,193 @@
-import { describe, it, expect, beforeEach, vi } from "vitest";
-import {
-  makeFakeClient,
-  jsonResponse,
-  errorResponse,
-  availabilityPage,
-} from "../support/fake-notion.js";
+import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
+import { makeFakeDb } from "../support/fake-db.js";
 
 // Module-level TTL cache, so re-import the module fresh per test — same approach
-// as product-categories.repository.test.ts.
-let repo: typeof import("../../src/lib/notion/staff-availability.repository.js");
+// as the other cached repositories.
+let repo: typeof import("../../src/lib/db/staff-availability.repository.js");
 
 beforeEach(async () => {
+  process.env.POSTGRES_URL = "postgres://test";
   vi.resetModules();
-  repo = await import("../../src/lib/notion/staff-availability.repository.js");
+  repo = await import("../../src/lib/db/staff-availability.repository.js");
+});
+
+afterEach(() => {
+  delete process.env.POSTGRES_URL;
+  vi.useRealTimers();
 });
 
 const ENTRY = {
   staff: "Alexandra",
   email: "alexandra@atelier.test",
-  weekdays: ["Monday"],
+  weekdays: ["Monday", "Wednesday"],
   start: "10:00",
   end: "17:00",
-  locations: ["In person"],
+  locations: ["in-person"],
 };
 
-function queryResponse(
-  results: unknown[],
-  { hasMore = false, nextCursor = null as string | null } = {},
-) {
-  return jsonResponse({ results, has_more: hasMore, next_cursor: nextCursor });
+/** A row as Postgres hands it back — snake_case, `time` rendered HH:MM:SS. */
+function row(overrides: Record<string, unknown> = {}) {
+  return {
+    id: "11111111-2222-3333-4444-555555555555",
+    staff: "Alexandra",
+    calendar_email: "alexandra@atelier.test",
+    weekdays: ["Monday", "Wednesday"],
+    start_time: "10:00:00",
+    end_time: "17:00:00",
+    locations: ["in-person"],
+    ...overrides,
+  };
 }
 
+const ID = "11111111-2222-3333-4444-555555555555";
+
 describe("listStaffAvailability", () => {
-  it("throws a pointed error when the database is not configured", async () => {
-    const client = makeFakeClient(() => jsonResponse({}), "");
-    await expect(repo.listStaffAvailability(client)).rejects.toThrow(
-      /NOTION_STAFF_AVAILABILITY_DATABASE_ID/,
+  it("throws a pointed error when the Postgres layer isn't configured", async () => {
+    delete process.env.POSTGRES_URL;
+    const db = makeFakeDb(() => []);
+    await expect(repo.listStaffAvailability(db)).rejects.toThrow(
+      /POSTGRES_URL is not configured/,
     );
-    expect(client.calls).toHaveLength(0);
+    expect(db.calls).toHaveLength(0);
   });
 
-  it("maps every row and follows pagination", async () => {
-    let call = 0;
-    const client = makeFakeClient(() => {
-      call += 1;
-      return call === 1
-        ? queryResponse([availabilityPage({ id: "row-1", ...ENTRY })], {
-            hasMore: true,
-            nextCursor: "cursor-2",
-          })
-        : queryResponse([availabilityPage({ id: "row-2", staff: "Alayna" })]);
-    });
-
-    const records = await repo.listStaffAvailability(client);
-    expect(records.map((r) => r.id)).toEqual(["row-1", "row-2"]);
-    expect(client.calls).toHaveLength(2);
-    expect(JSON.parse(String(client.calls[1].init?.body))).toMatchObject({
-      start_cursor: "cursor-2",
-    });
+  it("maps rows to schedule entries, trimming the seconds off the times", async () => {
+    const db = makeFakeDb(() => [row()]);
+    expect(await repo.listStaffAvailability(db)).toEqual([
+      {
+        id: ID,
+        staff: "Alexandra",
+        email: "alexandra@atelier.test",
+        weekdays: ["Monday", "Wednesday"],
+        start: "10:00",
+        end: "17:00",
+        locations: ["in-person"],
+      },
+    ]);
   });
 
   it("caches within the TTL", async () => {
-    const client = makeFakeClient(() =>
-      queryResponse([availabilityPage({ id: "row-1", staff: "Alexandra" })]),
-    );
-    await repo.listStaffAvailability(client);
-    await repo.listStaffAvailability(client);
-    expect(client.calls).toHaveLength(1);
-  });
-
-  it("rethrows when Notion errors and nothing has been read yet", async () => {
-    const client = makeFakeClient(() => errorResponse(500));
-    await expect(repo.listStaffAvailability(client)).rejects.toThrow(
-      /status 500/,
-    );
+    const db = makeFakeDb(() => [row()]);
+    await repo.listStaffAvailability(db);
+    await repo.listStaffAvailability(db);
+    expect(db.calls).toHaveLength(1);
   });
 
   it("keeps serving the last good read through an outage", async () => {
     let fail = false;
-    const client = makeFakeClient(() =>
-      fail
-        ? errorResponse(503)
-        : queryResponse([
-            availabilityPage({ id: "row-1", staff: "Alexandra" }),
-          ]),
-    );
-    await repo.listStaffAvailability(client);
+    const db = makeFakeDb(() => {
+      if (fail) throw new Error("connection refused");
+      return [row()];
+    });
+
+    await repo.listStaffAvailability(db);
     fail = true;
     // Past the TTL, so the read is attempted again — and fails.
     vi.useFakeTimers();
     vi.setSystemTime(new Date(Date.now() + 120_000));
-    expect((await repo.listStaffAvailability(client)).map((r) => r.id)).toEqual(
-      ["row-1"],
+    expect((await repo.listStaffAvailability(db)).map((e) => e.id)).toEqual([
+      ID,
+    ]);
+  });
+
+  it("rethrows when the database errors and nothing has been read yet", async () => {
+    const db = makeFakeDb(() => {
+      throw new Error("connection refused");
+    });
+    await expect(repo.listStaffAvailability(db)).rejects.toThrow(
+      /connection refused/,
     );
-    vi.useRealTimers();
   });
 });
 
 describe("createStaffAvailability", () => {
-  it("writes the row and returns it as stored", async () => {
-    const client = makeFakeClient(() =>
-      jsonResponse(availabilityPage({ id: "row-new", ...ENTRY })),
-    );
+  it("inserts the entry and returns it as stored", async () => {
+    const db = makeFakeDb(() => [row()]);
+    const created = await repo.createStaffAvailability(ENTRY, db);
 
-    const record = await repo.createStaffAvailability(ENTRY, client);
-    expect(record.id).toBe("row-new");
-    expect(client.calls[0].path).toBe("/v1/pages");
-    expect(JSON.parse(String(client.calls[0].init?.body))).toMatchObject({
-      parent: { database_id: "test-db-id" },
-    });
+    expect(created.id).toBe(ID);
+    expect(db.calls[0].text).toContain("insert into staff_availability");
+    expect(db.calls[0].params).toEqual([
+      "Alexandra",
+      "alexandra@atelier.test",
+      ["Monday", "Wednesday"],
+      "10:00",
+      "17:00",
+      ["in-person"],
+    ]);
+  });
+
+  it("stores the calendar address canonically", async () => {
+    const db = makeFakeDb(() => [row()]);
+    await repo.createStaffAvailability(
+      { ...ENTRY, email: "  Alexandra@Atelier.TEST " },
+      db,
+    );
+    expect(db.calls[0].params?.[1]).toBe("alexandra@atelier.test");
   });
 
   it("busts the cache so the next read sees the new row", async () => {
-    let listed = [availabilityPage({ id: "row-1", staff: "Alexandra" })];
-    const client = makeFakeClient((path) =>
-      path === "/v1/pages"
-        ? jsonResponse(availabilityPage({ id: "row-2", ...ENTRY }))
-        : queryResponse(listed),
+    let listed = [row()];
+    const db = makeFakeDb((text) =>
+      text.startsWith("insert") ? [row({ id: ID })] : listed,
     );
 
-    await repo.listStaffAvailability(client);
-    listed = [
-      availabilityPage({ id: "row-1", staff: "Alexandra" }),
-      availabilityPage({ id: "row-2", ...ENTRY }),
-    ];
-    await repo.createStaffAvailability(ENTRY, client);
-    expect((await repo.listStaffAvailability(client)).map((r) => r.id)).toEqual(
-      ["row-1", "row-2"],
-    );
-  });
-
-  it("throws with Notion's own message on a failed write", async () => {
-    const client = makeFakeClient(() => errorResponse(400, "bad property"));
-    await expect(repo.createStaffAvailability(ENTRY, client)).rejects.toThrow(
-      /bad property/,
-    );
+    await repo.listStaffAvailability(db);
+    listed = [row(), row({ id: "99999999-2222-3333-4444-555555555555" })];
+    await repo.createStaffAvailability(ENTRY, db);
+    expect(await repo.listStaffAvailability(db)).toHaveLength(2);
   });
 });
 
 describe("updateStaffAvailability", () => {
-  it("patches the page and returns the stored row", async () => {
-    const client = makeFakeClient(() =>
-      jsonResponse(availabilityPage({ id: "row-1", ...ENTRY })),
-    );
-    const record = await repo.updateStaffAvailability("row-1", ENTRY, client);
-    expect(record?.id).toBe("row-1");
-    expect(client.calls[0]).toMatchObject({
-      path: "/v1/pages/row-1",
-      init: { method: "PATCH" },
-    });
+  it("replaces the entry and returns the stored row", async () => {
+    const db = makeFakeDb(() => [row()]);
+    const updated = await repo.updateStaffAvailability(ID, ENTRY, db);
+
+    expect(updated?.id).toBe(ID);
+    expect(db.calls[0].text).toContain("update staff_availability");
+    expect(db.calls[0].params?.[0]).toBe(ID);
   });
 
-  it("returns null when the page is gone", async () => {
-    const client = makeFakeClient(() => errorResponse(404, "not found"));
+  it("returns null when no such row exists", async () => {
+    const db = makeFakeDb(() => []);
     expect(
-      await repo.updateStaffAvailability("row-gone", ENTRY, client),
+      await repo.updateStaffAvailability(
+        "99999999-2222-3333-4444-555555555555",
+        ENTRY,
+        db,
+      ),
     ).toBeNull();
+  });
+
+  it("answers a malformed id without letting the driver reject it", async () => {
+    // `id` is a uuid column, so `where id = 'nonsense'` is a driver error rather
+    // than an empty result — screening it keeps a junk id a 404, not a 500.
+    const db = makeFakeDb(() => {
+      throw new Error("invalid input syntax for type uuid");
+    });
+    expect(
+      await repo.updateStaffAvailability("nonsense", ENTRY, db),
+    ).toBeNull();
+    expect(db.calls).toHaveLength(0);
   });
 });
 
-describe("archiveStaffAvailability", () => {
-  it("archives the page (Notion's delete)", async () => {
-    const client = makeFakeClient(() =>
-      jsonResponse(availabilityPage({ id: "row-1" })),
-    );
-    expect(await repo.archiveStaffAvailability("row-1", client)).toBe(true);
-    expect(JSON.parse(String(client.calls[0].init?.body))).toEqual({
-      archived: true,
-    });
+describe("deleteStaffAvailability", () => {
+  it("deletes the row", async () => {
+    const db = makeFakeDb(() => [{ id: ID }]);
+    expect(await repo.deleteStaffAvailability(ID, db)).toBe(true);
+    expect(db.calls[0].text).toContain("delete from staff_availability");
   });
 
-  it("reports a missing page rather than throwing", async () => {
-    const client = makeFakeClient(() => errorResponse(404, "not found"));
-    expect(await repo.archiveStaffAvailability("row-gone", client)).toBe(false);
+  it("reports a row that was already gone", async () => {
+    const db = makeFakeDb(() => []);
+    expect(await repo.deleteStaffAvailability(ID, db)).toBe(false);
+  });
+
+  it("answers a malformed id without querying", async () => {
+    const db = makeFakeDb(() => []);
+    expect(await repo.deleteStaffAvailability("nonsense", db)).toBe(false);
+    expect(db.calls).toHaveLength(0);
   });
 });

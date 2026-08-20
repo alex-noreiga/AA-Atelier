@@ -1,6 +1,6 @@
 ---
 name: Appointment scheduling — Google Calendar integration + design decisions
-description: Real-time appointment booking backed by Google Calendar free/busy (conflicts) + a working-hours grid edited on the studio dashboard, writing each booking as a calendar event via a Workspace service account with domain-wide delegation. Records the setup and the trust/timezone rules.
+description: Real-time appointment booking backed by Google Calendar free/busy (conflicts) + a working-hours grid (a Postgres table) edited on the studio dashboard, writing each booking as a calendar event via a Workspace service account with domain-wide delegation. Records the setup and the trust/timezone rules.
 ---
 
 The site lets customers book appointments (consultations, fittings, design
@@ -17,18 +17,18 @@ slots from a **positive** weekly working-hours grid and **subtracts** busy
 intervals. Google free/busy only provides the subtractive half (when someone is
 busy), so the two halves come from two places:
 
-- **Working hours (positive grid)** → the **"Staff Availability" Notion database**
-  (`NOTION_STAFF_AVAILABILITY_DATABASE_ID`), edited on `/studio` → **Working
-  hours**. Read through `lib/appointments/schedule.ts` (the seam) over
-  `lib/notion/staff-availability.repository.ts` (60s cache + fallback) and mapped
-  by the pure `buildSchedule` in `lib/appointments/staff.ts`. One row is one block:
-  `Staff | Calendar Email | Weekdays | Start | End | Locations`. `Staff` must be a
-  catalog staff name — the editor enforces it now rather than failing silently;
-  `Calendar Email` is the Workspace calendar. (History: an `APPOINTMENT_STAFF` JSON
-  env var → a **Google Sheet** shared with the service account → this. The sheet
-  made hours editable without a redeploy but validated nothing, and needed the
-  Sheets API + a second share; see `staff-availability-dashboard.md`. Reading it
-  is async either way — `getScheduleConfig`/`calendarEmailFor` are async.)
+- **Working hours (positive grid)** → the **`staff_availability` Postgres table**
+  (`supabase/migrations/0002_staff_availability.sql`), edited on `/studio` →
+  **Working hours**. Read through `lib/appointments/schedule.ts` (the seam) over
+  `lib/db/staff-availability.repository.ts` (60s cache + fallback) and mapped by
+  the pure `buildSchedule` in `lib/appointments/staff.ts`. One row is one block:
+  staff, calendar email, weekdays, start/end `time`, locations. `staff` must be a
+  catalog staff name — the editor enforces it now rather than failing silently.
+  **This makes `POSTGRES_URL` required for booking**, unlike the rest of the
+  Postgres layer. (History: an `APPOINTMENT_STAFF` JSON env var → a **Google
+  Sheet** shared with the service account → a Notion database → this; see
+  `staff-availability-dashboard.md`. Reading it is async either way —
+  `getScheduleConfig`/`calendarEmailFor` are async.)
 - **Busy (subtractive)** → the Google **FreeBusy API** per staff calendar
   (`lib/google/calendar.repository.ts` → `listBusyInRange`), fed into
   `computeSlots` as `bookings`. Because booked appointments are themselves
@@ -52,9 +52,8 @@ Setup the atelier must do once:
 2. Workspace **Admin → Security → API controls → Domain-wide delegation**:
    authorize the service account's client id for scope
    `https://www.googleapis.com/auth/calendar` (calendar impersonation only).
-3. Create the **Staff Availability** Notion database, connect the integration to
-   it, set `NOTION_STAFF_AVAILABILITY_DATABASE_ID`, and enter the hours on
-   `/studio`.
+3. Run `db:migrate` to create the `staff_availability` table, set `POSTGRES_URL`,
+   and enter the hours on `/studio` → Working hours.
 
 ## Load-bearing rules (don't regress these)
 

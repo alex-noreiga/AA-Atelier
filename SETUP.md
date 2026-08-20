@@ -3,13 +3,16 @@
 This walks through everything needed to turn on **appointment booking**. Conflicts
 come from Google: each staff member's Google Calendar free/busy is subtracted
 from their working hours, and bookings are written as calendar events (with a
-Google Meet link for virtual). The bookable **working hours** themselves live in a
-Notion database you edit from the **studio dashboard**, no redeploy needed.
+Google Meet link for virtual). The bookable **working hours** themselves live in
+the app's own Postgres database, edited from the **studio dashboard**, no
+redeploy needed.
 
 You do this once. Plan ~20 minutes. You'll need:
 
 - A **Google Cloud** account (to create the service account + key).
 - **Google Workspace admin** access (for the one domain-wide-delegation step).
+- The **Supabase** Postgres connection strings (the Vercel integration supplies
+  them) — the working hours are a table there.
 - **Vercel** project access (to set the environment variables).
 
 > The rest of the app (orders, shop, contact) has its own env vars — see
@@ -62,53 +65,43 @@ this at **[admin.google.com](https://admin.google.com)** as a Workspace admin.
 5. **Authorize.**
 
 > This delegation is **only** for Calendar. The working hours (Part C) live in
-> Notion and don't involve Google at all.
+> the app's own database and don't involve Google at all.
 
 ---
 
-## Part C — Create the working-hours database
+## Part C — Create the working-hours table
 
-This is the "when are we open" schedule. You edit it on the studio dashboard any
-time; the site picks up changes within about a minute, with no redeploy.
+This is the "when are we open" schedule. It lives in the app's own Postgres
+database (the same Supabase project as sign-in), and you edit it on the studio
+dashboard any time; the site picks up changes within about a minute, with no
+redeploy.
 
-### 1. Create the Notion database
+### 1. Create the table
 
-In Notion, create a database called **Staff Availability** with these six
-properties (the names and types must match — the app reads them by name):
+The table ships as a migration, so this is one job run — not something to build
+by hand:
 
-| Property           | Type         | What it holds                             |
-| ------------------ | ------------ | ----------------------------------------- |
-| **Staff**          | Title        | The person's name (`Alexandra`, `Alayna`) |
-| **Calendar Email** | Email        | That person's Workspace calendar          |
-| **Weekdays**       | Multi-select | `Monday` … `Sunday`                       |
-| **Start**          | Text         | 24-hour `HH:MM`, e.g. `10:00`             |
-| **End**            | Text         | 24-hour `HH:MM`, e.g. `17:00`             |
-| **Locations**      | Multi-select | `In person` and/or `Virtual`              |
+1. Make sure the repo has a **`POSTGRES_URL_NON_POOLING`** secret (the Supabase
+   **direct** connection string, port 5432 — DDL can't go through the pooler).
+   The Supabase→Vercel integration provides both URLs; copy the direct one into
+   _GitHub → Settings → Secrets and variables → Actions_ if it isn't there.
+2. Run the **DB migrate** workflow: _GitHub → Actions → DB migrate → Run
+   workflow_. It applies every migration in `supabase/migrations/` that hasn't
+   been applied yet, each in a transaction.
 
-Leave it empty — you'll fill it in from the dashboard in step 3, which is what
-checks the values are ones the booking flow can actually use.
+Locally the same thing is `pnpm --filter @workspace/api-server db:migrate` with
+`POSTGRES_URL_NON_POOLING` set in your `.env`.
 
-> **Why text for the times?** Notion has no time-of-day property. `10:00` reads
-> as a time in Notion and parses the same way every other clock value in the app
-> does.
+> **Why not Notion, like the rest of the studio's settings?** Because nobody
+> edits this in Notion — the dashboard is the only thing that writes it, and the
+> booking calculator is the only thing that reads it. Keeping it in Postgres also
+> puts the rules in the database: real time-of-day columns, and a constraint that
+> makes hours ending before they start impossible to store rather than merely
+> refused.
 
-### 2. Share it with the integration + copy the id
+### 2. Enter the hours on the dashboard
 
-1. Open the database → **⋯ → Connections → Connect to** → your existing atelier
-   integration (the same one every other database uses). Without this, queries 404.
-2. Copy the database id: it's the 32-character token in the URL between the
-   workspace name and the `?`:
-
-```
-https://www.notion.so/your-workspace/1AbC…32 chars…XyZ?v=…
-                                     └──────── this ────────┘
-```
-
-You'll paste it into `NOTION_STAFF_AVAILABILITY_DATABASE_ID` next.
-
-### 3. Enter the hours on the dashboard
-
-Once the env var is set (Part D) and the site has redeployed, sign in and open
+Once `POSTGRES_URL` is set (Part D) and the site has redeployed, sign in and open
 **/studio → Working hours**, then **Add hours** for each block someone works:
 
 | Who       | Booking calendar            | Days    | From  | To    | Bookable for       |
@@ -122,7 +115,7 @@ they'd produce hours nothing could be booked into: a person the studio doesn't
 book, and an end time before the start time.
 
 **A day off is not an edit here.** Block it on the staff member's Google Calendar
-and it's subtracted automatically — this database is the standing week.
+and it's subtracted automatically — this table is the standing week.
 
 ---
 
@@ -136,10 +129,10 @@ and it's subtracted automatically — this database is the standing week.
 
    **Required**
 
-   | Key                                     | Value                                                                                                                                 |
-   | --------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------- |
-   | `GOOGLE_SERVICE_ACCOUNT_KEY`            | The **entire contents** of the JSON key file from Part A. Paste it verbatim — the escaped `\n` newlines inside are handled correctly. |
-   | `NOTION_STAFF_AVAILABILITY_DATABASE_ID` | The database id you copied in Part C, step 2 (just the token, not the full URL).                                                      |
+   | Key                          | Value                                                                                                                                                                          |
+   | ---------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+   | `GOOGLE_SERVICE_ACCOUNT_KEY` | The **entire contents** of the JSON key file from Part A. Paste it verbatim — the escaped `\n` newlines inside are handled correctly.                                          |
+   | `POSTGRES_URL`               | The **pooled** Supabase connection string (port 6543). Booking reads the working hours from it, so it is required here even though the rest of the Postgres layer is optional. |
 
    **Optional (sensible defaults if unset)**
 
@@ -157,9 +150,8 @@ and it's subtracted automatically — this database is the standing week.
    - **Deployments** tab → the latest deployment → the **⋯** menu → **Redeploy**; or
    - push any commit to the branch Vercel deploys.
 
-> For **local development**, put `GOOGLE_SERVICE_ACCOUNT_KEY` and
-> `NOTION_STAFF_AVAILABILITY_DATABASE_ID` in your repo-root `.env` (see
-> `.env.example`).
+> For **local development**, put `GOOGLE_SERVICE_ACCOUNT_KEY`, `POSTGRES_URL`
+> and `POSTGRES_URL_NON_POOLING` in your repo-root `.env` (see `.env.example`).
 
 ---
 
@@ -185,6 +177,6 @@ and it's subtracted automatically — this database is the standing week.
 - There must be **working hours on record** — an empty schedule offers no times.
   Check **/studio → Working hours**; the dashboard says so plainly when it's
   empty.
-- Confirm the **Staff Availability** database is **connected to the Notion
-  integration** (an unshared database 404s), and that the **Calendar API** is
-  enabled on the project.
+- If that page shows an error rather than an empty state, the **migration hasn't
+  run** or `POSTGRES_URL` isn't set for that environment.
+- Confirm the **Calendar API** is enabled on the Google Cloud project.
