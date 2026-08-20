@@ -287,6 +287,72 @@ export interface ReviewList {
   reviews: PublishedReview[];
 }
 
+/**
+ * Where a review stands with the atelier. `pending` is anything not yet decided — including the "New" it is captured with — so a review can only ever be waiting, shown, or set aside.
+ */
+export type ReviewModerationStatus = typeof ReviewModerationStatus[keyof typeof ReviewModerationStatus];
+
+
+export const ReviewModerationStatus = {
+  pending: 'pending',
+  published: 'published',
+  rejected: 'rejected',
+} as const;
+
+/**
+ * One review as the moderation queue shows it. Unlike the public `PublishedReview`, this is the whole row: the atelier is deciding whether to put it on the site, and who wrote it and whether their email matched the order are part of that judgement. Staff-only.
+ */
+export interface StudioReview {
+  /** The review's Notion page id; also what a decision is addressed to. */
+  id: string;
+  /**
+     * The star rating, 1 (poor) to 5 (excellent).
+     * @minimum 1
+     * @maximum 5
+     */
+  rating: number;
+  /** The customer's testimonial, as written. */
+  comment: string;
+  /** How the customer asked to be credited. Omitted when they left it blank, in which case a published testimonial is unattributed. */
+  customerName?: string;
+  /** The order the review is for. Omitted on a row that carries none. */
+  orderNumber?: string;
+  /** The address the review was submitted from. Shown so the atelier can recognize the customer; never served publicly. */
+  email?: string;
+  /** Whether that address matched the one stored on the order. False on a legacy order that has no email stored — accepted at capture, but worth vetting before it goes on the site. */
+  emailVerified: boolean;
+  /** Whether the customer agreed to their words being published. Publishing without it is refused, so this is what the dashboard reads to know whether the button can be offered at all. */
+  consentToPublish: boolean;
+  status: ReviewModerationStatus;
+  /** The `Status` select exactly as Notion holds it, when it is set. Shown for a row whose value the app doesn't recognize, so "why is this still pending?" is answerable without opening Notion. */
+  rawStatus?: string;
+  /** When the review was submitted (its Notion created time). */
+  submittedAt?: string;
+  /** Photographs of the finished piece, as URLs. Notion-signed and short-lived, so they are for rendering this page and nothing else. Empty for a decided review — photos are fetched only for the rows still awaiting a decision. */
+  photos: string[];
+  /** The review's page in Notion, for anything this queue doesn't show. */
+  notionUrl?: string;
+}
+
+/**
+ * The moderation queue: the pending reviews the atelier still owes a decision, and the decided ones for reference, newest first in both cases.
+ */
+export interface StudioReviewList {
+  /** Awaiting a decision, oldest submission first — the queue proper. */
+  pending: StudioReview[];
+  /** Already published or rejected, newest first. Capped, and carrying no photos — it is a record of what was decided, not a second queue. */
+  decided: StudioReview[];
+  /** True when there are more reviews than one read covers, so the queue says it is partial instead of looking complete. Older rows are still in Notion. */
+  truncated?: boolean;
+}
+
+/**
+ * The moderation decision to record against a review.
+ */
+export interface ReviewStatusRequest {
+  status: ReviewModerationStatus;
+}
+
 export interface NewContactRequest {
   /** @minLength 1 */
   name: string;

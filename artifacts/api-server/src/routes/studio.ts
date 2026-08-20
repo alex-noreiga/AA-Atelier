@@ -7,9 +7,13 @@ import {
   GetStudioAccessResponse,
   GetStudioAnalyticsResponse,
   ListStaffAvailabilityResponse,
+  ListStudioReviewsResponse,
   RunStudioToolBody,
   RunStudioToolParams,
   RunStudioToolResponse,
+  SetStudioReviewStatusBody,
+  SetStudioReviewStatusParams,
+  SetStudioReviewStatusResponse,
   UpdateStaffAvailabilityBody,
   UpdateStaffAvailabilityParams,
   UpdateStaffAvailabilityResponse,
@@ -23,6 +27,11 @@ import {
   type StudioToolArgs,
   type StudioToolName,
 } from "../services/studio-tools.service.js";
+import {
+  getReviewQueue,
+  setReviewModeration,
+} from "../services/studio-reviews.service.js";
+import type { ReviewModeration } from "../lib/notion/reviews.schema.js";
 import {
   getStaffAvailability,
   addStaffAvailability,
@@ -149,6 +158,41 @@ router.delete(
         message: "Those hours have been removed from the schedule.",
       }),
     );
+  },
+);
+
+// The review moderation queue — the read half of a loop the app has only ever
+// written to. A review is captured at delivery with `Status = New` and had to
+// be promoted by hand in Notion for the site's testimonials to pick it up;
+// these two operations are that decision, made behind the same staff gate as
+// everything else here.
+router.get(
+  "/studio/reviews",
+  accountRateLimiter,
+  requireStaff,
+  async (_req, res) => {
+    const queue = await getReviewQueue();
+    res.json(ListStudioReviewsResponse.parse(queue));
+  },
+);
+
+// One decision. A PUT rather than a POST because the whole state is sent and
+// re-sending it changes nothing — pressing Publish twice is one published
+// review, and the same call is how a decision made in error is undone (send
+// `pending` and the review is back in the queue).
+router.put(
+  "/studio/reviews/:reviewId/status",
+  accountRateLimiter,
+  requireStaff,
+  validate({
+    params: SetStudioReviewStatusParams,
+    body: SetStudioReviewStatusBody,
+  }),
+  async (_req, res) => {
+    const { reviewId } = res.locals.params as { reviewId: string };
+    const { status } = res.locals.body as { status: ReviewModeration };
+    const review = await setReviewModeration(reviewId, status);
+    res.json(SetStudioReviewStatusResponse.parse(review));
   },
 );
 

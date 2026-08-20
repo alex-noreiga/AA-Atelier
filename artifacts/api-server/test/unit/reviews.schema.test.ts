@@ -1,7 +1,11 @@
 import { describe, it, expect } from "vitest";
 import {
+  extractImageUrls,
   extractPublishedReviews,
+  extractStudioReview,
+  extractStudioReviews,
   isPublishable,
+  reviewModeration,
   REVIEW_STATUS_PUBLISHED,
   type NotionReviewPage,
 } from "../../src/lib/notion/reviews.schema.js";
@@ -120,5 +124,125 @@ describe("extractPublishedReviews", () => {
     ]).map((r) => r.rating);
 
     expect(ratings).toEqual([5, 1, 5, 4]);
+  });
+});
+
+// The staff projection is the mirror image of the public one: the public
+// extractor's job is to let nothing through that shouldn't be seen, and this
+// one's is to let nothing be hidden from the person deciding.
+describe("reviewModeration", () => {
+  it("reads the two values the app writes", () => {
+    expect(reviewModeration(page({ status: "Published" }))).toBe("published");
+    expect(reviewModeration(page({ status: "Rejected" }))).toBe("rejected");
+  });
+
+  it("treats the capture default as pending", () => {
+    expect(reviewModeration(page({ status: "New" }))).toBe("pending");
+  });
+
+  // "Archived" is how a review was retired before the queue existed, so the
+  // queue must not reopen every one of them as undecided.
+  it("reads the pre-existing Archived status as already set aside", () => {
+    expect(reviewModeration(page({ status: "Archived" }))).toBe("rejected");
+  });
+
+  it("treats a blank or unrecognized status as pending, never as published", () => {
+    expect(reviewModeration(page({ status: null }))).toBe("pending");
+    expect(reviewModeration(page({ status: "Featured" }))).toBe("pending");
+    expect(reviewModeration(page({ status: "published" }))).toBe("pending");
+    expect(reviewModeration({ id: "x", properties: {} })).toBe("pending");
+  });
+});
+
+describe("extractStudioReview", () => {
+  it("maps the whole row, including what the public projection withholds", () => {
+    expect(
+      extractStudioReview(
+        page({
+          id: "rev-9",
+          rating: 4,
+          comment: "Gorgeous.",
+          customerName: "Ada L.",
+          orderNumber: "000014",
+          email: "ada@example.com",
+          emailVerified: false,
+          status: "New",
+          consent: true,
+          createdTime: "2026-07-04T09:30:00.000Z",
+          url: "https://notion.so/rev-9",
+        }),
+      ),
+    ).toEqual({
+      id: "rev-9",
+      rating: 4,
+      comment: "Gorgeous.",
+      customerName: "Ada L.",
+      orderNumber: "000014",
+      email: "ada@example.com",
+      emailVerified: false,
+      consentToPublish: true,
+      status: "pending",
+      rawStatus: "New",
+      submittedAt: "2026-07-04T09:30:00.000Z",
+      notionUrl: "https://notion.so/rev-9",
+    });
+  });
+
+  it("keeps a review with no testimonial text — that is the one to reject", () => {
+    const review = extractStudioReview(page({ comment: "" }));
+    expect(review.comment).toBe("");
+  });
+
+  it("clamps a nonsense rating rather than failing the whole response", () => {
+    expect(extractStudioReview(page({ rating: 99 })).rating).toBe(5);
+    expect(extractStudioReview(page({ rating: null })).rating).toBe(5);
+    expect(extractStudioReview(page({ rating: 0 })).rating).toBe(1);
+  });
+
+  it("omits the optional fields it has no value for", () => {
+    const review = extractStudioReview(
+      page({
+        customerName: "",
+        orderNumber: "",
+        email: null,
+        status: null,
+        createdTime: null,
+        url: null,
+      }),
+    );
+    expect(review.customerName).toBeUndefined();
+    expect(review.orderNumber).toBeUndefined();
+    expect(review.email).toBeUndefined();
+    expect(review.rawStatus).toBeUndefined();
+    expect(review.submittedAt).toBeUndefined();
+    expect(review.notionUrl).toBeUndefined();
+  });
+
+  it("drops nothing — every row comes back, unlike the public extractor", () => {
+    const pages = [page({ status: "New" }), page({ consent: false }), page()];
+    expect(extractStudioReviews(pages)).toHaveLength(3);
+    expect(extractPublishedReviews(pages)).toHaveLength(1);
+  });
+});
+
+describe("extractImageUrls", () => {
+  it("reads Notion-hosted and external images, in body order", () => {
+    expect(
+      extractImageUrls([
+        { type: "quote" },
+        { type: "image", image: { file: { url: "https://notion/1.png" } } },
+        { type: "image", image: { external: { url: "https://cdn/2.png" } } },
+      ]),
+    ).toEqual(["https://notion/1.png", "https://cdn/2.png"]);
+  });
+
+  it("ignores an image block with no url and any non-image block", () => {
+    expect(
+      extractImageUrls([
+        { type: "image", image: {} },
+        { type: "paragraph" },
+        {},
+      ]),
+    ).toEqual([]);
   });
 });

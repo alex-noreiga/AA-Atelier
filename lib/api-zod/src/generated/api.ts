@@ -860,3 +860,87 @@ export const RunStudioToolResponse = zod.object({
 }).describe('The outcome of one internal tool run, already composed for display. The server owns the wording — it is the same summary the retired confirmation pages rendered — so the dashboard renders the result rather than re-deriving it from per-tool fields.')
 
 
+/**
+ * Every review the atelier hasn't decided on yet, plus the ones it has, newest first — the read half of the loop the app has only ever written to. A review is captured at delivery with its Notion `Status` set to "New" and had to be promoted by hand in Notion for the site to show it; this is that same decision, made where the rest of the studio work happens.
+ *
+ * The three moderation states are DERIVED from the `Status` select rather than enumerated from it: `published` and `rejected` name the two values the app writes, and everything else — "New", a blank select, or any value the atelier invented — reads as `pending`. So an unrecognized status asks for a decision rather than silently publishing.
+ *
+ * Photos are fetched only for the pending rows (they are what a decision is made on) and their URLs are short-lived Notion-signed links, good for this page load and not for storing. Same staff gate as the rest of the studio surface: 401 when not signed in, 404 when signed in but not staff, 403 when staff but not signed in with Google.
+ * @summary The review moderation queue
+ */
+export const listStudioReviewsResponsePendingItemRatingMax = 5;
+
+export const listStudioReviewsResponseDecidedItemRatingMax = 5;
+
+
+
+export const ListStudioReviewsResponse = zod.object({
+  "pending": zod.array(zod.object({
+  "id": zod.string().describe('The review\'s Notion page id; also what a decision is addressed to.'),
+  "rating": zod.number().int().min(1).max(listStudioReviewsResponsePendingItemRatingMax).describe('The star rating, 1 (poor) to 5 (excellent).'),
+  "comment": zod.string().describe('The customer\'s testimonial, as written.'),
+  "customerName": zod.string().optional().describe('How the customer asked to be credited. Omitted when they left it blank, in which case a published testimonial is unattributed.'),
+  "orderNumber": zod.string().optional().describe('The order the review is for. Omitted on a row that carries none.'),
+  "email": zod.string().optional().describe('The address the review was submitted from. Shown so the atelier can recognize the customer; never served publicly.'),
+  "emailVerified": zod.boolean().describe('Whether that address matched the one stored on the order. False on a legacy order that has no email stored — accepted at capture, but worth vetting before it goes on the site.'),
+  "consentToPublish": zod.boolean().describe('Whether the customer agreed to their words being published. Publishing without it is refused, so this is what the dashboard reads to know whether the button can be offered at all.'),
+  "status": zod.enum(['pending', 'published', 'rejected']).describe('Where a review stands with the atelier. `pending` is anything not yet decided — including the \"New\" it is captured with — so a review can only ever be waiting, shown, or set aside.'),
+  "rawStatus": zod.string().optional().describe('The `Status` select exactly as Notion holds it, when it is set. Shown for a row whose value the app doesn\'t recognize, so \"why is this still pending?\" is answerable without opening Notion.'),
+  "submittedAt": zod.coerce.date().optional().describe('When the review was submitted (its Notion created time).'),
+  "photos": zod.array(zod.string()).describe('Photographs of the finished piece, as URLs. Notion-signed and short-lived, so they are for rendering this page and nothing else. Empty for a decided review — photos are fetched only for the rows still awaiting a decision.'),
+  "notionUrl": zod.string().optional().describe('The review\'s page in Notion, for anything this queue doesn\'t show.')
+}).describe('One review as the moderation queue shows it. Unlike the public `PublishedReview`, this is the whole row: the atelier is deciding whether to put it on the site, and who wrote it and whether their email matched the order are part of that judgement. Staff-only.')).describe('Awaiting a decision, oldest submission first — the queue proper.'),
+  "decided": zod.array(zod.object({
+  "id": zod.string().describe('The review\'s Notion page id; also what a decision is addressed to.'),
+  "rating": zod.number().int().min(1).max(listStudioReviewsResponseDecidedItemRatingMax).describe('The star rating, 1 (poor) to 5 (excellent).'),
+  "comment": zod.string().describe('The customer\'s testimonial, as written.'),
+  "customerName": zod.string().optional().describe('How the customer asked to be credited. Omitted when they left it blank, in which case a published testimonial is unattributed.'),
+  "orderNumber": zod.string().optional().describe('The order the review is for. Omitted on a row that carries none.'),
+  "email": zod.string().optional().describe('The address the review was submitted from. Shown so the atelier can recognize the customer; never served publicly.'),
+  "emailVerified": zod.boolean().describe('Whether that address matched the one stored on the order. False on a legacy order that has no email stored — accepted at capture, but worth vetting before it goes on the site.'),
+  "consentToPublish": zod.boolean().describe('Whether the customer agreed to their words being published. Publishing without it is refused, so this is what the dashboard reads to know whether the button can be offered at all.'),
+  "status": zod.enum(['pending', 'published', 'rejected']).describe('Where a review stands with the atelier. `pending` is anything not yet decided — including the \"New\" it is captured with — so a review can only ever be waiting, shown, or set aside.'),
+  "rawStatus": zod.string().optional().describe('The `Status` select exactly as Notion holds it, when it is set. Shown for a row whose value the app doesn\'t recognize, so \"why is this still pending?\" is answerable without opening Notion.'),
+  "submittedAt": zod.coerce.date().optional().describe('When the review was submitted (its Notion created time).'),
+  "photos": zod.array(zod.string()).describe('Photographs of the finished piece, as URLs. Notion-signed and short-lived, so they are for rendering this page and nothing else. Empty for a decided review — photos are fetched only for the rows still awaiting a decision.'),
+  "notionUrl": zod.string().optional().describe('The review\'s page in Notion, for anything this queue doesn\'t show.')
+}).describe('One review as the moderation queue shows it. Unlike the public `PublishedReview`, this is the whole row: the atelier is deciding whether to put it on the site, and who wrote it and whether their email matched the order are part of that judgement. Staff-only.')).describe('Already published or rejected, newest first. Capped, and carrying no photos — it is a record of what was decided, not a second queue.'),
+  "truncated": zod.boolean().optional().describe('True when there are more reviews than one read covers, so the queue says it is partial instead of looking complete. Older rows are still in Notion.')
+}).describe('The moderation queue: the pending reviews the atelier still owes a decision, and the decided ones for reference, newest first in both cases.')
+
+
+/**
+ * Writes one review's moderation decision to its Notion `Status`. `published` is what puts a testimonial on the site, `rejected` takes it off (and keeps it out of the queue), and `pending` returns it to the queue — so a decision made in error is undone the same way it was made.
+ *
+ * Publishing requires the customer's own consent to publish, which the atelier cannot supply: without it the request is refused with 409 rather than writing a status the site would then decline to honour. Consent is on the review (`consentToPublish`), so the dashboard can say so before the button is pressed.
+ * @summary Publish, reject, or re-queue a review
+ */
+export const SetStudioReviewStatusParams = zod.object({
+  "reviewId": zod.coerce.string().describe('The review\'s id, as returned by the list operation.')
+})
+
+export const SetStudioReviewStatusBody = zod.object({
+  "status": zod.enum(['pending', 'published', 'rejected']).describe('Where a review stands with the atelier. `pending` is anything not yet decided — including the \"New\" it is captured with — so a review can only ever be waiting, shown, or set aside.')
+}).describe('The moderation decision to record against a review.')
+
+export const setStudioReviewStatusResponseRatingMax = 5;
+
+
+
+export const SetStudioReviewStatusResponse = zod.object({
+  "id": zod.string().describe('The review\'s Notion page id; also what a decision is addressed to.'),
+  "rating": zod.number().int().min(1).max(setStudioReviewStatusResponseRatingMax).describe('The star rating, 1 (poor) to 5 (excellent).'),
+  "comment": zod.string().describe('The customer\'s testimonial, as written.'),
+  "customerName": zod.string().optional().describe('How the customer asked to be credited. Omitted when they left it blank, in which case a published testimonial is unattributed.'),
+  "orderNumber": zod.string().optional().describe('The order the review is for. Omitted on a row that carries none.'),
+  "email": zod.string().optional().describe('The address the review was submitted from. Shown so the atelier can recognize the customer; never served publicly.'),
+  "emailVerified": zod.boolean().describe('Whether that address matched the one stored on the order. False on a legacy order that has no email stored — accepted at capture, but worth vetting before it goes on the site.'),
+  "consentToPublish": zod.boolean().describe('Whether the customer agreed to their words being published. Publishing without it is refused, so this is what the dashboard reads to know whether the button can be offered at all.'),
+  "status": zod.enum(['pending', 'published', 'rejected']).describe('Where a review stands with the atelier. `pending` is anything not yet decided — including the \"New\" it is captured with — so a review can only ever be waiting, shown, or set aside.'),
+  "rawStatus": zod.string().optional().describe('The `Status` select exactly as Notion holds it, when it is set. Shown for a row whose value the app doesn\'t recognize, so \"why is this still pending?\" is answerable without opening Notion.'),
+  "submittedAt": zod.coerce.date().optional().describe('When the review was submitted (its Notion created time).'),
+  "photos": zod.array(zod.string()).describe('Photographs of the finished piece, as URLs. Notion-signed and short-lived, so they are for rendering this page and nothing else. Empty for a decided review — photos are fetched only for the rows still awaiting a decision.'),
+  "notionUrl": zod.string().optional().describe('The review\'s page in Notion, for anything this queue doesn\'t show.')
+}).describe('One review as the moderation queue shows it. Unlike the public `PublishedReview`, this is the whole row: the atelier is deciding whether to put it on the site, and who wrote it and whether their email matched the order are part of that judgement. Staff-only.')
+
+
