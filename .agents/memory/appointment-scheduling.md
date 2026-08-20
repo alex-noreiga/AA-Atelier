@@ -17,14 +17,16 @@ slots from a **positive** weekly working-hours grid and **subtracts** busy
 intervals. Google free/busy only provides the subtractive half (when someone is
 busy), so the two halves come from two places:
 
-- **Working hours (positive grid)** → the **"Staff Availability" Notion database**
-  (`NOTION_STAFF_AVAILABILITY_DATABASE_ID`), edited on `/studio` → **Working
-  hours**. Read through `lib/appointments/schedule.ts` (the seam) over
-  `lib/notion/staff-availability.repository.ts` (60s cache + fallback) and mapped
+- **Working hours (positive grid)** → the **`staff_availability` Postgres table**,
+  edited on `/studio` → **Working hours**. Read through
+  `lib/appointments/schedule.ts` (the seam) over
+  `lib/db/staff-availability.repository.ts` (60s cache + fallback) and mapped
   by the pure `buildSchedule` in `lib/appointments/staff.ts`. One row is one block:
-  `Staff | Calendar Email | Weekdays | Start | End | Locations`. `Staff` must be a
-  catalog staff name — the editor enforces it now rather than failing silently;
-  `Calendar Email` is the Workspace calendar. (History: an `APPOINTMENT_STAFF` JSON
+  `staff | calendar_email | weekdays | start_time | end_time | locations`. `staff`
+  must be a catalog staff name — the editor enforces it now rather than failing
+  silently; `calendar_email` is the Workspace calendar. **Booking hard-requires
+  `POSTGRES_URL`**: this table is the record, with no fallback. (History: an
+  `APPOINTMENT_STAFF` JSON
   env var → a **Google Sheet** shared with the service account → this. The sheet
   made hours editable without a redeploy but validated nothing, and needed the
   Sheets API + a second share; see `staff-availability-dashboard.md`. Reading it
@@ -52,9 +54,8 @@ Setup the atelier must do once:
 2. Workspace **Admin → Security → API controls → Domain-wide delegation**:
    authorize the service account's client id for scope
    `https://www.googleapis.com/auth/calendar` (calendar impersonation only).
-3. Create the **Staff Availability** Notion database, connect the integration to
-   it, set `NOTION_STAFF_AVAILABILITY_DATABASE_ID`, and enter the hours on
-   `/studio`.
+3. Run `db:migrate` once (creates `staff_availability`), then enter the hours on
+   `/studio` → **Working hours**. No Notion database and no env var of its own.
 
 ## Load-bearing rules (don't regress these)
 

@@ -1,16 +1,17 @@
 // Pure mapper for the staff working-hours schedule. The entries come from the
-// "Staff Availability" Notion database the atelier edits on the studio
-// dashboard (see `lib/notion/staff-availability.repository.ts`); this module
-// turns them into the *positive* availability grid `computeSlots` needs plus a
-// staff→calendar-email map. No I/O and no env reads, so it's fully
-// unit-testable — the fetch/cache lives in the repository.
+// `staff_availability` table the atelier edits on the studio dashboard (see
+// `lib/db/staff-availability.repository.ts`); this module turns them into the
+// *positive* availability grid `computeSlots` needs plus a staff→calendar-email
+// map. No I/O and no env reads, so it's fully unit-testable — the fetch/cache
+// lives in the repository.
 //
-// The dashboard's editor validates before writing, so the entries this sees are
-// usually already well-formed. It stays tolerant anyway, because the rows are
-// ordinary Notion pages and can be hand-edited there: "Mon" and "Monday" both
-// read as Monday, "In person" as the `in-person` location, and an entry that
-// can't be made sense of is skipped rather than failing the whole request —
-// one bad row must not take every staff member's hours down with it.
+// The dashboard's editor validates before writing and the table's check
+// constraints back it up, so the entries this sees are well-formed in practice.
+// It stays tolerant anyway — it long predates that, and the tolerance costs
+// nothing: "Mon" and "Monday" both read as Monday, "In person" as the
+// `in-person` location, and an entry that can't be made sense of is skipped
+// rather than failing the whole request, so one bad row can never take every
+// staff member's hours down with it.
 
 import type { AppointmentLocation } from "./catalog.js";
 import type { WeeklyHours } from "./availability.js";
@@ -26,7 +27,7 @@ export interface ScheduleEntry {
   /** Local wall-clock `HH:MM`. */
   start: string;
   end: string;
-  /** Location labels ("In person" / "virtual"). */
+  /** Location ids ("in-person" / "virtual"; a legacy "In person" is tolerated). */
   locations: string[];
 }
 
