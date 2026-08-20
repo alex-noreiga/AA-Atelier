@@ -1,5 +1,5 @@
 import { useRef, useState } from "react";
-import { useForm } from "react-hook-form";
+import { useForm, type FieldErrors } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
 import { Link } from "wouter";
@@ -42,10 +42,34 @@ const MEASUREMENT_FIELDS = [
   { key: "bodyGirth", label: "Body Girth" },
 ] as const;
 
-// The intake is a two-step flow so the (optional) color step lives on its own
-// page rather than lengthening the main form. Step 0 carries every required
-// field; step 1 is the skippable colors picker + the final submit.
-const STEPS = ["Your details", "Colors"] as const;
+// The intake is a three-step flow, so no one page carries the whole form: who
+// the customer is, then what they want made, then when they need it. Step 0
+// carries every required field; steps 1 and 2 are entirely optional, and the
+// order is placed from step 2.
+const STEPS = ["Your details", "Your design", "Timeline"] as const;
+
+// Which fields live on which step. Two things read this: advancing validates
+// only the step being left (so an error further on can't block it), and a
+// failed final submit jumps back to the earliest step that owns an error
+// instead of stranding the customer on a page with nothing marked. Keep it in
+// step with the sections rendered below.
+const STEP_FIELDS = [
+  [
+    "fullName",
+    "email",
+    "phone",
+    "preferredContact",
+    "measurementMode",
+    "measurementUnit",
+    "waist",
+    "bust",
+    "hips",
+    "height",
+    "bodyGirth",
+  ],
+  ["colors", "colorUsage", "description"],
+  ["neededBy", "rushAcknowledged", "referralCode", "subscribeNewsletter"],
+] as const satisfies readonly (readonly (keyof FormInput)[])[];
 
 // Form-friendly schema (string inputs, friendly messages). Its output is mapped
 // to the generated `NewOrderRequest` contract where it is handed to the
@@ -142,7 +166,8 @@ export default function OrderForm() {
   // Notion file_upload ids for reference images the customer uploaded (managed
   // by <ReferenceImageUpload/>, which uploads each as it's chosen).
   const [referenceImageIds, setReferenceImageIds] = useState<string[]>([]);
-  // Which step of the two-step flow is showing (0 = details, 1 = colors).
+  // Which step of the three-step flow is showing (0 = details, 1 = design,
+  // 2 = timeline).
   const [step, setStep] = useState(0);
   const { toast } = useToast();
 
@@ -218,10 +243,20 @@ export default function OrderForm() {
   // Floor the "needed by" picker at today, so a past date can't be picked.
   const todayIso = new Date().toISOString().split("T")[0];
 
-  // Advance to the colors step only once the details step validates (every
-  // required field lives on step 0), so the customer can't skip past an error.
-  const goToColors = async () => {
-    if (await trigger()) setStep(1);
+  // Advance a step only once the step being left validates. Validation is
+  // scoped to that step's own fields, so an unfinished later step (an
+  // unacknowledged rush surcharge on step 2, say) can't block step 0.
+  const goToNextStep = async () => {
+    if (await trigger(STEP_FIELDS[step])) setStep((current) => current + 1);
+  };
+
+  // A failed submit sends the customer to the earliest step that owns an
+  // error, so the messages they're told about are on the page they land on.
+  const onInvalid = (formErrors: FieldErrors<FormInput>) => {
+    const firstBadStep = STEP_FIELDS.findIndex((fields) =>
+      fields.some((field) => formErrors[field]),
+    );
+    if (firstBadStep >= 0) setStep(firstBadStep);
   };
 
   const onSubmit = (values: FormValues) => {
@@ -390,17 +425,18 @@ export default function OrderForm() {
 
         {/* noValidate: zod owns validation (incl. the needed-by floor), so the
             browser's native constraint bubble can't pre-empt our inline
-            messages. On step 0 a submit (button or Enter) advances to the colors
-            step after validating; on step 1 it places the order. */}
+            messages. On every step but the last, a submit (button or Enter)
+            advances after validating that step; on the last it places the
+            order. */}
         <form
           noValidate
           onSubmit={
-            step === 0
+            step < STEPS.length - 1
               ? (e) => {
                   e.preventDefault();
-                  void goToColors();
+                  void goToNextStep();
                 }
-              : handleSubmit(onSubmit, () => setStep(0))
+              : handleSubmit(onSubmit, onInvalid)
           }
           onFocusCapture={onFormStart}
           onChangeCapture={onFormStart}
@@ -647,6 +683,71 @@ export default function OrderForm() {
                 )}
               </section>
 
+              <div className="flex justify-center pt-4 pb-8">
+                <Button
+                  type="submit"
+                  className={ctaVariants({ variant: "primary", size: "lg" })}
+                  data-testid="continue-to-design"
+                >
+                  Continue to your design
+                  <ArrowRight className="w-4 h-4 ml-2" />
+                </Button>
+              </div>
+            </div>
+          )}
+
+          {step === 1 && (
+            <div className="space-y-12">
+              <button
+                type="button"
+                onClick={() => setStep(0)}
+                className="inline-flex items-center gap-2 text-xs text-muted-foreground hover:text-primary transition-colors tracking-widest uppercase group"
+                data-testid="button-back-to-details"
+              >
+                <ArrowLeft className="w-4 h-4 group-hover:-translate-x-1 transition-transform" />
+                Back to your details
+              </button>
+
+              <section>
+                <h2 className="text-xs tracking-[0.2em] uppercase text-muted-foreground mb-2 pb-2 border-b border-border">
+                  Colors
+                </h2>
+                <p className="text-muted-foreground font-light text-sm mb-6">
+                  Optional — pick the colors you're picturing (choose as many as
+                  you like), or skip this and we'll settle it together at your
+                  consultation.
+                </p>
+                <div className="space-y-6">
+                  <ColorPicker
+                    palette={palette}
+                    value={colors}
+                    onChange={(next) =>
+                      setValue("colors", next, { shouldValidate: false })
+                    }
+                    disabled={submitting}
+                  />
+
+                  <div>
+                    <Label
+                      htmlFor="colorUsage"
+                      className="text-sm font-light tracking-wide"
+                    >
+                      How would you like these colors used?
+                      <span className="text-muted-foreground/60 ml-1 text-xs">
+                        (optional)
+                      </span>
+                    </Label>
+                    <Textarea
+                      id="colorUsage"
+                      {...register("colorUsage")}
+                      placeholder="e.g. emerald as the main color with gold accents on the collar, and a blush skirt."
+                      rows={3}
+                      className="mt-1.5 bg-transparent border border-border rounded-lg px-3 py-2 text-sm focus-visible:ring-0 focus-visible:border-primary transition-colors resize-none shadow-none"
+                    />
+                  </div>
+                </div>
+              </section>
+
               <section>
                 <h2 className="text-xs tracking-[0.2em] uppercase text-muted-foreground mb-6 pb-2 border-b border-border">
                   Costume Details
@@ -671,6 +772,57 @@ export default function OrderForm() {
                     />
                   </div>
 
+                  <div>
+                    <Label className="text-sm font-light tracking-wide">
+                      Reference Images
+                      <span className="text-muted-foreground/60 ml-1 text-xs">
+                        (optional)
+                      </span>
+                    </Label>
+                    <div className="mt-2">
+                      <ReferenceImageUpload
+                        onChange={setReferenceImageIds}
+                        disabled={submitting}
+                        helpText="Inspiration photos, fabric swatches, or a custom print you'd like us to work from."
+                      />
+                    </div>
+                  </div>
+                </div>
+              </section>
+
+              <div className="flex justify-center pt-4 pb-8">
+                <Button
+                  type="submit"
+                  className={ctaVariants({ variant: "primary", size: "lg" })}
+                  data-testid="continue-to-timeline"
+                >
+                  Continue to timeline
+                  <ArrowRight className="w-4 h-4 ml-2" />
+                </Button>
+              </div>
+            </div>
+          )}
+
+          {step === 2 && (
+            <div className="space-y-10">
+              <button
+                type="button"
+                onClick={() => setStep(1)}
+                className="inline-flex items-center gap-2 text-xs text-muted-foreground hover:text-primary transition-colors tracking-widest uppercase group"
+                data-testid="button-back-to-design"
+              >
+                <ArrowLeft className="w-4 h-4 group-hover:-translate-x-1 transition-transform" />
+                Back to your design
+              </button>
+
+              <section>
+                <h2 className="text-xs tracking-[0.2em] uppercase text-muted-foreground mb-2 pb-2 border-b border-border">
+                  Timeline
+                </h2>
+                <p className="text-muted-foreground font-light text-sm mb-6">
+                  Last step, and all of it is optional.
+                </p>
+                <div className="space-y-6">
                   <div>
                     <Label
                       htmlFor="neededBy"
@@ -739,22 +891,6 @@ export default function OrderForm() {
                       )}
                     </div>
                   )}
-
-                  <div>
-                    <Label className="text-sm font-light tracking-wide">
-                      Reference Images
-                      <span className="text-muted-foreground/60 ml-1 text-xs">
-                        (optional)
-                      </span>
-                    </Label>
-                    <div className="mt-2">
-                      <ReferenceImageUpload
-                        onChange={setReferenceImageIds}
-                        disabled={submitting}
-                        helpText="Inspiration photos, fabric swatches, or a custom print you'd like us to work from."
-                      />
-                    </div>
-                  </div>
                 </div>
               </section>
 
@@ -783,71 +919,6 @@ export default function OrderForm() {
                     Referred by another skater? Enter their code and we'll send
                     you a welcome discount.
                   </p>
-                </div>
-              </section>
-
-              <div className="flex justify-center pt-4 pb-8">
-                <Button
-                  type="submit"
-                  className={ctaVariants({ variant: "primary", size: "lg" })}
-                  data-testid="continue-to-colors"
-                >
-                  Continue to colors
-                  <ArrowRight className="w-4 h-4 ml-2" />
-                </Button>
-              </div>
-            </div>
-          )}
-
-          {step === 1 && (
-            <div className="space-y-10">
-              <button
-                type="button"
-                onClick={() => setStep(0)}
-                className="inline-flex items-center gap-2 text-xs text-muted-foreground hover:text-primary transition-colors tracking-widest uppercase group"
-                data-testid="button-back-to-details"
-              >
-                <ArrowLeft className="w-4 h-4 group-hover:-translate-x-1 transition-transform" />
-                Back to details
-              </button>
-
-              <section>
-                <h2 className="text-xs tracking-[0.2em] uppercase text-muted-foreground mb-2 pb-2 border-b border-border">
-                  Colors
-                </h2>
-                <p className="text-muted-foreground font-light text-sm mb-6">
-                  Optional — pick the colors you're picturing (choose as many as
-                  you like), or skip this and we'll settle it together at your
-                  consultation.
-                </p>
-                <div className="space-y-6">
-                  <ColorPicker
-                    palette={palette}
-                    value={colors}
-                    onChange={(next) =>
-                      setValue("colors", next, { shouldValidate: false })
-                    }
-                    disabled={submitting}
-                  />
-
-                  <div>
-                    <Label
-                      htmlFor="colorUsage"
-                      className="text-sm font-light tracking-wide"
-                    >
-                      How would you like these colors used?
-                      <span className="text-muted-foreground/60 ml-1 text-xs">
-                        (optional)
-                      </span>
-                    </Label>
-                    <Textarea
-                      id="colorUsage"
-                      {...register("colorUsage")}
-                      placeholder="e.g. emerald as the main color with gold accents on the collar, and a blush skirt."
-                      rows={3}
-                      className="mt-1.5 bg-transparent border border-border rounded-lg px-3 py-2 text-sm focus-visible:ring-0 focus-visible:border-primary transition-colors resize-none shadow-none"
-                    />
-                  </div>
                 </div>
               </section>
 

@@ -1277,8 +1277,10 @@ existing "Needed By" date, discloses the surcharge, requires the customer to
    (`web-app/src/lib/rush.ts`) is true when the needed-by date falls within
    `RUSH_WINDOW_DAYS` of today. The form then shows the surcharge notice and a required
    acknowledgement checkbox (a `superRefine` blocks submit until it's ticked) and sends
-   `rush: true`. A standard-timeline date sends no `rush` field. `NewOrderRequest.rush`
-   is part of the OpenAPI contract.
+   `rush: true`. Both the date and the disclosure live on the intake's **last** step, so
+   the surcharge is the last thing the customer reads before placing the order rather
+   than a mid-form interruption. A standard-timeline date sends no `rush` field.
+   `NewOrderRequest.rush` is part of the OpenAPI contract.
 
 3. **Recorded as a flag, two ways.** `buildOrderProperties` sets a **`Rush Order`
    checkbox** (filterable in Notion) and `buildOrderPageBlocks` adds a "Rush Order: Yes"
@@ -1333,7 +1335,8 @@ decisions:
    pairs it with a registered `colorUsage` textarea. The order body carries a flat
    `colors: string[]` (picked names) + `colorUsage` (string), both optional
    (contract-first on `NewOrderRequest`). Custom prints / fabric photos fold into the
-   existing **Reference Images** upload on step 1 (no separate uploader).
+   existing **Reference Images** upload, alongside it on the design step (no separate
+   uploader).
 
 4. **Recorded on the order (write-only).** `orders.blocks.ts` writes the picks as a
    **`Colors` multi_select** (the picked names — filterable in Notion) + a **`Color
@@ -1342,12 +1345,13 @@ Usage` rich_text**, and mirrors both as readable **page-body blocks** in the
    signal. Property-name constants (`ORDER_COLORS_PROPERTY`,
    `ORDER_COLOR_USAGE_PROPERTY`) live in `orders.schema.ts`.
 
-The color step is the second page of the two-step intake flow (step 1 = details, step
-2 = "Colors" + submit); see `order-form.tsx` (`STEPS`, the step gating). The atelier's
-one-time setup is **nothing** — the built-in primary palette works out of the box. To
-customize, add a **`COLOR_PALETTE`** row to the "Studio Settings" database with a
-`Value` like `Emerald #0B6E4F, Rose Gold #C5878C, Navy #1F2A44` (or set the
-`COLOR_PALETTE` env var); and add a **`Colors` (multi_select)** + **`Color Usage`
+The color picker opens the second page of the three-step intake flow (step 1 = "Your
+details", step 2 = "Your design" — colors + costume details, step 3 = "Timeline" +
+submit); see `order-form.tsx` (`STEPS` / `STEP_FIELDS`, the step gating). The
+atelier's one-time setup is **nothing** — the built-in primary palette works out of
+the box. To customize, add a **`COLOR_PALETTE`** row to the "Studio Settings"
+database with a `Value` like `Emerald #0B6E4F, Rose Gold #C5878C, Navy #1F2A44` (or
+set the `COLOR_PALETTE` env var); and add a **`Colors` (multi_select)** + **`Color Usage`
 (rich_text)** property to the **Order Tracking Pipeline** database for the write-back.
 Code: `openapi.yaml` (`/colors` + `Color`/`ColorList` + `colors`/`colorUsage` on
 `NewOrderRequest`), `services/colors.ts` + `routes/colors.ts`, `orders.{schema,blocks}.ts`
@@ -2972,7 +2976,7 @@ full detail in `.agents/memory/phase2-workspace-crm-archive-markers.md`.
 | Add request validation / error mapping                   | `artifacts/api-server/src/middlewares/*`                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                      |
 | Change the order-tracking UI (custom + shop)             | `artifacts/web-app/src/pages/track.tsx` (unified lookup) + `components/custom-order-result.tsx` + `components/shop-order-result.tsx`                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                          |
 | Change the order intake form                             | `artifacts/web-app/src/pages/order-form.tsx`                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                  |
-| Change the color selector (intake)                       | `artifacts/web-app/src/components/color-picker.tsx` + `pages/order-form.tsx` (frontend, step 2 of the two-step flow); `api-server/src/services/colors.ts` (`intakeColorPalette`/`parseColorPalette` + the built-in default) + `routes/colors.ts` (`GET /api/colors`, the `COLOR_PALETTE` Studio Settings value); `lib/notion/orders.{schema,blocks}.ts` (write-back to the order's `Colors` + `Color Usage`)                                                                                                                                                                                                                                                                                  |
+| Change the color selector (intake)                       | `artifacts/web-app/src/components/color-picker.tsx` + `pages/order-form.tsx` (frontend, step 2 of the three-step flow); `api-server/src/services/colors.ts` (`intakeColorPalette`/`parseColorPalette` + the built-in default) + `routes/colors.ts` (`GET /api/colors`, the `COLOR_PALETTE` Studio Settings value); `lib/notion/orders.{schema,blocks}.ts` (write-back to the order's `Colors` + `Color Usage`)                                                                                                                                                                                                                                                                                |
 | Change the rush order surcharge                          | `artifacts/web-app/src/lib/rush.ts` (window + disclosure) + `pages/order-form.tsx` (detect/acknowledge/send); `api-server/src/lib/notion/orders.blocks.ts` + `orders.schema.ts` (`Rush Order` record); `api-server/src/services/rush.ts` + `services/invoice-generator.service.ts` (server-priced "Surcharge" line); `web-app/src/lib/invoice-format.ts` ("Surcharge" line display)                                                                                                                                                                                                                                                                                                           |
 | Change referral & returning-skater rewards               | `api-server/src/services/rewards.service.ts` (engine + amount getters) + `lib/stripe/promotions.ts` (`createDiscountCode`) + `lib/notion/clients.repository.ts` (reward reads + `patchClientProperties`); wired from `submitOrder` (capture) + `recordPaidOrder` / `recordPayment` (issue); reward emails in `lib/resend/emails.ts`; `services/account.service.ts` + `web-app/src/pages/account.tsx` (referral card) + `pages/order-form.tsx` (`referralCode` field)                                                                                                                                                                                                                          |
 | Add/read an atelier-editable live setting                | `api-server/src/lib/settings/store.ts` (`SETTING_KEYS` + `settingValue`) + `lib/notion/settings.{schema,repository}.ts` (Notion read); consume with `settingValue(KEY) ?? process.env[KEY] ?? default` (see `services/rush.ts`); primed by the middleware in `app.ts`. Notion "Studio Settings" DB, `NOTION_SETTINGS_DATABASE_ID`                                                                                                                                                                                                                                                                                                                                                             |
