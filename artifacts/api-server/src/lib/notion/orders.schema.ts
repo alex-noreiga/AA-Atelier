@@ -81,6 +81,17 @@ export const ORDER_MEASUREMENT_UNIT_PROPERTY = "Measurement Unit"; // select (in
 // only when the customer supplied them.
 export const ORDER_COLORS_PROPERTY = "Colors"; // multi_select
 export const ORDER_COLOR_USAGE_PROPERTY = "Color Usage"; // rich_text
+// How the customer asked to be contacted, and — when they chose to be measured
+// at a fitting rather than entering values now — a flag saying so. Both mirror a
+// page-body line that has always been written; as typed properties they become
+// filterable, so the atelier can pull "everyone waiting to be measured" as a
+// view instead of reading it out of each page. Write-only, like `Colors`.
+export const ORDER_PREFERRED_CONTACT_PROPERTY = "Preferred Contact"; // select (email | phone | text)
+export const ORDER_MEASUREMENT_APPOINTMENT_PROPERTY = "Measurement Appointment"; // checkbox
+// The referral code the customer typed at intake, kept verbatim on the order so
+// the atelier can see who sent them even when the code resolved to nothing. The
+// reward engine reads the CRM, never this — it's a record, not a mechanism.
+export const ORDER_REFERRAL_CODE_PROPERTY = "Referral Code"; // rich_text
 
 /** Validated new-order payload, derived from the OpenAPI contract. */
 export type CreateOrderInput = z.infer<typeof CreateOrderBody>;

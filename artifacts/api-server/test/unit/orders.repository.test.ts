@@ -67,6 +67,57 @@ describe("createOrder", () => {
     expect(body.properties["Client"].relation).toEqual([{ id: "client-9" }]);
   });
 
+  it("drops a property the database doesn't have yet and retries, keeping the order", async () => {
+    // Notion rejects the WHOLE page when it names an unknown property, so an
+    // additive property the atelier hasn't added must not fail intake.
+    const client = makeFakeClient((path, init) => {
+      if (path !== "/v1/pages") throw new Error(`unexpected path ${path}`);
+      const body = JSON.parse(init!.body as string);
+      if ("Referral Code" in body.properties) {
+        return errorResponse(
+          400,
+          JSON.stringify({
+            object: "error",
+            code: "validation_error",
+            message: "Referral Code is not a property that exists",
+          }),
+        );
+      }
+      return jsonResponse({ id: "new-page" }, 200);
+    });
+
+    const { pageId } = await repo.createOrder(
+      { ...validOrder, referralCode: "AA-ABC123" },
+      client,
+    );
+
+    expect(pageId).toBe("new-page");
+    expect(client.calls).toHaveLength(2);
+    const retried = JSON.parse(client.calls[1].init!.body as string);
+    expect(retried.properties).not.toHaveProperty("Referral Code");
+    // Everything else survives — only the unknown property is dropped.
+    expect(retried.properties).toHaveProperty("Order Number");
+    expect(Array.isArray(retried.children)).toBe(true);
+  });
+
+  it("gives up rather than looping when the 400 names a property we did not send", async () => {
+    const client = makeFakeClient(() =>
+      errorResponse(
+        400,
+        JSON.stringify({
+          object: "error",
+          code: "validation_error",
+          message: "Something Else is not a property that exists",
+        }),
+      ),
+    );
+
+    await expect(repo.createOrder(validOrder, client)).rejects.toThrow(
+      /status 400/,
+    );
+    expect(client.calls).toHaveLength(1);
+  });
+
   it("throws with status and the Notion error text on a non-ok response", async () => {
     const client = makeFakeClient(() =>
       errorResponse(400, "validation_error: bad property"),

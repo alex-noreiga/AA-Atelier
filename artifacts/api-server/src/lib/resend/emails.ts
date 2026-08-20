@@ -36,12 +36,72 @@ function layout(heading: string, bodyHtml: string): string {
 </html>`;
 }
 
-/** Confirmation sent to the customer when a new custom order is submitted. */
+/** The customer's measurements as one line, or the note that they asked to be
+ * measured at an appointment instead. The intake offers exactly one of the two
+ * (`submitOrder` rejects a body with neither), so this never renders blanks. */
+function measurementsLine(input: CreateOrderInput): string {
+  if (input.waist === undefined) {
+    return "to be taken at a fitting or consultation appointment";
+  }
+  return (
+    `waist ${input.waist}, chest ${input.bust}, hips ${input.hips}, ` +
+    `height ${input.height}, girth ${input.bodyGirth} (${input.measurementUnit})`
+  );
+}
+
+/**
+ * Everything the customer told us about the piece itself, as label/value rows.
+ *
+ * Shared by the customer's confirmation and the atelier's notification so the two
+ * can't drift as the intake form grows — a field added to one is added to both.
+ * Every row but the measurements is optional and omitted when the customer left
+ * it blank, so neither email renders an empty label.
+ */
+function orderDetailFields(input: CreateOrderInput): Field[] {
+  return [
+    ["Measurements", measurementsLine(input)],
+    ...(input.colors && input.colors.length > 0
+      ? [["Colors", input.colors.join(", ")] as Field]
+      : []),
+    ...(input.colorUsage
+      ? [["Colors, as you'd like them used", input.colorUsage] as Field]
+      : []),
+    ...(input.description ? [["Notes", input.description] as Field] : []),
+    ...(input.referenceImageIds && input.referenceImageIds.length > 0
+      ? [
+          [
+            "Reference images",
+            `${input.referenceImageIds.length} uploaded`,
+          ] as Field,
+        ]
+      : []),
+    ...(input.neededBy
+      ? [["Needed by", formatOrderDate(input.neededBy)] as Field]
+      : []),
+    ...(input.rush ? [["Rush order", "Yes"] as Field] : []),
+    ...(input.referralCode
+      ? [["Referral code", input.referralCode] as Field]
+      : []),
+  ];
+}
+
+/** The contract coerces `neededBy` to a Date; defend against a raw string, as
+ * `orders.blocks.ts` does. */
+function formatOrderDate(neededBy: NonNullable<CreateOrderInput["neededBy"]>) {
+  return neededBy instanceof Date
+    ? neededBy.toISOString().slice(0, 10)
+    : String(neededBy);
+}
+
+/** Confirmation sent to the customer when a new custom order is submitted. It
+ * reads back everything they entered, so a typo in a measurement or a date is
+ * caught now rather than at the fitting. */
 export function orderConfirmationEmail(
   input: CreateOrderInput,
   orderNumber: string,
 ): EmailMessage {
   const firstName = input.fullName.trim().split(/\s+/)[0] || "there";
+  const details = orderDetailFields(input);
 
   const html = layout(
     "Your order is in our hands",
@@ -50,6 +110,12 @@ export function orderConfirmationEmail(
         our atelier will begin the journey from measurements to finished garment.</p>
      <p>Your order number is <strong>${orderNumber}</strong>. Keep it handy — you can
         follow each stage of your garment's progress on our website using this number.</p>
+     <p style="margin-bottom:10px;">Here's what we have on file:</p>
+     <div style="border-left:2px solid #e7e0d8;padding:2px 0 2px 16px;margin:0 0 20px;font-size:15px;">
+       ${renderRowsHtml(details)}
+     </div>
+     <p>If anything above needs correcting, simply reply to this email and we'll put
+        it right.</p>
      <p>We'll be in touch as your piece takes shape.</p>`,
   );
 
@@ -61,6 +127,13 @@ export function orderConfirmationEmail(
     ``,
     `Your order number is ${orderNumber}. Keep it handy — you can follow each stage`,
     `of your garment's progress on our website using this number.`,
+    ``,
+    `Here's what we have on file:`,
+    ``,
+    renderRowsText(details),
+    ``,
+    `If anything above needs correcting, simply reply to this email and we'll put`,
+    `it right.`,
     ``,
     `We'll be in touch as your piece takes shape.`,
     ``,
@@ -840,35 +913,21 @@ export function contactNotificationEmail(
   };
 }
 
-/** Notify the atelier of a new custom order. */
+/** Notify the atelier of a new custom order. Carries the same details as the
+ * customer's confirmation (via `orderDetailFields`) behind the contact rows, so
+ * the inbox shows the whole intake without opening Notion. */
 export function orderNotificationEmail(
   input: CreateOrderInput,
   orderNumber: string,
   to: string,
 ): EmailMessage {
-  const measurements =
-    `waist ${input.waist}, chest ${input.bust}, hips ${input.hips}, ` +
-    `height ${input.height}, girth ${input.bodyGirth} (${input.measurementUnit})`;
-
   const fields: Field[] = [
     ["Order number", orderNumber],
     ["Name", input.fullName],
     ["Email", input.email],
     ["Phone", input.phone],
     ["Preferred contact", input.preferredContact],
-    ["Measurements", measurements],
-    ...(input.neededBy
-      ? [["Needed by", input.neededBy.toISOString().slice(0, 10)] as Field]
-      : []),
-    ...(input.description ? [["Notes", input.description] as Field] : []),
-    ...(input.referenceImageIds && input.referenceImageIds.length > 0
-      ? [
-          [
-            "Reference images",
-            `${input.referenceImageIds.length} attached — see the order page in Notion`,
-          ] as Field,
-        ]
-      : []),
+    ...orderDetailFields(input),
   ];
 
   return {
