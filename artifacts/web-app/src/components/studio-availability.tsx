@@ -214,7 +214,7 @@ export function StudioAvailability() {
 
       <p className="mt-2 text-xs text-muted-foreground/80 font-light">
         These are the standing hours. A day off, a trip, or anything else on a
-        staff calendar is subtracted automatically — block it there, not here.
+        staff calendar is subtracted automatically.
       </p>
     </section>
   );
