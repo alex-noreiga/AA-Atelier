@@ -89,6 +89,45 @@ describe("orderConfirmationEmail", () => {
     expect(email.html).toContain("A.A Atelier");
     expect(email.text).toContain("000002");
   });
+
+  it("reads the order details back so the customer can spot a mistake", () => {
+    const email = orderConfirmationEmail(
+      createOrderInput({
+        colors: ["Emerald"],
+        description: "Ivory chiffon, long sleeves.",
+        neededBy: new Date("2026-09-01T12:34:56Z") as never,
+        rush: true,
+        referenceImageIds: ["a", "b"],
+      }),
+      "000002",
+    );
+
+    expect(email.text).toContain(
+      "Measurements: waist 28, chest 36, hips 38, height 65, girth 32 (inches)",
+    );
+    expect(email.text).toContain("Colors: Emerald");
+    expect(email.text).toContain("Notes: Ivory chiffon, long sleeves.");
+    expect(email.text).toContain("Reference images: 2 uploaded");
+    expect(email.text).toContain("Needed by: 2026-09-01");
+    expect(email.text).toContain("Rush order: Yes");
+    expect(email.html).toContain("Emerald");
+    // The invitation to correct it is the point of the recap.
+    expect(email.text).toMatch(/reply to this email/i);
+  });
+
+  it("tells a measure-at-fitting customer so, instead of listing blanks", () => {
+    const { waist, bust, hips, height, bodyGirth, ...contact } =
+      createOrderInput();
+    const email = orderConfirmationEmail(
+      { ...contact, measurementAppointment: true },
+      "000002",
+    );
+
+    expect(email.text).toContain(
+      "Measurements: to be taken at a fitting or consultation appointment",
+    );
+    expect(email.text).not.toContain("undefined");
+  });
 });
 
 describe("contactAckEmail", () => {
@@ -180,7 +219,59 @@ describe("orderNotificationEmail", () => {
       "000002",
       INBOX,
     );
-    expect(email.text).toContain("Reference images: 3 attached");
+    expect(email.text).toContain("Reference images: 3 uploaded");
+  });
+
+  it("carries every optional intake field the customer filled in", () => {
+    const email = orderNotificationEmail(
+      createOrderInput({
+        colors: ["Emerald", "Blush"],
+        colorUsage: "Emerald bodice with a blush skirt.",
+        description: "Ivory chiffon, long sleeves.",
+        neededBy: new Date("2026-09-01T12:34:56Z") as never,
+        rush: true,
+        referralCode: "AA-ABC123",
+      }),
+      "000002",
+      INBOX,
+    );
+
+    expect(email.text).toContain("Colors: Emerald, Blush");
+    expect(email.text).toContain(
+      "Colors, as you'd like them used: Emerald bodice with a blush skirt.",
+    );
+    expect(email.text).toContain("Notes: Ivory chiffon, long sleeves.");
+    expect(email.text).toContain("Needed by: 2026-09-01");
+    expect(email.text).toContain("Rush order: Yes");
+    expect(email.text).toContain("Referral code: AA-ABC123");
+  });
+
+  it("omits every optional field the customer left blank", () => {
+    const email = orderNotificationEmail(createOrderInput(), "000002", INBOX);
+    for (const label of [
+      "Colors",
+      "Notes",
+      "Needed by",
+      "Rush order",
+      "Referral code",
+    ]) {
+      expect(email.text).not.toContain(`${label}:`);
+    }
+  });
+
+  it("says measurements are coming at an appointment rather than rendering blanks", () => {
+    const { waist, bust, hips, height, bodyGirth, ...contact } =
+      createOrderInput();
+    const email = orderNotificationEmail(
+      { ...contact, measurementAppointment: true },
+      "000002",
+      INBOX,
+    );
+
+    expect(email.text).toContain(
+      "Measurements: to be taken at a fitting or consultation appointment",
+    );
+    expect(email.text).not.toContain("undefined");
   });
 });
 

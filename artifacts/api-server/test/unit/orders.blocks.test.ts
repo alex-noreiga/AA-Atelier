@@ -99,6 +99,40 @@ describe("buildOrderProperties", () => {
     expect(props["Measurement Unit"].select.name).toBe("cm");
   });
 
+  it("writes the preferred contact method as a select", () => {
+    const props = buildOrderProperties(
+      { ...baseOrder, preferredContact: "text" },
+      "ORD-ABC-123",
+    ) as any;
+    expect(props["Preferred Contact"].select.name).toBe("text");
+  });
+
+  it("flags a measure-at-fitting order with the Measurement Appointment checkbox", () => {
+    const props = buildOrderProperties(
+      { ...baseOrder, measurementAppointment: true },
+      "ORD-ABC-123",
+    ) as any;
+    expect(props["Measurement Appointment"].checkbox).toBe(true);
+  });
+
+  it("omits the Measurement Appointment checkbox when measurements were supplied", () => {
+    const props = buildOrderProperties(baseOrder, "ORD-ABC-123") as any;
+    expect(props).not.toHaveProperty("Measurement Appointment");
+  });
+
+  it("records the referral code as typed, and omits it when none was entered", () => {
+    const withCode = buildOrderProperties(
+      { ...baseOrder, referralCode: "AA-ABC123" },
+      "ORD-ABC-123",
+    ) as any;
+    expect(withCode["Referral Code"].rich_text[0].text.content).toBe(
+      "AA-ABC123",
+    );
+
+    const without = buildOrderProperties(baseOrder, "ORD-ABC-123") as any;
+    expect(without).not.toHaveProperty("Referral Code");
+  });
+
   it("omits the measurement properties for a measure-at-fitting order", () => {
     const {
       waist,
@@ -271,6 +305,16 @@ describe("color selections", () => {
     expect(pairs["Color Usage"]).toBe(
       "Emerald bodice, gold accents on the collar, blush skirt.",
     );
+  });
+
+  it("renders the referral code in the page body when one was entered", () => {
+    const pairs = textPairs(
+      buildOrderPageBlocks({ ...baseOrder, referralCode: "AA-ABC123" }),
+    );
+    expect(pairs["Referral Code"]).toBe("AA-ABC123");
+
+    const without = textPairs(buildOrderPageBlocks(baseOrder));
+    expect(without).not.toHaveProperty("Referral Code");
   });
 
   it("adds no color blocks when nothing was picked", () => {

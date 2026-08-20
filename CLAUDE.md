@@ -1357,6 +1357,51 @@ Code: `openapi.yaml` (`/colors` + `Color`/`ColorList` + `colors`/`colorUsage` on
 `NewOrderRequest`), `services/colors.ts` + `routes/colors.ts`, `orders.{schema,blocks}.ts`
 (write-back), and `web-app/src/components/color-picker.tsx` + `pages/order-form.tsx`.
 
+## What the intake records (order form -> Notion + email parity)
+
+Everything the three-step intake asks for reaches all three destinations: the
+**Notion order page** (typed properties + readable body blocks), the **customer's
+confirmation email**, and the **atelier's notification email**. The form has grown
+field by field (colors, the rush acknowledgement, the referral code, the
+measure-at-a-fitting option) and each addition used to have to be remembered in
+four places. Three things keep them in step:
+
+1. **One shared field list backs both emails.** `orderDetailFields`
+   (`lib/resend/emails.ts`) maps a `CreateOrderInput` to the label/value rows for
+   the piece itself — measurements, colors, colour usage, notes, reference-image
+   count, needed-by, rush, referral code — and **both** `orderConfirmationEmail`
+   and `orderNotificationEmail` render it. The notification prepends the contact
+   rows; the confirmation wraps it in "Here's what we have on file" and invites a
+   reply to correct it. A field added to the intake is added once, here. Every row
+   but the measurements is omitted when blank, so neither email renders an empty
+   label.
+
+2. **Measurements are one of two states, never blanks.** The intake offers either
+   the five values or "take them at an appointment" (`submitOrder` rejects a body
+   with neither), so `measurementsLine` renders the appointment note rather than
+   the five `undefined`s the notification email used to print for those orders.
+
+3. **A property the atelier hasn't added yet degrades; it doesn't fail intake.**
+   Notion rejects a page create that names a property the database lacks — the
+   **whole** page, not the field — so each additive property here was a live
+   footgun. `createPageDroppingUnknownProperties`
+   (`lib/notion/orders.repository.ts`) parses that 400, drops the offending
+   property, and retries (bounded, and only for a property we actually sent, so an
+   unrelated 400 still throws). The order is recorded without that one field, the
+   page body still carries the value as text, and a `warn` names the property to
+   add. This is the same "degrade with a pointed warn" contract as the
+   payment-reminder pass.
+
+**Atelier setup (optional, additive).** The write-back properties on **Order
+Tracking Pipeline**, beyond the ones the earlier sections list (`Due Date`,
+`Rush Order`, the five measurement numbers + `Measurement Unit`, `Colors`,
+`Color Usage`): **`Preferred Contact`** (select — `email` / `phone` / `text`),
+**`Measurement Appointment`** (checkbox — the orders still waiting to be measured,
+so they can be a view), and **`Referral Code`** (rich_text — what the customer
+typed, kept even when it resolved to nothing; the reward engine's own state lives
+on the Client CRM). Missing ⇒ that field is dropped per point 3 and still appears
+in the page body. Property names live in `orders.schema.ts`.
+
 ## Referral & returning-skater rewards
 
 Every customer gets a shareable **referral code**; when a skater they refer places
@@ -2995,7 +3040,7 @@ full detail in `.agents/memory/phase2-workspace-crm-archive-markers.md`.
 | Add/modify an API route                                  | `artifacts/api-server/src/routes/*`                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                           |
 | Add request validation / error mapping                   | `artifacts/api-server/src/middlewares/*`                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                      |
 | Change the order-tracking UI (custom + shop)             | `artifacts/web-app/src/pages/track.tsx` (unified lookup) + `components/custom-order-result.tsx` + `components/shop-order-result.tsx`                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                          |
-| Change the order intake form                             | `artifacts/web-app/src/pages/order-form.tsx`                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                  |
+| Change the order intake form                             | `artifacts/web-app/src/pages/order-form.tsx` — then carry the new field through to Notion + both emails (see "What the intake records"): `lib/notion/orders.{schema,blocks}.ts` for the property + page-body write, and `orderDetailFields` in `lib/resend/emails.ts` for both emails at once                                                                                                                                                                                                                                                                                                                                                                                                 |
 | Change the color selector (intake)                       | `artifacts/web-app/src/components/color-picker.tsx` + `pages/order-form.tsx` (frontend, step 2 of the three-step flow); `api-server/src/services/colors.ts` (`intakeColorPalette`/`parseColorPalette` + the built-in default) + `routes/colors.ts` (`GET /api/colors`, the `COLOR_PALETTE` Studio Settings value); `lib/notion/orders.{schema,blocks}.ts` (write-back to the order's `Colors` + `Color Usage`)                                                                                                                                                                                                                                                                                |
 | Change the rush order surcharge                          | `artifacts/web-app/src/lib/rush.ts` (window + disclosure) + `pages/order-form.tsx` (detect/acknowledge/send); `api-server/src/lib/notion/orders.blocks.ts` + `orders.schema.ts` (`Rush Order` record); `api-server/src/services/rush.ts` + `services/invoice-generator.service.ts` (server-priced "Surcharge" line); `web-app/src/lib/invoice-format.ts` ("Surcharge" line display)                                                                                                                                                                                                                                                                                                           |
 | Change referral & returning-skater rewards               | `api-server/src/services/rewards.service.ts` (engine + amount getters) + `lib/stripe/promotions.ts` (`createDiscountCode`) + `lib/notion/clients.repository.ts` (reward reads + `patchClientProperties`); wired from `submitOrder` (capture) + `recordPaidOrder` / `recordPayment` (issue); reward emails in `lib/resend/emails.ts`; `services/account.service.ts` + `web-app/src/pages/account.tsx` (referral card) + `pages/order-form.tsx` (`referralCode` field)                                                                                                                                                                                                                          |

@@ -18,6 +18,9 @@ import {
   ORDER_MEASUREMENT_UNIT_PROPERTY,
   ORDER_COLORS_PROPERTY,
   ORDER_COLOR_USAGE_PROPERTY,
+  ORDER_PREFERRED_CONTACT_PROPERTY,
+  ORDER_MEASUREMENT_APPOINTMENT_PROPERTY,
+  ORDER_REFERRAL_CODE_PROPERTY,
   type CreateOrderInput,
 } from "./orders.schema.js";
 import { normalizeEmail } from "../email.js";
@@ -94,6 +97,11 @@ export function buildOrderProperties(
     [ORDER_EMAIL_PROPERTY]: {
       email: normalizeEmail(data.email),
     },
+    // How the customer asked to be reached. Always present (the contract requires
+    // it), so unlike the optional properties below it needs no guard.
+    [ORDER_PREFERRED_CONTACT_PROPERTY]: {
+      select: { name: data.preferredContact },
+    },
   };
   // The customer's "needed by" date is the atelier's target completion date, so
   // seed the `Due Date` property from it directly at intake. The atelier can
@@ -124,6 +132,12 @@ export function buildOrderProperties(
       select: { name: data.measurementUnit },
     };
   }
+  // The other branch of the same choice: the customer asked to be measured at a
+  // fitting/consultation. Written only when true (an unset checkbox reads false),
+  // so the atelier can filter for the orders still waiting on measurements.
+  if (data.measurementAppointment) {
+    properties[ORDER_MEASUREMENT_APPOINTMENT_PROPERTY] = { checkbox: true };
+  }
   // The customer's color choices from the intake palette — a multi_select of the
   // picked color names (filterable) + a free-text usage note. Write-only; the app
   // never reads them back. Each written only when supplied.
@@ -135,6 +149,14 @@ export function buildOrderProperties(
   if (data.colorUsage) {
     properties[ORDER_COLOR_USAGE_PROPERTY] = {
       rich_text: [{ text: { content: data.colorUsage } }],
+    };
+  }
+  // The referral code as typed. Recorded even when it resolves to nothing — the
+  // reward engine's own state lives on the Client CRM (see rewards.service.ts);
+  // this is the atelier's record of what the customer entered.
+  if (data.referralCode) {
+    properties[ORDER_REFERRAL_CODE_PROPERTY] = {
+      rich_text: [{ text: { content: data.referralCode } }],
     };
   }
   if (clientPageId) {
@@ -204,6 +226,11 @@ export function buildOrderPageBlocks(data: CreateOrderInput): unknown[] {
   }
   if (data.colorUsage) {
     costumeSection.push(textBlock("Color Usage", data.colorUsage));
+  }
+  // Who sent them, as typed. Mirrors the `Referral Code` property above so the
+  // page reads complete without opening the property panel.
+  if (data.referralCode) {
+    costumeSection.push(textBlock("Referral Code", data.referralCode));
   }
   costumeSection.push(dividerBlock());
 
