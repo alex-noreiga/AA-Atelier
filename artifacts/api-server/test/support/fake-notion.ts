@@ -537,9 +537,13 @@ export function reviewPage(opts: {
   rating?: number | null;
   comment?: string;
   customerName?: string;
+  orderNumber?: string;
+  email?: string | null;
+  emailVerified?: boolean;
   status?: string | null;
   consent?: boolean;
   createdTime?: string | null;
+  url?: string | null;
 }) {
   const rt = (value?: string) => ({
     type: "rich_text",
@@ -551,6 +555,9 @@ export function reviewPage(opts: {
     ...(opts.createdTime === null
       ? {}
       : { created_time: opts.createdTime ?? "2026-08-01T12:00:00.000Z" }),
+    ...(opts.url === null
+      ? {}
+      : { url: opts.url ?? "https://notion.so/review-page" }),
     properties: {
       Rating: {
         type: "number",
@@ -566,6 +573,18 @@ export function reviewPage(opts: {
       "Consent to Publish": {
         type: "checkbox",
         checkbox: opts.consent ?? true,
+      },
+      // Read only by the staff (moderation) projection; the public one never
+      // touches these.
+      "Order Number": rt(opts.orderNumber ?? "000002"),
+      Email: {
+        type: "email",
+        email:
+          opts.email === null ? null : (opts.email ?? "skater@example.com"),
+      },
+      "Email Verified": {
+        type: "checkbox",
+        checkbox: opts.emailVerified ?? true,
       },
     },
   };

@@ -59,12 +59,15 @@ import type {
   ProductList,
   RescheduleAppointmentRequest,
   ReviewList,
+  ReviewStatusRequest,
   ShopOrderStatus,
   StaffAvailabilityEntry,
   StaffAvailabilityList,
   StaffAvailabilityRequest,
   StudioAccess,
   StudioAnalytics,
+  StudioReview,
+  StudioReviewList,
   StudioTool,
   StudioToolRequest,
   StudioToolRun
@@ -2514,5 +2517,162 @@ export const useRunStudioTool = <TError = ErrorType<ErrorEnvelope | OrderNotFoun
         TContext
       > => {
       return useMutation(getRunStudioToolMutationOptions(options));
+    }
+
+export const getListStudioReviewsUrl = () => {
+
+
+
+
+  return `/api/studio/reviews`
+}
+
+/**
+ * Every review the atelier hasn't decided on yet, plus the ones it has, newest first — the read half of the loop the app has only ever written to. A review is captured at delivery with its Notion `Status` set to "New" and had to be promoted by hand in Notion for the site to show it; this is that same decision, made where the rest of the studio work happens.
+ *
+ * The three moderation states are DERIVED from the `Status` select rather than enumerated from it: `published` and `rejected` name the two values the app writes, and everything else — "New", a blank select, or any value the atelier invented — reads as `pending`. So an unrecognized status asks for a decision rather than silently publishing.
+ *
+ * Photos are fetched only for the pending rows (they are what a decision is made on) and their URLs are short-lived Notion-signed links, good for this page load and not for storing. Same staff gate as the rest of the studio surface: 401 when not signed in, 404 when signed in but not staff, 403 when staff but not signed in with Google.
+ * @summary The review moderation queue
+ */
+export const listStudioReviews = async ( options?: Parameters<typeof customFetch>[1]): Promise<StudioReviewList> => {
+
+  return customFetch<StudioReviewList>(getListStudioReviewsUrl(),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
+
+
+
+
+export const getListStudioReviewsQueryKey = () => {
+    return [
+    `/api/studio/reviews`
+    ] as const;
+    }
+
+
+export const getListStudioReviewsQueryOptions = <TData = Awaited<ReturnType<typeof listStudioReviews>>, TError = ErrorType<ErrorEnvelope | OrderNotFound>>( options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof listStudioReviews>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getListStudioReviewsQueryKey();
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof listStudioReviews>>> = ({ signal }) => listStudioReviews({ signal, ...requestOptions });
+
+
+
+
+
+   return  { queryKey, queryFn, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof listStudioReviews>>, TError, TData> & { queryKey: QueryKey }
+}
+
+export type ListStudioReviewsQueryResult = NonNullable<Awaited<ReturnType<typeof listStudioReviews>>>
+export type ListStudioReviewsQueryError = ErrorType<ErrorEnvelope | OrderNotFound>
+
+
+/**
+ * @summary The review moderation queue
+ */
+
+export function useListStudioReviews<TData = Awaited<ReturnType<typeof listStudioReviews>>, TError = ErrorType<ErrorEnvelope | OrderNotFound>>(
+  options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof listStudioReviews>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+
+ ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+
+  const queryOptions = getListStudioReviewsQueryOptions(options)
+
+  const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
+
+  return withQueryKey(query, queryOptions.queryKey);
+}
+
+
+
+
+
+
+
+export const getSetStudioReviewStatusUrl = (reviewId: string,) => {
+
+
+
+
+  return `/api/studio/reviews/${reviewId}/status`
+}
+
+/**
+ * Writes one review's moderation decision to its Notion `Status`. `published` is what puts a testimonial on the site, `rejected` takes it off (and keeps it out of the queue), and `pending` returns it to the queue — so a decision made in error is undone the same way it was made.
+ *
+ * Publishing requires the customer's own consent to publish, which the atelier cannot supply: without it the request is refused with 409 rather than writing a status the site would then decline to honour. Consent is on the review (`consentToPublish`), so the dashboard can say so before the button is pressed.
+ * @summary Publish, reject, or re-queue a review
+ */
+export const setStudioReviewStatus = async (reviewId: string,
+    reviewStatusRequest: ReviewStatusRequest, options?: Parameters<typeof customFetch>[1]): Promise<StudioReview> => {
+
+  return customFetch<StudioReview>(getSetStudioReviewStatusUrl(reviewId),
+  {
+    ...options,
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    body: JSON.stringify(reviewStatusRequest)
+  }
+);}
+
+
+
+
+
+export const getSetStudioReviewStatusMutationOptions = <TError = ErrorType<ErrorEnvelope | OrderNotFound>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof setStudioReviewStatus>>, TError,{reviewId: string;data: BodyType<ReviewStatusRequest>}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof setStudioReviewStatus>>, TError,{reviewId: string;data: BodyType<ReviewStatusRequest>}, TContext> => {
+
+const mutationKey = ['setStudioReviewStatus'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof setStudioReviewStatus>>, {reviewId: string;data: BodyType<ReviewStatusRequest>}> = (props) => {
+          const {reviewId,data} = props ?? {};
+
+          return  setStudioReviewStatus(reviewId,data,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type SetStudioReviewStatusMutationResult = NonNullable<Awaited<ReturnType<typeof setStudioReviewStatus>>>
+    export type SetStudioReviewStatusMutationBody = BodyType<ReviewStatusRequest>
+    export type SetStudioReviewStatusMutationError = ErrorType<ErrorEnvelope | OrderNotFound>
+
+    /**
+ * @summary Publish, reject, or re-queue a review
+ */
+export const useSetStudioReviewStatus = <TError = ErrorType<ErrorEnvelope | OrderNotFound>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof setStudioReviewStatus>>, TError,{reviewId: string;data: BodyType<ReviewStatusRequest>}, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof setStudioReviewStatus>>,
+        TError,
+        {reviewId: string;data: BodyType<ReviewStatusRequest>},
+        TContext
+      > => {
+      return useMutation(getSetStudioReviewStatusMutationOptions(options));
     }
 

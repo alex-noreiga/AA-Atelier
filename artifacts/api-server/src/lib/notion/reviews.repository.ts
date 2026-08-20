@@ -3,11 +3,14 @@
 // `NOTION_REVIEWS_DATABASE_ID` (via `getReviewsNotionClient`) rather than
 // reusing the contact client.
 //
-// Two directions live here. `createReview` is the customer's post-delivery
-// submission (which requires the database and throws when it's unset), and
+// Three directions live here. `createReview` is the customer's post-delivery
+// submission (which requires the database and throws when it's unset);
 // `listPublishedReviews` is the read the site's testimonials render from —
 // which deliberately degrades to an empty list instead, since a marketing page
-// must not 500 because a Notion database id is missing.
+// must not 500 because a Notion database id is missing; and the moderation
+// reads/writes at the bottom serve the studio dashboard's queue, which is a
+// staff surface and so fails loudly like the write path rather than quietly
+// like the marketing one.
 
 import {
   getReviewsNotionClient,
@@ -23,9 +26,17 @@ import {
 } from "./reviews.blocks.js";
 import {
   extractPublishedReviews,
+  extractStudioReview,
+  extractStudioReviews,
+  extractImageUrls,
+  MODERATION_STATUS_VALUES,
   REVIEW_STATUS_PUBLISHED,
+  type NotionBlockChildrenResponse,
+  type NotionReviewPage,
   type NotionReviewsQueryResponse,
   type PublishedReviewRecord,
+  type ReviewModeration,
+  type StudioReviewRecord,
 } from "./reviews.schema.js";
 
 function assertConfigured(client: NotionClient): void {
@@ -159,4 +170,133 @@ export async function listPublishedReviews(
 /** Test seam: drop the published-reviews cache between cases. */
 export function __resetPublishedReviewsCache(): void {
   cachedPublished = null;
+}
+
+// --- Moderation: the studio dashboard's queue ---
+
+/**
+ * How many rows one moderation read covers. Notion's maximum page size, and
+ * deliberately a single page: the queue is a working surface for a studio that
+ * captures a handful of reviews a month, so paginating the whole database would
+ * buy nothing but latency. The caller is told when the read was cut short
+ * (`truncated`) so the dashboard can say the list is partial instead of looking
+ * complete.
+ */
+const MODERATION_PAGE_SIZE = 100;
+
+/**
+ * The newest reviews, in every state, for the dashboard to triage. Unfiltered
+ * on purpose — the moderation state is DERIVED from `Status` (see
+ * `reviewModeration`), so a filter would have to enumerate the values that read
+ * as pending, and a status the atelier invented would then never appear in the
+ * queue at all.
+ */
+export async function listReviewsForModeration(
+  client: NotionClient = getReviewsNotionClient(),
+): Promise<{ records: StudioReviewRecord[]; truncated: boolean }> {
+  assertConfigured(client);
+
+  const response = await client.fetch(
+    `/v1/databases/${client.databaseId}/query`,
+    {
+      method: "POST",
+      body: JSON.stringify({
+        page_size: MODERATION_PAGE_SIZE,
+        sorts: [{ timestamp: "created_time", direction: "descending" }],
+      }),
+    },
+  );
+
+  if (!response.ok) {
+    throw new Error(
+      `Notion review moderation query failed with status ${response.status}`,
+    );
+  }
+
+  const data = (await response.json()) as NotionReviewsQueryResponse;
+  return {
+    records: extractStudioReviews(data.results),
+    truncated: Boolean(data.has_more),
+  };
+}
+
+/** One review by page id, or null when Notion no longer has it (the row may
+ * have been deleted since the queue loaded). */
+export async function findReviewById(
+  reviewId: string,
+  client: NotionClient = getReviewsNotionClient(),
+): Promise<StudioReviewRecord | null> {
+  assertConfigured(client);
+
+  const response = await client.fetch(`/v1/pages/${reviewId}`);
+  if (response.status === 404) return null;
+  if (!response.ok) {
+    throw new Error(`Notion review read failed with status ${response.status}`);
+  }
+
+  return extractStudioReview((await response.json()) as NotionReviewPage);
+}
+
+/**
+ * Write one review's moderation decision to its `Status`, returning the row as
+ * it now stands. Null when Notion doesn't have that page, which the service
+ * turns into a 404.
+ *
+ * **Busts the published cache**, like the availability writes do: publishing a
+ * testimonial and then not seeing it on the site for another minute reads as
+ * the decision having failed.
+ */
+export async function setReviewStatus(
+  reviewId: string,
+  status: ReviewModeration,
+  client: NotionClient = getReviewsNotionClient(),
+): Promise<StudioReviewRecord | null> {
+  assertConfigured(client);
+
+  const response = await client.fetch(`/v1/pages/${reviewId}`, {
+    method: "PATCH",
+    body: JSON.stringify({
+      properties: {
+        [REVIEW_STATUS_PROPERTY]: {
+          select: { name: MODERATION_STATUS_VALUES[status] },
+        },
+      },
+    }),
+  });
+
+  if (response.status === 404) return null;
+  if (!response.ok) {
+    const errorText = await response.text();
+    throw new Error(
+      `Notion review status update failed with status ${response.status}: ${errorText}`,
+    );
+  }
+
+  cachedPublished = null;
+  return extractStudioReview((await response.json()) as NotionReviewPage);
+}
+
+/**
+ * The photographs on one review's page, as URLs.
+ *
+ * Best-effort by contract: a review whose photos can't be read is still a
+ * review the atelier can decide on from its words, so a failure here returns an
+ * empty list rather than emptying the queue. One page of blocks — a review's
+ * body is a quote plus a few images, nowhere near Notion's 100-block page.
+ */
+export async function listReviewPhotos(
+  reviewId: string,
+  client: NotionClient = getReviewsNotionClient(),
+): Promise<string[]> {
+  const response = await client.fetch(
+    `/v1/blocks/${reviewId}/children?page_size=100`,
+  );
+  if (!response.ok) {
+    throw new Error(
+      `Notion review photo read failed with status ${response.status}`,
+    );
+  }
+
+  const data = (await response.json()) as NotionBlockChildrenResponse;
+  return extractImageUrls(data.results);
 }

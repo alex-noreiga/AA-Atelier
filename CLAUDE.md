@@ -278,6 +278,16 @@ Express app (artifacts/api-server)  ──►  Notion REST API (orders database)
   │                                  staff gate as the figures above; this
   │                                  replaced the Google Sheet the schedule used
   │                                  to live in
+  ├─ GET  /api/studio/reviews      → the review moderation queue: every review
+  │                                  awaiting a decision (with its rating,
+  │                                  testimonial, author, and the photos read
+  │                                  from its Notion page body) plus the recently
+  │                                  decided ones. PUT
+  │                                  /api/studio/reviews/:id/status records one
+  │                                  decision — `published` / `rejected` /
+  │                                  `pending`. Same staff gate as the figures
+  │                                  above; publishing without the customer's
+  │                                  consent is refused (409)
   └─ POST /api/studio/tools/:tool  → the atelier's five internal actions, run from
                                      the signed-in studio dashboard: milestone
                                      reconciliation (`milestones`, the same sweep
@@ -1267,19 +1277,24 @@ minutes behind the edge cache.
    Notion page, so reading them would mean a per-review blocks fetch. The testimonial
    strip is text + rating only; the photographs are the portfolio gallery's job.
 
-5. **Curating happens in Notion, in saved views — there is no in-app admin.** The
-   Reviews database carries a **Curate** board (grouped by `Status`) plus three
-   filtered tables — **Live on the site**, **Awaiting curation**, and **Published but
-   not showing** — and an **`On the Website`** formula that renders the two gates
-   per row. See "Curating which reviews show" below and
+5. **Curating happens on the studio dashboard, with the Notion views as a second
+   surface.** See "Moderating reviews on the studio dashboard" below for the queue;
+   the Reviews database also keeps its **Curate** board (grouped by `Status`) plus
+   three filtered tables — **Live on the site**, **Awaiting curation**, and
+   **Published but not showing** — and an **`On the Website`** formula that renders
+   the two gates per row. Both surfaces write the same `Status` select, so neither is
+   authoritative over the other. See "Curating which reviews show" below and
    `.agents/memory/reviews-curation-views.md`.
 
 ### Curating which reviews show (Notion views)
 
-Selecting a testimonial is a **Notion action, not an app action** — there is no
-studio admin screen for it. The atelier drags a card from **New** to **Published** on
-the **Curate** board (or flips the `Status` select); the site picks it up within a
-minute (60s repository cache), or a few minutes behind the edge cache.
+Selecting a testimonial is normally a **dashboard action** now (see the section
+below), but the same `Status` select can be flipped in Notion — the atelier drags a
+card from **New** to **Published** on the **Curate** board; the site picks it up
+within a minute (60s repository cache), or a few minutes behind the edge cache. The
+views below still earn their place: they are the only surface that shows the whole
+history, and "Published but not showing" is still the only place a consent-blocked
+row is visible.
 
 | View                           | What it answers                                  |
 | ------------------------------ | ------------------------------------------------ |
@@ -1306,7 +1321,9 @@ Three things about this are load-bearing:
   property and a read path, not a view.
 
 `Status` also has an **`Archived`** option that predates the app. It isn't
-`"Published"`, so archiving is how a testimonial is retired from the site.
+`"Published"`, so archiving is how a testimonial is retired from the site — and the
+moderation queue reads it as a decision already taken (`REVIEW_SET_ASIDE_STATUSES`
+in `reviews.schema.ts`), so the archive doesn't reappear as a backlog.
 
 The workspace briefly had a **second** "Reviews" database — a stale `⭐ Reviews` under
 `website`, an abandoned earlier design (a `Published` checkbox rather than a `Status`
@@ -1314,6 +1331,67 @@ select) that nothing in the app read. It was **deleted in August 2026** once con
 empty. If one named "Reviews" ever reappears outside **orders**, it is not the app's:
 `NOTION_REVIEWS_DATABASE_ID` is the only source of truth. See
 `.agents/memory/reviews-curation-views.md`.
+
+### Moderating reviews on the studio dashboard
+
+A review lands with `Status = New` and, until this, could only be promoted by
+opening Notion — so the app **wrote** reviews and never read them back. The
+dashboard's **Reviews** panel is that read path and the decision in one place:
+`GET /api/studio/reviews` for the queue, `PUT /api/studio/reviews/:id/status`
+for one decision. Both are contract-first and behind the same `requireStaff`
+gate as the rest of the studio surface. Code:
+`services/studio-reviews.service.ts`, the two handlers in `routes/studio.ts`,
+the moderation half of `lib/notion/reviews.{schema,repository}.ts`, and
+`web-app/src/components/studio-reviews.tsx` (rendered by `pages/studio.tsx`).
+
+1. **The three states are DERIVED from `Status`, not enumerated from it.**
+   `published` is `"Published"`; `rejected` is `"Rejected"` (what the app writes)
+   **or** the pre-existing `"Archived"` (`REVIEW_SET_ASIDE_STATUSES`, so the
+   archive isn't reopened as a backlog); **everything else — `"New"`, a blank
+   select, or a value the atelier invented — is `pending`**. That direction is
+   load-bearing: an unrecognized status asks for a decision rather than standing
+   in for one, so a Notion rename produces a queue that reappears, never a
+   testimonial published without curation. The queue read is therefore
+   **unfiltered** — a filter would have to enumerate what counts as pending, and
+   an invented status would then never surface at all.
+
+2. **Publishing without the customer's consent is refused, not written.** The
+   site requires **both** gates (see above), so writing `Published` on a row with
+   `Consent to Publish` unticked is a decision that looks taken and does nothing.
+   The service reads the review first and throws a `ConflictError` → **409**; the
+   panel replaces the Publish button with the reason, so the refusal is visible
+   before the press. Setting such a review aside is still allowed.
+
+3. **Every decision is undoable, and `pending` writes the capture default.**
+   `pending` / `published` / `rejected` map to `"New"` / `"Published"` /
+   `"Rejected"` (`MODERATION_STATUS_VALUES`), so sending a review back to the
+   queue leaves the row exactly as a freshly submitted one. A `PUT` because the
+   whole state is sent and re-sending it changes nothing.
+
+4. **Photos are read from the page body, for the pending rows only.** A review's
+   photographs are image **blocks**, not a property, so each one costs a separate
+   Notion request (`listReviewPhotos`). A decision is made on the pending rows,
+   so only those are fetched — capped at `MODERATION_PHOTO_LIMIT` (20) with a
+   concurrency of 3 — and a failure degrades that review to its words rather than
+   failing the queue. The URLs are **Notion-signed and short-lived** (about an
+   hour), which is why they are fetched per page load and never stored.
+
+5. **The read is one Notion page and says when it was cut short.** 100 rows,
+   newest first, no pagination; `truncated` rides the response and the panel says
+   the list is partial rather than looking complete. The decided list is capped
+   at `DECIDED_REVIEW_LIMIT` (12) and carries no photos — it is a record, not a
+   second queue. The pending list is ordered **oldest first**: the review that
+   has waited longest is the one that owes an answer.
+
+6. **A decision busts the published cache.** `setReviewStatus` clears the
+   `listPublishedReviews` cache, so a newly published testimonial isn't a minute
+   behind on the site (the edge cache still applies).
+
+No new env vars and no atelier setup: it reads and writes the same Reviews
+database and the same `Status` select the Notion views use. The `"Rejected"`
+option auto-creates on first write. Deliberately **not** built: any customer
+email on a moderation decision — publishing a testimonial the customer already
+consented to needs no notification.
 
 ## Rush order surcharge
 
@@ -2979,6 +3057,7 @@ keys on exact property names). Recorded here only because two facts are
 | Change referral & returning-skater rewards               | `api-server/src/services/rewards.service.ts` (engine + amount getters) + `lib/stripe/promotions.ts` (`createDiscountCode`) + `lib/notion/clients.repository.ts` (reward reads + `patchClientProperties`); wired from `submitOrder` (capture) + `recordPaidOrder` / `recordPayment` (issue); reward emails in `lib/resend/emails.ts`; `services/account.service.ts` + `web-app/src/pages/account.tsx` (referral card) + `pages/order-form.tsx` (`referralCode` field)                                                                                                                                                                                                                          |
 | Add/read an atelier-editable live setting                | `api-server/src/lib/settings/store.ts` (`SETTING_KEYS` + `settingValue`) + `lib/notion/settings.{schema,repository}.ts` (Notion read); consume with `settingValue(KEY) ?? process.env[KEY] ?? default` (see `services/rush.ts`); primed by the middleware in `app.ts`. Notion "Studio Settings" DB, `NOTION_SETTINGS_DATABASE_ID`                                                                                                                                                                                                                                                                                                                                                             |
 | Change the measurement-change request                    | `artifacts/web-app/src/components/measurement-change-dialog.tsx` (opened from `components/custom-order-result.tsx`); `api-server/src/services/measurement-change.service.ts` + `routes/orders.ts` + `lib/notion/measurement-change.{blocks,repository}.ts` (writes to the **contact** database)                                                                                                                                                                                                                                                                                                                                                                                               |
+| Change review moderation on the dashboard                | `web-app/src/components/studio-reviews.tsx` (rendered by `pages/studio.tsx`); `services/studio-reviews.service.ts` + the `/studio/reviews` handlers in `routes/studio.ts` + the moderation half of `lib/notion/reviews.{schema,repository}.ts`                                                                                                                                                                                                                                                                                                                                                                                                                                                |
 | Change post-delivery review capture                      | `artifacts/web-app/src/components/review-dialog.tsx` (opened from `components/custom-order-result.tsx` for delivered orders); `api-server/src/services/review.service.ts` + `services/delivery.ts` + `routes/orders.ts` + `lib/notion/reviews.{blocks,repository}.ts` (writes to the **Reviews** database)                                                                                                                                                                                                                                                                                                                                                                                    |
 | Change the published testimonials                        | `artifacts/web-app/src/components/testimonials.tsx` (rendered by `pages/home.tsx` + `pages/about.tsx`); `getPublishedReviews` in `api-server/src/services/review.service.ts` + `routes/reviews.ts` + `lib/notion/reviews.schema.ts`                                                                                                                                                                                                                                                                                                                                                                                                                                                           |
 | Curate which reviews show on the site                    | The **Reviews** Notion database's saved views (Curate / Live on the site / Awaiting curation / Published but not showing) — no code; see `.agents/memory/reviews-curation-views.md`                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                           |
