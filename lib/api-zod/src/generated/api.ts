@@ -651,6 +651,109 @@ export const GetAccountOverviewResponse = zod.object({
 
 
 /**
+ * The standing working hours the slot calculator uses as its positive availability grid — one entry per staff member per block of hours, with the weekdays it repeats on and the locations it can be booked for. This is the schedule the atelier edits on the dashboard; it used to live in a Google Sheet. Same staff gate as the rest of the studio surface: 401 when not signed in, 404 when signed in but not staff, 403 when staff but not signed in with Google.
+ * @summary The staff working-hours schedule
+ */
+export const ListStaffAvailabilityResponse = zod.object({
+  "entries": zod.array(zod.object({
+  "id": zod.string().describe('Identifies the entry for an update or a delete.'),
+  "staff": zod.string().describe('The staff member these hours belong to. Always one of the names the studio books (see `staff` on the list response).'),
+  "calendarEmail": zod.string().email().describe('The Google Calendar this person\'s bookings are read from and written to. The same address is expected on every entry for one person; if they differ, the first one read wins.'),
+  "weekdays": zod.array(zod.enum(['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday']).describe('A day of the week a block of working hours repeats on.')).describe('The weekdays this block repeats on.'),
+  "start": zod.string().describe('When the block starts, as 24-hour `HH:MM` local studio time.'),
+  "end": zod.string().describe('When the block ends, as 24-hour `HH:MM` local studio time. Always later than `start` — an entry that ends before it begins is rejected rather than silently ignored.'),
+  "locations": zod.array(zod.enum(['in-person', 'virtual'])).describe('Which locations may be booked inside this block.')
+}).describe('One recurring block of a staff member\'s standing working hours — the POSITIVE availability the slot calculator starts from, before it subtracts whatever their Google Calendar says they are busy with. A day off is a calendar event, not an edit here.')).describe('Every block of hours on record, grouped by nothing in particular.'),
+  "staff": zod.array(zod.string()).describe('The staff members the studio books appointments with.')
+}).describe('The whole standing schedule, plus the staff it may be assigned to — so the editor offers the names the booking catalog actually knows instead of a free-text field that has to match one exactly.')
+
+
+/**
+ * Adds one recurring block of working hours for a staff member. The staff name must be one the studio books (the appointment catalog's list, also returned by the GET above) and the hours must be a real range, so an entry can't be saved that the slot calculator would silently ignore.
+ * @summary Add a block of working hours
+ */
+export const createStaffAvailabilityBodyStaffMax = 120;
+
+export const createStaffAvailabilityBodyCalendarEmailMax = 254;
+
+
+export const createStaffAvailabilityBodyStartRegExp = new RegExp('^([01][0-9]|2[0-3]):[0-5][0-9]$');
+export const createStaffAvailabilityBodyEndRegExp = new RegExp('^([01][0-9]|2[0-3]):[0-5][0-9]$');
+
+
+
+export const CreateStaffAvailabilityBody = zod.object({
+  "staff": zod.string().min(1).max(createStaffAvailabilityBodyStaffMax).describe('Must be a staff member the studio books — the appointment catalog\'s list, returned as `staff` by the list operation. A name outside it would produce hours nothing could ever be booked into.'),
+  "calendarEmail": zod.string().email().max(createStaffAvailabilityBodyCalendarEmailMax),
+  "weekdays": zod.array(zod.enum(['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday']).describe('A day of the week a block of working hours repeats on.')).min(1),
+  "start": zod.string().regex(createStaffAvailabilityBodyStartRegExp).describe('24-hour `HH:MM`.'),
+  "end": zod.string().regex(createStaffAvailabilityBodyEndRegExp).describe('24-hour `HH:MM`, later than `start`.'),
+  "locations": zod.array(zod.enum(['in-person', 'virtual'])).min(1)
+}).describe('One block of working hours to save. The whole entry is sent on both create and update, so the two paths validate identically.')
+
+export const CreateStaffAvailabilityResponse = zod.object({
+  "id": zod.string().describe('Identifies the entry for an update or a delete.'),
+  "staff": zod.string().describe('The staff member these hours belong to. Always one of the names the studio books (see `staff` on the list response).'),
+  "calendarEmail": zod.string().email().describe('The Google Calendar this person\'s bookings are read from and written to. The same address is expected on every entry for one person; if they differ, the first one read wins.'),
+  "weekdays": zod.array(zod.enum(['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday']).describe('A day of the week a block of working hours repeats on.')).describe('The weekdays this block repeats on.'),
+  "start": zod.string().describe('When the block starts, as 24-hour `HH:MM` local studio time.'),
+  "end": zod.string().describe('When the block ends, as 24-hour `HH:MM` local studio time. Always later than `start` — an entry that ends before it begins is rejected rather than silently ignored.'),
+  "locations": zod.array(zod.enum(['in-person', 'virtual'])).describe('Which locations may be booked inside this block.')
+}).describe('One recurring block of a staff member\'s standing working hours — the POSITIVE availability the slot calculator starts from, before it subtracts whatever their Google Calendar says they are busy with. A day off is a calendar event, not an edit here.')
+
+
+/**
+ * Replaces one entry's hours, days, locations, staff member, or calendar address. The whole entry is sent, so the same validation the create path applies holds here too.
+ * @summary Change a block of working hours
+ */
+export const UpdateStaffAvailabilityParams = zod.object({
+  "entryId": zod.coerce.string().describe('The entry\'s id, as returned by the list operation.')
+})
+
+export const updateStaffAvailabilityBodyStaffMax = 120;
+
+export const updateStaffAvailabilityBodyCalendarEmailMax = 254;
+
+
+export const updateStaffAvailabilityBodyStartRegExp = new RegExp('^([01][0-9]|2[0-3]):[0-5][0-9]$');
+export const updateStaffAvailabilityBodyEndRegExp = new RegExp('^([01][0-9]|2[0-3]):[0-5][0-9]$');
+
+
+
+export const UpdateStaffAvailabilityBody = zod.object({
+  "staff": zod.string().min(1).max(updateStaffAvailabilityBodyStaffMax).describe('Must be a staff member the studio books — the appointment catalog\'s list, returned as `staff` by the list operation. A name outside it would produce hours nothing could ever be booked into.'),
+  "calendarEmail": zod.string().email().max(updateStaffAvailabilityBodyCalendarEmailMax),
+  "weekdays": zod.array(zod.enum(['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday']).describe('A day of the week a block of working hours repeats on.')).min(1),
+  "start": zod.string().regex(updateStaffAvailabilityBodyStartRegExp).describe('24-hour `HH:MM`.'),
+  "end": zod.string().regex(updateStaffAvailabilityBodyEndRegExp).describe('24-hour `HH:MM`, later than `start`.'),
+  "locations": zod.array(zod.enum(['in-person', 'virtual'])).min(1)
+}).describe('One block of working hours to save. The whole entry is sent on both create and update, so the two paths validate identically.')
+
+export const UpdateStaffAvailabilityResponse = zod.object({
+  "id": zod.string().describe('Identifies the entry for an update or a delete.'),
+  "staff": zod.string().describe('The staff member these hours belong to. Always one of the names the studio books (see `staff` on the list response).'),
+  "calendarEmail": zod.string().email().describe('The Google Calendar this person\'s bookings are read from and written to. The same address is expected on every entry for one person; if they differ, the first one read wins.'),
+  "weekdays": zod.array(zod.enum(['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday']).describe('A day of the week a block of working hours repeats on.')).describe('The weekdays this block repeats on.'),
+  "start": zod.string().describe('When the block starts, as 24-hour `HH:MM` local studio time.'),
+  "end": zod.string().describe('When the block ends, as 24-hour `HH:MM` local studio time. Always later than `start` — an entry that ends before it begins is rejected rather than silently ignored.'),
+  "locations": zod.array(zod.enum(['in-person', 'virtual'])).describe('Which locations may be booked inside this block.')
+}).describe('One recurring block of a staff member\'s standing working hours — the POSITIVE availability the slot calculator starts from, before it subtracts whatever their Google Calendar says they are busy with. A day off is a calendar event, not an edit here.')
+
+
+/**
+ * Removes one entry from the schedule. Those hours stop being offered as soon as the change is picked up; appointments already booked inside them are untouched (they live on the staff calendar).
+ * @summary Remove a block of working hours
+ */
+export const DeleteStaffAvailabilityParams = zod.object({
+  "entryId": zod.coerce.string().describe('The entry\'s id, as returned by the list operation.')
+})
+
+export const DeleteStaffAvailabilityResponse = zod.object({
+  "message": zod.string()
+}).describe('A generic human-readable acknowledgement.')
+
+
+/**
  * A cheap "am I staff?" probe, so the app can offer a way in to `/studio` without every signed-in customer being shown a link that would refuse them. It runs the SAME gate as the figures below — allowlisted email plus (by default) a session established with Google — so a 200 here and a 200 there can't disagree: 401 when the caller isn't signed in, 404 when they are but aren't staff (the dashboard doesn't exist as far as they're concerned), 403 when they are staff but didn't sign in with Google. It reads nothing and aggregates nothing; reaching the handler at all IS the answer.
  * @summary Whether the caller may use the studio dashboard
  */

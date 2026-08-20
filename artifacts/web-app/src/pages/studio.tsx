@@ -13,11 +13,13 @@ import { Button } from "@/components/ui/button";
 import { PageShell } from "@/components/page-shell";
 import NotFound from "@/pages/not-found";
 import { StudioTools } from "@/components/studio-tools";
+import { StudioAvailability } from "@/components/studio-availability";
 import { Seo } from "@/components/seo";
 import { useAuth } from "@/lib/auth-context";
 import { supabase } from "@/lib/supabase";
 import { setPostSignInPath } from "@/lib/post-signin";
 import { ROUTE_SEO } from "@/lib/seo-routes";
+import { serverErrorMessage } from "@/lib/api-error";
 import { formatPrice, formatDate } from "@/lib/format";
 import { useState } from "react";
 import {
@@ -106,7 +108,7 @@ export default function Studio() {
             />
           </div>
         ) : status === 403 ? (
-          <AccessDenied reason={errorMessage(analytics.error)} />
+          <AccessDenied reason={serverErrorMessage(analytics.error)} />
         ) : analytics.isError || !analytics.data ? (
           <div className="text-center py-16" data-testid="studio-error">
             <h1 className="text-3xl font-serif mb-4">Something went wrong</h1>
@@ -310,6 +312,8 @@ function Dashboard({ data }: { data: StudioAnalytics }) {
       <PaymentsPanel payments={data.payments} />
 
       <TopItemsPanel items={data.topItems} />
+
+      <StudioAvailability />
 
       <StudioTools />
     </div>
@@ -700,12 +704,6 @@ export function monthLabel(month: string): string {
 /** The server's own explanation for a refusal, when it sent one. The API's
  * error envelope is `{ error }`, and the generated client hangs the parsed body
  * off the thrown error as `data`. */
-function errorMessage(error: unknown): string | undefined {
-  const data = (error as { data?: unknown } | null)?.data;
-  const message = (data as { error?: unknown } | null)?.error;
-  return typeof message === "string" && message.trim() ? message : undefined;
-}
-
 /** The "figures as of" line — a date-time, so a stale cached read is visible. */
 function formatDateTime(iso: string): string {
   const date = new Date(iso);

@@ -60,6 +60,9 @@ import type {
   RescheduleAppointmentRequest,
   ReviewList,
   ShopOrderStatus,
+  StaffAvailabilityEntry,
+  StaffAvailabilityList,
+  StaffAvailabilityRequest,
   StudioAccess,
   StudioAnalytics,
   StudioTool,
@@ -1987,6 +1990,301 @@ export function useGetAccountOverview<TData = Awaited<ReturnType<typeof getAccou
 
 
 
+
+export const getListStaffAvailabilityUrl = () => {
+
+
+
+
+  return `/api/studio/availability`
+}
+
+/**
+ * The standing working hours the slot calculator uses as its positive availability grid — one entry per staff member per block of hours, with the weekdays it repeats on and the locations it can be booked for. This is the schedule the atelier edits on the dashboard; it used to live in a Google Sheet. Same staff gate as the rest of the studio surface: 401 when not signed in, 404 when signed in but not staff, 403 when staff but not signed in with Google.
+ * @summary The staff working-hours schedule
+ */
+export const listStaffAvailability = async ( options?: Parameters<typeof customFetch>[1]): Promise<StaffAvailabilityList> => {
+
+  return customFetch<StaffAvailabilityList>(getListStaffAvailabilityUrl(),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
+
+
+
+
+export const getListStaffAvailabilityQueryKey = () => {
+    return [
+    `/api/studio/availability`
+    ] as const;
+    }
+
+
+export const getListStaffAvailabilityQueryOptions = <TData = Awaited<ReturnType<typeof listStaffAvailability>>, TError = ErrorType<ErrorEnvelope | OrderNotFound>>( options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof listStaffAvailability>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getListStaffAvailabilityQueryKey();
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof listStaffAvailability>>> = ({ signal }) => listStaffAvailability({ signal, ...requestOptions });
+
+
+
+
+
+   return  { queryKey, queryFn, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof listStaffAvailability>>, TError, TData> & { queryKey: QueryKey }
+}
+
+export type ListStaffAvailabilityQueryResult = NonNullable<Awaited<ReturnType<typeof listStaffAvailability>>>
+export type ListStaffAvailabilityQueryError = ErrorType<ErrorEnvelope | OrderNotFound>
+
+
+/**
+ * @summary The staff working-hours schedule
+ */
+
+export function useListStaffAvailability<TData = Awaited<ReturnType<typeof listStaffAvailability>>, TError = ErrorType<ErrorEnvelope | OrderNotFound>>(
+  options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof listStaffAvailability>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+
+ ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+
+  const queryOptions = getListStaffAvailabilityQueryOptions(options)
+
+  const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
+
+  return withQueryKey(query, queryOptions.queryKey);
+}
+
+
+
+
+
+
+
+export const getCreateStaffAvailabilityUrl = () => {
+
+
+
+
+  return `/api/studio/availability`
+}
+
+/**
+ * Adds one recurring block of working hours for a staff member. The staff name must be one the studio books (the appointment catalog's list, also returned by the GET above) and the hours must be a real range, so an entry can't be saved that the slot calculator would silently ignore.
+ * @summary Add a block of working hours
+ */
+export const createStaffAvailability = async (staffAvailabilityRequest: StaffAvailabilityRequest, options?: Parameters<typeof customFetch>[1]): Promise<StaffAvailabilityEntry> => {
+
+  return customFetch<StaffAvailabilityEntry>(getCreateStaffAvailabilityUrl(),
+  {
+    ...options,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    body: JSON.stringify(staffAvailabilityRequest)
+  }
+);}
+
+
+
+
+
+export const getCreateStaffAvailabilityMutationOptions = <TError = ErrorType<ErrorEnvelope | OrderNotFound>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof createStaffAvailability>>, TError,{data: BodyType<StaffAvailabilityRequest>}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof createStaffAvailability>>, TError,{data: BodyType<StaffAvailabilityRequest>}, TContext> => {
+
+const mutationKey = ['createStaffAvailability'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof createStaffAvailability>>, {data: BodyType<StaffAvailabilityRequest>}> = (props) => {
+          const {data} = props ?? {};
+
+          return  createStaffAvailability(data,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type CreateStaffAvailabilityMutationResult = NonNullable<Awaited<ReturnType<typeof createStaffAvailability>>>
+    export type CreateStaffAvailabilityMutationBody = BodyType<StaffAvailabilityRequest>
+    export type CreateStaffAvailabilityMutationError = ErrorType<ErrorEnvelope | OrderNotFound>
+
+    /**
+ * @summary Add a block of working hours
+ */
+export const useCreateStaffAvailability = <TError = ErrorType<ErrorEnvelope | OrderNotFound>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof createStaffAvailability>>, TError,{data: BodyType<StaffAvailabilityRequest>}, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof createStaffAvailability>>,
+        TError,
+        {data: BodyType<StaffAvailabilityRequest>},
+        TContext
+      > => {
+      return useMutation(getCreateStaffAvailabilityMutationOptions(options));
+    }
+
+export const getUpdateStaffAvailabilityUrl = (entryId: string,) => {
+
+
+
+
+  return `/api/studio/availability/${entryId}`
+}
+
+/**
+ * Replaces one entry's hours, days, locations, staff member, or calendar address. The whole entry is sent, so the same validation the create path applies holds here too.
+ * @summary Change a block of working hours
+ */
+export const updateStaffAvailability = async (entryId: string,
+    staffAvailabilityRequest: StaffAvailabilityRequest, options?: Parameters<typeof customFetch>[1]): Promise<StaffAvailabilityEntry> => {
+
+  return customFetch<StaffAvailabilityEntry>(getUpdateStaffAvailabilityUrl(entryId),
+  {
+    ...options,
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    body: JSON.stringify(staffAvailabilityRequest)
+  }
+);}
+
+
+
+
+
+export const getUpdateStaffAvailabilityMutationOptions = <TError = ErrorType<ErrorEnvelope | OrderNotFound>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof updateStaffAvailability>>, TError,{entryId: string;data: BodyType<StaffAvailabilityRequest>}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof updateStaffAvailability>>, TError,{entryId: string;data: BodyType<StaffAvailabilityRequest>}, TContext> => {
+
+const mutationKey = ['updateStaffAvailability'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof updateStaffAvailability>>, {entryId: string;data: BodyType<StaffAvailabilityRequest>}> = (props) => {
+          const {entryId,data} = props ?? {};
+
+          return  updateStaffAvailability(entryId,data,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type UpdateStaffAvailabilityMutationResult = NonNullable<Awaited<ReturnType<typeof updateStaffAvailability>>>
+    export type UpdateStaffAvailabilityMutationBody = BodyType<StaffAvailabilityRequest>
+    export type UpdateStaffAvailabilityMutationError = ErrorType<ErrorEnvelope | OrderNotFound>
+
+    /**
+ * @summary Change a block of working hours
+ */
+export const useUpdateStaffAvailability = <TError = ErrorType<ErrorEnvelope | OrderNotFound>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof updateStaffAvailability>>, TError,{entryId: string;data: BodyType<StaffAvailabilityRequest>}, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof updateStaffAvailability>>,
+        TError,
+        {entryId: string;data: BodyType<StaffAvailabilityRequest>},
+        TContext
+      > => {
+      return useMutation(getUpdateStaffAvailabilityMutationOptions(options));
+    }
+
+export const getDeleteStaffAvailabilityUrl = (entryId: string,) => {
+
+
+
+
+  return `/api/studio/availability/${entryId}`
+}
+
+/**
+ * Removes one entry from the schedule. Those hours stop being offered as soon as the change is picked up; appointments already booked inside them are untouched (they live on the staff calendar).
+ * @summary Remove a block of working hours
+ */
+export const deleteStaffAvailability = async (entryId: string, options?: Parameters<typeof customFetch>[1]): Promise<MessageResponse> => {
+
+  return customFetch<MessageResponse>(getDeleteStaffAvailabilityUrl(entryId),
+  {
+    ...options,
+    method: 'DELETE'
+
+
+  }
+);}
+
+
+
+
+
+export const getDeleteStaffAvailabilityMutationOptions = <TError = ErrorType<ErrorEnvelope | OrderNotFound>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof deleteStaffAvailability>>, TError,{entryId: string}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof deleteStaffAvailability>>, TError,{entryId: string}, TContext> => {
+
+const mutationKey = ['deleteStaffAvailability'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof deleteStaffAvailability>>, {entryId: string}> = (props) => {
+          const {entryId} = props ?? {};
+
+          return  deleteStaffAvailability(entryId,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type DeleteStaffAvailabilityMutationResult = NonNullable<Awaited<ReturnType<typeof deleteStaffAvailability>>>
+
+    export type DeleteStaffAvailabilityMutationError = ErrorType<ErrorEnvelope | OrderNotFound>
+
+    /**
+ * @summary Remove a block of working hours
+ */
+export const useDeleteStaffAvailability = <TError = ErrorType<ErrorEnvelope | OrderNotFound>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof deleteStaffAvailability>>, TError,{entryId: string}, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof deleteStaffAvailability>>,
+        TError,
+        {entryId: string},
+        TContext
+      > => {
+      return useMutation(getDeleteStaffAvailabilityMutationOptions(options));
+    }
 
 export const getGetStudioAccessUrl = () => {
 

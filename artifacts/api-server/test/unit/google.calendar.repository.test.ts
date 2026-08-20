@@ -1,9 +1,9 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 
 // The calendar repository resolves staff → calendar email and the working-hours
-// grid through the sheets repository; mock that layer so these tests focus on
-// the FreeBusy / event-insert mapping.
-vi.mock("../../src/lib/google/sheets.repository.js", () => ({
+// grid through the schedule seam; mock that layer so these tests focus on the
+// FreeBusy / event-insert mapping.
+vi.mock("../../src/lib/appointments/schedule.js", () => ({
   getStaffSchedule: vi.fn(),
   calendarEmailFor: vi.fn(),
 }));
@@ -21,7 +21,7 @@ import {
 import {
   getStaffSchedule,
   calendarEmailFor,
-} from "../../src/lib/google/sheets.repository.js";
+} from "../../src/lib/appointments/schedule.js";
 import type { GoogleCalendarClient } from "../../src/lib/google/client.js";
 
 const mockSchedule = vi.mocked(getStaffSchedule);
