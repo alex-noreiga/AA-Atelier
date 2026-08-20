@@ -97,7 +97,7 @@ Index Sys` → a number) on Production Schedule — each milestone now _reads_ t
     against the still-present old `Status` on live rows — e.g. Knight of Midnight at
     Cutting/Pinning: Pattern Design Completed, Cutting/Pinning In Progress, later
     Not Started). Logic verified by hand (formula values aren't API-readable).
-- **Code (applied — 1030 api-server tests green):**
+- **Code (applied):**
   - `production-schedule.blocks.ts`: `PS_STATUS_PROPERTY` → `PS_MILESTONE_STATUS_PROPERTY
 = "Milestone Status"`; `buildMilestoneProperties` no longer writes a completion
     state; removed `buildMilestoneStatusUpdate`, `PRODUCTION_SCHEDULE_INITIAL_STATUS`,
@@ -106,9 +106,10 @@ Index Sys` → a number) on Production Schedule — each milestone now _reads_ t
   - `production-schedule.repository.ts`: removed `listOrderMilestonePages` +
     `updateMilestoneStatus`; **rewrote the fitting-reminder filter** from status-type
     (`status: {does_not_equal/equals}`) to **formula-string** (`formula: {string:
-{…}}`) on `Milestone Status`. **(Superseded — see the follow-up below: the
-    formula filter 400s in production; the query now filters only on the stage
-    select + `Reminder Sent` checkbox and evaluates `Milestone Status` client-side.)**
+{…}}`) on `Milestone Status`. **(Superseded — see the rollup-derived-formula gotcha
+    at the top of this file: that formula filter 400s in production, so the query now
+    filters only on the stage select + `Reminder Sent` checkbox and evaluates
+    `Milestone Status` client-side.)**
   - `orders.repository.ts`: removed `findOrdersWithMilestones` (sync-only).
   - `schedule.service.ts`: removed `syncMilestoneStatuses` + `milestoneStatusFor`;
     dropped the sync pass + `milestonesUpdated` from `reconcileMilestones` /
@@ -120,12 +121,12 @@ Index Sys` → a number) on Production Schedule — each milestone now _reads_ t
   options in Notion means updating those two formulas (generation still reads the
   live list via `fetchLiveOrderStages`; the formulas degrade to blank for unknown
   stages). This is the deliberate price of "read, not copy."
-- **POST-DEPLOY manual step (do NOT do before the code ships):** the old `Status`
-  status-property on Production Schedule is **still present** on purpose — the
-  currently-deployed cron still writes it. After this branch deploys (the new code
-  stops writing/syncing it), **drop `Status`** in Notion and point the Timeline /
-  Calendar / "The Truth" views at `Milestone Status`. Until then both columns
-  coexist, which is the built-in way to eyeball that the formula matches.
+- **Manual step (the code has shipped, so this is now safe to do):** the old
+  `Status` status-property on Production Schedule was left in place while the
+  then-deployed cron still wrote it. Nothing writes it any more, so **drop `Status`**
+  in Notion if it is still there and point the Timeline / Calendar / "The Truth"
+  views at `Milestone Status`. (Keeping both columns side by side was the way to
+  eyeball that the formula matched the old sync; that check is done.)
 
 ## ① One costing engine — ALREADY STANDARDIZED (no change; docs were stale)
 

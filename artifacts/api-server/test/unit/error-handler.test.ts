@@ -17,6 +17,7 @@ import {
   ForbiddenError,
   MeasurementsLockedError,
   ConflictError,
+  ServiceUnavailableError,
 } from "../../src/lib/errors.js";
 
 const mockReportError = vi.mocked(reportError);
@@ -143,6 +144,25 @@ describe("errorHandler", () => {
     expect(res.body).toEqual({
       error: "You can leave a review once your order has been delivered.",
     });
+  });
+
+  it("maps a ServiceUnavailableError to a 503 and does NOT alert", async () => {
+    const res = makeRes();
+    await errorHandler(
+      new ServiceUnavailableError(
+        "Appointment availability is temporarily unavailable. Please try again in a few minutes.",
+      ),
+      req,
+      res,
+      vi.fn(),
+    );
+    expect(res.statusCode).toBe(503);
+    expect(res.body).toEqual({
+      error:
+        "Appointment availability is temporarily unavailable. Please try again in a few minutes.",
+    });
+    // A transient upstream outage is logged, not emailed — see the handler.
+    expect(mockReportError).not.toHaveBeenCalled();
   });
 
   it("maps an unknown error to a 500 with a generic message (no leak) and alerts", async () => {

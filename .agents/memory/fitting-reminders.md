@@ -10,26 +10,33 @@ new cron, and no frontend change** (the booking page already preselects a type f
 ## Why it's shaped this way
 
 - **Rides the existing reconciliation, not a new trigger.** There's no Notion→app
-  trigger (same constraint as milestones/status emails), so the reminder is a third
-  pass, `sendDueFittingReminders`, inside `reconcileMilestones`
-  (`services/schedule.service.ts`) after generation + status-sync. Both the Vercel
-  cron and the on-demand button run it; the result now carries `remindersSent`.
-- **One Notion query finds the work.** `findMilestonesNeedingFittingReminder`
+  trigger (same constraint as milestones/status emails), so the reminder is a pass,
+  `sendDueFittingReminders`, inside `reconcileMilestones`
+  (`services/schedule.service.ts`), after generation and before the payment-reminder
+  pass. Both the Vercel cron and the on-demand button run it; the result carries
+  `remindersSent`.
+- **One Notion query finds the work, but only half the conditions are server-side.**
+  `findMilestonesNeedingFittingReminder`
   (`lib/notion/production-schedule.repository.ts`) filters the Production Schedule DB
-  on `and`[ `or`(Production Stage = each fitting stage), Status ≠ Completed,
-  `or`(Target Completion Date `on_or_before` cutoff, Status = In Progress),
-  `Reminder Sent` = false ]. The milestone rows don't carry the customer email, so each
-  order is resolved back from its `Order` relation via
+  on just the reliably-typed properties — `or`(Production Stage = each fitting stage)
+  AND `Reminder Sent` = false — then evaluates the not-completed and
+  due-or-in-progress conditions **client-side** from each row's computed
+  `Milestone Status`. That split is forced: `Milestone Status` is a formula derived
+  from a rollup, and a `formula: {…}` **filter** on it 400s ("Unable to filter based on
+  a formula of unknown type") even though reading the computed value back per row
+  works. See `phase2-workspace-cards.md`. If the value is unreadable it falls through
+  to the date test — a safe degradation. The milestone rows don't carry the customer
+  email, so each order is resolved back from its `Order` relation via
   `findOrderForStageNotificationByPageId`.
 - **The reminder fires on date OR stage-arrival, whichever comes first** — not date
   only. If production runs **ahead of schedule** the order reaches Fitting before the
-  target date; `syncMilestoneStatuses` flips that milestone's Status to `In Progress`,
-  but a date-only filter (`on_or_before now+lead`) would still fail, and once the order
-  advances past Fitting the Status → `Completed` and it's excluded — so the whole fitting
-  window could pass with **no reminder ever sent**. The `Status = In Progress` clause
-  closes that miss. **Load-bearing ordering:** `reconcileMilestones` runs
-  `syncMilestoneStatuses()` before `sendDueFittingReminders()`, so In-Progress reflects
-  the order's live stage when the query runs.
+  target date, so a date-only test (`on_or_before now+lead`) would still fail, and once
+  the order advances past Fitting the milestone reads `Completed` and is excluded — so
+  the whole fitting window could pass with **no reminder ever sent**. The
+  `Milestone Status = In Progress` clause closes that miss. No pass-ordering dependency:
+  `Milestone Status` is a live Notion formula off the order's `Stage`, so it is always
+  current when the query runs. (It was once a nightly `syncMilestoneStatuses` pass that
+  had to run first; that pass is retired — see `phase2-workspace-cards.md` card ③.)
 - **"Fitting" + lead window are targeted business rules** (`services/fitting-reminder.ts`),
   the same kind of exception as `STATUS_IN_STOCK` / `MEASUREMENT_LOCK_FROM_STAGE`:
   `FITTING_REMINDER_STAGES` (comma-separated live Stage names, default `Fitting`) and
@@ -43,7 +50,7 @@ new cron, and no frontend change** (the booking page already preselects a type f
   Load-bearing: a milestone is marked reminded **even when the order has no email** (a
   legacy order can't be reached — marking stops a nightly re-check); if the order lookup
   **throws**, the row is left unmarked so the next run retries it. Per-milestone failures
-  are logged + skipped, like the generation/sync passes.
+  are logged + skipped, like the generation pass.
 - **Customer email only, best-effort, appointments sender.** Sends via
   `sendEmailBestEffort` from `fromAddress("appointments")` — a Resend failure never
   fails the cron. **No internal atelier notification** (deliberate, like the newsletter
@@ -61,10 +68,11 @@ tune it.
 
 ## Files
 
-`services/fitting-reminder.ts` (new), `services/schedule.service.ts`
-(`sendDueFittingReminders` + wired into `reconcileMilestones`, `MilestoneReconcileResult`
-gained `remindersSent`), `lib/notion/production-schedule.{blocks,repository}.ts`
-(`Reminder Sent` prop + query + marker), `fittingReminderEmail` in `lib/resend/emails.ts`,
-`routes/cron.ts` (button summary notes reminders). Tests: `test/unit/fitting-reminder.test.ts`
-(new), extended `resend.emails`, `schedule.service`, `production-schedule.repository`, and
+`services/fitting-reminder.ts`, `services/schedule.service.ts`
+(`sendDueFittingReminders`, wired into `reconcileMilestones`;
+`MilestoneReconcileResult.remindersSent`),
+`lib/notion/production-schedule.{blocks,repository}.ts` (`Reminder Sent` prop + query +
+marker), `fittingReminderEmail` in `lib/resend/emails.ts`, `routes/cron.ts` (the button
+summary notes reminders). Tests: `test/unit/fitting-reminder.test.ts` plus the
+`resend.emails`, `schedule.service`, `production-schedule.repository`, and
 `integration/cron.routes` suites.

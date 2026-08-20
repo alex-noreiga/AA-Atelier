@@ -8,6 +8,7 @@
 //   - MeasurementsLockedError          -> 409 ErrorEnvelope  { error }
 //   - UnauthorizedError                -> 401 ErrorEnvelope  { error }
 //   - ConflictError                    -> 409 ErrorEnvelope  { error }
+//   - ServiceUnavailableError          -> 503 ErrorEnvelope  { error }
 //   - anything else                    -> 500 ErrorEnvelope  { error }
 
 import type { ErrorRequestHandler } from "express";
@@ -21,6 +22,7 @@ import {
   MeasurementsLockedError,
   UnauthorizedError,
   ConflictError,
+  ServiceUnavailableError,
 } from "../lib/errors.js";
 import { logger } from "../lib/logger.js";
 import { reportError } from "../services/alert.service.js";
@@ -83,6 +85,16 @@ export const errorHandler: ErrorRequestHandler = async (
   if (err instanceof ConflictError) {
     const body: ErrorEnvelope = { error: err.message };
     res.status(409).json(body);
+    return;
+  }
+
+  // An upstream dependency is down (and had no cached value to serve). Logged,
+  // but deliberately not alert-emailed: it's transient, retriable, and not a
+  // defect in this app — the message tells the customer to try again.
+  if (err instanceof ServiceUnavailableError) {
+    logger.error({ err }, "Upstream service unavailable");
+    const body: ErrorEnvelope = { error: err.message };
+    res.status(503).json(body);
     return;
   }
 
