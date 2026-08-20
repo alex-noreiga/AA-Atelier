@@ -21,14 +21,16 @@
 //     day, and de-duping happens before the row is written.
 //  4. **Everything is stored canonically.** Weekday names in week order,
 //     locations as the ids the slot calculator uses, so a row written here reads
-//     the same as every other one no matter how it was typed.
+//     the same as every other one no matter how it was typed. The table's own
+//     check constraints hold the same vocabularies, so a hand-run `update` can't
+//     introduce a value the slot calculator would silently skip either.
 
 import {
   listStaffAvailability,
   createStaffAvailability,
   updateStaffAvailability,
-  archiveStaffAvailability,
-} from "../lib/notion/staff-availability.repository.js";
+  deleteStaffAvailability,
+} from "../lib/db/staff-availability.repository.js";
 import {
   normalizeWeekday,
   normalizeLocation,
@@ -37,7 +39,6 @@ import {
 } from "../lib/appointments/staff.js";
 import {
   APPOINTMENT_TYPES,
-  LOCATION_LABELS,
   type AppointmentLocation,
 } from "../lib/appointments/catalog.js";
 import { parseTimeToMinutes } from "../lib/appointments/time.js";
@@ -133,9 +134,11 @@ function toScheduleEntry(input: StaffAvailabilityInput): ScheduleEntry {
     weekdays: [...weekdays],
     start: input.start.trim(),
     end: input.end.trim(),
-    // Stored as the atelier's own labels ("In person"), read back as ids — the
-    // row stays legible in Notion without the slot calculator caring.
-    locations: locations.map((id) => LOCATION_LABELS[id]),
+    // Stored as the canonical ids the slot calculator uses. The Notion version
+    // wrote the atelier's labels ("In person") so the row stayed legible in the
+    // Notion UI; nothing reads this table by hand, so the round-trip through
+    // display labels is gone.
+    locations: [...locations],
   };
 }
 
@@ -193,7 +196,7 @@ export async function editStaffAvailability(
 }
 
 export async function removeStaffAvailability(entryId: string): Promise<void> {
-  const removed = await archiveStaffAvailability(entryId);
+  const removed = await deleteStaffAvailability(entryId);
   if (!removed) {
     throw new NotFoundError("That block of hours no longer exists.");
   }

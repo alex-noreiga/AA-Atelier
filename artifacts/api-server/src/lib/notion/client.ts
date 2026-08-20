@@ -69,7 +69,6 @@ let costingClient: NotionClient | null = null;
 let materialUsageClient: NotionClient | null = null;
 let reviewsClient: NotionClient | null = null;
 let settingsClient: NotionClient | null = null;
-let staffAvailabilityClient: NotionClient | null = null;
 
 /**
  * Lazily-constructed client reading credentials from the environment. Deferring
@@ -253,24 +252,6 @@ export function getReviewsNotionClient(): NotionClient {
     });
   }
   return reviewsClient;
-}
-
-/**
- * Client for the "Staff Availability" database — the atelier's standing working
- * hours, edited on the studio dashboard and read as the positive grid the slot
- * calculator subtracts calendar busy-time from. Same lazy construction, reads
- * `NOTION_STAFF_AVAILABILITY_DATABASE_ID`. Required for appointment booking:
- * unset means there are no working hours to offer, so the repository throws with
- * a pointed message rather than quietly returning an empty calendar.
- */
-export function getStaffAvailabilityNotionClient(): NotionClient {
-  if (!staffAvailabilityClient) {
-    staffAvailabilityClient = createNotionClient({
-      apiKey: process.env.NOTION_API_KEY ?? "",
-      databaseId: process.env.NOTION_STAFF_AVAILABILITY_DATABASE_ID ?? "",
-    });
-  }
-  return staffAvailabilityClient;
 }
 
 /**

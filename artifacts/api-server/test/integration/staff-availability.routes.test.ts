@@ -2,11 +2,11 @@ import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 
 // Mock the Notion adapter so the real service + route + auth stack runs without
 // the network. The mapping itself is unit-tested separately.
-vi.mock("../../src/lib/notion/staff-availability.repository.js", () => ({
+vi.mock("../../src/lib/db/staff-availability.repository.js", () => ({
   listStaffAvailability: vi.fn(),
   createStaffAvailability: vi.fn(),
   updateStaffAvailability: vi.fn(),
-  archiveStaffAvailability: vi.fn(),
+  deleteStaffAvailability: vi.fn(),
 }));
 
 import request from "supertest";
@@ -15,8 +15,8 @@ import {
   listStaffAvailability,
   createStaffAvailability,
   updateStaffAvailability,
-  archiveStaffAvailability,
-} from "../../src/lib/notion/staff-availability.repository.js";
+  deleteStaffAvailability,
+} from "../../src/lib/db/staff-availability.repository.js";
 import {
   __setSupabaseClientForTests,
   __resetSupabaseClient,
@@ -30,7 +30,7 @@ import {
 const mockList = vi.mocked(listStaffAvailability);
 const mockCreate = vi.mocked(createStaffAvailability);
 const mockUpdate = vi.mocked(updateStaffAvailability);
-const mockArchive = vi.mocked(archiveStaffAvailability);
+const mockDelete = vi.mocked(deleteStaffAvailability);
 
 const STAFF = "alexandra@a3iceanddance.com";
 const GOOGLE_STAFF: FakeClaims = {
@@ -78,7 +78,7 @@ beforeEach(() => {
   mockList.mockResolvedValue([ROW]);
   mockCreate.mockResolvedValue(ROW);
   mockUpdate.mockResolvedValue(ROW);
-  mockArchive.mockResolvedValue(true);
+  mockDelete.mockResolvedValue(true);
   acceptToken("staff-token", GOOGLE_STAFF);
 });
 
@@ -104,7 +104,7 @@ describe("the staff gate applies to the whole schedule surface", () => {
     expect(mockList).not.toHaveBeenCalled();
     expect(mockCreate).not.toHaveBeenCalled();
     expect(mockUpdate).not.toHaveBeenCalled();
-    expect(mockArchive).not.toHaveBeenCalled();
+    expect(mockDelete).not.toHaveBeenCalled();
   });
 
   it.each(cases)(
@@ -221,11 +221,11 @@ describe("DELETE /api/studio/availability/:entryId", () => {
 
     expect(res.status).toBe(200);
     expect(res.body.message).toMatch(/removed from the schedule/);
-    expect(mockArchive).toHaveBeenCalledWith("row-1");
+    expect(mockDelete).toHaveBeenCalledWith("row-1");
   });
 
   it("answers 404 when the row is already gone", async () => {
-    mockArchive.mockResolvedValue(false);
+    mockDelete.mockResolvedValue(false);
     const res = await request(app)
       .delete("/api/studio/availability/row-gone")
       .set("Authorization", "Bearer staff-token");
