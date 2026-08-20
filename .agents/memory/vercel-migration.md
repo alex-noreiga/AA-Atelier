@@ -8,7 +8,7 @@ description: Key decisions made when migrating this project from Replit deployme
 - Frontend (`artifacts/web-app`): Vite static build → `artifacts/web-app/dist/public`
 - API (`artifacts/api-server`): Express app wrapped in `api/index.ts` at the repo root, deployed as a Vercel serverless function
 - Routing: `vercel.json` rewrites `/api/:path*` → `/api/index`
-- Build command: `pnpm run build:vercel` (builds only the frontend; Vercel bundles the serverless function itself)
+- Build command: `pnpm run build:vercel` — esbuild-bundles the api-server, exports the product-SEO snapshot, then builds the frontend. `api/index.ts` imports the **pre-bundled** `artifacts/api-server/dist/app.mjs`, deliberately not the TS source, so `@vercel/node` never type-checks the workspace graph. Don't "fix" this by importing the source.
 
 ## Notion auth change
 
@@ -22,10 +22,13 @@ Object storage (GCS) also used the Replit sidecar for credentials and signed URL
 
 **Update:** the order form's optional **reference / inspiration images** were later reintroduced — but on top of **Notion's File Upload API**, not a revived object store. Rationale: everything else in this app lives in Notion and the atelier manages it there, so images attach as inline blocks on the order's own Notion page. No new service, no new env var — it reuses `NOTION_API_KEY`. Flow: the browser downscales each image on a canvas (`web-app/src/lib/reference-images.ts`) and POSTs the bytes one at a time to `POST /api/orders/reference-images` (a **raw-bytes route outside the OpenAPI contract**, mounted like the Stripe webhook); the server relays each to Notion (`api-server/src/routes/order-images.ts` → `lib/notion/file-uploads.repository.ts`, two calls: create + send) and returns a `file_upload` id; the order body carries the ids as `referenceImageIds`, attached as image blocks in `orders.blocks.ts`. Client-side downscaling + a 4 MB cap keep each request under Vercel's ~4.5 MB serverless body limit. See the "Order reference-image upload" bullet in `CLAUDE.md`.
 
-## Required env vars on Vercel
+## Env vars this migration introduced
+
+(The current, complete list lives in `CLAUDE.md` → "Environment variables" and
+`.env.example`; this is only what the Replit→Vercel move added.)
 
 - `NOTION_API_KEY` — from https://www.notion.so/my-integrations
-- `NOTION_ORDERS_DATABASE_ID` — the Notion DB ID (was `72ab2818-7cc8-4479-a685-41ebc4c368e8`)
+- `NOTION_ORDERS_DATABASE_ID` — the Order Tracking Pipeline DB id
 - `NOTION_CONTACT_DATABASE_ID` — the "Website Contact Messages" DB the `/contact` form writes to
 - `NOTION_INVENTORY_DATABASE_ID` — the finished-goods "inventory" DB the shop's `/products` endpoint reads
 - `RESEND_API_KEY` — from https://resend.com/api-keys (customer notification emails)
@@ -82,9 +85,14 @@ category `from` onto the message and the client honors a per-message `from` over
 base. Adding a second sender needs no new Resend/DNS setup (same verified domain) —
 only a mailbox/alias to _receive_ at the new address.
 
-**Deliberately not migrated:** order status/stage-change emails and the actual
-restock alert — both need a Notion→app trigger (webhook or cron) that doesn't
-exist yet.
+**Since migrated:** order **status/stage-change** emails now ship — the missing
+Notion→app trigger turned out to be a Notion **database automation** posting to
+`POST /api/webhooks/notion-stage-change` (forward-only via a `Last Notified Stage`
+marker). See the "Order status-change emails" section in `CLAUDE.md`.
+
+**Still not migrated:** the actual **restock alert** (the "it's back in stock" blast
+to everyone who asked). `/notify` only records the request + sends its receipt;
+telling those customers stock returned is still a manual atelier job.
 
 **Ops prerequisites:** verify the sending domain in Resend (SPF/DKIM DNS) before
 `RESEND_FROM_EMAIL` will deliver, and once the website sends reliably, **turn off

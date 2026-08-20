@@ -22,6 +22,11 @@ async function buildAll() {
     entryPoints: [
       path.resolve(artifactDir, "src/index.ts"),
       path.resolve(artifactDir, "src/app.ts"),
+      // Build-time SEO export. Bundled rather than run through node's
+      // --experimental-strip-types (the way db:migrate is) because it imports
+      // the Notion service layer, whose relative imports use `.js` specifiers
+      // that type-stripping does not resolve back to the `.ts` sources.
+      path.resolve(artifactDir, "src/scripts/export-product-seo.ts"),
     ],
     platform: "node",
     bundle: true,

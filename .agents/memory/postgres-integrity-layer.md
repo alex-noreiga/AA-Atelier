@@ -7,27 +7,33 @@ can't enforce. Notion stays the record for the order lifecycle. It is **entirely
 degrade-safe**: unset `POSTGRES_URL` ⇒ `postgresConfigured()` is false and every
 caller falls back to the pre-Postgres behavior.
 
-## What's actually wired (vs provisioned)
+## What's wired
 
-The single migration `supabase/migrations/0001_init.sql` provisions **four**
-tables — `schema_migrations`, `clients`, `order_index`, `processed_payments` —
-but **only `processed_payments` has a repository and a caller today.**
+`supabase/migrations/0001_init.sql` provisions four tables —
+`schema_migrations`, `clients`, `order_index`, `processed_payments` — and
+`0002_lock_down_public_tables.sql` closes them to PostgREST (below). All three
+data tables have a repository and callers.
 
-- **`processed_payments` — LIVE.** Atomic Stripe idempotency for **shop orders**.
+- **`processed_payments`.** Atomic Stripe idempotency for **shop orders**.
   `lib/db/processed-payments.repository.ts`: `claimPayment` (`insert … on conflict
 (stripe_session_id) do nothing`, returning `claimed` / `done` / `in_progress`,
   with a `STALE_CLAIM_MINUTES = 10` reclaim window so a crash between claim and
   confirm can't swallow a payment forever), `confirmPayment`, `releasePayment`.
-- **`clients` + `order_index` — SCHEMA-AHEAD-OF-CODE.** The intended email-keyed
-  customer + order discovery index for the account portal (`citext` email so
-  `where email = $1` is case-insensitive). **No repository, no writer, no reader
-  anywhere in `src/`.** The account overview still reads orders live from Notion
-  (`findOrdersByEmail`). Don't document these as functional; there is also **no
-  backfill script** (the word appears only in comments).
+- **`clients` + `order_index`.** The email-keyed customer + order discovery index
+  for the account portal (`citext` email so `where email = $1` is
+  case-insensitive). Written **best-effort** on order/checkout (`upsertClientIndex`
+  / `writeOrderIndex`, from `orders.service` + `checkout.service`) and read by the
+  overview (`findOrderRefsByEmail`, `account.service`). The read is a
+  **union, not a replacement**: `listCustomOrders` / `listShopOrders` start from
+  the Notion by-email query and add any order numbers the index finds that the
+  exact-email match missed, then read those back from Notion by number so
+  Stage/measurements stay live. A DB failure degrades to the Notion-only result.
+  `src/scripts/backfill-order-index.ts` (`db:backfill`) seeds the index from
+  existing Notion orders.
 
 ## Load-bearing decisions
 
-- **The one caller is `checkout.service.ts` `recordPaidOrder`.** Flow: if
+- **The Stripe caller is `checkout.service.ts` `recordPaidOrder`.** Flow: if
   `postgresConfigured()`, claim → write the Notion order → confirm; release +
   rethrow on failure so a Stripe redelivery reprocesses cleanly, and **throw** on a
   live `in_progress` claim so a concurrent delivery can't race a duplicate. A DB
@@ -47,6 +53,17 @@ but **only `processed_payments` has a repository and a caller today.**
   its `schema_migrations` insert). It's a manual `workflow_dispatch` job
   (`.github/workflows/migrate.yml`), deliberately kept out of `build:vercel` and
   cold starts — DDL must not run there.
+- **These tables are closed to the Data API — keep them that way.** Supabase serves
+  the `public` schema through PostgREST and the `anon` key ships in the browser
+  bundle (`VITE_PUBLIC_SUPABASE_ANON_KEY`), so a table left at Supabase's defaults
+  is world-readable **and world-writable**. `0002_lock_down_public_tables.sql` turns
+  RLS on with **no policies** (deny-all), revokes all grants from
+  `anon`/`authenticated`, and resets the schema's `ALTER DEFAULT PRIVILEGES` so a
+  future `create table` doesn't silently reopen it. The app is unaffected because it
+  never uses PostgREST — it connects directly as `postgres`, which **owns** these
+  tables and bypasses RLS. Two rules follow: a new `public` table needs its own
+  `enable row level security` + `revoke` pair in the migration that creates it, and
+  a PostgREST RPC (there are none) would need an explicit `grant execute`.
 - **Same client pattern as Notion/Stripe/Supabase.** `lib/db/client.ts` reads the
   URL at first use, exposes the narrow injectable `DbClient` seam (`query` + `end`)
   so repos are driver-agnostic and fakeable (`test/support/fake-db.ts`), with
@@ -56,9 +73,10 @@ but **only `processed_payments` has a repository and a caller today.**
 
 All optional. On Vercel the Supabase integration provides `POSTGRES_URL` +
 `POSTGRES_URL_NON_POOLING`; run `db:migrate` once against the non-pooled URL to
-create the tables. Unset ⇒ the layer no-ops (Stripe dedup falls back to Notion).
-Tests: `test/unit/db.client.test.ts`, `test/unit/processed-payments.repository.test.ts`,
-and the `checkout.service` dedup-branch tests.
+create the tables. Unset ⇒ the layer no-ops (Stripe dedup falls back to Notion and
+the portal reads Notion only). Tests: `test/unit/db.client.test.ts`,
+`test/unit/processed-payments.repository.test.ts`, and the `checkout.service`
+dedup-branch tests, all over `test/support/fake-db.ts`.
 
 ## Addendum — `restock_alerts` (0003)
 

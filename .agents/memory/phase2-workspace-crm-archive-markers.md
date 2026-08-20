@@ -115,9 +115,10 @@ inventory, per database:
   (`Referral Code` left visible — the atelier may want to share it.)
 - **Production Schedule:** `Reminder Sent` (+ the leftover `Status` status-property
   that card ③ of `phase2-workspace-cards.md` marks for post-deploy deletion).
-- **invoices & payments:** the `*Session Id` Stripe ids; and — once the payment-
-  reminder setup lands — `First/Second Deposit Reminded` + `Balance Reminded`
-  (not present yet).
+- **invoices & payments:** the `*Session Id` Stripe ids, plus
+  `First/Second Deposit Reminded` + `Balance Reminded` once the atelier adds them
+  (the payment-reminder code ships and no-ops until they exist — see the "Payment &
+  deposit due reminders" section in `CLAUDE.md`).
 
 - **Applied (API-possible):** the curated views above **hide** the markers from
   the working board — the Custom Orders Active/Archived views `HIDE` the three
