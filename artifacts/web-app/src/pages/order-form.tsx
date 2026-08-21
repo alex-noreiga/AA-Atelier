@@ -586,12 +586,9 @@ export default function OrderForm() {
                   than blocking behind a choice it can't offer. */}
               {services.length > 0 && (
                 <section>
-                  <h2 className="text-xs tracking-[0.2em] uppercase text-muted-foreground mb-2 pb-2 border-b border-border">
+                  <h2 className="text-xs tracking-[0.2em] uppercase text-muted-foreground mb-6 pb-2 border-b border-border">
                     What can we make for you?
                   </h2>
-                  <p className="text-muted-foreground font-light text-sm mb-6">
-                    Pick a service and we&rsquo;ll only ask for what it needs.
-                  </p>
                   <div
                     className="grid sm:grid-cols-2 gap-3"
                     data-testid="service-picker"
