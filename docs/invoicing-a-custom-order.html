@@ -1,0 +1,607 @@
+<title>Invoicing a Custom Order</title>
+
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:wght@400;500;600&family=Jost:wght@300;400;500;600&display=swap">
+
+<style>
+  /* ============ Tokens ============
+     Palette and type match the site's own Deep Plum & Champagne theme
+     (artifacts/web-app/src/index.css): plum ink, rose gold accent, champagne
+     paper, Cormorant Garamond over Jost. */
+  :root {
+    --paper:      hsl(36 44% 97%);
+    --paper-2:    hsl(34 34% 94%);
+    --paper-3:    hsl(33 30% 90%);
+    --ink:        hsl(320 24% 15%);
+    --ink-soft:   hsl(320 10% 40%);
+    --ink-faint:  hsl(320 8% 55%);
+    --line:       hsl(320 16% 85%);
+    --line-soft:  hsl(320 16% 90%);
+    --rose:       hsl(352 46% 48%);
+    --rose-deep:  hsl(352 50% 40%);
+    --rose-tint:  hsl(352 52% 96%);
+    --gold:       hsl(33 62% 38%);
+    --gold-tint:  hsl(38 66% 94%);
+
+    --serif: "Cormorant Garamond", Georgia, "Iowan Old Style", "Palatino Linotype", serif;
+    --sans:  "Jost", system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+    --mono:  ui-monospace, "SF Mono", "SFMono-Regular", Menlo, Consolas, monospace;
+
+    --maxw: 720px;
+    --shadow: 0 1px 2px hsl(320 20% 20% / .05), 0 8px 24px hsl(320 24% 20% / .06);
+  }
+
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      --paper:      hsl(320 30% 10%);
+      --paper-2:    hsl(320 27% 14%);
+      --paper-3:    hsl(320 24% 18%);
+      --ink:        hsl(35 40% 92%);
+      --ink-soft:   hsl(35 16% 72%);
+      --ink-faint:  hsl(35 12% 60%);
+      --line:       hsl(320 18% 25%);
+      --line-soft:  hsl(320 18% 20%);
+      --rose:       hsl(355 44% 70%);
+      --rose-deep:  hsl(355 44% 70%);
+      --rose-tint:  hsl(345 26% 18%);
+      --gold:       hsl(40 56% 70%);
+      --gold-tint:  hsl(36 24% 18%);
+      --shadow: 0 1px 2px hsl(320 40% 3% / .4), 0 10px 30px hsl(320 40% 3% / .45);
+    }
+  }
+  :root[data-theme="dark"] {
+    --paper: hsl(320 30% 10%); --paper-2: hsl(320 27% 14%); --paper-3: hsl(320 24% 18%);
+    --ink: hsl(35 40% 92%); --ink-soft: hsl(35 16% 72%); --ink-faint: hsl(35 12% 60%);
+    --line: hsl(320 18% 25%); --line-soft: hsl(320 18% 20%);
+    --rose: hsl(355 44% 70%); --rose-deep: hsl(355 44% 70%); --rose-tint: hsl(345 26% 18%);
+    --gold: hsl(40 56% 70%); --gold-tint: hsl(36 24% 18%);
+    --shadow: 0 1px 2px hsl(320 40% 3% / .4), 0 10px 30px hsl(320 40% 3% / .45);
+  }
+
+  /* ============ Base ============ */
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    background: var(--paper);
+    color: var(--ink);
+    font-family: var(--sans);
+    font-size: 17px;
+    line-height: 1.72;
+    font-weight: 300;
+    -webkit-font-smoothing: antialiased;
+  }
+  ::selection { background: var(--rose-tint); }
+
+  a { color: var(--rose-deep); text-decoration-thickness: 1px; text-underline-offset: 2px; }
+
+  .page {
+    display: grid;
+    grid-template-columns: 1fr;
+    max-width: 1180px;
+    margin: 0 auto;
+    padding: 0 28px;
+  }
+  @media (min-width: 1000px) {
+    .page { grid-template-columns: 236px minmax(0, 1fr); column-gap: 56px; }
+  }
+
+  /* ============ Type ============ */
+  h1, h2, h3 { font-family: var(--serif); font-weight: 500; text-wrap: balance; line-height: 1.1; }
+  h2 { font-size: clamp(1.7rem, 3.4vw, 2.15rem); margin: 0; letter-spacing: -0.01em; }
+  h3 {
+    font-family: var(--sans); font-weight: 500; font-size: 1.02rem;
+    letter-spacing: .01em; margin: 0 0 .3rem;
+  }
+  p { margin: 0 0 1.1rem; max-width: var(--maxw); }
+  p:last-child { margin-bottom: 0; }
+  strong { font-weight: 600; color: var(--ink); }
+  .lede { font-size: 1.18rem; color: var(--ink-soft); font-weight: 300; }
+
+  .eyebrow {
+    font-size: .7rem; letter-spacing: .26em; text-transform: uppercase;
+    color: var(--rose-deep); font-weight: 500; margin: 0;
+  }
+
+  code, .mono { font-family: var(--mono); font-size: .84em; }
+  p code, li code, td code, summary code {
+    background: var(--paper-2);
+    border: 1px solid var(--line-soft);
+    border-radius: 3px;
+    padding: .08em .38em;
+    color: var(--ink);
+    white-space: nowrap;
+  }
+
+  /* ============ Header ============ */
+  header.hero {
+    grid-column: 1 / -1;
+    padding: clamp(56px, 9vw, 96px) 0 clamp(30px, 5vw, 48px);
+    border-bottom: 1px solid var(--line);
+    margin-bottom: clamp(40px, 6vw, 64px);
+    animation: rise .8s cubic-bezier(.2,.7,.2,1) both;
+  }
+  header.hero h1 {
+    font-size: clamp(2.9rem, 7vw, 4.4rem);
+    margin: .5rem 0 .8rem;
+    letter-spacing: -0.015em;
+  }
+  header.hero .lede { max-width: 640px; margin: 0; }
+  .hero-meta {
+    display: flex; flex-wrap: wrap; gap: 10px 22px; align-items: baseline;
+    margin-top: 2rem; font-size: .74rem; letter-spacing: .16em; text-transform: uppercase;
+    color: var(--ink-faint);
+  }
+  .hero-meta span { display: inline-flex; align-items: center; gap: 8px; }
+  .hero-meta .dot { width: 4px; height: 4px; border-radius: 50%; background: var(--rose); }
+
+  /* ============ Contents rail ============ */
+  nav.toc { display: none; }
+  @media (min-width: 1000px) {
+    nav.toc {
+      display: block; grid-column: 1; align-self: start;
+      position: sticky; top: 40px; font-size: .84rem;
+    }
+  }
+  nav.toc ul { list-style: none; margin: 0; padding: 0; display: grid; gap: 2px; }
+  nav.toc a {
+    display: block; padding: 7px 12px; border-radius: 5px;
+    color: var(--ink-soft); text-decoration: none;
+    border-left: 2px solid transparent;
+    transition: background .18s, color .18s, border-color .18s;
+  }
+  nav.toc a:hover { background: var(--paper-2); color: var(--ink); }
+  nav.toc a.active { color: var(--ink); border-left-color: var(--rose); background: var(--paper-2); }
+  nav.toc .toc-head {
+    font-size: .68rem; letter-spacing: .22em; text-transform: uppercase;
+    color: var(--ink-faint); padding: 0 12px 12px; font-weight: 500;
+  }
+
+  /* ============ Content column ============ */
+  main { grid-column: 1 / -1; min-width: 0; display: grid; gap: clamp(48px, 7vw, 74px); }
+  @media (min-width: 1000px) { main { grid-column: 2; } }
+
+  section { scroll-margin-top: 32px; display: grid; gap: 1.2rem; }
+  .sec-head { display: grid; gap: .35rem; }
+  .sec-head .kicker {
+    font-size: .72rem; letter-spacing: .2em; text-transform: uppercase; color: var(--ink-faint);
+  }
+
+  /* ============ Stage strip ============ */
+  .stages { display: grid; gap: 16px; }
+  @media (min-width: 640px) { .stages { grid-template-columns: repeat(3, 1fr); } }
+  .stage {
+    background: var(--paper-2); border: 1px solid var(--line);
+    border-radius: 10px; padding: 20px; box-shadow: var(--shadow);
+    display: grid; gap: .3rem; align-content: start;
+  }
+  .stage .name { font-weight: 500; font-size: 1.05rem; font-family: var(--serif); font-size: 1.4rem; }
+  .stage .when { font-size: .86rem; color: var(--ink-soft); line-height: 1.55; }
+  .stage .tag {
+    justify-self: start; margin-top: 8px; font-size: .64rem; letter-spacing: .14em;
+    text-transform: uppercase; color: var(--ink-faint);
+    border: 1px solid var(--line); border-radius: 20px; padding: 3px 10px;
+  }
+
+  /* ============ Numbered steps (a real sequence) ============ */
+  ol.steps { list-style: none; counter-reset: step; margin: 0; padding: 0; max-width: var(--maxw); }
+  ol.steps > li { counter-increment: step; position: relative; padding: 0 0 1.7rem 58px; margin: 0; }
+  ol.steps > li:last-child { padding-bottom: 0; }
+  ol.steps > li:not(:last-child)::after {
+    content: ""; position: absolute; left: 18px; top: 42px; bottom: 4px; width: 1px; background: var(--line);
+  }
+  ol.steps > li::before {
+    content: counter(step); position: absolute; left: 0; top: -1px;
+    width: 37px; height: 37px; border-radius: 50%;
+    display: grid; place-items: center;
+    font-family: var(--serif); font-size: 1.15rem; color: var(--rose-deep);
+    background: var(--paper); border: 1px solid var(--line);
+  }
+  ol.steps h3 { margin-top: .35rem; }
+
+  /* ============ Callouts ============ */
+  .callout {
+    border: 1px solid var(--line); border-left: 3px solid var(--rose);
+    background: var(--rose-tint); border-radius: 8px;
+    padding: 18px 22px; max-width: var(--maxw);
+  }
+  .callout.warn { border-left-color: var(--gold); background: var(--gold-tint); }
+  .callout .label {
+    font-size: .68rem; letter-spacing: .18em; text-transform: uppercase; font-weight: 600;
+    color: var(--rose-deep); margin-bottom: .5rem; display: block;
+  }
+  .callout.warn .label { color: var(--gold); }
+  .callout ul { margin: .4rem 0 0; padding-left: 1.1rem; }
+  .callout li { margin-bottom: .5rem; }
+  .callout li:last-child { margin-bottom: 0; }
+
+  /* ============ Prose lists ============ */
+  ul.prose { padding-left: 0; list-style: none; max-width: var(--maxw); margin: 0; display: grid; gap: .7rem; }
+  ul.prose > li { position: relative; padding-left: 24px; }
+  ul.prose > li::before {
+    content: ""; position: absolute; left: 4px; top: .62em;
+    width: 6px; height: 6px; border-radius: 50%; background: var(--rose);
+  }
+
+  /* ============ FAQ ============ */
+  .faq { max-width: var(--maxw); border-top: 1px solid var(--line); }
+  .faq details { border-bottom: 1px solid var(--line); }
+  .faq summary {
+    cursor: pointer; list-style: none; padding: 18px 40px 18px 2px;
+    font-weight: 400; font-size: 1.02rem; position: relative; color: var(--ink);
+  }
+  .faq summary::-webkit-details-marker { display: none; }
+  .faq summary::after {
+    content: "+"; position: absolute; right: 6px; top: 50%; transform: translateY(-50%);
+    font-family: var(--serif); font-size: 1.5rem; color: var(--rose);
+  }
+  .faq details[open] summary::after { content: "\2013"; }
+  .faq details > *:not(summary) { margin: 0 0 18px; padding-right: 20px; }
+  .faq p { font-size: .98rem; color: var(--ink-soft); }
+
+  /* ============ Reference ============ */
+  .table-wrap { overflow-x: auto; max-width: 100%; border: 1px solid var(--line); border-radius: 10px; box-shadow: var(--shadow); }
+  table { border-collapse: collapse; width: 100%; font-size: .9rem; min-width: 520px; }
+  th, td { text-align: left; padding: 13px 16px; border-bottom: 1px solid var(--line-soft); vertical-align: top; }
+  thead th {
+    font-size: .66rem; letter-spacing: .16em; text-transform: uppercase; color: var(--ink-faint);
+    font-weight: 600; background: var(--paper-2); border-bottom: 1px solid var(--line);
+  }
+  tbody tr:last-child td { border-bottom: none; }
+  td.mono { font-family: var(--mono); font-size: .8rem; color: var(--ink-soft); white-space: nowrap; }
+  td .prop { font-weight: 500; }
+
+  .idcard { display: grid; gap: 14px; max-width: var(--maxw); }
+  @media (min-width: 560px) { .idcard { grid-template-columns: 1fr 1fr; } }
+  .idcard .box { background: var(--paper-2); border: 1px solid var(--line); border-radius: 10px; padding: 16px 18px; }
+  .idcard .box .k { font-size: .68rem; letter-spacing: .14em; text-transform: uppercase; color: var(--ink-faint); }
+  .idcard .box .db { font-family: var(--serif); font-size: 1.2rem; margin: 2px 0 8px; }
+  .idcard .box .id { font-family: var(--mono); font-size: .78rem; color: var(--ink-soft); word-break: break-all; line-height: 1.5; }
+
+  .sub { font-size: .95rem; color: var(--ink-soft); }
+
+  footer.foot {
+    grid-column: 1 / -1;
+    border-top: 1px solid var(--line);
+    margin-top: 56px; padding: 34px 0 64px;
+    font-size: .82rem; color: var(--ink-faint);
+    display: flex; flex-wrap: wrap; gap: 8px 20px; justify-content: space-between;
+  }
+
+  @keyframes rise { from { opacity: 0; transform: translateY(14px); } to { opacity: 1; transform: none; } }
+  @media (prefers-reduced-motion: reduce) {
+    * { animation: none !important; transition: none !important; scroll-behavior: auto !important; }
+  }
+  html { scroll-behavior: smooth; }
+  :focus-visible { outline: 2px solid var(--rose); outline-offset: 3px; border-radius: 2px; }
+</style>
+
+<div class="page">
+
+  <header class="hero">
+    <p class="eyebrow">A.A Atelier · Studio Operations</p>
+    <h1>Invoicing a Custom Order</h1>
+    <p class="lede">How to bill a custom order in Notion, and how the client pays it: a first deposit, a second deposit, and the final balance.</p>
+    <div class="hero-meta">
+      <span><span class="dot"></span> For Alexandra and Alayna</span>
+      <span><span class="dot"></span> Notion holds the invoice</span>
+      <span><span class="dot"></span> Stripe takes the money</span>
+    </div>
+  </header>
+
+  <nav class="toc" aria-label="Contents">
+    <div class="toc-head">Contents</div>
+    <ul>
+      <li><a href="#overview">How it works</a></li>
+      <li><a href="#stages">The three payments</a></li>
+      <li><a href="#setup">Setting up an invoice</a></li>
+      <li><a href="#itemize">Itemizing from the costing</a></li>
+      <li><a href="#rules">Rules that keep the math right</a></li>
+      <li><a href="#reminders">Automatic payment reminders</a></li>
+      <li><a href="#customer">What the client sees</a></li>
+      <li><a href="#faq">When something looks wrong</a></li>
+      <li><a href="#reference">Field reference</a></li>
+    </ul>
+  </nav>
+
+  <main>
+
+    <section id="overview">
+      <div class="sec-head">
+        <span class="kicker">The short version</span>
+        <h2>How it works</h2>
+      </div>
+      <p>You build the invoice in Notion. The website reads it and collects the money through Stripe. The site never sets a price of its own and never edits your costing. If a number is wrong on the site, it is wrong in Notion.</p>
+
+      <p>Two databases under <strong>finances</strong> do the work:</p>
+      <ul class="prose">
+        <li><strong>invoices &amp; payments</strong>: one row per order. This is the invoice itself. It holds the two deposit amounts, the paid checkboxes, the due dates, and the <code>Invoice Ready</code> switch.</li>
+        <li><strong>Invoice Line Items</strong>: the itemized lines that add up to the subtotal. Each line is a Garment, Material, Labor, Adjustment, or Surcharge.</li>
+      </ul>
+
+      <p>The invoice and the order are joined by a relation: <code>Order</code> on the invoice, <code>Invoices</code> on the order. The site follows the order's <code>Invoices</code> field to find the invoice, so after linking them, glance at the order row and confirm the invoice shows up there.</p>
+
+      <p>The only things the site ever writes to the invoice are the paid checkboxes, the Stripe session id next to each one, the reminder checkboxes, and the invoice title when you run the itemize tool. Your costing formulas are never touched.</p>
+    </section>
+
+    <section id="stages">
+      <div class="sec-head">
+        <span class="kicker">What a client pays, and when</span>
+        <h2>The three payments</h2>
+      </div>
+
+      <div class="stages">
+        <div class="stage">
+          <div class="name">First deposit</div>
+          <div class="when">Usually taken once the sketch is settled. You type the amount.</div>
+          <span class="tag">No tax</span>
+        </div>
+        <div class="stage">
+          <div class="name">Second deposit</div>
+          <div class="when">Usually taken at the first fitting. You type the amount.</div>
+          <span class="tag">No tax</span>
+        </div>
+        <div class="stage">
+          <div class="name">Final balance</div>
+          <div class="when">Line items minus the deposits already marked paid. Calculated, never typed.</div>
+          <span class="tag">Tax added</span>
+        </div>
+      </div>
+
+      <p>A deposit becomes payable online the moment you put an amount in its field. The client does not have to wait for the itemized invoice.</p>
+
+      <p>The balance is the sum of the line items minus every deposit that is marked paid, and it never goes below zero. It only appears to the client after you tick <code>Invoice Ready</code>. Sales tax is added at checkout on the balance only, which is why that checkout asks for a billing address. Deposits stay untaxed on purpose.</p>
+
+      <div class="callout">
+        <span class="label">There is no fixed order</span>
+        <p>A stage is payable whenever it has an amount and is not already marked paid. The client can pay the second deposit first, or the balance after only one deposit. The balance always subtracts whatever is marked paid at that moment, so the totals stay right either way.</p>
+      </div>
+
+      <p class="sub">Stripe's promo code and gift card box is on all three checkouts, so a code you create in the Stripe dashboard works on a deposit or the balance. If installment payments (Klarna, Affirm, Afterpay) are turned on, they show on the balance only. Deposits are card only.</p>
+    </section>
+
+    <section id="setup">
+      <div class="sec-head">
+        <span class="kicker">Step by step, in Notion</span>
+        <h2>Setting up an invoice</h2>
+      </div>
+
+      <ol class="steps">
+        <li>
+          <h3>Link the invoice to the order</h3>
+          <p>In <strong>invoices &amp; payments</strong>, find or create the row for this order and set its <code>Order</code> relation. One invoice per order. Check the order row now shows the invoice under <code>Invoices</code>, because that is the side the website reads.</p>
+        </li>
+        <li>
+          <h3>Set the first deposit</h3>
+          <p>Type the number into <code>First Deposit Amount</code>. That is all it takes for the client to be able to pay it online. Add <code>First Deposit Due</code> if you want a reminder email to go out before the date (see <a href="#reminders">reminders</a>).</p>
+        </li>
+        <li>
+          <h3>Set the second deposit</h3>
+          <p>Same thing, in <code>Second Deposit Amount</code> and <code>Second Deposit Due</code>.</p>
+        </li>
+        <li>
+          <h3>Itemize the invoice</h3>
+          <p>Run the <strong>Itemize an invoice</strong> tool on the studio dashboard at <code>/studio</code>. It writes the material, labor, and design lines from the order's costing. Details are in the <a href="#itemize">next section</a>. You can also add or edit lines by hand in <strong>Invoice Line Items</strong>.</p>
+        </li>
+        <li>
+          <h3>Set the payment deadline</h3>
+          <p><code>Payment Deadline</code> is the balance's due date. The client sees it on their invoice page, and it is what triggers the balance reminder email.</p>
+        </li>
+        <li>
+          <h3>Tick Invoice Ready</h3>
+          <p>Now the balance and the <em>View invoice</em> button appear for the client. Until then they see the deposits only, and the invoice page tells them the invoice is not ready yet.</p>
+        </li>
+        <li>
+          <h3>Leave the paid boxes alone</h3>
+          <p>When a client pays, the matching <code>Paid</code> box ticks itself within a few seconds, and the Stripe session id lands next to it. Tick a box yourself only for a payment that came in outside the website.</p>
+        </li>
+      </ol>
+    </section>
+
+    <section id="itemize">
+      <div class="sec-head">
+        <span class="kicker">The dashboard tool</span>
+        <h2>Itemizing from the costing</h2>
+      </div>
+
+      <p>Sign in at <code>/studio</code>, scroll to the tools, type the order number into <strong>Itemize an invoice</strong>, and press Itemize. It reads the order's costing items and writes:</p>
+
+      <ul class="prose">
+        <li>One <strong>Material</strong> line per material usage line, priced at that line's material cost. Packaging usage lines are skipped, since that is an internal cost.</li>
+        <li>One <strong>Labor</strong> line at the total labor cost from the costing.</li>
+        <li>One <strong>Adjustment</strong> line called "Design &amp; finishing" that makes the itemized total land exactly on the costing's suggested price. This is where the margin sits.</li>
+        <li>A <strong>Surcharge</strong> line if the order has <code>Rush Order</code> ticked, at 15% of the itemized subtotal.</li>
+      </ul>
+
+      <p>It also renames the invoice to the order number. Then it tells you what it wrote and what the invoice totals.</p>
+
+      <div class="callout">
+        <span class="label">It runs once</span>
+        <p>If the invoice already has any line items, the tool adds nothing and says so. That is deliberate, so a second press cannot duplicate the invoice. To rebuild it after changing the costing, delete the existing lines in Notion and run it again.</p>
+      </div>
+
+      <p>If the order has no costing items linked, the tool cannot run and tells you that. Link the costing to the order first.</p>
+
+      <div class="callout warn">
+        <span class="label">Why not add a costing line by hand</span>
+        <p>A costing item is a whole-garment price. Its suggested price already includes materials, labor, and margin. If you add a line linked to the costing item and also add material and labor lines, the client is billed for the same work twice. The tool avoids this by pricing every line it writes manually and never linking the costing item. Follow the same rule with any line you add yourself.</p>
+      </div>
+    </section>
+
+    <section id="rules">
+      <div class="sec-head">
+        <span class="kicker">Three things worth knowing</span>
+        <h2>Rules that keep the math right</h2>
+      </div>
+
+      <div class="callout warn">
+        <span class="label">A ticked Paid box hides the pay button</span>
+        <p>The site treats <code>Paid</code> as the record of payment. Tick it before the money arrives and the client can no longer pay that stage online, and the balance drops by that amount. Untick it and the pay option comes back. Recording a real payment taken outside the site is the one time you tick it yourself.</p>
+      </div>
+
+      <div class="callout">
+        <span class="label">Deposits are credits, not line items</span>
+        <p>Deposits live on the invoice row, never in Invoice Line Items. Do not create a "Deposit" line type. A deposit line would bill the client for their own deposit, and it would also throw off Notion's <code>Final Balance</code>, which does not filter those out.</p>
+      </div>
+
+      <div class="callout">
+        <span class="label">The balance is calculated, not stored</span>
+        <p>The client is charged the sum of the line items minus the deposits marked paid, recalculated every time the page loads. The <code>Final Balance</code> field in Notion is for your reading. The site does its own sum so a stray line cannot overcharge anyone.</p>
+      </div>
+    </section>
+
+    <section id="reminders">
+      <div class="sec-head">
+        <span class="kicker">Sent for you, overnight</span>
+        <h2>Automatic payment reminders</h2>
+      </div>
+
+      <p>If a stage has a due date, is unpaid, and the date is within seven days or already past, the nightly job emails the client a reminder with the amount and a link to pay. It covers all three stages: <code>First Deposit Due</code>, <code>Second Deposit Due</code>, and <code>Payment Deadline</code> for the balance.</p>
+
+      <ul class="prose">
+        <li>A stage with no due date is never reminded about. That is the switch: set a date to turn reminders on for that stage.</li>
+        <li>Each stage gets one reminder, ever. After it sends, the matching <code>Reminded</code> checkbox is ticked so the job does not send it again night after night. Untick it if you want another one to go out.</li>
+        <li>Nothing goes to the client for a stage already marked paid.</li>
+        <li>You do not have to wait for the overnight run. <strong>Reconcile production milestones</strong> on the dashboard does the same sweep on demand.</li>
+      </ul>
+    </section>
+
+    <section id="customer">
+      <div class="sec-head">
+        <span class="kicker">The other side of the screen</span>
+        <h2>What the client sees</h2>
+      </div>
+
+      <p>The client goes to the <strong>Track</strong> page and enters their order number, or opens the order from their account if they have one. From there:</p>
+
+      <ul class="prose">
+        <li><strong>Deposit cards.</strong> Every deposit with an amount on it shows as a card with a Pay button that opens Stripe checkout. Once paid, the card reads "paid" and offers a receipt link.</li>
+        <li><strong>The balance.</strong> After <code>Invoice Ready</code> is ticked, a card shows the balance due (or "Paid in full") with a <em>View invoice</em> button.</li>
+        <li><strong>The invoice page.</strong> The lines grouped under Garment, Materials, Labor, Adjustments, and Surcharge, then the subtotal, each deposit as a credit, and the balance due. There is a Pay balance button and a Download PDF button.</li>
+      </ul>
+
+      <p>Deposits show up before the invoice is itemized. The balance shows up only after you tick <code>Invoice Ready</code>. That gap is the point: you can collect a deposit while you are still costing the garment out.</p>
+
+      <p class="sub">An unpaid deposit is listed on the invoice page as a credit of $0.00 with "(unpaid)" next to it, so the arithmetic reads clearly. It turns into a real credit once it is paid.</p>
+    </section>
+
+    <section id="faq">
+      <div class="sec-head">
+        <span class="kicker">Troubleshooting</span>
+        <h2>When something looks wrong</h2>
+      </div>
+      <div class="faq">
+        <details>
+          <summary>The client says they cannot pay the balance</summary>
+          <p>Check <code>Invoice Ready</code> is ticked. If it is, check the line items add up to more than the deposits already marked paid, since a balance of zero has no pay button. Also check <code>Balance Paid</code> is not already ticked.</p>
+        </details>
+        <details>
+          <summary>A deposit is not showing for the client</summary>
+          <p>A deposit only appears once its amount is a number above zero. A blank field or a 0 is skipped entirely.</p>
+        </details>
+        <details>
+          <summary>It says a payment is paid, but nobody paid</summary>
+          <p>A <code>Paid</code> box is ticked when it should not be. Untick it and the pay option comes back.</p>
+        </details>
+        <details>
+          <summary>The itemize tool said it added nothing</summary>
+          <p>The invoice already has line items, so it left them alone. Delete the lines in Notion and run it again to rebuild from the current costing.</p>
+        </details>
+        <details>
+          <summary>I need to change a price after the invoice is out</summary>
+          <p>Edit the line in Invoice Line Items. The balance recalculates on its own, live, and the client sees the new figure on their next page load. Nothing else to do, as long as they have not already paid the balance.</p>
+        </details>
+        <details>
+          <summary>They paid me by e-transfer, cash, or in person</summary>
+          <p>The site only knows about payments made through Stripe. Tick that stage's <code>Paid</code> box yourself, and type <code>IN_PERSON</code> into that stage's Session Id field so the record shows where the money came from. The client's card will read "paid" with no receipt link, which is expected, since there is no Stripe receipt to link to.</p>
+        </details>
+        <details>
+          <summary>The order is canceled and I need to refund them</summary>
+          <p>Use <strong>Cancel &amp; refund an order</strong> on the studio dashboard rather than refunding in Stripe by hand. It refunds every paid stage on the invoice, marks the order cancelled, and emails the client. Payments already refunded are left alone, so running it twice is safe.</p>
+        </details>
+      </div>
+    </section>
+
+    <section id="reference">
+      <div class="sec-head">
+        <span class="kicker">For when you need the exact names</span>
+        <h2>Field reference</h2>
+      </div>
+
+      <h3>The two databases</h3>
+      <div class="idcard">
+        <div class="box">
+          <div class="k">The invoice</div>
+          <div class="db">invoices &amp; payments</div>
+          <div class="id">9d03dedf-7a0e-48a8-94c0-cb82b8d9fe4d</div>
+        </div>
+        <div class="box">
+          <div class="k">The itemized lines</div>
+          <div class="db">Invoice Line Items</div>
+          <div class="id">ed446cbc-a004-43db-b53e-c0765ef86621</div>
+        </div>
+      </div>
+
+      <h3>Fields on the invoice</h3>
+      <div class="table-wrap">
+        <table>
+          <thead>
+            <tr><th>Field</th><th>Type</th><th>What it does</th></tr>
+          </thead>
+          <tbody>
+            <tr><td class="prop">Order</td><td class="mono">relation</td><td>The order this invoice belongs to. One invoice per order.</td></tr>
+            <tr><td class="prop">First / Second Deposit Amount</td><td class="mono">number</td><td>The deposit you are charging. A number above zero makes it payable online.</td></tr>
+            <tr><td class="prop">First / Second Deposit Paid</td><td class="mono">checkbox</td><td>Ticks itself when the deposit is paid. Only tick it yourself for a payment taken outside the site.</td></tr>
+            <tr><td class="prop">First / Second Deposit Session Id</td><td class="mono">text</td><td>Written by the site. Holds the Stripe session, which is what the client's receipt link points at.</td></tr>
+            <tr><td class="prop">First / Second Deposit Due</td><td class="mono">date</td><td>Optional. Turns on the reminder email for that deposit.</td></tr>
+            <tr><td class="prop">Invoice Ready</td><td class="mono">checkbox</td><td>Reveals the itemized balance and the pay balance button to the client.</td></tr>
+            <tr><td class="prop">Payment Deadline</td><td class="mono">date</td><td>The balance's due date. Shown to the client and used for the balance reminder.</td></tr>
+            <tr><td class="prop">Balance Paid</td><td class="mono">checkbox</td><td>Ticks itself when the final balance is paid.</td></tr>
+            <tr><td class="prop">Balance Payment Session Id</td><td class="mono">text</td><td>Written by the site. Used to refund the balance if the order is cancelled.</td></tr>
+            <tr><td class="prop">First / Second Deposit Reminded, Balance Reminded</td><td class="mono">checkbox</td><td>Written by the site once a reminder is sent. Untick to allow another one.</td></tr>
+            <tr><td class="prop">Final Balance</td><td class="mono">formula</td><td>Sums the line items, for your view. The site does its own sum for the charge.</td></tr>
+            <tr><td class="prop">Invoice ID</td><td class="mono">title</td><td>The invoice name. The itemize tool sets it to the order number. Display only.</td></tr>
+          </tbody>
+        </table>
+      </div>
+
+      <h3>Line types in Invoice Line Items</h3>
+      <ul class="prose">
+        <li><strong>Garment</strong>, <strong>Material</strong>, <strong>Labor</strong>, <strong>Adjustment</strong>, and <strong>Surcharge</strong> all add up to the subtotal, and all show on the client's invoice under those headings.</li>
+        <li>There is no <strong>Deposit</strong> line type, on purpose. Deposits belong on the invoice row.</li>
+      </ul>
+
+      <div class="callout">
+        <span class="label">Formulas for your eyes only</span>
+        <p><code>Paid to Date</code>, <code>Remaining to Collect</code>, and <code>Payment Status</code> are there for you to read. The website does not use any of them. <code>Payment Status</code> flips to overdue at midnight on a payment's due date.</p>
+      </div>
+    </section>
+
+  </main>
+
+  <footer class="foot">
+    <span>A.A Atelier, internal operations guide</span>
+    <span>Notion holds the invoice, the site collects the money</span>
+  </footer>
+
+</div>
+
+<script>
+  // Highlight the section currently in view in the contents rail.
+  (function () {
+    var links = Array.prototype.slice.call(document.querySelectorAll("nav.toc a"));
+    var map = {};
+    links.forEach(function (a) { map[a.getAttribute("href").slice(1)] = a; });
+    var sections = Array.prototype.slice.call(document.querySelectorAll("main section"));
+    if (!("IntersectionObserver" in window)) return;
+    var io = new IntersectionObserver(function (entries) {
+      entries.forEach(function (e) {
+        if (e.isIntersecting) {
+          links.forEach(function (l) { l.classList.remove("active"); });
+          if (map[e.target.id]) map[e.target.id].classList.add("active");
+        }
+      });
+    }, { rootMargin: "-20% 0px -70% 0px", threshold: 0 });
+    sections.forEach(function (s) { io.observe(s); });
+  })();
+</script>
