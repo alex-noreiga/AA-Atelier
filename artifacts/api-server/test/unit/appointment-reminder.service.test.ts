@@ -91,7 +91,7 @@ describe("notifyUpcomingAppointments", () => {
     const message = mockSend.mock.calls[0][0];
     expect(message.to).toBe("skater@example.com");
     expect(message.subject).toBe(
-      "Reminder: your Fitting & Measurements is tomorrow",
+      "Reminder: your Fitting & Measurements appointment is tomorrow",
     );
     // The card's whole point: the reschedule link rides along.
     expect(message.text).toContain("https://atelier.test/appointments/manage");

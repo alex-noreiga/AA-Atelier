@@ -819,7 +819,12 @@ describe("appointmentReminderEmail", () => {
     });
 
     expect(email.to).toBe("ada@example.com");
-    expect(email.subject).toBe("Reminder: your Consultation is tomorrow");
+    expect(email.subject).toBe(
+      "Reminder: your Consultation appointment is tomorrow",
+    );
+    // Named as an appointment, so the subject and opening line can't read as
+    // the garment stage of the same name.
+    expect(email.html).toContain("appointment");
     expect(email.html).toContain("is tomorrow");
     expect(email.html).toContain("Monday, July 20 at 10:00 AM EDT");
     expect(email.html).toContain("APT-XYZ");
@@ -837,7 +842,7 @@ describe("appointmentReminderEmail", () => {
       whenPhrase: "on Monday, August 24",
     });
     expect(email.subject).toBe(
-      "Reminder: your Consultation is on Monday, August 24",
+      "Reminder: your Consultation appointment is on Monday, August 24",
     );
   });
 

@@ -1336,10 +1336,10 @@ export function appointmentReminderEmail(
     : "";
 
   const html = layout(
-    `Your ${details.typeName} is ${details.whenPhrase}`,
+    `Your ${details.typeName} appointment is ${details.whenPhrase}`,
     `<p>Hi ${firstName},</p>
-     <p>A quick reminder that your <strong>${details.typeName}</strong> with
-        <strong>${details.staff}</strong> is ${details.whenPhrase}.</p>
+     <p>A quick reminder that your <strong>${details.typeName}</strong> appointment
+        with <strong>${details.staff}</strong> is ${details.whenPhrase}.</p>
      <p><strong>When:</strong> ${details.when}<br/>
         <strong>Where:</strong> ${details.locationLabel}</p>
      ${meetHtml}
@@ -1351,8 +1351,8 @@ export function appointmentReminderEmail(
   const text = [
     `Hi ${firstName},`,
     ``,
-    `A quick reminder that your ${details.typeName} with ${details.staff} is`,
-    `${details.whenPhrase}.`,
+    `A quick reminder that your ${details.typeName} appointment with`,
+    `${details.staff} is ${details.whenPhrase}.`,
     ``,
     `When: ${details.when}`,
     `Where: ${details.locationLabel}`,
@@ -1370,7 +1370,7 @@ export function appointmentReminderEmail(
 
   return {
     to: details.email,
-    subject: `Reminder: your ${details.typeName} is ${details.whenPhrase}`,
+    subject: `Reminder: your ${details.typeName} appointment is ${details.whenPhrase}`,
     html,
     text,
   };
