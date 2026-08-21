@@ -103,6 +103,16 @@ test.describe("Order form", () => {
       page.getByRole("heading", { name: "Order Received" }),
     ).toHaveCount(0);
   });
+});
+
+// Opt-in smoke test against the real Notion write path. Skipped by default so
+// the suite stays deterministic and side-effect-free; run with
+// `E2E_LIVE_NOTION=1` (and a running api-server) to exercise it.
+test.describe("Order form — live Notion (opt-in)", () => {
+  test.skip(
+    !process.env.E2E_LIVE_NOTION,
+    "Set E2E_LIVE_NOTION=1 to run the live Notion write smoke test",
+  );
 
   test("submits a real order and returns a live ORD- number", async ({
     page,
