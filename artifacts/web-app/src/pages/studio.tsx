@@ -16,6 +16,7 @@ import { StudioTools } from "@/components/studio-tools";
 import { StudioAvailability } from "@/components/studio-availability";
 import { StudioReviews } from "@/components/studio-reviews";
 import { StudioMaterials } from "@/components/studio-materials";
+import { StudioGuides, GuidesFor } from "@/components/studio-guides";
 import { Seo } from "@/components/seo";
 import { useAuth } from "@/lib/auth-context";
 import { supabase } from "@/lib/supabase";
@@ -319,13 +320,23 @@ function Dashboard({ data }: { data: StudioAnalytics }) {
 
       <TopItemsPanel items={data.topItems} />
 
+      {/* Each panel carries the guides filed against it, so a procedure sits
+          with the thing it describes rather than in a manual elsewhere on the
+          page. `GuidesFor` renders nothing when there are none. */}
+      <GuidesFor section="figures" />
+
       <StudioMaterials />
+      <GuidesFor section="materials" />
 
       <StudioReviews />
+      <GuidesFor section="reviews" />
 
       <StudioAvailability />
+      <GuidesFor section="availability" />
 
       <StudioTools />
+
+      <StudioGuides />
     </div>
   );
 }

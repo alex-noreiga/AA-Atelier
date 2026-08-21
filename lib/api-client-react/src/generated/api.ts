@@ -68,6 +68,7 @@ import type {
   StaffAvailabilityRequest,
   StudioAccess,
   StudioAnalytics,
+  StudioGuideList,
   StudioReview,
   StudioReviewList,
   StudioTool,
@@ -2753,6 +2754,90 @@ export function useListStudioReviews<TData = Awaited<ReturnType<typeof listStudi
  ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
 
   const queryOptions = getListStudioReviewsQueryOptions(options)
+
+  const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
+
+  return withQueryKey(query, queryOptions.queryKey);
+}
+
+
+
+
+
+
+
+export const getGetStudioGuidesUrl = () => {
+
+
+
+
+  return `/api/studio/guides`
+}
+
+/**
+ * The studio procedures the code can't perform — how an invoice is actually built, when milestones are reconciled, how a refund is decided — written up as HTML files the atelier uploads to a Notion database and rendered here beside the tool or panel each one is about.
+ *
+ * The point of the arrangement is that a guide is revised by replacing the file, not by a deploy. So the app stores nothing: it reads the rows, and for each one downloads the attached file and returns its markup. The `section` says where the dashboard puts it, resolved from the row's `Section` against the served `sections` vocabulary — anything unrecognized (or blank) resolves to `general` and the guide is still shown, because a guide filed under a name nobody recognized is a guide the atelier wrote and would otherwise never see.
+ *
+ * A row whose file can't be rendered is returned anyway, with `unavailable` saying why rather than silently vanishing — the same reasoning as the materials panel's untracked list. `html` is the file's own markup, unmodified: the dashboard renders it in a sandboxed frame with scripts off, which is what makes serving markup nobody reviewed safe on an origin holding a signed-in staff session.
+ *
+ * Same staff gate as the rest of the studio surface: 401 when not signed in, 404 when signed in but not staff, 403 when staff but not signed in with Google.
+ * @summary The atelier's how-to guides, each next to what it describes
+ */
+export const getStudioGuides = async ( options?: Parameters<typeof customFetch>[1]): Promise<StudioGuideList> => {
+
+  return customFetch<StudioGuideList>(getGetStudioGuidesUrl(),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
+
+
+
+
+export const getGetStudioGuidesQueryKey = () => {
+    return [
+    `/api/studio/guides`
+    ] as const;
+    }
+
+
+export const getGetStudioGuidesQueryOptions = <TData = Awaited<ReturnType<typeof getStudioGuides>>, TError = ErrorType<ErrorEnvelope>>( options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getStudioGuides>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getGetStudioGuidesQueryKey();
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof getStudioGuides>>> = ({ signal }) => getStudioGuides({ signal, ...requestOptions });
+
+
+
+
+
+   return  { queryKey, queryFn, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof getStudioGuides>>, TError, TData> & { queryKey: QueryKey }
+}
+
+export type GetStudioGuidesQueryResult = NonNullable<Awaited<ReturnType<typeof getStudioGuides>>>
+export type GetStudioGuidesQueryError = ErrorType<ErrorEnvelope>
+
+
+/**
+ * @summary The atelier's how-to guides, each next to what it describes
+ */
+
+export function useGetStudioGuides<TData = Awaited<ReturnType<typeof getStudioGuides>>, TError = ErrorType<ErrorEnvelope>>(
+  options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getStudioGuides>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+
+ ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+
+  const queryOptions = getGetStudioGuidesQueryOptions(options)
 
   const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
 

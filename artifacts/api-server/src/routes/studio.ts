@@ -6,6 +6,7 @@ import {
   DeleteStaffAvailabilityResponse,
   GetStudioAccessResponse,
   GetStudioAnalyticsResponse,
+  GetStudioGuidesResponse,
   GetStudioMaterialsResponse,
   ListStaffAvailabilityResponse,
   ListStudioReviewsResponse,
@@ -24,6 +25,7 @@ import { accountRateLimiter } from "../middlewares/rate-limit.js";
 import { validate } from "../middlewares/validate.js";
 import { getStudioAnalytics } from "../services/studio-analytics.service.js";
 import { getMaterialsOverview } from "../services/materials.service.js";
+import { getStudioGuides } from "../services/studio-guides.service.js";
 import {
   runStudioTool,
   type StudioToolArgs,
@@ -174,6 +176,25 @@ router.get(
   async (_req, res) => {
     const overview = await getMaterialsOverview();
     res.json(GetStudioMaterialsResponse.parse(overview));
+  },
+);
+
+// The atelier's how-to guides, rendered beside the tool each one describes.
+// Read-only, and the app stores none of the content: a guide is an HTML file
+// attached to a Notion row, so revising a procedure is replacing a file rather
+// than a deploy — which is the whole reason this is a read at all.
+//
+// The markup is served exactly as the atelier wrote it. It is never executed
+// here and never executed in the browser either: the dashboard renders it in a
+// sandboxed frame with scripts disabled, because this origin holds a signed-in
+// staff session and the file is not code anybody reviewed.
+router.get(
+  "/studio/guides",
+  accountRateLimiter,
+  requireStaff,
+  async (_req, res) => {
+    const guides = await getStudioGuides();
+    res.json(GetStudioGuidesResponse.parse(guides));
   },
 );
 

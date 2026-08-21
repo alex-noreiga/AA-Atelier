@@ -263,6 +263,16 @@ Express app (artifacts/api-server)  ──►  Notion REST API (orders database)
   │                                  `pending`. Same staff gate as the figures
   │                                  above; publishing without the customer's
   │                                  consent is refused (409)
+  ├─ GET  /api/studio/guides       → the atelier's own how-to write-ups, each an
+  │                                  HTML file attached to a row of the Notion
+  │                                  "Studio Guides" database, served with the
+  │                                  markup inline and the section saying which
+  │                                  tool or panel it renders beside. The app
+  │                                  stores no guide content — revising a
+  │                                  procedure is replacing the file, not a
+  │                                  deploy. Rendered in a sandboxed frame with
+  │                                  scripts off. Same staff gate as the figures
+  │                                  above
   └─ POST /api/studio/tools/:tool  → the atelier's five internal actions, run from
                                      the signed-in studio dashboard: milestone
                                      reconciliation (`milestones`, the same sweep
@@ -2566,6 +2576,86 @@ the Notion automation sends it, rotating costs one env var and one automation
 header. No new env var is needed — the tools reuse the `STUDIO_STAFF_EMAILS`
 allowlist the dashboard already has.
 
+## How-to guides on the studio dashboard
+
+The studio procedures the code **can't** perform — how an invoice is actually
+built, what the milestone reconciliation is for, how a refund is decided — are
+written as HTML files the atelier uploads to a Notion **"Studio Guides"**
+database and rendered on `/studio` beside the tool or panel each one describes.
+`GET /api/studio/guides` (contract-first, `requireStaff` like the rest of the
+studio surface). Code: `lib/guide-sections.ts` (the vocabulary),
+`lib/notion/guides.{schema,repository}.ts`, `services/studio-guides.service.ts`,
+the `/studio/guides` handler in `routes/studio.ts`, and
+`web-app/src/components/studio-guides.tsx` (rendered by `pages/studio.tsx` and,
+per tool, by `components/studio-tools.tsx`).
+
+1. **The app stores no guide content, and has no editor.** A guide is a file
+   attached to a Notion row, so revising a procedure is replacing the file
+   rather than a deploy — which is the whole justification for reading it at
+   all: a procedure that needs an engineer to correct is a procedure that stays
+   wrong. It is also why there is no write path; adding a guide is adding a
+   Notion row. This was already how the atelier worked (an `invoicing-guide.html`
+   sat as an embed on the Notion finances page); this puts it next to the button
+   it describes.
+
+2. **The sandbox is the sanitizer, and it is not optional.** The markup is a
+   file somebody uploaded, rendered on an origin holding a signed-in staff
+   session — including the Supabase access token in `localStorage` the whole
+   studio surface is gated on. It goes into an `<iframe srcDoc>` whose `sandbox`
+   grants neither `allow-scripts` nor `allow-same-origin`, so nothing in a guide
+   can run and nothing could reach the page if it did. **Never** render a guide
+   with `dangerouslySetInnerHTML`, and never add either token
+   (`allow-popups allow-popups-to-escape-sandbox` **is** granted, so a link in a
+   guide opens in an ordinary new tab instead of being inert). There is
+   deliberately **no** server-side HTML sanitizer: it would buy no safety the
+   sandbox doesn't already give, would silently mangle the atelier's own markup,
+   and would make the sandbox read as defence-in-depth rather than the boundary
+   it is. `web-app/test/studio-guides.test.tsx` asserts the two absent tokens.
+
+3. **A tool id IS a section id, and resolution fails OPEN.** The six tool
+   sections are the same strings as `StudioToolName`, so
+   `<GuidesFor section={spec.tool} />` inside a tool card needs no mapping
+   table. `resolveGuideSection` matches the row's `Section` against the served
+   vocabulary — id **or** label, ignoring case, spacing and punctuation — and
+   falls back to `general` for anything blank or unrecognized, so a misfiled
+   guide loses its position on the page, never its existence (the opposite of
+   `orderDelivered`'s fail-closed, deliberately). Like `GET /services`, the
+   vocabulary is **served rather than duplicated** — it rides on every response
+   even when nothing is filed against it, because the accepted values are
+   otherwise only discoverable by reading `lib/guide-sections.ts`.
+
+4. **A guide is never dropped, only explained.** A row with no file yet, a PDF
+   filed as a guide, an oversized file, a failed download — each is listed with
+   `unavailable` saying which, the same reasoning as the materials panel's
+   untracked list. HTML-ness is decided on the file **name**: Notion's storage
+   host serves everything as a generic binary type, so there is no content type
+   to trust, and a `.pdf` would decode to mojibake.
+
+5. **Bounded, and the signed URL never leaves the server.** The markup is
+   returned inline in a JSON response from a serverless function, so
+   `MAX_GUIDE_BYTES` (512 KB) is checked against `Content-Length` first and
+   again on what arrived (a chunked response declares no length); an over-cap
+   guide is reported, never truncated. Notion's file URLs expire in about an
+   hour (like the review photos), so the server downloads the markup and serves
+   that — a cached response can't rot into a dead link, and no credential-bearing
+   URL reaches the browser. Downloads run 3 at a time; the assembled result is
+   cached 60s (which is also how long after replacing a file the dashboard takes
+   to show it), falling back to the cached result on a later failure.
+
+6. **Silent where there's nothing to say.** `GuidesFor` renders nothing at all
+   while loading, on error, or with no guide for its section — a tool card must
+   not sprout a skeleton because that guide hasn't been written. The **How-to
+   guides** panel at the bottom is the one place an unconfigured database, a
+   failed read, or an empty set is said out loud, and it holds the `general`
+   guides plus a count of the ones shown further up.
+
+The atelier's one-time setup: create the **"Studio Guides"** database with a
+`Guide` (title), a `File` (files & media — the uploaded `.html`), a `Section`
+(select), and optionally a `Summary` (rich text) and `Order` (number); share the
+Notion integration with it; set **`NOTION_STUDIO_GUIDES_DATABASE_ID`**. Unset ⇒
+the panel says it isn't connected. Property names live in `guides.schema.ts`.
+Full walkthrough in `.agents/memory/studio-how-to-guides.md`.
+
 ## Postgres (payment idempotency + a provisioned read-model)
 
 One-time setup: create a Supabase project and set `SUPABASE_URL` + `SUPABASE_ANON_KEY`
@@ -3268,6 +3358,13 @@ in the maintainer's env without edits.
   before (the order itself is recorded either way). Read at first use in
   `getOrderLinesNotionClient`; gated by `orderLinesConfigured()`. See "Automatic
   shop inventory decrement" above.
+- **Optional guides database:** `NOTION_STUDIO_GUIDES_DATABASE_ID` (the "Studio
+  Guides" database). When set (and the integration is shared with it), the studio
+  dashboard renders the atelier's own how-to write-ups — one uploaded HTML file per
+  row — beside the tool or panel each one describes. Read-only: revising a guide is
+  replacing the file, never a deploy. Unset ⇒ the guides panel says it isn't
+  connected. Read at first use in `getStudioGuidesNotionClient`; gated by
+  `guidesConfigured()`. See "How-to guides on the studio dashboard" above.
 
 ### Environment variables
 
@@ -3311,6 +3408,7 @@ scope went with the working-hours sheet.
 | `NOTION_SETTINGS_DATABASE_ID`                                                                                     | Studio Settings is env-only (see "Studio Settings")                 |
 | `NOTION_ORDER_LINES_DATABASE_ID`                                                                                  | No order lines written ⇒ shop stock never decrements                |
 | `NOTION_MATERIALS_DATABASE_ID`                                                                                    | No materials panel (`configured: false`) and no weekly digest       |
+| `NOTION_STUDIO_GUIDES_DATABASE_ID`                                                                                | No how-to guides; the dashboard panel says it isn't connected       |
 | `MATERIALS_DIGEST_WEEKDAY`                                                                                        | `Monday` (read in the studio timezone)                              |
 | `NOTION_RELATION_LINKS` (`1`/`true`/`yes`)                                                                        | Off — no order/inventory relations written (see "Relate requests…") |
 | `STRIPE_SHIPPING_RATE_IDS`                                                                                        | No shipping charged, no shipping options at checkout                |
@@ -3460,6 +3558,7 @@ full detail in `.agents/memory/phase2-workspace-crm-archive-markers.md`.
 | Change who can see the Dashboard nav link                | `web-app/src/lib/studio-access.ts` (the probe) + `useNavLinks()` / `DASHBOARD_LINK` in `components/navbar.tsx` (where it renders, in Account's place) + the staff hand-off in `pages/account.tsx` + the `/studio/access` route in `api-server/src/routes/studio.ts`; the gate itself is `requireStaff` (`middlewares/auth.ts`) + `lib/staff.ts`                                                                                                                                                                                                                                                                                                                                               |
 | Change the customer account portal (Supabase Auth)       | `artifacts/web-app/src/pages/account.tsx` (+ `components/appointment-manage-panel.tsx`, shared with `pages/appointment-manage.tsx`) + `pages/account-login.tsx` / `account-callback.tsx` / `account-reset.tsx` + `lib/supabase.ts` + `lib/auth-context.tsx` (frontend); `api-server/src/services/account.service.ts` + `routes/account.ts` + `middlewares/auth.ts` + `lib/supabase/client.ts`; queries `findOrdersByEmail` / `findShopOrdersByEmail` + `listUpcomingAppointmentsByEmail` (`lib/google/calendar.repository.ts`, mapped via `lib/appointments/event-details.ts`) + `extractMeasurements` (`lib/notion/orders.schema.ts`). Auth emails: `.agents/memory/supabase-auth-emails.md` |
 | Change the internal studio dashboard                     | `artifacts/web-app/src/pages/studio.tsx` (+ the `/studio` route in `App.tsx`, `noindex` entry in `lib/seo-routes.ts`); `api-server/src/services/studio-analytics.service.ts` (the pure `aggregateStudioAnalytics` + the cached use-case) + `routes/studio.ts` + `requireStaff` in `middlewares/auth.ts` + `lib/staff.ts` (the `STUDIO_STAFF_EMAILS` allowlist + the `amr` Google check); the 403 panel's re-sign-in lands back via `web-app/src/lib/post-signin.ts` (read by `pages/account-callback.tsx`); reads via `lib/notion/scan.ts` + `listOrdersForAnalytics` / `listShopOrdersForAnalytics` / `listInvoicesForAnalytics`                                                             |
+| Change the studio's how-to guides                        | `api-server/src/lib/guide-sections.ts` (the sections a guide can be filed against — a tool's id is its `StudioToolName`) + `lib/notion/guides.{schema,repository}.ts` (the Notion row + the file download) + `services/studio-guides.service.ts` (assembly, the HTML check, the 60s cache) + the `/studio/guides` route in `routes/studio.ts`; frontend `web-app/src/components/studio-guides.tsx` (`StudioGuides` panel + the `GuidesFor` slots), mounted by `pages/studio.tsx` and per tool by `components/studio-tools.tsx`. The sandboxed frame in that component is a security boundary — see the section above                                                                          |
 | Change the studio's internal tools (generators, refunds) | `api-server/src/services/studio-tools.service.ts` (the dispatcher + the composed result wording) + `routes/studio.ts` (`POST /studio/tools/:tool`, `requireStaff`) + `web-app/src/components/studio-tools.tsx` (rendered by `pages/studio.tsx`); the underlying work stays in `services/{schedule,invoice-generator,order-notification,order-cancellation,return-refund}.service.ts`. Contract in `openapi.yaml` (`StudioTool` / `StudioToolRequest` / `StudioToolRun`)                                                                                                                                                                                                                       |
 | Change the Postgres integrity layer / payment dedup      | `api-server/src/lib/db/client.ts` (`DbClient` seam + `postgresConfigured`) + `lib/db/processed-payments.repository.ts` (`claimPayment` / `confirmPayment` / `releasePayment`); consumed by `services/checkout.service.ts` (`recordPaidOrder`). Schema in `supabase/migrations/*.sql`, applied by `src/scripts/migrate.ts` (`pnpm db:migrate`, `.github/workflows/migrate.yml`)                                                                                                                                                                                                                                                                                                                |
 | Change the newsletter opt-in                             | `artifacts/web-app/src/components/newsletter-signup.tsx` (footer field, in `footer.tsx`) + the intake checkbox in `pages/order-form.tsx`; `api-server/src/services/newsletter.service.ts` + `routes/newsletter.ts` + `lib/notion/newsletter.{blocks,repository}.ts` (writes to the **contact** database) + `newsletterWelcomeEmail` in `lib/resend/emails.ts`                                                                                                                                                                                                                                                                                                                                 |

@@ -58,6 +58,13 @@ vi.mock("@workspace/api-client-react", () => ({
     isError: false,
     error: null,
   }),
+  useGetStudioGuides: () => ({
+    data: { guides: [], sections: [], configured: true },
+    isLoading: false,
+    isError: false,
+    error: null,
+  }),
+  getGetStudioGuidesQueryKey: () => ["studio-guides"],
   useSetStudioReviewStatus: () => ({ mutate: vi.fn(), isPending: false }),
   getListStudioReviewsQueryKey: () => ["studio-reviews"],
   useGetStudioMaterials: () => ({
