@@ -208,7 +208,7 @@ function ToolCard({ spec }: { spec: ToolSpec }) {
 
   return (
     <div
-      className="rounded-sm border border-border bg-card/40 p-5"
+      className="rounded-sm border border-border bg-card/40 p-4 sm:p-5"
       data-testid={`tool-${spec.tool}`}
     >
       <h3 className="text-base font-serif text-foreground">{spec.name}</h3>
@@ -216,9 +216,9 @@ function ToolCard({ spec }: { spec: ToolSpec }) {
         {spec.description}
       </p>
 
-      <div className="mt-4 flex flex-wrap items-end gap-3">
+      <div className="mt-4 flex flex-col gap-3 sm:flex-row sm:flex-wrap sm:items-end">
         {field && (
-          <div className="flex-1 min-w-[12rem]">
+          <div className="w-full sm:flex-1 sm:min-w-[12rem]">
             <Label
               htmlFor={fieldId}
               className="text-[10px] tracking-[0.15em] uppercase text-muted-foreground"
@@ -241,7 +241,7 @@ function ToolCard({ spec }: { spec: ToolSpec }) {
         )}
 
         {spec.offersAmount && (
-          <div className="w-32">
+          <div className="w-full sm:w-32">
             <Label
               htmlFor={`${fieldId}-amount`}
               className="text-[10px] tracking-[0.15em] uppercase text-muted-foreground"
@@ -268,7 +268,7 @@ function ToolCard({ spec }: { spec: ToolSpec }) {
           variant={spec.destructive ? "outline" : "default"}
           onClick={start}
           disabled={missingSubject || mutation.isPending}
-          className="gap-2"
+          className="w-full gap-2 sm:w-auto"
           data-testid={`tool-${spec.tool}-run`}
         >
           {mutation.isPending ? (

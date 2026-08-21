@@ -148,7 +148,7 @@ export function StudioAvailability() {
           ].map((group) => (
             <div
               key={group.name ?? "unassigned"}
-              className="rounded-sm border border-border bg-card/40 p-5"
+              className="rounded-sm border border-border bg-card/40 p-4 sm:p-5"
               data-testid={`availability-staff-${group.name ?? "unassigned"}`}
             >
               <h3 className="text-base font-serif text-foreground">
@@ -202,7 +202,7 @@ export function StudioAvailability() {
             <Button
               variant="outline"
               onClick={() => setEditing("new")}
-              className="gap-2"
+              className="w-full gap-2 sm:w-auto"
               data-testid="availability-add"
             >
               <Plus className="w-4 h-4" strokeWidth={1.5} />
@@ -236,25 +236,27 @@ function EntryRow({
 
   return (
     <li
-      className="flex flex-wrap items-center gap-x-4 gap-y-1 border-t border-border/60 pt-2 first:border-t-0 first:pt-0"
+      className="border-t border-border/60 pt-3 first:border-t-0 first:pt-0 sm:flex sm:flex-wrap sm:items-center sm:gap-x-4 sm:gap-y-1 sm:pt-2"
       data-testid={`availability-entry-${entry.id}`}
     >
-      <span className="text-sm text-foreground">
-        {summarizeDays(entry.weekdays)}
-      </span>
-      <span className="text-sm text-muted-foreground font-light">
-        {entry.start}–{entry.end}
-      </span>
-      <span className="text-xs tracking-wide uppercase text-muted-foreground/80">
-        {entry.locations
-          .map((id) => LOCATIONS.find((l) => l.id === id)?.label ?? id)
-          .join(" · ")}
-      </span>
-      <span className="text-xs text-muted-foreground/70 font-light break-all">
-        {entry.calendarEmail}
+      <span className="flex flex-wrap items-baseline gap-x-3 gap-y-0.5 sm:contents">
+        <span className="text-sm text-foreground">
+          {summarizeDays(entry.weekdays)}
+        </span>
+        <span className="text-sm text-muted-foreground font-light">
+          {entry.start}–{entry.end}
+        </span>
+        <span className="text-xs tracking-wide uppercase text-muted-foreground/80">
+          {entry.locations
+            .map((id) => LOCATIONS.find((l) => l.id === id)?.label ?? id)
+            .join(" · ")}
+        </span>
+        <span className="w-full text-xs text-muted-foreground/70 font-light break-all sm:w-auto">
+          {entry.calendarEmail}
+        </span>
       </span>
 
-      <span className="ml-auto flex items-center gap-1">
+      <span className="mt-1 -ml-2 flex items-center gap-1 sm:mt-0 sm:ml-auto">
         <Button
           variant="ghost"
           size="sm"
@@ -390,13 +392,13 @@ function AvailabilityForm({
 
   return (
     <div
-      className="rounded-sm border border-border bg-card/60 p-5"
+      className="rounded-sm border border-border bg-card/60 p-4 sm:p-5"
       data-testid={
         entryId ? `availability-form-${entryId}` : "availability-form-new"
       }
     >
-      <div className="flex flex-wrap gap-4">
-        <div className="min-w-[10rem]">
+      <div className="grid grid-cols-2 gap-3 sm:flex sm:flex-wrap sm:gap-4">
+        <div className="col-span-2 sm:col-auto sm:min-w-[10rem]">
           <Label
             htmlFor={`${fieldId}-staff`}
             className="text-[10px] tracking-[0.15em] uppercase text-muted-foreground"
@@ -420,7 +422,7 @@ function AvailabilityForm({
           </select>
         </div>
 
-        <div className="flex-1 min-w-[14rem]">
+        <div className="col-span-2 sm:col-auto sm:flex-1 sm:min-w-[14rem]">
           <Label
             htmlFor={`${fieldId}-email`}
             className="text-[10px] tracking-[0.15em] uppercase text-muted-foreground"
@@ -441,7 +443,7 @@ function AvailabilityForm({
           />
         </div>
 
-        <div className="w-28">
+        <div className="sm:w-28">
           <Label
             htmlFor={`${fieldId}-start`}
             className="text-[10px] tracking-[0.15em] uppercase text-muted-foreground"
@@ -460,7 +462,7 @@ function AvailabilityForm({
           />
         </div>
 
-        <div className="w-28">
+        <div className="sm:w-28">
           <Label
             htmlFor={`${fieldId}-end`}
             className="text-[10px] tracking-[0.15em] uppercase text-muted-foreground"
@@ -484,7 +486,7 @@ function AvailabilityForm({
         <legend className="text-[10px] tracking-[0.15em] uppercase text-muted-foreground">
           Days
         </legend>
-        <div className="mt-2 flex flex-wrap gap-2">
+        <div className="mt-2 grid grid-cols-7 gap-1 sm:flex sm:flex-wrap sm:gap-2">
           {WEEKDAYS.map((day) => {
             const on = draft.weekdays.includes(day);
             return (
@@ -493,7 +495,7 @@ function AvailabilityForm({
                 type="button"
                 onClick={() => toggleDay(day)}
                 aria-pressed={on}
-                className={`rounded-full border px-3 py-1 text-xs tracking-wide transition-colors ${
+                className={`rounded-full border px-1.5 py-1.5 text-xs tracking-wide transition-colors sm:px-3 sm:py-1 ${
                   on
                     ? "border-primary bg-primary/10 text-foreground"
                     : "border-border text-muted-foreground hover:text-foreground"
@@ -534,7 +536,7 @@ function AvailabilityForm({
         </div>
       </fieldset>
 
-      <div className="mt-5 flex items-center gap-2">
+      <div className="mt-5 flex flex-wrap items-center gap-2">
         <Button
           onClick={save}
           disabled={incomplete || pending}
