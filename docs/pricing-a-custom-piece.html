@@ -228,8 +228,8 @@
           <dl class="fields">
             <div><dt>Item</dt><dd>Name it.</dd></div>
             <div><dt>Order</dt><dd>Link to the order. Without this the invoice tool has nothing to read.</dd></div>
-            <div><dt>Pricing Settings</dt><dd>Set to <strong>Custom / Direct</strong>. See the warning below.</dd></div>
-            <div><dt>Labor Hours</dt><dd>Your estimate. The rate comes from the settings row, $5/hr right now.</dd></div>
+            <div><dt>Pricing Settings</dt><dd><strong>Custom / Direct</strong>. The template fills this in.</dd></div>
+            <div><dt>Labor Hours</dt><dd>Your estimate, and never leave it blank. The rate comes from the settings row, $5/hr right now.</dd></div>
             <div><dt>Channel</dt><dd>Custom. This one is just a label, it does not affect the price.</dd></div>
           </dl>
         </li>
@@ -252,8 +252,13 @@
       </ol>
 
       <div class="callout warn">
-        <span class="label">Check the Pricing Settings link every time</span>
-        <p>The <strong>New custom work</strong> template arrives with Pricing Settings pointing at <strong>Production / Marketplace</strong>, which grosses the price up by a 6.5% marketplace fee you are not paying on a direct sale. Switch it to <strong>Custom / Direct</strong> or the client is quoted about 7% high.</p>
+        <span class="label">The two things that quietly underprice a piece</span>
+        <p>Empty <code>Labor Hours</code> prices the piece at materials plus margin with the labor left out, and it does it silently. And an invoice built by hand out of material lines bills those materials at cost, with no labor and no margin at all. Let the itemize tool write the lines.</p>
+      </div>
+
+      <div class="callout">
+        <span class="label">The two Pricing Settings rows</span>
+        <p><strong>Custom / Direct</strong> charges no selling fee. <strong>Production / Marketplace</strong> adds 6.5%, for pieces sold somewhere that takes a cut. Custom work belongs on the first, and the <code>Channel</code> select does not decide this, the relation does.</p>
       </div>
     </section>
 
@@ -292,6 +297,10 @@
             <tr>
               <td>Suggested Price blank or tiny</td>
               <td>No Pricing Settings link, or <code>Labor Hours</code> is empty.</td>
+            </tr>
+            <tr>
+              <td>Invoice is about the cost of the fabric</td>
+              <td>The lines were added by hand, so there is no labor line and no margin. Delete them and run the itemize tool.</td>
             </tr>
             <tr>
               <td>Material Cost is missing a material</td>
