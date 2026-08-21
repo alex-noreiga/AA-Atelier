@@ -1318,6 +1318,64 @@ export function appointmentConfirmationEmail(
   };
 }
 
+/**
+ * The day-before nudge, sent by the nightly reminder sweep. Deliberately the
+ * shortest of the appointment emails: the customer already has the confirmation
+ * and the calendar invite, so this repeats only what they need to show up — when,
+ * where, how to join — and the link to move it if they can't. `whenPhrase` is
+ * "tomorrow" / "today" / "on Monday, August 25" (lib/appointments/reminders.ts),
+ * so the copy reads right whatever lead the atelier sets.
+ */
+export function appointmentReminderEmail(
+  details: AppointmentEmailDetails & { whenPhrase: string },
+): EmailMessage {
+  const firstName = details.customerName.trim().split(/\s+/)[0] || "there";
+
+  const meetHtml = details.meetingUrl
+    ? `<p><strong>Join link:</strong> <a href="${details.meetingUrl}">${details.meetingUrl}</a></p>`
+    : "";
+
+  const html = layout(
+    `Your ${details.typeName} is ${details.whenPhrase}`,
+    `<p>Hi ${firstName},</p>
+     <p>A quick reminder that your <strong>${details.typeName}</strong> with
+        <strong>${details.staff}</strong> is ${details.whenPhrase}.</p>
+     <p><strong>When:</strong> ${details.when}<br/>
+        <strong>Where:</strong> ${details.locationLabel}</p>
+     ${meetHtml}
+     <p>Your confirmation code is <strong>${details.confirmationCode}</strong>.</p>
+     ${manageHtml(details)}
+     <p>We look forward to seeing you.</p>`,
+  );
+
+  const text = [
+    `Hi ${firstName},`,
+    ``,
+    `A quick reminder that your ${details.typeName} with ${details.staff} is`,
+    `${details.whenPhrase}.`,
+    ``,
+    `When: ${details.when}`,
+    `Where: ${details.locationLabel}`,
+    ...(details.meetingUrl ? [`Join link: ${details.meetingUrl}`] : []),
+    ``,
+    `Your confirmation code is ${details.confirmationCode}.`,
+    ``,
+    ...manageText(details),
+    ``,
+    `We look forward to seeing you.`,
+    ``,
+    `Thank you,`,
+    `The ${ATELIER_NAME} team`,
+  ].join("\n");
+
+  return {
+    to: details.email,
+    subject: `Reminder: your ${details.typeName} is ${details.whenPhrase}`,
+    html,
+    text,
+  };
+}
+
 /** Confirmation sent to the customer when they reschedule an appointment. */
 export function appointmentRescheduledEmail(
   details: AppointmentEmailDetails,

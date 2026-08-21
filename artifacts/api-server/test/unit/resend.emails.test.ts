@@ -27,6 +27,7 @@ import {
   referralCreditEmail,
   returningSkaterRewardEmail,
   appointmentConfirmationEmail,
+  appointmentReminderEmail,
   appointmentRescheduledEmail,
   appointmentCancelledEmail,
   appointmentChangeNotificationEmail,
@@ -805,6 +806,51 @@ describe("appointmentConfirmationEmail", () => {
     const email = appointmentConfirmationEmail(appointmentDetails());
     expect(email.html).toContain("reply to this email");
     expect(email.html).not.toContain("/appointments/manage");
+  });
+});
+
+describe("appointmentReminderEmail", () => {
+  it("names when the appointment is and carries the reschedule link", () => {
+    const email = appointmentReminderEmail({
+      ...appointmentDetails({
+        manageUrl: "https://example.test/appointments/manage?token=abc",
+      }),
+      whenPhrase: "tomorrow",
+    });
+
+    expect(email.to).toBe("ada@example.com");
+    expect(email.subject).toBe("Reminder: your Consultation is tomorrow");
+    expect(email.html).toContain("is tomorrow");
+    expect(email.html).toContain("Monday, July 20 at 10:00 AM EDT");
+    expect(email.html).toContain("APT-XYZ");
+    // The reason a reminder beats Google's own notification: somewhere to move
+    // the appointment to instead of not turning up.
+    expect(email.html).toContain("Reschedule or cancel");
+    expect(email.text).toContain(
+      "https://example.test/appointments/manage?token=abc",
+    );
+  });
+
+  it("reads correctly for a lead longer than a day", () => {
+    const email = appointmentReminderEmail({
+      ...appointmentDetails(),
+      whenPhrase: "on Monday, August 24",
+    });
+    expect(email.subject).toBe(
+      "Reminder: your Consultation is on Monday, August 24",
+    );
+  });
+
+  it("includes the join link for a virtual appointment", () => {
+    const email = appointmentReminderEmail({
+      ...appointmentDetails({
+        locationLabel: "Virtual",
+        meetingUrl: "https://meet.google.com/abc-defg-hij",
+      }),
+      whenPhrase: "tomorrow",
+    });
+    expect(email.html).toContain("https://meet.google.com/abc-defg-hij");
+    expect(email.text).toContain("https://meet.google.com/abc-defg-hij");
   });
 });
 

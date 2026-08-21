@@ -20,6 +20,9 @@ vi.mock("../../src/lib/notion/invoice.repository.js", () => ({
 vi.mock("../../src/services/restock-notification.service.js", () => ({
   notifyRestock: vi.fn(),
 }));
+vi.mock("../../src/services/appointment-reminder.service.js", () => ({
+  notifyUpcomingAppointments: vi.fn(),
+}));
 vi.mock("../../src/lib/resend/send.js", () => ({
   sendEmailBestEffort: vi.fn(),
 }));
@@ -34,6 +37,7 @@ import {
   sendDueFittingReminders,
   sendDuePaymentReminders,
   sendDueRestockAlerts,
+  sendDueAppointmentReminders,
   reconcileMilestones,
 } from "../../src/services/schedule.service.js";
 import {
@@ -54,6 +58,7 @@ import {
 } from "../../src/lib/notion/invoice.repository.js";
 import { sendEmailBestEffort } from "../../src/lib/resend/send.js";
 import { notifyRestock } from "../../src/services/restock-notification.service.js";
+import { notifyUpcomingAppointments } from "../../src/services/appointment-reminder.service.js";
 import { logger } from "../../src/lib/logger.js";
 
 const mockFind = vi.mocked(findOrdersNeedingMilestones);
@@ -67,6 +72,7 @@ const mockFindPaymentInvoices = vi.mocked(findInvoicesNeedingPaymentReminder);
 const mockMarkPaymentReminded = vi.mocked(markPaymentStageReminded);
 const mockSend = vi.mocked(sendEmailBestEffort);
 const mockRestock = vi.mocked(notifyRestock);
+const mockAppointmentReminders = vi.mocked(notifyUpcomingAppointments);
 
 const from = new Date("2026-01-01T00:00:00Z");
 
@@ -507,6 +513,12 @@ describe("reconcileMilestones", () => {
       alreadyAlerted: 0,
       items: [{ item: "Bow Fleece Soaker", notified: 3 }],
     });
+    mockAppointmentReminders.mockResolvedValue({
+      status: "sent",
+      sent: 1,
+      alreadyReminded: 0,
+      skipped: 0,
+    });
 
     const result = await reconcileMilestones(from);
 
@@ -518,6 +530,7 @@ describe("reconcileMilestones", () => {
       remindersSent: 1,
       paymentRemindersSent: 0,
       restockAlertsSent: 3,
+      appointmentRemindersSent: 1,
     });
   });
 });
@@ -543,5 +556,27 @@ describe("sendDueRestockAlerts", () => {
     mockRestock.mockRejectedValue(new Error("notion down"));
 
     await expect(sendDueRestockAlerts()).resolves.toBe(0);
+  });
+});
+
+describe("sendDueAppointmentReminders", () => {
+  it("reports how many reminders the sweep sent", async () => {
+    mockAppointmentReminders.mockResolvedValue({
+      status: "sent",
+      sent: 3,
+      alreadyReminded: 1,
+      skipped: 0,
+    });
+
+    const now = new Date("2026-08-21T08:00:00Z");
+    await expect(sendDueAppointmentReminders(now)).resolves.toBe(3);
+    // The sweep's window is derived from the run's clock, not its own.
+    expect(mockAppointmentReminders).toHaveBeenCalledWith(now);
+  });
+
+  it("swallows a failed sweep so the rest of the run still completes", async () => {
+    mockAppointmentReminders.mockRejectedValue(new Error("google down"));
+
+    await expect(sendDueAppointmentReminders()).resolves.toBe(0);
   });
 });

@@ -81,7 +81,7 @@ const TOOLS: ToolSpec[] = [
     tool: "milestones",
     name: "Reconcile production milestones",
     description:
-      "Generates milestones for any order with a due date that hasn't got them, and sends any fitting or payment reminders now due. This runs itself nightly — press it to catch up sooner.",
+      "Generates milestones for any order with a due date that hasn't got them, and sends any fitting, payment or appointment reminders now due. This runs itself nightly — press it to catch up sooner.",
     action: "Run now",
   },
   {

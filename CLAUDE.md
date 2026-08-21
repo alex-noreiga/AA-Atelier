@@ -229,7 +229,11 @@ Express app (artifacts/api-server)  ──►  Notion REST API (orders database)
   │                                  "Automated fitting reminders") and a
   │                                  best-effort payment reminder for any invoice
   │                                  deposit/balance coming due or overdue (see
-  │                                  "Payment & deposit due reminders").
+  │                                  "Payment & deposit due reminders"), a
+  │                                  back-in-stock alert sweep, and a best-effort
+  │                                  day-before reminder for every booked
+  │                                  appointment coming up (see "Day-before
+  │                                  appointment reminders").
   │                                  NOT part of the OpenAPI contract.
   ├─ GET  /api/studio/availability
   │                                → the atelier's standing working hours (the
@@ -484,7 +488,7 @@ stages/categories/working-hours.
    Notion DB is not a secrets store, and you can't read Notion settings without the
    API key + the settings DB's own id. The keys that ARE read from settings are
    enumerated in `SETTING_KEYS` (`lib/settings/store.ts`): `RUSH_SURCHARGE_RATE`,
-   `MEASUREMENT_LOCK_FROM_STAGE`, the four `APPOINTMENT_*` policy vars, the reward
+   `MEASUREMENT_LOCK_FROM_STAGE`, the five `APPOINTMENT_*` policy vars, the reward
    amounts, `COLOR_PALETTE` (the intake color picker's palette), and the
    notification **inboxes** (`ATELIER_INBOX_EMAIL`, `ATELIER_CONTACT_INBOX_EMAIL`,
    `ATELIER_APPOINTMENTS_INBOX_EMAIL`, `ALERT_INBOX_EMAIL`). Email **senders**
@@ -1038,6 +1042,89 @@ No new env vars are required; the one optional knob is `PAYMENT_REMINDER_LEAD_DA
 payments"**: add **`First Deposit Due`** / **`Second Deposit Due`** (date) — the balance
 reuses **`Payment Deadline`** — and the three `Reminded` checkboxes (the app writes
 them; leave unchecked). Until those exist the pass is a no-op.
+
+## Day-before appointment reminders
+
+The day before a booked appointment, the customer gets a best-effort email with
+the time, the place, the Meet link if it's virtual, and — the point of it — the
+**reschedule / cancel link**, so someone who can't make it moves the slot instead
+of not turning up. No new endpoint, no new cron, no frontend change, and nothing
+to configure in Notion or Google. Code: `lib/appointments/reminders.ts` (the pure
+policy), `services/appointment-reminder.service.ts` (the sweep),
+`sendDueAppointmentReminders` in `services/schedule.service.ts`,
+`listAppointmentsInRange` / `markAppointmentReminded` in
+`lib/google/calendar.repository.ts`, and `appointmentReminderEmail` in
+`lib/resend/emails.ts`.
+
+This is a second reminder on top of Google's own calendar notification, and it
+earns that: Google's carries none of the manage link, the Meet link, or the
+confirmation code, and goes only to whoever accepted the invite.
+
+1. **A sweep over a window, because there is no appointments database.** A booking
+   exists only as an event on a staff calendar, so there's nothing to hang a
+   per-booking timer on. `listAppointmentsInRange` does one `events.list` per staff
+   calendar over the window and filters **client-side** to events carrying the
+   `aptEmail` stamp — Google ANDs repeated `privateExtendedProperty` params, so
+   "any appointment of ours" can't be asked for server-side the way
+   `listUpcomingAppointmentsByEmail` asks for one customer's.
+
+2. **The window is a calendar day, not a duration.** `reminderWindow` runs from
+   `now` to the **end of the local day `APPOINTMENT_REMINDER_LEAD_DAYS` ahead**
+   (default 1). A "24 hours out" test would miss exactly the bookings this exists
+   for: the nightly run fires around 3am studio time, so a 10am appointment
+   tomorrow is ~31 hours away when the sweep sees it. Starting at `now` rather than
+   at midnight also means a missed run degrades to a **late** reminder, not none.
+   `whenPhrase` renders "today" / "tomorrow" / "on Monday, August 24", so the copy
+   reads correctly whatever lead the atelier sets.
+
+3. **The idempotency marker is a TIME on the event, not a flag.** After sending,
+   `aptRemindedEmail` is stamped on the event with **the start instant that was
+   reminded about** (`sendUpdates=none` — bookkeeping must not fire a second
+   calendar notification). Two behaviors fall out of that shape rather than needing
+   rules of their own: a customer who **reschedules** after being reminded is
+   reminded again (the marker no longer matches the new `start`), and the feature
+   needs no table and no Notion property. A boolean would have silently suppressed
+   every rescheduled booking's reminder.
+
+4. **Send, then mark — the reverse of the back-in-stock sweep, deliberately.**
+   There a lost marker means re-emailing forever, so it claims first. Here the
+   window closes when the appointment passes, so a failed marker risks at most one
+   duplicate, while marking first would risk losing the reminder outright. A marker
+   failure is a `warn`, not a throw, and one unreadable booking never strands the
+   rest of the night's.
+
+5. **It rides the nightly reconciliation.** `sendDueAppointmentReminders` is the
+   fourth notification pass in `reconcileMilestones`, alongside fitting, payment and
+   restock — that cron already fires at the hour a day-before reminder wants, and
+   the studio dashboard's **Reconcile production milestones** tool is the on-demand
+   path for free. A cancelled event, one with no recognizable appointment type (a
+   calendar entry the atelier typed by hand), or one with no email is skipped, and
+   an install with no Google key / no `POSTGRES_URL` reports **unconfigured**
+   quietly rather than alerting the inbox nightly about a feature nobody turned on.
+
+6. **Customer email only + best-effort**, from the **appointments** sender.
+   Deliberately no atelier notification — the studio's calendar is already the day
+   sheet. The manage link needs `SESSION_SECRET` + `PUBLIC_BASE_URL`; unset ⇒ it's
+   omitted and the copy falls back to "reply to us", exactly like the confirmation
+   email.
+
+**Groundwork for SMS** (the roadmap's own later card, since the reminder is the
+natural first text): the customer's **phone is now stamped on the event**
+(`aptPhone`, written by `createCalendarEvent` — nothing reads it, but it's the one
+piece that can't be retro-fitted onto bookings already taken, the same argument
+that made `aptEmail` load-bearing later), the **marker is per-channel** from the
+start (`aptRemindedEmail` / `aptRemindedSms`, so a new channel doesn't inherit the
+email's history and find every booking already "reminded"), and the window, the due
+test and the wording are transport-agnostic. What SMS still needs is a vendor and —
+the real work — an **opt-in**: consent to be texted isn't the same permission as a
+transactional email, `preferredContact` is a "how should we reach you" rather than
+consent, and that belongs on the Client CRM next to the newsletter consent, not
+bolted onto this sweep. See `.agents/memory/appointment-reminders.md`.
+
+Known limits: an appointment the atelier types straight into Google is never
+reminded about (the sweep only recognizes bookings this app made), and there is one
+reminder per booking per start time — an additional "and again an hour before" would
+need a second marker, which the per-channel key scheme extends to cleanly.
 
 ## Post-delivery reviews (capture, then publish)
 
@@ -1752,10 +1839,9 @@ with `SESSION_SECRET`; its `"appointment"` purpose — the only token purpose �
      in `lib/resend/emails.ts`, `pages/appointment-manage.tsx` (+ shared
      `lib/appointment-format.ts`).
 
-A **day-before reminder** is a deliberate fast-follow, not built: it needs a new cron
-doing a net-new `events.list`-by-window plus a per-event `aptReminded` marker — the
-extended-property model above is the groundwork. See
-`.agents/memory/appointment-reschedule-cancel.md`.
+The **day-before reminder** was the deferred half of the same roadmap card and has
+since shipped, built on the extended-property model above — see "Day-before
+appointment reminders" below.
 
 ## Staff availability, edited on the dashboard
 
@@ -2807,8 +2893,11 @@ in the maintainer's env without edits.
     from transactional above that).
 - **Optional appointment-booking policy env vars:** `APPOINTMENT_TIMEZONE`
   (IANA zone for working hours/slots, default `America/Chicago`),
-  `APPOINTMENT_MIN_LEAD_HOURS` (24), `APPOINTMENT_MAX_ADVANCE_DAYS` (45), and
-  `APPOINTMENT_SLOT_STEP_MINUTES` (15). All have defaults.
+  `APPOINTMENT_MIN_LEAD_HOURS` (24), `APPOINTMENT_MAX_ADVANCE_DAYS` (45),
+  `APPOINTMENT_SLOT_STEP_MINUTES` (15), and `APPOINTMENT_REMINDER_LEAD_DAYS` (1 —
+  how many local days ahead the reminder sweep looks; a value below 1 falls back
+  to the default rather than becoming a morning-of note). All have defaults, and
+  all five are Studio-Settings tunables.
 - **Optional measurement-change env var:** `MEASUREMENT_LOCK_FROM_STAGE` (default
   `Cutting/Pinning`) — the live **Stage** option at/after which an order's
   measurements are frozen and `POST /orders/:n/measurement-change-requests` is
@@ -2941,6 +3030,7 @@ scope went with the working-hours sheet.
 | `RESEND_AUDIENCE_ID`                                                                                              | Newsletter sync skipped; the opt-in is still captured in Notion     |
 | `APPOINTMENT_TIMEZONE`                                                                                            | `America/Chicago`                                                   |
 | `APPOINTMENT_MIN_LEAD_HOURS` / `_MAX_ADVANCE_DAYS` / `_SLOT_STEP_MINUTES`                                         | `24` / `45` / `15`                                                  |
+| `APPOINTMENT_REMINDER_LEAD_DAYS`                                                                                  | `1` (the day before)                                                |
 | `MEASUREMENT_LOCK_FROM_STAGE`                                                                                     | `Cutting/Pinning`                                                   |
 | `RUSH_SURCHARGE_RATE`                                                                                             | `0.15` (`0` disables the surcharge line)                            |
 | `VITE_RUSH_WINDOW_DAYS`, `VITE_RUSH_SURCHARGE_NOTE` (build-time)                                                  | `21`, `"a 15% rush surcharge"`                                      |
@@ -3064,6 +3154,7 @@ full detail in `.agents/memory/phase2-workspace-crm-archive-markers.md`.
 | Change production-schedule milestones                    | `api-server/src/services/schedule.service.ts` + `routes/cron.ts` + `lib/notion/production-schedule.{blocks,repository}.ts` + `lib/notion/orders.repository.ts` (`findOrdersNeedingMilestones`/`markMilestonesGenerated`); cron in `vercel.json`                                                                                                                                                                                                                                                                                                                                                                                                                                               |
 | Change order status-change emails (+ pipeline graphic)   | `api-server/src/lib/resend/emails.ts` (`orderStageChangeEmail`) + `services/order-notification.service.ts` + `routes/order-notification.ts` + `lib/notion/orders.repository.ts` (`findOrderForStageNotification`); Notion automation → `POST /api/webhooks/notion-stage-change`; on-demand send via the `status-email` studio tool                                                                                                                                                                                                                                                                                                                                                            |
 | Change back-in-stock alerts                              | `services/restock-notification.service.ts` + `services/restock.ts` + `sendDueRestockAlerts` in `services/schedule.service.ts` + `claimRestockAlert` in `lib/db/restock-alerts.repository.ts` + `findPendingBackInStockRequests` in `lib/notion/notify.repository.ts`; the on-demand run is the `restock-alert` studio tool                                                                                                                                                                                                                                                                                                                                                                    |
+| Change day-before appointment reminders                  | `lib/appointments/reminders.ts` (window, per-channel markers, `whenPhrase`) + `services/appointment-reminder.service.ts` (the sweep) + `sendDueAppointmentReminders` in `services/schedule.service.ts` + `listAppointmentsInRange` / `markAppointmentReminded` / the `aptPhone` stamp in `lib/google/calendar.repository.ts` + `appointmentReminderEmail` in `lib/resend/emails.ts`; runs in the milestone cron                                                                                                                                                                                                                                                                               |
 | Change automated fitting reminders                       | `api-server/src/services/schedule.service.ts` (`sendDueFittingReminders`) + `services/fitting-reminder.ts` (env business rule) + `lib/notion/production-schedule.{blocks,repository}.ts` (`findMilestonesNeedingFittingReminder`/`markFittingReminderSent`, `Reminder Sent` prop) + `fittingReminderEmail` in `lib/resend/emails.ts`; runs in the milestone cron                                                                                                                                                                                                                                                                                                                              |
 | Change payment & deposit due reminders                   | `api-server/src/services/schedule.service.ts` (`sendDuePaymentReminders`) + `services/payment-reminder.ts` (env business rule) + `lib/notion/invoice.repository.ts` (`findInvoicesNeedingPaymentReminder`/`markPaymentStageReminded`) + `extractPaymentReminderInvoice` + `PAYMENT_STAGE_REMINDER_FIELDS` in `lib/notion/invoice.schema.ts` + `paymentReminderEmail` in `lib/resend/emails.ts`; runs in the milestone cron                                                                                                                                                                                                                                                                    |
 | Change appointment booking (UI)                          | `artifacts/web-app/src/pages/appointments.tsx`                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                |
