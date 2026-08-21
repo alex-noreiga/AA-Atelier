@@ -84,6 +84,19 @@ app never writes materials stock.
   renders the reason. Rendering an empty alert list instead would read as "all good" —
   the most dangerous possible way to be wrong here.
 
+- **So is `unreachable: true` — the 404 that used to be a 500.** In production the id
+  was set but Notion answered **404** (the integration had not been shared with the
+  database, or the id was wrong), and the panel 500'd on every dashboard load, alerting
+  the inbox with `Notion query failed with status 404` and nothing else. That is the
+  same KIND of state as an unset id — configuration only a human can clear — so
+  `getMaterialsOverview` catches a 404 and reports it, and the panel names the fix
+  (share the database, check the id). Two things are load-bearing: it catches **only**
+  404 (a 502 is an outage that clears itself and is worth the one alert), and it is told
+  apart by **status, not message text** — `scanDatabase` throws a `NotionRequestError`
+  (`lib/notion/errors.ts`) carrying the status, Notion's `code`/`message`, the scan's
+  label and the database id, so every full-database scan's failure now says which
+  database and, for a 404, what to do about it.
+
 - **The scan is unfiltered and bounded.** Nothing to filter on (see above), so it's a
   full `scanDatabase` like the studio analytics, with the usual 60s TTL and
   fall-back-to-stale-on-error. A Notion blip degrades to slightly stale numbers rather

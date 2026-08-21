@@ -912,7 +912,8 @@ export const GetStudioMaterialsResponse = zod.object({
 }).describe('A material no alert can ever fire for, and why — so an unwatched material is visible rather than the alert list just looking quiet.')).describe('Not watched, and why — alphabetical.'),
   "suppressedCount": zod.number().int().describe('How many materials the atelier has muted. Reported so the panel can say so rather than the numbers silently not adding up.'),
   "totalCount": zod.number().int().describe('Every material row read, muted ones included.'),
-  "configured": zod.boolean().describe('False when the materials database isn\'t wired up, in which case the lists are empty and the panel says why instead of rendering an empty list that reads as \"all good\".')
+  "configured": zod.boolean().describe('False when the materials database isn\'t wired up, in which case the lists are empty and the panel says why instead of rendering an empty list that reads as \"all good\".'),
+  "unreachable": zod.boolean().optional().describe('True when the database id IS set but Notion answered 404 — the integration has not been shared with the database, or the id is wrong. The lists are empty and the panel says what to fix; reported rather than thrown because it is a configuration state only a human can clear, not an outage worth erroring the panel over. Absent when the read worked.')
 }).describe('The materials panel — what to reorder, and what isn\'t being watched.')
 
 

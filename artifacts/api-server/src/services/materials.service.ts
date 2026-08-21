@@ -29,7 +29,9 @@ import {
   listMaterials,
   materialsConfigured,
 } from "../lib/notion/materials.repository.js";
+import { isNotionNotFound } from "../lib/notion/errors.js";
 import type { MaterialRecord } from "../lib/notion/materials.schema.js";
+import { logger } from "../lib/logger.js";
 
 /** A material at or below its reorder point — something to buy. */
 export interface MaterialAlert {
@@ -71,6 +73,11 @@ export interface MaterialsOverview {
   /** False when `NOTION_MATERIALS_DATABASE_ID` is unset — the panel says so
    * rather than rendering an empty list that looks like "all good". */
   configured: boolean;
+  /** True when the id IS set but Notion answered 404 — the integration has not
+   * been shared with the database, or the id is wrong. Configured-but-unreadable
+   * is a third state, and it is a configuration one: see
+   * {@link getMaterialsOverview}. Absent when the read worked. */
+  unreachable?: boolean;
 }
 
 /**
@@ -159,18 +166,39 @@ function cmp(a: string, b: string): number {
  * The dashboard's materials panel. Degrades to an empty, `configured: false`
  * overview when the database isn't wired up — a marketing-page-style refusal to
  * 500 over a missing id, and the panel renders the reason.
+ *
+ * A Notion **404** degrades the same way, with `unreachable` marking it. An id
+ * that is set but that the integration can't see (never shared, or the wrong id
+ * pasted in) is the same KIND of state as an unset one — a configuration
+ * mistake only a human can clear — and it behaved like the opposite: every
+ * dashboard load 500'd the panel and emailed the alert inbox, saying only
+ * "Notion query failed with status 404". So it's reported to the panel, which
+ * says what to fix, and the error message now names the database either way.
+ *
+ * Every other failure still throws. A 502 from Notion IS an outage, it clears
+ * on its own, and it is worth exactly the one alert the error handler sends.
  */
 export async function getMaterialsOverview(): Promise<MaterialsOverview> {
+  const empty = {
+    lowStock: [],
+    untracked: [],
+    suppressedCount: 0,
+    totalCount: 0,
+  } satisfies Omit<MaterialsOverview, "configured">;
+
   if (!materialsConfigured()) {
-    return {
-      lowStock: [],
-      untracked: [],
-      suppressedCount: 0,
-      totalCount: 0,
-      configured: false,
-    };
+    return { ...empty, configured: false };
   }
 
-  const materials = await listMaterials();
-  return { ...classifyMaterials(materials), configured: true };
+  try {
+    const materials = await listMaterials();
+    return { ...classifyMaterials(materials), configured: true };
+  } catch (err) {
+    if (!isNotionNotFound(err)) throw err;
+    logger.warn(
+      { err },
+      "Materials database is configured but Notion cannot see it; check the id and that the integration is shared with it",
+    );
+    return { ...empty, configured: true, unreachable: true };
+  }
 }

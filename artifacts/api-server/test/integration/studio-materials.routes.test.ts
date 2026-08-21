@@ -14,6 +14,7 @@ import {
   materialsConfigured,
 } from "../../src/lib/notion/materials.repository.js";
 import type { MaterialRecord } from "../../src/lib/notion/materials.schema.js";
+import { NotionRequestError } from "../../src/lib/notion/errors.js";
 import {
   __setSupabaseClientForTests,
   __resetSupabaseClient,
@@ -146,6 +147,47 @@ describe("GET /api/studio/materials", () => {
     expect(response.body.untracked).toEqual([
       { id: "b", name: "Tulle", reason: "no-reorder-point", stockOnHand: 0.25 },
     ]);
+  });
+
+  // A database id that is set but that the integration can't see is the same
+  // KIND of state as an unset one — a configuration mistake only a human can
+  // clear — and it used to 500 the panel and alert the inbox on every load.
+  it("reports unreachable rather than 500-ing when Notion answers 404", async () => {
+    mockList.mockRejectedValue(
+      new NotionRequestError(
+        "Notion query failed with status 404 for the materials inventory database (id abc): object_not_found",
+        404,
+        "object_not_found",
+      ),
+    );
+
+    const response = await request(app)
+      .get("/api/studio/materials")
+      .set("Authorization", "Bearer staff-token");
+
+    expect(response.status).toBe(200);
+    expect(response.body).toEqual({
+      lowStock: [],
+      untracked: [],
+      suppressedCount: 0,
+      totalCount: 0,
+      configured: true,
+      unreachable: true,
+    });
+  });
+
+  // An outage is not a configuration state: it clears on its own, and it is
+  // worth the one alert the error handler sends.
+  it("still fails on a transient Notion error", async () => {
+    mockList.mockRejectedValue(
+      new NotionRequestError("Notion query failed with status 502", 502),
+    );
+
+    const response = await request(app)
+      .get("/api/studio/materials")
+      .set("Authorization", "Bearer staff-token");
+
+    expect(response.status).toBe(500);
   });
 
   // An unconfigured database must not 500 the dashboard, and must not render as
