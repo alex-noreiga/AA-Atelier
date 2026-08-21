@@ -934,12 +934,9 @@ export function materialsDigestEmail(
 
   const html = internalLayout(
     heading,
-    `<ul style="margin:0 0 16px;padding-left:20px;">
+    `<ul style="margin:0;padding-left:20px;">
         ${itemsHtml}
-     </ul>
-     <p style="font-size:13px;color:#8a7f74;margin:0;">Set or clear a reorder point on a
-        material in Notion to change what appears here. Tick its restock-alerts
-        checkbox to mute it.</p>`,
+     </ul>`,
     "weekly stock check",
   );
 
@@ -949,9 +946,6 @@ export function materialsDigestEmail(
     ...items.map(
       (item) => `- ${line(item)}${item.link ? ` — ${item.link}` : ""}`,
     ),
-    ``,
-    `Set or clear a reorder point on a material in Notion to change what appears`,
-    `here. Tick its restock-alerts checkbox to mute it.`,
   ].join("\n");
 
   return {
