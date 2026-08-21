@@ -2622,25 +2622,30 @@ It runs **daily** at 13:00 UTC (not on every push) via `.github/workflows/smoke.
   is unset), built from the run's `json` reporter output. On a scheduled failure the
   workflow also opens or updates a single GitHub issue.
 
-**Two optional repo variables sharpen the suite; both are inert when unset.** Neither is
-a secret (an order number and a boolean aren't sensitive), so set them as repo
-**variables**, not secrets:
+**Two optional repo variables sharpen the suite.** Neither is a secret (an order number
+and a boolean aren't sensitive), so they are repo **variables**, not secrets:
 
-| Variable                   | Effect when unset                        | Effect when set                                                          |
-| -------------------------- | ---------------------------------------- | ------------------------------------------------------------------------ |
-| `SMOKE_KNOWN_ORDER_NUMBER` | `order-success.smoke.ts` **skips**       | That order is looked up on `/track` and the success timeline must render |
-| `SMOKE_EXPECT_REVIEWS`     | `reviews.smoke.ts` accepts an empty list | `1` requires `GET /api/reviews` to return at least one testimonial       |
+| Variable                   | Effect when unset                                             | Effect when set                                                    |
+| -------------------------- | ------------------------------------------------------------- | ------------------------------------------------------------------ |
+| `SMOKE_KNOWN_ORDER_NUMBER` | Falls back to the **`ORD-TEST-00000`** default in `smoke.yml` | Overrides the default with that order                              |
+| `SMOKE_EXPECT_REVIEWS`     | `reviews.smoke.ts` accepts an empty list                      | `1` requires `GET /api/reviews` to return at least one testimonial |
 
-`SMOKE_KNOWN_ORDER_NUMBER` is the one worth setting first: it gates the **only** spec that
-asserts a _successful_ data render. Every other data spec proves "the endpoint didn't
-error" — a regression that broke the success timeline (the actual payoff) would sail
-through an otherwise-green run. Point it at a **permanent sentinel**: an order the atelier
-will never delete, ideally already at its final stage so its timeline can't change, and
-belonging to the studio rather than a customer. In this workspace that is
-**`ORD-TEST-00000`** ("Toothless Dress" — Delivered, `Archived` ticked, studio-owned).
-Archiving is a checkbox the app never filters on, so an archived order still resolves
-normally; a **cancelled** one would not suit, because the tracking page then renders the
-cancelled banner instead of the timeline.
+`SMOKE_KNOWN_ORDER_NUMBER` gates the **only** spec that asserts a _successful_ data
+render. Every other data spec proves "the endpoint didn't error" — a regression that broke
+the success timeline (the actual payoff) would sail through an otherwise-green run. It is
+therefore **defaulted in `smoke.yml`** rather than left unset: it _was_ unset for the
+suite's entire life, so that spec never once ran while the job still reported green — a
+check that silently doesn't exist is worse than no check, because the green tells you it
+passed.
+
+The default uses the same shape as `PLAYWRIGHT_BASE_URL`'s apex fallback in that file, and
+a repo variable or secret still overrides it. What makes an order suitable as the
+sentinel: **permanent** (the atelier will never delete it), already at its **final stage**
+so its timeline can't shift under the test, and **studio-owned** rather than a customer's
+record being polled daily. `ORD-TEST-00000` ("Toothless Dress") is Delivered, has
+`Archived` ticked, and is the studio's own. Archiving is a checkbox the app never filters
+on, so an archived order still resolves normally; a **cancelled** one would not suit,
+because the tracking page then renders the cancelled banner instead of the timeline.
 
 Similarly `SMOKE_EXPECT_REVIEWS=1` is worth setting once testimonials are actually live —
 until then `GET /api/reviews` returning `[]` is ambiguous between "nothing published" and

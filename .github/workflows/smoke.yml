@@ -81,7 +81,18 @@ jobs:
           # (tests/smoke/order-success.smoke.ts). Set it as a repo VARIABLE
           # (an order number isn't sensitive) or a secret — either is picked up
           # here. Unset ⇒ that one spec skips itself; every other spec runs.
-          SMOKE_KNOWN_ORDER_NUMBER: ${{ vars.SMOKE_KNOWN_ORDER_NUMBER || secrets.SMOKE_KNOWN_ORDER_NUMBER }}
+          # The sentinel order order-success.smoke.ts looks up — the only spec
+          # that asserts a SUCCESSFUL data render rather than a 404-or-no-error
+          # path. Defaulted here (same shape as PLAYWRIGHT_BASE_URL above, which
+          # already falls back to the apex) so the check is on by default instead
+          # of skipping silently: it was unset for the suite's whole life, so
+          # that spec never once ran while the job still reported green.
+          #
+          # ORD-TEST-00000 ("Toothless Dress") is the studio's own test order —
+          # Delivered, so its timeline can't shift, and `Archived`, which the app
+          # never filters on, so it still resolves. A repo variable or secret
+          # still overrides this if the sentinel ever needs to change.
+          SMOKE_KNOWN_ORDER_NUMBER: ${{ vars.SMOKE_KNOWN_ORDER_NUMBER || secrets.SMOKE_KNOWN_ORDER_NUMBER || 'ORD-TEST-00000' }}
           # Set to "1" once testimonials are live on the site. GET /api/reviews
           # is degrade-safe (it returns [] rather than erroring), so an empty
           # list is ambiguous — "nothing published" and "the Notion read broke"
