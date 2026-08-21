@@ -38,9 +38,10 @@ vi.mock("@/lib/auth-context", () => ({
 vi.mock("@workspace/api-client-react", () => ({
   useGetStudioAnalytics: vi.fn(),
   getGetStudioAnalyticsQueryKey: () => ["studio-analytics"],
-  // The materials panel, the moderation queue, the internal tools panel, and
-  // the working-hours editor ride along at the bottom of the dashboard; each
-  // has its own test file, so here they just need inert hooks to render.
+  // The materials panel, the moderation queue, the request queue, the internal
+  // tools panel, and the working-hours editor ride along at the bottom of the
+  // dashboard; each has its own test file, so here they just need inert hooks
+  // to render.
   useRunStudioTool: () => ({ mutate: vi.fn(), isPending: false }),
   useListStaffAvailability: () => ({
     data: { entries: [], staff: [] },
@@ -60,6 +61,14 @@ vi.mock("@workspace/api-client-react", () => ({
   }),
   useSetStudioReviewStatus: () => ({ mutate: vi.fn(), isPending: false }),
   getListStudioReviewsQueryKey: () => ["studio-reviews"],
+  useListStudioRequests: () => ({
+    data: { open: [], closed: [] },
+    isLoading: false,
+    isError: false,
+    error: null,
+  }),
+  useSetStudioRequestState: () => ({ mutate: vi.fn(), isPending: false }),
+  getListStudioRequestsQueryKey: () => ["studio-requests"],
   useGetStudioMaterials: () => ({
     data: {
       lowStock: [],

@@ -1690,6 +1690,147 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/ErrorEnvelope"
+  /studio/requests:
+    get:
+      operationId: listStudioRequests
+      tags: [studio]
+      summary: The open customer-request queue
+      description: >-
+        The customer requests waiting on the atelier — measurement changes,
+        cancellations, returns and exchanges, back-in-stock asks and website
+        inquiries — read back out of the shared "Website Contact Messages"
+        inbox. Until this, the app only ever WROTE those rows: actioning one
+        meant reading it in Notion and re-typing its order number into a tool on
+        this dashboard.
+
+
+        So each row carries its own `action` where one exists: the tool that
+        actions it and the argument it needs, derived server-side from the
+        request type next to the code that writes it. A cancellation hands its
+        order number to `cancellation-refund`, a return to `return-refund`, a
+        back-in-stock ask hands its item to `restock-alert`. A measurement
+        change or an inquiry carries none — those are answered by hand, and
+        saying so is more honest than offering a button that does nothing.
+
+
+        The open list is OLDEST first: the request that has waited longest is
+        the one that owes an answer. Newsletter opt-ins are deliberately absent
+        — they land in the same database but are a consent record nobody
+        answers, so including them makes a queue that never empties.
+
+
+        Same staff gate as the rest of the studio surface: 401 when not signed
+        in, 404 when signed in but not staff, 403 when staff but not signed in
+        with Google.
+      security:
+        - bearerAuth: []
+      responses:
+        "200":
+          description: The open requests, oldest first, plus recently closed ones
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/StudioRequestList"
+        "401":
+          description: Not signed in (missing or expired session)
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorEnvelope"
+        "403":
+          description: >-
+            A studio account whose session wasn't established with Google (the
+            default policy).
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorEnvelope"
+        "404":
+          description: >-
+            Signed in, but not a studio account — the same answer a URL that
+            doesn't exist gets (see the other studio operations).
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/OrderNotFound"
+        "500":
+          description: Server error
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorEnvelope"
+  /studio/requests/{requestId}/state:
+    put:
+      operationId: setStudioRequestState
+      tags: [studio]
+      summary: Move a request through the inbox
+      description: >-
+        Writes one request's `Stage` in Notion — the resolved state the
+        contact inbox has always carried. `replied` marks a request answered
+        but still open, `closed` takes it off the queue, and `new` returns it,
+        so a row closed in error is reopened the same way it was closed.
+
+
+        A PUT rather than a POST because the whole state is sent and re-sending
+        it changes nothing. This is the only thing the dashboard writes to a
+        request row: the request itself is never edited, exactly as the capture
+        endpoints never edit the order they concern.
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: requestId
+          in: path
+          required: true
+          schema:
+            type: string
+          description: The request's id, as returned by the list operation.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/RequestStateRequest"
+      responses:
+        "200":
+          description: The request as it now stands
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/StudioRequest"
+        "400":
+          description: Not a state a request can be moved to
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorEnvelope"
+        "401":
+          description: Not signed in (missing or expired session)
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorEnvelope"
+        "403":
+          description: >-
+            A studio account whose session wasn't established with Google (the
+            default policy).
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorEnvelope"
+        "404":
+          description: >-
+            No such request — or the caller isn't a studio account, which
+            answers identically by design (see the other studio operations).
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/OrderNotFound"
+        "500":
+          description: Server error
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorEnvelope"
 components:
   securitySchemes:
     bearerAuth:
@@ -2449,6 +2590,154 @@ components:
       properties:
         status:
           $ref: "#/components/schemas/ReviewModerationStatus"
+    StudioRequestKind:
+      type: string
+      enum:
+        - inquiry
+        - back-in-stock
+        - measurement
+        - cancellation
+        - return
+        - other
+      description: >-
+        What a customer is asking for, DERIVED from the row's `Request type`
+        select rather than enumerated from it. Five kinds name the values the
+        app writes; `other` is anything else — a blank select, or a type the
+        atelier invented — so an unrecognized row appears in the queue asking
+        to be looked at rather than vanishing from it.
+
+
+        Newsletter opt-ins share the same database but are not a kind here:
+        they are a consent record nobody answers, and are excluded from the
+        queue entirely.
+    StudioRequestState:
+      type: string
+      enum: [new, replied, closed]
+      description: >-
+        Where a request stands in the inbox, derived from its Notion `Stage`.
+        `closed` is the only value that takes it off the queue, so a row with a
+        blank or unrecognized stage reads as `new` — an untriaged request
+        should appear rather than disappear.
+    StudioRequestAction:
+      type: object
+      description: >-
+        The dashboard tool that actions this request, and the argument it
+        needs. Present only where the app can action the request at all: the
+        two refunds and the back-in-stock sweep. A measurement change is
+        applied to the order by hand and an inquiry is answered by email, so
+        neither carries one.
+      required: [tool]
+      properties:
+        tool:
+          $ref: "#/components/schemas/StudioTool"
+        orderNumber:
+          type: string
+          description: >-
+            The order the tool should act on, read off the request. Absent when
+            it couldn't be recovered — a row whose title was rewritten by hand,
+            say — in which case the action is not offered at all rather than
+            offered blank.
+        item:
+          type: string
+          description: The inventory item name, for a back-in-stock request.
+    StudioRequest:
+      type: object
+      description: >-
+        One customer request as the queue shows it — the row from the shared
+        contact inbox, plus what can be done about it. Staff-only.
+      required: [id, kind, subject, state]
+      properties:
+        id:
+          type: string
+          description: The request's Notion page id; also what a state change is addressed to.
+        kind:
+          $ref: "#/components/schemas/StudioRequestKind"
+        rawType:
+          type: string
+          description: >-
+            The `Request type` select exactly as Notion holds it, when set.
+            Shown for a row the app reads as `other`, so "why is this here?" is
+            answerable without opening Notion.
+        subject:
+          type: string
+          description: The row's title, as the writer composed it.
+        customerName:
+          type: string
+          description: Who wrote it, when the request records a name (inquiries do).
+        email:
+          type: string
+          description: >-
+            The address the request came from — how an inquiry or a measurement
+            change is answered. Omitted on a row that carries none.
+        phone:
+          type: string
+          description: A contact number, when the customer left one.
+        message:
+          type: string
+          description: >-
+            The request in full: the cancellation reason, the requested
+            measurements, the return's kind and reason. Composed by the writer
+            that filed it, and shown verbatim.
+        orderNumber:
+          type: string
+          description: >-
+            The order the request concerns, for the order-scoped kinds. Absent
+            on an inquiry or a back-in-stock ask, which concern no order.
+        item:
+          type: string
+          description: The piece being asked about (back-in-stock and returns).
+        size:
+          type: string
+          description: The size band a back-in-stock request named, when it named one.
+        state:
+          $ref: "#/components/schemas/StudioRequestState"
+        rawStage:
+          type: string
+          description: The `Stage` select exactly as Notion holds it, when set.
+        submittedAt:
+          type: string
+          format: date-time
+          description: When the request was filed (its Notion created time).
+        action:
+          $ref: "#/components/schemas/StudioRequestAction"
+        notionUrl:
+          type: string
+          description: >-
+            The request's page in Notion, for everything this queue doesn't
+            show — the linked order, the client record, the atelier's own notes.
+    StudioRequestList:
+      type: object
+      description: >-
+        The request queue: what is still open, and the recently closed rows for
+        reference.
+      required: [open, closed]
+      properties:
+        open:
+          type: array
+          description: >-
+            Still waiting, OLDEST first — the queue proper. Anything not closed
+            counts, including a row whose stage was never set.
+          items:
+            $ref: "#/components/schemas/StudioRequest"
+        closed:
+          type: array
+          description: >-
+            Recently closed, newest first. Capped — it is a record of what was
+            worked down, not a second queue.
+          items:
+            $ref: "#/components/schemas/StudioRequest"
+        truncated:
+          type: boolean
+          description: >-
+            True when there are more open requests than one read covers, so the
+            queue says it is partial instead of looking complete.
+    RequestStateRequest:
+      type: object
+      description: The state to record against a request.
+      required: [state]
+      properties:
+        state:
+          $ref: "#/components/schemas/StudioRequestState"
     NewContactRequest:
       type: object
       required:

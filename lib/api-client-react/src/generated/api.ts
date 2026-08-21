@@ -58,6 +58,7 @@ import type {
   OrderStatus,
   PaymentSessionResponse,
   ProductList,
+  RequestStateRequest,
   RescheduleAppointmentRequest,
   ReviewList,
   ReviewStatusRequest,
@@ -68,6 +69,8 @@ import type {
   StaffAvailabilityRequest,
   StudioAccess,
   StudioAnalytics,
+  StudioRequest,
+  StudioRequestList,
   StudioReview,
   StudioReviewList,
   StudioTool,
@@ -2838,5 +2841,164 @@ export const useSetStudioReviewStatus = <TError = ErrorType<ErrorEnvelope | Orde
         TContext
       > => {
       return useMutation(getSetStudioReviewStatusMutationOptions(options));
+    }
+
+export const getListStudioRequestsUrl = () => {
+
+
+
+
+  return `/api/studio/requests`
+}
+
+/**
+ * The customer requests waiting on the atelier — measurement changes, cancellations, returns and exchanges, back-in-stock asks and website inquiries — read back out of the shared "Website Contact Messages" inbox. Until this, the app only ever WROTE those rows: actioning one meant reading it in Notion and re-typing its order number into a tool on this dashboard.
+ *
+ * So each row carries its own `action` where one exists: the tool that actions it and the argument it needs, derived server-side from the request type next to the code that writes it. A cancellation hands its order number to `cancellation-refund`, a return to `return-refund`, a back-in-stock ask hands its item to `restock-alert`. A measurement change or an inquiry carries none — those are answered by hand, and saying so is more honest than offering a button that does nothing.
+ *
+ * The open list is OLDEST first: the request that has waited longest is the one that owes an answer. Newsletter opt-ins are deliberately absent — they land in the same database but are a consent record nobody answers, so including them makes a queue that never empties.
+ *
+ * Same staff gate as the rest of the studio surface: 401 when not signed in, 404 when signed in but not staff, 403 when staff but not signed in with Google.
+ * @summary The open customer-request queue
+ */
+export const listStudioRequests = async ( options?: Parameters<typeof customFetch>[1]): Promise<StudioRequestList> => {
+
+  return customFetch<StudioRequestList>(getListStudioRequestsUrl(),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
+
+
+
+
+export const getListStudioRequestsQueryKey = () => {
+    return [
+    `/api/studio/requests`
+    ] as const;
+    }
+
+
+export const getListStudioRequestsQueryOptions = <TData = Awaited<ReturnType<typeof listStudioRequests>>, TError = ErrorType<ErrorEnvelope | OrderNotFound>>( options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof listStudioRequests>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getListStudioRequestsQueryKey();
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof listStudioRequests>>> = ({ signal }) => listStudioRequests({ signal, ...requestOptions });
+
+
+
+
+
+   return  { queryKey, queryFn, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof listStudioRequests>>, TError, TData> & { queryKey: QueryKey }
+}
+
+export type ListStudioRequestsQueryResult = NonNullable<Awaited<ReturnType<typeof listStudioRequests>>>
+export type ListStudioRequestsQueryError = ErrorType<ErrorEnvelope | OrderNotFound>
+
+
+/**
+ * @summary The open customer-request queue
+ */
+
+export function useListStudioRequests<TData = Awaited<ReturnType<typeof listStudioRequests>>, TError = ErrorType<ErrorEnvelope | OrderNotFound>>(
+  options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof listStudioRequests>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+
+ ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+
+  const queryOptions = getListStudioRequestsQueryOptions(options)
+
+  const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
+
+  return withQueryKey(query, queryOptions.queryKey);
+}
+
+
+
+
+
+
+
+export const getSetStudioRequestStateUrl = (requestId: string,) => {
+
+
+
+
+  return `/api/studio/requests/${requestId}/state`
+}
+
+/**
+ * Writes one request's `Stage` in Notion — the resolved state the contact inbox has always carried. `replied` marks a request answered but still open, `closed` takes it off the queue, and `new` returns it, so a row closed in error is reopened the same way it was closed.
+ *
+ * A PUT rather than a POST because the whole state is sent and re-sending it changes nothing. This is the only thing the dashboard writes to a request row: the request itself is never edited, exactly as the capture endpoints never edit the order they concern.
+ * @summary Move a request through the inbox
+ */
+export const setStudioRequestState = async (requestId: string,
+    requestStateRequest: RequestStateRequest, options?: Parameters<typeof customFetch>[1]): Promise<StudioRequest> => {
+
+  return customFetch<StudioRequest>(getSetStudioRequestStateUrl(requestId),
+  {
+    ...options,
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    body: JSON.stringify(requestStateRequest)
+  }
+);}
+
+
+
+
+
+export const getSetStudioRequestStateMutationOptions = <TError = ErrorType<ErrorEnvelope | OrderNotFound>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof setStudioRequestState>>, TError,{requestId: string;data: BodyType<RequestStateRequest>}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof setStudioRequestState>>, TError,{requestId: string;data: BodyType<RequestStateRequest>}, TContext> => {
+
+const mutationKey = ['setStudioRequestState'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof setStudioRequestState>>, {requestId: string;data: BodyType<RequestStateRequest>}> = (props) => {
+          const {requestId,data} = props ?? {};
+
+          return  setStudioRequestState(requestId,data,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type SetStudioRequestStateMutationResult = NonNullable<Awaited<ReturnType<typeof setStudioRequestState>>>
+    export type SetStudioRequestStateMutationBody = BodyType<RequestStateRequest>
+    export type SetStudioRequestStateMutationError = ErrorType<ErrorEnvelope | OrderNotFound>
+
+    /**
+ * @summary Move a request through the inbox
+ */
+export const useSetStudioRequestState = <TError = ErrorType<ErrorEnvelope | OrderNotFound>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof setStudioRequestState>>, TError,{requestId: string;data: BodyType<RequestStateRequest>}, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof setStudioRequestState>>,
+        TError,
+        {requestId: string;data: BodyType<RequestStateRequest>},
+        TContext
+      > => {
+      return useMutation(getSetStudioRequestStateMutationOptions(options));
     }
 

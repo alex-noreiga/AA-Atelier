@@ -8,10 +8,14 @@ import {
   GetStudioAnalyticsResponse,
   GetStudioMaterialsResponse,
   ListStaffAvailabilityResponse,
+  ListStudioRequestsResponse,
   ListStudioReviewsResponse,
   RunStudioToolBody,
   RunStudioToolParams,
   RunStudioToolResponse,
+  SetStudioRequestStateBody,
+  SetStudioRequestStateParams,
+  SetStudioRequestStateResponse,
   SetStudioReviewStatusBody,
   SetStudioReviewStatusParams,
   SetStudioReviewStatusResponse,
@@ -20,7 +24,7 @@ import {
   UpdateStaffAvailabilityResponse,
 } from "@workspace/api-zod";
 import { requireStaff } from "../middlewares/auth.js";
-import { accountRateLimiter } from "../middlewares/rate-limit.js";
+import { studioRateLimiter } from "../middlewares/rate-limit.js";
 import { validate } from "../middlewares/validate.js";
 import { getStudioAnalytics } from "../services/studio-analytics.service.js";
 import { getMaterialsOverview } from "../services/materials.service.js";
@@ -34,6 +38,11 @@ import {
   setReviewModeration,
 } from "../services/studio-reviews.service.js";
 import type { ReviewModeration } from "../lib/notion/reviews.schema.js";
+import {
+  getRequestQueue,
+  setRequestQueueState,
+} from "../services/studio-requests.service.js";
+import type { RequestState } from "../lib/notion/requests.schema.js";
 import {
   getStaffAvailability,
   addStaffAvailability,
@@ -53,18 +62,20 @@ const router = Router();
 // link can never be offered to someone the figures would refuse. Reaching this
 // handler IS the answer, which is why the body is a constant — there is nothing
 // to read and nothing to compute, and a non-staff caller never gets here.
-router.get("/studio/access", accountRateLimiter, requireStaff, (_req, res) => {
+router.get("/studio/access", studioRateLimiter, requireStaff, (_req, res) => {
   res.json(GetStudioAccessResponse.parse({ staff: true }));
 });
 
 // The internal studio dashboard's figures. `requireStaff` verifies the same
 // Supabase access token the customer portal uses and additionally requires the
 // signed-in email to be on the studio allowlist — 401 when not signed in, 403
-// when signed in as a customer. The account limiter is reused as a cheap brake
-// on the authorization surface, exactly as on `/account/overview`.
+// when signed in as a customer. Every route here carries `studioRateLimiter`
+// rather than the account one: past `requireStaff` the caller is an allowlisted
+// staff member, so the ceiling has to fit a few people USING the dashboard
+// (six reads a load, one write per queue decision) rather than deter a stranger.
 router.get(
   "/studio/analytics",
-  accountRateLimiter,
+  studioRateLimiter,
   requireStaff,
   async (_req, res) => {
     const analytics = await getStudioAnalytics();
@@ -84,7 +95,7 @@ router.get(
 // route that quietly doesn't exist.
 router.post(
   "/studio/tools/:tool",
-  accountRateLimiter,
+  studioRateLimiter,
   requireStaff,
   validate({ params: RunStudioToolParams, body: RunStudioToolBody }),
   async (_req, res) => {
@@ -105,7 +116,7 @@ router.post(
 // free-text field that has to match one of them exactly.
 router.get(
   "/studio/availability",
-  accountRateLimiter,
+  studioRateLimiter,
   requireStaff,
   async (_req, res) => {
     const schedule = await getStaffAvailability();
@@ -115,7 +126,7 @@ router.get(
 
 router.post(
   "/studio/availability",
-  accountRateLimiter,
+  studioRateLimiter,
   requireStaff,
   validate({ body: CreateStaffAvailabilityBody }),
   async (_req, res) => {
@@ -131,7 +142,7 @@ router.post(
 // the create path would have refused.
 router.put(
   "/studio/availability/:entryId",
-  accountRateLimiter,
+  studioRateLimiter,
   requireStaff,
   validate({
     params: UpdateStaffAvailabilityParams,
@@ -149,7 +160,7 @@ router.put(
 
 router.delete(
   "/studio/availability/:entryId",
-  accountRateLimiter,
+  studioRateLimiter,
   requireStaff,
   validate({ params: DeleteStaffAvailabilityParams }),
   async (_req, res) => {
@@ -169,7 +180,7 @@ router.delete(
 // the studio work. Read-only — the app never writes materials stock.
 router.get(
   "/studio/materials",
-  accountRateLimiter,
+  studioRateLimiter,
   requireStaff,
   async (_req, res) => {
     const overview = await getMaterialsOverview();
@@ -184,7 +195,7 @@ router.get(
 // everything else here.
 router.get(
   "/studio/reviews",
-  accountRateLimiter,
+  studioRateLimiter,
   requireStaff,
   async (_req, res) => {
     const queue = await getReviewQueue();
@@ -198,7 +209,7 @@ router.get(
 // `pending` and the review is back in the queue).
 router.put(
   "/studio/reviews/:reviewId/status",
-  accountRateLimiter,
+  studioRateLimiter,
   requireStaff,
   validate({
     params: SetStudioReviewStatusParams,
@@ -209,6 +220,41 @@ router.put(
     const { status } = res.locals.body as { status: ReviewModeration };
     const review = await setReviewModeration(reviewId, status);
     res.json(SetStudioReviewStatusResponse.parse(review));
+  },
+);
+
+// The customer-request queue — the other half of a loop the app has only ever
+// written to. Six kinds of request land in the shared contact inbox, and until
+// now actioning one meant reading it in Notion and re-typing its order number
+// into the tools above. Each row served here carries the tool that actions it
+// and the argument that tool needs.
+router.get(
+  "/studio/requests",
+  studioRateLimiter,
+  requireStaff,
+  async (_req, res) => {
+    const queue = await getRequestQueue();
+    res.json(ListStudioRequestsResponse.parse(queue));
+  },
+);
+
+// Move one request through the inbox. A PUT for the same reason the review
+// decision is one: the whole state is sent, and re-sending it changes nothing —
+// closing a request twice is one closed request, and `new` is how a row closed
+// in error is put back.
+router.put(
+  "/studio/requests/:requestId/state",
+  studioRateLimiter,
+  requireStaff,
+  validate({
+    params: SetStudioRequestStateParams,
+    body: SetStudioRequestStateBody,
+  }),
+  async (_req, res) => {
+    const { requestId } = res.locals.params as { requestId: string };
+    const { state } = res.locals.body as { state: RequestState };
+    const updated = await setRequestQueueState(requestId, state);
+    res.json(SetStudioRequestStateResponse.parse(updated));
   },
 );
 

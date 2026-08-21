@@ -421,6 +421,115 @@ export interface ReviewStatusRequest {
   status: ReviewModerationStatus;
 }
 
+/**
+ * What a customer is asking for, DERIVED from the row's `Request type` select rather than enumerated from it. Five kinds name the values the app writes; `other` is anything else — a blank select, or a type the atelier invented — so an unrecognized row appears in the queue asking to be looked at rather than vanishing from it.
+ *
+ * Newsletter opt-ins share the same database but are not a kind here: they are a consent record nobody answers, and are excluded from the queue entirely.
+ */
+export type StudioRequestKind = typeof StudioRequestKind[keyof typeof StudioRequestKind];
+
+
+export const StudioRequestKind = {
+  inquiry: 'inquiry',
+  'back-in-stock': 'back-in-stock',
+  measurement: 'measurement',
+  cancellation: 'cancellation',
+  return: 'return',
+  other: 'other',
+} as const;
+
+/**
+ * Where a request stands in the inbox, derived from its Notion `Stage`. `closed` is the only value that takes it off the queue, so a row with a blank or unrecognized stage reads as `new` — an untriaged request should appear rather than disappear.
+ */
+export type StudioRequestState = typeof StudioRequestState[keyof typeof StudioRequestState];
+
+
+export const StudioRequestState = {
+  new: 'new',
+  replied: 'replied',
+  closed: 'closed',
+} as const;
+
+/**
+ * Which internal tool to run. Each names an action the atelier used to trigger by opening a shared-secret link from Notion — or, for `restock-alert`, one that would have needed such a link.
+ */
+export type StudioTool = typeof StudioTool[keyof typeof StudioTool];
+
+
+export const StudioTool = {
+  milestones: 'milestones',
+  'invoice-lines': 'invoice-lines',
+  'status-email': 'status-email',
+  'cancellation-refund': 'cancellation-refund',
+  'return-refund': 'return-refund',
+  'restock-alert': 'restock-alert',
+} as const;
+
+/**
+ * The dashboard tool that actions this request, and the argument it needs. Present only where the app can action the request at all: the two refunds and the back-in-stock sweep. A measurement change is applied to the order by hand and an inquiry is answered by email, so neither carries one.
+ */
+export interface StudioRequestAction {
+  tool: StudioTool;
+  /** The order the tool should act on, read off the request. Absent when it couldn't be recovered — a row whose title was rewritten by hand, say — in which case the action is not offered at all rather than offered blank. */
+  orderNumber?: string;
+  /** The inventory item name, for a back-in-stock request. */
+  item?: string;
+}
+
+/**
+ * One customer request as the queue shows it — the row from the shared contact inbox, plus what can be done about it. Staff-only.
+ */
+export interface StudioRequest {
+  /** The request's Notion page id; also what a state change is addressed to. */
+  id: string;
+  kind: StudioRequestKind;
+  /** The `Request type` select exactly as Notion holds it, when set. Shown for a row the app reads as `other`, so "why is this here?" is answerable without opening Notion. */
+  rawType?: string;
+  /** The row's title, as the writer composed it. */
+  subject: string;
+  /** Who wrote it, when the request records a name (inquiries do). */
+  customerName?: string;
+  /** The address the request came from — how an inquiry or a measurement change is answered. Omitted on a row that carries none. */
+  email?: string;
+  /** A contact number, when the customer left one. */
+  phone?: string;
+  /** The request in full: the cancellation reason, the requested measurements, the return's kind and reason. Composed by the writer that filed it, and shown verbatim. */
+  message?: string;
+  /** The order the request concerns, for the order-scoped kinds. Absent on an inquiry or a back-in-stock ask, which concern no order. */
+  orderNumber?: string;
+  /** The piece being asked about (back-in-stock and returns). */
+  item?: string;
+  /** The size band a back-in-stock request named, when it named one. */
+  size?: string;
+  state: StudioRequestState;
+  /** The `Stage` select exactly as Notion holds it, when set. */
+  rawStage?: string;
+  /** When the request was filed (its Notion created time). */
+  submittedAt?: string;
+  action?: StudioRequestAction;
+  /** The request's page in Notion, for everything this queue doesn't show — the linked order, the client record, the atelier's own notes. */
+  notionUrl?: string;
+}
+
+/**
+ * The request queue: what is still open, and the recently closed rows for reference.
+ */
+export interface StudioRequestList {
+  /** Still waiting, OLDEST first — the queue proper. Anything not closed counts, including a row whose stage was never set. */
+  open: StudioRequest[];
+  /** Recently closed, newest first. Capped — it is a record of what was worked down, not a second queue. */
+  closed: StudioRequest[];
+  /** True when there are more open requests than one read covers, so the queue says it is partial instead of looking complete. */
+  truncated?: boolean;
+}
+
+/**
+ * The state to record against a request.
+ */
+export interface RequestStateRequest {
+  state: StudioRequestState;
+}
+
 export interface NewContactRequest {
   /** @minLength 1 */
   name: string;
@@ -1201,21 +1310,6 @@ export const StudioToolRunStatus = {
   ok: 'ok',
   noop: 'noop',
   attention: 'attention',
-} as const;
-
-/**
- * Which internal tool to run. Each names an action the atelier used to trigger by opening a shared-secret link from Notion — or, for `restock-alert`, one that would have needed such a link.
- */
-export type StudioTool = typeof StudioTool[keyof typeof StudioTool];
-
-
-export const StudioTool = {
-  milestones: 'milestones',
-  'invoice-lines': 'invoice-lines',
-  'status-email': 'status-email',
-  'cancellation-refund': 'cancellation-refund',
-  'return-refund': 'return-refund',
-  'restock-alert': 'restock-alert',
 } as const;
 
 /**
