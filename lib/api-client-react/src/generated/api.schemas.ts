@@ -449,6 +449,8 @@ export interface MaterialsOverview {
   totalCount: number;
   /** False when the materials database isn't wired up, in which case the lists are empty and the panel says why instead of rendering an empty list that reads as "all good". */
   configured: boolean;
+  /** True when the database id IS set but Notion answered 404 — the integration has not been shared with the database, or the id is wrong. The lists are empty and the panel says what to fix; reported rather than thrown because it is a configuration state only a human can clear, not an outage worth erroring the panel over. Absent when the read worked. */
+  unreachable?: boolean;
 }
 
 /**

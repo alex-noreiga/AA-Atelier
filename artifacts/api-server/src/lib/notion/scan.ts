@@ -18,6 +18,7 @@
 //     here rather than being copy-pasted (and drifting) three times.
 
 import type { NotionClient } from "./client.js";
+import { notionRequestError } from "./errors.js";
 import { logger } from "../logger.js";
 
 /** Safety ceiling on a full-database scan: 100 pages × 100 rows = 10,000 rows. */
@@ -56,7 +57,13 @@ export async function scanDatabase<TRow>(
     );
 
     if (!response.ok) {
-      throw new Error(`Notion query failed with status ${response.status}`);
+      // `label` and the id ride the error: a scan that fails is read by whoever
+      // opens the alert email, and "status 404" alone tells them nothing about
+      // which database to go and share.
+      throw await notionRequestError(response, {
+        label,
+        databaseId: client.databaseId,
+      });
     }
 
     const data = (await response.json()) as NotionPagedResponse<TRow>;

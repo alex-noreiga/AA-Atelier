@@ -1870,7 +1870,16 @@ and `web-app/src/components/studio-materials.tsx`. Load-bearing decisions:
    usual 60s TTL + fall-back-to-stale-on-error, so a Notion blip degrades to
    slightly stale numbers rather than an empty shopping list. An unset
    `NOTION_MATERIALS_DATABASE_ID` returns `configured: false` with empty lists and
-   the panel **says so** — never an empty list that reads as "all good".
+   the panel **says so** — never an empty list that reads as "all good". A Notion
+   **404** (the id is set but the integration was never shared with the database,
+   or the id is wrong) degrades the same way, flagged `unreachable: true` with the
+   sharing fix in the panel: it is the same kind of state as an unset id — one only
+   a human can clear — so 500-ing the panel and alerting the inbox on every
+   dashboard load was the wrong shape. Any **other** status still throws (an outage
+   clears itself and is worth the one alert). The 404 is told apart by
+   `NotionRequestError` (`lib/notion/errors.ts`), which `scanDatabase` now throws
+   with the database's label, its id, and Notion's own `code`/`message` — "Notion
+   query failed with status 404" alone named neither the database nor the fix.
 
 The atelier's one-time setup: share the Notion integration with **materials
 inventory** and set **`NOTION_MATERIALS_DATABASE_ID`**. Nothing to add in Notion —
@@ -3540,6 +3549,33 @@ full detail in `.agents/memory/phase2-workspace-crm-archive-markers.md`.
   ids). The curated views hide them; the collapsed "🔧 System" property group is a UI-only
   runbook step (property groups aren't API-reachable).
 
+### The Studio Operations home page (Notion, linked views only)
+
+**🧭 Studio Operations** is the atelier's daily Notion page — a child of
+**{ A.A. Atelier }** and the first entry in its Navigation callout — gathering the four
+things that need working down: **orders due**, **milestones running late**, **new
+reviews**, and **open requests**. It is **linked views only**: no code, no property, no
+env var, and **no change to any source database or its own views**. Full detail, live ids
+and the verification notes are in `.agents/memory/studio-operations-page.md`.
+
+Three things about it are load-bearing:
+
+- **It reads and edits rows; `/studio` acts.** Figures, refunds, the review queue and the
+  five tools stay on the website dashboard, which is the only place money moves. The
+  Notion page is deliberately the surface for editing the rows themselves, and says so in
+  its own copy so the two don't drift into competing dashboards.
+- **Nothing filters on a date being "before today", and nothing filters on
+  `Milestone Status`.** The view DSL accepts `< "today"` and then matches **zero rows**
+  without erroring, and a filter on the rollup-derived `Milestone Status` formula compiles
+  to an untypeable `every` shape — the view-filter face of the API-query 400 in
+  `phase2-workspace-cards.md`. So the milestones section **sorts** by target date and
+  shows `Milestone Status` as a column to read by eye. Don't "fix" this by adding either
+  filter; verify any new filter by querying the view back before trusting it.
+- **Six option names are baked into its filters** — the order Stage `Delivered`, the
+  review statuses `Published` / `Archived` / `Rejected`, and the request `Stage`=`Closed`
+  / `Request type`=`Newsletter`. A Notion rename makes rows silently appear or vanish
+  there, exactly as it does to the matching constants in code.
+
 ## Quick reference — where things live
 
 | I want to…                                               | Go to                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                         |
@@ -3561,6 +3597,7 @@ full detail in `.agents/memory/phase2-workspace-crm-archive-markers.md`.
 | Change review moderation on the dashboard                | `web-app/src/components/studio-reviews.tsx` (rendered by `pages/studio.tsx`); `services/studio-reviews.service.ts` + the `/studio/reviews` handlers in `routes/studio.ts` + the moderation half of `lib/notion/reviews.{schema,repository}.ts`                                                                                                                                                                                                                                                                                                                                                                                                                                                |
 | Change post-delivery review capture                      | `artifacts/web-app/src/components/review-dialog.tsx` (opened from `components/custom-order-result.tsx` for delivered orders); `api-server/src/services/review.service.ts` + `services/delivery.ts` + `routes/orders.ts` + `lib/notion/reviews.{blocks,repository}.ts` (writes to the **Reviews** database)                                                                                                                                                                                                                                                                                                                                                                                    |
 | Change the published testimonials                        | `artifacts/web-app/src/components/testimonials.tsx` (rendered by `pages/home.tsx` + `pages/about.tsx`); `getPublishedReviews` in `api-server/src/services/review.service.ts` + `routes/reviews.ts` + `lib/notion/reviews.schema.ts`                                                                                                                                                                                                                                                                                                                                                                                                                                                           |
+| Change the studio's daily Notion ops page                | The **🧭 Studio Operations** page under **{ A.A. Atelier }** — four linked views over Custom Orders / Production Schedule / Reviews / Website Contact Messages; no code; see `.agents/memory/studio-operations-page.md`                                                                                                                                                                                                                                                                                                                                                                                                                                                                       |
 | Curate which reviews show on the site                    | The **Reviews** Notion database's saved views (Curate / Live on the site / Awaiting curation / Published but not showing) — no code; see `.agents/memory/reviews-curation-views.md`                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                           |
 | Change order cancellation & refunds                      | `artifacts/web-app/src/components/cancellation-request-dialog.tsx` (rendered by `components/custom-order-result.tsx` + `shop-order-result.tsx`); customer request in `api-server/src/services/cancellation.service.ts` + `routes/orders.ts` + `routes/shop-orders.ts` + `lib/notion/cancellation.{blocks,repository}.ts` (writes to the **contact** database); atelier refund in `services/order-cancellation.service.ts` + the `cancellation-refund` studio tool (`services/studio-tools.service.ts`) + the `Cancelled`/`setOrderCancelled`/`setShopOrderCancelled` writers                                                                                                                  |
 | Change the landing page                                  | `artifacts/web-app/src/pages/home.tsx`                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                        |
