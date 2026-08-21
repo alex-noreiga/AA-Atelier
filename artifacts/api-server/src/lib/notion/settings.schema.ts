@@ -12,8 +12,12 @@
 
 export const SETTING_KEY_PROPERTY = "Setting"; // title — the setting key
 export const SETTING_VALUE_PROPERTY = "Value"; // rich_text — the setting value
+// rich_text — a human note the app never READS, but does seed when the dashboard
+// creates a row, so a key added from the editor documents itself in Notion.
+export const SETTING_DESCRIPTION_PROPERTY = "Description";
 
 export interface NotionSettingsPage {
+  id?: string;
   properties: {
     Setting?: { type: "title"; title: Array<{ plain_text: string }> };
     Value?: { type: "rich_text"; rich_text: Array<{ plain_text: string }> };
@@ -50,4 +54,28 @@ export function extractSettings(
     settings.set(key, valueText(page));
   }
   return settings;
+}
+
+/** One settings row as the dashboard sees it: the Notion page id (so a value can
+ * be written back to the row that already exists rather than a second one), the
+ * key as typed, and the value. Unlike the map above this keeps EVERY row —
+ * including one whose key isn't a setting the app reads, which is the whole
+ * point: a mistyped key is invisible in the map and is exactly what the editor
+ * has to be able to show. */
+export interface SettingRow {
+  pageId: string;
+  key: string;
+  value: string;
+}
+
+/** Every row in the settings database, in Notion's order. Rows with a blank key
+ * are skipped — there is nothing to show and nothing to match. */
+export function extractSettingRows(pages: NotionSettingsPage[]): SettingRow[] {
+  const rows: SettingRow[] = [];
+  for (const page of pages) {
+    const key = titleText(page);
+    if (!key) continue;
+    rows.push({ pageId: page.id ?? "", key, value: valueText(page) });
+  }
+  return rows;
 }
