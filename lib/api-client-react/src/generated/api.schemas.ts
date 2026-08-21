@@ -491,6 +491,104 @@ export interface StudioReview {
 }
 
 /**
+ * What shape the value is, so the editor can render the right input and say what it expects.
+ */
+export type StudioSettingKind = typeof StudioSettingKind[keyof typeof StudioSettingKind];
+
+
+export const StudioSettingKind = {
+  number: 'number',
+  integer: 'integer',
+  percent: 'percent',
+  money: 'money',
+  text: 'text',
+  email: 'email',
+  timezone: 'timezone',
+  palette: 'palette',
+} as const;
+
+/**
+ * Which of the three layers the effective value came from. `default` also covers a configured-but-unusable value (see `ignoredValue`), because that is what the app does with one — it does NOT fall through to the next layer down.
+ */
+export type SettingSource = typeof SettingSource[keyof typeof SettingSource];
+
+
+export const SettingSource = {
+  notion: 'notion',
+  environment: 'environment',
+  default: 'default',
+} as const;
+
+/**
+ * One atelier-editable setting, resolved. The key is the name of its environment variable and of its Notion row's `Setting` title — that identity 1:1 across all three is what keeps them from ever meaning different things.
+ */
+export interface StudioSetting {
+  /** The setting's name, identical to its environment variable. */
+  key: string;
+  /** The setting's name in the atelier's terms. */
+  label: string;
+  /** The section the editor shows this under. */
+  group: string;
+  /** What shape the value is, so the editor can render the right input and say what it expects. */
+  kind: StudioSettingKind;
+  /** What the setting does, and what changing it affects. */
+  description: string;
+  /** What the Notion row holds. Absent when there is no row for this key, or its Value is blank (which reads as unset everywhere). */
+  notionValue?: string;
+  /** What the environment variable holds. Absent when it isn't set. These are non-secret tunables by definition — secrets are deliberately not settings. */
+  envValue?: string;
+  /** The built-in fallback, as text. Empty when the fallback isn't a value at all — an unset studio inbox means the notification is skipped, not sent somewhere else. */
+  defaultValue: string;
+  /** How to phrase the fallback when `defaultValue` alone doesn't say it, e.g. "The studio inbox above". */
+  defaultLabel?: string;
+  /** The value the app is using right now. */
+  effectiveValue: string;
+  source: SettingSource;
+  /** Present when a value IS configured but the app can't use it, so the default is in force instead. This is the silent failure the editor exists to surface; in Notion the row looks entirely normal. */
+  ignoredValue?: string;
+  /** Lower bound for a numeric setting. */
+  min?: number;
+  /** Upper bound for a numeric setting. */
+  max?: number;
+  /** Step for a numeric input. */
+  step?: number;
+  /** The unit shown beside the input, e.g. "days" or "%". */
+  unit?: string;
+  /** An example value, shown when the field is empty. */
+  placeholder?: string;
+}
+
+/**
+ * A row in the settings database whose key isn't a setting the app reads — so nothing has ever read it, and nothing ever will. Listing it is the only way a mistyped key is visible anywhere.
+ */
+export interface UnknownSettingRow {
+  /** The key as typed in the Notion row. */
+  key: string;
+  /** What that row holds, when it holds anything. */
+  value?: string;
+  /** The setting this was probably meant to be, when one is within a typo or two of it. Absent when nothing is close. */
+  suggestion?: string;
+}
+
+/**
+ * Every setting the app reads, plus any row that isn't one.
+ */
+export interface StudioSettingsOverview {
+  /** Whether a Studio Settings database is connected. False ⇒ every value comes from the environment or a default and nothing can be edited here — which is a state only a human can clear, so the editor says so rather than offering a Save with nowhere to write. */
+  configured: boolean;
+  settings: StudioSetting[];
+  unknownRows: UnknownSettingRow[];
+}
+
+/**
+ * The value to save. An empty string clears the setting, handing it back to its environment variable or built-in default.
+ */
+export interface StudioSettingRequest {
+  /** @maxLength 2000 */
+  value: string;
+}
+
+/**
  * The moderation queue: the pending reviews the atelier still owes a decision, and the decided ones for reference, newest first in both cases.
  */
 export interface StudioReviewList {

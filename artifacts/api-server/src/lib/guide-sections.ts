@@ -41,6 +41,7 @@ export const GUIDE_SECTIONS: readonly GuideSection[] = [
   { id: "materials", label: "Materials" },
   { id: "reviews", label: "Reviews" },
   { id: "availability", label: "Working hours" },
+  { id: "settings", label: "Studio settings" },
   { id: "milestones", label: "Reconcile production milestones" },
   { id: "invoice-lines", label: "Itemize an invoice" },
   { id: "status-email", label: "Send a status update" },

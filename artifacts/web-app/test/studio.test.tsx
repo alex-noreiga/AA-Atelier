@@ -38,9 +38,10 @@ vi.mock("@/lib/auth-context", () => ({
 vi.mock("@workspace/api-client-react", () => ({
   useGetStudioAnalytics: vi.fn(),
   getGetStudioAnalyticsQueryKey: () => ["studio-analytics"],
-  // The materials panel, the moderation queue, the internal tools panel, and
-  // the working-hours editor ride along at the bottom of the dashboard; each
-  // has its own test file, so here they just need inert hooks to render.
+  // The materials panel, the moderation queue, the settings editor, the
+  // internal tools panel, and the working-hours editor ride along at the bottom
+  // of the dashboard; each has its own test file, so here they just need inert
+  // hooks to render.
   useRunStudioTool: () => ({ mutate: vi.fn(), isPending: false }),
   useListStaffAvailability: () => ({
     data: { entries: [], staff: [] },
@@ -80,6 +81,14 @@ vi.mock("@workspace/api-client-react", () => ({
     error: null,
   }),
   getGetStudioMaterialsQueryKey: () => ["studio-materials"],
+  useGetStudioSettings: () => ({
+    data: { configured: true, settings: [], unknownRows: [] },
+    isLoading: false,
+    isError: false,
+    error: null,
+  }),
+  useSetStudioSetting: () => ({ mutate: vi.fn(), isPending: false }),
+  getGetStudioSettingsQueryKey: () => ["studio-settings"],
 }));
 
 // The 403 panel offers a Google re-sign-in, which drives supabase-js directly.

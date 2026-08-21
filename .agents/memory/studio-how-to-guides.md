@@ -39,7 +39,13 @@ sandboxed frame beside whatever that section names.
 
 ## Load-bearing decisions
 
-0. **Listing and content are separate operations — this was a correction.** The
+1. **The vocabulary tracks the dashboard's panels.** A section exists for each
+   of the six tools and each panel — including `settings`, added when the studio
+   settings editor landed on `main` mid-branch. A new panel that never gets a
+   section is a panel no guide can be filed against, so adding one is part of
+   adding a panel.
+
+2. **Listing and content are separate operations — this was a correction.** The
    first cut inlined every guide's markup into the listing, so the dashboard
    downloaded the studio's entire manual on every load in order to render a
    column of collapsed one-line summaries. Three problems, one cause: the
@@ -51,13 +57,13 @@ sandboxed frame beside whatever that section names.
    guide on. Fetching per guide on open fixes all three, and makes the per-file
    cap the only cap needed. Don't merge them back.
 
-1. **The app stores no guide content, and has no editor.** A guide is a file
+3. **The app stores no guide content, and has no editor.** A guide is a file
    attached to a Notion row; revising it is replacing the file. That is the
    whole justification for the feature — a procedure that needs an engineer to
    correct is a procedure that stays wrong. It is also why there is no
    "create guide" write path: adding one is adding a Notion row.
 
-2. **The sandbox IS the sanitizer, and it is not optional.** The markup is a
+4. **The sandbox IS the sanitizer, and it is not optional.** The markup is a
    file somebody uploaded, rendered on an origin that holds a signed-in staff
    session — including the Supabase access token in `localStorage` that the
    whole studio surface is gated on. It goes into an `<iframe srcDoc>` whose
@@ -75,7 +81,7 @@ sandboxed frame beside whatever that section names.
    - `web-app/test/studio-guides.test.tsx` asserts the two absent tokens, so
      adding one fails CI rather than a review.
 
-3. **Section resolution FAILS OPEN.** `resolveGuideSection` matches the row's
+5. **Section resolution FAILS OPEN.** `resolveGuideSection` matches the row's
    `Section` against the served vocabulary — id or label, ignoring case, spacing
    and punctuation — and falls back to `general` for anything blank or
    unrecognized. A guide is something the atelier sat down and wrote; misfiling
@@ -84,18 +90,18 @@ sandboxed frame beside whatever that section names.
    recoverable, whereas a guide that silently isn't there is indistinguishable
    from one nobody wrote.)
 
-4. **A tool id IS a section id.** The six section ids for tools are the same
+6. **A tool id IS a section id.** The six section ids for tools are the same
    strings as `StudioToolName`, so `<GuidesFor section={spec.tool} />` inside
    the tool card needs no mapping table and can't drift from the tool list.
 
-5. **The vocabulary is served, not duplicated.** Like `GET /services`, the
+7. **The vocabulary is served, not duplicated.** Like `GET /services`, the
    catalog is code (it's coupled to what the page renders, so it can't be a live
    Notion read) but both sides need it — the atelier picks a `Section`, the
    dashboard decides where the guide goes. It rides on every response even when
    no guide is filed against it, because the accepted values are otherwise only
    discoverable by reading `lib/guide-sections.ts`.
 
-6. **A guide is never dropped, only explained.** No file yet, a pasted link
+8. **A guide is never dropped, only explained.** No file yet, a pasted link
    where an upload was needed, a PDF filed as a guide, an oversized file, a
    failed download — each is reported with `unavailable` saying which, and
    listed. Same reasoning as the materials panel's untracked list: a guide that
@@ -104,7 +110,7 @@ sandboxed frame beside whatever that section names.
    (`staticUnavailability`, shared by both halves so they can't disagree), so a
    broken guide reads as broken before anyone opens it and is never requested.
 
-7. **The download is bounded three ways.** `MAX_GUIDE_BYTES` is 2 MB — sized for
+9. **The download is bounded three ways.** `MAX_GUIDE_BYTES` is 2 MB — sized for
    the guide the atelier will actually write, an HTML export with its
    screenshots base64-inlined — checked against `Content-Length` first (so an
    oversized file is refused without being pulled down) **and as the body
@@ -118,38 +124,38 @@ sandboxed frame beside whatever that section names.
    reported, never truncated: half a procedure that stops mid-sentence is worse
    than one that says why it isn't here.
 
-8. **Only an UPLOAD is fetched, never a pasted link.** A Notion `files` property
-   holds either; the review-photo reader accepts both and this must not. The
-   server returns what it downloads, so accepting `external` would let anyone
-   with **edit access to the guides database** — a Notion permission, not
-   membership of `STUDIO_STAFF_EMAILS` — aim a server-side GET at an address of
-   their choosing and read the answer on the dashboard. The two groups mostly
-   overlap; "mostly" is not a security boundary. `GuideAttachment` is a
-   discriminated union, so the fetchable URL exists only on the `upload` variant
-   and the compiler is what enforces it; a pasted link is reported as
-   `not-uploaded` rather than silently ignored, and its URL never leaves
-   `guides.schema.ts`.
+10. **Only an UPLOAD is fetched, never a pasted link.** A Notion `files` property
+    holds either; the review-photo reader accepts both and this must not. The
+    server returns what it downloads, so accepting `external` would let anyone
+    with **edit access to the guides database** — a Notion permission, not
+    membership of `STUDIO_STAFF_EMAILS` — aim a server-side GET at an address of
+    their choosing and read the answer on the dashboard. The two groups mostly
+    overlap; "mostly" is not a security boundary. `GuideAttachment` is a
+    discriminated union, so the fetchable URL exists only on the `upload` variant
+    and the compiler is what enforces it; a pasted link is reported as
+    `not-uploaded` rather than silently ignored, and its URL never leaves
+    `guides.schema.ts`.
 
-9. **HTML is decided on the file NAME.** Notion's storage host serves
-   everything as a generic binary type, so there is no content type to trust. A
-   `.pdf` would decode to mojibake and render as a page of noise; it is reported
-   as `not-html` so the atelier can see it needs converting.
+11. **HTML is decided on the file NAME.** Notion's storage host serves
+    everything as a generic binary type, so there is no content type to trust. A
+    `.pdf` would decode to mojibake and render as a page of noise; it is reported
+    as `not-html` so the atelier can see it needs converting.
 
-10. **The signed URL never leaves the server.** Notion file URLs expire in about
+12. **The signed URL never leaves the server.** Notion file URLs expire in about
     an hour (same as the review photos). Handing one to the browser would mean a
     cached response rotting into a dead link, and a credential-bearing URL on
     the page. The server downloads the markup and serves that — and re-reads the
     row on open rather than trusting a listing whose URLs may have expired
     since.
 
-11. **The listing is cached 60s; markup is not.** The listing is one Notion
+13. **The listing is cached 60s; markup is not.** The listing is one Notion
     query, cached like every other live read here — which is also how long after
     editing a row the dashboard takes to show it — falling back to the cached
     result on a later failure, because stale guides are still the right
     procedures. Markup is fetched on demand and held by the browser's query
     cache while the guide is open, so replacing a file shows on the next open.
 
-12. **An unreachable database is reported, not thrown — and is its OWN state.**
+14. **An unreachable database is reported, not thrown — and is its OWN state.**
     The id set but the integration never shared 404s every query. Left as a
     throw that is a permanent 500 **plus an alert email on every dashboard
     load**, for the single likeliest setup mistake and a configuration state
