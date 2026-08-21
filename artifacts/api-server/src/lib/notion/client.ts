@@ -61,6 +61,7 @@ let contactClient: NotionClient | null = null;
 let inventoryClient: NotionClient | null = null;
 let productCategoriesClient: NotionClient | null = null;
 let shopOrdersClient: NotionClient | null = null;
+let orderLinesClient: NotionClient | null = null;
 let productionScheduleClient: NotionClient | null = null;
 let clientCrmClient: NotionClient | null = null;
 let invoicesClient: NotionClient | null = null;
@@ -144,6 +145,25 @@ export function getShopOrdersNotionClient(): NotionClient {
     });
   }
   return shopOrdersClient;
+}
+
+/**
+ * Client for the "order lines" database — one row per purchased item on a shop
+ * order, which is what makes the inventory's `Units Sold (auto)` rollup (and so
+ * `Quantity Available`) move when something sells. Same lazy construction, reads
+ * `NOTION_ORDER_LINES_DATABASE_ID`. Optional: when the env var is unset the
+ * client's `databaseId` is empty and the repository treats that as "not
+ * configured", so a paid order is recorded exactly as it was before lines
+ * existed — stock just doesn't decrement.
+ */
+export function getOrderLinesNotionClient(): NotionClient {
+  if (!orderLinesClient) {
+    orderLinesClient = createNotionClient({
+      apiKey: process.env.NOTION_API_KEY ?? "",
+      databaseId: process.env.NOTION_ORDER_LINES_DATABASE_ID ?? "",
+    });
+  }
+  return orderLinesClient;
 }
 
 /**

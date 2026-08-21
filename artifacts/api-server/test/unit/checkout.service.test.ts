@@ -9,6 +9,15 @@ vi.mock("../../src/lib/notion/shop-orders.repository.js", () => ({
   findOrderBySessionId: vi.fn(),
   createShopOrder: vi.fn(),
 }));
+// Order lines are the shop's inventory decrement, written best-effort right
+// after the order page. Mocking the REPOSITORY (not the service) keeps the real
+// Stripe-line -> line mapping under test while touching no Notion. Cleared
+// mocks make `orderLinesConfigured` falsy by default, i.e. "not configured",
+// which is the pre-lines behavior every other test in this file expects.
+vi.mock("../../src/lib/notion/order-lines.repository.js", () => ({
+  createOrderLine: vi.fn(),
+  orderLinesConfigured: vi.fn(),
+}));
 // The CRM upsert is a best-effort side effect on the webhook path; mock it so
 // the tests drive the link/skip/failure branches without touching Notion.
 vi.mock("../../src/lib/notion/clients.repository.js", () => ({
@@ -39,6 +48,10 @@ import {
   findOrderBySessionId,
 } from "../../src/lib/notion/shop-orders.repository.js";
 import { upsertClientByEmail } from "../../src/lib/notion/clients.repository.js";
+import {
+  createOrderLine,
+  orderLinesConfigured,
+} from "../../src/lib/notion/order-lines.repository.js";
 import { sendEmailBestEffort } from "../../src/lib/resend/send.js";
 import { runPaidOrderRewards } from "../../src/services/rewards.service.js";
 import type { VariantRecord } from "../../src/lib/notion/products.schema.js";
@@ -49,6 +62,8 @@ const mockListVariants = vi.mocked(listVariants);
 const mockFind = vi.mocked(findOrderBySessionId);
 const mockCreate = vi.mocked(createShopOrder);
 const mockUpsertClient = vi.mocked(upsertClientByEmail);
+const mockCreateOrderLine = vi.mocked(createOrderLine);
+const mockOrderLinesConfigured = vi.mocked(orderLinesConfigured);
 const mockSend = vi.mocked(sendEmailBestEffort);
 const mockRewards = vi.mocked(runPaidOrderRewards);
 
@@ -238,11 +253,13 @@ describe("createCheckoutSession", () => {
       [{ variantId: "v1", size: "Adult S", quantity: 1 }],
       stripe,
     );
+    // The size rides on the metadata as well as the display name, so the
+    // webhook can band the order line without parsing it back out of a string.
     expect(
       create.mock.calls[0][0].line_items[0].price_data.product_data,
     ).toEqual({
       name: "Keyhole Dress — Adult S",
-      metadata: { variantId: "v1" },
+      metadata: { variantId: "v1", size: "Adult S" },
     });
   });
 
@@ -583,6 +600,86 @@ describe("recordPaidOrder", () => {
       "inv-b",
     ]);
     delete process.env.NOTION_RELATION_LINKS;
+  });
+
+  // Writing these line rows IS the stock decrement: the inventory's
+  // `Units Sold (auto)` rollup sums them through each line's `Item` relation.
+  it("writes one order line per purchased item so inventory decrements", async () => {
+    mockFind.mockResolvedValue(false);
+    mockCreate.mockResolvedValue("order-page");
+    mockOrderLinesConfigured.mockReturnValue(true);
+    const fullSession = {
+      id: "cs_lines",
+      payment_status: "paid",
+      line_items: {
+        data: [
+          {
+            description: "Keyhole Dress — Adult S",
+            quantity: 2,
+            amount_subtotal: 24000,
+            price: {
+              unit_amount: 12000,
+              product: { metadata: { variantId: "inv-a", size: "Adult S" } },
+            },
+          },
+          {
+            description: "Blade Towel",
+            quantity: 1,
+            amount_subtotal: 1200,
+            price: {
+              unit_amount: 1200,
+              product: { metadata: { variantId: "inv-b" } },
+            },
+          },
+        ],
+      },
+    } as unknown as Stripe.Checkout.Session;
+    const { stripe, retrieve } = fakeStripe();
+    retrieve.mockResolvedValue(fullSession);
+
+    await recordPaidOrder(
+      { id: "cs_lines" } as Stripe.Checkout.Session,
+      stripe,
+    );
+
+    expect(mockCreateOrderLine).toHaveBeenCalledTimes(2);
+    expect(mockCreateOrderLine).toHaveBeenCalledWith({
+      orderPageId: "order-page",
+      itemPageId: "inv-a",
+      name: "Keyhole Dress — Adult S",
+      quantity: 2,
+      unitPrice: 120,
+      size: "Adult S",
+    });
+    expect(mockCreateOrderLine).toHaveBeenCalledWith({
+      orderPageId: "order-page",
+      itemPageId: "inv-b",
+      name: "Blade Towel",
+      quantity: 1,
+      unitPrice: 12,
+    });
+  });
+
+  it("records the order without lines when the order-lines database is unset", async () => {
+    mockFind.mockResolvedValue(false);
+    mockOrderLinesConfigured.mockReturnValue(false);
+    const fullSession = {
+      id: "cs_nolines",
+      payment_status: "paid",
+      line_items: {
+        data: [{ price: { product: { metadata: { variantId: "inv-a" } } } }],
+      },
+    } as unknown as Stripe.Checkout.Session;
+    const { stripe, retrieve } = fakeStripe();
+    retrieve.mockResolvedValue(fullSession);
+
+    await recordPaidOrder(
+      { id: "cs_nolines" } as Stripe.Checkout.Session,
+      stripe,
+    );
+
+    expect(mockCreate).toHaveBeenCalled();
+    expect(mockCreateOrderLine).not.toHaveBeenCalled();
   });
 
   it("omits the inventory relation when the gate is off, even with metadata present", async () => {

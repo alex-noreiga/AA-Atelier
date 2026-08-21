@@ -27,6 +27,10 @@ import { writeOrderIndex } from "../lib/db/order-index.repository.js";
 import { runPaidOrderRewards } from "./rewards.service.js";
 import { relationLinksEnabled } from "./request-links.js";
 import {
+  purchasedLinesFromSession,
+  recordShopOrderLines,
+} from "./order-lines.service.js";
+import {
   generateShopOrderNumber,
   formatShippingAddress,
 } from "../lib/notion/shop-orders.blocks.js";
@@ -156,11 +160,12 @@ function toLineItem(
     }
   }
 
-  // Cap the requested quantity at the live stock count. Inventory is manual and
-  // never decrements (see CLAUDE.md), so this is the only guard against a stale
-  // or tampered cart over-ordering a limited item. A null/undefined count is an
-  // uncapped one-off — mirrors computeVariantAvailability treating null as
-  // available. A zero count is already rejected above by the `available` check.
+  // Cap the requested quantity at the live stock count. Stock decrements only
+  // once payment lands (the webhook writes the order lines the inventory rollup
+  // sums), and nothing is reserved in between, so this is the only guard against
+  // a stale or tampered cart over-ordering a limited item. A null/undefined
+  // count is an uncapped one-off — mirrors computeVariantAvailability treating
+  // null as available. A zero count is already rejected by the `available` check.
   if (
     typeof variant.quantityAvailable === "number" &&
     item.quantity > variant.quantityAvailable
@@ -185,9 +190,18 @@ function toLineItem(
       // Stamp the inventory row's Notion page id (`variantId === page id`, see
       // products.schema.ts) onto the ad-hoc product's metadata. Stripe drops the
       // id from the returned line item otherwise, so this is how the webhook
-      // recovers which inventory row each purchased line is, to relate the shop
-      // order back to inventory (roadmap: "relate shop orders to inventory rows").
-      product_data: { name, metadata: { variantId: item.variantId } },
+      // recovers which inventory row each purchased line is — to relate the shop
+      // order back to inventory (roadmap: "relate shop orders to inventory rows")
+      // and to write the order line that decrements its stock. The size rides
+      // along for the line's `Size` band; it's already in `name`, but parsing it
+      // back out of a display string would be guesswork.
+      product_data: {
+        name,
+        metadata: {
+          variantId: item.variantId,
+          ...(item.size ? { size: item.size } : {}),
+        },
+      },
     },
   };
 }
@@ -437,23 +451,17 @@ export async function recordPaidOrder(
 /**
  * Recover the deduped inventory (Notion page) ids purchased on a session, from
  * the `variantId` metadata stamped on each line's product at checkout (see
- * `toLineItem`). Lines with no such metadata (e.g. a legacy session created
- * before this shipped) are skipped, so an empty array means "nothing to relate".
+ * `toLineItem`). Derived from the same `purchasedLinesFromSession` the order
+ * lines are built from, so the order's `Inventory Items` relation and its line
+ * rows can never disagree about which inventory rows it touched. Lines with no
+ * such metadata (e.g. a legacy session created before this shipped) are skipped,
+ * so an empty array means "nothing to relate".
  */
 function resolvePurchasedInventoryIds(
   session: Stripe.Checkout.Session,
 ): string[] {
-  const ids = new Set<string>();
-  for (const line of session.line_items?.data ?? []) {
-    const product = line.price?.product;
-    // `product` is only an object when expanded (and not deleted); its metadata
-    // carries the inventory page id. A string id or a deleted product yields none.
-    if (product && typeof product === "object" && "metadata" in product) {
-      const variantId = product.metadata?.variantId;
-      if (variantId) ids.add(variantId);
-    }
-  }
-  return [...ids];
+  const { lines } = purchasedLinesFromSession(session);
+  return [...new Set(lines.map((line) => line.itemPageId))];
 }
 
 /**
@@ -520,6 +528,14 @@ async function processPaidShopOrder(
     clientPageId,
     itemPageIds,
   );
+
+  // The shop's inventory decrement: one Notion "order lines" row per purchased
+  // item, which is what moves the inventory's `Units Sold (auto)` rollup and so
+  // its `Quantity Available`. Best-effort and never throwing (a throw would 500
+  // the webhook and make Stripe redeliver into the dedupe guard, losing the
+  // lines anyway); no-ops when the order-lines database isn't configured. See
+  // services/order-lines.service.ts.
+  await recordShopOrderLines(full, notionPageId);
 
   // Best-effort: index the shop order in Postgres for the account portal's
   // reliable order discovery. Notion is the record; a PG hiccup must never fail

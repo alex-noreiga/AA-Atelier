@@ -555,10 +555,15 @@ Load-bearing points:
    Custom-order payments don't use `processed_payments` — `recordPayment` is
    idempotent via the Notion invoice write alone.
 
-4. **Inventory is manual for v1.** A sale does not decrement Notion stock — the
-   atelier adjusts it by hand. `Quantity Available` is a Notion **formula** and
-   can't be written; auto-decrement would need a new writable count property plus
-   reservation logic. Don't wire it up without that.
+4. **Stock decrements by WRITING ROWS, not by writing a number.** A paid order
+   writes one **"order lines"** row per purchased item (`Item` relation → the
+   inventory row, plus `Qty`, `Unit Price` and `Size`), and the atelier's
+   existing rollups do the arithmetic: inventory's **`Units Sold (auto)`** sums
+   each line's `Counts Toward Sold` formula (its `Qty`, unless the parent order
+   is `Voided`) through that relation, and **`Quantity Available`** subtracts it.
+   That indirection is the whole design — `Quantity Available` is a Notion
+   **formula** and can't be written, so the line row is the only thing there is
+   to write. See "Automatic shop inventory decrement" below.
 
 5. **Shipping rates live in Stripe, not code.** `checkout.service` reads
    `STRIPE_SHIPPING_RATE_IDS` (comma-separated `shr_…` ids the atelier creates and
@@ -645,6 +650,80 @@ One-time setup: create the "Shop Orders" Notion database (properties in
 `shop-orders.blocks.ts`, including the `Order Number` rich_text property) and share
 the integration with it. Local testing uses Stripe test-mode keys +
 `stripe listen --forward-to localhost:3000/api/webhooks/stripe`.
+
+### Automatic shop inventory decrement (the "order lines" rows)
+
+A paid shop order writes one Notion **"order lines"** row per purchased item, and
+that is the shop's stock decrement. The machinery it feeds already existed and had
+never fired: checkout recorded the items only as free-text bullets on the order
+page, so the lines database stayed empty and stock drifted from the day the shop
+opened. Code: `services/order-lines.service.ts`,
+`lib/notion/order-lines.{blocks,repository}.ts`, `getOrderLinesNotionClient`, and
+the `recordShopOrderLines` call at the tail of `processPaidShopOrder`
+(`services/checkout.service.ts`). Load-bearing decisions:
+
+1. **The row IS the decrement — there is no number to write.** Inventory's
+   `Quantity Available` is a **formula** over a **`Units Sold (auto)`** rollup,
+   which sums each line's **`Counts Toward Sold`** formula (its `Qty`, unless the
+   parent order is `Voided`) through the line's **`Item`** relation. So the app
+   writes a row and the atelier's rollups do the arithmetic — no writable count
+   property, and no second store to keep in step. A line **without** an `Item`
+   relation contributes nothing, which is why a Stripe line we can't resolve to an
+   inventory row is **skipped and warned** rather than written as litter.
+
+2. **Best-effort, always — the paid order outranks its bookkeeping.** The lines
+   are written after the order's own Notion page, on the Stripe webhook path. A
+   throw there would 500 the webhook, Stripe would redeliver, and the redelivery
+   would early-return at the dedupe guard — losing the lines anyway and risking a
+   duplicate order. So every failure is caught **per line** (one bad row doesn't
+   cost the rest of the order its stock movement) and logged at **`error`**,
+   because a missed line drifts stock invisibly. Same reason the reclaim path
+   (order page already exists) writes no lines: like the confirmation email and
+   the rewards, they're skipped, not retried.
+
+3. **Quantity, price and size come from Stripe, not the cart.** The webhook
+   re-reads the session (`expand: ["line_items.data.price.product"]`), so what's
+   recorded is what was actually paid for. `checkout.service` stamps the
+   **`size`** onto each ad-hoc product's metadata alongside the `variantId` it
+   already carried — the size is in the display name too, but parsing it back out
+   of a string would be guesswork. `Unit Price` is the **listed** unit price, not
+   the discounted one: the order's `Items Subtotal` rollup is meant to be compared
+   against its `Total` to show shipping, fees and discounts.
+   `resolvePurchasedInventoryIds` (the `Inventory Items` relation) is now **derived
+   from the same** `purchasedLinesFromSession`, so the relation and the line rows
+   can't disagree about which inventory rows an order touched.
+
+4. **Cancelling an order puts its units back, via `Voided`.**
+   `setShopOrderCancelled` ticks the **`Voided`** checkbox in the same PATCH as
+   `Cancelled` — `Voided` is what `Counts Toward Sold` reads, so it's what makes
+   the rollup fall back. The two are separate properties on purpose: `Cancelled`
+   is the customer-facing state the tracking page renders, `Voided` is the
+   bookkeeping fact the rollups travel (and the atelier ticks it by hand for an
+   order the app never took money for). A **return/exchange** refund deliberately
+   does **not** void — whether a returned piece goes back on the shelf is the
+   atelier's call, since it may come back unsellable.
+
+5. **Still no reservation logic, by design.** Stock moves at **payment**, so an
+   abandoned checkout consumes nothing, but nothing is held between session
+   creation and payment either — two simultaneous checkouts can still oversell the
+   last piece. The quantity cap in `toLineItem` (against live `Quantity Available`)
+   remains the only guard. Reserving would need a store of its own; the roadmap
+   card explicitly scoped it out.
+
+6. **Optional, and unset means exactly the old behavior.**
+   `orderLinesConfigured()` gates the whole pass on
+   `NOTION_ORDER_LINES_DATABASE_ID`, so a workspace that hasn't shared the database
+   with the integration records paid orders as before and just doesn't decrement —
+   never a failed order over bookkeeping.
+
+The atelier's one-time setup: share the Notion integration with the **"order
+lines"** database and set **`NOTION_ORDER_LINES_DATABASE_ID`**. Nothing to add in
+Notion — `Line`, `Item`, `Order`, `Qty`, `Unit Price`, `Size` and the two formulas
+already exist, as do inventory's `Units Sold (auto)` / `Quantity Available` and the
+shop order's `Voided`. Note that lines exist only from this deploy onward, so
+reconcile the drift once by adjusting each item's **`Sold (opening)`** — the app
+never writes that property and never reads these rollups back except as
+`Quantity Available`.
 
 ### Custom-order payments (the invoice is the source of truth for all three stages)
 
@@ -2979,6 +3058,14 @@ in the maintainer's env without edits.
   400s the whole page-create — so the property must exist first. Unset ⇒ no relation is
   written and the behavior is exactly as before (degrade-safe, like the `Client` link).
   See "Relate requests & orders to their sources" below.
+- **Optional order-lines database:** `NOTION_ORDER_LINES_DATABASE_ID` (the "order
+  lines" database). When set (and the integration is shared with it), a paid shop
+  order writes one line row per purchased item, which is what moves inventory's
+  `Units Sold (auto)` rollup and so `Quantity Available` — the shop's automatic
+  stock decrement. Unset ⇒ no lines are written and stock stays manual, exactly as
+  before (the order itself is recorded either way). Read at first use in
+  `getOrderLinesNotionClient`; gated by `orderLinesConfigured()`. See "Automatic
+  shop inventory decrement" above.
 
 ### Environment variables
 
@@ -3020,6 +3107,7 @@ scope went with the working-hours sheet.
 | ----------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------- |
 | `NOTION_CLIENT_CRM_DATABASE_ID`                                                                                   | CRM linking + all reward paths are skipped                          |
 | `NOTION_SETTINGS_DATABASE_ID`                                                                                     | Studio Settings is env-only (see "Studio Settings")                 |
+| `NOTION_ORDER_LINES_DATABASE_ID`                                                                                  | No order lines written ⇒ shop stock never decrements                |
 | `NOTION_RELATION_LINKS` (`1`/`true`/`yes`)                                                                        | Off — no order/inventory relations written (see "Relate requests…") |
 | `STRIPE_SHIPPING_RATE_IDS`                                                                                        | No shipping charged, no shipping options at checkout                |
 | `STRIPE_BNPL_METHODS`                                                                                             | Payment methods stay dynamic (Dashboard-managed)                    |
@@ -3144,6 +3232,7 @@ full detail in `.agents/memory/phase2-workspace-crm-archive-markers.md`.
 | Change the landing page                                  | `artifacts/web-app/src/pages/home.tsx`                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                        |
 | Change the shop (live Notion inventory)                  | `artifacts/web-app/src/pages/shop.tsx` + `services/products.service.ts` + `lib/notion/products.*`                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                             |
 | Change the back-in-stock notify dialog                   | `artifacts/web-app/src/components/notify-dialog.tsx` + `services/notify.service.ts` + `lib/notion/notify.*` (writes to the **contact** database — see below)                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                  |
+| Change the shop's inventory decrement                    | `api-server/src/services/order-lines.service.ts` (`purchasedLinesFromSession` + the best-effort `recordShopOrderLines`) + `lib/notion/order-lines.{blocks,repository}.ts` + `getOrderLinesNotionClient`; called at the tail of `processPaidShopOrder` in `services/checkout.service.ts`. The `Voided` release is `setShopOrderCancelled` in `lib/notion/shop-orders.repository.ts`                                                                                                                                                                                                                                                                                                            |
 | Change shop checkout / payments                          | `artifacts/web-app/src/lib/cart.tsx` + `components/cart-drawer.tsx` + `components/add-to-cart.tsx` (frontend); `api-server/src/services/checkout.service.ts` + `routes/checkout.ts` + `routes/stripe-webhook.ts` + `lib/stripe/*` + `lib/notion/shop-orders.*` (backend)                                                                                                                                                                                                                                                                                                                                                                                                                      |
 | Change shop-order tracking                               | `artifacts/web-app/src/components/shop-order-result.tsx` (rendered by `pages/track.tsx`; + order number on `pages/shop-success.tsx`); `api-server/src/services/shop-orders.service.ts` + `routes/shop-orders.ts` + `lib/notion/shop-orders.{blocks,repository}.ts` + `services/checkout.service.ts` (mints the number)                                                                                                                                                                                                                                                                                                                                                                        |
 | Change the return / exchange request                     | `artifacts/web-app/src/components/return-exchange-dialog.tsx` (opened from `components/shop-order-result.tsx`); `api-server/src/services/return-request.service.ts` + `routes/shop-orders.ts` (`POST /shop-orders/:n/return-requests`) + `lib/notion/return-request.{blocks,repository}.ts` (writes to the **contact** database) + `findShopOrderVerification` in `lib/notion/shop-orders.repository.ts`; policy copy in `pages/shipping-returns.tsx`                                                                                                                                                                                                                                         |

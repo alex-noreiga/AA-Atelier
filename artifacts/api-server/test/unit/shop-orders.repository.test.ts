@@ -17,6 +17,7 @@ import {
   SHOP_ORDER_TOTAL_PROPERTY,
   SHOP_ORDER_EMAIL_PROPERTY,
   SHOP_ORDER_CANCELLED_PROPERTY,
+  SHOP_ORDER_VOIDED_PROPERTY,
   SHOP_ORDER_REFUNDED_PROPERTY,
   SHOP_ORDER_RETURN_PROCESSED_PROPERTY,
   SHOP_ORDER_TRACKING_NUMBER_PROPERTY,
@@ -394,6 +395,20 @@ describe("setShopOrderCancelled", () => {
     expect(call.init?.method).toBe("PATCH");
     const body = JSON.parse(call.init!.body as string);
     expect(body.properties[SHOP_ORDER_CANCELLED_PROPERTY]).toEqual({
+      checkbox: true,
+    });
+  });
+
+  // Voided is what the order lines' `Counts Toward Sold` formula reads, so it is
+  // what puts a cancelled order's units back on the shelf. It rides the same
+  // PATCH as Cancelled so the two can't drift apart.
+  it("also sets Voided, so the order stops consuming inventory", async () => {
+    const client = makeFakeClient(() => jsonResponse({}, 200));
+
+    await setShopOrderCancelled("so-page", client);
+
+    const body = JSON.parse(client.calls[0].init!.body as string);
+    expect(body.properties[SHOP_ORDER_VOIDED_PROPERTY]).toEqual({
       checkbox: true,
     });
   });
