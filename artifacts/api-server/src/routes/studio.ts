@@ -6,6 +6,7 @@ import {
   DeleteStaffAvailabilityResponse,
   GetStudioAccessResponse,
   GetStudioAnalyticsResponse,
+  GetStudioMaterialsResponse,
   ListStaffAvailabilityResponse,
   ListStudioReviewsResponse,
   RunStudioToolBody,
@@ -22,6 +23,7 @@ import { requireStaff } from "../middlewares/auth.js";
 import { accountRateLimiter } from "../middlewares/rate-limit.js";
 import { validate } from "../middlewares/validate.js";
 import { getStudioAnalytics } from "../services/studio-analytics.service.js";
+import { getMaterialsOverview } from "../services/materials.service.js";
 import {
   runStudioTool,
   type StudioToolArgs,
@@ -158,6 +160,20 @@ router.delete(
         message: "Those hours have been removed from the schedule.",
       }),
     );
+  },
+);
+
+// The materials restock alerts. The reorder points and the stock formulas have
+// been in Notion since before the app existed and were only ever visible to
+// someone who went looking in that database; this puts them next to the rest of
+// the studio work. Read-only — the app never writes materials stock.
+router.get(
+  "/studio/materials",
+  accountRateLimiter,
+  requireStaff,
+  async (_req, res) => {
+    const overview = await getMaterialsOverview();
+    res.json(GetStudioMaterialsResponse.parse(overview));
   },
 );
 

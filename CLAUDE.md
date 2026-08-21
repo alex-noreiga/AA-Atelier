@@ -1793,6 +1793,78 @@ stages). Code: `orderStageChangeEmail` in `lib/resend/emails.ts`,
 `updateLastNotifiedStage` in `lib/notion/orders.repository.ts`,
 `services/order-notification.service.ts`, `routes/order-notification.ts`.
 
+## Materials restock alerts (dashboard panel + a weekly digest)
+
+The atelier's **"materials inventory"** Notion database has carried a reorder
+point (`Minimum Stock`), a `Stock on Hand` formula and a `Restock Alert` formula
+per material since long before the app existed — and the app had never read that
+database, so the alerts only existed for whoever thought to open it mid-project.
+This surfaces them in two places: the studio dashboard's **Materials** panel
+(`GET /api/studio/materials`) and a **weekly digest email** to the atelier. Code:
+`lib/notion/materials.{schema,repository}.ts`, `getMaterialsNotionClient`,
+`services/materials.service.ts` (the pure `classifyMaterials` + the cached
+use-case), `services/materials-digest.service.ts`, the `/studio/materials` route,
+and `web-app/src/components/studio-materials.tsx`. Load-bearing decisions:
+
+1. **`Restock Alerts On/Off` is a SUPPRESSION checkbox, despite its name.** Its
+   Notion description is explicit — "Check this to suppress restock alerts for
+   fabrics or materials that do not need restocking" — and the data agrees (8 of
+   the 9 rows carrying a reorder point are unticked). The constant is
+   `MATERIAL_ALERTS_SUPPRESSED_PROPERTY`, named for what it does rather than what
+   it is called, because reading it the other way inverts the whole panel.
+
+2. **The trip is re-derived in code, not read off the `Restock Alert` formula.**
+   Two reasons, and the first is a repo-wide gotcha: a `formula: {…}` **filter**
+   on a formula derived from rollups 400s through the Notion API ("Unable to
+   filter based on a formula of unknown type") — the same wall
+   `Milestone Status` hit (`.agents/memory/phase2-workspace-cards.md`). The
+   second is that the formula's rendered value is display wording the atelier can
+   restyle, so matching on it would be a string compare against a promise nobody
+   made. Deriving `stockOnHand <= minimumStock` also yields the **`shortfall`**
+   the panel and the digest rank by. The cost is a duplicated rule: **change what
+   counts as low in the Notion formula and it must change in
+   `materials.service.ts` too** — a targeted business rule, like
+   `STATUS_IN_STOCK`.
+
+3. **Unknown stock is never an alert; absent is not zero.** `Stock on Hand` is a
+   formula over two rollups and is genuinely absent on a material with no intake
+   lines. "We have none" and "we have never counted" are different claims, and
+   only one is a reason to reorder — so such a row is reported as `untracked`
+   with `reason: "stock-unknown"` rather than shouted about.
+
+4. **The untracked list is the point, not a footnote.** Only **9 of 50**
+   materials currently carry a `Minimum Stock`, so a strict alert list would look
+   reassuringly empty while saying nothing about the other 41. Those are listed
+   separately (collapsed, alphabetical) with the stock they do have, which is
+   what the atelier needs to pick a threshold. A **muted** material is in neither
+   list and only **counted**, so the numbers still add up.
+
+5. **The digest reports STATE, which is what makes it idempotent.** It rides the
+   nightly reconciliation (`sendDueMaterialsDigest`, a sixth pass) and fires only
+   on `MATERIALS_DIGEST_WEEKDAY`, read in the studio timezone so "Monday" means
+   the atelier's Monday. Because it lists what is _currently_ low rather than
+   announcing a material _becoming_ low, running it twice says the same true
+   thing — so unlike the back-in-stock sweep it needs **no sent-marker store and
+   no Postgres table**. It sends **nothing** when nothing is low (a weekly "all
+   good" trains you to ignore the sender) and self-gates on the atelier inbox.
+   Accepted limit: the weekday check is the whole guard, so a double-fire of the
+   cron on digest day would send two copies — an internal email, and cheaper than
+   a marker store for a message that is safe to repeat.
+
+6. **Read-only, degrade-safe, and cached like every other live Notion read.**
+   The app never writes materials stock. `listMaterials` is a bounded
+   `scanDatabase` (nothing to filter on — the panel wants the whole book) with the
+   usual 60s TTL + fall-back-to-stale-on-error, so a Notion blip degrades to
+   slightly stale numbers rather than an empty shopping list. An unset
+   `NOTION_MATERIALS_DATABASE_ID` returns `configured: false` with empty lists and
+   the panel **says so** — never an empty list that reads as "all good".
+
+The atelier's one-time setup: share the Notion integration with **materials
+inventory** and set **`NOTION_MATERIALS_DATABASE_ID`**. Nothing to add in Notion —
+`Item Name`, `Category`, `Minimum Stock`, `Stock on Hand`, `Restock Alerts On/Off`,
+`Material Link` and `Price per Unit` all already exist. To make the panel useful,
+set a `Minimum Stock` on the materials worth watching.
+
 ## Back-in-stock alerts (nightly sweep + a studio tool)
 
 `POST /api/notify` captures a "tell me when this returns" request and acknowledges it,
@@ -3179,6 +3251,15 @@ in the maintainer's env without edits.
   400s the whole page-create — so the property must exist first. Unset ⇒ no relation is
   written and the behavior is exactly as before (degrade-safe, like the `Client` link).
   See "Relate requests & orders to their sources" below.
+- **Optional materials database:** `NOTION_MATERIALS_DATABASE_ID` (the "materials
+  inventory" database). When set (and the integration is shared with it), the
+  studio dashboard's **Materials** panel lists everything at or below its
+  `Minimum Stock`, and the nightly reconciliation emails a weekly digest of the
+  same list. Read-only — the app never writes materials stock. Unset ⇒ the panel
+  reports it isn't connected and the digest no-ops. The one knob is
+  `MATERIALS_DIGEST_WEEKDAY` (default `Monday`, a long weekday name read in the
+  studio timezone), a targeted business rule like `FITTING_REMINDER_STAGES`. See
+  "Materials restock alerts" above.
 - **Optional order-lines database:** `NOTION_ORDER_LINES_DATABASE_ID` (the "order
   lines" database). When set (and the integration is shared with it), a paid shop
   order writes one line row per purchased item, which is what moves inventory's
@@ -3229,6 +3310,8 @@ scope went with the working-hours sheet.
 | `NOTION_CLIENT_CRM_DATABASE_ID`                                                                                   | CRM linking + all reward paths are skipped                          |
 | `NOTION_SETTINGS_DATABASE_ID`                                                                                     | Studio Settings is env-only (see "Studio Settings")                 |
 | `NOTION_ORDER_LINES_DATABASE_ID`                                                                                  | No order lines written ⇒ shop stock never decrements                |
+| `NOTION_MATERIALS_DATABASE_ID`                                                                                    | No materials panel (`configured: false`) and no weekly digest       |
+| `MATERIALS_DIGEST_WEEKDAY`                                                                                        | `Monday` (read in the studio timezone)                              |
 | `NOTION_RELATION_LINKS` (`1`/`true`/`yes`)                                                                        | Off — no order/inventory relations written (see "Relate requests…") |
 | `STRIPE_SHIPPING_RATE_IDS`                                                                                        | No shipping charged, no shipping options at checkout                |
 | `STRIPE_BNPL_METHODS`                                                                                             | Payment methods stay dynamic (Dashboard-managed)                    |
@@ -3354,6 +3437,7 @@ full detail in `.agents/memory/phase2-workspace-crm-archive-markers.md`.
 | Change the landing page                                  | `artifacts/web-app/src/pages/home.tsx`                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                        |
 | Change the shop (live Notion inventory)                  | `artifacts/web-app/src/pages/shop.tsx` + `services/products.service.ts` + `lib/notion/products.*`                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                             |
 | Change the back-in-stock notify dialog                   | `artifacts/web-app/src/components/notify-dialog.tsx` + `services/notify.service.ts` + `lib/notion/notify.*` (writes to the **contact** database — see below)                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                  |
+| Change the materials restock alerts                      | `api-server/src/services/materials.service.ts` (the pure `classifyMaterials` + `getMaterialsOverview`) + `lib/notion/materials.{schema,repository}.ts` + `getMaterialsNotionClient` + the `/studio/materials` route in `routes/studio.ts`; the weekly email is `services/materials-digest.service.ts` + `materialsDigestEmail` in `lib/resend/emails.ts`, run by `sendDueMaterialsDigest` in `services/schedule.service.ts`; panel in `web-app/src/components/studio-materials.tsx`                                                                                                                                                                                                           |
 | Change the shop's inventory decrement                    | `api-server/src/services/order-lines.service.ts` (`purchasedLinesFromSession` + the best-effort `recordShopOrderLines`) + `lib/notion/order-lines.{blocks,repository}.ts` + `getOrderLinesNotionClient`; called at the tail of `processPaidShopOrder` in `services/checkout.service.ts`. The `Voided` release is `setShopOrderCancelled` in `lib/notion/shop-orders.repository.ts`                                                                                                                                                                                                                                                                                                            |
 | Change shop checkout / payments                          | `artifacts/web-app/src/lib/cart.tsx` + `components/cart-drawer.tsx` + `components/add-to-cart.tsx` (frontend); `api-server/src/services/checkout.service.ts` + `routes/checkout.ts` + `routes/stripe-webhook.ts` + `lib/stripe/*` + `lib/notion/shop-orders.*` (backend)                                                                                                                                                                                                                                                                                                                                                                                                                      |
 | Change shop-order tracking                               | `artifacts/web-app/src/components/shop-order-result.tsx` (rendered by `pages/track.tsx`; + order number on `pages/shop-success.tsx`); `api-server/src/services/shop-orders.service.ts` + `routes/shop-orders.ts` + `lib/notion/shop-orders.{blocks,repository}.ts` + `services/checkout.service.ts` (mints the number)                                                                                                                                                                                                                                                                                                                                                                        |

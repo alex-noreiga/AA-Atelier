@@ -15,6 +15,7 @@ import NotFound from "@/pages/not-found";
 import { StudioTools } from "@/components/studio-tools";
 import { StudioAvailability } from "@/components/studio-availability";
 import { StudioReviews } from "@/components/studio-reviews";
+import { StudioMaterials } from "@/components/studio-materials";
 import { Seo } from "@/components/seo";
 import { useAuth } from "@/lib/auth-context";
 import { supabase } from "@/lib/supabase";
@@ -313,6 +314,8 @@ function Dashboard({ data }: { data: StudioAnalytics }) {
       <PaymentsPanel payments={data.payments} />
 
       <TopItemsPanel items={data.topItems} />
+
+      <StudioMaterials />
 
       <StudioReviews />
 

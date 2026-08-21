@@ -9,6 +9,7 @@
 
 import { reportError } from "./alert.service.js";
 import { notifyRestock } from "./restock-notification.service.js";
+import { sendWeeklyMaterialsDigest } from "./materials-digest.service.js";
 import { notifyUpcomingAppointments } from "./appointment-reminder.service.js";
 import {
   fittingReminderLeadDays,
@@ -58,6 +59,8 @@ export interface MilestoneReconcileResult extends MilestoneGenerationResult {
   paymentRemindersSent: number;
   restockAlertsSent: number;
   appointmentRemindersSent: number;
+  /** Materials listed in the weekly digest; 0 on the six days it doesn't run. */
+  materialsDigestItems: number;
 }
 
 /** Format a Date as an ISO calendar date (`yyyy-mm-dd`), in UTC. */
@@ -411,11 +414,37 @@ export async function reconcileMilestones(
   const paymentRemindersSent = await sendDuePaymentReminders(now);
   const restockAlertsSent = await sendDueRestockAlerts();
   const appointmentRemindersSent = await sendDueAppointmentReminders(now);
+  const materialsDigestItems = await sendDueMaterialsDigest(now);
   return {
     ...generation,
     remindersSent,
     paymentRemindersSent,
     restockAlertsSent,
     appointmentRemindersSent,
+    materialsDigestItems,
   };
+}
+
+/**
+ * Email the atelier its weekly materials shopping list.
+ *
+ * Rides this run like the passes above, and is a no-op on the six days that
+ * aren't its weekday — the schedule lives in `sendWeeklyMaterialsDigest`, which
+ * also decides whether there is anything worth sending. Unlike the reminders
+ * this one is safe to repeat, because it reports current state rather than
+ * announcing an event.
+ *
+ * Swallows its own failure (alerting instead) so a Notion blip can't fail the
+ * whole reconciliation.
+ */
+export async function sendDueMaterialsDigest(now: Date): Promise<number> {
+  try {
+    return await sendWeeklyMaterialsDigest(now);
+  } catch (err) {
+    await reportError(
+      { err },
+      "Failed to send the weekly materials digest; will retry next run",
+    );
+    return 0;
+  }
 }

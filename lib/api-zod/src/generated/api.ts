@@ -883,6 +883,40 @@ export const RunStudioToolResponse = zod.object({
 
 
 /**
+ * The atelier's materials inventory, split into what needs buying and what isn't being watched. The reorder points, the stock-on-hand formula and a restock-alert formula have existed in Notion since before the app did; this is the read that puts them somewhere they'll be seen.
+ *
+ * The trip is re-derived server-side from `Stock on Hand` vs `Minimum Stock` rather than read off the atelier's own restock-alert formula: a formula derived from rollups can't be filtered on through the Notion API, and its rendered value is display wording nobody promised to keep. Deriving it also yields the `shortfall` the list is ranked by.
+ *
+ * Two things are deliberately never alerts. A material whose stock formula produced no number is `stock-unknown` in `untracked` — absent is not zero, and "we have never counted" is not a reason to reorder. A material the atelier has muted is in neither list and only counted, so the numbers still add up.
+ *
+ * Same staff gate as the rest of the studio surface: 401 when not signed in, 404 when signed in but not staff, 403 when staff but not signed in with Google.
+ * @summary Materials at or below their reorder point
+ */
+export const GetStudioMaterialsResponse = zod.object({
+  "lowStock": zod.array(zod.object({
+  "id": zod.string().describe('The material\'s Notion page id.'),
+  "name": zod.string().describe('The material as the atelier names it.'),
+  "category": zod.string().optional().describe('Fabric \/ Applique \/ Crystal \/ Packaging \/ Notions. Omitted when unset.'),
+  "stockOnHand": zod.number().describe('Units remaining, from the Notion stock formula. Always a number here — a material whose stock is unknown is never reported as an alert.'),
+  "minimumStock": zod.number().describe('The reorder point the atelier set.'),
+  "shortfall": zod.number().describe('How far below the reorder point it is, rounded to two places. `0` when it has landed exactly on it — a reorder point is the level you buy AT, so that still counts. The list is ranked by this.'),
+  "link": zod.string().optional().describe('Where to buy it again, when the atelier recorded a link.'),
+  "pricePerUnit": zod.number().optional().describe('Dollars per unit, when recorded.')
+}).describe('A material at or below its reorder point — something to buy.')).describe('At or below the reorder point, worst shortfall first.'),
+  "untracked": zod.array(zod.object({
+  "id": zod.string().describe('The material\'s Notion page id.'),
+  "name": zod.string(),
+  "category": zod.string().optional(),
+  "reason": zod.enum(['no-reorder-point', 'stock-unknown']).describe('`no-reorder-point` — `Minimum Stock` is unset, so nothing can trip. `stock-unknown` — the stock formula produced no number (typically a material with no intake lines recorded yet).'),
+  "stockOnHand": zod.number().optional().describe('Present only for `no-reorder-point`, where the stock IS known and only the threshold is missing.')
+}).describe('A material no alert can ever fire for, and why — so an unwatched material is visible rather than the alert list just looking quiet.')).describe('Not watched, and why — alphabetical.'),
+  "suppressedCount": zod.number().int().describe('How many materials the atelier has muted. Reported so the panel can say so rather than the numbers silently not adding up.'),
+  "totalCount": zod.number().int().describe('Every material row read, muted ones included.'),
+  "configured": zod.boolean().describe('False when the materials database isn\'t wired up, in which case the lists are empty and the panel says why instead of rendering an empty list that reads as \"all good\".')
+}).describe('The materials panel — what to reorder, and what isn\'t being watched.')
+
+
+/**
  * Every review the atelier hasn't decided on yet, plus the ones it has, newest first — the read half of the loop the app has only ever written to. A review is captured at delivery with its Notion `Status` set to "New" and had to be promoted by hand in Notion for the site to show it; this is that same decision, made where the rest of the studio work happens.
  *
  * The three moderation states are DERIVED from the `Status` select rather than enumerated from it: `published` and `rejected` name the two values the app writes, and everything else — "New", a blank select, or any value the atelier invented — reads as `pending`. So an unrecognized status asks for a decision rather than silently publishing.
