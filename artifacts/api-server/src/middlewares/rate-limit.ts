@@ -1,4 +1,9 @@
-// Rate limiting for the account-portal overview route. Sign-in itself runs on
+// Rate limiting for the routes that need a brake: the account-portal overview,
+// the internal studio surface, and the public submission forms. Each has its own
+// ceiling because each is guarding against a different thing — see the comment
+// above each limiter.
+//
+// Sign-in itself runs on
 // Supabase Auth in the browser, so the one server endpoint left here just
 // performs authorization (verifying the Supabase access token before returning
 // the customer's data); a brake on abuse — token guessing, scraping — belongs here.
@@ -15,6 +20,34 @@ import rateLimit from "express-rate-limit";
 export const accountRateLimiter = rateLimit({
   windowMs: 15 * 60 * 1000, // 15 minutes
   limit: 30, // per IP per window on the account overview route
+  standardHeaders: "draft-7",
+  legacyHeaders: false,
+  message: { error: "Too many requests. Please try again in a few minutes." },
+});
+
+/**
+ * The brake on the studio surface, which is a different shape of problem.
+ *
+ * `/studio/*` is reached only by an authenticated session whose email is on the
+ * `STUDIO_STAFF_EMAILS` allowlist, so the abuse this guards against — token
+ * guessing, scraping a stranger's data — is already answered by the gate rather
+ * than by the ceiling. What the ceiling has to accommodate instead is a handful
+ * of people USING the page: one dashboard load is already nine reads (access,
+ * analytics, materials, reviews, availability, settings, requests, newsletter,
+ * guides) before anyone opens a guide, and working the request queue or the
+ * review queue down is one write per decision. At the
+ * account limiter's 30 that is five refreshes, or two dozen clicks, before a
+ * staff member is locked out of their own dashboard for a quarter of an hour —
+ * which is not a brake, it is a bug.
+ *
+ * So the studio routes get their own, looser limit. It is still a limit: a
+ * runaway client (a render loop hammering `/studio/analytics`, whose Notion
+ * scans are the most expensive read in the app) is stopped well short of doing
+ * real damage. Same in-memory / per-instance caveat as above.
+ */
+export const studioRateLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000, // 15 minutes
+  limit: 300, // per IP per window across the whole studio surface
   standardHeaders: "draft-7",
   legacyHeaders: false,
   message: { error: "Too many requests. Please try again in a few minutes." },

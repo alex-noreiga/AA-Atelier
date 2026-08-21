@@ -13,6 +13,8 @@ import { Button } from "@/components/ui/button";
 import { PageShell } from "@/components/page-shell";
 import NotFound from "@/pages/not-found";
 import { StudioTools } from "@/components/studio-tools";
+import { StudioRequests } from "@/components/studio-requests";
+import { StudioNewsletter } from "@/components/studio-newsletter";
 import { StudioAvailability } from "@/components/studio-availability";
 import { StudioReviews } from "@/components/studio-reviews";
 import { StudioMaterials } from "@/components/studio-materials";
@@ -24,6 +26,7 @@ import { supabase } from "@/lib/supabase";
 import { setPostSignInPath } from "@/lib/post-signin";
 import { ROUTE_SEO } from "@/lib/seo-routes";
 import { serverErrorMessage } from "@/lib/api-error";
+import { toolHandoff, type ToolHandoff } from "@/lib/studio-handoff";
 import { formatPrice, formatDate } from "@/lib/format";
 import { useEffect, useRef, useState } from "react";
 import {
@@ -265,6 +268,12 @@ function AccessDenied({ reason }: { reason?: string }) {
 function Dashboard({ data }: { data: StudioAnalytics }) {
   const thisMonth = data.revenue[data.revenue.length - 1];
 
+  // A request in the queue handing its own order number to the tool that
+  // actions it. The state lives here because the two are sibling panels, and
+  // the tools panel is where the confirmation stays — the queue prepares a run,
+  // it never starts one. See `lib/studio-handoff.ts`.
+  const [handoff, setHandoff] = useState<ToolHandoff | undefined>();
+
   return (
     <div className="space-y-10 sm:space-y-12">
       <div className="grid grid-cols-2 md:grid-cols-4 gap-2 sm:gap-3">
@@ -338,7 +347,13 @@ function Dashboard({ data }: { data: StudioAnalytics }) {
       <StudioSettings />
       <GuidesFor section="settings" />
 
-      <StudioTools />
+      <StudioRequests onHandoff={(next) => setHandoff(toolHandoff(next))} />
+      <GuidesFor section="requests" />
+
+      <StudioNewsletter />
+      <GuidesFor section="newsletter" />
+
+      <StudioTools handoff={handoff} />
 
       <StudioGuides />
     </div>

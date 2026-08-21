@@ -8,19 +8,21 @@ import type { z } from "zod";
 import type { CreateContactMessageBody } from "@workspace/api-zod";
 import { normalizeEmail } from "../email.js";
 
-// Live-schema property names (a Notion rename is a one-line change here). The
-// exported ones are shared with `notify.blocks.ts`: the shop's back-in-stock
-// requests land in this same database, so the two writers must agree on the
-// property names. "Request type" is what separates them in the inbox.
+// Live-schema property names (a Notion rename is a one-line change here). They
+// are all exported because this database has more than one reader and writer:
+// the shop's back-in-stock requests and the four order-scoped request writers
+// land here too and must agree on the names, and `requests.schema.ts` reads the
+// same rows back for the studio dashboard's queue. "Request type" is what
+// separates the six kinds in the inbox.
 export const CONTACT_SUBJECT_PROPERTY = "Message (subject)"; // title
-const CONTACT_NAME_PROPERTY = "Customer name"; // rich_text
+export const CONTACT_NAME_PROPERTY = "Customer name"; // rich_text
 export const CONTACT_EMAIL_PROPERTY = "Email"; // email
-const CONTACT_PHONE_PROPERTY = "Phone"; // phone_number
+export const CONTACT_PHONE_PROPERTY = "Phone"; // phone_number
 export const CONTACT_MESSAGE_PROPERTY = "Message"; // rich_text
 export const CONTACT_STAGE_PROPERTY = "Stage"; // select
 export const CONTACT_DEFAULT_STAGE = "New";
 export const CONTACT_TYPE_PROPERTY = "Request type"; // select
-const CONTACT_REQUEST_TYPE = "Inquiry";
+export const CONTACT_REQUEST_TYPE = "Inquiry";
 // Relation to the Client CRM database. Shared by all three writers to this
 // database (like CONTACT_EMAIL_PROPERTY) so the row links to the canonical
 // customer record instead of only re-typing name/email as free text.

@@ -18,7 +18,7 @@
 // Results are deliberately not persisted: this is a console, not a log. What
 // happened is in Notion, Stripe, and the server's own logs.
 
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import {
   useRunStudioTool,
   type StudioTool,
@@ -29,6 +29,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { serverErrorMessage } from "@/lib/api-error";
 import { GuidesFor } from "@/components/studio-guides";
+import type { ToolHandoff } from "@/lib/studio-handoff";
 import {
   Loader2,
   Play,
@@ -137,7 +138,7 @@ const TOOLS: ToolSpec[] = [
   },
 ];
 
-export function StudioTools() {
+export function StudioTools({ handoff }: { handoff?: ToolHandoff }) {
   return (
     <section data-testid="panel-tools">
       <h2 className="flex items-center gap-2 text-xs tracking-[0.2em] uppercase text-muted-foreground mb-4">
@@ -146,14 +147,26 @@ export function StudioTools() {
       </h2>
       <div className="space-y-3">
         {TOOLS.map((spec) => (
-          <ToolCard key={spec.tool} spec={spec} />
+          <ToolCard
+            key={spec.tool}
+            spec={spec}
+            handoff={handoff?.tool === spec.tool ? handoff : undefined}
+          />
         ))}
       </div>
     </section>
   );
 }
 
-function ToolCard({ spec }: { spec: ToolSpec }) {
+function ToolCard({
+  spec,
+  handoff,
+}: {
+  spec: ToolSpec;
+  /** A request in the queue above handing this tool its own argument. Only ever
+   * set on the card the hand-off names. */
+  handoff?: ToolHandoff;
+}) {
   const [subject, setSubject] = useState("");
   const [amount, setAmount] = useState("");
   const [force, setForce] = useState(false);
@@ -162,9 +175,30 @@ function ToolCard({ spec }: { spec: ToolSpec }) {
   const [error, setError] = useState<string | null>(null);
 
   const mutation = useRunStudioTool();
+  const card = useRef<HTMLDivElement>(null);
+  const input = useRef<HTMLInputElement>(null);
   const field = spec.field;
   const missingSubject =
     Boolean(field) && !field?.optional && subject.trim() === "";
+
+  // A request handing this tool its argument: fill the field, bring the card
+  // into view, and put the cursor in it so the value can be read and corrected
+  // before anything runs. Deliberately stops there — a hand-off prepares a run,
+  // it never starts one, so the refunds keep their confirmation step. Keyed on
+  // the hand-off's nonce, so pressing the same request twice re-scrolls (and
+  // re-arms a confirmation that was dismissed) rather than doing nothing.
+  useEffect(() => {
+    if (!handoff) return;
+    const value = handoff.orderNumber ?? handoff.item ?? "";
+    setSubject(value);
+    // Any previous result belongs to a different order; leaving it under a
+    // freshly filled field would read as this request having been actioned.
+    setRun(null);
+    setError(null);
+    setConfirming(false);
+    card.current?.scrollIntoView({ behavior: "smooth", block: "center" });
+    input.current?.focus();
+  }, [handoff]);
 
   const execute = () => {
     setConfirming(false);
@@ -205,6 +239,7 @@ function ToolCard({ spec }: { spec: ToolSpec }) {
 
   return (
     <div
+      ref={card}
       className="rounded-sm border border-border bg-card/40 p-4 sm:p-5"
       data-testid={`tool-${spec.tool}`}
     >
@@ -230,6 +265,7 @@ function ToolCard({ spec }: { spec: ToolSpec }) {
             </Label>
             <Input
               id={fieldId}
+              ref={input}
               value={subject}
               onChange={(event) => {
                 setSubject(event.target.value);

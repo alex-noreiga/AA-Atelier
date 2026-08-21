@@ -40,10 +40,12 @@ sandboxed frame beside whatever that section names.
 ## Load-bearing decisions
 
 1. **The vocabulary tracks the dashboard's panels.** A section exists for each
-   of the six tools and each panel — including `settings`, added when the studio
-   settings editor landed on `main` mid-branch. A new panel that never gets a
-   section is a panel no guide can be filed against, so adding one is part of
-   adding a panel.
+   of the six tools and each panel. Three were added mid-branch as `main` grew
+   panels this branch hadn't seen — `settings`, then `requests` and
+   `newsletter`. A new panel that never gets a section is a panel no guide can
+   be filed against, so adding one belongs with adding the panel, not to a
+   follow-up. If you add a panel to `pages/studio.tsx`, add its section here and
+   a `<GuidesFor>` beside it.
 
 2. **Listing and content are separate operations — this was a correction.** The
    first cut inlined every guide's markup into the listing, so the dashboard

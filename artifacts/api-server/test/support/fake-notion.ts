@@ -589,3 +589,74 @@ export function reviewPage(opts: {
     },
   };
 }
+
+/**
+ * A raw "Website Contact Messages" page, as the studio request queue reads one.
+ *
+ * Every property here is written by one of the six contact-database writers, so
+ * the defaults model the commonest row the queue sees: a cancellation request
+ * filed against a custom order and not yet triaged. Pass `null` to model a
+ * property Notion returned empty, and omit the value to take the default.
+ */
+export function contactRequestPage(
+  opts: {
+    id?: string;
+    subject?: string;
+    requestType?: string | null;
+    stage?: string | null;
+    customerName?: string;
+    email?: string | null;
+    phone?: string | null;
+    message?: string;
+    item?: string;
+    size?: string;
+    createdTime?: string | null;
+    url?: string | null;
+  } = {},
+) {
+  const rt = (value?: string) => ({
+    type: "rich_text",
+    rich_text: value ? [{ plain_text: value }] : [],
+  });
+  const select = (value: string | null | undefined, fallback: string) => ({
+    type: "select",
+    select: value === null ? null : { name: value ?? fallback },
+  });
+
+  return {
+    id: opts.id ?? "request-page",
+    ...(opts.createdTime === null
+      ? {}
+      : { created_time: opts.createdTime ?? "2026-08-01T12:00:00.000Z" }),
+    ...(opts.url === null
+      ? {}
+      : { url: opts.url ?? "https://notion.so/request-page" }),
+    properties: {
+      "Message (subject)": {
+        type: "title",
+        title:
+          opts.subject === ""
+            ? []
+            : [{ plain_text: opts.subject ?? "Cancellation: ORD-000002" }],
+      },
+      "Request type": select(opts.requestType, "Cancellation"),
+      Stage: select(opts.stage, "New"),
+      "Customer name": rt(opts.customerName),
+      Email: {
+        type: "email",
+        email:
+          opts.email === null ? null : (opts.email ?? "skater@example.com"),
+      },
+      Phone: {
+        type: "phone_number",
+        phone_number: opts.phone === null ? null : (opts.phone ?? undefined),
+      },
+      Message: rt(
+        opts.message ??
+          "Cancellation requested for custom order ORD-000002.\n\nReason: —",
+      ),
+      Item: rt(opts.item),
+      Size: rt(opts.size),
+    },
+  };
+}

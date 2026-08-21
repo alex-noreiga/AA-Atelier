@@ -54,10 +54,13 @@ import type {
   NewReturnResponse,
   NewReviewRequest,
   NewReviewResponse,
+  NewsletterSignup,
+  NewsletterSignupList,
   OrderNotFound,
   OrderStatus,
   PaymentSessionResponse,
   ProductList,
+  RequestStateRequest,
   RescheduleAppointmentRequest,
   ReviewList,
   ReviewStatusRequest,
@@ -70,6 +73,8 @@ import type {
   StudioAnalytics,
   StudioGuideContent,
   StudioGuideList,
+  StudioRequest,
+  StudioRequestList,
   StudioReview,
   StudioReviewList,
   StudioSetting,
@@ -3176,5 +3181,324 @@ export const useSetStudioSetting = <TError = ErrorType<ErrorEnvelope | OrderNotF
         TContext
       > => {
       return useMutation(getSetStudioSettingMutationOptions(options));
+    }
+
+export const getListStudioRequestsUrl = () => {
+
+
+
+
+  return `/api/studio/requests`
+}
+
+/**
+ * The customer requests waiting on the atelier — measurement changes, cancellations, returns and exchanges, back-in-stock asks and website inquiries — read back out of the shared "Website Contact Messages" inbox. Until this, the app only ever WROTE those rows: actioning one meant reading it in Notion and re-typing its order number into a tool on this dashboard.
+ *
+ * So each row carries its own `action` where one exists: the tool that actions it and the argument it needs, derived server-side from the request type next to the code that writes it. A cancellation hands its order number to `cancellation-refund`, a return to `return-refund`, a back-in-stock ask hands its item to `restock-alert`. A measurement change or an inquiry carries none — those are answered by hand, and saying so is more honest than offering a button that does nothing.
+ *
+ * The open list is OLDEST first: the request that has waited longest is the one that owes an answer. Newsletter opt-ins are deliberately absent — they land in the same database but are a consent record nobody answers, so including them makes a queue that never empties.
+ *
+ * Same staff gate as the rest of the studio surface: 401 when not signed in, 404 when signed in but not staff, 403 when staff but not signed in with Google.
+ * @summary The open customer-request queue
+ */
+export const listStudioRequests = async ( options?: Parameters<typeof customFetch>[1]): Promise<StudioRequestList> => {
+
+  return customFetch<StudioRequestList>(getListStudioRequestsUrl(),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
+
+
+
+
+export const getListStudioRequestsQueryKey = () => {
+    return [
+    `/api/studio/requests`
+    ] as const;
+    }
+
+
+export const getListStudioRequestsQueryOptions = <TData = Awaited<ReturnType<typeof listStudioRequests>>, TError = ErrorType<ErrorEnvelope | OrderNotFound>>( options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof listStudioRequests>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getListStudioRequestsQueryKey();
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof listStudioRequests>>> = ({ signal }) => listStudioRequests({ signal, ...requestOptions });
+
+
+
+
+
+   return  { queryKey, queryFn, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof listStudioRequests>>, TError, TData> & { queryKey: QueryKey }
+}
+
+export type ListStudioRequestsQueryResult = NonNullable<Awaited<ReturnType<typeof listStudioRequests>>>
+export type ListStudioRequestsQueryError = ErrorType<ErrorEnvelope | OrderNotFound>
+
+
+/**
+ * @summary The open customer-request queue
+ */
+
+export function useListStudioRequests<TData = Awaited<ReturnType<typeof listStudioRequests>>, TError = ErrorType<ErrorEnvelope | OrderNotFound>>(
+  options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof listStudioRequests>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+
+ ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+
+  const queryOptions = getListStudioRequestsQueryOptions(options)
+
+  const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
+
+  return withQueryKey(query, queryOptions.queryKey);
+}
+
+
+
+
+
+
+
+export const getSetStudioRequestStateUrl = (requestId: string,) => {
+
+
+
+
+  return `/api/studio/requests/${requestId}/state`
+}
+
+/**
+ * Writes one request's `Stage` in Notion — the resolved state the contact inbox has always carried. `replied` marks a request answered but still open, `closed` takes it off the queue, and `new` returns it, so a row closed in error is reopened the same way it was closed.
+ *
+ * A PUT rather than a POST because the whole state is sent and re-sending it changes nothing. This is the only thing the dashboard writes to a request row: the request itself is never edited, exactly as the capture endpoints never edit the order they concern.
+ * @summary Move a request through the inbox
+ */
+export const setStudioRequestState = async (requestId: string,
+    requestStateRequest: RequestStateRequest, options?: Parameters<typeof customFetch>[1]): Promise<StudioRequest> => {
+
+  return customFetch<StudioRequest>(getSetStudioRequestStateUrl(requestId),
+  {
+    ...options,
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    body: JSON.stringify(requestStateRequest)
+  }
+);}
+
+
+
+
+
+export const getSetStudioRequestStateMutationOptions = <TError = ErrorType<ErrorEnvelope | OrderNotFound>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof setStudioRequestState>>, TError,{requestId: string;data: BodyType<RequestStateRequest>}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof setStudioRequestState>>, TError,{requestId: string;data: BodyType<RequestStateRequest>}, TContext> => {
+
+const mutationKey = ['setStudioRequestState'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof setStudioRequestState>>, {requestId: string;data: BodyType<RequestStateRequest>}> = (props) => {
+          const {requestId,data} = props ?? {};
+
+          return  setStudioRequestState(requestId,data,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type SetStudioRequestStateMutationResult = NonNullable<Awaited<ReturnType<typeof setStudioRequestState>>>
+    export type SetStudioRequestStateMutationBody = BodyType<RequestStateRequest>
+    export type SetStudioRequestStateMutationError = ErrorType<ErrorEnvelope | OrderNotFound>
+
+    /**
+ * @summary Move a request through the inbox
+ */
+export const useSetStudioRequestState = <TError = ErrorType<ErrorEnvelope | OrderNotFound>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof setStudioRequestState>>, TError,{requestId: string;data: BodyType<RequestStateRequest>}, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof setStudioRequestState>>,
+        TError,
+        {requestId: string;data: BodyType<RequestStateRequest>},
+        TContext
+      > => {
+      return useMutation(getSetStudioRequestStateMutationOptions(options));
+    }
+
+export const getListNewsletterSignupsUrl = () => {
+
+
+
+
+  return `/api/studio/newsletter`
+}
+
+/**
+ * The marketing opt-ins captured on the site, and — read live from Resend — whether each one is actually on the audience the studio sends broadcasts to. They land in the same "Website Contact Messages" database as the other requests but are deliberately kept out of the request queue: an opt-in is a consent record nobody answers, and leaving them there makes a queue that never empties.
+ *
+ * Membership is NEVER stored as a marker on the Notion row. The audience is the sending list, so it is also the only honest answer to "did this person get added?" — a checkbox on the row could only ever say what someone remembered to tick, and the capture-time sync (which is best-effort, and silently skipped when the audience isn't configured) would not tick it. This is the same rule the return refunds follow with Stripe.
+ *
+ * Same staff gate as the rest of the studio surface: 401 when not signed in, 404 when signed in but not staff, 403 when staff but not signed in with Google.
+ * @summary Newsletter opt-ins and whether they reached the mailing list
+ */
+export const listNewsletterSignups = async ( options?: Parameters<typeof customFetch>[1]): Promise<NewsletterSignupList> => {
+
+  return customFetch<NewsletterSignupList>(getListNewsletterSignupsUrl(),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
+
+
+
+
+export const getListNewsletterSignupsQueryKey = () => {
+    return [
+    `/api/studio/newsletter`
+    ] as const;
+    }
+
+
+export const getListNewsletterSignupsQueryOptions = <TData = Awaited<ReturnType<typeof listNewsletterSignups>>, TError = ErrorType<ErrorEnvelope | OrderNotFound>>( options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof listNewsletterSignups>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getListNewsletterSignupsQueryKey();
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof listNewsletterSignups>>> = ({ signal }) => listNewsletterSignups({ signal, ...requestOptions });
+
+
+
+
+
+   return  { queryKey, queryFn, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof listNewsletterSignups>>, TError, TData> & { queryKey: QueryKey }
+}
+
+export type ListNewsletterSignupsQueryResult = NonNullable<Awaited<ReturnType<typeof listNewsletterSignups>>>
+export type ListNewsletterSignupsQueryError = ErrorType<ErrorEnvelope | OrderNotFound>
+
+
+/**
+ * @summary Newsletter opt-ins and whether they reached the mailing list
+ */
+
+export function useListNewsletterSignups<TData = Awaited<ReturnType<typeof listNewsletterSignups>>, TError = ErrorType<ErrorEnvelope | OrderNotFound>>(
+  options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof listNewsletterSignups>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+
+ ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+
+  const queryOptions = getListNewsletterSignupsQueryOptions(options)
+
+  const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
+
+  return withQueryKey(query, queryOptions.queryKey);
+}
+
+
+
+
+
+
+
+export const getSubscribeNewsletterSignupUrl = (signupId: string,) => {
+
+
+
+
+  return `/api/studio/newsletter/${signupId}/subscribe`
+}
+
+/**
+ * Adds the opt-in's email to the configured Resend audience and then closes its Notion row, so the two halves of "I've dealt with this person" happen together and neither can be forgotten.
+ *
+ * An address Resend already holds is left alone and the row is simply filed away, so a repeat press is safe and a partial failure is retryable. That is also what keeps the studio out of anyone's unsubscribe: an opted-out contact is already on the audience, so nothing is written for them.
+ *
+ * It is refused (409) when the audience isn't configured — closing the row would then record a subscription that never happened — and when the row carries no address. Either can still be dismissed with the request-state operation instead.
+ *
+ * Notion is written only after Resend accepts. A failure there leaves the row open, which is the safe direction — an opt-in that stays in the list costs a second press, one that is filed away having never reached the audience costs a subscriber silently.
+ * @summary Add one opt-in to the Resend audience and file the row away
+ */
+export const subscribeNewsletterSignup = async (signupId: string, options?: Parameters<typeof customFetch>[1]): Promise<NewsletterSignup> => {
+
+  return customFetch<NewsletterSignup>(getSubscribeNewsletterSignupUrl(signupId),
+  {
+    ...options,
+    method: 'POST'
+
+
+  }
+);}
+
+
+
+
+
+export const getSubscribeNewsletterSignupMutationOptions = <TError = ErrorType<ErrorEnvelope | OrderNotFound>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof subscribeNewsletterSignup>>, TError,{signupId: string}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof subscribeNewsletterSignup>>, TError,{signupId: string}, TContext> => {
+
+const mutationKey = ['subscribeNewsletterSignup'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof subscribeNewsletterSignup>>, {signupId: string}> = (props) => {
+          const {signupId} = props ?? {};
+
+          return  subscribeNewsletterSignup(signupId,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type SubscribeNewsletterSignupMutationResult = NonNullable<Awaited<ReturnType<typeof subscribeNewsletterSignup>>>
+
+    export type SubscribeNewsletterSignupMutationError = ErrorType<ErrorEnvelope | OrderNotFound>
+
+    /**
+ * @summary Add one opt-in to the Resend audience and file the row away
+ */
+export const useSubscribeNewsletterSignup = <TError = ErrorType<ErrorEnvelope | OrderNotFound>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof subscribeNewsletterSignup>>, TError,{signupId: string}, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof subscribeNewsletterSignup>>,
+        TError,
+        {signupId: string},
+        TContext
+      > => {
+      return useMutation(getSubscribeNewsletterSignupMutationOptions(options));
     }
 
