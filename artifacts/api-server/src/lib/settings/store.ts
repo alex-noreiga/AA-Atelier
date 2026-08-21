@@ -13,27 +13,11 @@
 
 import { fetchStudioSettings } from "../notion/settings.repository.js";
 
-/** The Studio Settings keys the app reads. The Notion `Setting` title matches the
- * env var name 1:1 so the mapping can't drift; this list is the documented set
- * (a seed for the atelier's rows). `settingValue` still accepts any string. */
-export const SETTING_KEYS = [
-  "RUSH_SURCHARGE_RATE",
-  "MEASUREMENT_LOCK_FROM_STAGE",
-  "APPOINTMENT_TIMEZONE",
-  "APPOINTMENT_MIN_LEAD_HOURS",
-  "APPOINTMENT_MAX_ADVANCE_DAYS",
-  "APPOINTMENT_SLOT_STEP_MINUTES",
-  "APPOINTMENT_REMINDER_LEAD_DAYS",
-  "ATELIER_INBOX_EMAIL",
-  "ATELIER_CONTACT_INBOX_EMAIL",
-  "ATELIER_APPOINTMENTS_INBOX_EMAIL",
-  "ALERT_INBOX_EMAIL",
-  "REFERRAL_CREDIT_AMOUNT",
-  "REFERRAL_WELCOME_PERCENT",
-  "RETURNING_DISCOUNT_PERCENT",
-  "REWARD_CODE_EXPIRES_DAYS",
-  "COLOR_PALETTE",
-] as const;
+// The keys the app reads, what each one means, and how a value is validated all
+// live in `./catalog.ts` — one entry per setting, which is what the studio
+// dashboard's settings editor renders. `settingValue` below still accepts any
+// string, so a caller adding a key is never blocked on the catalog; but a key
+// missing from it is a key the atelier can't see or edit, so add both together.
 
 let snapshot = new Map<string, string>();
 

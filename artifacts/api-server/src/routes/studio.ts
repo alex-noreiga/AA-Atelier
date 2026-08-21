@@ -7,6 +7,7 @@ import {
   GetStudioAccessResponse,
   GetStudioAnalyticsResponse,
   GetStudioMaterialsResponse,
+  GetStudioSettingsResponse,
   ListStaffAvailabilityResponse,
   ListNewsletterSignupsResponse,
   ListStudioRequestsResponse,
@@ -20,6 +21,9 @@ import {
   SetStudioReviewStatusBody,
   SetStudioReviewStatusParams,
   SetStudioReviewStatusResponse,
+  SetStudioSettingBody,
+  SetStudioSettingParams,
+  SetStudioSettingResponse,
   SubscribeNewsletterSignupParams,
   SubscribeNewsletterSignupResponse,
   UpdateStaffAvailabilityBody,
@@ -50,6 +54,10 @@ import {
   getNewsletterPanel,
   subscribeNewsletterSignup,
 } from "../services/studio-newsletter.service.js";
+import {
+  getStudioSettings,
+  saveStudioSetting,
+} from "../services/studio-settings.service.js";
 import {
   getStaffAvailability,
   addStaffAvailability,
@@ -296,6 +304,42 @@ router.post(
     const { signupId } = res.locals.params as { signupId: string };
     const signup = await subscribeNewsletterSignup(signupId);
     res.json(SubscribeNewsletterSignupResponse.parse(signup));
+  },
+);
+
+// The atelier-editable settings, and the write that changes one.
+//
+// The settings themselves have been live-editable in Notion for a while; what
+// was missing is that a free-text key/value table can't tell you anything. A
+// mistyped key is a row nothing reads, a mistyped value is parsed and quietly
+// replaced by the built-in default, and Notion shows both as though they were in
+// force. So the read below reports where each effective value actually came
+// from, and the write validates against the setting before storing it — which is
+// the whole difference between this and typing into the table.
+router.get(
+  "/studio/settings",
+  studioRateLimiter,
+  requireStaff,
+  async (_req, res) => {
+    const overview = await getStudioSettings();
+    res.json(GetStudioSettingsResponse.parse(overview));
+  },
+);
+
+// A PUT because the whole value is sent and re-sending it changes nothing, and
+// because clearing a setting is the same operation with an empty value — there
+// is deliberately no delete: the row documents the key, and a blank value is
+// what "unset" means everywhere else in this system.
+router.put(
+  "/studio/settings/:key",
+  studioRateLimiter,
+  requireStaff,
+  validate({ params: SetStudioSettingParams, body: SetStudioSettingBody }),
+  async (_req, res) => {
+    const { key } = res.locals.params as { key: string };
+    const { value } = res.locals.body as { value: string };
+    const setting = await saveStudioSetting(key, value);
+    res.json(SetStudioSettingResponse.parse(setting));
   },
 );
 
