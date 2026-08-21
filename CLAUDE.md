@@ -286,9 +286,8 @@ Express app (artifacts/api-server)  ──►  Notion REST API (orders database)
   │                                  /api/studio/newsletter/:id/subscribe adds one
   │                                  to the audience and then files its Notion row
   │                                  away; refused (409) with no audience
-  │                                  configured, no address, or a contact who has
-  │                                  unsubscribed. Dismissing without adding is the
-  │                                  request-state operation above
+  │                                  configured or no address. Dismissing without
+  │                                  adding is the request-state operation above
   └─ POST /api/studio/tools/:tool  → the atelier's five internal actions, run from
                                      the signed-in studio dashboard: milestone
                                      reconciliation (`milestones`, the same sweep
@@ -2721,13 +2720,13 @@ adds one to the audience and files its row away. Code:
    source of truth for money — the Notion markers are not".
 
 2. **"We couldn't ask" is its own answer.** `NewsletterSubscription` is
-   `subscribed` / `unsubscribed` / `absent` / **`unknown`**, and the Add button is
-   offered **only** on `absent`. An unreadable or unconfigured audience reports
-   `unknown` for every row and the panel says which of the two it is — because
-   rendering "we couldn't reach Resend" as "not on the list" would put an Add
-   button in front of people who are already subscribed. The audience read is
-   best-effort: Notion and Resend are separate systems, so a Resend outage costs
-   the subscribed column for one page load, not the list of who opted in.
+   `subscribed` / `absent` / **`unknown`**, and the Add button is offered **only**
+   on `absent`. An unreadable or unconfigured audience reports `unknown` for every
+   row and the panel says which of the two it is — because rendering "we couldn't
+   reach Resend" as "not on the list" would put an Add button in front of people
+   who are already on it. The audience read is best-effort: Notion and Resend are
+   separate systems, so a Resend outage costs the subscribed column for one page
+   load, not the list of who opted in.
 
 3. **Resend first, Notion second.** An opt-in left in the panel having already
    been added costs one wasted press (the upsert is idempotent); one filed away
@@ -2735,12 +2734,18 @@ adds one to the audience and files its row away. Code:
    `Stage` write only happens after Resend accepts, and a Resend failure leaves
    the row open.
 
-4. **Re-subscribing someone who opted out is refused (409), not attempted.** The
-   `upsertAudienceContact` PATCH sets `unsubscribed: false`, which is right at
-   capture time (the person just asked) and wrong from a dashboard. The membership
-   is checked before the write, and such a row can still be **dismissed**. The
-   same 409 covers an unconfigured audience — closing the row would otherwise
-   record a subscription that never happened.
+4. **Whether a contact has since UNSUBSCRIBED is deliberately not modelled.**
+   Resend owns unsubscribes — it attaches the one-click unsubscribe to every
+   broadcast and honours it — so an opt-out is not something the atelier acts on,
+   and a state nobody acts on is one more thing to reason about for no gain. Such
+   a contact reads as `subscribed` (Resend holds them) and so is never offered
+   the Add button. That also keeps the studio structurally out of anyone's
+   opt-out: `subscribeNewsletterSignup` **skips the Resend write for an address
+   already on the audience** and just files the row, so `upsertAudienceContact`'s
+   re-subscribe PATCH — right at capture time, when the person has just asked, and
+   wrong from a dashboard — is unreachable from this panel. A 409 is left for the
+   two states that genuinely block: an unconfigured audience (closing the row
+   would record a subscription that never happened) and a row with no address.
 
 5. **Dismiss reuses the queue's state operation.** There is one writer of a
    contact row's `Stage` (`PUT /studio/requests/:id/state`), and the newsletter

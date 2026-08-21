@@ -114,18 +114,6 @@ describe("StudioNewsletter", () => {
     );
   });
 
-  it("offers no Add button for someone who unsubscribed", () => {
-    withPanel([signup({ subscription: "unsubscribed" })]);
-    render(<StudioNewsletter />);
-
-    expect(screen.queryByTestId("signup-add-sign-1")).toBeNull();
-    expect(screen.getByTestId("signup-subscription-sign-1")).toHaveTextContent(
-      "Unsubscribed",
-    );
-    // It can still be filed away.
-    expect(screen.getByTestId("signup-dismiss-sign-1")).toBeInTheDocument();
-  });
-
   it("offers no Add button when the answer is unknown", () => {
     withPanel([signup({ subscription: "unknown" })], {
       configured: true,
@@ -189,7 +177,7 @@ describe("StudioNewsletter", () => {
   it("shows the server's reason when an add is refused", async () => {
     subscribe.mockImplementation((_vars, opts) =>
       opts.onError({
-        data: { error: "This person has unsubscribed in Resend." },
+        data: { error: "No Resend audience is configured." },
       }),
     );
     withPanel([signup()]);
@@ -198,7 +186,7 @@ describe("StudioNewsletter", () => {
     await userEvent.click(screen.getByTestId("signup-add-sign-1"));
 
     expect(screen.getByTestId("signup-error-sign-1")).toHaveTextContent(
-      "This person has unsubscribed in Resend.",
+      "No Resend audience is configured.",
     );
   });
 

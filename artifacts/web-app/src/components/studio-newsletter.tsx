@@ -340,14 +340,15 @@ function SignupRow({ signup }: { signup: NewsletterSignup }) {
 }
 
 /** Whether this address is on the mailing list — the whole reason the panel
- * exists, so it reads as a status rather than a decoration. */
+ * exists, so it reads as a status rather than a decoration.
+ *
+ * There is no "unsubscribed" here on purpose. Resend owns unsubscribes and
+ * honours them on every broadcast, so someone who opted out is somebody the
+ * studio has nothing left to do about: they read as on the list, and the Add
+ * button isn't offered for them any more than for anyone else Resend holds. */
 function SubscriptionBadge({ signup }: { signup: NewsletterSignup }) {
   const { label, tone } = {
     subscribed: { label: "On the list", tone: "bg-primary/10 text-primary" },
-    unsubscribed: {
-      label: "Unsubscribed",
-      tone: "bg-muted text-muted-foreground",
-    },
     absent: {
       label: "Not on the list",
       tone: "bg-destructive/10 text-destructive",

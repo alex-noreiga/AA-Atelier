@@ -130,19 +130,28 @@ export async function upsertAudienceContactBestEffort(
 // is the same rule the return refunds follow with Stripe: the vendor holds the
 // fact, our rows hold the paperwork.
 
-/** Where one email stands in the audience. */
-export type AudienceMembership = "subscribed" | "unsubscribed" | "absent";
+/**
+ * Where one email stands in the audience: on it, or not.
+ *
+ * Deliberately NOT three-valued. Resend also reports whether a contact has
+ * unsubscribed, and this does not read it: Resend owns the subscription (it
+ * attaches the one-click unsubscribe to every broadcast, and honours it), so
+ * someone who opted out is simply somebody the studio has nothing left to do
+ * about. Carrying that state would only put a distinction on the dashboard that
+ * nobody acts on — and, because the panel offers its Add button on "not on the
+ * list" alone, an opted-out contact is never offered one either way.
+ */
+export type AudienceMembership = "subscribed" | "absent";
 
 /** The audience as the studio panel needs it: who is on it, and how many. */
 export interface AudienceSnapshot {
-  /** Lowercased email → whether Resend has them opted out. */
-  contacts: Map<string, boolean>;
+  /** Lowercased emails. */
+  contacts: Set<string>;
   total: number;
 }
 
 interface ResendContactRow {
   email?: unknown;
-  unsubscribed?: unknown;
 }
 
 interface ResendContactsResponse {
@@ -190,12 +199,12 @@ export async function listAudienceContacts(
   }
 
   const body = (await response.json()) as ResendContactsResponse;
-  const contacts = new Map<string, boolean>();
+  const contacts = new Set<string>();
   for (const row of body.data ?? []) {
     if (typeof row.email !== "string") continue;
     const email = row.email.trim().toLowerCase();
     if (!email) continue;
-    contacts.set(email, row.unsubscribed === true);
+    contacts.add(email);
   }
 
   return { contacts, total: contacts.size };
@@ -208,7 +217,7 @@ export function membershipIn(
   email: string,
 ): AudienceMembership | null {
   if (!snapshot) return null;
-  const unsubscribed = snapshot.contacts.get(email.trim().toLowerCase());
-  if (unsubscribed === undefined) return "absent";
-  return unsubscribed ? "unsubscribed" : "subscribed";
+  return snapshot.contacts.has(email.trim().toLowerCase())
+    ? "subscribed"
+    : "absent";
 }

@@ -1905,14 +1905,17 @@ paths:
         person" happen together and neither can be forgotten.
 
 
-        The add is an upsert, so pressing this for someone already on the list
-        changes nothing and answers `subscribed` — which makes a repeat press
-        safe and a partial failure retryable. It is refused (409) when the
-        audience isn't configured, because closing the row would then record a
-        subscription that never happened, and when the contact has
-        UNSUBSCRIBED in Resend: re-adding someone who opted out is not a
-        decision the atelier can take on their behalf, and the row can still be
-        dismissed with the request-state operation instead.
+        An address Resend already holds is left alone and the row is simply
+        filed away, so a repeat press is safe and a partial failure is
+        retryable. That is also what keeps the studio out of anyone's
+        unsubscribe: an opted-out contact is already on the audience, so
+        nothing is written for them.
+
+
+        It is refused (409) when the audience isn't configured — closing the
+        row would then record a subscription that never happened — and when the
+        row carries no address. Either can still be dismissed with the
+        request-state operation instead.
 
 
         Notion is written only after Resend accepts. A failure there leaves the
@@ -1959,8 +1962,7 @@ paths:
                 $ref: "#/components/schemas/OrderNotFound"
         "409":
           description: >-
-            The audience isn't configured, the row carries no email, or the
-            contact has unsubscribed in Resend.
+            The audience isn't configured, or the row carries no email.
           content:
             application/json:
               schema:
@@ -2876,15 +2878,21 @@ components:
             queue says it is partial instead of looking complete.
     NewsletterSubscription:
       type: string
-      enum: [subscribed, unsubscribed, absent, unknown]
+      enum: [subscribed, absent, unknown]
       description: >-
         Where this email stands in the Resend audience, read live rather than
-        stored. `subscribed` — on the list and receiving broadcasts.
-        `unsubscribed` — on the list but opted out, which the studio must not
-        undo on their behalf. `absent` — not on the list, so this is the row to
-        act on. `unknown` — the audience isn't configured or couldn't be read,
-        in which case the panel says so rather than implying nobody is
-        subscribed.
+        stored. `subscribed` — Resend holds them, so there is nothing to do.
+        `absent` — not on the list, so this is the row to act on. `unknown` —
+        the audience isn't configured or couldn't be read, in which case the
+        panel says so rather than implying nobody is on the list.
+
+
+        Whether a contact has since unsubscribed is deliberately NOT reported.
+        Resend owns that: it attaches the one-click unsubscribe to every
+        broadcast and honours it, so an opt-out is not something the studio
+        acts on. Such a contact reads as `subscribed` — Resend has them — and
+        so is never offered the add action, which is the behaviour that
+        matters.
     NewsletterAudienceStatus:
       type: object
       description: >-

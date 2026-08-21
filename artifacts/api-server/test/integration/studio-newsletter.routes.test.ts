@@ -108,7 +108,7 @@ beforeEach(() => {
   });
   mockHandled.mockResolvedValue([]);
   mockConfigured.mockReturnValue(true);
-  mockAudience.mockResolvedValue({ contacts: new Map(), total: 0 });
+  mockAudience.mockResolvedValue({ contacts: new Set(), total: 0 });
   mockUpsert.mockResolvedValue(undefined);
   mockFind.mockResolvedValue(row());
   mockSetStage.mockResolvedValue(row({ state: "closed" }));
@@ -204,9 +204,9 @@ describe("POST /api/studio/newsletter/:signupId/subscribe", () => {
     expect(mockSetStage).toHaveBeenCalledWith("sign-1", "closed");
   });
 
-  it("409s rather than re-subscribing someone who opted out", async () => {
+  it("leaves an address Resend already holds alone, and still files the row", async () => {
     mockAudience.mockResolvedValue({
-      contacts: new Map([["skater@example.com", true]]),
+      contacts: new Set(["skater@example.com"]),
       total: 1,
     });
 
@@ -214,9 +214,13 @@ describe("POST /api/studio/newsletter/:signupId/subscribe", () => {
       .post("/api/studio/newsletter/sign-1/subscribe")
       .set("Authorization", "Bearer staff-token");
 
-    expect(res.status).toBe(409);
-    expect(res.body.error).toMatch(/unsubscribed/i);
+    expect(res.status).toBe(200);
+    expect(res.body).toMatchObject({
+      state: "closed",
+      subscription: "subscribed",
+    });
     expect(mockUpsert).not.toHaveBeenCalled();
+    expect(mockSetStage).toHaveBeenCalledWith("sign-1", "closed");
   });
 
   it("409s when no audience is configured, leaving the row open", async () => {

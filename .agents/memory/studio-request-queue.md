@@ -130,14 +130,23 @@ Consequences:
   unconfigured audience must never render as "not on the list", because `absent` is
   what puts an Add button in front of someone already subscribed. The Add button is
   offered on `absent` alone.
+- **Unsubscribed is NOT modelled**, and this was a deliberate reversal. The first
+  cut had a four-valued subscription and refused (409) to add an opted-out contact.
+  The atelier's call: "I don't care about unsubscribed. If they wanted to
+  unsubscribe that's their business." That is right — Resend owns unsubscribes and
+  honours them on every broadcast, so an opt-out is not a state anyone here acts
+  on, and carrying it only added a badge and a refusal to reason about. An
+  opted-out contact now reads as `subscribed` (Resend holds them) and is offered
+  nothing, which was already the behaviour. **The compliance property is kept
+  structurally instead of by a special case**: the subscribe path skips the Resend
+  write for any address already on the audience, so `upsertAudienceContact`'s
+  re-subscribe PATCH cannot be reached from the dashboard.
 - **Resend first, then the Notion `Stage` write.** An opt-in left in the panel
   having already been added costs one wasted press (the upsert is idempotent); one
   filed away having never reached the list costs a subscriber, silently, forever.
-- **A 409 rather than a re-subscribe** when Resend says the contact unsubscribed.
-  `upsertAudienceContact`'s PATCH sets `unsubscribed: false` unconditionally, which
-  is right at capture time (the person just asked) and wrong from a dashboard. Also
-  409 when no audience is configured — closing the row would record a subscription
-  that never happened.
+- **409 only for the two states that genuinely block**: no audience configured
+  (closing the row would record a subscription that never happened) and a row with
+  no address. Both can still be dismissed.
 - **The audience read is best-effort but the Notion read is not.** Two separate
   systems: a Resend outage costs the subscribed column for one page load, not the
   list of who opted in.

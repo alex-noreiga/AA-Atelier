@@ -74,9 +74,10 @@ function row(
   };
 }
 
-/** A Resend audience snapshot holding `email → unsubscribed`. */
-function audience(entries: Array<[string, boolean]> = []) {
-  return { contacts: new Map(entries), total: entries.length };
+/** A Resend audience snapshot: the emails it holds. Whether any of them have
+ * since unsubscribed is deliberately not modelled — Resend owns that. */
+function audience(emails: string[] = []) {
+  return { contacts: new Set(emails), total: emails.length };
 }
 
 beforeEach(() => {
@@ -97,25 +98,18 @@ describe("getNewsletterPanel", () => {
       records: [
         signup({ id: "on", email: "on@example.com" }),
         signup({ id: "off", email: "off@example.com" }),
-        signup({ id: "gone", email: "gone@example.com" }),
       ],
       truncated: false,
     });
-    mockAudience.mockResolvedValue(
-      audience([
-        ["on@example.com", false],
-        ["gone@example.com", true],
-      ]),
-    );
+    mockAudience.mockResolvedValue(audience(["on@example.com"]));
 
     const panel = await getNewsletterPanel();
 
     expect(panel.pending.map((s) => [s.id, s.subscription])).toEqual([
       ["on", "subscribed"],
       ["off", "absent"],
-      ["gone", "unsubscribed"],
     ]);
-    expect(panel.audience).toEqual({ configured: true, contactCount: 2 });
+    expect(panel.audience).toEqual({ configured: true, contactCount: 1 });
   });
 
   it("matches an address whatever its casing", async () => {
@@ -123,7 +117,7 @@ describe("getNewsletterPanel", () => {
       records: [signup({ email: "Skater@Example.com" })],
       truncated: false,
     });
-    mockAudience.mockResolvedValue(audience([["skater@example.com", false]]));
+    mockAudience.mockResolvedValue(audience(["skater@example.com"]));
 
     const panel = await getNewsletterPanel();
     expect(panel.pending[0].subscription).toBe("subscribed");
@@ -218,14 +212,17 @@ describe("subscribeNewsletterSignup", () => {
     expect(mockSetStage).not.toHaveBeenCalled();
   });
 
-  it("refuses to undo somebody's unsubscribe", async () => {
-    mockAudience.mockResolvedValue(audience([["skater@example.com", true]]));
+  // Leaving an address Resend already holds alone is what keeps the studio out
+  // of anyone's unsubscribe: an opted-out contact is on the audience, so the
+  // upsert — whose PATCH would clear their opt-out — is never reached for them.
+  it("writes nothing to Resend for an address already on the list, and still files the row", async () => {
+    mockAudience.mockResolvedValue(audience(["skater@example.com"]));
 
-    await expect(subscribeNewsletterSignup("sign-1")).rejects.toThrow(
-      ConflictError,
-    );
+    const result = await subscribeNewsletterSignup("sign-1");
+
     expect(mockUpsert).not.toHaveBeenCalled();
-    expect(mockSetStage).not.toHaveBeenCalled();
+    expect(mockSetStage).toHaveBeenCalledWith("sign-1", "closed");
+    expect(result.subscription).toBe("subscribed");
   });
 
   it("refuses when no audience is configured, rather than closing the row", async () => {

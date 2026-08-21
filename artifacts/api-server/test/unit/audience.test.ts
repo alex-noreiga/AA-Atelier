@@ -146,12 +146,15 @@ describe("listAudienceContacts", () => {
     expect(calls).toHaveLength(0);
   });
 
-  it("keys the audience by lowercased email, carrying the opt-out flag", async () => {
+  it("keys the audience by lowercased email", async () => {
     const { impl, calls } = fakeFetch([
       new Response(
         JSON.stringify({
           data: [
-            { email: "Grace@Example.com", unsubscribed: false },
+            { email: "Grace@Example.com" },
+            // Resend reports an opt-out; we deliberately don't read it — Resend
+            // owns unsubscribes, so an opted-out contact is simply on the list
+            // as far as this panel is concerned, and offered no action.
             { email: "ada@example.com", unsubscribed: true },
           ],
         }),
@@ -166,7 +169,7 @@ describe("listAudienceContacts", () => {
     );
     expect(snapshot?.total).toBe(2);
     expect(membershipIn(snapshot, "grace@example.com")).toBe("subscribed");
-    expect(membershipIn(snapshot, "ADA@example.com")).toBe("unsubscribed");
+    expect(membershipIn(snapshot, "ADA@example.com")).toBe("subscribed");
     expect(membershipIn(snapshot, "nobody@example.com")).toBe("absent");
   });
 

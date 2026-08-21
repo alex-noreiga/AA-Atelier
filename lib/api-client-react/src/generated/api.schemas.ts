@@ -525,14 +525,15 @@ export interface StudioRequestList {
 }
 
 /**
- * Where this email stands in the Resend audience, read live rather than stored. `subscribed` — on the list and receiving broadcasts. `unsubscribed` — on the list but opted out, which the studio must not undo on their behalf. `absent` — not on the list, so this is the row to act on. `unknown` — the audience isn't configured or couldn't be read, in which case the panel says so rather than implying nobody is subscribed.
+ * Where this email stands in the Resend audience, read live rather than stored. `subscribed` — Resend holds them, so there is nothing to do. `absent` — not on the list, so this is the row to act on. `unknown` — the audience isn't configured or couldn't be read, in which case the panel says so rather than implying nobody is on the list.
+ *
+ * Whether a contact has since unsubscribed is deliberately NOT reported. Resend owns that: it attaches the one-click unsubscribe to every broadcast and honours it, so an opt-out is not something the studio acts on. Such a contact reads as `subscribed` — Resend has them — and so is never offered the add action, which is the behaviour that matters.
  */
 export type NewsletterSubscription = typeof NewsletterSubscription[keyof typeof NewsletterSubscription];
 
 
 export const NewsletterSubscription = {
   subscribed: 'subscribed',
-  unsubscribed: 'unsubscribed',
   absent: 'absent',
   unknown: 'unknown',
 } as const;

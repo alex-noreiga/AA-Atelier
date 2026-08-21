@@ -37,9 +37,15 @@ import { logger } from "../lib/logger.js";
 import { ConflictError, NotFoundError } from "../lib/errors.js";
 
 /** Where an opt-in stands with the mailing list. `unknown` is its own answer:
- * "we could not ask", which must not be rendered as "not subscribed". */
-export type SignupSubscription =
-  "subscribed" | "unsubscribed" | "absent" | "unknown";
+ * "we could not ask", which must not be rendered as "not on the list".
+ *
+ * Whether a contact has since UNSUBSCRIBED is deliberately not modelled here.
+ * Resend owns that — it attaches the one-click unsubscribe to every broadcast
+ * and honours it — so someone who opted out is somebody the studio has nothing
+ * left to do about, and a state nobody acts on is one more thing to reason
+ * about for no gain. They read as `subscribed` (Resend has them) and so are
+ * never offered the Add button, which is the behaviour that matters. */
+export type SignupSubscription = "subscribed" | "absent" | "unknown";
 
 /** One opt-in, plus the live answer to "did they reach the list?". */
 export interface NewsletterSignupView extends NewsletterSignupRecord {
@@ -126,11 +132,9 @@ export async function getNewsletterPanel(): Promise<{
  * list costs a subscriber, silently, forever.
  *
  * Refused rather than attempted when the audience isn't configured (closing the
- * row would record a subscription that never happened), when the row carries no
- * address, and when Resend says the contact has UNSUBSCRIBED — undoing
- * somebody's opt-out is not a decision the studio gets to take on their behalf,
- * whatever the row says. Such a row can still be dismissed through the ordinary
- * request-state operation.
+ * row would record a subscription that never happened) and when the row carries
+ * no address. Either can still be dismissed through the ordinary request-state
+ * operation.
  */
 export async function subscribeNewsletterSignup(
   signupId: string,
@@ -150,15 +154,14 @@ export async function subscribeNewsletterSignup(
     );
   }
 
-  // Checked before writing, not after: the upsert would re-subscribe them.
+  // An address Resend already holds is left alone — the row is simply filed
+  // away. That keeps the press idempotent, and it is also what makes it
+  // impossible to reach the upsert's re-subscribe path from this panel: someone
+  // who opted out is already on the audience, so nothing is written for them.
   const snapshot = await listAudienceContacts();
-  if (membershipIn(snapshot, existing.email) === "unsubscribed") {
-    throw new ConflictError(
-      "This person has unsubscribed in Resend, so they can't be added back from here. Dismiss the sign-up instead.",
-    );
+  if (membershipIn(snapshot, existing.email) !== "subscribed") {
+    await upsertAudienceContact(existing.email);
   }
-
-  await upsertAudienceContact(existing.email);
 
   const updated = await setRequestStage(signupId, "closed");
   if (!updated) {
