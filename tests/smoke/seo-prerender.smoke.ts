@@ -108,15 +108,32 @@ test.describe("Production smoke: SEO prerender", () => {
 // inbound backlinks use the www host; if the redirect were dropped the site
 // would still work but every canonical URL, OG tag and share card would
 // disagree with the address the visitor is on, splitting SEO signal silently.
+const APEX = "a3iceanddance.com";
+
+/**
+ * Whether a hostname really is the production domain.
+ *
+ * Deliberately NOT `hostname.endsWith(APEX)`: a bare suffix test also matches
+ * `evil-a3iceanddance.com`, which is the incomplete-URL-sanitization pattern
+ * CodeQL flags. The consequence here would only be a test skipping when it
+ * shouldn't, but the correct check is one line longer, so there is no reason to
+ * ship the loose one.
+ */
+function isProductionHost(hostname: string): boolean {
+  return hostname === APEX || hostname.endsWith(`.${APEX}`);
+}
+
 test.describe("Production smoke: canonical host", () => {
   test("www redirects to the apex domain", async ({ request, baseURL }) => {
-    const target = new URL(baseURL ?? "https://a3iceanddance.com");
+    const target = new URL(baseURL ?? `https://${APEX}`);
     test.skip(
-      !target.hostname.endsWith("a3iceanddance.com"),
+      !isProductionHost(target.hostname),
       `Target ${target.hostname} is not the production domain — no www redirect to check.`,
     );
 
-    const res = await request.get(`https://www.${target.hostname}/`, {
+    // Built from the known apex rather than the target's own hostname, so
+    // pointing the suite at www.<apex> can't produce a www.www.<apex> request.
+    const res = await request.get(`https://www.${APEX}/`, {
       maxRedirects: 0,
       failOnStatusCode: false,
     });
@@ -125,6 +142,6 @@ test.describe("Production smoke: canonical host", () => {
       [301, 308],
       `www answered ${res.status()}; expected a permanent redirect to the apex`,
     ).toContain(res.status());
-    expect(res.headers()["location"] ?? "").toContain(target.hostname);
+    expect(res.headers()["location"] ?? "").toContain(APEX);
   });
 });
