@@ -30,12 +30,14 @@ import {
 } from "./contact.blocks.js";
 import { NEWSLETTER_REQUEST_TYPE } from "./newsletter.blocks.js";
 import {
+  extractNewsletterSignups,
   extractStudioRequest,
   extractStudioRequests,
   REQUEST_STAGE_CLOSED,
   REQUEST_STAGE_VALUES,
   type NotionRequestPage,
   type NotionRequestsQueryResponse,
+  type NewsletterSignupRecord,
   type RequestState,
   type StudioRequestRecord,
 } from "./requests.schema.js";
@@ -195,4 +197,71 @@ export async function setRequestStage(
   }
 
   return extractStudioRequest((await response.json()) as NotionRequestPage);
+}
+
+// --- The newsletter opt-ins ------------------------------------------------
+//
+// Same database, same two-query shape as the queue above, and the mirror image
+// of its filter: everything the queue excludes is exactly what this reads.
+
+/** How many recently-filed opt-ins come back for reference. */
+export const HANDLED_SIGNUP_LIMIT = 12;
+
+/** The opt-ins not yet filed away, oldest first — someone who opted in weeks
+ * ago and never reached the mailing list is the one to fix first. */
+export async function listPendingNewsletterSignups(
+  client: NotionClient = getContactNotionClient(),
+): Promise<{ records: NewsletterSignupRecord[]; truncated: boolean }> {
+  assertConfigured(client);
+
+  const data = await queryRequests(client, {
+    page_size: OPEN_PAGE_SIZE,
+    filter: {
+      and: [
+        {
+          property: CONTACT_TYPE_PROPERTY,
+          select: { equals: NEWSLETTER_REQUEST_TYPE },
+        },
+        {
+          property: CONTACT_STAGE_PROPERTY,
+          select: { does_not_equal: REQUEST_STAGE_CLOSED },
+        },
+      ],
+    },
+    sorts: [{ timestamp: "created_time", direction: "ascending" }],
+  });
+
+  return {
+    records: extractNewsletterSignups(data.results),
+    truncated: Boolean(data.has_more),
+  };
+}
+
+/** The most recently filed-away opt-ins, newest first. Still checked against
+ * the live audience by the service, so one filed away that never reached the
+ * list stays visible rather than being assumed done. */
+export async function listHandledNewsletterSignups(
+  client: NotionClient = getContactNotionClient(),
+  limit: number = HANDLED_SIGNUP_LIMIT,
+): Promise<NewsletterSignupRecord[]> {
+  assertConfigured(client);
+
+  const data = await queryRequests(client, {
+    page_size: limit,
+    filter: {
+      and: [
+        {
+          property: CONTACT_TYPE_PROPERTY,
+          select: { equals: NEWSLETTER_REQUEST_TYPE },
+        },
+        {
+          property: CONTACT_STAGE_PROPERTY,
+          select: { equals: REQUEST_STAGE_CLOSED },
+        },
+      ],
+    },
+    sorts: [{ timestamp: "created_time", direction: "descending" }],
+  });
+
+  return extractNewsletterSignups(data.results);
 }

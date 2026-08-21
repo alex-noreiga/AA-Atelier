@@ -274,8 +274,21 @@ Express app (artifacts/api-server)  ──►  Notion REST API (orders database)
   │                                  /api/studio/requests/:id/state moves one row
   │                                  through the inbox — `new` / `replied` /
   │                                  `closed`, all reversible. Newsletter opt-ins
-  │                                  are excluded (a consent record, not a request).
-  │                                  Same staff gate as the figures above
+  │                                  are excluded — they have their own panel
+  │                                  below. Same staff gate as the figures above
+  ├─ GET  /api/studio/newsletter   → the marketing opt-ins, and — read LIVE from
+  │                                  Resend, never stored — whether each one
+  │                                  actually reached the audience broadcasts go
+  │                                  out to. The capture-time sync is best-effort
+  │                                  and self-gates off when no audience is set,
+  │                                  so this is where an opt-in that never synced
+  │                                  becomes visible. POST
+  │                                  /api/studio/newsletter/:id/subscribe adds one
+  │                                  to the audience and then files its Notion row
+  │                                  away; refused (409) with no audience
+  │                                  configured, no address, or a contact who has
+  │                                  unsubscribed. Dismissing without adding is the
+  │                                  request-state operation above
   └─ POST /api/studio/tools/:tool  → the atelier's five internal actions, run from
                                      the signed-in studio dashboard: milestone
                                      reconciliation (`milestones`, the same sweep
@@ -492,7 +505,10 @@ is still captured in Notion) and is **best-effort** (a Resend hiccup never fails
 opt-in). The upsert re-subscribes a previously-unsubscribed email that re-opts-in
 (create with `unsubscribed:false`, else PATCH by email). One-time setup: create an
 Audience in Resend → **Audiences**, set `RESEND_AUDIENCE_ID`, send via Resend →
-**Broadcasts** (free ≤1,000 contacts).
+**Broadcasts** (free ≤1,000 contacts). The studio dashboard's **newsletter panel**
+reconciles the two — it lists the opt-ins Notion holds and asks Resend which of
+them actually reached the audience, which is the only place a silently-failed
+best-effort sync becomes visible (see "The newsletter panel").
 
 **Auth:** the server reads `NOTION_API_KEY` and `NOTION_ORDERS_DATABASE_ID` from
 environment variables (via `createNotionClient` in `notion/client.ts`, read at first
@@ -2684,6 +2700,67 @@ writes the same `Website Contact Messages` database, the same `Stage` select, an
 the same `Request type` values the six writers already use (the inbox's triage
 views read the same property, so neither surface is authoritative over the other).
 
+### The newsletter panel (opt-ins vs. the Resend audience)
+
+The sixth request type gets its own panel rather than a place in the queue above,
+because nobody _answers_ an opt-in — someone puts the address on the mailing list.
+`GET /api/studio/newsletter` lists them; `POST /api/studio/newsletter/:id/subscribe`
+adds one to the audience and files its row away. Code:
+`services/studio-newsletter.service.ts`, the newsletter half of
+`lib/notion/requests.{schema,repository}.ts`, the read side of
+`lib/resend/audience.ts`, and `web-app/src/components/studio-newsletter.tsx`.
+
+1. **Membership is READ from Resend, never stored — this is the whole design.**
+   The app already tries to sync each opt-in at capture time
+   (`upsertAudienceContactBestEffort`), and that sync is **best-effort** and
+   **self-gates off** when `RESEND_AUDIENCE_ID` is unset. So an opt-in can sit in
+   Notion having never reached the list, with nothing anywhere saying so — and an
+   "added" checkbox on the row would be silent about exactly that case, because it
+   records what someone remembered to tick and the capture-time sync wouldn't tick
+   it. `listAudienceContacts` asks Resend instead. Same rule as "Stripe is the
+   source of truth for money — the Notion markers are not".
+
+2. **"We couldn't ask" is its own answer.** `NewsletterSubscription` is
+   `subscribed` / `unsubscribed` / `absent` / **`unknown`**, and the Add button is
+   offered **only** on `absent`. An unreadable or unconfigured audience reports
+   `unknown` for every row and the panel says which of the two it is — because
+   rendering "we couldn't reach Resend" as "not on the list" would put an Add
+   button in front of people who are already subscribed. The audience read is
+   best-effort: Notion and Resend are separate systems, so a Resend outage costs
+   the subscribed column for one page load, not the list of who opted in.
+
+3. **Resend first, Notion second.** An opt-in left in the panel having already
+   been added costs one wasted press (the upsert is idempotent); one filed away
+   having never reached the list costs a subscriber, silently, forever. So the
+   `Stage` write only happens after Resend accepts, and a Resend failure leaves
+   the row open.
+
+4. **Re-subscribing someone who opted out is refused (409), not attempted.** The
+   `upsertAudienceContact` PATCH sets `unsubscribed: false`, which is right at
+   capture time (the person just asked) and wrong from a dashboard. The membership
+   is checked before the write, and such a row can still be **dismissed**. The
+   same 409 covers an unconfigured audience — closing the row would otherwise
+   record a subscription that never happened.
+
+5. **Dismiss reuses the queue's state operation.** There is one writer of a
+   contact row's `Stage` (`PUT /studio/requests/:id/state`), and the newsletter
+   panel calls it for dismiss/put-back rather than growing a second one. That is
+   why `newsletter` rejoined `StudioRequestKind` — the row type has to be
+   expressible in the response — while `extractStudioRequests` still filters
+   opt-ins out of the queue itself.
+
+6. **The already-filed list keeps its live status.** A row dismissed in error, or
+   filed away before the audience was configured, still shows **Not on the list**
+   — so a mistake stays visible instead of being assumed dealt with.
+
+7. **`source` is parsed from the subject.** `newsletter.blocks.ts` deliberately
+   folds it into the title (`Newsletter opt-in — footer`) rather than adding a
+   property, so `extractSignupSource` reads it back. Display-only; nothing
+   branches on it, and an unrecognized subject simply yields nothing.
+
+Setup is the same `RESEND_AUDIENCE_ID` the capture-time sync already uses — unset
+⇒ the panel still lists the opt-ins (so nothing is lost) and says what to set.
+
 ## Postgres (payment idempotency + a provisioned read-model)
 
 One-time setup: create a Supabase project and set `SUPABASE_URL` + `SUPABASE_ANON_KEY`
@@ -3576,6 +3653,7 @@ Three things about it are load-bearing:
 | Change the measurement-change request                    | `artifacts/web-app/src/components/measurement-change-dialog.tsx` (opened from `components/custom-order-result.tsx`); `api-server/src/services/measurement-change.service.ts` + `routes/orders.ts` + `lib/notion/measurement-change.{blocks,repository}.ts` (writes to the **contact** database)                                                                                                                                                                                                                                                                                                                                                                                               |
 | Change review moderation on the dashboard                | `web-app/src/components/studio-reviews.tsx` (rendered by `pages/studio.tsx`); `services/studio-reviews.service.ts` + the `/studio/reviews` handlers in `routes/studio.ts` + the moderation half of `lib/notion/reviews.{schema,repository}.ts`                                                                                                                                                                                                                                                                                                                                                                                                                                                |
 | Change the customer-request queue on the dashboard       | `web-app/src/components/studio-requests.tsx` + `lib/studio-handoff.ts` (the hand-off into `components/studio-tools.tsx`), rendered by `pages/studio.tsx`; `services/studio-requests.service.ts` + the `/studio/requests` handlers in `routes/studio.ts` + `lib/notion/requests.{schema,repository}.ts` — which tool actions which kind lives in `requestAction`                                                                                                                                                                                                                                                                                                                               |
+| Change the newsletter panel on the dashboard             | `web-app/src/components/studio-newsletter.tsx` (rendered by `pages/studio.tsx`); `services/studio-newsletter.service.ts` + the `/studio/newsletter` handlers in `routes/studio.ts` + the newsletter half of `lib/notion/requests.{schema,repository}.ts` + the read side of `lib/resend/audience.ts` (`listAudienceContacts` / `membershipIn` — membership is never stored)                                                                                                                                                                                                                                                                                                                   |
 | Change post-delivery review capture                      | `artifacts/web-app/src/components/review-dialog.tsx` (opened from `components/custom-order-result.tsx` for delivered orders); `api-server/src/services/review.service.ts` + `services/delivery.ts` + `routes/orders.ts` + `lib/notion/reviews.{blocks,repository}.ts` (writes to the **Reviews** database)                                                                                                                                                                                                                                                                                                                                                                                    |
 | Change the published testimonials                        | `artifacts/web-app/src/components/testimonials.tsx` (rendered by `pages/home.tsx` + `pages/about.tsx`); `getPublishedReviews` in `api-server/src/services/review.service.ts` + `routes/reviews.ts` + `lib/notion/reviews.schema.ts`                                                                                                                                                                                                                                                                                                                                                                                                                                                           |
 | Change the studio's daily Notion ops page                | The **🧭 Studio Operations** page under **{ A.A. Atelier }** — four linked views over Custom Orders / Production Schedule / Reviews / Website Contact Messages; no code; see `.agents/memory/studio-operations-page.md`                                                                                                                                                                                                                                                                                                                                                                                                                                                                       |

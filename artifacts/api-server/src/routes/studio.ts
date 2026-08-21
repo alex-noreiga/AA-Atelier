@@ -8,6 +8,7 @@ import {
   GetStudioAnalyticsResponse,
   GetStudioMaterialsResponse,
   ListStaffAvailabilityResponse,
+  ListNewsletterSignupsResponse,
   ListStudioRequestsResponse,
   ListStudioReviewsResponse,
   RunStudioToolBody,
@@ -19,6 +20,8 @@ import {
   SetStudioReviewStatusBody,
   SetStudioReviewStatusParams,
   SetStudioReviewStatusResponse,
+  SubscribeNewsletterSignupParams,
+  SubscribeNewsletterSignupResponse,
   UpdateStaffAvailabilityBody,
   UpdateStaffAvailabilityParams,
   UpdateStaffAvailabilityResponse,
@@ -43,6 +46,10 @@ import {
   setRequestQueueState,
 } from "../services/studio-requests.service.js";
 import type { RequestState } from "../lib/notion/requests.schema.js";
+import {
+  getNewsletterPanel,
+  subscribeNewsletterSignup,
+} from "../services/studio-newsletter.service.js";
 import {
   getStaffAvailability,
   addStaffAvailability,
@@ -255,6 +262,40 @@ router.put(
     const { state } = res.locals.body as { state: RequestState };
     const updated = await setRequestQueueState(requestId, state);
     res.json(SetStudioRequestStateResponse.parse(updated));
+  },
+);
+
+// The newsletter opt-ins, which are kept out of the queue above on purpose: an
+// opt-in is a consent record nobody answers, and the job it needs is getting
+// the address onto the mailing list. Whether that happened is read live from
+// Resend rather than stored — the capture-time sync is best-effort and
+// self-gates off when no audience is configured, so a marker on the Notion row
+// would be silent about the one case worth catching.
+router.get(
+  "/studio/newsletter",
+  studioRateLimiter,
+  requireStaff,
+  async (_req, res) => {
+    const panel = await getNewsletterPanel();
+    res.json(ListNewsletterSignupsResponse.parse(panel));
+  },
+);
+
+// Add one opt-in to the audience and file its row away. A POST rather than a
+// PUT because it is not idempotent in the way the state writes are: it performs
+// an action against another vendor, and "add this person to the list" reads as
+// a thing done rather than a state set — even though the upsert underneath
+// makes a repeat press harmless. Dismissing an opt-in without subscribing is
+// the ordinary request-state operation above; there is no second way to do it.
+router.post(
+  "/studio/newsletter/:signupId/subscribe",
+  studioRateLimiter,
+  requireStaff,
+  validate({ params: SubscribeNewsletterSignupParams }),
+  async (_req, res) => {
+    const { signupId } = res.locals.params as { signupId: string };
+    const signup = await subscribeNewsletterSignup(signupId);
+    res.json(SubscribeNewsletterSignupResponse.parse(signup));
   },
 );
 

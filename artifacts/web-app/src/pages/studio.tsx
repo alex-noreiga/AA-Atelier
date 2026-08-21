@@ -14,6 +14,7 @@ import { PageShell } from "@/components/page-shell";
 import NotFound from "@/pages/not-found";
 import { StudioTools } from "@/components/studio-tools";
 import { StudioRequests } from "@/components/studio-requests";
+import { StudioNewsletter } from "@/components/studio-newsletter";
 import { StudioAvailability } from "@/components/studio-availability";
 import { StudioReviews } from "@/components/studio-reviews";
 import { StudioMaterials } from "@/components/studio-materials";
@@ -334,6 +335,8 @@ function Dashboard({ data }: { data: StudioAnalytics }) {
       <StudioAvailability />
 
       <StudioRequests onHandoff={(next) => setHandoff(toolHandoff(next))} />
+
+      <StudioNewsletter />
 
       <StudioTools handoff={handoff} />
     </div>

@@ -1831,6 +1831,146 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/ErrorEnvelope"
+  /studio/newsletter:
+    get:
+      operationId: listNewsletterSignups
+      tags: [studio]
+      summary: Newsletter opt-ins and whether they reached the mailing list
+      description: >-
+        The marketing opt-ins captured on the site, and — read live from
+        Resend — whether each one is actually on the audience the studio sends
+        broadcasts to. They land in the same "Website Contact Messages"
+        database as the other requests but are deliberately kept out of the
+        request queue: an opt-in is a consent record nobody answers, and
+        leaving them there makes a queue that never empties.
+
+
+        Membership is NEVER stored as a marker on the Notion row. The audience
+        is the sending list, so it is also the only honest answer to "did this
+        person get added?" — a checkbox on the row could only ever say what
+        someone remembered to tick, and the capture-time sync (which is
+        best-effort, and silently skipped when the audience isn't configured)
+        would not tick it. This is the same rule the return refunds follow with
+        Stripe.
+
+
+        Same staff gate as the rest of the studio surface: 401 when not signed
+        in, 404 when signed in but not staff, 403 when staff but not signed in
+        with Google.
+      security:
+        - bearerAuth: []
+      responses:
+        "200":
+          description: The opt-ins, oldest first, with their audience status
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/NewsletterSignupList"
+        "401":
+          description: Not signed in (missing or expired session)
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorEnvelope"
+        "403":
+          description: >-
+            A studio account whose session wasn't established with Google (the
+            default policy).
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorEnvelope"
+        "404":
+          description: >-
+            Signed in, but not a studio account — the same answer a URL that
+            doesn't exist gets (see the other studio operations).
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/OrderNotFound"
+        "500":
+          description: Server error
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorEnvelope"
+  /studio/newsletter/{signupId}/subscribe:
+    post:
+      operationId: subscribeNewsletterSignup
+      tags: [studio]
+      summary: Add one opt-in to the Resend audience and file the row away
+      description: >-
+        Adds the opt-in's email to the configured Resend audience and then
+        closes its Notion row, so the two halves of "I've dealt with this
+        person" happen together and neither can be forgotten.
+
+
+        The add is an upsert, so pressing this for someone already on the list
+        changes nothing and answers `subscribed` — which makes a repeat press
+        safe and a partial failure retryable. It is refused (409) when the
+        audience isn't configured, because closing the row would then record a
+        subscription that never happened, and when the contact has
+        UNSUBSCRIBED in Resend: re-adding someone who opted out is not a
+        decision the atelier can take on their behalf, and the row can still be
+        dismissed with the request-state operation instead.
+
+
+        Notion is written only after Resend accepts. A failure there leaves the
+        row open, which is the safe direction — an opt-in that stays in the
+        list costs a second press, one that is filed away having never reached
+        the audience costs a subscriber silently.
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: signupId
+          in: path
+          required: true
+          schema:
+            type: string
+          description: The opt-in's id, as returned by the list operation.
+      responses:
+        "200":
+          description: The opt-in as it now stands
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/NewsletterSignup"
+        "401":
+          description: Not signed in (missing or expired session)
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorEnvelope"
+        "403":
+          description: >-
+            A studio account whose session wasn't established with Google (the
+            default policy).
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorEnvelope"
+        "404":
+          description: >-
+            No such opt-in — or the caller isn't a studio account, which
+            answers identically by design (see the other studio operations).
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/OrderNotFound"
+        "409":
+          description: >-
+            The audience isn't configured, the row carries no email, or the
+            contact has unsubscribed in Resend.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorEnvelope"
+        "500":
+          description: Server error
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorEnvelope"
 components:
   securitySchemes:
     bearerAuth:
@@ -2598,18 +2738,21 @@ components:
         - measurement
         - cancellation
         - return
+        - newsletter
         - other
       description: >-
         What a customer is asking for, DERIVED from the row's `Request type`
-        select rather than enumerated from it. Five kinds name the values the
+        select rather than enumerated from it. Six kinds name the values the
         app writes; `other` is anything else — a blank select, or a type the
         atelier invented — so an unrecognized row appears in the queue asking
         to be looked at rather than vanishing from it.
 
 
-        Newsletter opt-ins share the same database but are not a kind here:
-        they are a consent record nobody answers, and are excluded from the
-        queue entirely.
+        `newsletter` never appears in the request QUEUE — an opt-in is a
+        consent record nobody answers, so it has its own panel (see
+        `/studio/newsletter`) and is filtered out of the queue. The kind still
+        exists because the queue's state operation is shared across the whole
+        contact inbox, and it answers with the row it wrote.
     StudioRequestState:
       type: string
       enum: [new, replied, closed]
@@ -2731,6 +2874,104 @@ components:
           description: >-
             True when there are more open requests than one read covers, so the
             queue says it is partial instead of looking complete.
+    NewsletterSubscription:
+      type: string
+      enum: [subscribed, unsubscribed, absent, unknown]
+      description: >-
+        Where this email stands in the Resend audience, read live rather than
+        stored. `subscribed` — on the list and receiving broadcasts.
+        `unsubscribed` — on the list but opted out, which the studio must not
+        undo on their behalf. `absent` — not on the list, so this is the row to
+        act on. `unknown` — the audience isn't configured or couldn't be read,
+        in which case the panel says so rather than implying nobody is
+        subscribed.
+    NewsletterAudienceStatus:
+      type: object
+      description: >-
+        The state of the Resend audience itself, so the panel can explain an
+        empty or unknown column rather than leaving it blank.
+      required: [configured]
+      properties:
+        configured:
+          type: boolean
+          description: >-
+            False when `RESEND_AUDIENCE_ID` (or the API key) is unset. Every
+            opt-in then reads `unknown`, the capture-time sync is off too, and
+            the panel says what to set rather than showing a list that looks
+            unhandled.
+        unreachable:
+          type: boolean
+          description: >-
+            True when the audience IS configured but Resend couldn't be read.
+            The opt-ins are still listed — from Notion, which is a separate
+            system — with an `unknown` subscription each. Absent when the read
+            worked.
+        contactCount:
+          type: integer
+          description: How many contacts the audience holds. Absent when unreadable.
+    NewsletterSignup:
+      type: object
+      description: >-
+        One marketing opt-in, and whether it reached the mailing list.
+        Staff-only.
+      required: [id, subject, state, subscription]
+      properties:
+        id:
+          type: string
+          description: The opt-in's Notion page id; also what an action is addressed to.
+        email:
+          type: string
+          description: >-
+            The address that opted in — the whole content of the record.
+            Omitted only on a malformed row, which can then be dismissed but
+            not subscribed.
+        source:
+          type: string
+          description: >-
+            Where they opted in (the footer field, the order form), recovered
+            from the row's subject. Absent when the capture recorded none.
+        subject:
+          type: string
+          description: The row's title, as the writer composed it.
+        state:
+          $ref: "#/components/schemas/StudioRequestState"
+        subscription:
+          $ref: "#/components/schemas/NewsletterSubscription"
+        submittedAt:
+          type: string
+          format: date-time
+          description: When they opted in (the row's Notion created time).
+        notionUrl:
+          type: string
+          description: The opt-in's page in Notion.
+    NewsletterSignupList:
+      type: object
+      description: >-
+        The opt-ins still to be dealt with, the recently filed ones, and the
+        state of the audience they are checked against.
+      required: [pending, handled, audience]
+      properties:
+        pending:
+          type: array
+          description: >-
+            Not yet filed away, OLDEST first — someone who opted in weeks ago
+            and never reached the list is the one to fix first.
+          items:
+            $ref: "#/components/schemas/NewsletterSignup"
+        handled:
+          type: array
+          description: >-
+            Recently closed, newest first. Capped, and still carrying their
+            live audience status — so a row filed away that never actually
+            reached the list is visible rather than assumed done.
+          items:
+            $ref: "#/components/schemas/NewsletterSignup"
+        audience:
+          $ref: "#/components/schemas/NewsletterAudienceStatus"
+        truncated:
+          type: boolean
+          description: >-
+            True when there are more pending opt-ins than one read covers.
     RequestStateRequest:
       type: object
       description: The state to record against a request.

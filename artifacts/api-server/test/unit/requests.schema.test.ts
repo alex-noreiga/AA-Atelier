@@ -1,6 +1,8 @@
 import { describe, it, expect } from "vitest";
 import {
+  extractNewsletterSignup,
   extractOrderNumber,
+  extractSignupSource,
   extractStudioRequest,
   extractStudioRequests,
   isNewsletterRow,
@@ -33,6 +35,9 @@ describe("requestKind", () => {
     expect(requestKind(page({ requestType: "Return / exchange" }))).toBe(
       "return",
     );
+    // Never reaches the queue (see extractStudioRequests), but the shared state
+    // operation answers with the row it wrote, and that row can be an opt-in.
+    expect(requestKind(page({ requestType: "Newsletter" }))).toBe("newsletter");
   });
 
   it("reads an unrecognized or blank type as `other` rather than dropping it", () => {
@@ -245,5 +250,63 @@ describe("extractStudioRequests", () => {
     ]);
 
     expect(records.map((r) => r.id)).toEqual(["keep", "keep-2"]);
+  });
+});
+
+// The opt-in's source is folded into the subject by the writer rather than
+// given a property, so parsing it back is the only way to show it.
+describe("extractSignupSource", () => {
+  it("reads the source the writer folded into the subject", () => {
+    expect(extractSignupSource("Newsletter opt-in — footer")).toBe("footer");
+    expect(extractSignupSource("Newsletter opt-in — order form")).toBe(
+      "order form",
+    );
+  });
+
+  it("yields nothing for a subject that carries none", () => {
+    expect(extractSignupSource("Newsletter opt-in")).toBe("");
+    expect(extractSignupSource("")).toBe("");
+  });
+});
+
+describe("extractNewsletterSignup", () => {
+  it("maps an opt-in to its narrow projection", () => {
+    expect(
+      extractNewsletterSignup(
+        page({
+          id: "sign-1",
+          requestType: "Newsletter",
+          subject: "Newsletter opt-in — footer",
+          email: "skater@example.com",
+          message: "",
+        }),
+      ),
+    ).toEqual({
+      id: "sign-1",
+      email: "skater@example.com",
+      source: "footer",
+      subject: "Newsletter opt-in — footer",
+      state: "new",
+      submittedAt: "2026-08-01T12:00:00.000Z",
+      notionUrl: "https://notion.so/request-page",
+    });
+  });
+
+  // Whether they reached the list is read from Resend by the service; nothing
+  // about membership is ever mapped off the Notion row.
+  it("carries no subscription state of its own", () => {
+    const record = extractNewsletterSignup(
+      page({ requestType: "Newsletter", stage: "Closed" }),
+    );
+    expect(record).not.toHaveProperty("subscription");
+    expect(record.state).toBe("closed");
+  });
+
+  it("names a row with no title, and omits an address it doesn't have", () => {
+    const record = extractNewsletterSignup(
+      page({ requestType: "Newsletter", subject: "", email: null }),
+    );
+    expect(record.subject).toBe("Newsletter opt-in");
+    expect(record.email).toBeUndefined();
   });
 });

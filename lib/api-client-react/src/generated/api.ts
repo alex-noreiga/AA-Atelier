@@ -54,6 +54,8 @@ import type {
   NewReturnResponse,
   NewReviewRequest,
   NewReviewResponse,
+  NewsletterSignup,
+  NewsletterSignupList,
   OrderNotFound,
   OrderStatus,
   PaymentSessionResponse,
@@ -3000,5 +3002,163 @@ export const useSetStudioRequestState = <TError = ErrorType<ErrorEnvelope | Orde
         TContext
       > => {
       return useMutation(getSetStudioRequestStateMutationOptions(options));
+    }
+
+export const getListNewsletterSignupsUrl = () => {
+
+
+
+
+  return `/api/studio/newsletter`
+}
+
+/**
+ * The marketing opt-ins captured on the site, and — read live from Resend — whether each one is actually on the audience the studio sends broadcasts to. They land in the same "Website Contact Messages" database as the other requests but are deliberately kept out of the request queue: an opt-in is a consent record nobody answers, and leaving them there makes a queue that never empties.
+ *
+ * Membership is NEVER stored as a marker on the Notion row. The audience is the sending list, so it is also the only honest answer to "did this person get added?" — a checkbox on the row could only ever say what someone remembered to tick, and the capture-time sync (which is best-effort, and silently skipped when the audience isn't configured) would not tick it. This is the same rule the return refunds follow with Stripe.
+ *
+ * Same staff gate as the rest of the studio surface: 401 when not signed in, 404 when signed in but not staff, 403 when staff but not signed in with Google.
+ * @summary Newsletter opt-ins and whether they reached the mailing list
+ */
+export const listNewsletterSignups = async ( options?: Parameters<typeof customFetch>[1]): Promise<NewsletterSignupList> => {
+
+  return customFetch<NewsletterSignupList>(getListNewsletterSignupsUrl(),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
+
+
+
+
+export const getListNewsletterSignupsQueryKey = () => {
+    return [
+    `/api/studio/newsletter`
+    ] as const;
+    }
+
+
+export const getListNewsletterSignupsQueryOptions = <TData = Awaited<ReturnType<typeof listNewsletterSignups>>, TError = ErrorType<ErrorEnvelope | OrderNotFound>>( options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof listNewsletterSignups>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getListNewsletterSignupsQueryKey();
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof listNewsletterSignups>>> = ({ signal }) => listNewsletterSignups({ signal, ...requestOptions });
+
+
+
+
+
+   return  { queryKey, queryFn, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof listNewsletterSignups>>, TError, TData> & { queryKey: QueryKey }
+}
+
+export type ListNewsletterSignupsQueryResult = NonNullable<Awaited<ReturnType<typeof listNewsletterSignups>>>
+export type ListNewsletterSignupsQueryError = ErrorType<ErrorEnvelope | OrderNotFound>
+
+
+/**
+ * @summary Newsletter opt-ins and whether they reached the mailing list
+ */
+
+export function useListNewsletterSignups<TData = Awaited<ReturnType<typeof listNewsletterSignups>>, TError = ErrorType<ErrorEnvelope | OrderNotFound>>(
+  options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof listNewsletterSignups>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+
+ ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+
+  const queryOptions = getListNewsletterSignupsQueryOptions(options)
+
+  const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
+
+  return withQueryKey(query, queryOptions.queryKey);
+}
+
+
+
+
+
+
+
+export const getSubscribeNewsletterSignupUrl = (signupId: string,) => {
+
+
+
+
+  return `/api/studio/newsletter/${signupId}/subscribe`
+}
+
+/**
+ * Adds the opt-in's email to the configured Resend audience and then closes its Notion row, so the two halves of "I've dealt with this person" happen together and neither can be forgotten.
+ *
+ * The add is an upsert, so pressing this for someone already on the list changes nothing and answers `subscribed` — which makes a repeat press safe and a partial failure retryable. It is refused (409) when the audience isn't configured, because closing the row would then record a subscription that never happened, and when the contact has UNSUBSCRIBED in Resend: re-adding someone who opted out is not a decision the atelier can take on their behalf, and the row can still be dismissed with the request-state operation instead.
+ *
+ * Notion is written only after Resend accepts. A failure there leaves the row open, which is the safe direction — an opt-in that stays in the list costs a second press, one that is filed away having never reached the audience costs a subscriber silently.
+ * @summary Add one opt-in to the Resend audience and file the row away
+ */
+export const subscribeNewsletterSignup = async (signupId: string, options?: Parameters<typeof customFetch>[1]): Promise<NewsletterSignup> => {
+
+  return customFetch<NewsletterSignup>(getSubscribeNewsletterSignupUrl(signupId),
+  {
+    ...options,
+    method: 'POST'
+
+
+  }
+);}
+
+
+
+
+
+export const getSubscribeNewsletterSignupMutationOptions = <TError = ErrorType<ErrorEnvelope | OrderNotFound>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof subscribeNewsletterSignup>>, TError,{signupId: string}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof subscribeNewsletterSignup>>, TError,{signupId: string}, TContext> => {
+
+const mutationKey = ['subscribeNewsletterSignup'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof subscribeNewsletterSignup>>, {signupId: string}> = (props) => {
+          const {signupId} = props ?? {};
+
+          return  subscribeNewsletterSignup(signupId,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type SubscribeNewsletterSignupMutationResult = NonNullable<Awaited<ReturnType<typeof subscribeNewsletterSignup>>>
+
+    export type SubscribeNewsletterSignupMutationError = ErrorType<ErrorEnvelope | OrderNotFound>
+
+    /**
+ * @summary Add one opt-in to the Resend audience and file the row away
+ */
+export const useSubscribeNewsletterSignup = <TError = ErrorType<ErrorEnvelope | OrderNotFound>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof subscribeNewsletterSignup>>, TError,{signupId: string}, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof subscribeNewsletterSignup>>,
+        TError,
+        {signupId: string},
+        TContext
+      > => {
+      return useMutation(getSubscribeNewsletterSignupMutationOptions(options));
     }
 

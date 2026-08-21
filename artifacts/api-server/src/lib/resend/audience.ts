@@ -118,3 +118,97 @@ export async function upsertAudienceContactBestEffort(
     );
   }
 }
+
+// --- Reading the audience back -------------------------------------------
+//
+// The studio's newsletter panel asks "did this opt-in actually reach the
+// mailing list?", and the honest answer can only come from the list itself.
+// A marker on the Notion row would say what someone remembered to tick, and
+// the capture-time sync above — best-effort, and silently skipped when the
+// audience is unconfigured — would not tick it, so the one case worth catching
+// (an opt-in that never synced) is exactly the one a marker would miss. This
+// is the same rule the return refunds follow with Stripe: the vendor holds the
+// fact, our rows hold the paperwork.
+
+/** Where one email stands in the audience. */
+export type AudienceMembership = "subscribed" | "unsubscribed" | "absent";
+
+/** The audience as the studio panel needs it: who is on it, and how many. */
+export interface AudienceSnapshot {
+  /** Lowercased email → whether Resend has them opted out. */
+  contacts: Map<string, boolean>;
+  total: number;
+}
+
+interface ResendContactRow {
+  email?: unknown;
+  unsubscribed?: unknown;
+}
+
+interface ResendContactsResponse {
+  data?: ResendContactRow[];
+}
+
+/** Whether the audience sync is configured at all. Unset ⇒ the panel reports
+ * every opt-in as `unknown` and says what to set, rather than showing a list
+ * that reads as nobody being subscribed. */
+export function audienceConfigured(deps: AudienceDeps = {}): boolean {
+  const apiKey = deps.apiKey ?? process.env.RESEND_API_KEY ?? "";
+  const audience = deps.audienceId ?? audienceId();
+  return Boolean(apiKey && audience);
+}
+
+/**
+ * Every contact on the configured audience, keyed by lowercased email.
+ *
+ * Returns `null` — never throws — when the sync isn't configured, so the
+ * caller reports "unknown" rather than "absent"; the difference matters,
+ * because "absent" is what puts an Add button in front of the atelier.
+ *
+ * Deliberately unpaginated: Resend's Contacts API returns the audience in one
+ * response, and the free Marketing tier this runs on tops out at 1,000
+ * contacts. If the list ever outgrows that, this is the place to page.
+ */
+export async function listAudienceContacts(
+  deps: AudienceDeps = {},
+): Promise<AudienceSnapshot | null> {
+  const apiKey = deps.apiKey ?? process.env.RESEND_API_KEY ?? "";
+  const audience = deps.audienceId ?? audienceId();
+  if (!apiKey || !audience) return null;
+
+  const doFetch: FetchImpl = deps.fetchImpl ?? fetch;
+  const response = await doFetch(
+    `${RESEND_BASE_URL}/audiences/${audience}/contacts`,
+    { headers: authHeaders(apiKey) },
+  );
+
+  if (!response.ok) {
+    const detail = await response.text().catch(() => "");
+    throw new Error(
+      `Resend audience read failed with status ${response.status}: ${detail}`,
+    );
+  }
+
+  const body = (await response.json()) as ResendContactsResponse;
+  const contacts = new Map<string, boolean>();
+  for (const row of body.data ?? []) {
+    if (typeof row.email !== "string") continue;
+    const email = row.email.trim().toLowerCase();
+    if (!email) continue;
+    contacts.set(email, row.unsubscribed === true);
+  }
+
+  return { contacts, total: contacts.size };
+}
+
+/** Where `email` stands in a snapshot. A null snapshot has no opinion, which
+ * the caller renders as `unknown`. */
+export function membershipIn(
+  snapshot: AudienceSnapshot | null,
+  email: string,
+): AudienceMembership | null {
+  if (!snapshot) return null;
+  const unsubscribed = snapshot.contacts.get(email.trim().toLowerCase());
+  if (unsubscribed === undefined) return "absent";
+  return unsubscribed ? "unsubscribed" : "subscribed";
+}

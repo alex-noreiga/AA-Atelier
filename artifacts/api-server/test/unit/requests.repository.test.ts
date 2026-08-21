@@ -2,6 +2,8 @@ import { describe, it, expect } from "vitest";
 import {
   listOpenRequests,
   listClosedRequests,
+  listPendingNewsletterSignups,
+  listHandledNewsletterSignups,
   findRequestById,
   setRequestStage,
 } from "../../src/lib/notion/requests.repository.js";
@@ -154,5 +156,72 @@ describe("setRequestStage", () => {
   it("returns null when the page is gone", async () => {
     const client = makeFakeClient(() => errorResponse(404));
     await expect(setRequestStage("gone", "closed", client)).resolves.toBeNull();
+  });
+});
+
+// The mirror image of the queue's filter: everything the queue excludes is
+// exactly what these read.
+describe("the newsletter reads", () => {
+  it("asks for the opt-ins not yet filed away, oldest first", async () => {
+    const client = makeFakeClient(() =>
+      jsonResponse({ results: [], has_more: false, next_cursor: null }),
+    );
+
+    await listPendingNewsletterSignups(client);
+
+    const body = queryBody(client);
+    expect(body.filter).toEqual({
+      and: [
+        { property: "Request type", select: { equals: "Newsletter" } },
+        { property: "Stage", select: { does_not_equal: "Closed" } },
+      ],
+    });
+    expect(body.sorts).toEqual([
+      { timestamp: "created_time", direction: "ascending" },
+    ]);
+  });
+
+  it("asks for the filed opt-ins, newest first and capped", async () => {
+    const client = makeFakeClient(() =>
+      jsonResponse({ results: [], has_more: false, next_cursor: null }),
+    );
+
+    await listHandledNewsletterSignups(client, 5);
+
+    const body = queryBody(client);
+    expect(body.filter).toEqual({
+      and: [
+        { property: "Request type", select: { equals: "Newsletter" } },
+        { property: "Stage", select: { equals: "Closed" } },
+      ],
+    });
+    expect(body.page_size).toBe(5);
+  });
+
+  it("maps the rows and reports a cut-short read", async () => {
+    const client = makeFakeClient(() =>
+      jsonResponse({
+        results: [
+          contactRequestPage({
+            id: "sign-1",
+            requestType: "Newsletter",
+            subject: "Newsletter opt-in — order form",
+            email: "skater@example.com",
+          }),
+        ],
+        has_more: true,
+        next_cursor: "next",
+      }),
+    );
+
+    const { records, truncated } = await listPendingNewsletterSignups(client);
+
+    expect(records).toHaveLength(1);
+    expect(records[0]).toMatchObject({
+      id: "sign-1",
+      email: "skater@example.com",
+      source: "order form",
+    });
+    expect(truncated).toBe(true);
   });
 });

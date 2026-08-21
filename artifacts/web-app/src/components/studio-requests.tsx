@@ -60,6 +60,9 @@ const KIND_LABELS: Record<StudioRequestKind, string> = {
   measurement: "Measurement change",
   cancellation: "Cancellation",
   return: "Return or exchange",
+  // Never reaches this queue — an opt-in is filtered out server-side and has
+  // its own panel. The map stays total so a kind added later can't be missed.
+  newsletter: "Newsletter sign-up",
   other: "Request",
 };
 

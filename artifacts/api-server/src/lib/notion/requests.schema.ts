@@ -75,18 +75,21 @@ export type RequestKind =
   | "measurement"
   | "cancellation"
   | "return"
+  | "newsletter"
   | "other";
 
 /** `Request type` → kind. Everything absent from this table is `other`, which
  * is what puts a row the atelier typed by hand in front of them rather than
- * dropping it. Newsletter opt-ins are deliberately NOT here — they are excluded
- * from the queue entirely (see {@link isNewsletterRow}). */
+ * dropping it. `newsletter` is here so the shared state operation can answer
+ * with the row it wrote, but an opt-in is still kept out of the request QUEUE
+ * (see {@link isNewsletterRow}) — it has a panel of its own. */
 const KIND_BY_REQUEST_TYPE: Record<string, RequestKind> = {
   [CONTACT_REQUEST_TYPE]: "inquiry",
   [NOTIFY_REQUEST_TYPE]: "back-in-stock",
   [MEASUREMENT_CHANGE_REQUEST_TYPE]: "measurement",
   [CANCELLATION_REQUEST_TYPE]: "cancellation",
   [RETURN_REQUEST_TYPE]: "return",
+  [NEWSLETTER_REQUEST_TYPE]: "newsletter",
 };
 
 /** The kinds that concern an order, and so carry an order number to recover. */
@@ -343,4 +346,61 @@ export function extractStudioRequests(
   return pages
     .filter((page) => !isNewsletterRow(page))
     .map(extractStudioRequest);
+}
+
+// --- The newsletter opt-ins (their own panel, not the queue) ---
+
+/** One marketing opt-in as its panel shows it. Deliberately narrow: an opt-in
+ * IS an email address and when it arrived, so there is nothing else to map.
+ * Whether it reached the mailing list is NOT here — that is read live from
+ * Resend by the service, because a marker on this row could only say what
+ * someone remembered to tick. */
+export interface NewsletterSignupRecord {
+  id: string;
+  email?: string;
+  /** Where they opted in — the footer field, the order form. */
+  source?: string;
+  subject: string;
+  state: RequestState;
+  submittedAt?: string;
+  notionUrl?: string;
+}
+
+/**
+ * The opt-in `source` back out of the subject the writer composed.
+ *
+ * `newsletter.blocks.ts` deliberately folds it into the title
+ * (`Newsletter opt-in — footer`) rather than adding a property, so this is the
+ * only way to recover it. It is display-only and nothing branches on it, which
+ * is why an unrecognized subject simply yields nothing rather than being
+ * treated as a mapping failure.
+ */
+export function extractSignupSource(subject: string): string {
+  const [, source = ""] = subject.split(/\s+—\s+/, 2);
+  return source.trim();
+}
+
+/** Map one Notion contact row to the newsletter panel's projection. */
+export function extractNewsletterSignup(
+  page: NotionRequestPage,
+): NewsletterSignupRecord {
+  const subject = extractTitle(page, CONTACT_SUBJECT_PROPERTY);
+  const email = extractEmail(page, CONTACT_EMAIL_PROPERTY);
+  const source = extractSignupSource(subject);
+
+  return {
+    id: page.id,
+    subject: subject || "Newsletter opt-in",
+    state: requestState(page),
+    ...(email ? { email } : {}),
+    ...(source ? { source } : {}),
+    ...(page.created_time ? { submittedAt: page.created_time } : {}),
+    ...(page.url ? { notionUrl: page.url } : {}),
+  };
+}
+
+export function extractNewsletterSignups(
+  pages: NotionRequestPage[],
+): NewsletterSignupRecord[] {
+  return pages.map(extractNewsletterSignup);
 }

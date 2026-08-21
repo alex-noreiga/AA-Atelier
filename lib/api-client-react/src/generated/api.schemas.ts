@@ -422,9 +422,9 @@ export interface ReviewStatusRequest {
 }
 
 /**
- * What a customer is asking for, DERIVED from the row's `Request type` select rather than enumerated from it. Five kinds name the values the app writes; `other` is anything else — a blank select, or a type the atelier invented — so an unrecognized row appears in the queue asking to be looked at rather than vanishing from it.
+ * What a customer is asking for, DERIVED from the row's `Request type` select rather than enumerated from it. Six kinds name the values the app writes; `other` is anything else — a blank select, or a type the atelier invented — so an unrecognized row appears in the queue asking to be looked at rather than vanishing from it.
  *
- * Newsletter opt-ins share the same database but are not a kind here: they are a consent record nobody answers, and are excluded from the queue entirely.
+ * `newsletter` never appears in the request QUEUE — an opt-in is a consent record nobody answers, so it has its own panel (see `/studio/newsletter`) and is filtered out of the queue. The kind still exists because the queue's state operation is shared across the whole contact inbox, and it answers with the row it wrote.
  */
 export type StudioRequestKind = typeof StudioRequestKind[keyof typeof StudioRequestKind];
 
@@ -435,6 +435,7 @@ export const StudioRequestKind = {
   measurement: 'measurement',
   cancellation: 'cancellation',
   return: 'return',
+  newsletter: 'newsletter',
   other: 'other',
 } as const;
 
@@ -520,6 +521,64 @@ export interface StudioRequestList {
   /** Recently closed, newest first. Capped — it is a record of what was worked down, not a second queue. */
   closed: StudioRequest[];
   /** True when there are more open requests than one read covers, so the queue says it is partial instead of looking complete. */
+  truncated?: boolean;
+}
+
+/**
+ * Where this email stands in the Resend audience, read live rather than stored. `subscribed` — on the list and receiving broadcasts. `unsubscribed` — on the list but opted out, which the studio must not undo on their behalf. `absent` — not on the list, so this is the row to act on. `unknown` — the audience isn't configured or couldn't be read, in which case the panel says so rather than implying nobody is subscribed.
+ */
+export type NewsletterSubscription = typeof NewsletterSubscription[keyof typeof NewsletterSubscription];
+
+
+export const NewsletterSubscription = {
+  subscribed: 'subscribed',
+  unsubscribed: 'unsubscribed',
+  absent: 'absent',
+  unknown: 'unknown',
+} as const;
+
+/**
+ * The state of the Resend audience itself, so the panel can explain an empty or unknown column rather than leaving it blank.
+ */
+export interface NewsletterAudienceStatus {
+  /** False when `RESEND_AUDIENCE_ID` (or the API key) is unset. Every opt-in then reads `unknown`, the capture-time sync is off too, and the panel says what to set rather than showing a list that looks unhandled. */
+  configured: boolean;
+  /** True when the audience IS configured but Resend couldn't be read. The opt-ins are still listed — from Notion, which is a separate system — with an `unknown` subscription each. Absent when the read worked. */
+  unreachable?: boolean;
+  /** How many contacts the audience holds. Absent when unreadable. */
+  contactCount?: number;
+}
+
+/**
+ * One marketing opt-in, and whether it reached the mailing list. Staff-only.
+ */
+export interface NewsletterSignup {
+  /** The opt-in's Notion page id; also what an action is addressed to. */
+  id: string;
+  /** The address that opted in — the whole content of the record. Omitted only on a malformed row, which can then be dismissed but not subscribed. */
+  email?: string;
+  /** Where they opted in (the footer field, the order form), recovered from the row's subject. Absent when the capture recorded none. */
+  source?: string;
+  /** The row's title, as the writer composed it. */
+  subject: string;
+  state: StudioRequestState;
+  subscription: NewsletterSubscription;
+  /** When they opted in (the row's Notion created time). */
+  submittedAt?: string;
+  /** The opt-in's page in Notion. */
+  notionUrl?: string;
+}
+
+/**
+ * The opt-ins still to be dealt with, the recently filed ones, and the state of the audience they are checked against.
+ */
+export interface NewsletterSignupList {
+  /** Not yet filed away, OLDEST first — someone who opted in weeks ago and never reached the list is the one to fix first. */
+  pending: NewsletterSignup[];
+  /** Recently closed, newest first. Capped, and still carrying their live audience status — so a row filed away that never actually reached the list is visible rather than assumed done. */
+  handled: NewsletterSignup[];
+  audience: NewsletterAudienceStatus;
+  /** True when there are more pending opt-ins than one read covers. */
   truncated?: boolean;
 }
 

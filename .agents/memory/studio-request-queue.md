@@ -101,3 +101,52 @@ renamed `Closed` reopens every closed request. Neither errors.
   refund that ran is not the same fact as a request the atelier considers answered
   (a partial return refund is the obvious case), and inferring one from the other
   would close rows that still need work.
+
+## The newsletter panel (follow-up)
+
+Added straight after the queue, on the same branch: opt-ins needed a surface of
+their own, because the job an opt-in needs is not "answer it" but "get this address
+onto the mailing list".
+
+`GET /studio/newsletter` + `POST /studio/newsletter/:id/subscribe`. Dismiss/put-back
+reuse the queue's `PUT /studio/requests/:id/state` — one writer of a contact row's
+`Stage` — which is why `newsletter` rejoined `StudioRequestKind` while the queue's
+extractor still filters opt-ins out.
+
+**The decision the rest follows from: membership is read from Resend, never stored.**
+
+The tempting design is a "Added to the list" checkbox on the Notion row. It is
+wrong, and the reason is worth keeping: the app _already_ syncs each opt-in at
+capture time (`upsertAudienceContactBestEffort`), and that sync is **best-effort**
+and **self-gates off** when `RESEND_AUDIENCE_ID` is unset. So the one case worth
+catching — an opt-in recorded in Notion that never reached the audience — is
+precisely the case a checkbox would be silent about, because nothing would have
+ticked it. Asking Resend (`listAudienceContacts`, one unpaginated GET) is the only
+honest answer. Same rule as `return-refunds.md`: the vendor holds the fact.
+
+Consequences:
+
+- **`unknown` is a first-class value**, distinct from `absent`. An unreadable or
+  unconfigured audience must never render as "not on the list", because `absent` is
+  what puts an Add button in front of someone already subscribed. The Add button is
+  offered on `absent` alone.
+- **Resend first, then the Notion `Stage` write.** An opt-in left in the panel
+  having already been added costs one wasted press (the upsert is idempotent); one
+  filed away having never reached the list costs a subscriber, silently, forever.
+- **A 409 rather than a re-subscribe** when Resend says the contact unsubscribed.
+  `upsertAudienceContact`'s PATCH sets `unsubscribed: false` unconditionally, which
+  is right at capture time (the person just asked) and wrong from a dashboard. Also
+  409 when no audience is configured — closing the row would record a subscription
+  that never happened.
+- **The audience read is best-effort but the Notion read is not.** Two separate
+  systems: a Resend outage costs the subscribed column for one page load, not the
+  list of who opted in.
+- **The already-filed list keeps its live status**, so a row dismissed in error (or
+  filed before the audience was configured) still shows "Not on the list".
+
+`source` (footer / order form) is parsed back out of the row title, because
+`newsletter.blocks.ts` folds it there rather than adding a property. Display-only.
+
+**Not built:** a bulk "add all". The list is short, each press is a vendor write,
+and a per-row failure (an address Resend rejects) is legible where a batch's
+partial failure would not be.
