@@ -38,7 +38,13 @@ test.describe("Production smoke: site navigation", () => {
     { path: "/about", testId: "story-section", name: "About" },
     { path: "/services", testId: "cta-begin-commission", name: "Services" },
     { path: "/contact", testId: "submit-contact", name: "Contact" },
-    { path: "/order", testId: "submit-order", name: "Order form" },
+    // The intake is a THREE-step flow (PR #194, 2026-08-20): "Your details" ->
+    // "Your design" -> "Timeline". `submit-order` lives on the last step, so it
+    // does not exist on load — asserting it here turned the monitor red the
+    // morning after that shipped, with production perfectly healthy. Assert the
+    // step-1 CTA instead: it is present on load and only renders once the form
+    // itself has mounted, so a white-screened route still fails.
+    { path: "/order", testId: "continue-to-design", name: "Order form" },
     { path: "/appointments", testId: "step-purpose", name: "Appointments" },
     // Legal / policy pages (consent + terms live here) — heading-based, since
     // the shared LegalPage shell carries no testid.
