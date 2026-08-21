@@ -934,9 +934,7 @@ export function materialsDigestEmail(
 
   const html = internalLayout(
     heading,
-    `<p style="margin:0 0 16px;">These are at or below the reorder point you set in
-        materials inventory, most short first.</p>
-     <ul style="margin:0 0 16px;padding-left:20px;">
+    `<ul style="margin:0 0 16px;padding-left:20px;">
         ${itemsHtml}
      </ul>
      <p style="font-size:13px;color:#8a7f74;margin:0;">Set or clear a reorder point on a
@@ -947,8 +945,6 @@ export function materialsDigestEmail(
 
   const text = [
     heading,
-    ``,
-    `At or below the reorder point set in materials inventory, most short first:`,
     ``,
     ...items.map(
       (item) => `- ${line(item)}${item.link ? ` — ${item.link}` : ""}`,
