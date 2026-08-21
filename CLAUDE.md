@@ -2649,12 +2649,13 @@ per tool, by `components/studio-tools.tsx`).
    failed read, or an empty set is said out loud, and it holds the `general`
    guides plus a count of the ones shown further up.
 
-The atelier's one-time setup: create the **"Studio Guides"** database with a
-`Guide` (title), a `File` (files & media — the uploaded `.html`), a `Section`
-(select), and optionally a `Summary` (rich text) and `Order` (number); share the
-Notion integration with it; set **`NOTION_STUDIO_GUIDES_DATABASE_ID`**. Unset ⇒
-the panel says it isn't connected. Property names live in `guides.schema.ts`.
-Full walkthrough in `.agents/memory/studio-how-to-guides.md`.
+The **"Studio Guides"** database already exists (under the Notion _website_
+page, with `Guide` title, `File` files & media, `Section` select, `Summary` rich
+text and `Order` number). The atelier's remaining one-time setup: share the
+Notion integration with it, and set **`NOTION_STUDIO_GUIDES_DATABASE_ID`**.
+Unset ⇒ the panel says it isn't connected. Property names live in
+`guides.schema.ts`; the id and the remaining steps are in
+`.agents/memory/studio-how-to-guides.md`.
 
 ## Postgres (payment idempotency + a provisioned read-model)
 

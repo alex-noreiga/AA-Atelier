@@ -112,25 +112,31 @@ the file in a sandboxed frame beside whatever that section names.
 
 ## OUTSTANDING — atelier steps the code can't do
 
-Nothing here happens on its own. Until step 3 the panel says the database
-isn't connected, which is the intended unconfigured state, not a fault.
+The **"Studio Guides" database has been created** (2026-08-21), under the Notion
+**website** page alongside Website Contact Messages, with all five properties
+and the eleven `Section` options pre-filled. Database id:
+`d9c893301efc480d9d8861d28e887c72`.
 
-- [ ] **1. Create the "Studio Guides" database in Notion** with these
-      properties (names are in `lib/notion/guides.schema.ts`):
-  - `Guide` — **title**. The guide's name.
-  - `File` — **files & media**. The uploaded `.html` write-up. Only the first
-    file on a row is read.
-  - `Section` — **select**. Where it renders. Any of the ids or labels in
-    `GUIDE_SECTIONS`; anything else lands under General.
-  - `Summary` — **rich text**, optional. One line shown before it is opened.
-  - `Order` — **number**, optional. Sorts within a section; a row without one
-    sorts after every row that has one.
-- [ ] **2. Share the Notion integration with it** (otherwise the query 404s).
-- [ ] **3. Set `NOTION_STUDIO_GUIDES_DATABASE_ID`** in Vercel and redeploy.
-- [ ] **4. Move `invoicing-guide.html` in.** It is currently an embed block at
-      the bottom of the Notion **finances** page. Create a row, attach the same
-      file, set `Section` to `invoice-lines`, and it appears inside the
-      "Itemize an invoice" card. The page embed can then go.
+What is left cannot be done through the MCP connector, because it authenticates
+as a different identity than the app's own integration:
+
+- [ ] **1. Share the Notion integration with the Studio Guides database.**
+      Open it → ••• → Connections → add the same integration
+      `NOTION_API_KEY` belongs to. Without this the query 404s and every guide
+      shows as unreadable.
+- [ ] **2. Set `NOTION_STUDIO_GUIDES_DATABASE_ID=d9c893301efc480d9d8861d28e887c72`**
+      in Vercel, and redeploy. Until then the panel reports it isn't connected,
+      which is the intended unconfigured state rather than a fault.
+- [ ] **3. Attach `invoicing-guide.html` to the seeded "Building an invoice"
+      row** (`Section = Itemize an invoice`, already set). The file currently
+      lives as an embed block at the bottom of the Notion **finances** page; it
+      could not be copied automatically, because a file uploaded by one
+      integration isn't readable by another. Once it renders on the dashboard,
+      delete that embed.
+
+The seeded row is the only one, deliberately: an empty row renders as "No file
+attached yet", so pre-creating one per section would put ten placeholders across
+the dashboard.
 
 ## NOT YET VERIFIED AGAINST LIVE NOTION
 
