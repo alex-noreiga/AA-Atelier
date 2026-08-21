@@ -16,6 +16,7 @@ import { StudioTools } from "@/components/studio-tools";
 import { StudioAvailability } from "@/components/studio-availability";
 import { StudioReviews } from "@/components/studio-reviews";
 import { StudioMaterials } from "@/components/studio-materials";
+import { StudioSettings } from "@/components/studio-settings";
 import { Seo } from "@/components/seo";
 import { useAuth } from "@/lib/auth-context";
 import { supabase } from "@/lib/supabase";
@@ -324,6 +325,8 @@ function Dashboard({ data }: { data: StudioAnalytics }) {
       <StudioReviews />
 
       <StudioAvailability />
+
+      <StudioSettings />
 
       <StudioTools />
     </div>

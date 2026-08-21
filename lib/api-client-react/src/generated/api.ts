@@ -70,6 +70,9 @@ import type {
   StudioAnalytics,
   StudioReview,
   StudioReviewList,
+  StudioSetting,
+  StudioSettingRequest,
+  StudioSettingsOverview,
   StudioTool,
   StudioToolRequest,
   StudioToolRun
@@ -2838,5 +2841,166 @@ export const useSetStudioReviewStatus = <TError = ErrorType<ErrorEnvelope | Orde
         TContext
       > => {
       return useMutation(getSetStudioReviewStatusMutationOptions(options));
+    }
+
+export const getGetStudioSettingsUrl = () => {
+
+
+
+
+  return `/api/studio/settings`
+}
+
+/**
+ * The settings the atelier can retune live, each resolved the way the app itself resolves it: the Notion "Studio Settings" row first, then the environment variable of the same name, then the built-in default.
+ *
+ * The settings database is a free-text key/value table, and both halves of a row fail silently when they are wrong. A mistyped KEY is a row nothing reads. A mistyped VALUE is parsed, rejected, and replaced by the built-in default. In Notion both look exactly like a setting in force, which is what this read exists to end: `source` names which of the three is actually being used, `ignoredValue` names a configured value the app can't use, and `unknownRows` lists the rows that aren't settings at all, with the key each was probably meant to be.
+ *
+ * Note the resolution order has a corner worth stating: a value present in Notion but unusable falls back to the DEFAULT, not to the environment — the environment is only consulted when Notion has nothing to say.
+ *
+ * Same staff gate as the rest of the studio surface: 401 when not signed in, 404 when signed in but not staff, 403 when staff but not signed in with Google.
+ * @summary Every studio setting, and where its value comes from
+ */
+export const getStudioSettings = async ( options?: Parameters<typeof customFetch>[1]): Promise<StudioSettingsOverview> => {
+
+  return customFetch<StudioSettingsOverview>(getGetStudioSettingsUrl(),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
+
+
+
+
+export const getGetStudioSettingsQueryKey = () => {
+    return [
+    `/api/studio/settings`
+    ] as const;
+    }
+
+
+export const getGetStudioSettingsQueryOptions = <TData = Awaited<ReturnType<typeof getStudioSettings>>, TError = ErrorType<ErrorEnvelope | OrderNotFound>>( options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getStudioSettings>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getGetStudioSettingsQueryKey();
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof getStudioSettings>>> = ({ signal }) => getStudioSettings({ signal, ...requestOptions });
+
+
+
+
+
+   return  { queryKey, queryFn, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof getStudioSettings>>, TError, TData> & { queryKey: QueryKey }
+}
+
+export type GetStudioSettingsQueryResult = NonNullable<Awaited<ReturnType<typeof getStudioSettings>>>
+export type GetStudioSettingsQueryError = ErrorType<ErrorEnvelope | OrderNotFound>
+
+
+/**
+ * @summary Every studio setting, and where its value comes from
+ */
+
+export function useGetStudioSettings<TData = Awaited<ReturnType<typeof getStudioSettings>>, TError = ErrorType<ErrorEnvelope | OrderNotFound>>(
+  options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getStudioSettings>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+
+ ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+
+  const queryOptions = getGetStudioSettingsQueryOptions(options)
+
+  const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
+
+  return withQueryKey(query, queryOptions.queryKey);
+}
+
+
+
+
+
+
+
+export const getSetStudioSettingUrl = (key: string,) => {
+
+
+
+
+  return `/api/studio/settings/${key}`
+}
+
+/**
+ * Writes one setting's value to its Notion row, creating the row when the key doesn't have one yet.
+ *
+ * The value is validated against the setting before it is written, which is the difference between this and typing into the Notion table: there, a value the app can't use saves happily and is then ignored forever. The write guard is allowed to be stricter than the runtime — a rush rate of `15` (meaning 15%) parses fine and would price a 1500% surcharge, so the editor refuses it even though the runtime would accept it.
+ *
+ * An empty value is a CLEAR, not a rejection: it hands the setting back to its environment variable or built-in default, and keeps the row, which documents the key. There is deliberately no delete.
+ * @summary Save or clear one studio setting
+ */
+export const setStudioSetting = async (key: string,
+    studioSettingRequest: StudioSettingRequest, options?: Parameters<typeof customFetch>[1]): Promise<StudioSetting> => {
+
+  return customFetch<StudioSetting>(getSetStudioSettingUrl(key),
+  {
+    ...options,
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    body: JSON.stringify(studioSettingRequest)
+  }
+);}
+
+
+
+
+
+export const getSetStudioSettingMutationOptions = <TError = ErrorType<ErrorEnvelope | OrderNotFound>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof setStudioSetting>>, TError,{key: string;data: BodyType<StudioSettingRequest>}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof setStudioSetting>>, TError,{key: string;data: BodyType<StudioSettingRequest>}, TContext> => {
+
+const mutationKey = ['setStudioSetting'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof setStudioSetting>>, {key: string;data: BodyType<StudioSettingRequest>}> = (props) => {
+          const {key,data} = props ?? {};
+
+          return  setStudioSetting(key,data,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type SetStudioSettingMutationResult = NonNullable<Awaited<ReturnType<typeof setStudioSetting>>>
+    export type SetStudioSettingMutationBody = BodyType<StudioSettingRequest>
+    export type SetStudioSettingMutationError = ErrorType<ErrorEnvelope | OrderNotFound>
+
+    /**
+ * @summary Save or clear one studio setting
+ */
+export const useSetStudioSetting = <TError = ErrorType<ErrorEnvelope | OrderNotFound>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof setStudioSetting>>, TError,{key: string;data: BodyType<StudioSettingRequest>}, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof setStudioSetting>>,
+        TError,
+        {key: string;data: BodyType<StudioSettingRequest>},
+        TContext
+      > => {
+      return useMutation(getSetStudioSettingMutationOptions(options));
     }
 

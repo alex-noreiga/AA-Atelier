@@ -1001,3 +1001,83 @@ export const SetStudioReviewStatusResponse = zod.object({
 }).describe('One review as the moderation queue shows it. Unlike the public `PublishedReview`, this is the whole row: the atelier is deciding whether to put it on the site, and who wrote it and whether their email matched the order are part of that judgement. Staff-only.')
 
 
+/**
+ * The settings the atelier can retune live, each resolved the way the app itself resolves it: the Notion "Studio Settings" row first, then the environment variable of the same name, then the built-in default.
+ *
+ * The settings database is a free-text key/value table, and both halves of a row fail silently when they are wrong. A mistyped KEY is a row nothing reads. A mistyped VALUE is parsed, rejected, and replaced by the built-in default. In Notion both look exactly like a setting in force, which is what this read exists to end: `source` names which of the three is actually being used, `ignoredValue` names a configured value the app can't use, and `unknownRows` lists the rows that aren't settings at all, with the key each was probably meant to be.
+ *
+ * Note the resolution order has a corner worth stating: a value present in Notion but unusable falls back to the DEFAULT, not to the environment — the environment is only consulted when Notion has nothing to say.
+ *
+ * Same staff gate as the rest of the studio surface: 401 when not signed in, 404 when signed in but not staff, 403 when staff but not signed in with Google.
+ * @summary Every studio setting, and where its value comes from
+ */
+export const GetStudioSettingsResponse = zod.object({
+  "configured": zod.boolean().describe('Whether a Studio Settings database is connected. False ⇒ every value comes from the environment or a default and nothing can be edited here — which is a state only a human can clear, so the editor says so rather than offering a Save with nowhere to write.'),
+  "settings": zod.array(zod.object({
+  "key": zod.string().describe('The setting\'s name, identical to its environment variable.'),
+  "label": zod.string().describe('The setting\'s name in the atelier\'s terms.'),
+  "group": zod.string().describe('The section the editor shows this under.'),
+  "kind": zod.enum(['number', 'integer', 'percent', 'money', 'text', 'email', 'timezone', 'palette']).describe('What shape the value is, so the editor can render the right input and say what it expects.'),
+  "description": zod.string().describe('What the setting does, and what changing it affects.'),
+  "notionValue": zod.string().optional().describe('What the Notion row holds. Absent when there is no row for this key, or its Value is blank (which reads as unset everywhere).'),
+  "envValue": zod.string().optional().describe('What the environment variable holds. Absent when it isn\'t set. These are non-secret tunables by definition — secrets are deliberately not settings.'),
+  "defaultValue": zod.string().describe('The built-in fallback, as text. Empty when the fallback isn\'t a value at all — an unset studio inbox means the notification is skipped, not sent somewhere else.'),
+  "defaultLabel": zod.string().optional().describe('How to phrase the fallback when `defaultValue` alone doesn\'t say it, e.g. \"The studio inbox above\".'),
+  "effectiveValue": zod.string().describe('The value the app is using right now.'),
+  "source": zod.enum(['notion', 'environment', 'default']).describe('Which of the three layers the effective value came from. `default` also covers a configured-but-unusable value (see `ignoredValue`), because that is what the app does with one — it does NOT fall through to the next layer down.'),
+  "ignoredValue": zod.string().optional().describe('Present when a value IS configured but the app can\'t use it, so the default is in force instead. This is the silent failure the editor exists to surface; in Notion the row looks entirely normal.'),
+  "min": zod.number().optional().describe('Lower bound for a numeric setting.'),
+  "max": zod.number().optional().describe('Upper bound for a numeric setting.'),
+  "step": zod.number().optional().describe('Step for a numeric input.'),
+  "unit": zod.string().optional().describe('The unit shown beside the input, e.g. \"days\" or \"%\".'),
+  "placeholder": zod.string().optional().describe('An example value, shown when the field is empty.')
+}).describe('One atelier-editable setting, resolved. The key is the name of its environment variable and of its Notion row\'s `Setting` title — that identity 1:1 across all three is what keeps them from ever meaning different things.')),
+  "unknownRows": zod.array(zod.object({
+  "key": zod.string().describe('The key as typed in the Notion row.'),
+  "value": zod.string().optional().describe('What that row holds, when it holds anything.'),
+  "suggestion": zod.string().optional().describe('The setting this was probably meant to be, when one is within a typo or two of it. Absent when nothing is close.')
+}).describe('A row in the settings database whose key isn\'t a setting the app reads — so nothing has ever read it, and nothing ever will. Listing it is the only way a mistyped key is visible anywhere.'))
+}).describe('Every setting the app reads, plus any row that isn\'t one.')
+
+
+/**
+ * Writes one setting's value to its Notion row, creating the row when the key doesn't have one yet.
+ *
+ * The value is validated against the setting before it is written, which is the difference between this and typing into the Notion table: there, a value the app can't use saves happily and is then ignored forever. The write guard is allowed to be stricter than the runtime — a rush rate of `15` (meaning 15%) parses fine and would price a 1500% surcharge, so the editor refuses it even though the runtime would accept it.
+ *
+ * An empty value is a CLEAR, not a rejection: it hands the setting back to its environment variable or built-in default, and keeps the row, which documents the key. There is deliberately no delete.
+ * @summary Save or clear one studio setting
+ */
+export const SetStudioSettingParams = zod.object({
+  "key": zod.coerce.string().describe('The setting\'s key — the same name as its environment variable, as returned by the list operation.')
+})
+
+export const setStudioSettingBodyValueMax = 2000;
+
+
+
+export const SetStudioSettingBody = zod.object({
+  "value": zod.string().max(setStudioSettingBodyValueMax)
+}).describe('The value to save. An empty string clears the setting, handing it back to its environment variable or built-in default.')
+
+export const SetStudioSettingResponse = zod.object({
+  "key": zod.string().describe('The setting\'s name, identical to its environment variable.'),
+  "label": zod.string().describe('The setting\'s name in the atelier\'s terms.'),
+  "group": zod.string().describe('The section the editor shows this under.'),
+  "kind": zod.enum(['number', 'integer', 'percent', 'money', 'text', 'email', 'timezone', 'palette']).describe('What shape the value is, so the editor can render the right input and say what it expects.'),
+  "description": zod.string().describe('What the setting does, and what changing it affects.'),
+  "notionValue": zod.string().optional().describe('What the Notion row holds. Absent when there is no row for this key, or its Value is blank (which reads as unset everywhere).'),
+  "envValue": zod.string().optional().describe('What the environment variable holds. Absent when it isn\'t set. These are non-secret tunables by definition — secrets are deliberately not settings.'),
+  "defaultValue": zod.string().describe('The built-in fallback, as text. Empty when the fallback isn\'t a value at all — an unset studio inbox means the notification is skipped, not sent somewhere else.'),
+  "defaultLabel": zod.string().optional().describe('How to phrase the fallback when `defaultValue` alone doesn\'t say it, e.g. \"The studio inbox above\".'),
+  "effectiveValue": zod.string().describe('The value the app is using right now.'),
+  "source": zod.enum(['notion', 'environment', 'default']).describe('Which of the three layers the effective value came from. `default` also covers a configured-but-unusable value (see `ignoredValue`), because that is what the app does with one — it does NOT fall through to the next layer down.'),
+  "ignoredValue": zod.string().optional().describe('Present when a value IS configured but the app can\'t use it, so the default is in force instead. This is the silent failure the editor exists to surface; in Notion the row looks entirely normal.'),
+  "min": zod.number().optional().describe('Lower bound for a numeric setting.'),
+  "max": zod.number().optional().describe('Upper bound for a numeric setting.'),
+  "step": zod.number().optional().describe('Step for a numeric input.'),
+  "unit": zod.string().optional().describe('The unit shown beside the input, e.g. \"days\" or \"%\".'),
+  "placeholder": zod.string().optional().describe('An example value, shown when the field is empty.')
+}).describe('One atelier-editable setting, resolved. The key is the name of its environment variable and of its Notion row\'s `Setting` title — that identity 1:1 across all three is what keeps them from ever meaning different things.')
+
+

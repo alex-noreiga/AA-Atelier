@@ -37,7 +37,9 @@ const SEND_TIMEOUT_MS = 3000;
 
 const recentAlerts = new Map<string, number>();
 
-function alertInbox(): string {
+// Exported so the settings catalog's restatement of this default can be tested
+// against the getter itself rather than trusted (`test/unit/settings.catalog.test.ts`).
+export function alertInbox(): string {
   return (
     (settingValue("ALERT_INBOX_EMAIL") ?? process.env.ALERT_INBOX_EMAIL) ||
     DEFAULT_ALERT_INBOX

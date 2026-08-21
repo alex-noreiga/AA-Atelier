@@ -496,7 +496,7 @@ stages/categories/working-hours.
    `NOTION_*_DATABASE_ID`, `SUPABASE_URL`, `PUBLIC_BASE_URL`, …) stay in Vercel — a
    Notion DB is not a secrets store, and you can't read Notion settings without the
    API key + the settings DB's own id. The keys that ARE read from settings are
-   enumerated in `SETTING_KEYS` (`lib/settings/store.ts`): `RUSH_SURCHARGE_RATE`,
+   enumerated in `SETTING_DEFINITIONS` (`lib/settings/catalog.ts`): `RUSH_SURCHARGE_RATE`,
    `MEASUREMENT_LOCK_FROM_STAGE`, the five `APPOINTMENT_*` policy vars, the reward
    amounts, `COLOR_PALETTE` (the intake color picker's palette), and the
    notification **inboxes** (`ATELIER_INBOX_EMAIL`, `ATELIER_CONTACT_INBOX_EMAIL`,
@@ -520,14 +520,100 @@ stages/categories/working-hours.
    empty and everything falls back to env. Test seams: `__setSettingsSnapshot` /
    `__resetSettings` (store) and `__resetSettingsCache` (repository).
 
+4. **Each key is a typed catalog entry, and that's what the dashboard renders.**
+   `lib/settings/catalog.ts` holds one `SettingDefinition` per key — its label,
+   group, `kind`, the description, the built-in default as text, and **two**
+   validators. The split between them is load-bearing: **`accepts` mirrors the
+   runtime getter** ("would the app honour this value?") and decides whether a
+   stored value is in force or is being ignored, so it must never be stricter
+   than the getter or the dashboard would report a value as thrown away while the
+   app was using it. **`validate` guards a write** and is deliberately allowed to
+   be stricter — the runtime takes any non-negative rush rate, but `15` (meaning
+   15%) would price a 1500% surcharge, so the editor refuses it. Writes may be
+   fussier than reads; reads must honour whatever is already stored. The catalog
+   **restates** each default rather than owning it, so
+   `test/unit/settings.catalog.test.ts` drives every real getter with an empty
+   snapshot and asserts it lands on the catalog's default — that test is what
+   stops the two drifting, not a convention.
+
+See "Studio settings, edited on the dashboard" below for the editor built on it.
+
 One-time setup (all optional — unset ⇒ env-only): create the "Studio Settings"
 database (a `Setting` title, a `Value` text, a `Description` text), share the
 integration with it, set `NOTION_SETTINGS_DATABASE_ID`, and fill in a `Value` only
 for the settings to override. Code: `lib/notion/settings.{schema,repository}.ts`,
-`lib/settings/store.ts`, `getSettingsNotionClient` in `notion/client.ts`, the prime
-middleware in `app.ts`, and the consuming getters (`services/rush.ts`,
+`lib/settings/{store,catalog}.ts`, `getSettingsNotionClient` in `notion/client.ts`,
+the prime middleware in `app.ts`, and the consuming getters (`services/rush.ts`,
 `services/measurement-lock.ts`, `services/rewards.service.ts`,
 `lib/appointments/settings.ts`, `lib/resend/config.ts`, `services/alert.service.ts`).
+
+## Studio settings, edited on the dashboard
+
+The settings above have been live-editable in Notion for a while — as a free-text
+key/value table, which is a surface that **cannot tell you anything**. Both halves
+of a row fail silently when they're wrong: a mistyped **key**
+(`RUSH_SURCHARGE_RAT`) is a row nothing ever reads, and a mistyped **value**
+(`15%` where a fraction was wanted) is parsed, rejected, and replaced by the
+built-in default. In Notion both look exactly like a setting in force. `/studio` →
+**Studio settings** is the surface that ends that: `GET /api/studio/settings`
+resolves every known key and says where its value came from, and
+`PUT /api/studio/settings/{key}` validates before it writes. Code:
+`services/studio-settings.service.ts`, the two handlers in `routes/studio.ts`,
+`fetchSettingRows` / `saveSetting` / `settingsConfigured` in
+`lib/notion/settings.repository.ts`, `extractSettingRows` in
+`settings.schema.ts`, and `web-app/src/components/studio-settings.tsx`.
+
+1. **Resolution is mirrored exactly, including the part that surprises people.**
+   Every getter reads `settingValue(KEY) ?? process.env[KEY]` and _then_ parses,
+   so a value present in Notion but unusable falls back to the **default** — it
+   does **not** fall through to the environment, because the environment was never
+   consulted. `source` reports that honestly (`default`, with the discarded value
+   on `ignoredValue`); reporting `environment` would be wrong in the one case
+   somebody opens this page to understand.
+
+2. **The read is deliberately neither the cached map nor degrade-safe.** It reads
+   **rows**, not the key→value map: a mistyped key simply isn't in that map, and a
+   duplicate row loses to whichever came last — both states the editor exists to
+   make visible. It is **uncached**, because the atelier looks at it immediately
+   after saving and a 60s-stale answer reads as the save having failed. And it
+   **throws** where `fetchStudioSettings` returns an empty map: every settings
+   consumer has an env fallback behind it, but an editor showing an empty list
+   would just be lying.
+
+3. **Unknown rows are reported with the key they were probably meant to be.** A
+   row whose key isn't a setting is listed with a bounded (≤2 edit) near-miss
+   suggestion, matched case- and punctuation-insensitively so `Rush Surcharge
+Rate` finds `RUSH_SURCHARGE_RATE`. This panel is the only place in the app
+   where such a row is visible at all.
+
+4. **A blank value is a CLEAR, not a rejection**, and there is deliberately no
+   delete: a blank `Value` reads as unset everywhere, so clearing is how a setting
+   is handed back to its env var / built-in default, and keeping the row keeps the
+   key documented. The write updates the row that already holds the key or creates
+   one, seeding `Description` from the catalog — with **one bounded retry without
+   it** (Notion rejects the _whole_ create when a page names a property the
+   database lacks, and `Description` is the one property the setup calls optional,
+   so a database without that column could otherwise never save a setting at all).
+   A successful write **drops the cached map**, so the next request's
+   `primeSettings` sees the change rather than the save appearing not to work.
+
+5. **The field is seeded from the Notion value, never the effective one.** An
+   environment value shown in an editable box would be copied into Notion the
+   moment anyone pressed Save, silently moving where that setting lives.
+
+6. **An unconfigured database is said plainly, not rendered as an empty editor.**
+   `configured: false` ⇒ the values shown are still real (the environment's and
+   the built-ins') but nothing is editable, and a write answers **409** rather
+   than offering a Save with nowhere to write — the same "a state only a human can
+   clear" shape as the materials panel's unreachable database.
+
+Same `requireStaff` gate as the rest of the studio surface (401 / 404 / 403), and
+contract-first like the rest of the dashboard. **No new env var and no atelier
+setup** — it reads and writes the same Studio Settings database, the same `Setting`
+/ `Value` / `Description` properties, and the same env vars as before. To add a
+setting, add its key to `SETTING_DEFINITIONS` **and** its getter together: a key
+missing from the catalog still resolves at runtime, but the atelier can't see or
+edit it.
 
 ## Working with Stripe (shop checkout)
 
@@ -3206,13 +3292,16 @@ in the maintainer's env without edits.
 - **Optional live-config database:** `NOTION_SETTINGS_DATABASE_ID` (the "Studio
   Settings" key/value database). When set (and the integration is shared with it),
   the atelier can retune the runtime business tunables — `RUSH_SURCHARGE_RATE`,
-  `MEASUREMENT_LOCK_FROM_STAGE`, the four `APPOINTMENT_*` policy vars, `COLOR_PALETTE`
-  (the intake color picker's palette), and the notification inboxes
-  (`ATELIER_INBOX_EMAIL`, `ATELIER_CONTACT_INBOX_EMAIL`,
-  `ATELIER_APPOINTMENTS_INBOX_EMAIL`, `ALERT_INBOX_EMAIL`) — in Notion instead of
+  `MEASUREMENT_LOCK_FROM_STAGE`, the five `APPOINTMENT_*` policy vars, the four
+  reward amounts, `COLOR_PALETTE` (the intake color picker's palette), and the
+  notification inboxes (`ATELIER_INBOX_EMAIL`, `ATELIER_CONTACT_INBOX_EMAIL`,
+  `ATELIER_APPOINTMENTS_INBOX_EMAIL`, `ALERT_INBOX_EMAIL`) — from the studio
+  dashboard's **Studio settings** editor (or the Notion rows directly) instead of
   Vercel; each still falls back to its env var, then the built-in default. Unset ⇒
-  env-only, exactly as before. Secrets, database ids, and email **senders** stay in
-  Vercel by design (see "Studio Settings").
+  env-only, exactly as before, and the editor says so rather than offering a Save
+  with nowhere to write. Secrets, database ids, and email **senders** stay in
+  Vercel by design (see "Studio Settings" and "Studio settings, edited on the
+  dashboard").
 - **Optional fitting-reminder env vars:** `FITTING_REMINDER_STAGES` (default
   `Fitting`) — the live **Stage** option name(s), comma-separated, that trigger an
   automated fitting reminder; and `FITTING_REMINDER_LEAD_DAYS` (default `10`) — how
@@ -3463,8 +3552,9 @@ Three things about it are load-bearing:
 | Change the color selector (intake)                       | `artifacts/web-app/src/components/color-picker.tsx` + `pages/order-form.tsx` (frontend, step 2 of the three-step flow); `api-server/src/services/colors.ts` (`intakeColorPalette`/`parseColorPalette` + the built-in default) + `routes/colors.ts` (`GET /api/colors`, the `COLOR_PALETTE` Studio Settings value); `lib/notion/orders.{schema,blocks}.ts` (write-back to the order's `Colors` + `Color Usage`)                                                                                                                                                                                                                                                                                |
 | Change the rush order surcharge                          | `artifacts/web-app/src/lib/rush.ts` (window + disclosure) + `pages/order-form.tsx` (detect/acknowledge/send); `api-server/src/lib/notion/orders.blocks.ts` + `orders.schema.ts` (`Rush Order` record); `api-server/src/services/rush.ts` + `services/invoice-generator.service.ts` (server-priced "Surcharge" line); `web-app/src/lib/invoice-format.ts` ("Surcharge" line display)                                                                                                                                                                                                                                                                                                           |
 | Change referral & returning-skater rewards               | `api-server/src/services/rewards.service.ts` (engine + amount getters) + `lib/stripe/promotions.ts` (`createDiscountCode`) + `lib/notion/clients.repository.ts` (reward reads + `patchClientProperties`); wired from `submitOrder` (capture) + `recordPaidOrder` / `recordPayment` (issue); reward emails in `lib/resend/emails.ts`; `services/account.service.ts` + `web-app/src/pages/account.tsx` (referral card) + `pages/order-form.tsx` (`referralCode` field)                                                                                                                                                                                                                          |
-| Add/read an atelier-editable live setting                | `api-server/src/lib/settings/store.ts` (`SETTING_KEYS` + `settingValue`) + `lib/notion/settings.{schema,repository}.ts` (Notion read); consume with `settingValue(KEY) ?? process.env[KEY] ?? default` (see `services/rush.ts`); primed by the middleware in `app.ts`. Notion "Studio Settings" DB, `NOTION_SETTINGS_DATABASE_ID`                                                                                                                                                                                                                                                                                                                                                             |
+| Add/read an atelier-editable live setting                | `api-server/src/lib/settings/catalog.ts` (`SETTING_DEFINITIONS` — the typed entry the dashboard renders) + `lib/settings/store.ts` (`settingValue`) + `lib/notion/settings.{schema,repository}.ts` (Notion read/write); consume with `settingValue(KEY) ?? process.env[KEY] ?? default` (see `services/rush.ts`); primed by the middleware in `app.ts`. Notion "Studio Settings" DB, `NOTION_SETTINGS_DATABASE_ID`                                                                                                                                                                                                                                                                            |
 | Change the measurement-change request                    | `artifacts/web-app/src/components/measurement-change-dialog.tsx` (opened from `components/custom-order-result.tsx`); `api-server/src/services/measurement-change.service.ts` + `routes/orders.ts` + `lib/notion/measurement-change.{blocks,repository}.ts` (writes to the **contact** database)                                                                                                                                                                                                                                                                                                                                                                                               |
+| Change the studio settings editor                        | `web-app/src/components/studio-settings.tsx` (rendered by `pages/studio.tsx`); `services/studio-settings.service.ts` + the `/studio/settings` handlers in `routes/studio.ts` + `lib/settings/catalog.ts` (the per-key definition + its two validators) + `fetchSettingRows` / `saveSetting` in `lib/notion/settings.repository.ts`                                                                                                                                                                                                                                                                                                                                                            |
 | Change review moderation on the dashboard                | `web-app/src/components/studio-reviews.tsx` (rendered by `pages/studio.tsx`); `services/studio-reviews.service.ts` + the `/studio/reviews` handlers in `routes/studio.ts` + the moderation half of `lib/notion/reviews.{schema,repository}.ts`                                                                                                                                                                                                                                                                                                                                                                                                                                                |
 | Change post-delivery review capture                      | `artifacts/web-app/src/components/review-dialog.tsx` (opened from `components/custom-order-result.tsx` for delivered orders); `api-server/src/services/review.service.ts` + `services/delivery.ts` + `routes/orders.ts` + `lib/notion/reviews.{blocks,repository}.ts` (writes to the **Reviews** database)                                                                                                                                                                                                                                                                                                                                                                                    |
 | Change the published testimonials                        | `artifacts/web-app/src/components/testimonials.tsx` (rendered by `pages/home.tsx` + `pages/about.tsx`); `getPublishedReviews` in `api-server/src/services/review.service.ts` + `routes/reviews.ts` + `lib/notion/reviews.schema.ts`                                                                                                                                                                                                                                                                                                                                                                                                                                                           |
