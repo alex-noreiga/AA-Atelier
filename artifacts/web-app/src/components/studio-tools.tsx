@@ -141,7 +141,7 @@ export function StudioTools() {
     <section data-testid="panel-tools">
       <h2 className="flex items-center gap-2 text-xs tracking-[0.2em] uppercase text-muted-foreground mb-4">
         <Wrench className="w-4 h-4" strokeWidth={1.5} />
-        Internal tools
+        Actions
       </h2>
       <div className="space-y-3">
         {TOOLS.map((spec) => (

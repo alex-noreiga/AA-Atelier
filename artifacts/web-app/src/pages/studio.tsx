@@ -267,7 +267,7 @@ function Dashboard({ data }: { data: StudioAnalytics }) {
     <div className="space-y-10 sm:space-y-12">
       <div className="grid grid-cols-2 md:grid-cols-4 gap-2 sm:gap-3">
         <StatTile
-          label="In production"
+          label="Active orders"
           value={String(data.production.activeOrders)}
           hint={`${data.production.unscheduled} without a due date`}
           testId="stat-active"
@@ -275,7 +275,7 @@ function Dashboard({ data }: { data: StudioAnalytics }) {
         <StatTile
           label="Overdue"
           value={String(data.production.overdue)}
-          hint={`${data.production.dueThisWeek} due this week`}
+          hint={`${data.production.dueThisWeek} due in 7 days`}
           emphasis={data.production.overdue > 0}
           testId="stat-overdue"
         />
@@ -288,7 +288,7 @@ function Dashboard({ data }: { data: StudioAnalytics }) {
           testId="stat-outstanding"
         />
         <StatTile
-          label="Shop, this month"
+          label="Shop this month"
           value={formatPrice(thisMonth?.shopRevenue ?? 0)}
           hint={`${thisMonth?.shopOrders ?? 0} order${
             thisMonth?.shopOrders === 1 ? "" : "s"
@@ -578,7 +578,7 @@ function RevenuePanel({ months }: { months: StudioRevenueMonth[] }) {
   return (
     <Section
       icon={<TrendingUp className="w-4 h-4" strokeWidth={1.5} />}
-      title="By month"
+      title="Money by month"
       testId="panel-revenue"
     >
       <div className="flex flex-wrap items-center gap-x-4 gap-y-1 mb-4 text-xs text-muted-foreground">
