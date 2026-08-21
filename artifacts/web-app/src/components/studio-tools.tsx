@@ -148,10 +148,6 @@ export function StudioTools() {
           <ToolCard key={spec.tool} spec={spec} />
         ))}
       </div>
-      <p className="mt-2 text-xs text-muted-foreground/80 font-light">
-        Every tool here is safe to run twice — a repeat reports that there was
-        nothing left to do rather than doing it again.
-      </p>
     </section>
   );
 }

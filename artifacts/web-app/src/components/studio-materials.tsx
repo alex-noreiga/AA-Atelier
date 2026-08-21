@@ -106,12 +106,6 @@ export function StudioMaterials() {
           )}
         </div>
       )}
-
-      {data?.configured && data.suppressedCount > 0 && (
-        <p className="mt-2 text-xs text-muted-foreground/80 font-light">
-          {data.suppressedCount} muted.
-        </p>
-      )}
     </section>
   );
 }

@@ -335,13 +335,11 @@ function Dashboard({ data }: { data: StudioAnalytics }) {
 function Section({
   icon,
   title,
-  note,
   children,
   testId,
 }: {
   icon: React.ReactNode;
   title: string;
-  note?: string;
   children: React.ReactNode;
   testId?: string;
 }) {
@@ -354,11 +352,6 @@ function Section({
       <div className="rounded-sm border border-border bg-card/40 p-4 sm:p-5">
         {children}
       </div>
-      {note && (
-        <p className="mt-2 text-xs text-muted-foreground/80 font-light">
-          {note}
-        </p>
-      )}
     </section>
   );
 }
@@ -439,19 +432,19 @@ function BarRow({
 
 // --- Panels ---
 
+/** A panel's own summary figures, above its detail. */
+function PanelSummary({ children }: { children: React.ReactNode }) {
+  return (
+    <p className="mb-4 text-xs text-muted-foreground font-light">{children}</p>
+  );
+}
+
 function ProductionPanel({ production }: { production: StudioProductionLoad }) {
   return (
     <Section
       icon={<Hammer className="w-4 h-4" strokeWidth={1.5} />}
       title="Production load"
       testId="panel-production"
-      note={
-        production.unscheduled > 0
-          ? `${production.unscheduled} active order${
-              production.unscheduled === 1 ? "" : "s"
-            } have no due date, so they don't appear on the schedule.`
-          : undefined
-      }
     >
       <div className="grid grid-cols-2 sm:grid-cols-4 gap-4 mb-6 text-center">
         <Figure label="Scheduled" value={production.scheduled} />
@@ -537,12 +530,11 @@ function PipelinePanel({
 }) {
   const max = pipeline.stages.reduce((top, s) => Math.max(top, s.count), 0);
   return (
-    <Section
-      icon={icon}
-      title={title}
-      testId={testId}
-      note={`${pipeline.total} on record · ${pipeline.completed} finished · ${pipeline.cancelled} cancelled`}
-    >
+    <Section icon={icon} title={title} testId={testId}>
+      <PanelSummary>
+        {pipeline.total} on record · {pipeline.completed} finished ·{" "}
+        {pipeline.cancelled} cancelled
+      </PanelSummary>
       {pipeline.stages.length === 0 ? (
         <p className="text-sm text-muted-foreground font-light">
           No stages configured in Notion.
@@ -588,7 +580,6 @@ function RevenuePanel({ months }: { months: StudioRevenueMonth[] }) {
       icon={<TrendingUp className="w-4 h-4" strokeWidth={1.5} />}
       title="By month"
       testId="panel-revenue"
-      note="Shop revenue is money taken. Custom is work booked — the invoice total, placed in the month the order came in — so the two aren't added together."
     >
       <div className="flex flex-wrap items-center gap-x-4 gap-y-1 mb-4 text-xs text-muted-foreground">
         <span className="inline-flex items-center gap-1.5">
@@ -654,12 +645,13 @@ function PaymentsPanel({ payments }: { payments: StudioPaymentTotals }) {
       icon={<Wallet className="w-4 h-4" strokeWidth={1.5} />}
       title="Deposits & balances"
       testId="panel-payments"
-      note={`${formatPrice(payments.invoicedTotal)} invoiced across ${
-        payments.invoiceCount
-      } invoice${payments.invoiceCount === 1 ? "" : "s"} · ${formatPrice(
-        payments.collectedTotal,
-      )} collected`}
     >
+      <PanelSummary>
+        {formatPrice(payments.invoicedTotal)} invoiced across{" "}
+        {payments.invoiceCount} invoice
+        {payments.invoiceCount === 1 ? "" : "s"} ·{" "}
+        {formatPrice(payments.collectedTotal)} collected
+      </PanelSummary>
       <div className="space-y-2">
         <BarRow
           label="Deposits collected"
@@ -697,7 +689,6 @@ function TopItemsPanel({ items }: { items: StudioTopItem[] }) {
       icon={<Star className="w-4 h-4" strokeWidth={1.5} />}
       title="Best sellers"
       testId="panel-top-items"
-      note="Counted as orders containing the piece — the inventory link records what was bought, not how many."
     >
       {items.length === 0 ? (
         <p className="text-sm text-muted-foreground font-light">

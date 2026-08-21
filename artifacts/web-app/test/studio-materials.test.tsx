@@ -126,12 +126,6 @@ describe("StudioMaterials", () => {
     expect(screen.getByText("no stock recorded")).toBeInTheDocument();
   });
 
-  it("reports how many materials are muted", () => {
-    h.materials.data = overview({ suppressedCount: 21 });
-    render(<StudioMaterials />);
-    expect(screen.getByText(/21 muted\./)).toBeInTheDocument();
-  });
-
   // An unconfigured database must never render as an empty list.
   it("explains itself when the database isn't connected", () => {
     h.materials.data = overview({ configured: false });

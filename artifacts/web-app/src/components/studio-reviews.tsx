@@ -83,8 +83,7 @@ export function StudioReviews() {
               className="text-sm text-muted-foreground font-light"
               data-testid="reviews-empty"
             >
-              Nothing waiting. Every review that has come in has been decided
-              on.
+              Nothing waiting.
             </p>
           )}
 
@@ -107,13 +106,15 @@ export function StudioReviews() {
         </div>
       )}
 
-      <p className="mt-2 text-xs text-muted-foreground/80 font-light">
-        A published review appears on the home and about pages within a few
-        minutes.
-        {queue.data?.truncated
-          ? " Only the most recent reviews are listed here; older ones are in Notion."
-          : ""}
-      </p>
+      {queue.data?.truncated && (
+        <p
+          className="mt-2 text-xs text-muted-foreground/80 font-light"
+          data-testid="reviews-truncated"
+        >
+          Only the most recent reviews are listed here; older ones are in
+          Notion.
+        </p>
+      )}
     </section>
   );
 }
