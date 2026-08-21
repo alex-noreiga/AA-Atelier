@@ -1,0 +1,323 @@
+<title>Pricing a Custom Piece</title>
+
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:wght@400;500;600&family=Jost:wght@300;400;500;600&display=swap">
+
+<style>
+  /* Palette and type follow the site's Deep Plum & Champagne theme
+     (artifacts/web-app/src/index.css). */
+  :root {
+    --paper:      hsl(36 44% 97%);
+    --paper-2:    hsl(34 34% 94%);
+    --ink:        hsl(320 24% 15%);
+    --ink-soft:   hsl(320 10% 40%);
+    --ink-faint:  hsl(320 8% 55%);
+    --line:       hsl(320 16% 85%);
+    --line-soft:  hsl(320 16% 90%);
+    --rose:       hsl(352 46% 48%);
+    --rose-deep:  hsl(352 50% 40%);
+    --rose-tint:  hsl(352 52% 96%);
+    --gold:       hsl(33 62% 38%);
+    --gold-tint:  hsl(38 66% 94%);
+
+    --serif: "Cormorant Garamond", Georgia, "Iowan Old Style", serif;
+    --sans:  "Jost", system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+    --mono:  ui-monospace, "SF Mono", "SFMono-Regular", Menlo, Consolas, monospace;
+
+    --maxw: 660px;
+    --shadow: 0 1px 2px hsl(320 20% 20% / .05), 0 8px 24px hsl(320 24% 20% / .06);
+  }
+
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      --paper:      hsl(320 30% 10%);
+      --paper-2:    hsl(320 27% 14%);
+      --ink:        hsl(35 40% 92%);
+      --ink-soft:   hsl(35 16% 72%);
+      --ink-faint:  hsl(35 12% 60%);
+      --line:       hsl(320 18% 25%);
+      --line-soft:  hsl(320 18% 20%);
+      --rose:       hsl(355 44% 70%);
+      --rose-deep:  hsl(355 44% 70%);
+      --rose-tint:  hsl(345 26% 18%);
+      --gold:       hsl(40 56% 70%);
+      --gold-tint:  hsl(36 24% 18%);
+      --shadow: 0 1px 2px hsl(320 40% 3% / .4), 0 10px 30px hsl(320 40% 3% / .45);
+    }
+  }
+  :root[data-theme="dark"] {
+    --paper: hsl(320 30% 10%); --paper-2: hsl(320 27% 14%);
+    --ink: hsl(35 40% 92%); --ink-soft: hsl(35 16% 72%); --ink-faint: hsl(35 12% 60%);
+    --line: hsl(320 18% 25%); --line-soft: hsl(320 18% 20%);
+    --rose: hsl(355 44% 70%); --rose-deep: hsl(355 44% 70%); --rose-tint: hsl(345 26% 18%);
+    --gold: hsl(40 56% 70%); --gold-tint: hsl(36 24% 18%);
+    --shadow: 0 1px 2px hsl(320 40% 3% / .4), 0 10px 30px hsl(320 40% 3% / .45);
+  }
+
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    background: var(--paper);
+    color: var(--ink);
+    font-family: var(--sans);
+    font-size: 16.5px;
+    line-height: 1.66;
+    font-weight: 300;
+    -webkit-font-smoothing: antialiased;
+  }
+  ::selection { background: var(--rose-tint); }
+  a { color: var(--rose-deep); text-underline-offset: 2px; }
+
+  .page { max-width: 860px; margin: 0 auto; padding: 0 26px; }
+
+  h1, h2 { font-family: var(--serif); font-weight: 500; text-wrap: balance; line-height: 1.1; }
+  h2 { font-size: 1.75rem; margin: 0; letter-spacing: -0.01em; }
+  h3 { font-family: var(--sans); font-weight: 500; font-size: 1rem; margin: 0 0 .25rem; }
+  p { margin: 0 0 .85rem; max-width: var(--maxw); }
+  p:last-child { margin-bottom: 0; }
+  strong { font-weight: 600; color: var(--ink); }
+  em { font-style: normal; color: var(--ink-faint); }
+
+  .eyebrow {
+    font-size: .68rem; letter-spacing: .26em; text-transform: uppercase;
+    color: var(--rose-deep); font-weight: 500; margin: 0;
+  }
+
+  code, .mono { font-family: var(--mono); font-size: .85em; }
+  p code, li code, dd code, dt code, td code {
+    background: var(--paper-2);
+    border: 1px solid var(--line-soft);
+    border-radius: 3px;
+    padding: .06em .36em;
+    white-space: nowrap;
+  }
+
+  header.hero {
+    padding: clamp(44px, 7vw, 72px) 0 clamp(22px, 4vw, 32px);
+    border-bottom: 1px solid var(--line);
+    margin-bottom: clamp(32px, 5vw, 44px);
+  }
+  header.hero h1 {
+    font-size: clamp(2.4rem, 6vw, 3.4rem);
+    margin: .4rem 0 .7rem;
+    letter-spacing: -0.015em;
+  }
+  header.hero p.sum { max-width: 600px; color: var(--ink-soft); font-size: 1.05rem; margin: 0; }
+
+  main { display: grid; gap: clamp(38px, 5vw, 50px); }
+  section { display: grid; gap: 1rem; }
+
+  /* Where you type vs. where you read. */
+  .chain { display: grid; gap: 10px; max-width: var(--maxw); }
+  @media (min-width: 680px) { .chain { grid-template-columns: 1fr 1fr 1fr; } }
+  .chain .box {
+    border: 1px solid var(--line); border-radius: 9px; padding: 13px 15px;
+    background: var(--paper-2); display: grid; gap: 2px; align-content: start;
+    position: relative;
+  }
+  .chain .box .db { font-family: var(--mono); font-size: .76rem; color: var(--ink); }
+  .chain .box .does { font-size: .84rem; color: var(--ink-soft); line-height: 1.45; }
+  .chain .box .role {
+    font-size: .6rem; letter-spacing: .14em; text-transform: uppercase;
+    color: var(--rose-deep); margin-bottom: 2px;
+  }
+  .chain .box.read .role { color: var(--ink-faint); }
+
+  ol.steps { list-style: none; counter-reset: step; margin: 0; padding: 0; max-width: var(--maxw); }
+  ol.steps > li { counter-increment: step; position: relative; padding: 0 0 1.5rem 46px; }
+  ol.steps > li:last-child { padding-bottom: 0; }
+  ol.steps > li:not(:last-child)::after {
+    content: ""; position: absolute; left: 15px; top: 36px; bottom: 2px; width: 1px; background: var(--line);
+  }
+  ol.steps > li::before {
+    content: counter(step); position: absolute; left: 0; top: -1px;
+    width: 31px; height: 31px; border-radius: 50%;
+    display: grid; place-items: center;
+    font-family: var(--serif); font-size: 1.05rem; color: var(--rose-deep);
+    background: var(--paper); border: 1px solid var(--line);
+  }
+  ol.steps > li > p { font-size: .95rem; color: var(--ink-soft); margin: 0 0 .6rem; }
+
+  dl.fields { margin: 0; display: grid; gap: .45rem; font-size: .94rem; }
+  dl.fields > div { display: grid; gap: .1rem; }
+  @media (min-width: 560px) {
+    dl.fields > div { grid-template-columns: 168px 1fr; gap: .1rem 16px; align-items: baseline; }
+  }
+  dl.fields dt { font-family: var(--mono); font-size: .8rem; }
+  dl.fields dd { margin: 0; color: var(--ink-soft); }
+
+  .callout {
+    border: 1px solid var(--line); border-left: 3px solid var(--rose);
+    background: var(--rose-tint); border-radius: 8px;
+    padding: 14px 19px; max-width: var(--maxw); font-size: .94rem;
+  }
+  .callout.warn { border-left-color: var(--gold); background: var(--gold-tint); }
+  .callout .label {
+    font-size: .65rem; letter-spacing: .18em; text-transform: uppercase; font-weight: 600;
+    color: var(--rose-deep); margin-bottom: .35rem; display: block;
+  }
+  .callout.warn .label { color: var(--gold); }
+
+  ul.prose { padding-left: 0; list-style: none; max-width: var(--maxw); margin: 0; display: grid; gap: .5rem; }
+  ul.prose > li { position: relative; padding-left: 20px; }
+  ul.prose > li::before {
+    content: ""; position: absolute; left: 3px; top: .6em;
+    width: 5px; height: 5px; border-radius: 50%; background: var(--rose);
+  }
+
+  .table-wrap { overflow-x: auto; max-width: 100%; border: 1px solid var(--line); border-radius: 9px; box-shadow: var(--shadow); }
+  table { border-collapse: collapse; width: 100%; font-size: .89rem; min-width: 500px; }
+  th, td { text-align: left; padding: 11px 15px; border-bottom: 1px solid var(--line-soft); vertical-align: top; }
+  thead th {
+    font-size: .63rem; letter-spacing: .16em; text-transform: uppercase; color: var(--ink-faint);
+    font-weight: 600; background: var(--paper-2); border-bottom: 1px solid var(--line);
+  }
+  tbody tr:last-child td { border-bottom: none; }
+  td:first-child { width: 40%; }
+
+  footer.foot {
+    border-top: 1px solid var(--line);
+    margin-top: 46px; padding: 24px 0 56px;
+    font-size: .8rem; color: var(--ink-faint);
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    * { animation: none !important; transition: none !important; }
+  }
+  :focus-visible { outline: 2px solid var(--rose); outline-offset: 3px; border-radius: 2px; }
+</style>
+
+<div class="page">
+
+  <header class="hero">
+    <p class="eyebrow">A.A Atelier · Studio Operations</p>
+    <h1>Pricing a Custom Piece</h1>
+    <p class="sum">Cost it in the costing database, read the suggested price, then put it on the invoice.</p>
+  </header>
+
+  <main>
+
+    <section>
+      <div class="chain">
+        <div class="box">
+          <div class="role">You fill in</div>
+          <div class="db">material usage database</div>
+          <div class="does">A row per material: what and how much.</div>
+        </div>
+        <div class="box">
+          <div class="role">You fill in</div>
+          <div class="db">costing</div>
+          <div class="does">A row per piece: labor hours and the pricing settings.</div>
+        </div>
+        <div class="box read">
+          <div class="role">You read</div>
+          <div class="db">Suggested Price</div>
+          <div class="does">The quote. Then the invoice bills it.</div>
+        </div>
+      </div>
+    </section>
+
+    <section>
+      <h2>Cost it</h2>
+
+      <ol class="steps">
+        <li>
+          <h3>Start a costing row</h3>
+          <p>In <strong>finances &rarr; costing</strong>, new row from the <strong>New custom work</strong> template. One row per piece, so a two-garment order gets two rows on the same order.</p>
+          <dl class="fields">
+            <div><dt>Item</dt><dd>Name it.</dd></div>
+            <div><dt>Order</dt><dd>Link to the order. Without this the invoice tool has nothing to read.</dd></div>
+            <div><dt>Pricing Settings</dt><dd>Set to <strong>Custom / Direct</strong>. See the warning below.</dd></div>
+            <div><dt>Labor Hours</dt><dd>Your estimate. The rate comes from the settings row, $5/hr right now.</dd></div>
+            <div><dt>Channel</dt><dd>Custom. This one is just a label, it does not affect the price.</dd></div>
+          </dl>
+        </li>
+        <li>
+          <h3>Add a usage line per material</h3>
+          <p>In <strong>production &rarr; material usage database</strong>, or from the costing row's <code>Material Usage Lines</code> field. There are templates for the usual ones: outer fabric, padding layer, absorbant fabric, blade cloth, bags, packaging label.</p>
+          <dl class="fields">
+            <div><dt>Usage Line</dt><dd>The name the client will see on the invoice.</dd></div>
+            <div><dt>Material</dt><dd>Link to materials inventory. Unit cost comes from its <code>Price per Unit</code>.</dd></div>
+            <div><dt>Quantity Used</dt><dd>In that material's own unit. Include waste.</dd></div>
+            <div><dt>Usage Type</dt><dd>Material, or Packaging to keep it in your cost but off the client's invoice.</dd></div>
+            <div><dt>Costing Item</dt><dd>Link back to the piece.</dd></div>
+          </dl>
+        </li>
+        <li>
+          <h3>Read the price</h3>
+          <p>Everything on the costing row calculates itself. <code>Break Even Price</code> is your floor, <code>Suggested Price</code> is the quote, <code>Profit</code> is what you keep. With the current settings, 100% margin and no fees on Custom / Direct, the suggested price lands at twice materials plus labor plus packaging.</p>
+          <p>To move it: change <code>Labor Hours</code> for this piece, or the margin on the Pricing Settings row, which moves everything using that row. Never type a price into the costing or the invoice.</p>
+        </li>
+      </ol>
+
+      <div class="callout warn">
+        <span class="label">Check the Pricing Settings link every time</span>
+        <p>The <strong>New custom work</strong> template arrives with Pricing Settings pointing at <strong>Production / Marketplace</strong>, which grosses the price up by a 6.5% marketplace fee you are not paying on a direct sale. Switch it to <strong>Custom / Direct</strong> or the client is quoted about 7% high.</p>
+      </div>
+    </section>
+
+    <section>
+      <h2>Bill it</h2>
+
+      <ol class="steps">
+        <li>
+          <h3>Deposits</h3>
+          <p>On the order's invoice in <strong>invoices &amp; payments</strong>, put a number in <code>First Deposit Amount</code>. That alone makes it payable online. Same for <code>Second Deposit Amount</code> at the fitting. Add <code>First Deposit Due</code>, <code>Second Deposit Due</code>, or <code>Payment Deadline</code> to turn on reminder emails for those stages.</p>
+        </li>
+        <li>
+          <h3>Itemize</h3>
+          <p><strong>/studio &rarr; Itemize an invoice</strong>, type the order number. It writes a material line per usage line, a labor line, a design &amp; finishing line for the margin, and a rush surcharge if the order is marked rush. Totals to the suggested price.</p>
+          <p>It runs once. If the invoice already has lines it does nothing, so to redo it after changing the costing, delete the lines in Notion and run it again.</p>
+        </li>
+        <li>
+          <h3>Invoice Ready</h3>
+          <p>Tick it and the client gets the balance and the itemized invoice. The paid checkboxes look after themselves from there, unless someone pays you in person.</p>
+        </li>
+      </ol>
+    </section>
+
+    <section>
+      <h2>If the price looks wrong</h2>
+      <div class="table-wrap">
+        <table>
+          <thead>
+            <tr><th>What you see</th><th>What it is</th></tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td>Roughly 7% high</td>
+              <td>Pricing Settings is on Production / Marketplace. Switch to Custom / Direct.</td>
+            </tr>
+            <tr>
+              <td>Suggested Price blank or tiny</td>
+              <td>No Pricing Settings link, or <code>Labor Hours</code> is empty.</td>
+            </tr>
+            <tr>
+              <td>Material Cost is missing a material</td>
+              <td>That usage line is not linked to the costing item, or the material has no <code>Price per Unit</code>.</td>
+            </tr>
+            <tr>
+              <td>Packaging is showing on the client's invoice</td>
+              <td>Its <code>Usage Type</code> is Material, not Packaging.</td>
+            </tr>
+            <tr>
+              <td>Invoice totals more than the quote</td>
+              <td>A hand-added invoice line is linked to a Costing Item, which prices at the whole garment. Clear the link or delete the line.</td>
+            </tr>
+            <tr>
+              <td>Changed the costing, invoice unchanged</td>
+              <td>Lines are only written once. Delete them and rerun the itemize tool.</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+    </section>
+
+  </main>
+
+  <footer class="foot">
+    costing and invoices &amp; payments live under <strong>finances</strong>. Material usage lives under <strong>production</strong>. Rates and margin live on the two <strong>Pricing Settings</strong> rows.
+  </footer>
+
+</div>
