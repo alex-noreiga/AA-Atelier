@@ -134,4 +134,15 @@ describe("StudioMaterials", () => {
     expect(screen.getByTestId("materials-unconfigured")).toBeInTheDocument();
     expect(screen.queryByTestId("materials-empty")).toBeNull();
   });
+
+  // Configured but unreadable is its own state: the id is set, so "not
+  // connected yet" would send the atelier to fix the wrong thing.
+  it("names the sharing fix when Notion can't see the database", () => {
+    h.materials.data = overview({ configured: true, unreachable: true });
+    render(<StudioMaterials />);
+
+    expect(screen.getByTestId("materials-unreachable")).toBeInTheDocument();
+    expect(screen.queryByTestId("materials-unconfigured")).toBeNull();
+    expect(screen.queryByTestId("materials-empty")).toBeNull();
+  });
 });

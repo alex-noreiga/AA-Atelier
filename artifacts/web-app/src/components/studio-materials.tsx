@@ -14,7 +14,10 @@
 //    so a strict alert list would look reassuringly empty while saying nothing
 //    about the other forty. Those are listed separately, collapsed.
 //  - **Saying when it isn't wired up.** An unconfigured database renders the
-//    reason, never an empty list that reads as "all good".
+//    reason, never an empty list that reads as "all good". A database the
+//    integration can't see (`unreachable`) reads the same way, with the fix for
+//    that state instead — it used to be the one configuration mistake here that
+//    surfaced as a failed panel.
 
 import {
   useGetStudioMaterials,
@@ -75,6 +78,16 @@ export function StudioMaterials() {
           The materials database isn’t connected yet, so nothing can be checked.
           Set NOTION_MATERIALS_DATABASE_ID and share the Notion integration with
           the materials inventory.
+        </p>
+      ) : data?.unreachable ? (
+        <p
+          className="text-sm text-muted-foreground font-light"
+          data-testid="materials-unreachable"
+        >
+          Notion can’t find the materials database, so nothing can be checked.
+          Open the materials inventory in Notion and share it with the
+          integration (⋯ → Connections), and check NOTION_MATERIALS_DATABASE_ID
+          holds that database’s id.
         </p>
       ) : (
         <div className="space-y-3">

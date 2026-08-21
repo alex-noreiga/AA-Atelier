@@ -1,6 +1,10 @@
 import { describe, it, expect } from "vitest";
 import { scanDatabase, MAX_SCAN_PAGES } from "../../src/lib/notion/scan.js";
 import {
+  NotionRequestError,
+  isNotionNotFound,
+} from "../../src/lib/notion/errors.js";
+import {
   makeFakeClient,
   jsonResponse,
   errorResponse,
@@ -77,5 +81,48 @@ describe("scanDatabase", () => {
   it("throws on a failed query", async () => {
     const client = makeFakeClient(() => errorResponse(503, "unavailable"));
     await expect(scanDatabase(client, "test")).rejects.toThrow(/503/);
+  });
+
+  // The status alone is what a failed scan used to say. Whoever reads the alert
+  // email needs to know WHICH database, and what to do about it.
+  it("names the database, the id and Notion's own reason", async () => {
+    const client = makeFakeClient(() =>
+      jsonResponse(
+        {
+          object: "error",
+          status: 404,
+          code: "object_not_found",
+          message:
+            "Could not find database with ID: test-db-id. Make sure the relevant pages and databases are shared with your integration.",
+        },
+        404,
+      ),
+    );
+
+    const error = await scanDatabase(client, "materials inventory").catch(
+      (err: unknown) => err,
+    );
+
+    expect(error).toBeInstanceOf(NotionRequestError);
+    expect((error as NotionRequestError).status).toBe(404);
+    expect((error as NotionRequestError).code).toBe("object_not_found");
+    const message = (error as Error).message;
+    expect(message).toContain("materials inventory");
+    expect(message).toContain("test-db-id");
+    expect(message).toContain("object_not_found");
+    // The actionable half: a 404 is configuration, not an outage.
+    expect(message).toMatch(/shared with that database/);
+    expect(isNotionNotFound(error)).toBe(true);
+  });
+
+  it("reports a non-404 failure as not-found's opposite", async () => {
+    const client = makeFakeClient(() => errorResponse(502, "bad gateway"));
+
+    const error = await scanDatabase(client, "test").catch(
+      (err: unknown) => err,
+    );
+
+    expect(isNotionNotFound(error)).toBe(false);
+    expect((error as Error).message).toContain("bad gateway");
   });
 });

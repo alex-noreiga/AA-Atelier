@@ -1857,7 +1857,16 @@ and `web-app/src/components/studio-materials.tsx`. Load-bearing decisions:
    usual 60s TTL + fall-back-to-stale-on-error, so a Notion blip degrades to
    slightly stale numbers rather than an empty shopping list. An unset
    `NOTION_MATERIALS_DATABASE_ID` returns `configured: false` with empty lists and
-   the panel **says so** — never an empty list that reads as "all good".
+   the panel **says so** — never an empty list that reads as "all good". A Notion
+   **404** (the id is set but the integration was never shared with the database,
+   or the id is wrong) degrades the same way, flagged `unreachable: true` with the
+   sharing fix in the panel: it is the same kind of state as an unset id — one only
+   a human can clear — so 500-ing the panel and alerting the inbox on every
+   dashboard load was the wrong shape. Any **other** status still throws (an outage
+   clears itself and is worth the one alert). The 404 is told apart by
+   `NotionRequestError` (`lib/notion/errors.ts`), which `scanDatabase` now throws
+   with the database's label, its id, and Notion's own `code`/`message` — "Notion
+   query failed with status 404" alone named neither the database nor the fix.
 
 The atelier's one-time setup: share the Notion integration with **materials
 inventory** and set **`NOTION_MATERIALS_DATABASE_ID`**. Nothing to add in Notion —
