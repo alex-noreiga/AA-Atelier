@@ -92,6 +92,14 @@ export const ORDER_MEASUREMENT_APPOINTMENT_PROPERTY = "Measurement Appointment";
 // the atelier can see who sent them even when the code resolved to nothing. The
 // reward engine reads the CRM, never this — it's a record, not a mechanism.
 export const ORDER_REFERRAL_CODE_PROPERTY = "Referral Code"; // rich_text
+// Which of the studio's services the order was placed for — a bespoke
+// commission, alterations, rhinestoning, or a repair (`lib/service-catalog.ts`).
+// It decides what the intake asked for, so recording it is what lets the atelier
+// tell an order with no measurements apart from an incomplete one. A `select`,
+// so it filters and groups; Notion auto-creates the option on first write.
+// Write-only — the app never reads it back (the catalog, not the order, is the
+// authority on what a service needs).
+export const ORDER_SERVICE_PROPERTY = "Service"; // select
 
 /** Validated new-order payload, derived from the OpenAPI contract. */
 export type CreateOrderInput = z.infer<typeof CreateOrderBody>;

@@ -81,6 +81,8 @@ export * from './rescheduleAppointmentRequest';
 export * from './reviewList';
 export * from './reviewModerationStatus';
 export * from './reviewStatusRequest';
+export * from './service';
+export * from './serviceList';
 export * from './shopOrderStatus';
 export * from './shopOrderStatusTracking';
 export * from './sizeOption';

@@ -21,9 +21,11 @@ import {
   ORDER_PREFERRED_CONTACT_PROPERTY,
   ORDER_MEASUREMENT_APPOINTMENT_PROPERTY,
   ORDER_REFERRAL_CODE_PROPERTY,
+  ORDER_SERVICE_PROPERTY,
   type CreateOrderInput,
 } from "./orders.schema.js";
 import { normalizeEmail } from "../email.js";
+import { resolveOrderService } from "../service-catalog.js";
 
 /** Format the customer's "needed by" value as a Notion date string
  * (`YYYY-MM-DD`). The contract coerces it to a `Date`, but we defend against a
@@ -85,9 +87,22 @@ export function buildOrderProperties(
   orderNumber: string,
   clientPageId?: string,
 ): Record<string, unknown> {
+  // Which service this order is for. It names the piece in the page title and is
+  // written as its own property below; everything downstream (which sections the
+  // page body carries) reads the same entry, so an order can't be titled one
+  // thing and shaped like another.
+  const service = resolveOrderService(data.service);
   const properties: Record<string, unknown> = {
     [ORDER_NAME_PROPERTY]: {
-      title: [{ text: { content: `${data.fullName} – Custom Costume` } }],
+      title: [
+        { text: { content: `${data.fullName} – ${service.orderLabel}` } },
+      ],
+    },
+    // Recorded on every order (the contract's `service` is optional, but it
+    // always resolves to a catalog entry), so the atelier can filter the
+    // pipeline by the kind of work rather than reading it out of the title.
+    [ORDER_SERVICE_PROPERTY]: {
+      select: { name: service.name },
     },
     [ORDER_NUMBER_PROPERTY]: {
       rich_text: [{ text: { content: orderNumber } }],
@@ -169,12 +184,17 @@ export function buildOrderProperties(
 
 /** Notion page body (`children`) blocks for a new order. */
 export function buildOrderPageBlocks(data: CreateOrderInput): unknown[] {
+  const service = resolveOrderService(data.service);
+
   const contactSection = [
     headingBlock("Contact Information"),
     textBlock("Full Name", data.fullName),
     textBlock("Email", data.email),
     textBlock("Phone", data.phone),
     textBlock("Preferred Contact", data.preferredContact),
+    // Mirrors the `Service` property above so the page reads complete without
+    // opening the property panel — the same treatment as the referral code.
+    textBlock("Service", service.name),
     dividerBlock(),
   ];
 
@@ -185,29 +205,38 @@ export function buildOrderPageBlocks(data: CreateOrderInput): unknown[] {
   // properties in `buildOrderProperties` (the read source for the account portal),
   // both from this one intake payload so they can't drift. In-place editing still
   // goes through the measurement-change request flow (Approach A) for now.
+  //
+  // A service that isn't asking for body measurements (alterations,
+  // rhinestoning, a repair — all measured on the piece itself, in person) omits
+  // the section entirely rather than printing "to be taken at an appointment"
+  // for work where none is owed.
   const providedMeasurements = data.waist !== undefined;
-  const measurementSection = providedMeasurements
-    ? [
-        headingBlock(`Measurements (${data.measurementUnit})`),
-        textBlock("Waist", String(data.waist)),
-        textBlock("Chest", String(data.bust)),
-        textBlock("Hips", String(data.hips)),
-        textBlock("Height", String(data.height)),
-        textBlock("Body Girth", String(data.bodyGirth)),
-        dividerBlock(),
-      ]
-    : [
-        headingBlock("Measurements"),
-        textBlock(
-          "Status",
-          "To be taken at a scheduled fitting or consultation appointment.",
-        ),
-        dividerBlock(),
-      ];
+  const measurementSection = !service.measurements
+    ? []
+    : providedMeasurements
+      ? [
+          headingBlock(`Measurements (${data.measurementUnit})`),
+          textBlock("Waist", String(data.waist)),
+          textBlock("Chest", String(data.bust)),
+          textBlock("Hips", String(data.hips)),
+          textBlock("Height", String(data.height)),
+          textBlock("Body Girth", String(data.bodyGirth)),
+          dividerBlock(),
+        ]
+      : [
+          headingBlock("Measurements"),
+          textBlock(
+            "Status",
+            "To be taken at a scheduled fitting or consultation appointment.",
+          ),
+          dividerBlock(),
+        ];
 
   const costumeSection: unknown[] = [headingBlock("Costume Details")];
+  // The free-text brief, under the label this service asked for it with — for a
+  // repair that heading is "The piece and what needs repairing", not "Description".
   if (data.description) {
-    costumeSection.push(textBlock("Description", data.description));
+    costumeSection.push(textBlock(service.detailsLabel, data.description));
   }
   if (data.neededBy) {
     costumeSection.push(textBlock("Needed By", formatNeededBy(data.neededBy)));

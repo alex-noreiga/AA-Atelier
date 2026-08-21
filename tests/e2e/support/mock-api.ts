@@ -5,7 +5,11 @@
 // generated react-query client, and the rendered result).
 
 import type { Page, Route } from "@playwright/test";
-import { colorList, type OrderStatus } from "@workspace/test-fixtures";
+import {
+  colorList,
+  serviceList,
+  type OrderStatus,
+} from "@workspace/test-fixtures";
 
 const json = (route: Route, status: number, body: unknown) =>
   route.fulfill({
@@ -80,6 +84,22 @@ export async function mockColors(
   await page.route("**/api/colors", async (route) => {
     if (route.request().method() !== "GET") return route.fallback();
     await json(route, opts.status ?? 200, opts.body ?? colorList());
+  });
+}
+
+/**
+ * Mock `GET /api/services` (the intake service catalog, which decides what the
+ * order form asks for). Defaults to the shared `serviceList()` fixture; pass
+ * `body: { services: [] }` to exercise the degraded path, where the picker is
+ * hidden and the form falls back to the bespoke commission's shape.
+ */
+export async function mockServices(
+  page: Page,
+  opts: { status?: number; body?: unknown } = {},
+): Promise<void> {
+  await page.route("**/api/services", async (route) => {
+    if (route.request().method() !== "GET") return route.fallback();
+    await json(route, opts.status ?? 200, opts.body ?? serviceList());
   });
 }
 

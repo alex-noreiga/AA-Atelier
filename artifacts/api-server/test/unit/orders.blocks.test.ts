@@ -323,3 +323,54 @@ describe("color selections", () => {
     expect(pairs).not.toHaveProperty("Color Usage");
   });
 });
+
+describe("the service an order is for", () => {
+  const repair: CreateOrderInput = {
+    ...createOrderInput({ service: "repairs" }),
+    waist: undefined,
+    bust: undefined,
+    hips: undefined,
+    height: undefined,
+    bodyGirth: undefined,
+    measurementUnit: undefined,
+    description: "Lost stones on the left shoulder",
+  };
+
+  it("names the piece in the title and records the service as a select", () => {
+    const props = buildOrderProperties(repair, "ORD-REP-1") as any;
+
+    expect(props["Order Name"].title[0].text.content).toBe(
+      "Ada Lovelace – Repair",
+    );
+    expect(props.Service.select.name).toBe("Repairs & Restoration");
+  });
+
+  it("keeps a commission titled as before", () => {
+    // The default an order with no service resolves to — an order placed by a
+    // client that predates the catalog must read exactly as it used to.
+    const props = buildOrderProperties(baseOrder, "ORD-1") as any;
+
+    expect(props["Order Name"].title[0].text.content).toBe(
+      "Ada Lovelace – Custom Costume",
+    );
+    expect(props.Service.select.name).toBe("Bespoke Commission");
+  });
+
+  it("omits the measurements section for a service that never asked", () => {
+    const blocks = buildOrderPageBlocks(repair);
+
+    // Not "to be taken at an appointment" — that would promise a fitting
+    // nobody arranged.
+    expect(headings(blocks)).not.toContain("Measurements");
+    expect(textPairs(blocks)).not.toHaveProperty("Status");
+  });
+
+  it("labels the brief with the prompt the service asked it under", () => {
+    const pairs = textPairs(buildOrderPageBlocks(repair));
+
+    expect(pairs.Service).toBe("Repairs & Restoration");
+    expect(pairs["The piece and what needs repairing"]).toBe(
+      "Lost stones on the left shoulder",
+    );
+  });
+});

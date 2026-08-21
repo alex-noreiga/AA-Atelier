@@ -266,6 +266,76 @@ describe("POST /api/orders", () => {
     expect(mockCreate).not.toHaveBeenCalled();
   });
 
+  it("accepts a service that asks for no measurements, without them", async () => {
+    mockCreate.mockResolvedValue({
+      orderNumber: "ORD-REP-001",
+      pageId: "page-1",
+    });
+    const {
+      waist,
+      bust,
+      hips,
+      height,
+      bodyGirth,
+      measurementUnit,
+      ...contact
+    } = validBody;
+
+    const res = await request(app)
+      .post("/api/orders")
+      .send({
+        ...contact,
+        service: "repairs",
+        description: "Lost stones on the left shoulder",
+      });
+
+    // A repair is measured on the piece, in person — the values-or-appointment
+    // rule that guards a commission must not apply to it.
+    expect(res.status).toBe(201);
+    expect(res.body).toEqual({ orderNumber: "ORD-REP-001" });
+  });
+
+  it("returns 400 when a service worked on the customer's own piece carries no brief", async () => {
+    const {
+      waist,
+      bust,
+      hips,
+      height,
+      bodyGirth,
+      measurementUnit,
+      ...contact
+    } = validBody;
+
+    const res = await request(app)
+      .post("/api/orders")
+      .send({ ...contact, service: "repairs", description: "   " });
+
+    expect(res.status).toBe(400);
+    expect(res.body).toHaveProperty("error");
+    expect(mockCreate).not.toHaveBeenCalled();
+  });
+
+  it("holds an unknown service to the bespoke commission's rules", async () => {
+    const {
+      waist,
+      bust,
+      hips,
+      height,
+      bodyGirth,
+      measurementUnit,
+      ...contact
+    } = validBody;
+
+    // A retired or mistyped id must lose no gate: it resolves to the widest
+    // service, which still needs measurements or an appointment.
+    const res = await request(app)
+      .post("/api/orders")
+      .send({ ...contact, service: "embroidery" });
+
+    expect(res.status).toBe(400);
+    expect(mockCreate).not.toHaveBeenCalled();
+  });
+
   it("captures a referral code when one is supplied", async () => {
     mockCreate.mockResolvedValue({
       orderNumber: "ORD-REF-001",

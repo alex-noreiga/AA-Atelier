@@ -39,7 +39,7 @@ test.describe("Production smoke: site navigation", () => {
     { path: "/services", testId: "cta-begin-commission", name: "Services" },
     { path: "/contact", testId: "submit-contact", name: "Contact" },
     // The intake is a THREE-step flow (PR #194, 2026-08-20): "Your details" ->
-    // "Your design" -> "Timeline". `submit-order` lives on the last step, so it
+    // "Your piece" -> "Timeline". `submit-order` lives on the last step, so it
     // does not exist on load — asserting it here turned the monitor red the
     // morning after that shipped, with production perfectly healthy. Assert the
     // step-1 CTA instead: it is present on load and only renders once the form

@@ -7,6 +7,7 @@ import {
   Sparkles,
   type LucideIcon,
 } from "lucide-react";
+import { Link } from "wouter";
 import { PageShell } from "@/components/page-shell";
 import { CtaLink } from "@/components/cta";
 import { SectionHeader } from "@/components/section-header";
@@ -19,6 +20,16 @@ interface Service {
   description: string;
   /** Short, honest price anchor shown under the title. */
   price: string;
+  /**
+   * The intake service this card starts, as a `/order?service=<id>` deep link —
+   * the same shape as `/appointments?type=<id>`. The ids are the studio's
+   * service catalog (`api-server/src/lib/service-catalog.ts`, served by
+   * `GET /services`), which is what decides the fields the order form then asks
+   * for; an id that no longer exists simply lands the customer on the picker.
+   */
+  serviceId: string;
+  /** The call to action on the card, phrased for that service. */
+  cta: string;
 }
 
 const SERVICES: Service[] = [
@@ -28,6 +39,8 @@ const SERVICES: Service[] = [
     description:
       "Designed and made entirely for you — from first consultation and sketch through pattern-making, construction, and hand-finishing. Each costume is built from scratch to suit your body, your program, and your vision.",
     price: "From a $100 deposit",
+    serviceId: "bespoke",
+    cta: "Begin a commission",
   },
   {
     icon: Ruler,
@@ -35,6 +48,8 @@ const SERVICES: Service[] = [
     description:
       "In-person fittings and precise adjustments to perfect line, comfort, and movement — so your costume feels like a second skin, whether you're competing or performing.",
     price: "From $50",
+    serviceId: "alterations",
+    cta: "Request an alteration",
   },
   {
     icon: Sparkles,
@@ -42,6 +57,8 @@ const SERVICES: Service[] = [
     description:
       "Hand-applied crystals, beading, and detailing that catch the light. Offered on our own commissions or as a standalone service for a costume you already own.",
     price: "From $50",
+    serviceId: "rhinestoning",
+    cta: "Request rhinestoning",
   },
   {
     icon: Heart,
@@ -49,6 +66,8 @@ const SERVICES: Service[] = [
     description:
       "Mending, refreshing, and restoring beloved costumes — from re-securing stones to reworking seams — giving a treasured piece another season.",
     price: "From $50",
+    serviceId: "repairs",
+    cta: "Request a repair",
   },
 ];
 
@@ -160,27 +179,40 @@ export default function Services() {
 
         {/* Service cards */}
         <div className="mt-24 grid sm:grid-cols-2 gap-6 md:gap-8">
-          {SERVICES.map(({ icon: Icon, title, description, price }) => (
-            <div
-              key={title}
-              className="border border-border/60 rounded-2xl p-8 hover:border-primary/50 transition-colors"
-              data-testid={`service-${title
-                .toLowerCase()
-                .replace(/[^a-z]+/g, "-")
-                .replace(/^-|-$/g, "")}`}
-            >
-              <Icon className="w-6 h-6 text-primary mb-5" strokeWidth={1.5} />
-              <h2 className="font-serif text-2xl md:text-3xl text-foreground mb-2">
-                {title}
-              </h2>
-              <p className="text-primary/80 text-xs tracking-[0.2em] uppercase mb-4">
-                {price}
-              </p>
-              <p className="text-muted-foreground font-light leading-relaxed">
-                {description}
-              </p>
-            </div>
-          ))}
+          {SERVICES.map(
+            ({ icon: Icon, title, description, price, serviceId, cta }) => (
+              <div
+                key={title}
+                className="border border-border/60 rounded-2xl p-8 hover:border-primary/50 transition-colors flex flex-col"
+                data-testid={`service-${title
+                  .toLowerCase()
+                  .replace(/[^a-z]+/g, "-")
+                  .replace(/^-|-$/g, "")}`}
+              >
+                <Icon className="w-6 h-6 text-primary mb-5" strokeWidth={1.5} />
+                <h2 className="font-serif text-2xl md:text-3xl text-foreground mb-2">
+                  {title}
+                </h2>
+                <p className="text-primary/80 text-xs tracking-[0.2em] uppercase mb-4">
+                  {price}
+                </p>
+                <p className="text-muted-foreground font-light leading-relaxed">
+                  {description}
+                </p>
+                {/* Each service starts its own intake, so the three standalone
+                    services are no longer funnelled through a commission form
+                    asking for body measurements they don't need. */}
+                <Link
+                  to={`/order?service=${serviceId}`}
+                  className="mt-6 inline-flex items-center gap-2 self-start text-xs tracking-[0.2em] uppercase text-primary hover:gap-3 transition-all group"
+                  data-testid={`cta-service-${serviceId}`}
+                >
+                  {cta}
+                  <ArrowRight className="w-4 h-4 group-hover:translate-x-0.5 transition-transform" />
+                </Link>
+              </div>
+            ),
+          )}
         </div>
 
         {/* Pricing */}
@@ -242,7 +274,10 @@ export default function Services() {
 
         {/* CTA */}
         <div className="mt-24 flex flex-col sm:flex-row items-center justify-center gap-4">
-          <CtaLink to="/order" data-testid="cta-begin-commission">
+          <CtaLink
+            to="/order?service=bespoke"
+            data-testid="cta-begin-commission"
+          >
             <PenLine className="w-4 h-4" />
             Begin a Commission
             <ArrowRight className="w-4 h-4 group-hover:translate-x-1 transition-transform" />

@@ -18,6 +18,8 @@ export interface NewOrderRequest {
   /** @minLength 1 */
   phone: string;
   preferredContact: NewOrderRequestPreferredContact;
+  /** The id of the service being ordered, from the live `GET /services` catalog (a bespoke commission, alterations, rhinestoning, repairs). It decides which of the fields below apply and which the server requires: only a service whose catalog entry asks for measurements requires them (or a measurement appointment), and a service performed on a piece the customer already owns requires a `description`. Optional — an omitted or unknown id is treated as a bespoke commission, so a client that predates the catalog behaves exactly as before. */
+  service?: string;
   /** @minimum 0 */
   waist?: number;
   /** @minimum 0 */
@@ -31,6 +33,7 @@ export interface NewOrderRequest {
   measurementUnit?: NewOrderRequestMeasurementUnit;
   /** True when the customer opted to have their measurements taken at a scheduled fitting or consultation instead of entering them now. When true the measurement fields are omitted. */
   measurementAppointment?: boolean;
+  /** Free text about the piece. For a bespoke commission these are optional design notes; for a service performed on a garment the customer already owns (alterations, rhinestoning, repairs) it is the brief — what the piece is and what needs doing — and the server requires it (see `service`). */
   description?: string;
   neededBy?: Date;
   /** True when the customer confirmed a rush order — a neededBy date inside the studio's rush window, acknowledged with the disclosed surcharge. Recorded on the Notion order (a "Rush Order" checkbox + a page note) so the atelier prices the rush surcharge into the invoice; the app does not compute the fee itself. Optional; omitted for standard-timeline orders. */

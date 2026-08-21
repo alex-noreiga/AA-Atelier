@@ -8,6 +8,7 @@
 // template engine, no new dependency) plus a plaintext twin for every message.
 
 import type { CreateOrderInput } from "../notion/orders.schema.js";
+import { resolveOrderService } from "../service-catalog.js";
 import type { CreateContactInput } from "../notion/contact.blocks.js";
 import type { CreateNotifyInput } from "../notion/notify.blocks.js";
 import type { CreateNewsletterInput } from "../notion/newsletter.blocks.js";
@@ -37,8 +38,9 @@ function layout(heading: string, bodyHtml: string): string {
 }
 
 /** The customer's measurements as one line, or the note that they asked to be
- * measured at an appointment instead. The intake offers exactly one of the two
- * (`submitOrder` rejects a body with neither), so this never renders blanks. */
+ * measured at an appointment instead. Only called for a service that asks for
+ * measurements, and that intake offers exactly one of the two (`submitOrder`
+ * rejects a body with neither), so this never renders blanks. */
 function measurementsLine(input: CreateOrderInput): string {
   if (input.waist === undefined) {
     return "to be taken at a fitting or consultation appointment";
@@ -54,19 +56,29 @@ function measurementsLine(input: CreateOrderInput): string {
  *
  * Shared by the customer's confirmation and the atelier's notification so the two
  * can't drift as the intake form grows — a field added to one is added to both.
- * Every row but the measurements is optional and omitted when the customer left
- * it blank, so neither email renders an empty label.
+ * Every row but the service is optional and omitted when the customer left it
+ * blank (or when their service never asked for it), so neither email renders an
+ * empty label.
  */
 function orderDetailFields(input: CreateOrderInput): Field[] {
+  const service = resolveOrderService(input.service);
   return [
-    ["Measurements", measurementsLine(input)],
+    ["Service", service.name],
+    // A service that never asked for measurements has none to read back — and a
+    // "to be taken at an appointment" line on a repair would promise a fitting
+    // nobody arranged. So the row rides the same catalog flag the form does.
+    ...(service.measurements
+      ? [["Measurements", measurementsLine(input)] as Field]
+      : []),
     ...(input.colors && input.colors.length > 0
       ? [["Colors", input.colors.join(", ")] as Field]
       : []),
     ...(input.colorUsage
       ? [["Colors, as you'd like them used", input.colorUsage] as Field]
       : []),
-    ...(input.description ? [["Notes", input.description] as Field] : []),
+    ...(input.description
+      ? [[service.detailsLabel, input.description] as Field]
+      : []),
     ...(input.referenceImageIds && input.referenceImageIds.length > 0
       ? [
           [
@@ -102,12 +114,15 @@ export function orderConfirmationEmail(
 ): EmailMessage {
   const firstName = input.fullName.trim().split(/\s+/)[0] || "there";
   const details = orderDetailFields(input);
+  // The opening line belongs to the service — a repair isn't a journey from
+  // measurements to a finished garment. It lives on the catalog entry so a
+  // service's whole character is in one place.
+  const { emailIntro } = resolveOrderService(input.service);
 
   const html = layout(
     "Your order is in our hands",
     `<p>Hi ${firstName},</p>
-     <p>Thank you for trusting us with your custom piece. We've received your order and
-        our atelier will begin the journey from measurements to finished garment.</p>
+     <p>${emailIntro}</p>
      <p>Your order number is <strong>${orderNumber}</strong>. Keep it handy — you can
         follow each stage of your garment's progress on our website using this number.</p>
      <p style="margin-bottom:10px;">Here's what we have on file:</p>
@@ -122,8 +137,7 @@ export function orderConfirmationEmail(
   const text = [
     `Hi ${firstName},`,
     ``,
-    `Thank you for trusting us with your custom piece. We've received your order and`,
-    `our atelier will begin the journey from measurements to finished garment.`,
+    emailIntro,
     ``,
     `Your order number is ${orderNumber}. Keep it handy — you can follow each stage`,
     `of your garment's progress on our website using this number.`,

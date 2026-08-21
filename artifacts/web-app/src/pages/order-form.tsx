@@ -1,11 +1,12 @@
-import { useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useForm, type FieldErrors } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
-import { Link } from "wouter";
+import { Link, useSearch } from "wouter";
 import {
   useCreateOrder,
   useGetColors,
+  useGetServices,
   useSubscribeNewsletter,
 } from "@workspace/api-client-react";
 import { Button } from "@/components/ui/button";
@@ -20,6 +21,12 @@ import { SuccessScreen } from "@/components/success-screen";
 import { Seo } from "@/components/seo";
 import { ROUTE_SEO } from "@/lib/seo-routes";
 import { isRushNeededBy, RUSH_SURCHARGE_NOTE } from "@/lib/rush";
+import {
+  requestedServiceId,
+  serviceRules,
+  SERVICE_FALLBACK,
+  type ServiceRules,
+} from "@/lib/order-services";
 import { useAnalytics, AnalyticsEvent } from "@/lib/analytics";
 import { useSubmitTimer } from "@/lib/anti-spam";
 import { useToast } from "@/hooks/use-toast";
@@ -42,11 +49,12 @@ const MEASUREMENT_FIELDS = [
   { key: "bodyGirth", label: "Body Girth" },
 ] as const;
 
-// The intake is a three-step flow, so no one page carries the whole form: who
-// the customer is, then what they want made, then when they need it. Step 0
-// carries every required field; steps 1 and 2 are entirely optional, and the
-// order is placed from step 2.
-const STEPS = ["Your details", "Your design", "Timeline"] as const;
+// The intake is a three-step flow, so no one page carries the whole form: which
+// service they want and who they are, then the piece itself, then when they need
+// it. Step 0 carries every required field; step 1 is optional for a bespoke
+// commission and carries the brief for the services worked on a piece the
+// customer already owns; the order is placed from step 2.
+const STEPS = ["Your details", "Your piece", "Timeline"] as const;
 
 // Which fields live on which step. Two things read this: advancing validates
 // only the step being left (so an error further on can't block it), and a
@@ -55,6 +63,7 @@ const STEPS = ["Your details", "Your design", "Timeline"] as const;
 // step with the sections rendered below.
 const STEP_FIELDS = [
   [
+    "service",
     "fullName",
     "email",
     "phone",
@@ -76,87 +85,122 @@ const STEP_FIELDS = [
 // `useCreateOrder` mutation below, so the form cannot silently drift from the
 // API spec.
 //
-// Measurements are optional: the customer either enters them now ("self"), or
-// picks "appointment" to have them taken at a scheduled fitting/consultation.
-// The measurement inputs are only *required* in "self" mode, which a flat field
-// schema can't express — hence the superRefine.
-const formSchema = z
-  .object({
-    fullName: z.string().min(1, "Full name is required"),
-    email: z.string().email("Please enter a valid email address"),
-    phone: z.string().min(1, "Phone number is required"),
-    preferredContact: z.enum(["email", "phone", "text"], {
-      required_error: "Please select a preferred contact method",
-    }),
-    measurementMode: z.enum(["self", "appointment"]).default("self"),
-    measurementUnit: z.enum(["inches", "cm"]).default("inches"),
-    waist: z.string().optional(),
-    bust: z.string().optional(),
-    hips: z.string().optional(),
-    height: z.string().optional(),
-    bodyGirth: z.string().optional(),
-    description: z.string().optional(),
-    // The colors the customer picked from the studio palette (multi-select,
-    // driven by <ColorPicker/> via setValue) + a free-text note on how they'd
-    // like them used. Both optional — exact fabric is settled at consultation.
-    colors: z.array(z.string()).default([]),
-    colorUsage: z.string().optional(),
-    neededBy: z.string().optional(),
-    // Optional referral code from another skater. Validated server-side against
-    // the CRM (an unknown/self code is silently ignored), so no client checks.
-    referralCode: z.string().optional(),
-    // Set when the customer acknowledges the rush surcharge. Only *required*
-    // when the needed-by date lands inside the rush window (see superRefine).
-    rushAcknowledged: z.boolean().default(false),
-    // Marketing opt-in, separate from the transactional order. Off by default —
-    // consent must be a deliberate tick.
-    subscribeNewsletter: z.boolean().default(false),
-  })
-  .superRefine((values, ctx) => {
-    // "Needed by", when supplied, must be in the future — it feeds the atelier's
-    // real scheduling (the order's Due Date), so a past date is a mistake.
-    if (values.neededBy) {
-      const today = new Date();
-      today.setHours(0, 0, 0, 0);
-      const chosen = new Date(`${values.neededBy}T00:00:00`);
-      if (!Number.isNaN(chosen.getTime()) && chosen < today) {
+// It is built per service rather than declared once, because which fields are
+// required depends on which service the customer picked — measurements only for
+// a garment made from scratch, the free-text brief only for work on a piece they
+// already own. A flat field schema can't express that, so the rules come in as
+// `rules` and the superRefine applies them; the same rules are what the server's
+// `enforceServiceGate` checks, both from the one `GET /services` catalog. The
+// resolver is rebuilt when the picked service changes (see `useMemo` below).
+function buildFormSchema(rules: ServiceRules) {
+  return z
+    .object({
+      // The chosen service's id. Required only once the catalog has loaded — with
+      // no catalog there is no picker to answer, and the server reads an absent
+      // service as a bespoke commission.
+      service: z.string().default(""),
+      fullName: z.string().min(1, "Full name is required"),
+      email: z.string().email("Please enter a valid email address"),
+      phone: z.string().min(1, "Phone number is required"),
+      preferredContact: z.enum(["email", "phone", "text"], {
+        required_error: "Please select a preferred contact method",
+      }),
+      measurementMode: z.enum(["self", "appointment"]).default("self"),
+      measurementUnit: z.enum(["inches", "cm"]).default("inches"),
+      waist: z.string().optional(),
+      bust: z.string().optional(),
+      hips: z.string().optional(),
+      height: z.string().optional(),
+      bodyGirth: z.string().optional(),
+      description: z.string().optional(),
+      // The colors the customer picked from the studio palette (multi-select,
+      // driven by <ColorPicker/> via setValue) + a free-text note on how they'd
+      // like them used. Both optional — exact fabric is settled at consultation.
+      colors: z.array(z.string()).default([]),
+      colorUsage: z.string().optional(),
+      neededBy: z.string().optional(),
+      // Optional referral code from another skater. Validated server-side against
+      // the CRM (an unknown/self code is silently ignored), so no client checks.
+      referralCode: z.string().optional(),
+      // Set when the customer acknowledges the rush surcharge. Only *required*
+      // when the needed-by date lands inside the rush window (see superRefine).
+      rushAcknowledged: z.boolean().default(false),
+      // Marketing opt-in, separate from the transactional order. Off by default —
+      // consent must be a deliberate tick.
+      subscribeNewsletter: z.boolean().default(false),
+    })
+    .superRefine((values, ctx) => {
+      if (rules.required && !values.service) {
         ctx.addIssue({
-          path: ["neededBy"],
+          path: ["service"],
           code: z.ZodIssueCode.custom,
-          message: "Please choose a date in the future",
+          message: "Please choose the service you'd like",
         });
       }
-    }
 
-    // A needed-by date inside the rush window carries a surcharge; the customer
-    // must acknowledge it before the order can be placed.
-    if (isRushNeededBy(values.neededBy) && !values.rushAcknowledged) {
-      ctx.addIssue({
-        path: ["rushAcknowledged"],
-        code: z.ZodIssueCode.custom,
-        message: "Please acknowledge the rush surcharge to continue",
-      });
-    }
-
-    if (values.measurementMode !== "self") return;
-    for (const { key } of MEASUREMENT_FIELDS) {
-      const raw = values[key];
-      const num = Number(raw);
-      if (!raw || Number.isNaN(num) || num <= 0) {
+      // For alterations, rhinestoning and repairs the free-text field is the
+      // brief — what the piece is and what needs doing — so it is required. A
+      // bespoke commission's design notes stay optional (the design is settled at
+      // consultation), which is exactly the split the server enforces.
+      if (rules.detailsRequired && !values.description?.trim()) {
         ctx.addIssue({
-          path: [key],
+          path: ["description"],
           code: z.ZodIssueCode.custom,
-          message:
-            raw && !Number.isNaN(num)
-              ? "Must be a positive number"
-              : "Required",
+          message: "Please tell us about the piece and what you'd like done",
         });
       }
-    }
-  });
 
-type FormInput = z.input<typeof formSchema>;
-type FormValues = z.output<typeof formSchema>;
+      // "Needed by", when supplied, must be in the future — it feeds the atelier's
+      // real scheduling (the order's Due Date), so a past date is a mistake.
+      if (values.neededBy) {
+        const today = new Date();
+        today.setHours(0, 0, 0, 0);
+        const chosen = new Date(`${values.neededBy}T00:00:00`);
+        if (!Number.isNaN(chosen.getTime()) && chosen < today) {
+          ctx.addIssue({
+            path: ["neededBy"],
+            code: z.ZodIssueCode.custom,
+            message: "Please choose a date in the future",
+          });
+        }
+      }
+
+      // A needed-by date inside the rush window carries a surcharge; the customer
+      // must acknowledge it before the order can be placed.
+      if (isRushNeededBy(values.neededBy) && !values.rushAcknowledged) {
+        ctx.addIssue({
+          path: ["rushAcknowledged"],
+          code: z.ZodIssueCode.custom,
+          message: "Please acknowledge the rush surcharge to continue",
+        });
+      }
+
+      // A service that doesn't ask for body measurements never renders the inputs,
+      // so it must not require them either.
+      if (!rules.measurements) return;
+      if (values.measurementMode !== "self") return;
+      for (const { key } of MEASUREMENT_FIELDS) {
+        const raw = values[key];
+        const num = Number(raw);
+        if (!raw || Number.isNaN(num) || num <= 0) {
+          ctx.addIssue({
+            path: [key],
+            code: z.ZodIssueCode.custom,
+            message:
+              raw && !Number.isNaN(num)
+                ? "Must be a positive number"
+                : "Required",
+          });
+        }
+      }
+    });
+}
+
+// The field *shape* is the same for every service — only which fields the
+// refinement requires differs — so one built schema stands in for the types.
+const BASE_SCHEMA = buildFormSchema(SERVICE_FALLBACK);
+type FormInput = z.input<typeof BASE_SCHEMA>;
+type FormValues = z.output<typeof BASE_SCHEMA>;
 
 export default function OrderForm() {
   const [success, setSuccess] = useState<{
@@ -214,6 +258,22 @@ export default function OrderForm() {
   const { data: colorsData } = useGetColors();
   const palette = colorsData?.colors ?? [];
 
+  // The studio's service catalog — which services can be ordered and, per
+  // service, what the rest of this form asks for. Served rather than duplicated
+  // here so the form and the server's `POST /orders` gate work off one
+  // definition. Degrade-safe like the palette: while it loads or if it errors
+  // the list is empty, the picker doesn't render, and the form falls back to the
+  // bespoke commission's shape — which is exactly what it asked for before
+  // services existed, and what the server reads an order with no service as.
+  const { data: servicesData } = useGetServices();
+  const services = servicesData?.services ?? [];
+
+  // The resolver is indirected through a ref so that changing service
+  // re-validates against the new service's rules without re-creating the form,
+  // which would drop every value the customer has already entered. Its current
+  // value is set from `rules` just below, once `watch` exists to read the pick.
+  const resolverRef = useRef(zodResolver(BASE_SCHEMA));
+
   const {
     register,
     handleSubmit,
@@ -222,8 +282,10 @@ export default function OrderForm() {
     trigger,
     formState: { errors },
   } = useForm<FormInput, any, FormValues>({
-    resolver: zodResolver(formSchema),
+    resolver: (values, context, options) =>
+      resolverRef.current(values, context, options),
     defaultValues: {
+      service: "",
       measurementMode: "self",
       measurementUnit: "inches",
       preferredContact: undefined,
@@ -232,6 +294,32 @@ export default function OrderForm() {
   });
 
   const submitting = createOrder.isPending;
+  const pickedService = watch("service");
+  // What the chosen service asks for. Everything below — which sections render,
+  // which fields validate, and what goes in the payload — reads this one value.
+  const rules = useMemo(
+    () => serviceRules(services, pickedService),
+    [services, pickedService],
+  );
+  resolverRef.current = useMemo(
+    () => zodResolver(buildFormSchema(rules)),
+    [rules],
+  );
+
+  // Deep-link: `/order?service=<id>` (the per-service links on the Services
+  // page) preselects that service once the catalog has loaded, mirroring
+  // `/appointments?type=<id>`. Runs once — the ref guard leaves a customer who
+  // then picks something else alone. An unknown id resolves to undefined and
+  // simply leaves them on the picker.
+  const search = useSearch();
+  const preselected = useRef(false);
+  useEffect(() => {
+    if (preselected.current || services.length === 0) return;
+    const requested = requestedServiceId(search, services);
+    if (!requested) return;
+    preselected.current = true;
+    setValue("service", requested);
+  }, [search, services, setValue]);
   const measurementMode = watch("measurementMode");
   const measurementUnit = watch("measurementUnit");
   const preferredContact = watch("preferredContact");
@@ -261,6 +349,7 @@ export default function OrderForm() {
 
   const onSubmit = (values: FormValues) => {
     const {
+      service,
       description,
       neededBy,
       referralCode,
@@ -285,6 +374,10 @@ export default function OrderForm() {
     // Funnel-submit: non-identifying shape of the order only (no name/email/
     // phone/measurements). Fired client-side before the network call.
     analytics(AnalyticsEvent.OrderFormSubmit, {
+      // Which service was ordered — the one field that says whether the funnel
+      // is carrying commissions or standalone work. Non-identifying, like the
+      // rest of this payload.
+      service: service || "unspecified",
       rush,
       measurementMode,
       hasReferral: Boolean(referralCode?.trim()),
@@ -307,9 +400,12 @@ export default function OrderForm() {
 
     // Either supply the measurements, or flag that they'll be taken at an
     // appointment — never both. (The superRefine above guarantees the "self"
-    // branch has all five present.)
-    const measurements =
-      measurementMode === "appointment"
+    // branch has all five present.) A service that never asked for measurements
+    // sends neither: its inputs were never rendered, so their values would be
+    // empty strings, and the server doesn't require them for that service.
+    const measurements = !rules.measurements
+      ? {}
+      : measurementMode === "appointment"
         ? { measurementAppointment: true }
         : {
             measurementUnit,
@@ -325,14 +421,20 @@ export default function OrderForm() {
     createOrder.mutate({
       data: {
         ...contact,
+        ...(service ? { service } : {}),
         ...measurements,
         ...(description ? { description } : {}),
         ...(neededBy ? { neededBy } : {}),
         ...(rush ? { rush: true } : {}),
         ...(referralCode?.trim() ? { referralCode: referralCode.trim() } : {}),
         ...(referenceImageIds.length ? { referenceImageIds } : {}),
-        ...(pickedColors.length ? { colors: pickedColors } : {}),
-        ...(colorUsage ? { colorUsage } : {}),
+        // Dropped for a service that doesn't offer the palette — a customer who
+        // picked colours and then switched to a repair must not have them ride
+        // along on a form that stopped showing them.
+        ...(rules.colors && pickedColors.length
+          ? { colors: pickedColors }
+          : {}),
+        ...(rules.colors && colorUsage ? { colorUsage } : {}),
       },
     });
   };
@@ -345,7 +447,7 @@ export default function OrderForm() {
         description={
           success.appointment
             ? "Thank you! We'll be in touch soon to schedule your measurement appointment and confirm your details. You can also schedule a consultation now to talk through your design."
-            : "Thank you! We'll be in touch soon to confirm your details. Want to talk through your design? Schedule a consultation now."
+            : "Thank you! We'll be in touch soon to confirm your details. Want to talk it through? Schedule a consultation now."
         }
         footer={
           <div className="flex flex-col items-center gap-6">
@@ -419,7 +521,8 @@ export default function OrderForm() {
             Place an Order
           </h1>
           <p className="text-muted-foreground font-light text-lg">
-            Tell us about your dream costume and we'll bring it to life.
+            Tell us what you&rsquo;d like made or mended, and we&rsquo;ll take
+            it from there.
           </p>
         </div>
 
@@ -477,6 +580,59 @@ export default function OrderForm() {
 
           {step === 0 && (
             <div className="space-y-12">
+              {/* The service comes first: it decides what the rest of the form
+                  asks for. Hidden entirely when the catalog couldn't be read,
+                  in which case the form falls back to the bespoke shape rather
+                  than blocking behind a choice it can't offer. */}
+              {services.length > 0 && (
+                <section>
+                  <h2 className="text-xs tracking-[0.2em] uppercase text-muted-foreground mb-6 pb-2 border-b border-border">
+                    What can we make for you?
+                  </h2>
+                  <div
+                    className="grid sm:grid-cols-2 gap-3"
+                    data-testid="service-picker"
+                  >
+                    {services.map((option) => (
+                      <button
+                        key={option.id}
+                        type="button"
+                        onClick={() =>
+                          setValue("service", option.id, {
+                            shouldValidate: true,
+                          })
+                        }
+                        aria-pressed={pickedService === option.id}
+                        data-testid={`service-option-${option.id}`}
+                        className={`text-left px-4 py-3 rounded-lg border transition-all ${
+                          pickedService === option.id
+                            ? "border-primary bg-primary/10"
+                            : "border-border hover:border-primary/50"
+                        }`}
+                      >
+                        <span
+                          className={`block text-sm tracking-wide ${
+                            pickedService === option.id
+                              ? "text-primary"
+                              : "text-foreground"
+                          }`}
+                        >
+                          {option.name}
+                        </span>
+                        <span className="block text-xs font-light text-muted-foreground mt-1 leading-relaxed">
+                          {option.summary}
+                        </span>
+                      </button>
+                    ))}
+                  </div>
+                  {errors.service && (
+                    <p className="text-destructive text-xs mt-2">
+                      {errors.service.message}
+                    </p>
+                  )}
+                </section>
+              )}
+
               <section>
                 <h2 className="text-xs tracking-[0.2em] uppercase text-muted-foreground mb-6 pb-2 border-b border-border">
                   Contact Information
@@ -579,109 +735,115 @@ export default function OrderForm() {
                 </div>
               </section>
 
-              <section>
-                <div className="flex items-center justify-between mb-6 pb-2 border-b border-border">
-                  <h2 className="text-xs tracking-[0.2em] uppercase text-muted-foreground">
-                    Measurements
-                  </h2>
-                  {measurementMode === "self" && (
-                    <div className="flex gap-2">
-                      {(["inches", "cm"] as const).map((unit) => (
-                        <button
-                          key={unit}
-                          type="button"
-                          onClick={() => setValue("measurementUnit", unit)}
-                          className={`px-3 py-1 rounded-full text-xs tracking-wider border transition-all ${
-                            measurementUnit === unit
-                              ? "border-primary bg-primary/10 text-primary"
-                              : "border-border text-muted-foreground hover:border-primary/50"
-                          }`}
-                        >
-                          {unit}
-                        </button>
-                      ))}
-                    </div>
-                  )}
-                </div>
-
-                <div className="flex flex-col sm:flex-row gap-3 mb-8">
-                  {(
-                    [
-                      { mode: "self", label: "I'll enter my measurements" },
-                      {
-                        mode: "appointment",
-                        label: "Take them at an appointment",
-                      },
-                    ] as const
-                  ).map(({ mode, label }) => (
-                    <button
-                      key={mode}
-                      type="button"
-                      onClick={() =>
-                        setValue("measurementMode", mode, {
-                          shouldValidate: true,
-                        })
-                      }
-                      className={`flex-1 px-4 py-3 rounded-lg text-sm tracking-wide border transition-all ${
-                        measurementMode === mode
-                          ? "border-primary bg-primary/10 text-primary"
-                          : "border-border text-muted-foreground hover:border-primary/50"
-                      }`}
-                    >
-                      {label}
-                    </button>
-                  ))}
-                </div>
-
-                {measurementMode === "self" ? (
-                  <div className="grid grid-cols-2 md:grid-cols-3 gap-5">
-                    {MEASUREMENT_FIELDS.map(({ key, label }) => (
-                      <div key={key}>
-                        <Label
-                          htmlFor={key}
-                          className="text-sm font-light tracking-wide"
-                        >
-                          {label}
-                          <span className="text-muted-foreground/60 ml-1 text-xs">
-                            ({measurementUnit})
-                          </span>
-                        </Label>
-                        <Input
-                          id={key}
-                          type="number"
-                          step="0.1"
-                          min="0"
-                          {...register(key)}
-                          placeholder="0.0"
-                          className="mt-1.5 bg-transparent border-0 border-b border-border rounded-none px-0 py-3 focus-visible:ring-0 focus-visible:border-primary transition-colors shadow-none"
-                        />
-                        {errors[key] && (
-                          <p className="text-destructive text-xs mt-1">
-                            {errors[key]?.message}
-                          </p>
-                        )}
+              {/* Only a garment made from scratch needs body measurements; an
+                  alteration, a stoning job or a repair is measured on the piece
+                  itself, in person. The server skips the same check for those
+                  services, from the same catalog entry. */}
+              {rules.measurements && (
+                <section>
+                  <div className="flex items-center justify-between mb-6 pb-2 border-b border-border">
+                    <h2 className="text-xs tracking-[0.2em] uppercase text-muted-foreground">
+                      Measurements
+                    </h2>
+                    {measurementMode === "self" && (
+                      <div className="flex gap-2">
+                        {(["inches", "cm"] as const).map((unit) => (
+                          <button
+                            key={unit}
+                            type="button"
+                            onClick={() => setValue("measurementUnit", unit)}
+                            className={`px-3 py-1 rounded-full text-xs tracking-wider border transition-all ${
+                              measurementUnit === unit
+                                ? "border-primary bg-primary/10 text-primary"
+                                : "border-border text-muted-foreground hover:border-primary/50"
+                            }`}
+                          >
+                            {unit}
+                          </button>
+                        ))}
                       </div>
+                    )}
+                  </div>
+
+                  <div className="flex flex-col sm:flex-row gap-3 mb-8">
+                    {(
+                      [
+                        { mode: "self", label: "I'll enter my measurements" },
+                        {
+                          mode: "appointment",
+                          label: "Take them at an appointment",
+                        },
+                      ] as const
+                    ).map(({ mode, label }) => (
+                      <button
+                        key={mode}
+                        type="button"
+                        onClick={() =>
+                          setValue("measurementMode", mode, {
+                            shouldValidate: true,
+                          })
+                        }
+                        className={`flex-1 px-4 py-3 rounded-lg text-sm tracking-wide border transition-all ${
+                          measurementMode === mode
+                            ? "border-primary bg-primary/10 text-primary"
+                            : "border-border text-muted-foreground hover:border-primary/50"
+                        }`}
+                      >
+                        {label}
+                      </button>
                     ))}
                   </div>
-                ) : (
-                  <div className="border border-border rounded-lg p-6 bg-muted/20">
-                    <p className="text-sm font-light text-foreground/90 leading-relaxed">
-                      No problem — we'll take your measurements for you. Book a
-                      fitting now and we'll take them then, or we'll arrange it
-                      when you place your order.
-                    </p>
-                    <CtaLink
-                      to="/appointments?type=fitting"
-                      variant="outline"
-                      className="mt-5"
-                      data-testid="link-book-fitting"
-                    >
-                      <CalendarCheck className="w-4 h-4" />
-                      Book your fitting
-                    </CtaLink>
-                  </div>
-                )}
-              </section>
+
+                  {measurementMode === "self" ? (
+                    <div className="grid grid-cols-2 md:grid-cols-3 gap-5">
+                      {MEASUREMENT_FIELDS.map(({ key, label }) => (
+                        <div key={key}>
+                          <Label
+                            htmlFor={key}
+                            className="text-sm font-light tracking-wide"
+                          >
+                            {label}
+                            <span className="text-muted-foreground/60 ml-1 text-xs">
+                              ({measurementUnit})
+                            </span>
+                          </Label>
+                          <Input
+                            id={key}
+                            type="number"
+                            step="0.1"
+                            min="0"
+                            {...register(key)}
+                            placeholder="0.0"
+                            className="mt-1.5 bg-transparent border-0 border-b border-border rounded-none px-0 py-3 focus-visible:ring-0 focus-visible:border-primary transition-colors shadow-none"
+                          />
+                          {errors[key] && (
+                            <p className="text-destructive text-xs mt-1">
+                              {errors[key]?.message}
+                            </p>
+                          )}
+                        </div>
+                      ))}
+                    </div>
+                  ) : (
+                    <div className="border border-border rounded-lg p-6 bg-muted/20">
+                      <p className="text-sm font-light text-foreground/90 leading-relaxed">
+                        No problem — we'll take your measurements for you. Book
+                        a fitting now and we'll take them then, or we'll arrange
+                        it when you place your order.
+                      </p>
+                      <CtaLink
+                        to="/appointments?type=fitting"
+                        variant="outline"
+                        className="mt-5"
+                        data-testid="link-book-fitting"
+                      >
+                        <CalendarCheck className="w-4 h-4" />
+                        Book your fitting
+                      </CtaLink>
+                    </div>
+                  )}
+                </section>
+              )}
 
               <div className="flex justify-center pt-4 pb-8">
                 <Button
@@ -689,7 +851,7 @@ export default function OrderForm() {
                   className={ctaVariants({ variant: "primary", size: "lg" })}
                   data-testid="continue-to-design"
                 >
-                  Continue to your design
+                  Continue to your piece
                   <ArrowRight className="w-4 h-4 ml-2" />
                 </Button>
               </div>
@@ -708,45 +870,51 @@ export default function OrderForm() {
                 Back to your details
               </button>
 
-              <section>
-                <h2 className="text-xs tracking-[0.2em] uppercase text-muted-foreground mb-2 pb-2 border-b border-border">
-                  Colors
-                </h2>
-                <p className="text-muted-foreground font-light text-sm mb-6">
-                  Optional — pick the colors you're picturing (choose as many as
-                  you like), or skip this and we'll settle it together at your
-                  consultation.
-                </p>
-                <div className="space-y-6">
-                  <ColorPicker
-                    palette={palette}
-                    value={colors}
-                    onChange={(next) =>
-                      setValue("colors", next, { shouldValidate: false })
-                    }
-                    disabled={submitting}
-                  />
-
-                  <div>
-                    <Label
-                      htmlFor="colorUsage"
-                      className="text-sm font-light tracking-wide"
-                    >
-                      How would you like these colors used?
-                      <span className="text-muted-foreground/60 ml-1 text-xs">
-                        (optional)
-                      </span>
-                    </Label>
-                    <Textarea
-                      id="colorUsage"
-                      {...register("colorUsage")}
-                      placeholder="e.g. emerald as the main color with gold accents on the collar, and a blush skirt."
-                      rows={3}
-                      className="mt-1.5 bg-transparent border border-border rounded-lg px-3 py-2 text-sm focus-visible:ring-0 focus-visible:border-primary transition-colors resize-none shadow-none"
+              {/* The palette is offered where a colour choice is actually ours
+                  to make — a commission we're designing, or the stones going on
+                  a piece. An alteration or a repair works with what the garment
+                  already is. */}
+              {rules.colors && (
+                <section>
+                  <h2 className="text-xs tracking-[0.2em] uppercase text-muted-foreground mb-2 pb-2 border-b border-border">
+                    Colors
+                  </h2>
+                  <p className="text-muted-foreground font-light text-sm mb-6">
+                    Optional — pick the colors you're picturing (choose as many
+                    as you like), or skip this and we'll settle it together at
+                    your consultation.
+                  </p>
+                  <div className="space-y-6">
+                    <ColorPicker
+                      palette={palette}
+                      value={colors}
+                      onChange={(next) =>
+                        setValue("colors", next, { shouldValidate: false })
+                      }
+                      disabled={submitting}
                     />
+
+                    <div>
+                      <Label
+                        htmlFor="colorUsage"
+                        className="text-sm font-light tracking-wide"
+                      >
+                        How would you like these colors used?
+                        <span className="text-muted-foreground/60 ml-1 text-xs">
+                          (optional)
+                        </span>
+                      </Label>
+                      <Textarea
+                        id="colorUsage"
+                        {...register("colorUsage")}
+                        placeholder="e.g. emerald as the main color with gold accents on the collar, and a blush skirt."
+                        rows={3}
+                        className="mt-1.5 bg-transparent border border-border rounded-lg px-3 py-2 text-sm focus-visible:ring-0 focus-visible:border-primary transition-colors resize-none shadow-none"
+                      />
+                    </div>
                   </div>
-                </div>
-              </section>
+                </section>
+              )}
 
               <section>
                 <h2 className="text-xs tracking-[0.2em] uppercase text-muted-foreground mb-6 pb-2 border-b border-border">
@@ -754,22 +922,34 @@ export default function OrderForm() {
                 </h2>
                 <div className="space-y-6">
                   <div>
+                    {/* Label, prompt and whether it's required all come from the
+                        service: for a commission these are optional design
+                        notes, for a repair it is the brief. */}
                     <Label
                       htmlFor="description"
                       className="text-sm font-light tracking-wide"
                     >
-                      Description / Notes
-                      <span className="text-muted-foreground/60 ml-1 text-xs">
-                        (optional)
-                      </span>
+                      {rules.detailsLabel}
+                      {rules.detailsRequired ? (
+                        <span className="text-primary"> *</span>
+                      ) : (
+                        <span className="text-muted-foreground/60 ml-1 text-xs">
+                          (optional)
+                        </span>
+                      )}
                     </Label>
                     <Textarea
                       id="description"
                       {...register("description")}
-                      placeholder="Tell us about your vision — style, silhouette, special requirements..."
+                      placeholder={rules.detailsHelp}
                       rows={4}
                       className="mt-1.5 bg-transparent border border-border rounded-lg px-3 py-2 text-sm focus-visible:ring-0 focus-visible:border-primary transition-colors resize-none shadow-none"
                     />
+                    {errors.description && (
+                      <p className="text-destructive text-xs mt-1">
+                        {errors.description.message}
+                      </p>
+                    )}
                   </div>
 
                   <div>
@@ -812,7 +992,7 @@ export default function OrderForm() {
                 data-testid="button-back-to-design"
               >
                 <ArrowLeft className="w-4 h-4 group-hover:-translate-x-1 transition-transform" />
-                Back to your design
+                Back to your piece
               </button>
 
               <section>

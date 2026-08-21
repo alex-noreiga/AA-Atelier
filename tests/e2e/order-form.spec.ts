@@ -1,6 +1,6 @@
 import { test, expect } from "./support/test";
 import { createOrderInput, GENERIC_ERROR } from "@workspace/test-fixtures";
-import { mockCreateOrder, mockColors } from "./support/mock-api";
+import { mockCreateOrder, mockColors, mockServices } from "./support/mock-api";
 
 // Measurements come from the shared fixture, but the *identity* stays
 // Playwright-specific on purpose: the opt-in live-Notion test below submits
@@ -12,6 +12,9 @@ const E2E_ORDER = createOrderInput({
 });
 
 async function fillValidOrder(page: import("@playwright/test").Page) {
+  // The service comes first and decides what the rest of the form asks for; a
+  // commission is the one that still asks for body measurements.
+  await page.getByTestId("service-option-bespoke").click();
   await page.locator("#fullName").fill(E2E_ORDER.fullName);
   await page.locator("#email").fill(E2E_ORDER.email);
   await page.locator("#phone").fill(E2E_ORDER.phone);
@@ -23,11 +26,11 @@ async function fillValidOrder(page: import("@playwright/test").Page) {
   await page.locator("#bodyGirth").fill(String(E2E_ORDER.bodyGirth));
 }
 
-// The intake is a three-step flow: your details, then the optional design step
-// (colors + costume details), then the optional timeline step where the order
-// is placed. Advance from step 0 to the design step.
+// The intake is a three-step flow: which service and who you are, then the piece
+// itself (colors + details), then the optional timeline step where the order is
+// placed. Advance from step 0 to the piece step.
 async function continueToDesign(page: import("@playwright/test").Page) {
-  await page.getByRole("button", { name: /Continue to your design/i }).click();
+  await page.getByRole("button", { name: /Continue to your piece/i }).click();
   await expect(
     page.getByRole("button", { name: /Continue to timeline/i }),
   ).toBeVisible();
@@ -54,6 +57,7 @@ test.describe("Order form", () => {
   // unmocked-/api guard stays satisfied on every page load in this suite.
   test.beforeEach(async ({ page }) => {
     await mockColors(page);
+    await mockServices(page);
   });
 
   test("submits a valid order and shows the returned order number (API mocked)", async ({
@@ -102,6 +106,62 @@ test.describe("Order form", () => {
     await expect(
       page.getByRole("heading", { name: "Order Received" }),
     ).toHaveCount(0);
+  });
+});
+
+test.describe("Order form — per-service intake", () => {
+  test.beforeEach(async ({ page }) => {
+    await mockColors(page);
+    await mockServices(page);
+  });
+
+  test("a service deep link preselects it and asks only for what it needs", async ({
+    page,
+  }) => {
+    const requests: unknown[] = [];
+    await page.route("**/api/orders", async (route) => {
+      if (route.request().method() !== "POST") return route.fallback();
+      requests.push(route.request().postDataJSON());
+      await route.fulfill({
+        status: 201,
+        contentType: "application/json",
+        body: JSON.stringify({ orderNumber: "ORD-REP-0001" }),
+      });
+    });
+
+    // The link the Services page's repair card points at.
+    await page.goto("/order?service=repairs");
+
+    // Preselected, and the body measurements are gone with it.
+    await expect(page.getByTestId("service-option-repairs")).toHaveAttribute(
+      "aria-pressed",
+      "true",
+    );
+    await expect(page.locator("#waist")).toHaveCount(0);
+
+    await page.locator("#fullName").fill(E2E_ORDER.fullName);
+    await page.locator("#email").fill(E2E_ORDER.email);
+    await page.locator("#phone").fill(E2E_ORDER.phone);
+    await page.getByRole("button", { name: "Email" }).click();
+    await page.getByRole("button", { name: /Continue to your piece/i }).click();
+
+    // The brief is required for a piece the customer already owns.
+    await page.getByRole("button", { name: /Continue to timeline/i }).click();
+    await expect(
+      page.getByText("Please tell us about the piece and what you'd like done"),
+    ).toBeVisible();
+
+    await page.locator("#description").fill("Lost stones on the left shoulder");
+    await continueToTimeline(page);
+    await page.getByRole("button", { name: "Submit Order" }).click();
+
+    await expect(page.getByTestId("order-number")).toHaveText("ORD-REP-0001");
+    expect(requests).toHaveLength(1);
+    expect(requests[0]).toMatchObject({
+      service: "repairs",
+      description: "Lost stones on the left shoulder",
+    });
+    expect(requests[0]).not.toHaveProperty("waist");
   });
 });
 

@@ -25,6 +25,10 @@ import {
 import { sendEmailBestEffort } from "../lib/resend/send.js";
 import { fromAddress, atelierInbox } from "../lib/resend/config.js";
 import { hasAllMeasurements } from "./measurements.js";
+import {
+  resolveOrderService,
+  type OrderServiceDef,
+} from "../lib/service-catalog.js";
 import { logger } from "../lib/logger.js";
 
 export async function getOrderStatus(
@@ -70,17 +74,46 @@ export async function getOrderStatus(
   };
 }
 
-export async function submitOrder(
+/**
+ * The per-service intake gate — the order-form counterpart of the appointment
+ * flow's `enforceBookingGate`. What an order must carry depends on which service
+ * it is for, which a flat request schema can't express, so the catalog decides
+ * and this enforces it:
+ *
+ *   - a service that asks for measurements needs all five, or an explicit
+ *     request to have them taken at a fitting/consultation;
+ *   - a service performed on a piece the customer already owns needs the
+ *     free-text `description` — that text is the brief, not a nicety.
+ *
+ * An unknown or omitted `service` resolves to a bespoke commission, so a client
+ * that predates the catalog keeps the exact rule it always had.
+ */
+function enforceServiceGate(
+  service: OrderServiceDef,
   input: CreateOrderInput,
-): Promise<{ orderNumber: string }> {
-  // The generated (flat) schema can't express this: measurements are optional,
-  // but only because the customer may instead ask to have them taken at a
-  // fitting/consultation. Reject a body that offers neither.
-  if (!input.measurementAppointment && !hasAllMeasurements(input)) {
+): void {
+  if (
+    service.measurements &&
+    !input.measurementAppointment &&
+    !hasAllMeasurements(input)
+  ) {
     throw new ValidationError(
       "Please enter your measurements or request a measurement appointment.",
     );
   }
+
+  if (service.detailsRequired && !input.description?.trim()) {
+    throw new ValidationError(
+      "Please tell us about the piece and what you'd like done to it.",
+    );
+  }
+}
+
+export async function submitOrder(
+  input: CreateOrderInput,
+): Promise<{ orderNumber: string }> {
+  const service = resolveOrderService(input.service);
+  enforceServiceGate(service, input);
 
   // Best-effort: mirror the customer into the Client CRM (dedupe by email) so we
   // can link the order to a durable client record. A CRM failure must never fail

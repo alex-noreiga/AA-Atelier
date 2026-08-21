@@ -1,20 +1,30 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import { render, screen, fireEvent, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import { createOrderInput, colorList } from "@workspace/test-fixtures";
+import {
+  createOrderInput,
+  colorList,
+  serviceList,
+} from "@workspace/test-fixtures";
 
 // Capture what the create-order mutation is called with, without hitting the
 // network. `vi.hoisted` makes the spy available inside the hoisted vi.mock.
-const { mutate, subscribeMutate, colorsResult } = vi.hoisted(() => ({
-  mutate: vi.fn(),
-  subscribeMutate: vi.fn(),
-  // Mutable so a test can swap in an empty/errored colors result.
-  colorsResult: { current: { data: undefined as unknown } },
-}));
+const { mutate, subscribeMutate, colorsResult, servicesResult } = vi.hoisted(
+  () => ({
+    mutate: vi.fn(),
+    subscribeMutate: vi.fn(),
+    // Mutable so a test can swap in an empty/errored colors result.
+    colorsResult: { current: { data: undefined as unknown } },
+    // Likewise for the service catalog — an empty result is the degraded path
+    // where the form falls back to the bespoke shape.
+    servicesResult: { current: { data: undefined as unknown } },
+  }),
+);
 vi.mock("@workspace/api-client-react", () => ({
   useCreateOrder: () => ({ mutate, isPending: false }),
   useSubscribeNewsletter: () => ({ mutate: subscribeMutate, isPending: false }),
   useGetColors: () => colorsResult.current,
+  useGetServices: () => servicesResult.current,
 }));
 
 import OrderForm from "@/pages/order-form";
@@ -23,6 +33,7 @@ import OrderForm from "@/pages/order-form";
 // `colorsResult.current` to exercise the empty/degraded path.
 beforeEach(() => {
   colorsResult.current = { data: colorList() };
+  servicesResult.current = { data: serviceList() };
 });
 
 function byId(id: string): HTMLElement {
@@ -39,6 +50,9 @@ function byId(id: string): HTMLElement {
  */
 async function fillRequired(user: ReturnType<typeof userEvent.setup>) {
   const order = createOrderInput();
+  // The service is picked first and decides what the rest of the form asks for;
+  // the commission is the one that still asks for measurements.
+  await user.click(screen.getByTestId("service-option-bespoke"));
   await user.type(byId("fullName"), order.fullName);
   await user.type(byId("email"), order.email);
   await user.type(byId("phone"), order.phone);
@@ -57,7 +71,7 @@ async function fillRequired(user: ReturnType<typeof userEvent.setup>) {
 // step's button to confirm the advance landed.
 async function continueToDesign(user: ReturnType<typeof userEvent.setup>) {
   await user.click(
-    screen.getByRole("button", { name: /continue to your design/i }),
+    screen.getByRole("button", { name: /continue to your piece/i }),
   );
   await screen.findByRole("button", { name: /continue to timeline/i });
 }
@@ -103,6 +117,7 @@ describe("OrderForm submission mapping", () => {
     render(<OrderForm />);
 
     const order = createOrderInput();
+    await user.click(screen.getByTestId("service-option-bespoke"));
     await user.type(byId("fullName"), order.fullName);
     await user.type(byId("email"), order.email);
     await user.type(byId("phone"), order.phone);
@@ -348,7 +363,7 @@ describe("OrderForm validation", () => {
     const user = userEvent.setup();
     render(<OrderForm />);
     await user.click(
-      screen.getByRole("button", { name: /continue to your design/i }),
+      screen.getByRole("button", { name: /continue to your piece/i }),
     );
 
     expect(
@@ -467,5 +482,152 @@ describe("OrderForm color selector", () => {
     const { data } = mutate.mock.calls[0][0];
     expect(data).not.toHaveProperty("colors");
     expect(data.colorUsage).toBe("Deep teal, please");
+  });
+});
+
+describe("OrderForm service catalog", () => {
+  /** Step 0 for a service that asks for nothing but contact details. */
+  async function fillContactOnly(user: ReturnType<typeof userEvent.setup>) {
+    const order = createOrderInput();
+    await user.type(byId("fullName"), order.fullName);
+    await user.type(byId("email"), order.email);
+    await user.type(byId("phone"), order.phone);
+    await user.click(screen.getByRole("button", { name: "Email" }));
+  }
+
+  it("blocks advancing until a service is picked", async () => {
+    const user = userEvent.setup();
+    render(<OrderForm />);
+    await fillContactOnly(user);
+    await user.click(
+      screen.getByRole("button", { name: /continue to your piece/i }),
+    );
+
+    expect(
+      await screen.findByText("Please choose the service you'd like"),
+    ).toBeInTheDocument();
+    // Still on step 0.
+    expect(
+      screen.queryByRole("button", { name: /continue to timeline/i }),
+    ).not.toBeInTheDocument();
+  });
+
+  it("drops the measurements section for a service that doesn't need them", async () => {
+    const user = userEvent.setup();
+    render(<OrderForm />);
+    expect(byId("waist")).toBeInTheDocument();
+
+    await user.click(screen.getByTestId("service-option-repairs"));
+
+    // Not merely un-required — the whole section is gone, including the
+    // "take them at an appointment" alternative.
+    expect(document.getElementById("waist")).toBeNull();
+    expect(
+      screen.queryByRole("button", { name: "Take them at an appointment" }),
+    ).not.toBeInTheDocument();
+  });
+
+  it("requires the brief for a service worked on a piece the customer owns", async () => {
+    const user = userEvent.setup();
+    render(<OrderForm />);
+    await user.click(screen.getByTestId("service-option-repairs"));
+    await fillContactOnly(user);
+    await continueToDesign(user);
+
+    // The field is labelled and prompted by the service, and the colour picker
+    // is gone — a repair works with what the garment already is.
+    expect(
+      screen.getByLabelText(/The piece and what needs repairing/i),
+    ).toBeInTheDocument();
+    expect(screen.queryByTestId("color-picker")).not.toBeInTheDocument();
+
+    await user.click(
+      screen.getByRole("button", { name: /continue to timeline/i }),
+    );
+    expect(
+      await screen.findByText(
+        "Please tell us about the piece and what you'd like done",
+      ),
+    ).toBeInTheDocument();
+  });
+
+  it("drops colours picked before switching to a service that doesn't offer them", async () => {
+    const user = userEvent.setup();
+    render(<OrderForm />);
+    await user.click(screen.getByTestId("service-option-bespoke"));
+    await fillContactOnly(user);
+    await user.type(byId("waist"), "28");
+    await user.type(byId("bust"), "36");
+    await user.type(byId("hips"), "38");
+    await user.type(byId("height"), "65");
+    await user.type(byId("bodyGirth"), "32");
+    await continueToDesign(user);
+    await user.click(screen.getByTestId("color-ivory"));
+
+    // Change of mind: back to step 0 and pick the repair instead.
+    await user.click(screen.getByTestId("button-back-to-details"));
+    await user.click(await screen.findByTestId("service-option-repairs"));
+    await continueToDesign(user);
+    await user.type(byId("description"), "Torn seam at the waist");
+    await continueToTimeline(user);
+    await user.click(screen.getByRole("button", { name: "Submit Order" }));
+
+    await waitFor(() => expect(mutate).toHaveBeenCalledTimes(1));
+    const { data } = mutate.mock.calls[0][0];
+    expect(data.service).toBe("repairs");
+    // Neither the colours nor the measurements the bespoke form collected.
+    expect(data).not.toHaveProperty("colors");
+    expect(data).not.toHaveProperty("colorUsage");
+    expect(data).not.toHaveProperty("waist");
+  });
+
+  it("sends the picked service and no measurements for a repair", async () => {
+    const user = userEvent.setup();
+    render(<OrderForm />);
+    await user.click(screen.getByTestId("service-option-repairs"));
+    await fillContactOnly(user);
+    await continueToDesign(user);
+    await user.type(byId("description"), "Lost stones on the left shoulder");
+    await continueToTimeline(user);
+    await user.click(screen.getByRole("button", { name: "Submit Order" }));
+
+    await waitFor(() => expect(mutate).toHaveBeenCalledTimes(1));
+    const { data } = mutate.mock.calls[0][0];
+    expect(data.service).toBe("repairs");
+    expect(data.description).toBe("Lost stones on the left shoulder");
+    expect(data).not.toHaveProperty("waist");
+    expect(data).not.toHaveProperty("measurementUnit");
+    // Not a deferred measurement either — this service never asked.
+    expect(data).not.toHaveProperty("measurementAppointment");
+  });
+
+  it("falls back to the bespoke form when the catalog can't be read", async () => {
+    const user = userEvent.setup();
+    servicesResult.current = { data: undefined };
+    render(<OrderForm />);
+
+    // No picker to answer, so nothing to be blocked behind — and the form is
+    // the full commission intake it was before services existed.
+    expect(screen.queryByTestId("service-picker")).not.toBeInTheDocument();
+    expect(byId("waist")).toBeInTheDocument();
+
+    const order = createOrderInput();
+    await user.type(byId("fullName"), order.fullName);
+    await user.type(byId("email"), order.email);
+    await user.type(byId("phone"), order.phone);
+    await user.click(screen.getByRole("button", { name: "Email" }));
+    await user.type(byId("waist"), String(order.waist));
+    await user.type(byId("bust"), String(order.bust));
+    await user.type(byId("hips"), String(order.hips));
+    await user.type(byId("height"), String(order.height));
+    await user.type(byId("bodyGirth"), String(order.bodyGirth));
+    await continueToSubmit(user);
+    await user.click(screen.getByRole("button", { name: "Submit Order" }));
+
+    await waitFor(() => expect(mutate).toHaveBeenCalledTimes(1));
+    const { data } = mutate.mock.calls[0][0];
+    // The server reads an order with no service as a bespoke commission.
+    expect(data).not.toHaveProperty("service");
+    expect(data.waist).toBe(28);
   });
 });
