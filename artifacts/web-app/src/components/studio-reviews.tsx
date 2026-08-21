@@ -83,8 +83,7 @@ export function StudioReviews() {
               className="text-sm text-muted-foreground font-light"
               data-testid="reviews-empty"
             >
-              Nothing waiting. Every review that has come in has been decided
-              on.
+              Nothing waiting.
             </p>
           )}
 
@@ -107,13 +106,15 @@ export function StudioReviews() {
         </div>
       )}
 
-      <p className="mt-2 text-xs text-muted-foreground/80 font-light">
-        A published review appears on the home and about pages within a few
-        minutes.
-        {queue.data?.truncated
-          ? " Only the most recent reviews are listed here; older ones are in Notion."
-          : ""}
-      </p>
+      {queue.data?.truncated && (
+        <p
+          className="mt-2 text-xs text-muted-foreground/80 font-light"
+          data-testid="reviews-truncated"
+        >
+          Only the most recent reviews are listed here; older ones are in
+          Notion.
+        </p>
+      )}
     </section>
   );
 }
@@ -147,10 +148,10 @@ function ReviewCard({ review }: { review: StudioReview }) {
 
   return (
     <article
-      className="rounded-sm border border-border bg-card/40 p-5"
+      className="rounded-sm border border-border bg-card/40 p-4 sm:p-5"
       data-testid={`review-${review.id}`}
     >
-      <div className="flex flex-wrap items-start justify-between gap-3">
+      <div className="flex items-start justify-between gap-3">
         <div className="min-w-0">
           <Stars rating={review.rating} />
           {byline && (
@@ -188,7 +189,7 @@ function ReviewCard({ review }: { review: StudioReview }) {
                 <img
                   src={url}
                   alt={`Photo ${index + 1} of the finished piece`}
-                  className="h-24 w-24 rounded-sm border border-border object-cover"
+                  className="h-20 w-20 rounded-sm border border-border object-cover sm:h-24 sm:w-24"
                   loading="lazy"
                 />
               </a>
@@ -259,7 +260,7 @@ function ReviewCard({ review }: { review: StudioReview }) {
             href={review.notionUrl}
             target="_blank"
             rel="noreferrer"
-            className="ml-auto inline-flex items-center gap-1 text-xs text-muted-foreground hover:text-primary"
+            className="inline-flex items-center gap-1 text-xs text-muted-foreground hover:text-primary sm:ml-auto"
             data-testid={`review-notion-${review.id}`}
           >
             <ExternalLink className="w-3.5 h-3.5" strokeWidth={1.5} />

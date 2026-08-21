@@ -106,12 +106,6 @@ export function StudioMaterials() {
           )}
         </div>
       )}
-
-      {data?.configured && data.suppressedCount > 0 && (
-        <p className="mt-2 text-xs text-muted-foreground/80 font-light">
-          {data.suppressedCount} muted.
-        </p>
-      )}
     </section>
   );
 }
@@ -120,7 +114,7 @@ export function StudioMaterials() {
 function MaterialRow({ material }: { material: MaterialAlert }) {
   return (
     <div
-      className="rounded-sm border border-border bg-card/40 p-4 flex items-baseline justify-between gap-4"
+      className="rounded-sm border border-border bg-card/40 p-3 sm:p-4 flex items-baseline justify-between gap-3 sm:gap-4"
       data-testid="material-row"
     >
       <div className="min-w-0">
@@ -156,7 +150,7 @@ function UntrackedRow({ material }: { material: UntrackedMaterial }) {
 
   return (
     <div
-      className="flex items-baseline justify-between gap-4 text-sm font-light"
+      className="flex items-baseline justify-between gap-3 sm:gap-4 text-sm font-light"
       data-testid="material-untracked-row"
     >
       <span className="truncate">{material.name}</span>

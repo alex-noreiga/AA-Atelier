@@ -23,7 +23,7 @@ import { setPostSignInPath } from "@/lib/post-signin";
 import { ROUTE_SEO } from "@/lib/seo-routes";
 import { serverErrorMessage } from "@/lib/api-error";
 import { formatPrice, formatDate } from "@/lib/format";
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import {
   Loader2,
   LogOut,
@@ -96,9 +96,9 @@ export default function Studio() {
   }
 
   return (
-    <PageShell align="top" className="pt-28 pb-20">
+    <PageShell align="top" className="pt-24 sm:pt-28 pb-16 sm:pb-20">
       <Seo {...ROUTE_SEO["/studio"]} />
-      <div className="w-full max-w-4xl z-10 mx-auto px-6 animate-in fade-in duration-700">
+      <div className="w-full max-w-4xl z-10 mx-auto px-4 sm:px-6 animate-in fade-in duration-700">
         {loading || analytics.isLoading ? (
           <div
             className="flex items-center justify-center py-24"
@@ -113,7 +113,9 @@ export default function Studio() {
           <AccessDenied reason={serverErrorMessage(analytics.error)} />
         ) : analytics.isError || !analytics.data ? (
           <div className="text-center py-16" data-testid="studio-error">
-            <h1 className="text-3xl font-serif mb-4">Something went wrong</h1>
+            <h1 className="text-2xl sm:text-3xl font-serif mb-4">
+              Something went wrong
+            </h1>
             <p className="text-muted-foreground">
               We couldn&apos;t load the studio figures just now. Please try
               again in a moment.
@@ -127,9 +129,9 @@ export default function Studio() {
           </div>
         ) : (
           <>
-            <header className="flex items-start justify-between gap-4 mb-12">
+            <header className="flex flex-col gap-3 mb-10 sm:mb-12 sm:flex-row sm:items-start sm:justify-between sm:gap-4">
               <div className="min-w-0">
-                <h1 className="text-4xl md:text-5xl font-serif text-foreground mb-2">
+                <h1 className="text-3xl sm:text-4xl md:text-5xl font-serif text-foreground mb-2">
                   Dashboard
                 </h1>
                 <p className="text-muted-foreground font-light text-sm">
@@ -144,7 +146,7 @@ export default function Studio() {
                   </p>
                 )}
               </div>
-              <div className="flex items-center gap-1 shrink-0">
+              <div className="flex items-center gap-1 shrink-0 -ml-3 sm:ml-0">
                 <Button
                   variant="ghost"
                   onClick={() => void analytics.refetch()}
@@ -225,7 +227,9 @@ function AccessDenied({ reason }: { reason?: string }) {
         className="w-6 h-6 mx-auto mb-4 text-muted-foreground"
         strokeWidth={1}
       />
-      <h1 className="text-3xl font-serif mb-4">Dashboard access only</h1>
+      <h1 className="text-2xl sm:text-3xl font-serif mb-4">
+        Dashboard access only
+      </h1>
       <p className="text-muted-foreground max-w-md mx-auto">
         {reason ??
           "Studio access requires signing in with Google. Please sign out and use Continue with Google."}
@@ -260,10 +264,10 @@ function Dashboard({ data }: { data: StudioAnalytics }) {
   const thisMonth = data.revenue[data.revenue.length - 1];
 
   return (
-    <div className="space-y-12">
-      <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+    <div className="space-y-10 sm:space-y-12">
+      <div className="grid grid-cols-2 md:grid-cols-4 gap-2 sm:gap-3">
         <StatTile
-          label="In production"
+          label="Active orders"
           value={String(data.production.activeOrders)}
           hint={`${data.production.unscheduled} without a due date`}
           testId="stat-active"
@@ -271,7 +275,7 @@ function Dashboard({ data }: { data: StudioAnalytics }) {
         <StatTile
           label="Overdue"
           value={String(data.production.overdue)}
-          hint={`${data.production.dueThisWeek} due this week`}
+          hint={`${data.production.dueThisWeek} due in 7 days`}
           emphasis={data.production.overdue > 0}
           testId="stat-overdue"
         />
@@ -284,7 +288,7 @@ function Dashboard({ data }: { data: StudioAnalytics }) {
           testId="stat-outstanding"
         />
         <StatTile
-          label="Shop, this month"
+          label="Shop this month"
           value={formatPrice(thisMonth?.shopRevenue ?? 0)}
           hint={`${thisMonth?.shopOrders ?? 0} order${
             thisMonth?.shopOrders === 1 ? "" : "s"
@@ -331,13 +335,11 @@ function Dashboard({ data }: { data: StudioAnalytics }) {
 function Section({
   icon,
   title,
-  note,
   children,
   testId,
 }: {
   icon: React.ReactNode;
   title: string;
-  note?: string;
   children: React.ReactNode;
   testId?: string;
 }) {
@@ -347,14 +349,9 @@ function Section({
         {icon}
         {title}
       </h2>
-      <div className="rounded-sm border border-border bg-card/40 p-5">
+      <div className="rounded-sm border border-border bg-card/40 p-4 sm:p-5">
         {children}
       </div>
-      {note && (
-        <p className="mt-2 text-xs text-muted-foreground/80 font-light">
-          {note}
-        </p>
-      )}
     </section>
   );
 }
@@ -374,14 +371,14 @@ function StatTile({
 }) {
   return (
     <div
-      className="rounded-sm border border-border bg-card/40 p-4"
+      className="rounded-sm border border-border bg-card/40 p-3 sm:p-4"
       data-testid={testId}
     >
       <p className="text-[10px] tracking-[0.15em] uppercase text-muted-foreground mb-2">
         {label}
       </p>
       <p
-        className={`text-2xl font-serif ${
+        className={`text-xl sm:text-2xl font-serif ${
           emphasis ? "text-destructive" : "text-foreground"
         }`}
       >
@@ -394,7 +391,15 @@ function StatTile({
   );
 }
 
-/** A labelled horizontal bar, sized against the largest value in its group. */
+/**
+ * A labelled horizontal bar, sized against the largest value in its group.
+ *
+ * Three fixed columns (label, bar, figure) leave the bar about 40px wide on a
+ * phone — and the bar is the whole point of the row. So below `sm` the bar
+ * wraps onto its own full-width line beneath the label and figure. `order-*`
+ * does the rearranging rather than a second copy of the figure, so the text
+ * appears once however the row is laid out.
+ */
 function BarRow({
   label,
   value,
@@ -408,17 +413,17 @@ function BarRow({
 }) {
   const width = max > 0 ? Math.round((value / max) * 100) : 0;
   return (
-    <div className="flex items-center gap-3 text-sm">
-      <span className="w-36 shrink-0 truncate text-muted-foreground font-light">
+    <div className="flex flex-wrap items-center gap-x-3 gap-y-1.5 text-sm">
+      <span className="order-1 min-w-0 flex-1 truncate text-muted-foreground font-light sm:w-36 sm:flex-none sm:shrink-0 lg:w-56">
         {label}
       </span>
-      <span className="flex-1 h-2 rounded-full bg-muted/60 overflow-hidden">
+      <span className="order-3 w-full h-2 rounded-full bg-muted/60 overflow-hidden sm:order-2 sm:w-auto sm:flex-1">
         <span
           className="block h-full bg-primary/70"
           style={{ width: `${width}%` }}
         />
       </span>
-      <span className="w-20 shrink-0 text-right tabular-nums">
+      <span className="order-2 shrink-0 tabular-nums sm:order-3 sm:w-20 sm:text-right">
         {display ?? value}
       </span>
     </div>
@@ -427,19 +432,19 @@ function BarRow({
 
 // --- Panels ---
 
+/** A panel's own summary figures, above its detail. */
+function PanelSummary({ children }: { children: React.ReactNode }) {
+  return (
+    <p className="mb-4 text-xs text-muted-foreground font-light">{children}</p>
+  );
+}
+
 function ProductionPanel({ production }: { production: StudioProductionLoad }) {
   return (
     <Section
       icon={<Hammer className="w-4 h-4" strokeWidth={1.5} />}
       title="Production load"
       testId="panel-production"
-      note={
-        production.unscheduled > 0
-          ? `${production.unscheduled} active order${
-              production.unscheduled === 1 ? "" : "s"
-            } have no due date, so they don't appear on the schedule.`
-          : undefined
-      }
     >
       <div className="grid grid-cols-2 sm:grid-cols-4 gap-4 mb-6 text-center">
         <Figure label="Scheduled" value={production.scheduled} />
@@ -465,7 +470,7 @@ function ProductionPanel({ production }: { production: StudioProductionLoad }) {
           {production.upcoming.map((order) => (
             <li
               key={order.orderNumber}
-              className="flex items-baseline justify-between gap-3 py-2 text-sm"
+              className="flex flex-col gap-0.5 py-2 text-sm sm:flex-row sm:items-baseline sm:justify-between sm:gap-3"
             >
               <span className="min-w-0">
                 <span className="block truncate">
@@ -503,7 +508,7 @@ function Figure({
 }) {
   return (
     <div>
-      <p className="text-2xl font-serif">{value}</p>
+      <p className="text-xl sm:text-2xl font-serif">{value}</p>
       <p className="mt-1 inline-flex items-center gap-1 text-[10px] tracking-[0.15em] uppercase text-muted-foreground">
         {icon}
         {label}
@@ -525,12 +530,11 @@ function PipelinePanel({
 }) {
   const max = pipeline.stages.reduce((top, s) => Math.max(top, s.count), 0);
   return (
-    <Section
-      icon={icon}
-      title={title}
-      testId={testId}
-      note={`${pipeline.total} on record · ${pipeline.completed} finished · ${pipeline.cancelled} cancelled`}
-    >
+    <Section icon={icon} title={title} testId={testId}>
+      <PanelSummary>
+        {pipeline.total} on record · {pipeline.completed} finished ·{" "}
+        {pipeline.cancelled} cancelled
+      </PanelSummary>
       {pipeline.stages.length === 0 ? (
         <p className="text-sm text-muted-foreground font-light">
           No stages configured in Notion.
@@ -562,14 +566,22 @@ function RevenuePanel({ months }: { months: StudioRevenueMonth[] }) {
   const shopTotal = months.reduce((sum, m) => sum + m.shopRevenue, 0);
   const customTotal = months.reduce((sum, m) => sum + m.customBooked, 0);
 
+  // When the chart scrolls (phone widths), open it on the most recent month
+  // rather than a year ago — "how is this month going" is the question being
+  // asked. A no-op at desktop widths, where nothing overflows.
+  const scroller = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    const el = scroller.current;
+    if (el) el.scrollLeft = el.scrollWidth;
+  }, [months]);
+
   return (
     <Section
       icon={<TrendingUp className="w-4 h-4" strokeWidth={1.5} />}
-      title="By month"
+      title="Money by month"
       testId="panel-revenue"
-      note="Shop revenue is money taken. Custom is work booked — the invoice total, placed in the month the order came in — so the two aren't added together."
     >
-      <div className="flex items-center gap-4 mb-4 text-xs text-muted-foreground">
+      <div className="flex flex-wrap items-center gap-x-4 gap-y-1 mb-4 text-xs text-muted-foreground">
         <span className="inline-flex items-center gap-1.5">
           <span className="w-2.5 h-2.5 rounded-sm bg-primary/70" />
           Shop taken {formatPrice(shopTotal)}
@@ -580,30 +592,42 @@ function RevenuePanel({ months }: { months: StudioRevenueMonth[] }) {
         </span>
       </div>
 
-      <div className="flex items-end gap-1.5 h-40" data-testid="revenue-chart">
-        {months.map((month) => (
-          <div
-            key={month.month}
-            className="flex-1 flex flex-col items-center gap-1 h-full justify-end"
-            title={`${monthLabel(month.month)} — shop ${formatPrice(
-              month.shopRevenue,
-            )}, custom booked ${formatPrice(month.customBooked)}`}
-          >
-            <span className="flex items-end gap-0.5 w-full h-full">
-              <span
-                className="flex-1 bg-primary/70 rounded-t-sm min-h-px self-end"
-                style={{ height: `${barHeight(month.shopRevenue, max)}%` }}
-              />
-              <span
-                className="flex-1 bg-primary/30 rounded-t-sm min-h-px self-end"
-                style={{ height: `${barHeight(month.customBooked, max)}%` }}
-              />
-            </span>
-            <span className="text-[10px] text-muted-foreground whitespace-nowrap">
-              {monthLabel(month.month).slice(0, 3)}
-            </span>
-          </div>
-        ))}
+      {/* Twelve months of paired bars can't fit a phone at a readable width,
+          so the chart scrolls sideways below `sm` (fixed-width columns) and
+          fills the panel from `sm` up (flexible ones). The negative margin
+          lets it scroll edge to edge inside the card's padding. */}
+      <div
+        ref={scroller}
+        className="-mx-4 px-4 overflow-x-auto sm:mx-0 sm:px-0 sm:overflow-visible"
+      >
+        <div
+          className="flex items-end gap-1.5 h-40"
+          data-testid="revenue-chart"
+        >
+          {months.map((month) => (
+            <div
+              key={month.month}
+              className="w-9 shrink-0 flex flex-col items-center gap-1 h-full justify-end sm:w-auto sm:flex-1"
+              title={`${monthLabel(month.month)} — shop ${formatPrice(
+                month.shopRevenue,
+              )}, custom booked ${formatPrice(month.customBooked)}`}
+            >
+              <span className="flex items-end gap-0.5 w-full h-full">
+                <span
+                  className="flex-1 bg-primary/70 rounded-t-sm min-h-px self-end"
+                  style={{ height: `${barHeight(month.shopRevenue, max)}%` }}
+                />
+                <span
+                  className="flex-1 bg-primary/30 rounded-t-sm min-h-px self-end"
+                  style={{ height: `${barHeight(month.customBooked, max)}%` }}
+                />
+              </span>
+              <span className="text-[10px] text-muted-foreground whitespace-nowrap">
+                {monthLabel(month.month).slice(0, 3)}
+              </span>
+            </div>
+          ))}
+        </div>
       </div>
     </Section>
   );
@@ -621,12 +645,13 @@ function PaymentsPanel({ payments }: { payments: StudioPaymentTotals }) {
       icon={<Wallet className="w-4 h-4" strokeWidth={1.5} />}
       title="Deposits & balances"
       testId="panel-payments"
-      note={`${formatPrice(payments.invoicedTotal)} invoiced across ${
-        payments.invoiceCount
-      } invoice${payments.invoiceCount === 1 ? "" : "s"} · ${formatPrice(
-        payments.collectedTotal,
-      )} collected`}
     >
+      <PanelSummary>
+        {formatPrice(payments.invoicedTotal)} invoiced across{" "}
+        {payments.invoiceCount} invoice
+        {payments.invoiceCount === 1 ? "" : "s"} ·{" "}
+        {formatPrice(payments.collectedTotal)} collected
+      </PanelSummary>
       <div className="space-y-2">
         <BarRow
           label="Deposits collected"
@@ -664,7 +689,6 @@ function TopItemsPanel({ items }: { items: StudioTopItem[] }) {
       icon={<Star className="w-4 h-4" strokeWidth={1.5} />}
       title="Best sellers"
       testId="panel-top-items"
-      note="Counted as orders containing the piece — the inventory link records what was bought, not how many."
     >
       {items.length === 0 ? (
         <p className="text-sm text-muted-foreground font-light">
