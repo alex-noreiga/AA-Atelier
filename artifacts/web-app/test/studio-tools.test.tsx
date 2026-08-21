@@ -6,7 +6,7 @@
 // strict about — a mis-typed order number there refunds a real customer, and the
 // retired links had no such step.
 
-import { describe, it, expect, vi, beforeEach } from "vitest";
+import { describe, it, expect, vi, beforeAll, beforeEach } from "vitest";
 import { render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import type { Mock } from "vitest";
@@ -17,6 +17,13 @@ vi.mock("@workspace/api-client-react", () => ({
 }));
 
 import { StudioTools } from "@/components/studio-tools";
+import { toolHandoff } from "@/lib/studio-handoff";
+
+// jsdom has no layout, so it doesn't implement scrollIntoView. The hand-off
+// calls it to bring the filled card into view; stub it so the effect runs.
+beforeAll(() => {
+  Element.prototype.scrollIntoView = vi.fn();
+});
 
 const mutate = h.mutate as unknown as Mock;
 
@@ -364,6 +371,103 @@ describe("StudioTools — back-in-stock alerts", () => {
     expect(mutate).toHaveBeenCalled();
     expect(screen.getByTestId("tool-restock-alert-result")).toHaveTextContent(
       "not in stock",
+    );
+  });
+});
+
+// The receiving end of the customer-request queue's hand-off. A request carries
+// its own order number here so nothing is re-typed — but it only ever PREPARES
+// a run: the confirmation the refunds ask for is what makes a wrong number
+// impossible rather than merely unlikely, and a hand-off must not skip it.
+describe("a hand-off from the request queue", () => {
+  it("fills the named tool's field without running anything", () => {
+    render(
+      <StudioTools
+        handoff={toolHandoff({
+          tool: "cancellation-refund",
+          orderNumber: "ORD-000002",
+        })}
+      />,
+    );
+
+    expect(screen.getByTestId("tool-cancellation-refund-order")).toHaveValue(
+      "ORD-000002",
+    );
+    expect(mutate).not.toHaveBeenCalled();
+    expect(screen.queryByTestId("tool-cancellation-refund-confirm")).toBeNull();
+  });
+
+  it("still asks before refunding a handed-off order", async () => {
+    render(
+      <StudioTools
+        handoff={toolHandoff({
+          tool: "return-refund",
+          orderNumber: "SHP-1A2B",
+        })}
+      />,
+    );
+
+    await userEvent.click(screen.getByTestId("tool-return-refund-run"));
+
+    expect(screen.getByTestId("tool-return-refund-confirm")).toHaveTextContent(
+      "SHP-1A2B",
+    );
+    expect(mutate).not.toHaveBeenCalled();
+  });
+
+  it("fills only the tool it names", () => {
+    render(
+      <StudioTools
+        handoff={toolHandoff({ tool: "restock-alert", item: "Aurora Dress" })}
+      />,
+    );
+
+    expect(screen.getByTestId("tool-restock-alert-item")).toHaveValue(
+      "Aurora Dress",
+    );
+    expect(screen.getByTestId("tool-cancellation-refund-order")).toHaveValue(
+      "",
+    );
+  });
+
+  // A result left under a freshly filled field would read as this request
+  // having been actioned, which it hasn't.
+  it("clears a previous run's result when a new request arrives", async () => {
+    succeedWith({
+      tool: "cancellation-refund",
+      status: "ok",
+      title: "Cancellation processed",
+      message: "Order ORD-000002: refunded 1 payment totalling $120.00.",
+    });
+    const { rerender } = render(
+      <StudioTools
+        handoff={toolHandoff({
+          tool: "cancellation-refund",
+          orderNumber: "ORD-000002",
+        })}
+      />,
+    );
+
+    await userEvent.click(screen.getByTestId("tool-cancellation-refund-run"));
+    await userEvent.click(
+      screen.getByTestId("tool-cancellation-refund-confirm-yes"),
+    );
+    expect(
+      screen.getByTestId("tool-cancellation-refund-result"),
+    ).toBeInTheDocument();
+
+    rerender(
+      <StudioTools
+        handoff={toolHandoff({
+          tool: "cancellation-refund",
+          orderNumber: "ORD-000009",
+        })}
+      />,
+    );
+
+    expect(screen.queryByTestId("tool-cancellation-refund-result")).toBeNull();
+    expect(screen.getByTestId("tool-cancellation-refund-order")).toHaveValue(
+      "ORD-000009",
     );
   });
 });

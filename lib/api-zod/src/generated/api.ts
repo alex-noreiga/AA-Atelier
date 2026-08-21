@@ -1081,3 +1081,164 @@ export const SetStudioSettingResponse = zod.object({
 }).describe('One atelier-editable setting, resolved. The key is the name of its environment variable and of its Notion row\'s `Setting` title — that identity 1:1 across all three is what keeps them from ever meaning different things.')
 
 
+/**
+ * The customer requests waiting on the atelier — measurement changes, cancellations, returns and exchanges, back-in-stock asks and website inquiries — read back out of the shared "Website Contact Messages" inbox. Until this, the app only ever WROTE those rows: actioning one meant reading it in Notion and re-typing its order number into a tool on this dashboard.
+ *
+ * So each row carries its own `action` where one exists: the tool that actions it and the argument it needs, derived server-side from the request type next to the code that writes it. A cancellation hands its order number to `cancellation-refund`, a return to `return-refund`, a back-in-stock ask hands its item to `restock-alert`. A measurement change or an inquiry carries none — those are answered by hand, and saying so is more honest than offering a button that does nothing.
+ *
+ * The open list is OLDEST first: the request that has waited longest is the one that owes an answer. Newsletter opt-ins are deliberately absent — they land in the same database but are a consent record nobody answers, so including them makes a queue that never empties.
+ *
+ * Same staff gate as the rest of the studio surface: 401 when not signed in, 404 when signed in but not staff, 403 when staff but not signed in with Google.
+ * @summary The open customer-request queue
+ */
+export const ListStudioRequestsResponse = zod.object({
+  "open": zod.array(zod.object({
+  "id": zod.string().describe('The request\'s Notion page id; also what a state change is addressed to.'),
+  "kind": zod.enum(['inquiry', 'back-in-stock', 'measurement', 'cancellation', 'return', 'newsletter', 'other']).describe('What a customer is asking for, DERIVED from the row\'s `Request type` select rather than enumerated from it. Six kinds name the values the app writes; `other` is anything else — a blank select, or a type the atelier invented — so an unrecognized row appears in the queue asking to be looked at rather than vanishing from it.\n\n`newsletter` never appears in the request QUEUE — an opt-in is a consent record nobody answers, so it has its own panel (see `\/studio\/newsletter`) and is filtered out of the queue. The kind still exists because the queue\'s state operation is shared across the whole contact inbox, and it answers with the row it wrote.'),
+  "rawType": zod.string().optional().describe('The `Request type` select exactly as Notion holds it, when set. Shown for a row the app reads as `other`, so \"why is this here?\" is answerable without opening Notion.'),
+  "subject": zod.string().describe('The row\'s title, as the writer composed it.'),
+  "customerName": zod.string().optional().describe('Who wrote it, when the request records a name (inquiries do).'),
+  "email": zod.string().optional().describe('The address the request came from — how an inquiry or a measurement change is answered. Omitted on a row that carries none.'),
+  "phone": zod.string().optional().describe('A contact number, when the customer left one.'),
+  "message": zod.string().optional().describe('The request in full: the cancellation reason, the requested measurements, the return\'s kind and reason. Composed by the writer that filed it, and shown verbatim.'),
+  "orderNumber": zod.string().optional().describe('The order the request concerns, for the order-scoped kinds. Absent on an inquiry or a back-in-stock ask, which concern no order.'),
+  "item": zod.string().optional().describe('The piece being asked about (back-in-stock and returns).'),
+  "size": zod.string().optional().describe('The size band a back-in-stock request named, when it named one.'),
+  "state": zod.enum(['new', 'replied', 'closed']).describe('Where a request stands in the inbox, derived from its Notion `Stage`. `closed` is the only value that takes it off the queue, so a row with a blank or unrecognized stage reads as `new` — an untriaged request should appear rather than disappear.'),
+  "rawStage": zod.string().optional().describe('The `Stage` select exactly as Notion holds it, when set.'),
+  "submittedAt": zod.coerce.date().optional().describe('When the request was filed (its Notion created time).'),
+  "action": zod.object({
+  "tool": zod.enum(['milestones', 'invoice-lines', 'status-email', 'cancellation-refund', 'return-refund', 'restock-alert']).describe('Which internal tool to run. Each names an action the atelier used to trigger by opening a shared-secret link from Notion — or, for `restock-alert`, one that would have needed such a link.'),
+  "orderNumber": zod.string().optional().describe('The order the tool should act on, read off the request. Absent when it couldn\'t be recovered — a row whose title was rewritten by hand, say — in which case the action is not offered at all rather than offered blank.'),
+  "item": zod.string().optional().describe('The inventory item name, for a back-in-stock request.')
+}).optional().describe('The dashboard tool that actions this request, and the argument it needs. Present only where the app can action the request at all: the two refunds and the back-in-stock sweep. A measurement change is applied to the order by hand and an inquiry is answered by email, so neither carries one.'),
+  "notionUrl": zod.string().optional().describe('The request\'s page in Notion, for everything this queue doesn\'t show — the linked order, the client record, the atelier\'s own notes.')
+}).describe('One customer request as the queue shows it — the row from the shared contact inbox, plus what can be done about it. Staff-only.')).describe('Still waiting, OLDEST first — the queue proper. Anything not closed counts, including a row whose stage was never set.'),
+  "closed": zod.array(zod.object({
+  "id": zod.string().describe('The request\'s Notion page id; also what a state change is addressed to.'),
+  "kind": zod.enum(['inquiry', 'back-in-stock', 'measurement', 'cancellation', 'return', 'newsletter', 'other']).describe('What a customer is asking for, DERIVED from the row\'s `Request type` select rather than enumerated from it. Six kinds name the values the app writes; `other` is anything else — a blank select, or a type the atelier invented — so an unrecognized row appears in the queue asking to be looked at rather than vanishing from it.\n\n`newsletter` never appears in the request QUEUE — an opt-in is a consent record nobody answers, so it has its own panel (see `\/studio\/newsletter`) and is filtered out of the queue. The kind still exists because the queue\'s state operation is shared across the whole contact inbox, and it answers with the row it wrote.'),
+  "rawType": zod.string().optional().describe('The `Request type` select exactly as Notion holds it, when set. Shown for a row the app reads as `other`, so \"why is this here?\" is answerable without opening Notion.'),
+  "subject": zod.string().describe('The row\'s title, as the writer composed it.'),
+  "customerName": zod.string().optional().describe('Who wrote it, when the request records a name (inquiries do).'),
+  "email": zod.string().optional().describe('The address the request came from — how an inquiry or a measurement change is answered. Omitted on a row that carries none.'),
+  "phone": zod.string().optional().describe('A contact number, when the customer left one.'),
+  "message": zod.string().optional().describe('The request in full: the cancellation reason, the requested measurements, the return\'s kind and reason. Composed by the writer that filed it, and shown verbatim.'),
+  "orderNumber": zod.string().optional().describe('The order the request concerns, for the order-scoped kinds. Absent on an inquiry or a back-in-stock ask, which concern no order.'),
+  "item": zod.string().optional().describe('The piece being asked about (back-in-stock and returns).'),
+  "size": zod.string().optional().describe('The size band a back-in-stock request named, when it named one.'),
+  "state": zod.enum(['new', 'replied', 'closed']).describe('Where a request stands in the inbox, derived from its Notion `Stage`. `closed` is the only value that takes it off the queue, so a row with a blank or unrecognized stage reads as `new` — an untriaged request should appear rather than disappear.'),
+  "rawStage": zod.string().optional().describe('The `Stage` select exactly as Notion holds it, when set.'),
+  "submittedAt": zod.coerce.date().optional().describe('When the request was filed (its Notion created time).'),
+  "action": zod.object({
+  "tool": zod.enum(['milestones', 'invoice-lines', 'status-email', 'cancellation-refund', 'return-refund', 'restock-alert']).describe('Which internal tool to run. Each names an action the atelier used to trigger by opening a shared-secret link from Notion — or, for `restock-alert`, one that would have needed such a link.'),
+  "orderNumber": zod.string().optional().describe('The order the tool should act on, read off the request. Absent when it couldn\'t be recovered — a row whose title was rewritten by hand, say — in which case the action is not offered at all rather than offered blank.'),
+  "item": zod.string().optional().describe('The inventory item name, for a back-in-stock request.')
+}).optional().describe('The dashboard tool that actions this request, and the argument it needs. Present only where the app can action the request at all: the two refunds and the back-in-stock sweep. A measurement change is applied to the order by hand and an inquiry is answered by email, so neither carries one.'),
+  "notionUrl": zod.string().optional().describe('The request\'s page in Notion, for everything this queue doesn\'t show — the linked order, the client record, the atelier\'s own notes.')
+}).describe('One customer request as the queue shows it — the row from the shared contact inbox, plus what can be done about it. Staff-only.')).describe('Recently closed, newest first. Capped — it is a record of what was worked down, not a second queue.'),
+  "truncated": zod.boolean().optional().describe('True when there are more open requests than one read covers, so the queue says it is partial instead of looking complete.')
+}).describe('The request queue: what is still open, and the recently closed rows for reference.')
+
+
+/**
+ * Writes one request's `Stage` in Notion — the resolved state the contact inbox has always carried. `replied` marks a request answered but still open, `closed` takes it off the queue, and `new` returns it, so a row closed in error is reopened the same way it was closed.
+ *
+ * A PUT rather than a POST because the whole state is sent and re-sending it changes nothing. This is the only thing the dashboard writes to a request row: the request itself is never edited, exactly as the capture endpoints never edit the order they concern.
+ * @summary Move a request through the inbox
+ */
+export const SetStudioRequestStateParams = zod.object({
+  "requestId": zod.coerce.string().describe('The request\'s id, as returned by the list operation.')
+})
+
+export const SetStudioRequestStateBody = zod.object({
+  "state": zod.enum(['new', 'replied', 'closed']).describe('Where a request stands in the inbox, derived from its Notion `Stage`. `closed` is the only value that takes it off the queue, so a row with a blank or unrecognized stage reads as `new` — an untriaged request should appear rather than disappear.')
+}).describe('The state to record against a request.')
+
+export const SetStudioRequestStateResponse = zod.object({
+  "id": zod.string().describe('The request\'s Notion page id; also what a state change is addressed to.'),
+  "kind": zod.enum(['inquiry', 'back-in-stock', 'measurement', 'cancellation', 'return', 'newsletter', 'other']).describe('What a customer is asking for, DERIVED from the row\'s `Request type` select rather than enumerated from it. Six kinds name the values the app writes; `other` is anything else — a blank select, or a type the atelier invented — so an unrecognized row appears in the queue asking to be looked at rather than vanishing from it.\n\n`newsletter` never appears in the request QUEUE — an opt-in is a consent record nobody answers, so it has its own panel (see `\/studio\/newsletter`) and is filtered out of the queue. The kind still exists because the queue\'s state operation is shared across the whole contact inbox, and it answers with the row it wrote.'),
+  "rawType": zod.string().optional().describe('The `Request type` select exactly as Notion holds it, when set. Shown for a row the app reads as `other`, so \"why is this here?\" is answerable without opening Notion.'),
+  "subject": zod.string().describe('The row\'s title, as the writer composed it.'),
+  "customerName": zod.string().optional().describe('Who wrote it, when the request records a name (inquiries do).'),
+  "email": zod.string().optional().describe('The address the request came from — how an inquiry or a measurement change is answered. Omitted on a row that carries none.'),
+  "phone": zod.string().optional().describe('A contact number, when the customer left one.'),
+  "message": zod.string().optional().describe('The request in full: the cancellation reason, the requested measurements, the return\'s kind and reason. Composed by the writer that filed it, and shown verbatim.'),
+  "orderNumber": zod.string().optional().describe('The order the request concerns, for the order-scoped kinds. Absent on an inquiry or a back-in-stock ask, which concern no order.'),
+  "item": zod.string().optional().describe('The piece being asked about (back-in-stock and returns).'),
+  "size": zod.string().optional().describe('The size band a back-in-stock request named, when it named one.'),
+  "state": zod.enum(['new', 'replied', 'closed']).describe('Where a request stands in the inbox, derived from its Notion `Stage`. `closed` is the only value that takes it off the queue, so a row with a blank or unrecognized stage reads as `new` — an untriaged request should appear rather than disappear.'),
+  "rawStage": zod.string().optional().describe('The `Stage` select exactly as Notion holds it, when set.'),
+  "submittedAt": zod.coerce.date().optional().describe('When the request was filed (its Notion created time).'),
+  "action": zod.object({
+  "tool": zod.enum(['milestones', 'invoice-lines', 'status-email', 'cancellation-refund', 'return-refund', 'restock-alert']).describe('Which internal tool to run. Each names an action the atelier used to trigger by opening a shared-secret link from Notion — or, for `restock-alert`, one that would have needed such a link.'),
+  "orderNumber": zod.string().optional().describe('The order the tool should act on, read off the request. Absent when it couldn\'t be recovered — a row whose title was rewritten by hand, say — in which case the action is not offered at all rather than offered blank.'),
+  "item": zod.string().optional().describe('The inventory item name, for a back-in-stock request.')
+}).optional().describe('The dashboard tool that actions this request, and the argument it needs. Present only where the app can action the request at all: the two refunds and the back-in-stock sweep. A measurement change is applied to the order by hand and an inquiry is answered by email, so neither carries one.'),
+  "notionUrl": zod.string().optional().describe('The request\'s page in Notion, for everything this queue doesn\'t show — the linked order, the client record, the atelier\'s own notes.')
+}).describe('One customer request as the queue shows it — the row from the shared contact inbox, plus what can be done about it. Staff-only.')
+
+
+/**
+ * The marketing opt-ins captured on the site, and — read live from Resend — whether each one is actually on the audience the studio sends broadcasts to. They land in the same "Website Contact Messages" database as the other requests but are deliberately kept out of the request queue: an opt-in is a consent record nobody answers, and leaving them there makes a queue that never empties.
+ *
+ * Membership is NEVER stored as a marker on the Notion row. The audience is the sending list, so it is also the only honest answer to "did this person get added?" — a checkbox on the row could only ever say what someone remembered to tick, and the capture-time sync (which is best-effort, and silently skipped when the audience isn't configured) would not tick it. This is the same rule the return refunds follow with Stripe.
+ *
+ * Same staff gate as the rest of the studio surface: 401 when not signed in, 404 when signed in but not staff, 403 when staff but not signed in with Google.
+ * @summary Newsletter opt-ins and whether they reached the mailing list
+ */
+export const ListNewsletterSignupsResponse = zod.object({
+  "pending": zod.array(zod.object({
+  "id": zod.string().describe('The opt-in\'s Notion page id; also what an action is addressed to.'),
+  "email": zod.string().optional().describe('The address that opted in — the whole content of the record. Omitted only on a malformed row, which can then be dismissed but not subscribed.'),
+  "source": zod.string().optional().describe('Where they opted in (the footer field, the order form), recovered from the row\'s subject. Absent when the capture recorded none.'),
+  "subject": zod.string().describe('The row\'s title, as the writer composed it.'),
+  "state": zod.enum(['new', 'replied', 'closed']).describe('Where a request stands in the inbox, derived from its Notion `Stage`. `closed` is the only value that takes it off the queue, so a row with a blank or unrecognized stage reads as `new` — an untriaged request should appear rather than disappear.'),
+  "subscription": zod.enum(['subscribed', 'absent', 'unknown']).describe('Where this email stands in the Resend audience, read live rather than stored. `subscribed` — Resend holds them, so there is nothing to do. `absent` — not on the list, so this is the row to act on. `unknown` — the audience isn\'t configured or couldn\'t be read, in which case the panel says so rather than implying nobody is on the list.\n\nWhether a contact has since unsubscribed is deliberately NOT reported. Resend owns that: it attaches the one-click unsubscribe to every broadcast and honours it, so an opt-out is not something the studio acts on. Such a contact reads as `subscribed` — Resend has them — and so is never offered the add action, which is the behaviour that matters.'),
+  "submittedAt": zod.coerce.date().optional().describe('When they opted in (the row\'s Notion created time).'),
+  "notionUrl": zod.string().optional().describe('The opt-in\'s page in Notion.')
+}).describe('One marketing opt-in, and whether it reached the mailing list. Staff-only.')).describe('Not yet filed away, OLDEST first — someone who opted in weeks ago and never reached the list is the one to fix first.'),
+  "handled": zod.array(zod.object({
+  "id": zod.string().describe('The opt-in\'s Notion page id; also what an action is addressed to.'),
+  "email": zod.string().optional().describe('The address that opted in — the whole content of the record. Omitted only on a malformed row, which can then be dismissed but not subscribed.'),
+  "source": zod.string().optional().describe('Where they opted in (the footer field, the order form), recovered from the row\'s subject. Absent when the capture recorded none.'),
+  "subject": zod.string().describe('The row\'s title, as the writer composed it.'),
+  "state": zod.enum(['new', 'replied', 'closed']).describe('Where a request stands in the inbox, derived from its Notion `Stage`. `closed` is the only value that takes it off the queue, so a row with a blank or unrecognized stage reads as `new` — an untriaged request should appear rather than disappear.'),
+  "subscription": zod.enum(['subscribed', 'absent', 'unknown']).describe('Where this email stands in the Resend audience, read live rather than stored. `subscribed` — Resend holds them, so there is nothing to do. `absent` — not on the list, so this is the row to act on. `unknown` — the audience isn\'t configured or couldn\'t be read, in which case the panel says so rather than implying nobody is on the list.\n\nWhether a contact has since unsubscribed is deliberately NOT reported. Resend owns that: it attaches the one-click unsubscribe to every broadcast and honours it, so an opt-out is not something the studio acts on. Such a contact reads as `subscribed` — Resend has them — and so is never offered the add action, which is the behaviour that matters.'),
+  "submittedAt": zod.coerce.date().optional().describe('When they opted in (the row\'s Notion created time).'),
+  "notionUrl": zod.string().optional().describe('The opt-in\'s page in Notion.')
+}).describe('One marketing opt-in, and whether it reached the mailing list. Staff-only.')).describe('Recently closed, newest first. Capped, and still carrying their live audience status — so a row filed away that never actually reached the list is visible rather than assumed done.'),
+  "audience": zod.object({
+  "configured": zod.boolean().describe('False when `RESEND_AUDIENCE_ID` (or the API key) is unset. Every opt-in then reads `unknown`, the capture-time sync is off too, and the panel says what to set rather than showing a list that looks unhandled.'),
+  "unreachable": zod.boolean().optional().describe('True when the audience IS configured but Resend couldn\'t be read. The opt-ins are still listed — from Notion, which is a separate system — with an `unknown` subscription each. Absent when the read worked.'),
+  "contactCount": zod.number().int().optional().describe('How many contacts the audience holds. Absent when unreadable.')
+}).describe('The state of the Resend audience itself, so the panel can explain an empty or unknown column rather than leaving it blank.'),
+  "truncated": zod.boolean().optional().describe('True when there are more pending opt-ins than one read covers.')
+}).describe('The opt-ins still to be dealt with, the recently filed ones, and the state of the audience they are checked against.')
+
+
+/**
+ * Adds the opt-in's email to the configured Resend audience and then closes its Notion row, so the two halves of "I've dealt with this person" happen together and neither can be forgotten.
+ *
+ * An address Resend already holds is left alone and the row is simply filed away, so a repeat press is safe and a partial failure is retryable. That is also what keeps the studio out of anyone's unsubscribe: an opted-out contact is already on the audience, so nothing is written for them.
+ *
+ * It is refused (409) when the audience isn't configured — closing the row would then record a subscription that never happened — and when the row carries no address. Either can still be dismissed with the request-state operation instead.
+ *
+ * Notion is written only after Resend accepts. A failure there leaves the row open, which is the safe direction — an opt-in that stays in the list costs a second press, one that is filed away having never reached the audience costs a subscriber silently.
+ * @summary Add one opt-in to the Resend audience and file the row away
+ */
+export const SubscribeNewsletterSignupParams = zod.object({
+  "signupId": zod.coerce.string().describe('The opt-in\'s id, as returned by the list operation.')
+})
+
+export const SubscribeNewsletterSignupResponse = zod.object({
+  "id": zod.string().describe('The opt-in\'s Notion page id; also what an action is addressed to.'),
+  "email": zod.string().optional().describe('The address that opted in — the whole content of the record. Omitted only on a malformed row, which can then be dismissed but not subscribed.'),
+  "source": zod.string().optional().describe('Where they opted in (the footer field, the order form), recovered from the row\'s subject. Absent when the capture recorded none.'),
+  "subject": zod.string().describe('The row\'s title, as the writer composed it.'),
+  "state": zod.enum(['new', 'replied', 'closed']).describe('Where a request stands in the inbox, derived from its Notion `Stage`. `closed` is the only value that takes it off the queue, so a row with a blank or unrecognized stage reads as `new` — an untriaged request should appear rather than disappear.'),
+  "subscription": zod.enum(['subscribed', 'absent', 'unknown']).describe('Where this email stands in the Resend audience, read live rather than stored. `subscribed` — Resend holds them, so there is nothing to do. `absent` — not on the list, so this is the row to act on. `unknown` — the audience isn\'t configured or couldn\'t be read, in which case the panel says so rather than implying nobody is on the list.\n\nWhether a contact has since unsubscribed is deliberately NOT reported. Resend owns that: it attaches the one-click unsubscribe to every broadcast and honours it, so an opt-out is not something the studio acts on. Such a contact reads as `subscribed` — Resend has them — and so is never offered the add action, which is the behaviour that matters.'),
+  "submittedAt": zod.coerce.date().optional().describe('When they opted in (the row\'s Notion created time).'),
+  "notionUrl": zod.string().optional().describe('The opt-in\'s page in Notion.')
+}).describe('One marketing opt-in, and whether it reached the mailing list. Staff-only.')
+
+
