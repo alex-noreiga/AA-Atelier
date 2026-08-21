@@ -79,64 +79,17 @@ afterEach(() => {
 
 const ENDPOINT = "/api/studio/tools/milestones";
 
+// The full requireStaff matrix (unknown token / non-staff 404 / non-Google 403
+// / unset-allowlist fail-closed) is exercised against that middleware in
+// studio.routes.test.ts. Repeating it per mounted route only re-tested the same
+// middleware, so what is left here is the two things specific to THIS route:
+// that the gate is actually mounted on it at all, and that it refuses the
+// CRON_SECRET these actions used to authenticate with.
 describe("POST /api/studio/tools/:tool — the gate", () => {
   it("401s an anonymous caller without running anything", async () => {
     const res = await request(app).post(ENDPOINT).send({});
 
     expect(res.status).toBe(401);
-    expect(mockRun).not.toHaveBeenCalled();
-  });
-
-  it("401s a token Supabase doesn't recognize", async () => {
-    const res = await request(app)
-      .post(ENDPOINT)
-      .set("Authorization", "Bearer forged")
-      .send({});
-
-    expect(res.status).toBe(401);
-    expect(mockRun).not.toHaveBeenCalled();
-  });
-
-  it("404s a signed-in customer who isn't on the staff allowlist", async () => {
-    // Same answer a URL that doesn't exist gets — the tools must not confirm
-    // the studio surface to a customer any more than the figures do.
-    acceptToken(TOKEN, {
-      email: "skater@example.com",
-      sub: "user-2",
-      amr: [{ method: "oauth", timestamp: 1_700_000_000 }],
-    });
-
-    const res = await request(app)
-      .post(ENDPOINT)
-      .set("Authorization", `Bearer ${TOKEN}`)
-      .send({});
-
-    expect(res.status).toBe(404);
-    expect(mockRun).not.toHaveBeenCalled();
-  });
-
-  it("403s a staff member whose session wasn't established with Google", async () => {
-    acceptToken(TOKEN, { email: STAFF, sub: "user-1", amr: ["password"] });
-
-    const res = await request(app)
-      .post(ENDPOINT)
-      .set("Authorization", `Bearer ${TOKEN}`)
-      .send({});
-
-    expect(res.status).toBe(403);
-    expect(res.body.error).toContain("Google");
-    expect(mockRun).not.toHaveBeenCalled();
-  });
-
-  it("404s everyone when no allowlist is configured (fails closed)", async () => {
-    delete process.env.STUDIO_STAFF_EMAILS;
-
-    const res = await request(app)
-      .post(ENDPOINT)
-      .set("Authorization", `Bearer ${TOKEN}`)
-      .send({});
-
-    expect(res.status).toBe(404);
     expect(mockRun).not.toHaveBeenCalled();
   });
 

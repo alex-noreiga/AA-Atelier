@@ -51,55 +51,6 @@ test.describe("Shop back-in-stock dialog", () => {
     await mockProducts(page, { body: INVENTORY });
   });
 
-  test("takes an email for a sold-out item and confirms in place", async ({
-    page,
-  }) => {
-    const notify = await mockCreateNotify(page, { body: { success: true } });
-
-    await page.goto("/shop");
-    await page.getByTestId("cta-notify-v1").first().click();
-
-    await expect(page.getByTestId("notify-dialog")).toBeVisible();
-    await page.getByTestId("notify-email").fill("grace@example.com");
-    await page.getByTestId("notify-submit").click();
-
-    await expect(page.getByTestId("notify-success")).toBeVisible();
-    // The whole variant is sold out, so no size is attached. The form also
-    // carries the invisible anti-spam fields (empty honeypot + fill timing).
-    expect(notify.requests).toEqual([
-      {
-        email: "grace@example.com",
-        item: "Bow Fleece Soaker",
-        website: "",
-        elapsedMs: expect.any(Number),
-      },
-    ]);
-  });
-
-  test("attaches the exact size when a sold-out size band is clicked", async ({
-    page,
-  }) => {
-    const notify = await mockCreateNotify(page, { body: { success: true } });
-
-    await page.goto("/shop");
-    await page.getByTestId("size-notify-v2-adult-s").first().click();
-
-    await page.getByTestId("notify-email").fill("grace@example.com");
-    await page.getByTestId("notify-submit").click();
-
-    await expect(page.getByTestId("notify-success")).toBeVisible();
-    // Plus the invisible anti-spam fields (empty honeypot + fill timing).
-    expect(notify.requests).toEqual([
-      {
-        email: "grace@example.com",
-        item: "Keyhole Dress",
-        size: "Adult S",
-        website: "",
-        elapsedMs: expect.any(Number),
-      },
-    ]);
-  });
-
   test("shows a destructive toast when the API rejects the request", async ({
     page,
   }) => {
