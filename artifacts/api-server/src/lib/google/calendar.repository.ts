@@ -10,6 +10,11 @@
 //   - createCalendarEvent()    writes the booking as a calendar event, invites
 //                              the customer, and (for virtual) attaches a Meet.
 //
+// Plus the reads and writes the later features grew: get/update/cancel one event
+// (self-service reschedule & cancel), list a customer's events by the `aptEmail`
+// stamp (the account portal), and list a time window + stamp a reminder marker
+// (the day-before reminder sweep).
+//
 // Busy is read fresh (no cache): availability and the final booking re-check
 // must reflect the latest state so a just-taken slot is never offered.
 
@@ -141,6 +146,19 @@ export const EVENT_PROP_LOCATION = "aptLocation";
 export const EVENT_PROP_CONFIRMATION = "aptConfirmation";
 export const EVENT_PROP_EMAIL = "aptEmail";
 export const EVENT_PROP_NAME = "aptName";
+/**
+ * The customer's phone number, stamped so a future channel has somewhere to send
+ * to. Nothing reads it today — the reminder sweep below emails — but the number
+ * is only on the event if it was written when the booking was made, and an SMS
+ * reminder built later can't retro-fit it onto bookings already taken. Same
+ * argument as `aptEmail`, which the account portal came to depend on.
+ */
+export const EVENT_PROP_PHONE = "aptPhone";
+// The reminder markers (`aptRemindedEmail` / `aptRemindedSms`) are the one pair
+// of appointment properties NOT declared here: they belong to the reminder
+// policy, which is pure and shouldn't reach through this adapter to read its own
+// vocabulary. `markAppointmentReminded` below takes the key as an argument for
+// the same reason. See `lib/appointments/reminders.ts`.
 
 /**
  * Write the booking to the staff member's calendar (impersonated), invite the
@@ -201,6 +219,7 @@ export async function createCalendarEvent(
         [EVENT_PROP_CONFIRMATION]: appointment.confirmationCode,
         [EVENT_PROP_EMAIL]: appointment.email,
         [EVENT_PROP_NAME]: appointment.customerName,
+        ...(appointment.phone ? { [EVENT_PROP_PHONE]: appointment.phone } : {}),
       },
     },
     ...(isVirtual
@@ -368,6 +387,95 @@ export async function listUpcomingAppointmentsByEmail(
 
   found.sort((a, b) => a.event.start.getTime() - b.event.start.getTime());
   return found;
+}
+
+/**
+ * Every appointment event starting inside `[from, to)`, across every staff
+ * calendar — the read the day-before reminder sweep is built on.
+ *
+ * Unlike `listUpcomingAppointmentsByEmail` this can't push the "is it ours?" test
+ * into the query: `privateExtendedProperty` matches one exact `key=value` pair
+ * and repeating the parameter ANDs the pairs, so there is no way to ask for "any
+ * `aptType`". So it lists the window plainly and filters here on the `aptEmail`
+ * stamp, which every booking this app made carries. A day's worth of a small
+ * atelier's calendar is a handful of events, and the alternative — one query per
+ * appointment type per calendar — is more requests for the same answer.
+ */
+export async function listAppointmentsInRange(
+  from: Date,
+  to: Date,
+  client: GoogleCalendarClient = getGoogleCalendarClient(),
+): Promise<StaffCalendarEvent[]> {
+  const { calendars } = await getStaffSchedule();
+  const found: StaffCalendarEvent[] = [];
+
+  for (const [staff, calendarEmail] of calendars) {
+    const query = new URLSearchParams({
+      timeMin: from.toISOString(),
+      timeMax: to.toISOString(),
+      singleEvents: "true",
+      orderBy: "startTime",
+      showDeleted: "false",
+    });
+    const response = await client.fetch(
+      calendarEmail,
+      `/calendars/${encodeURIComponent(calendarEmail)}/events?${query}`,
+      { method: "GET" },
+    );
+    if (!response.ok) {
+      throw new Error(
+        `Google Calendar events list failed with status ${response.status}`,
+      );
+    }
+    const data = (await response.json()) as CalendarEventsListResponse;
+    for (const item of data.items ?? []) {
+      const event = parseCalendarEvent(item);
+      // Ours, not the staff member's lunch or a personal entry.
+      if (event.extended[EVENT_PROP_EMAIL]) found.push({ staff, event });
+    }
+  }
+
+  found.sort((a, b) => a.event.start.getTime() - b.event.start.getTime());
+  return found;
+}
+
+/**
+ * Record on the event itself that a reminder went out for it, on one channel.
+ *
+ * The whole `private` map is rewritten from the copy the caller just read, plus
+ * the marker: patch semantics on a nested map aren't a merge we want to bet an
+ * event's metadata on, and re-sending what we read is both cheap and exact.
+ * `sendUpdates=none` because this is bookkeeping — the customer must not get a
+ * second calendar notification for a reminder we sent them.
+ */
+export async function markAppointmentReminded(
+  staff: string,
+  eventId: string,
+  existing: Record<string, string>,
+  marker: { key: string; value: string },
+  client: GoogleCalendarClient = getGoogleCalendarClient(),
+): Promise<void> {
+  const calendarEmail = await calendarEmailFor(staff);
+  if (!calendarEmail) {
+    throw new Error(`No calendar is configured for staff member "${staff}"`);
+  }
+
+  const body = {
+    extendedProperties: {
+      private: { ...existing, [marker.key]: marker.value },
+    },
+  };
+  const query = new URLSearchParams({ sendUpdates: "none" });
+  const response = await client.fetch(
+    calendarEmail,
+    `/calendars/${encodeURIComponent(calendarEmail)}/events/${encodeURIComponent(eventId)}?${query}`,
+    { method: "PATCH", body: JSON.stringify(body) },
+  );
+  if (!response.ok) {
+    throw new Error(
+      `Google Calendar reminder marker patch failed with status ${response.status}`,
+    );
+  }
 }
 
 /**

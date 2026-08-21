@@ -117,7 +117,8 @@ function money(amount: number): string {
 // --- The tools ---
 
 /** Milestone reconciliation: the same nightly sweep Vercel Cron runs, on demand.
- * Generation plus the fitting and payment reminder passes. */
+ * Generation plus the fitting, payment, back-in-stock and appointment-reminder
+ * passes. */
 async function runMilestones(): Promise<StudioToolRunResult> {
   const result = await reconcileMilestones();
   const {
@@ -126,6 +127,7 @@ async function runMilestones(): Promise<StudioToolRunResult> {
     remindersSent,
     paymentRemindersSent,
     restockAlertsSent,
+    appointmentRemindersSent,
   } = result;
 
   const details: string[] = [];
@@ -138,12 +140,18 @@ async function runMilestones(): Promise<StudioToolRunResult> {
   if (restockAlertsSent > 0) {
     details.push(`Sent ${plural(restockAlertsSent, "back-in-stock alert")}.`);
   }
+  if (appointmentRemindersSent > 0) {
+    details.push(
+      `Sent ${plural(appointmentRemindersSent, "appointment reminder")}.`,
+    );
+  }
 
   const didSomething =
     milestonesCreated > 0 ||
     remindersSent > 0 ||
     paymentRemindersSent > 0 ||
-    restockAlertsSent > 0;
+    restockAlertsSent > 0 ||
+    appointmentRemindersSent > 0;
 
   return {
     tool: "milestones",

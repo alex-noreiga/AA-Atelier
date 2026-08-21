@@ -47,6 +47,17 @@ function readServiceAccountKey(): ServiceAccountKey {
 }
 
 /**
+ * Whether a Calendar service account is configured at all. Callers that run
+ * unattended (the nightly appointment-reminder sweep) use this to stay quiet on
+ * an install without Google, rather than throwing a configuration error into the
+ * cron's alert mail every night. Request-driven callers don't need it — they'd
+ * rather surface the misconfiguration as a 500.
+ */
+export function googleCalendarConfigured(): boolean {
+  return !!process.env.GOOGLE_SERVICE_ACCOUNT_KEY?.trim();
+}
+
+/**
  * The injectable seam. `fetch` mints a domain-wide-delegation access token for
  * the given staff `subjectEmail` and calls the Calendar API as that user. The
  * repository takes a `GoogleCalendarClient` so unit tests pass a fake without

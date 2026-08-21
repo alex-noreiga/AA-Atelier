@@ -57,6 +57,7 @@ describe("runStudioTool — milestones", () => {
       remindersSent: 1,
       paymentRemindersSent: 2,
       restockAlertsSent: 0,
+      appointmentRemindersSent: 0,
     });
 
     const result = await runStudioTool("milestones");
@@ -79,12 +80,31 @@ describe("runStudioTool — milestones", () => {
       remindersSent: 0,
       paymentRemindersSent: 0,
       restockAlertsSent: 4,
+      appointmentRemindersSent: 0,
     });
 
     const result = await runStudioTool("milestones");
 
     expect(result.status).toBe("ok");
     expect(result.details).toEqual(["Sent 4 back-in-stock alerts."]);
+  });
+
+  // Same reasoning for the appointment reminders: the nightly run also sends
+  // those, so a night whose only work was reminders is still work done.
+  it("counts the appointment reminders as work done", async () => {
+    mockMilestones.mockResolvedValue({
+      ordersProcessed: 0,
+      milestonesCreated: 0,
+      remindersSent: 0,
+      paymentRemindersSent: 0,
+      restockAlertsSent: 0,
+      appointmentRemindersSent: 2,
+    });
+
+    const result = await runStudioTool("milestones");
+
+    expect(result.status).toBe("ok");
+    expect(result.details).toEqual(["Sent 2 appointment reminders."]);
   });
 
   it("is a noop when there was nothing to generate and nothing to send", async () => {
@@ -94,6 +114,7 @@ describe("runStudioTool — milestones", () => {
       remindersSent: 0,
       paymentRemindersSent: 0,
       restockAlertsSent: 0,
+      appointmentRemindersSent: 0,
     });
 
     const result = await runStudioTool("milestones");
@@ -109,6 +130,7 @@ describe("runStudioTool — milestones", () => {
       remindersSent: 2,
       paymentRemindersSent: 0,
       restockAlertsSent: 0,
+      appointmentRemindersSent: 0,
     });
 
     const result = await runStudioTool("milestones");

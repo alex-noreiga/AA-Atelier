@@ -9,6 +9,7 @@
 
 import { reportError } from "./alert.service.js";
 import { notifyRestock } from "./restock-notification.service.js";
+import { notifyUpcomingAppointments } from "./appointment-reminder.service.js";
 import {
   fittingReminderLeadDays,
   fittingReminderStages,
@@ -47,14 +48,16 @@ export interface MilestoneGenerationResult {
   milestonesCreated: number;
 }
 
-/** The full reconciliation result: generation counts, how many fitting reminders
- * were sent, and how many payment (deposit/balance) due reminders were sent.
+/** The full reconciliation result: generation counts, plus what each notification
+ * pass sent — fitting reminders, payment (deposit/balance) due reminders,
+ * back-in-stock alerts, and day-before appointment reminders.
  * (Milestone completion state is now a live Notion formula — `Milestone Status`,
  * derived from the order's stage — so there is no status-sync pass to count.) */
 export interface MilestoneReconcileResult extends MilestoneGenerationResult {
   remindersSent: number;
   paymentRemindersSent: number;
   restockAlertsSent: number;
+  appointmentRemindersSent: number;
 }
 
 /** Format a Date as an ISO calendar date (`yyyy-mm-dd`), in UTC. */
@@ -365,10 +368,38 @@ export async function sendDueRestockAlerts(): Promise<number> {
 }
 
 /**
+ * Remind customers whose appointment is coming up tomorrow.
+ *
+ * Like the passes above this rides the nightly run rather than asking for a cron
+ * of its own: the reminder wants to go out in the small hours of the day before,
+ * which is exactly when this already fires. `notifyUpcomingAppointments` reads
+ * the window from Google Calendar and marks each event it has answered, so this
+ * is only the schedule — it neither decides who is due nor tracks who was told.
+ *
+ * Swallows its own failure (alerting instead) so a Google outage can't fail the
+ * whole reconciliation — the next run retries, and nothing was marked reminded.
+ */
+export async function sendDueAppointmentReminders(
+  now: Date = new Date(),
+): Promise<number> {
+  try {
+    const result = await notifyUpcomingAppointments(now);
+    return result.sent;
+  } catch (err) {
+    await reportError(
+      { err },
+      "Failed to send appointment reminders; will retry next run",
+    );
+    return 0;
+  }
+}
+
+/**
  * The full nightly reconciliation the cron and the dashboard's tool run: generate
  * milestones for orders that just got a due date, then email customers whose
- * fitting is approaching, whose deposit/balance is coming due, and who is waiting
- * on a shop piece that has come back in stock. Milestone completion state needs
+ * fitting is approaching, whose deposit/balance is coming due, who is waiting on
+ * a shop piece that has come back in stock, and who has an appointment tomorrow.
+ * Milestone completion state needs
  * no pass here — it's the live `Milestone Status` Notion formula, derived from
  * the order's stage, so the "Coming Up" calendar reflects real progress on its own.
  */
@@ -379,10 +410,12 @@ export async function reconcileMilestones(
   const remindersSent = await sendDueFittingReminders(now);
   const paymentRemindersSent = await sendDuePaymentReminders(now);
   const restockAlertsSent = await sendDueRestockAlerts();
+  const appointmentRemindersSent = await sendDueAppointmentReminders(now);
   return {
     ...generation,
     remindersSent,
     paymentRemindersSent,
     restockAlertsSent,
+    appointmentRemindersSent,
   };
 }

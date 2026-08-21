@@ -9,6 +9,7 @@
 // - APPOINTMENT_MIN_LEAD_HOURS  how far ahead a slot must be to be bookable.
 // - APPOINTMENT_MAX_ADVANCE_DAYS how far into the future booking is allowed.
 // - APPOINTMENT_SLOT_STEP_MINUTES the grid slots snap to within working hours.
+// - APPOINTMENT_REMINDER_LEAD_DAYS how many days ahead the reminder sweep looks.
 
 import { settingValue } from "../settings/store.js";
 
@@ -16,6 +17,7 @@ const DEFAULT_TIMEZONE = "America/Chicago";
 const DEFAULT_MIN_LEAD_HOURS = 24;
 const DEFAULT_MAX_ADVANCE_DAYS = 45;
 const DEFAULT_SLOT_STEP_MINUTES = 15;
+const DEFAULT_REMINDER_LEAD_DAYS = 1;
 
 export function appointmentTimezone(): string {
   return (
@@ -53,4 +55,20 @@ export function slotStepMinutes(): number {
   return Number.isFinite(minutes) && minutes >= 5
     ? Math.floor(minutes)
     : DEFAULT_SLOT_STEP_MINUTES;
+}
+
+/**
+ * How many local days ahead the appointment-reminder sweep looks. The default of
+ * 1 is the "day before" reminder; 0 would reduce it to same-day only, so anything
+ * below 1 falls back rather than quietly turning the feature into a morning-of
+ * note. Raise it to give customers longer notice.
+ */
+export function reminderLeadDays(): number {
+  const days = Number(
+    settingValue("APPOINTMENT_REMINDER_LEAD_DAYS") ??
+      process.env.APPOINTMENT_REMINDER_LEAD_DAYS,
+  );
+  return Number.isFinite(days) && days >= 1
+    ? Math.floor(days)
+    : DEFAULT_REMINDER_LEAD_DAYS;
 }
