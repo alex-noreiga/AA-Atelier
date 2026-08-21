@@ -60,6 +60,7 @@ import type {
   RescheduleAppointmentRequest,
   ReviewList,
   ReviewStatusRequest,
+  ServiceList,
   ShopOrderStatus,
   StaffAvailabilityEntry,
   StaffAvailabilityList,
@@ -981,6 +982,84 @@ export function useGetColors<TData = Awaited<ReturnType<typeof getColors>>, TErr
  ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
 
   const queryOptions = getGetColorsQueryOptions(options)
+
+  const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
+
+  return withQueryKey(query, queryOptions.queryKey);
+}
+
+
+
+
+
+
+
+export const getGetServicesUrl = () => {
+
+
+
+
+  return `/api/services`
+}
+
+/**
+ * Returns the studio's intake service catalog — bespoke commissions, alterations, rhinestoning, repairs — and, per service, which parts of the order form apply to it: whether it asks for body measurements, whether it offers the colour palette, and the label/prompt for its free-text details field (and whether that field is required). This is the same catalog the server enforces on `POST /orders`, so the form and the gate can't disagree — the counterpart of `GET /appointments/options` surfacing each booking type's gates. It is a code catalog with no configuration behind it, so it always returns a non-empty list.
+ * @summary List the services a custom order can be placed for
+ */
+export const getServices = async ( options?: Parameters<typeof customFetch>[1]): Promise<ServiceList> => {
+
+  return customFetch<ServiceList>(getGetServicesUrl(),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
+
+
+
+
+export const getGetServicesQueryKey = () => {
+    return [
+    `/api/services`
+    ] as const;
+    }
+
+
+export const getGetServicesQueryOptions = <TData = Awaited<ReturnType<typeof getServices>>, TError = ErrorType<ErrorEnvelope>>( options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getServices>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getGetServicesQueryKey();
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof getServices>>> = ({ signal }) => getServices({ signal, ...requestOptions });
+
+
+
+
+
+   return  { queryKey, queryFn, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof getServices>>, TError, TData> & { queryKey: QueryKey }
+}
+
+export type GetServicesQueryResult = NonNullable<Awaited<ReturnType<typeof getServices>>>
+export type GetServicesQueryError = ErrorType<ErrorEnvelope>
+
+
+/**
+ * @summary List the services a custom order can be placed for
+ */
+
+export function useGetServices<TData = Awaited<ReturnType<typeof getServices>>, TError = ErrorType<ErrorEnvelope>>(
+  options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getServices>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+
+ ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+
+  const queryOptions = getGetServicesQueryOptions(options)
 
   const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
 

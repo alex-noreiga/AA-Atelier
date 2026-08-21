@@ -1,10 +1,15 @@
 import { test, expect } from "./support/test";
-import { mockColors, mockPublishedReviews } from "./support/mock-api";
+import {
+  mockColors,
+  mockPublishedReviews,
+  mockServices,
+} from "./support/mock-api";
 
 // The navbar fetches nothing, and the status page calls the API only on submit.
-// Two endpoints still need stubbing to satisfy the unmocked-/api guard: the home
-// page these specs start from fetches its testimonial strip, and the order form
-// loads its color palette (GET /api/colors) on mount.
+// Three endpoints still need stubbing to satisfy the unmocked-/api guard: the
+// home page these specs start from fetches its testimonial strip, and the order
+// form loads its color palette (GET /api/colors) and its service catalog
+// (GET /api/services) on mount.
 
 test.describe("Navbar", () => {
   test.beforeEach(async ({ page }) => {
@@ -15,6 +20,7 @@ test.describe("Navbar", () => {
     page,
   }) => {
     await mockColors(page);
+    await mockServices(page);
     await page.goto("/");
 
     await expect(page.getByTestId("nav-place-an-order")).toBeHidden();

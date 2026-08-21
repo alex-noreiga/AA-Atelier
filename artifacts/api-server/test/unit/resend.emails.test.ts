@@ -106,7 +106,9 @@ describe("orderConfirmationEmail", () => {
       "Measurements: waist 28, chest 36, hips 38, height 65, girth 32 (inches)",
     );
     expect(email.text).toContain("Colors: Emerald");
-    expect(email.text).toContain("Notes: Ivory chiffon, long sleeves.");
+    // The free-text row is labelled by the service that asked for it.
+    expect(email.text).toContain("Service: Bespoke Commission");
+    expect(email.text).toContain("Description: Ivory chiffon, long sleeves.");
     expect(email.text).toContain("Reference images: 2 uploaded");
     expect(email.text).toContain("Needed by: 2026-09-01");
     expect(email.text).toContain("Rush order: Yes");
@@ -127,6 +129,49 @@ describe("orderConfirmationEmail", () => {
       "Measurements: to be taken at a fitting or consultation appointment",
     );
     expect(email.text).not.toContain("undefined");
+  });
+});
+
+describe("order emails per service", () => {
+  const repair = {
+    ...createOrderInput({
+      service: "repairs",
+      description: "Lost stones on the left shoulder",
+    }),
+    waist: undefined,
+    bust: undefined,
+    hips: undefined,
+    height: undefined,
+    bodyGirth: undefined,
+    measurementUnit: undefined,
+  };
+
+  it("drops the measurements row for a service that never asked", () => {
+    const email = orderConfirmationEmail(repair, "000003");
+
+    // Neither five blanks nor a promise of a fitting nobody arranged.
+    expect(email.text).not.toContain("Measurements:");
+    expect(email.text).not.toContain("undefined");
+    expect(email.text).toContain("Service: Repairs & Restoration");
+    expect(email.text).toContain(
+      "The piece and what needs repairing: Lost stones on the left shoulder",
+    );
+  });
+
+  it("opens with the service's own words, not a commission's", () => {
+    expect(orderConfirmationEmail(repair, "000003").text).toContain(
+      "We've received your repair request",
+    );
+    expect(orderConfirmationEmail(createOrderInput(), "000002").text).toContain(
+      "from measurements to finished garment",
+    );
+  });
+
+  it("carries the same rows into the atelier notification", () => {
+    const email = orderNotificationEmail(repair, "000003", INBOX);
+
+    expect(email.text).toContain("Service: Repairs & Restoration");
+    expect(email.text).not.toContain("Measurements:");
   });
 });
 
@@ -240,7 +285,7 @@ describe("orderNotificationEmail", () => {
     expect(email.text).toContain(
       "Colors, as you'd like them used: Emerald bodice with a blush skirt.",
     );
-    expect(email.text).toContain("Notes: Ivory chiffon, long sleeves.");
+    expect(email.text).toContain("Description: Ivory chiffon, long sleeves.");
     expect(email.text).toContain("Needed by: 2026-09-01");
     expect(email.text).toContain("Rush order: Yes");
     expect(email.text).toContain("Referral code: AA-ABC123");

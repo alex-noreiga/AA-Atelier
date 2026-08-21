@@ -17,6 +17,9 @@ vi.mock("@workspace/api-client-react", () => ({
   }),
   useSubscribeNewsletter: () => ({ mutate: vi.fn(), isPending: false }),
   useGetColors: () => ({ data: undefined }),
+  // No catalog: the form falls back to the bespoke shape, which is the one that
+  // reaches the fitting/consultation offers this file is about.
+  useGetServices: () => ({ data: undefined }),
 }));
 
 import OrderForm from "@/pages/order-form";
@@ -48,7 +51,7 @@ async function fillMeasurements(user: ReturnType<typeof userEvent.setup>) {
 // (timeline) step, so skip past the two optional steps first.
 async function continueToSubmit(user: ReturnType<typeof userEvent.setup>) {
   await user.click(
-    screen.getByRole("button", { name: /continue to your design/i }),
+    screen.getByRole("button", { name: /continue to your piece/i }),
   );
   await user.click(
     await screen.findByRole("button", { name: /continue to timeline/i }),

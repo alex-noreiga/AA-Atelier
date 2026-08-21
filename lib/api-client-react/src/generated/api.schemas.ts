@@ -147,6 +147,8 @@ export interface NewOrderRequest {
   /** @minLength 1 */
   phone: string;
   preferredContact: NewOrderRequestPreferredContact;
+  /** The id of the service being ordered, from the live `GET /services` catalog (a bespoke commission, alterations, rhinestoning, repairs). It decides which of the fields below apply and which the server requires: only a service whose catalog entry asks for measurements requires them (or a measurement appointment), and a service performed on a piece the customer already owns requires a `description`. Optional — an omitted or unknown id is treated as a bespoke commission, so a client that predates the catalog behaves exactly as before. */
+  service?: string;
   /** @minimum 0 */
   waist?: number;
   /** @minimum 0 */
@@ -160,6 +162,7 @@ export interface NewOrderRequest {
   measurementUnit?: NewOrderRequestMeasurementUnit;
   /** True when the customer opted to have their measurements taken at a scheduled fitting or consultation instead of entering them now. When true the measurement fields are omitted. */
   measurementAppointment?: boolean;
+  /** Free text about the piece. For a bespoke commission these are optional design notes; for a service performed on a garment the customer already owns (alterations, rhinestoning, repairs) it is the brief — what the piece is and what needs doing — and the server requires it (see `service`). */
   description?: string;
   neededBy?: string;
   /** True when the customer confirmed a rush order — a neededBy date inside the studio's rush window, acknowledged with the disclosed surcharge. Recorded on the Notion order (a "Rush Order" checkbox + a page note) so the atelier prices the rush surcharge into the invoice; the app does not compute the fee itself. Optional; omitted for standard-timeline orders. */
@@ -519,6 +522,33 @@ export interface Color {
 export interface ColorList {
   /** The studio's intake color palette — the atelier-editable `COLOR_PALETTE` Studio Settings value, or a built-in primary-color palette when unset. Always non-empty. */
   colors: Color[];
+}
+
+/**
+ * One service a custom order can be placed for, with the rules that decide what the intake form asks for. The flags are the contract's half of a targeted business rule held in server code (like the appointment-type catalog): the same definitions gate `POST /orders`.
+ */
+export interface Service {
+  /** Stable id, sent back as `service` on a new order. */
+  id: string;
+  /** Display name, e.g. "Fittings & Alterations". */
+  name: string;
+  /** One line describing the service, shown on the picker. */
+  summary: string;
+  /** Whether this service asks for the five body measurements. When false the form omits them entirely and the server does not require values (nor a measurement appointment) — only a garment made from scratch needs them. */
+  measurements: boolean;
+  /** Whether this service offers the studio colour palette and the "how would you like these used" note. */
+  colors: boolean;
+  /** Whether the order's free-text `description` is required. True for the services performed on a piece the customer already owns, where that description IS the brief; false for a bespoke commission, whose design notes are optional. */
+  detailsRequired: boolean;
+  /** Field label for `description` on this service's form. */
+  detailsLabel: string;
+  /** Placeholder / prompt for `description` on this service's form. */
+  detailsHelp: string;
+}
+
+export interface ServiceList {
+  /** The intake service catalog, in the order the form should offer it. Always non-empty; the first entry is the default when a new order names no service. */
+  services: Service[];
 }
 
 export interface CheckoutItem {

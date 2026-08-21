@@ -32,6 +32,7 @@ import type {
   NewReviewRequest,
   OrderStatus,
   ProductList,
+  ServiceList,
 } from "@workspace/api-zod";
 
 // Re-export the generated contract types the e2e mock helpers type against, so
@@ -209,6 +210,41 @@ export function colorList(overrides: Partial<ColorList> = {}): ColorList {
     colors: [
       { id: "ivory", name: "Ivory", hex: "#F3ECE2" },
       { id: "emerald", name: "Emerald", hex: "#0B6E4F" },
+    ],
+    ...overrides,
+  };
+}
+
+/**
+ * The `GET /api/services` catalog — the studio's intake services and, per
+ * service, what the order form asks for. Trimmed to two entries that differ in
+ * every flag (a commission that needs measurements and colours but no brief; a
+ * repair that needs the brief and neither of the others), which is what the
+ * order form's branching actually turns on.
+ */
+export function serviceList(overrides: Partial<ServiceList> = {}): ServiceList {
+  return {
+    services: [
+      {
+        id: "bespoke",
+        name: "Bespoke Commission",
+        summary: "A costume designed and made for you from scratch.",
+        measurements: true,
+        colors: true,
+        detailsRequired: false,
+        detailsLabel: "Description",
+        detailsHelp: "Tell us about your vision...",
+      },
+      {
+        id: "repairs",
+        name: "Repairs & Restoration",
+        summary: "Mending and restoring a costume you love.",
+        measurements: false,
+        colors: false,
+        detailsRequired: true,
+        detailsLabel: "The piece and what needs repairing",
+        detailsHelp: "Tell us what's happened to it...",
+      },
     ],
     ...overrides,
   };

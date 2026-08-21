@@ -151,6 +151,15 @@ Express app (artifacts/api-server)  ──►  Notion REST API (orders database)
   │                                  `COLOR_PALETTE` Studio Settings value, falling
   │                                  back to a built-in primary palette, so it's
   │                                  always non-empty. No dedicated Notion database
+  ├─ GET  /api/services            → the intake service catalog (bespoke commissions,
+  │                                  alterations, rhinestoning, repairs) and, per
+  │                                  service, what the order form asks for: body
+  │                                  measurements, the colour palette, and the
+  │                                  label/prompt for its free-text brief (and
+  │                                  whether it's required). A code catalog, served
+  │                                  rather than duplicated so the form and the
+  │                                  `POST /orders` gate can't disagree — the
+  │                                  counterpart of `/appointments/options`
   ├─ GET  /api/reviews             → the curated testimonials the marketing pages
   │                                  show, from the Notion "Reviews" database.
   │                                  Anonymous + read-only: only rows the atelier
@@ -1357,6 +1366,82 @@ Code: `openapi.yaml` (`/colors` + `Color`/`ColorList` + `colors`/`colorUsage` on
 `NewOrderRequest`), `services/colors.ts` + `routes/colors.ts`, `orders.{schema,blocks}.ts`
 (write-back), and `web-app/src/components/color-picker.tsx` + `pages/order-form.tsx`.
 
+## An order form per service
+
+The Services page advertises four services — **bespoke commissions**, **fittings &
+alterations**, **rhinestoning & embellishment**, **repairs & restoration** — and for a
+long time all four funnelled into one intake that asked every customer for five body
+measurements and a colour palette. The service is now picked on the intake's **first
+step** and decides what the rest of the form asks for, exactly as the appointment
+catalog varies what a booking requires by type. Code:
+`api-server/src/lib/service-catalog.ts` (the catalog), `routes/services.ts`
+(`GET /services`), `enforceServiceGate` in `services/orders.service.ts` (the gate), and
+on the frontend `web-app/src/lib/order-services.ts` + `pages/order-form.tsx` +
+the per-card links on `pages/services.tsx`. Load-bearing decisions:
+
+1. **The catalog is a targeted business rule in code, and it is SERVED rather than
+   duplicated.** Like `lib/appointments/catalog.ts` (and `STATUS_IN_STOCK` /
+   `MEASUREMENT_LOCK_FROM_STAGE`), it is code, not a live Notion read — each entry's
+   flags drive slot-like decisions coupled to the form and the server. But both sides
+   need it: the form decides which sections to render, and `POST /orders` decides what
+   to require. So `GET /services` (contract-first, `useGetServices`) serves the one
+   definition, the way `GET /appointments/options` surfaces each booking type's
+   `requiresOrder` / `requiresProjectDetails`. A repair the form stops asking
+   measurements for is a repair the server stops requiring them from, because there is
+   only one place that says so. The ids (`bespoke`, `alterations`, `rhinestoning`,
+   `repairs`) are what deep links and stored orders carry, so renaming one is breaking;
+   renaming a `name` is not.
+
+2. **Two flags are gates, mirroring `enforceBookingGate`.** `measurements` decides
+   whether the five body measurements are asked for at all — **only a bespoke
+   commission sets it**, because an alteration, a stoning job, or a repair is measured
+   on the piece itself, in person. `detailsRequired` makes the order's existing
+   free-text `description` **required** for the three services worked on a garment the
+   customer already owns, where that text _is_ the brief; a commission's design notes
+   stay optional (the design is settled at consultation). It deliberately **reuses
+   `description`** rather than adding a field: same Notion property, same email row,
+   nothing to keep in step — only the label, prompt, and requiredness vary, and those
+   come from the catalog entry (`detailsLabel` / `detailsHelp`).
+
+3. **An absent or unknown `service` resolves to the bespoke commission.**
+   `NewOrderRequest.service` is **optional** in the contract, and `resolveOrderService`
+   falls back to the first catalog entry — so a client that predates the catalog, or a
+   deep link naming a service since retired, keeps the widest form and the exact gate
+   it always had rather than silently losing one. The frontend fallback is the same
+   shape (`SERVICE_FALLBACK` in `lib/order-services.ts`): while `GET /services` is in
+   flight, or if it errors, the picker is hidden, nothing is required of it, and the
+   form is the full commission intake it was before services existed. Degrading to the
+   _widest_ form is the safe direction — a customer is never blocked behind a choice
+   the page can't offer, and never has a gate quietly dropped.
+
+4. **The catalog also owns the atelier- and customer-facing wording — server-side
+   only.** `orderLabel` names the piece in the Notion page title (`Ada – Repair`, and
+   still `Ada – Custom Costume` for a commission) and `emailIntro` is the confirmation
+   email's opening line, because "the journey from measurements to finished garment"
+   is nonsense for a repair. Neither is on the contract: `getServiceOptions()` strips
+   them, so the form is served only what it renders.
+
+5. **The order records which service it is.** `buildOrderProperties` writes a
+   **`Service` select** (`ORDER_SERVICE_PROPERTY`) plus a page-body line, so the
+   atelier can filter the pipeline by the kind of work — and, crucially, tell an order
+   with no measurements apart from an incomplete one. Write-only: the app never reads
+   it back, because the **catalog**, not the order, is the authority on what a service
+   needs. Missing property ⇒ dropped by `createPageDroppingUnknownProperties` with a
+   pointed warn, like every other additive intake property. The emails carry a
+   `Service` row and **omit the measurements row entirely** for a service that never
+   asked, rather than printing blanks or promising a fitting nobody arranged.
+
+6. **Each Services-page card starts its own intake.** `/order?service=<id>` preselects
+   the service once the catalog loads, mirroring `/appointments?type=<id>`; an
+   unrecognized id lands the customer on the picker rather than on a silently wrong
+   form. This is what closes the roadmap card's actual complaint — three of the four
+   advertised services had no intake that fitted them.
+
+**Atelier setup (optional, additive):** add a **`Service`** (select) property to the
+**Order Tracking Pipeline** database. Notion auto-creates the options on first write;
+until the property exists the field is dropped and the value still appears in the page
+body. Nothing else — no env var, and the catalog is a deploy-time change.
+
 ## What the intake records (order form -> Notion + email parity)
 
 Everything the three-step intake asks for reaches all three destinations: the
@@ -1368,18 +1453,21 @@ four places. Three things keep them in step:
 
 1. **One shared field list backs both emails.** `orderDetailFields`
    (`lib/resend/emails.ts`) maps a `CreateOrderInput` to the label/value rows for
-   the piece itself — measurements, colors, colour usage, notes, reference-image
-   count, needed-by, rush, referral code — and **both** `orderConfirmationEmail`
+   the piece itself — the service, measurements, colors, colour usage, the brief,
+   reference-image count, needed-by, rush, referral code — and **both** `orderConfirmationEmail`
    and `orderNotificationEmail` render it. The notification prepends the contact
    rows; the confirmation wraps it in "Here's what we have on file" and invites a
    reply to correct it. A field added to the intake is added once, here. Every row
    but the measurements is omitted when blank, so neither email renders an empty
    label.
 
-2. **Measurements are one of two states, never blanks.** The intake offers either
-   the five values or "take them at an appointment" (`submitOrder` rejects a body
-   with neither), so `measurementsLine` renders the appointment note rather than
-   the five `undefined`s the notification email used to print for those orders.
+2. **Measurements are one of two states, never blanks — or absent entirely.** For a
+   service that asks for them, the intake offers either the five values or "take them
+   at an appointment" (`submitOrder` rejects a body with neither), so
+   `measurementsLine` renders the appointment note rather than the five `undefined`s
+   the notification email used to print for those orders. For a service that doesn't
+   (alterations, rhinestoning, repairs — see "An order form per service"), the row is
+   omitted from both emails and the section from the Notion page body.
 
 3. **A property the atelier hasn't added yet degrades; it doesn't fail intake.**
    Notion rejects a page create that names a property the database lacks — the
@@ -1395,7 +1483,7 @@ four places. Three things keep them in step:
 **Atelier setup (optional, additive).** The write-back properties on **Order
 Tracking Pipeline**, beyond the ones the earlier sections list (`Due Date`,
 `Rush Order`, the five measurement numbers + `Measurement Unit`, `Colors`,
-`Color Usage`): **`Preferred Contact`** (select — `email` / `phone` / `text`),
+`Color Usage`, `Service`): **`Preferred Contact`** (select — `email` / `phone` / `text`),
 **`Measurement Appointment`** (checkbox — the orders still waiting to be measured,
 so they can be a view), and **`Referral Code`** (rich_text — what the customer
 typed, kept even when it resolved to nothing; the reward engine's own state lives
@@ -3041,6 +3129,7 @@ full detail in `.agents/memory/phase2-workspace-crm-archive-markers.md`.
 | Add request validation / error mapping                   | `artifacts/api-server/src/middlewares/*`                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                      |
 | Change the order-tracking UI (custom + shop)             | `artifacts/web-app/src/pages/track.tsx` (unified lookup) + `components/custom-order-result.tsx` + `components/shop-order-result.tsx`                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                          |
 | Change the order intake form                             | `artifacts/web-app/src/pages/order-form.tsx` — then carry the new field through to Notion + both emails (see "What the intake records"): `lib/notion/orders.{schema,blocks}.ts` for the property + page-body write, and `orderDetailFields` in `lib/resend/emails.ts` for both emails at once                                                                                                                                                                                                                                                                                                                                                                                                 |
+| Change which service an order can be placed for          | `api-server/src/lib/service-catalog.ts` (the catalog + its gates) + `routes/services.ts` (`GET /services`) + `enforceServiceGate` in `services/orders.service.ts`; frontend `web-app/src/lib/order-services.ts` (the fallback + deep-link resolution) + the picker and conditional sections in `pages/order-form.tsx` + the per-card links in `pages/services.tsx`; write-back via `ORDER_SERVICE_PROPERTY` in `lib/notion/orders.{schema,blocks}.ts` and the `Service` row in `orderDetailFields` (`lib/resend/emails.ts`)                                                                                                                                                                   |
 | Change the color selector (intake)                       | `artifacts/web-app/src/components/color-picker.tsx` + `pages/order-form.tsx` (frontend, step 2 of the three-step flow); `api-server/src/services/colors.ts` (`intakeColorPalette`/`parseColorPalette` + the built-in default) + `routes/colors.ts` (`GET /api/colors`, the `COLOR_PALETTE` Studio Settings value); `lib/notion/orders.{schema,blocks}.ts` (write-back to the order's `Colors` + `Color Usage`)                                                                                                                                                                                                                                                                                |
 | Change the rush order surcharge                          | `artifacts/web-app/src/lib/rush.ts` (window + disclosure) + `pages/order-form.tsx` (detect/acknowledge/send); `api-server/src/lib/notion/orders.blocks.ts` + `orders.schema.ts` (`Rush Order` record); `api-server/src/services/rush.ts` + `services/invoice-generator.service.ts` (server-priced "Surcharge" line); `web-app/src/lib/invoice-format.ts` ("Surcharge" line display)                                                                                                                                                                                                                                                                                                           |
 | Change referral & returning-skater rewards               | `api-server/src/services/rewards.service.ts` (engine + amount getters) + `lib/stripe/promotions.ts` (`createDiscountCode`) + `lib/notion/clients.repository.ts` (reward reads + `patchClientProperties`); wired from `submitOrder` (capture) + `recordPaidOrder` / `recordPayment` (issue); reward emails in `lib/resend/emails.ts`; `services/account.service.ts` + `web-app/src/pages/account.tsx` (referral card) + `pages/order-form.tsx` (`referralCode` field)                                                                                                                                                                                                                          |

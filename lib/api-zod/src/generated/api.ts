@@ -85,6 +85,7 @@ export const CreateOrderBody = zod.object({
   "email": zod.string().email(),
   "phone": zod.string().min(1),
   "preferredContact": zod.enum(['email', 'phone', 'text']),
+  "service": zod.string().optional().describe('The id of the service being ordered, from the live `GET \/services` catalog (a bespoke commission, alterations, rhinestoning, repairs). It decides which of the fields below apply and which the server requires: only a service whose catalog entry asks for measurements requires them (or a measurement appointment), and a service performed on a piece the customer already owns requires a `description`. Optional — an omitted or unknown id is treated as a bespoke commission, so a client that predates the catalog behaves exactly as before.'),
   "waist": zod.number().min(createOrderBodyWaistMin).optional(),
   "bust": zod.number().min(createOrderBodyBustMin).optional(),
   "hips": zod.number().min(createOrderBodyHipsMin).optional(),
@@ -92,7 +93,7 @@ export const CreateOrderBody = zod.object({
   "bodyGirth": zod.number().min(createOrderBodyBodyGirthMin).optional(),
   "measurementUnit": zod.enum(['inches', 'cm']).optional(),
   "measurementAppointment": zod.boolean().optional().describe('True when the customer opted to have their measurements taken at a scheduled fitting or consultation instead of entering them now. When true the measurement fields are omitted.'),
-  "description": zod.string().optional(),
+  "description": zod.string().optional().describe('Free text about the piece. For a bespoke commission these are optional design notes; for a service performed on a garment the customer already owns (alterations, rhinestoning, repairs) it is the brief — what the piece is and what needs doing — and the server requires it (see `service`).'),
   "neededBy": zod.coerce.date().optional(),
   "rush": zod.boolean().optional().describe('True when the customer confirmed a rush order — a neededBy date inside the studio\'s rush window, acknowledged with the disclosed surcharge. Recorded on the Notion order (a \"Rush Order\" checkbox + a page note) so the atelier prices the rush surcharge into the invoice; the app does not compute the fee itself. Optional; omitted for standard-timeline orders.'),
   "referenceImageIds": zod.array(zod.string()).optional().describe('Notion file_upload ids for customer-supplied reference \/ inspiration images, each obtained by first POSTing the image bytes to POST \/orders\/reference-images (a binary endpoint outside this contract, mounted like the Stripe webhook). They are attached to the order\'s Notion page as image blocks. Optional; omitted when the customer uploaded none.'),
@@ -315,6 +316,24 @@ export const GetColorsResponse = zod.object({
   "name": zod.string(),
   "hex": zod.string().describe('Hex color fill for the chip, e.g. \"#2E5CB8\".')
 })).describe('The studio\'s intake color palette — the atelier-editable `COLOR_PALETTE` Studio Settings value, or a built-in primary-color palette when unset. Always non-empty.')
+})
+
+
+/**
+ * Returns the studio's intake service catalog — bespoke commissions, alterations, rhinestoning, repairs — and, per service, which parts of the order form apply to it: whether it asks for body measurements, whether it offers the colour palette, and the label/prompt for its free-text details field (and whether that field is required). This is the same catalog the server enforces on `POST /orders`, so the form and the gate can't disagree — the counterpart of `GET /appointments/options` surfacing each booking type's gates. It is a code catalog with no configuration behind it, so it always returns a non-empty list.
+ * @summary List the services a custom order can be placed for
+ */
+export const GetServicesResponse = zod.object({
+  "services": zod.array(zod.object({
+  "id": zod.string().describe('Stable id, sent back as `service` on a new order.'),
+  "name": zod.string().describe('Display name, e.g. \"Fittings & Alterations\".'),
+  "summary": zod.string().describe('One line describing the service, shown on the picker.'),
+  "measurements": zod.boolean().describe('Whether this service asks for the five body measurements. When false the form omits them entirely and the server does not require values (nor a measurement appointment) — only a garment made from scratch needs them.'),
+  "colors": zod.boolean().describe('Whether this service offers the studio colour palette and the \"how would you like these used\" note.'),
+  "detailsRequired": zod.boolean().describe('Whether the order\'s free-text `description` is required. True for the services performed on a piece the customer already owns, where that description IS the brief; false for a bespoke commission, whose design notes are optional.'),
+  "detailsLabel": zod.string().describe('Field label for `description` on this service\'s form.'),
+  "detailsHelp": zod.string().describe('Placeholder \/ prompt for `description` on this service\'s form.')
+}).describe('One service a custom order can be placed for, with the rules that decide what the intake form asks for. The flags are the contract\'s half of a targeted business rule held in server code (like the appointment-type catalog): the same definitions gate `POST \/orders`.')).describe('The intake service catalog, in the order the form should offer it. Always non-empty; the first entry is the default when a new order names no service.')
 })
 
 

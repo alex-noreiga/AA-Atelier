@@ -38,7 +38,9 @@ test.describe("Production smoke: site navigation", () => {
     { path: "/about", testId: "story-section", name: "About" },
     { path: "/services", testId: "cta-begin-commission", name: "Services" },
     { path: "/contact", testId: "submit-contact", name: "Contact" },
-    { path: "/order", testId: "submit-order", name: "Order form" },
+    // The intake is a three-step flow, so the first thing it renders is the
+    // step-0 continue button — "submit-order" only exists on the last step.
+    { path: "/order", testId: "continue-to-design", name: "Order form" },
     { path: "/appointments", testId: "step-purpose", name: "Appointments" },
     // Legal / policy pages (consent + terms live here) — heading-based, since
     // the shared LegalPage shell carries no testid.
