@@ -2609,9 +2609,13 @@ nonexistent number (the real Notion 404 path), and client-side form validation, 
 **never** creating an order/checkout/booking/contact message or sending an email, so it is
 safe to run against production forever.
 
-It runs **weekly** (not on every push) via `.github/workflows/smoke.yml` (`schedule` cron
+It runs **daily** at 13:00 UTC (not on every push) via `.github/workflows/smoke.yml`
+(`schedule` cron
 
-- `workflow_dispatch`); after every scheduled run it **emails a pass/fail report**
+- `workflow_dispatch`) — daily rather than weekly because the suite is read-only, so
+  running it often is free and it cuts worst-case detection latency for a production
+  break from ~7 days to ~1. The summary **email** is still weekly (Mondays), plus
+  immediately on any failure; after those runs it **emails a pass/fail report**
   (`tests/scripts/email-smoke-report.mjs`, through the app's Resend mailer — needs the
   `RESEND_API_KEY` + `RESEND_FROM_EMAIL` repo secrets, recipient `SMOKE_REPORT_TO`
   defaulting to the atelier inbox; the script self-gates and never fails the job if Resend

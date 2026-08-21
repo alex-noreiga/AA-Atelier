@@ -3,10 +3,15 @@ import { test, expect } from "@playwright/test";
 // The DEEP appointment smoke: unlike `appointments.smoke.ts` (which only proves
 // the static `/api/appointments/options` catalog rendered), this exercises
 // `GET /api/appointments/availability` — the endpoint that actually reads each
-// staff member's Google Calendar free/busy AND the working-hours database.
-// That's exactly where a Google outage, an expired/mis-scoped service-account
-// key, an unshared Notion database, or a lapsed domain-wide delegation surfaces,
-// and none of the other specs touch it.
+// staff member's Google Calendar free/busy AND the standing working hours. That
+// is exactly where a Google outage, an expired or mis-scoped service-account
+// key, a lapsed domain-wide delegation, or an unreachable Postgres surfaces, and
+// none of the other specs touch it.
+//
+// Note the working hours have moved twice — a Google Sheet, then a Notion
+// database, now the `staff_availability` Postgres table edited on /studio — and
+// booking HARD-REQUIRES that table (it is the one store in lib/db/ with no
+// fallback). So a failure here points at Google or Postgres, not at Notion.
 //
 // Driven through the API request context (no browser) rather than the fragile
 // four-step booking UI, and strictly READ-ONLY: it lists open times but never
@@ -33,8 +38,8 @@ test.describe("Production smoke: appointment availability", () => {
     const location = type.locations[0];
     expect(location).toBeTruthy();
 
-    // The real availability computation: config working hours (Sheet) minus
-    // Google Calendar free/busy. A 200 with a slots array means both external
+    // The real availability computation: the standing working hours (Postgres)
+    // minus Google Calendar free/busy. A 200 with a slots array means both
     // reads succeeded end to end.
     const availRes = await request.get("/api/appointments/availability", {
       params: { typeId: type.id, location },
