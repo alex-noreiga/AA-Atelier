@@ -107,11 +107,9 @@ export function StudioMaterials() {
         </div>
       )}
 
-      {data?.configured && (
+      {data?.configured && data.suppressedCount > 0 && (
         <p className="mt-2 text-xs text-muted-foreground/80 font-light">
-          Read from materials inventory in Notion — set a Minimum Stock on a
-          material to watch it, or tick its restock-alerts checkbox to mute it.
-          {data.suppressedCount > 0 ? ` ${data.suppressedCount} muted.` : ""}
+          {data.suppressedCount} muted.
         </p>
       )}
     </section>
