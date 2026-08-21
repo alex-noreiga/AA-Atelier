@@ -20,21 +20,36 @@ double-charge trap the generator exists to avoid.
 
 ## What was built
 
-`GET /api/studio/guides` — contract-first, behind the same `requireStaff` gate
-as the rest of the studio surface. Each row of a Notion **"Studio Guides"**
-database carries an uploaded HTML file and a `Section`; the dashboard renders
-the file in a sandboxed frame beside whatever that section names.
+Two contract-first reads, behind the same `requireStaff` gate as the rest of the
+studio surface. Each row of a Notion **"Studio Guides"** database carries an
+uploaded HTML file and a `Section`; the dashboard renders the file in a
+sandboxed frame beside whatever that section names.
 
-| Piece                         | File                                       |
-| ----------------------------- | ------------------------------------------ |
-| Section vocabulary + resolver | `api-server/src/lib/guide-sections.ts`     |
-| Notion read-side mapping      | `lib/notion/guides.schema.ts`              |
-| Row query + file download     | `lib/notion/guides.repository.ts`          |
-| Assembly, cache, HTML check   | `services/studio-guides.service.ts`        |
-| Route                         | `routes/studio.ts`                         |
-| Panel + per-section slots     | `web-app/src/components/studio-guides.tsx` |
+- `GET /api/studio/guides` — what the guides are and where they go. No content.
+- `GET /api/studio/guides/{guideId}` — one guide's markup, fetched on open.
+
+| Piece                          | File                                       |
+| ------------------------------ | ------------------------------------------ |
+| Section vocabulary + resolver  | `api-server/src/lib/guide-sections.ts`     |
+| Notion read-side mapping       | `lib/notion/guides.schema.ts`              |
+| Row queries + bounded download | `lib/notion/guides.repository.ts`          |
+| Assembly, cache, renderability | `services/studio-guides.service.ts`        |
+| Routes                         | `routes/studio.ts`                         |
+| Panel + per-section slots      | `web-app/src/components/studio-guides.tsx` |
 
 ## Load-bearing decisions
+
+0. **Listing and content are separate operations — this was a correction.** The
+   first cut inlined every guide's markup into the listing, so the dashboard
+   downloaded the studio's entire manual on every load in order to render a
+   column of collapsed one-line summaries. Three problems, one cause: the
+   response had a per-file cap but no aggregate one, so about nine
+   screenshot-heavy guides would pass Vercel's ~4.5 MB payload limit and **500
+   the endpoint** — taking the small guides down with the large ones, with no
+   partial degradation; a dashboard left open re-downloaded the lot on refocus;
+   and one hung storage connection stalled a page nobody had asked to read a
+   guide on. Fetching per guide on open fixes all three, and makes the per-file
+   cap the only cap needed. Don't merge them back.
 
 1. **The app stores no guide content, and has no editor.** A guide is a file
    attached to a Notion row; revising it is replacing the file. That is the
@@ -80,35 +95,66 @@ the file in a sandboxed frame beside whatever that section names.
    no guide is filed against it, because the accepted values are otherwise only
    discoverable by reading `lib/guide-sections.ts`.
 
-6. **A guide is never dropped, only explained.** No file yet, a PDF filed as a
-   guide, an oversized file, a failed download — each is returned with
-   `unavailable` saying which, and listed. Same reasoning as the materials
-   panel's untracked list: a guide that appears nowhere and raises nothing
-   reads exactly like one nobody wrote.
+6. **A guide is never dropped, only explained.** No file yet, a pasted link
+   where an upload was needed, a PDF filed as a guide, an oversized file, a
+   failed download — each is reported with `unavailable` saying which, and
+   listed. Same reasoning as the materials panel's untracked list: a guide that
+   appears nowhere and raises nothing reads exactly like one nobody wrote. The
+   three reasons visible without a download are decided in the **listing**
+   (`staticUnavailability`, shared by both halves so they can't disagree), so a
+   broken guide reads as broken before anyone opens it and is never requested.
 
-7. **The size cap is a response cap.** The markup is returned inline in JSON
-   from a serverless function, so an unbounded attachment is an unbounded
-   response. `MAX_GUIDE_BYTES` is 512 KB, checked against `Content-Length`
-   first (so an oversized file is refused without being pulled down) and again
-   on what arrived (because a chunked response declares no length). An over-cap
-   guide is reported, never truncated — half a procedure that stops mid-sentence
-   is worse than one that says why it isn't here.
+7. **The download is bounded three ways.** `MAX_GUIDE_BYTES` is 2 MB — sized for
+   the guide the atelier will actually write, an HTML export with its
+   screenshots base64-inlined — checked against `Content-Length` first (so an
+   oversized file is refused without being pulled down) **and as the body
+   streams**. The stream check is the load-bearing one: `arrayBuffer()` then
+   measure is an unbounded read wearing a cap, since a 300 MB file served
+   without a declared length is fully materialized before rejection. There is
+   also a 10s `AbortSignal`, because a hung storage connection would otherwise
+   hold a worker until the platform kills the function — turning a slow file
+   into a 500. Every other outbound read here that can hang carries an explicit
+   bound (`lib/google/retry.ts`); this is that bound. An over-cap guide is
+   reported, never truncated: half a procedure that stops mid-sentence is worse
+   than one that says why it isn't here.
 
-8. **HTML is decided on the file NAME.** Notion's storage host serves
+8. **Only an UPLOAD is fetched, never a pasted link.** A Notion `files` property
+   holds either; the review-photo reader accepts both and this must not. The
+   server returns what it downloads, so accepting `external` would let anyone
+   with **edit access to the guides database** — a Notion permission, not
+   membership of `STUDIO_STAFF_EMAILS` — aim a server-side GET at an address of
+   their choosing and read the answer on the dashboard. The two groups mostly
+   overlap; "mostly" is not a security boundary. `GuideAttachment` is a
+   discriminated union, so the fetchable URL exists only on the `upload` variant
+   and the compiler is what enforces it; a pasted link is reported as
+   `not-uploaded` rather than silently ignored, and its URL never leaves
+   `guides.schema.ts`.
+
+9. **HTML is decided on the file NAME.** Notion's storage host serves
    everything as a generic binary type, so there is no content type to trust. A
    `.pdf` would decode to mojibake and render as a page of noise; it is reported
    as `not-html` so the atelier can see it needs converting.
 
-9. **The signed URL never leaves the server.** Notion file URLs expire in about
-   an hour (same as the review photos). Handing one to the browser would mean a
-   cached response rotting into a dead link, and a credential-bearing URL on the
-   page. The server downloads the markup and serves that.
+10. **The signed URL never leaves the server.** Notion file URLs expire in about
+    an hour (same as the review photos). Handing one to the browser would mean a
+    cached response rotting into a dead link, and a credential-bearing URL on
+    the page. The server downloads the markup and serves that — and re-reads the
+    row on open rather than trusting a listing whose URLs may have expired
+    since.
 
-10. **Cached whole, for 60s.** Each guide costs a download on top of the Notion
-    query, so the assembled result is cached rather than the rows — which is
-    also how long after replacing a file the dashboard takes to show it. A later
-    read that fails falls back to the cached result: stale guides are still the
-    right procedures.
+11. **The listing is cached 60s; markup is not.** The listing is one Notion
+    query, cached like every other live read here — which is also how long after
+    editing a row the dashboard takes to show it — falling back to the cached
+    result on a later failure, because stale guides are still the right
+    procedures. Markup is fetched on demand and held by the browser's query
+    cache while the guide is open, so replacing a file shows on the next open.
+
+12. **An unreachable database reads as "not connected", not as an error.** The
+    id set but the integration never shared 404s every query. Left as a throw
+    that is a permanent 500 **plus an alert email on every dashboard load** —
+    for the single likeliest setup mistake, and one whose fix the "not
+    connected" copy already names. So a Notion 404 degrades to exactly what an
+    unset id gets, with a pointed `warn`. Every other failure still surfaces.
 
 ## OUTSTANDING — atelier steps the code can't do
 
@@ -145,7 +191,7 @@ verified as wiring. Two things are worth checking on the first real guide:
 
 - **That the attachment downloads at all.** The `file.url` a database `files`
   property returns is signed for the integration; the download is a plain
-  `fetch` with no Notion credential on it. If it 403s, every guide shows as
+  `fetch` with no Notion credential on it. If it 403s, an opened guide shows as
   `unreadable` and the `warn` in `studio-guides.service.ts` names which.
 - **That a real guide renders legibly in the frame.** The frame is a fixed
   60vh with its own scrollbar — a sandboxed `srcdoc` document can't be measured

@@ -13,11 +13,32 @@ const h = vi.hoisted(() => ({
     isError: false,
     error: null as unknown,
   },
+  content: {
+    data: undefined as unknown,
+    isLoading: false,
+    isError: false,
+    error: null as unknown,
+  },
+  /** What the content hook was asked for, and whether it was enabled — "did
+   * opening this guide actually fetch anything?" is the behaviour under test,
+   * not just what rendered. */
+  contentCalls: [] as Array<{ id: string; enabled: boolean }>,
 }));
 
 vi.mock("@workspace/api-client-react", () => ({
   useGetStudioGuides: () => h.guides,
   getGetStudioGuidesQueryKey: () => ["/api/studio/guides"],
+  useGetStudioGuideContent: (
+    id: string,
+    opts?: { query?: { enabled?: boolean } },
+  ) => {
+    const enabled = opts?.query?.enabled !== false;
+    h.contentCalls.push({ id, enabled });
+    return enabled
+      ? h.content
+      : { data: undefined, isLoading: false, isError: false, error: null };
+  },
+  getGetStudioGuideContentQueryKey: (id: string) => ["/api/studio/guides", id],
 }));
 
 import { StudioGuides, GuidesFor } from "@/components/studio-guides";
@@ -33,7 +54,6 @@ function guide(overrides: Record<string, unknown> = {}) {
     id: "guide-1",
     title: "Building an invoice",
     section: "invoice-lines",
-    html: "<h1>How to build an invoice</h1>",
     notionUrl: "https://notion.so/guide-1",
     ...overrides,
   };
@@ -51,8 +71,15 @@ function openFirstGuide() {
 }
 
 beforeEach(() => {
+  h.contentCalls = [];
   h.guides = {
     data: list(),
+    isLoading: false,
+    isError: false,
+    error: null,
+  };
+  h.content = {
+    data: { id: "guide-1", html: "<h1>How to build an invoice</h1>" },
     isLoading: false,
     isError: false,
     error: null,
@@ -113,10 +140,69 @@ describe("GuidesFor", () => {
     expect(sandbox).not.toContain("allow-same-origin");
   });
 
-  it("doesn't mount the frame until the guide is opened", () => {
+  // The whole reason markup is a second request: a dashboard carrying a dozen
+  // guides must download none of them until someone opens one.
+  it("fetches nothing until the guide is opened", () => {
     h.guides = { ...h.guides, data: list({ guides: [guide()] }) };
 
     render(<GuidesFor section="invoice-lines" />);
+
+    expect(screen.queryByTestId("guide-frame")).not.toBeInTheDocument();
+    expect(h.contentCalls.every((call) => !call.enabled)).toBe(true);
+  });
+
+  it("requests the markup once opened", () => {
+    h.guides = { ...h.guides, data: list({ guides: [guide()] }) };
+
+    render(<GuidesFor section="invoice-lines" />);
+    openFirstGuide();
+
+    expect(h.contentCalls.some((call) => call.enabled)).toBe(true);
+  });
+
+  // The listing already knows this one can't render, so opening it must not
+  // spend a request finding out.
+  it("never requests markup for a guide the listing marked unavailable", () => {
+    h.guides = {
+      ...h.guides,
+      data: list({ guides: [guide({ unavailable: "no-file" })] }),
+    };
+
+    render(<GuidesFor section="invoice-lines" />);
+    openFirstGuide();
+
+    expect(h.contentCalls.every((call) => !call.enabled)).toBe(true);
+    expect(screen.getByTestId("guide-unavailable")).toBeInTheDocument();
+  });
+
+  it("explains a pasted link, which is never fetched", () => {
+    h.guides = {
+      ...h.guides,
+      data: list({ guides: [guide({ unavailable: "not-uploaded" })] }),
+    };
+
+    render(<GuidesFor section="invoice-lines" />);
+
+    expect(screen.getByTestId("guide-unavailable")).toHaveTextContent(
+      "pasted link",
+    );
+  });
+
+  it("reports a download that failed at open time", () => {
+    h.guides = { ...h.guides, data: list({ guides: [guide()] }) };
+    h.content = {
+      data: { id: "guide-1", unavailable: "too-large" },
+      isLoading: false,
+      isError: false,
+      error: null,
+    };
+
+    render(<GuidesFor section="invoice-lines" />);
+    openFirstGuide();
+
+    expect(screen.getByTestId("guide-unavailable")).toHaveTextContent(
+      "too large",
+    );
     expect(screen.queryByTestId("guide-frame")).not.toBeInTheDocument();
   });
 
@@ -126,13 +212,7 @@ describe("GuidesFor", () => {
     h.guides = {
       ...h.guides,
       data: list({
-        guides: [
-          guide({
-            html: undefined,
-            unavailable: "not-html",
-            fileName: "g.pdf",
-          }),
-        ],
+        guides: [guide({ unavailable: "not-html", fileName: "g.pdf" })],
       }),
     };
 

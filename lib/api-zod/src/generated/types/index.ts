@@ -98,6 +98,8 @@ export * from './staffWeekday';
 export * from './studioAccess';
 export * from './studioAnalytics';
 export * from './studioGuide';
+export * from './studioGuideContent';
+export * from './studioGuideContentUnavailable';
 export * from './studioGuideList';
 export * from './studioGuideUnavailable';
 export * from './studioPaymentTotals';

@@ -16,6 +16,9 @@
 //     into this page. Do not add either token to that attribute. Rendering the
 //     HTML inline (`dangerouslySetInnerHTML`) would hand a `<script>` or an
 //     `onerror=` the studio session, which is the exact thing this avoids.
+//  1b. **Markup is fetched per guide, on open.** The listing carries no HTML —
+//     `enabled: opened` defers the second request — so a dashboard nobody reads
+//     a guide on downloads nothing, and one slow file can't stall the page.
 //  2. **A guide that isn't there is silent, except where it can be explained.**
 //     `GuidesFor` renders nothing at all while loading, on error, or with
 //     nothing filed against its section — a tool card should not sprout a
@@ -27,7 +30,10 @@ import { useState } from "react";
 import {
   useGetStudioGuides,
   getGetStudioGuidesQueryKey,
+  useGetStudioGuideContent,
+  getGetStudioGuideContentQueryKey,
   type StudioGuide,
+  type StudioGuideUnavailable,
 } from "@workspace/api-client-react";
 import { serverErrorMessage } from "@/lib/api-error";
 import { BookOpen, ExternalLink, Loader2 } from "lucide-react";
@@ -46,7 +52,16 @@ const GENERAL_SECTION = "general";
  */
 function useGuides() {
   return useGetStudioGuides({
-    query: { queryKey: getGetStudioGuidesQueryKey(), retry: false },
+    query: {
+      queryKey: getGetStudioGuidesQueryKey(),
+      retry: false,
+      // Staff membership and a studio's manual both change about as often as an
+      // env var does, so the default "stale immediately, refetch on focus"
+      // would re-ask on every tab-back for nothing — and this is the sixth
+      // studio call per page load against a shared per-IP limiter.
+      staleTime: 60_000,
+      refetchOnWindowFocus: false,
+    },
   });
 }
 
@@ -182,12 +197,17 @@ export function StudioGuides() {
 }
 
 /** Why a guide has no markup, in the atelier's terms. */
-function unavailableReason(guide: StudioGuide): string {
-  switch (guide.unavailable) {
+function unavailableReason(
+  reason: StudioGuideUnavailable | undefined,
+  fileName: string | undefined,
+): string {
+  switch (reason) {
     case "no-file":
       return "No file attached yet.";
+    case "not-uploaded":
+      return "That’s a pasted link rather than an uploaded file. Upload the HTML file to this row instead.";
     case "not-html":
-      return `${guide.fileName ?? "The attached file"} isn’t an HTML file, so it can’t be shown here.`;
+      return `${fileName ?? "The attached file"} isn’t an HTML file, so it can’t be shown here.`;
     case "too-large":
       return "The file is too large to show here.";
     default:
@@ -196,14 +216,31 @@ function unavailableReason(guide: StudioGuide): string {
 }
 
 /**
- * One guide, collapsed until asked for.
+ * One guide, collapsed until asked for — and downloaded only then.
  *
- * The frame is mounted only once opened. A dashboard can carry a dozen guides
- * and each one is a full document; building them all up front would mean every
- * image and web font in every guide loading on a page nobody asked to read.
+ * The markup is a second request rather than part of the listing, so a
+ * dashboard carrying a dozen guides fetches nothing until someone opens one.
+ * `enabled: opened` is what defers it; the query cache then holds it, so
+ * collapsing and re-opening doesn't re-download.
  */
 function GuideDisclosure({ guide }: { guide: StudioGuide }) {
   const [opened, setOpened] = useState(false);
+
+  // The listing already knows the reasons visible without a download, so a
+  // guide that can't be rendered is never requested at all.
+  const renderable = !guide.unavailable;
+
+  const content = useGetStudioGuideContent(guide.id, {
+    query: {
+      queryKey: getGetStudioGuideContentQueryKey(guide.id),
+      enabled: opened && renderable,
+      retry: false,
+      staleTime: Infinity,
+    },
+  });
+
+  const reason = guide.unavailable ?? content.data?.unavailable;
+  const html = content.data?.html;
 
   return (
     <details
@@ -223,34 +260,50 @@ function GuideDisclosure({ guide }: { guide: StudioGuide }) {
           )}
         </span>
         <span className="shrink-0 text-[10px] tracking-[0.15em] uppercase text-muted-foreground">
-          {guide.html ? "Read" : "Unavailable"}
+          {renderable ? "Read" : "Unavailable"}
         </span>
       </summary>
 
       <div className="px-3 pb-3 sm:px-4 sm:pb-4">
-        {guide.html ? (
-          opened && (
-            /* The sandbox is the security boundary — see rule 1 at the top of
-               this file. `allow-popups` (with the escape) is granted so a link
-               in a guide opens in an ordinary new tab; scripts and same-origin
-               access are not, and must not be. */
-            <iframe
-              title={guide.title}
-              srcDoc={guide.html}
-              sandbox="allow-popups allow-popups-to-escape-sandbox"
-              referrerPolicy="no-referrer"
-              className="w-full h-[60vh] min-h-72 rounded-sm border border-border bg-white"
-              data-testid="guide-frame"
+        {opened && renderable && content.isLoading ? (
+          <div
+            className="py-8 flex justify-center"
+            data-testid="guide-content-loading"
+          >
+            <Loader2
+              className="w-5 h-5 animate-spin text-primary"
+              strokeWidth={1}
             />
-          )
-        ) : (
+          </div>
+        ) : opened && renderable && content.isError ? (
           <p
             className="text-xs text-muted-foreground font-light"
             data-testid="guide-unavailable"
           >
-            {unavailableReason(guide)}
+            {serverErrorMessage(content.error) ??
+              "The guide couldn’t be loaded just now."}
           </p>
-        )}
+        ) : html ? (
+          /* The sandbox is the security boundary — see rule 1 at the top of
+             this file. `allow-popups` (with the escape) is granted so a link
+             in a guide opens in an ordinary new tab; scripts and same-origin
+             access are not, and must not be. */
+          <iframe
+            title={guide.title}
+            srcDoc={html}
+            sandbox="allow-popups allow-popups-to-escape-sandbox"
+            referrerPolicy="no-referrer"
+            className="w-full h-[60vh] min-h-72 rounded-sm border border-border bg-white"
+            data-testid="guide-frame"
+          />
+        ) : reason ? (
+          <p
+            className="text-xs text-muted-foreground font-light"
+            data-testid="guide-unavailable"
+          >
+            {unavailableReason(reason, guide.fileName)}
+          </p>
+        ) : null}
 
         <div className="mt-2 flex items-center justify-between gap-3">
           <span className="text-[10px] text-muted-foreground/80">

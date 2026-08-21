@@ -14,28 +14,40 @@
 //
 // Load-bearing decisions:
 //
-//  1. **A guide is never dropped, only explained.** A row with no file, a PDF
-//     filed as a guide, an oversized file, a download that failed — each is
-//     returned with `unavailable` saying which. The alternative is a guide the
-//     atelier wrote that appears nowhere and raises nothing, which is
-//     indistinguishable from one nobody wrote. Same reasoning as the materials
-//     panel's untracked list.
-//  2. **The markup is served verbatim, and sanitized by the FRAME, not here.**
+//  1. **Listing is metadata; markup is fetched per guide, when opened.** Two
+//     use-cases rather than one, because inlining every guide's markup into the
+//     listing put the studio's whole manual in a single JSON body: nine
+//     screenshot-heavy guides would pass Vercel's ~4.5 MB response limit and
+//     500 the endpoint, losing the small guides along with the large ones. It
+//     also means a dashboard nobody opens a guide on downloads nothing at all,
+//     and one hung storage connection can't stall the page.
+//  2. **A guide is never dropped, only explained.** A row with no file, a
+//     pasted link where an upload was needed, a PDF filed as a guide, an
+//     oversized file, a failed download — each is reported with `unavailable`
+//     saying which. The alternative is a guide the atelier wrote that appears
+//     nowhere and raises nothing, which is indistinguishable from one nobody
+//     wrote. Same reasoning as the materials panel's untracked list. The three
+//     reasons that need no download are decided in the listing, so a broken
+//     guide reads as broken before anyone opens it.
+//  3. **The markup is served verbatim, and sanitized by the FRAME, not here.**
 //     The dashboard renders it in a sandboxed iframe with scripts disabled, so
 //     nothing in a guide can run or reach the signed-in studio session. Passing
 //     it through a regex "sanitizer" as well would buy no safety the sandbox
 //     doesn't already give, while silently mangling the atelier's own markup —
 //     and would make the sandbox look optional to whoever reads this next. It
 //     is not optional. See `components/studio-guides.tsx`.
-//  3. **Cached whole, for a minute.** Each guide costs a download on top of the
-//     Notion query, so the assembled result is cached rather than the rows —
-//     the same 60s every live read here uses, which is also how long after
-//     replacing a file the dashboard takes to show it.
+//  4. **The listing is cached for a minute**, like every other live read here,
+//     which is also how long after editing a row the dashboard takes to show
+//     the change. Markup is deliberately not cached server-side: it is fetched
+//     on demand and held by the browser's query cache while the guide is open,
+//     so replacing a file shows on the next open rather than a minute later.
 
 import {
   guidesConfigured,
   listGuides,
+  findGuideById,
   fetchGuideDocument,
+  GuidesDatabaseUnreachableError,
 } from "../lib/notion/guides.repository.js";
 import type { GuideRecord } from "../lib/notion/guides.schema.js";
 import {
@@ -43,22 +55,31 @@ import {
   resolveGuideSection,
   type GuideSection,
 } from "../lib/guide-sections.js";
+import { NotFoundError } from "../lib/errors.js";
 import { logger } from "../lib/logger.js";
 
 /** Why a guide has no markup to render. Mirrors `StudioGuide.unavailable`. */
 export type GuideUnavailable =
-  "no-file" | "not-html" | "too-large" | "unreadable";
+  "no-file" | "not-uploaded" | "not-html" | "too-large" | "unreadable";
 
 export interface StudioGuideView {
   id: string;
   title: string;
   summary?: string;
   section: string;
-  html?: string;
+  /** Set when the row can't produce markup for a reason visible without a
+   * download, so the dashboard says so before the guide is opened. */
   unavailable?: GuideUnavailable;
   fileName?: string;
   updatedAt?: string;
   notionUrl?: string;
+}
+
+/** One guide's markup, or why there isn't any. */
+export interface StudioGuideContentView {
+  id: string;
+  html?: string;
+  unavailable?: GuideUnavailable;
 }
 
 export interface StudioGuidesResult {
@@ -68,37 +89,8 @@ export interface StudioGuidesResult {
   truncated?: boolean;
 }
 
-/**
- * How many attachments are downloaded at once. Notion's published rate limit
- * averages three requests a second; the downloads go to its storage host rather
- * than the API, but staying under it costs nothing and keeps one badly-timed
- * dashboard load from competing with the rest of the page's reads.
- */
-const GUIDE_CONCURRENCY = 3;
-
 /** A minute, like every other live read here. */
 const CACHE_TTL_MS = 60_000;
-
-/** Run `task` over `items` a few at a time, preserving order. */
-async function mapLimited<T, R>(
-  items: T[],
-  limit: number,
-  task: (item: T) => Promise<R>,
-): Promise<R[]> {
-  const results: R[] = new Array(items.length);
-  let next = 0;
-
-  async function worker(): Promise<void> {
-    for (let index = next++; index < items.length; index = next++) {
-      results[index] = await task(items[index]);
-    }
-  }
-
-  await Promise.all(
-    Array.from({ length: Math.min(limit, items.length) }, worker),
-  );
-  return results;
-}
 
 /**
  * Whether an attachment is markup this can render.
@@ -129,41 +121,38 @@ export function compareGuides(a: GuideRecord, b: GuideRecord): number {
   return a.title.localeCompare(b.title);
 }
 
-/** The everything-but-the-markup half of a guide, so both paths agree on it. */
-function baseView(record: GuideRecord): StudioGuideView {
+/**
+ * The reasons a row can't produce markup that are visible from the row alone —
+ * no download required.
+ *
+ * Shared by both halves so the listing and the content read can't disagree
+ * about whether a guide is renderable: the listing reports it, and the content
+ * read refuses on exactly the same test rather than fetching anyway.
+ */
+export function staticUnavailability(
+  record: GuideRecord,
+): GuideUnavailable | undefined {
+  const attachment = record.attachment;
+  if (!attachment) return "no-file";
+  if (attachment.kind !== "upload") return "not-uploaded";
+  if (!isHtmlAttachment(attachment.name)) return "not-html";
+  return undefined;
+}
+
+/** Map one row to its listing entry. */
+function toView(record: GuideRecord): StudioGuideView {
+  const unavailable = staticUnavailability(record);
+
   return {
     id: record.id,
     title: record.title,
     section: resolveGuideSection(record.section),
     ...(record.summary ? { summary: record.summary } : {}),
+    ...(unavailable ? { unavailable } : {}),
     ...(record.attachment?.name ? { fileName: record.attachment.name } : {}),
     ...(record.updatedAt ? { updatedAt: record.updatedAt } : {}),
     ...(record.notionUrl ? { notionUrl: record.notionUrl } : {}),
   };
-}
-
-/** Resolve one row to what the dashboard renders. */
-async function resolveGuide(record: GuideRecord): Promise<StudioGuideView> {
-  const base = baseView(record);
-  const attachment = record.attachment;
-
-  if (!attachment) return { ...base, unavailable: "no-file" };
-  if (!isHtmlAttachment(attachment.name)) {
-    return { ...base, unavailable: "not-html" };
-  }
-
-  const document = await fetchGuideDocument(attachment);
-  if (!document.ok) {
-    // Worth a log line: unlike the other reasons, this one is nothing the
-    // atelier did and nothing they can fix by editing the row.
-    logger.warn(
-      { guide: record.title, reason: document.reason },
-      "Studio guide attachment could not be read",
-    );
-    return { ...base, unavailable: document.reason };
-  }
-
-  return { ...base, html: document.html };
 }
 
 let cached: { result: StudioGuidesResult; fetchedAt: number } | null = null;
@@ -174,11 +163,13 @@ export function __resetStudioGuidesCache(): void {
 }
 
 /**
- * The atelier's guides, ready to render.
+ * The atelier's guides — what they are and where they go, without their
+ * content.
  *
  * The section vocabulary rides along whether or not any guide is filed against
  * it, so an empty panel can still tell the atelier what a `Section` may be set
- * to — the one thing that is otherwise only discoverable by reading this file.
+ * to — the one thing that is otherwise only discoverable by reading
+ * `lib/guide-sections.ts`.
  */
 export async function getStudioGuides(): Promise<StudioGuidesResult> {
   const sections = [...GUIDE_SECTIONS];
@@ -193,14 +184,9 @@ export async function getStudioGuides(): Promise<StudioGuidesResult> {
 
   try {
     const { records, truncated } = await listGuides();
-    const guides = await mapLimited(
-      [...records].sort(compareGuides),
-      GUIDE_CONCURRENCY,
-      resolveGuide,
-    );
 
     const result: StudioGuidesResult = {
-      guides,
+      guides: [...records].sort(compareGuides).map(toView),
       sections,
       configured: true,
       ...(truncated ? { truncated: true } : {}),
@@ -210,8 +196,56 @@ export async function getStudioGuides(): Promise<StudioGuidesResult> {
   } catch (error) {
     // Stale guides are still the right procedures; no guides reads as though
     // none were ever written. Fall back where there is something to fall back
-    // to, and surface the failure otherwise.
+    // to.
     if (cached) return cached.result;
+
+    // An id set but never shared with the integration 404s every query. Left
+    // as a throw that is a permanent 500 plus an alert email on every dashboard
+    // load — for a misconfiguration whose fix the "not connected" copy already
+    // names. So it degrades to exactly what an unset id gets. Every other
+    // failure still surfaces.
+    if (error instanceof GuidesDatabaseUnreachableError) {
+      logger.warn(
+        { err: error },
+        "Studio Guides database is set but unreachable — is the Notion integration shared with it?",
+      );
+      return { guides: [], sections, configured: false };
+    }
     throw error;
   }
+}
+
+/**
+ * One guide's markup, fetched now.
+ *
+ * The row is read back rather than trusted from the listing: the signed
+ * attachment URL expires in about an hour, so it has to be fresh, and re-reading
+ * is also what turns a row deleted since the dashboard loaded into a 404 rather
+ * than a confusing download error.
+ */
+export async function getStudioGuideContent(
+  guideId: string,
+): Promise<StudioGuideContentView> {
+  if (!guidesConfigured()) {
+    throw new NotFoundError("That guide no longer exists.");
+  }
+
+  const record = await findGuideById(guideId);
+  if (!record) throw new NotFoundError("That guide no longer exists.");
+
+  const unavailable = staticUnavailability(record);
+  if (unavailable) return { id: record.id, unavailable };
+
+  const document = await fetchGuideDocument(record.attachment!);
+  if (!document.ok) {
+    // Worth a log line: unlike the static reasons, this one is nothing the
+    // atelier did and nothing they can fix by editing the row.
+    logger.warn(
+      { guide: record.title, reason: document.reason },
+      "Studio guide attachment could not be read",
+    );
+    return { id: record.id, unavailable: document.reason };
+  }
+
+  return { id: record.id, html: document.html };
 }

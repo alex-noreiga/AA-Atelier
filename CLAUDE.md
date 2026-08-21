@@ -265,14 +265,17 @@ Express app (artifacts/api-server)  ──►  Notion REST API (orders database)
   │                                  consent is refused (409)
   ├─ GET  /api/studio/guides       → the atelier's own how-to write-ups, each an
   │                                  HTML file attached to a row of the Notion
-  │                                  "Studio Guides" database, served with the
-  │                                  markup inline and the section saying which
-  │                                  tool or panel it renders beside. The app
-  │                                  stores no guide content — revising a
-  │                                  procedure is replacing the file, not a
-  │                                  deploy. Rendered in a sandboxed frame with
-  │                                  scripts off. Same staff gate as the figures
-  │                                  above
+  │                                  "Studio Guides" database. Lists what the
+  │                                  guides are and which tool or panel each
+  │                                  renders beside — NOT their content;
+  │                                  GET /api/studio/guides/:id downloads one
+  │                                  guide's markup when it's opened, so the
+  │                                  studio's whole manual is never inlined in
+  │                                  one response. The app stores no guide
+  │                                  content — revising a procedure is replacing
+  │                                  the file, not a deploy. Rendered in a
+  │                                  sandboxed frame with scripts off. Same
+  │                                  staff gate as the figures above
   └─ POST /api/studio/tools/:tool  → the atelier's five internal actions, run from
                                      the signed-in studio dashboard: milestone
                                      reconciliation (`milestones`, the same sweep
@@ -2585,7 +2588,7 @@ database and rendered on `/studio` beside the tool or panel each one describes.
 `GET /api/studio/guides` (contract-first, `requireStaff` like the rest of the
 studio surface). Code: `lib/guide-sections.ts` (the vocabulary),
 `lib/notion/guides.{schema,repository}.ts`, `services/studio-guides.service.ts`,
-the `/studio/guides` handler in `routes/studio.ts`, and
+the two `/studio/guides` handlers in `routes/studio.ts`, and
 `web-app/src/components/studio-guides.tsx` (rendered by `pages/studio.tsx` and,
 per tool, by `components/studio-tools.tsx`).
 
@@ -2597,6 +2600,15 @@ per tool, by `components/studio-tools.tsx`).
    Notion row. This was already how the atelier worked (an `invoicing-guide.html`
    sat as an embed on the Notion finances page); this puts it next to the button
    it describes.
+
+   **Listing and content are two operations.** `/studio/guides` carries what the
+   guides are and where they go; `/studio/guides/{id}` downloads one guide's
+   markup when it is opened. Inlining every guide in the listing put the
+   studio's whole manual in a single JSON body — past Vercel's ~4.5 MB response
+   limit at a handful of screenshot-heavy guides, which 500s the endpoint and
+   loses the small guides along with the large ones, since the size cap is per
+   file. It also means a dashboard nobody opens a guide on downloads nothing,
+   and one slow file can't stall the page.
 
 2. **The sandbox is the sanitizer, and it is not optional.** The markup is a
    file somebody uploaded, rendered on an origin holding a signed-in staff
@@ -2624,23 +2636,41 @@ per tool, by `components/studio-tools.tsx`).
    even when nothing is filed against it, because the accepted values are
    otherwise only discoverable by reading `lib/guide-sections.ts`.
 
-4. **A guide is never dropped, only explained.** A row with no file yet, a PDF
-   filed as a guide, an oversized file, a failed download — each is listed with
-   `unavailable` saying which, the same reasoning as the materials panel's
-   untracked list. HTML-ness is decided on the file **name**: Notion's storage
-   host serves everything as a generic binary type, so there is no content type
-   to trust, and a `.pdf` would decode to mojibake.
+4. **A guide is never dropped, only explained.** A row with no file yet, a
+   pasted link where an upload was needed, a PDF filed as a guide, an oversized
+   file, a failed download — each is reported with `unavailable` saying which,
+   the same reasoning as the materials panel's untracked list. The three reasons
+   visible without a download are decided in the **listing**, so a broken guide
+   reads as broken before anyone opens it (and is never requested). HTML-ness is
+   decided on the file **name**: Notion's storage host serves everything as a
+   generic binary type, so there is no content type to trust, and a `.pdf` would
+   decode to mojibake.
 
-5. **Bounded, and the signed URL never leaves the server.** The markup is
-   returned inline in a JSON response from a serverless function, so
-   `MAX_GUIDE_BYTES` (512 KB) is checked against `Content-Length` first and
-   again on what arrived (a chunked response declares no length); an over-cap
-   guide is reported, never truncated. Notion's file URLs expire in about an
-   hour (like the review photos), so the server downloads the markup and serves
-   that — a cached response can't rot into a dead link, and no credential-bearing
-   URL reaches the browser. Downloads run 3 at a time; the assembled result is
-   cached 60s (which is also how long after replacing a file the dashboard takes
-   to show it), falling back to the cached result on a later failure.
+5. **Only an upload is ever fetched, and the download is bounded.** A Notion
+   `files` property holds either an upload (`file`) or a pasted link
+   (`external`); the review-photo reader accepts both and this one must not.
+   The server returns what it downloads, so accepting a pasted link would let
+   anyone with **edit access to that database** — a Notion permission, not
+   membership of `STUDIO_STAFF_EMAILS` — aim a server-side GET at an address of
+   their choosing and read the answer. `GuideAttachment` is a discriminated
+   union so the fetchable URL exists only on the upload variant and the compiler
+   enforces it. The download is capped at `MAX_GUIDE_BYTES` (2 MB) checked
+   against `Content-Length` **and** as the body streams — buffering first and
+   measuring after is an unbounded read wearing a cap — and carries a 10s
+   `AbortSignal`, because one hung storage connection would otherwise hold a
+   worker until the platform kills the function. Notion's file URLs expire in
+   about an hour (like the review photos), so the server downloads the markup
+   and serves that: no credential-bearing URL reaches the browser, and the row
+   is re-read on open rather than trusted from a listing whose URLs have since
+   expired.
+
+   The **listing** is cached 60s (which is also how long after editing a row the
+   dashboard takes to show it), falling back to the cached result on a later
+   failure. A Notion **404** — the id set but the integration never shared, the
+   likeliest setup mistake — degrades to the same "not connected" an unset id
+   gets, rather than a permanent 500 plus an alert email on every dashboard
+   load. Markup is deliberately not cached server-side; the browser's query
+   cache holds it while the guide is open.
 
 6. **Silent where there's nothing to say.** `GuidesFor` renders nothing at all
    while loading, on error, or with no guide for its section — a tool card must

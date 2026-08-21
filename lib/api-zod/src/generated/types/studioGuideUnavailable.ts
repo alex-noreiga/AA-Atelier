@@ -7,13 +7,14 @@
  */
 
 /**
- * Why there is no `html` to render. `no-file` — the row has no attachment yet. `not-html` — the attachment isn't an HTML file, so rendering it as markup would be gibberish. `too-large` — over the server's size cap. `unreadable` — the download failed. The guide is listed either way, so a broken one is visible rather than absent.
+ * Why this guide has no markup to show, when that is knowable without downloading it: `no-file` — the row has no attachment yet; `not-uploaded` — the attachment is a pasted link rather than a file uploaded to Notion, which is never fetched; `not-html` — it isn't an HTML file, so rendering it as markup would be gibberish. The guide is listed either way, so a broken one is visible rather than absent. The two download-time reasons (`too-large`, `unreadable`) can only come back from the content operation.
  */
 export type StudioGuideUnavailable = typeof StudioGuideUnavailable[keyof typeof StudioGuideUnavailable];
 
 
 export const StudioGuideUnavailable = {
   'no-file': 'no-file',
+  'not-uploaded': 'not-uploaded',
   'not-html': 'not-html',
   'too-large': 'too-large',
   unreadable: 'unreadable',

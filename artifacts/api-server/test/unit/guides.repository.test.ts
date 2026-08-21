@@ -6,6 +6,7 @@ import {
 import type { GuideAttachment } from "../../src/lib/notion/guides.schema.js";
 
 const attachment: GuideAttachment = {
+  kind: "upload",
   name: "invoicing-guide.html",
   url: "https://files.notion.so/signed/invoicing-guide.html",
 };
@@ -57,7 +58,9 @@ describe("fetchGuideDocument", () => {
     expect(result).toEqual({ ok: false, reason: "too-large" });
   });
 
-  // ...and again on what arrived, because a chunked response declares no length.
+  // ...and again as the body streams, because a chunked response declares no
+  // length. Buffering first and measuring after would be an unbounded read
+  // wearing a cap: a 300 MB file would be fully materialized before rejection.
   it("refuses an oversized file that declared no length", async () => {
     const result = await fetchGuideDocument(
       attachment,
@@ -65,6 +68,72 @@ describe("fetchGuideDocument", () => {
     );
 
     expect(result).toEqual({ ok: false, reason: "too-large" });
+  });
+
+  it("stops reading — and cancels the body — once the cap is passed", async () => {
+    let produced = 0;
+    let cancelled = false;
+    const chunk = new Uint8Array(64 * 1024);
+
+    const body = new ReadableStream<Uint8Array>({
+      pull(controller) {
+        produced += chunk.byteLength;
+        controller.enqueue(chunk);
+      },
+      cancel() {
+        cancelled = true;
+      },
+    });
+    const fetchImpl = vi.fn(
+      async () => new Response(body),
+    ) as unknown as typeof fetch;
+
+    const result = await fetchGuideDocument(attachment, fetchImpl);
+
+    expect(result).toEqual({ ok: false, reason: "too-large" });
+    expect(cancelled).toBe(true);
+    // Bounded at the cap plus the chunk that crossed it, plus one more the
+    // stream's own read-ahead had already queued — the point being that an
+    // endless stream stops rather than becoming an endless allocation.
+    expect(produced).toBeLessThanOrEqual(
+      MAX_GUIDE_BYTES + 2 * chunk.byteLength,
+    );
+  });
+
+  // A pasted external link is never requested: the server returns what it
+  // downloads, and the URL comes from a database whose editors are a Notion
+  // permission rather than the studio staff allowlist.
+  it("never fetches an attachment that isn't an upload", async () => {
+    const fetchImpl = vi.fn() as unknown as typeof fetch;
+
+    const result = await fetchGuideDocument(
+      { kind: "external", name: "linked.html" },
+      fetchImpl,
+    );
+
+    expect(result).toEqual({ ok: false, reason: "unreadable" });
+    expect(fetchImpl).not.toHaveBeenCalled();
+  });
+
+  it("passes an abort signal, so a hung download can't stall the request", async () => {
+    const fetchImpl = vi.fn(
+      async (_url: string, _init?: RequestInit) => new Response("<p>ok</p>"),
+    );
+
+    await fetchGuideDocument(attachment, fetchImpl as unknown as typeof fetch);
+
+    expect(fetchImpl.mock.calls[0]?.[1]?.signal).toBeInstanceOf(AbortSignal);
+  });
+
+  it("reports an aborted download as unreadable", async () => {
+    const fetchImpl = vi.fn(async () => {
+      throw new DOMException("The operation was aborted.", "TimeoutError");
+    }) as unknown as typeof fetch;
+
+    await expect(fetchGuideDocument(attachment, fetchImpl)).resolves.toEqual({
+      ok: false,
+      reason: "unreadable",
+    });
   });
 
   it("reports a non-ok download as unreadable", async () => {

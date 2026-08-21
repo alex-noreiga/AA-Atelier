@@ -360,13 +360,14 @@ export interface GuideSection {
 }
 
 /**
- * Why there is no `html` to render. `no-file` — the row has no attachment yet. `not-html` — the attachment isn't an HTML file, so rendering it as markup would be gibberish. `too-large` — over the server's size cap. `unreadable` — the download failed. The guide is listed either way, so a broken one is visible rather than absent.
+ * Why this guide has no markup to show, when that is knowable without downloading it: `no-file` — the row has no attachment yet; `not-uploaded` — the attachment is a pasted link rather than a file uploaded to Notion, which is never fetched; `not-html` — it isn't an HTML file, so rendering it as markup would be gibberish. The guide is listed either way, so a broken one is visible rather than absent. The two download-time reasons (`too-large`, `unreadable`) can only come back from the content operation.
  */
 export type StudioGuideUnavailable = typeof StudioGuideUnavailable[keyof typeof StudioGuideUnavailable];
 
 
 export const StudioGuideUnavailable = {
   'no-file': 'no-file',
+  'not-uploaded': 'not-uploaded',
   'not-html': 'not-html',
   'too-large': 'too-large',
   unreadable: 'unreadable',
@@ -384,9 +385,7 @@ export interface StudioGuide {
   summary?: string;
   /** Which section id the guide renders under. Always one of the served `sections` — an unrecognized or blank `Section` resolves to `general` rather than dropping the guide. */
   section: string;
-  /** The attached file's markup, exactly as uploaded. Absent when `unavailable` says why it couldn't be served. It is rendered in a sandboxed frame with scripts disabled, so it is never executed and never sees the studio session. */
-  html?: string;
-  /** Why there is no `html` to render. `no-file` — the row has no attachment yet. `not-html` — the attachment isn't an HTML file, so rendering it as markup would be gibberish. `too-large` — over the server's size cap. `unreadable` — the download failed. The guide is listed either way, so a broken one is visible rather than absent. */
+  /** Why this guide has no markup to show, when that is knowable without downloading it: `no-file` — the row has no attachment yet; `not-uploaded` — the attachment is a pasted link rather than a file uploaded to Notion, which is never fetched; `not-html` — it isn't an HTML file, so rendering it as markup would be gibberish. The guide is listed either way, so a broken one is visible rather than absent. The two download-time reasons (`too-large`, `unreadable`) can only come back from the content operation. */
   unavailable?: StudioGuideUnavailable;
   /** The attached file's name, when the row has one. */
   fileName?: string;
@@ -394,6 +393,32 @@ export interface StudioGuide {
   updatedAt?: string;
   /** The guide's page in Notion, which is where the file is replaced. */
   notionUrl?: string;
+}
+
+/**
+ * Why there is no `html`. Beyond the three the listing can already report: `too-large` — the file is over the server's per-guide cap; `unreadable` — the download failed, timed out, or was refused.
+ */
+export type StudioGuideContentUnavailable = typeof StudioGuideContentUnavailable[keyof typeof StudioGuideContentUnavailable];
+
+
+export const StudioGuideContentUnavailable = {
+  'no-file': 'no-file',
+  'not-uploaded': 'not-uploaded',
+  'not-html': 'not-html',
+  'too-large': 'too-large',
+  unreadable: 'unreadable',
+} as const;
+
+/**
+ * One guide's markup, downloaded on demand — or the reason there is none.
+ */
+export interface StudioGuideContent {
+  /** The guide's Notion page id. */
+  id: string;
+  /** The attached file's markup, exactly as uploaded and deliberately not sanitized. Absent when `unavailable` says why. It is rendered in a sandboxed frame granting neither scripts nor same-origin access, so it is never executed and never sees the studio session. */
+  html?: string;
+  /** Why there is no `html`. Beyond the three the listing can already report: `too-large` — the file is over the server's per-guide cap; `unreadable` — the download failed, timed out, or was refused. */
+  unavailable?: StudioGuideContentUnavailable;
 }
 
 /**

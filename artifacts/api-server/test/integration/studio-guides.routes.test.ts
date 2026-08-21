@@ -2,18 +2,27 @@ import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 
 // Mock the Notion adapter so the real service + route + auth stack runs without
 // the network. The section resolution and the file handling are unit-tested.
-vi.mock("../../src/lib/notion/guides.repository.js", () => ({
-  guidesConfigured: vi.fn(),
-  listGuides: vi.fn(),
-  fetchGuideDocument: vi.fn(),
-}));
+vi.mock("../../src/lib/notion/guides.repository.js", async () => {
+  const actual = await vi.importActual<
+    typeof import("../../src/lib/notion/guides.repository.js")
+  >("../../src/lib/notion/guides.repository.js");
+  return {
+    GuidesDatabaseUnreachableError: actual.GuidesDatabaseUnreachableError,
+    guidesConfigured: vi.fn(),
+    listGuides: vi.fn(),
+    findGuideById: vi.fn(),
+    fetchGuideDocument: vi.fn(),
+  };
+});
 
 import request from "supertest";
 import app from "../../src/app.js";
 import {
   guidesConfigured,
   listGuides,
+  findGuideById,
   fetchGuideDocument,
+  GuidesDatabaseUnreachableError,
 } from "../../src/lib/notion/guides.repository.js";
 import { __resetStudioGuidesCache } from "../../src/services/studio-guides.service.js";
 import type { GuideRecord } from "../../src/lib/notion/guides.schema.js";
@@ -29,6 +38,7 @@ import {
 
 const mockConfigured = vi.mocked(guidesConfigured);
 const mockList = vi.mocked(listGuides);
+const mockFind = vi.mocked(findGuideById);
 const mockFetch = vi.mocked(fetchGuideDocument);
 
 const STAFF = "alexandra@a3iceanddance.com";
@@ -44,7 +54,11 @@ function guide(overrides: Partial<GuideRecord> = {}): GuideRecord {
     title: "Building an invoice",
     section: "Itemize an invoice",
     order: null,
-    attachment: { name: "invoicing-guide.html", url: "https://files/x.html" },
+    attachment: {
+      kind: "upload",
+      name: "invoicing-guide.html",
+      url: "https://files/x.html",
+    },
     notionUrl: "https://notion.so/guide-1",
     ...overrides,
   };
@@ -70,6 +84,7 @@ beforeEach(() => {
   delete process.env.STUDIO_REQUIRE_GOOGLE;
   mockConfigured.mockReturnValue(true);
   mockList.mockResolvedValue({ records: [guide()], truncated: false });
+  mockFind.mockResolvedValue(guide());
   mockFetch.mockResolvedValue({ ok: true, html: "<h1>How to</h1>" });
   acceptToken("staff-token", GOOGLE_STAFF);
 });
@@ -121,7 +136,7 @@ describe("GET /api/studio/guides", () => {
     expect(mockList).not.toHaveBeenCalled();
   });
 
-  it("serves the guide's markup and the section it belongs to", async () => {
+  it("lists the guide and where it belongs, without its markup", async () => {
     const response = await request(app)
       .get("/api/studio/guides")
       .set("Authorization", "Bearer staff-token");
@@ -132,9 +147,12 @@ describe("GET /api/studio/guides", () => {
     expect(response.body.guides[0]).toMatchObject({
       title: "Building an invoice",
       section: "invoice-lines",
-      html: "<h1>How to</h1>",
       notionUrl: "https://notion.so/guide-1",
     });
+    // The listing must stay small: inlining every guide's markup is what would
+    // push a studio's whole manual past the serverless response limit.
+    expect(response.body.guides[0].html).toBeUndefined();
+    expect(mockFetch).not.toHaveBeenCalled();
   });
 
   // The vocabulary rides along whether or not anything is filed against it —
@@ -178,5 +196,98 @@ describe("GET /api/studio/guides", () => {
     expect(response.body.guides).toEqual([]);
     expect(response.body.sections.length).toBeGreaterThan(0);
     expect(mockList).not.toHaveBeenCalled();
+  });
+
+  // The id set but the integration never shared 404s every query. Left as a
+  // throw that is a permanent 500 plus an alert email on every dashboard load,
+  // for a misconfiguration the "not connected" copy already tells you to fix.
+  it("reads an unreachable database as not connected rather than 500ing", async () => {
+    mockList.mockRejectedValue(
+      new GuidesDatabaseUnreachableError("Notion returned 404"),
+    );
+
+    const response = await request(app)
+      .get("/api/studio/guides")
+      .set("Authorization", "Bearer staff-token");
+
+    expect(response.status).toBe(200);
+    expect(response.body).toMatchObject({ guides: [], configured: false });
+  });
+});
+
+describe("GET /api/studio/guides/:guideId", () => {
+  it("answers 401 without a Bearer token, and reads nothing", async () => {
+    const response = await request(app).get("/api/studio/guides/guide-1");
+
+    expect(response.status).toBe(401);
+    expect(mockFind).not.toHaveBeenCalled();
+  });
+
+  it("answers 404 for a signed-in customer", async () => {
+    acceptToken("customer-token", {
+      email: "someone@example.com",
+      sub: "user-2",
+      amr: [{ method: "oauth", timestamp: 1_700_000_000 }],
+    });
+
+    const response = await request(app)
+      .get("/api/studio/guides/guide-1")
+      .set("Authorization", "Bearer customer-token");
+
+    expect(response.status).toBe(404);
+    expect(mockFind).not.toHaveBeenCalled();
+  });
+
+  it("answers 403 for staff whose session wasn't established with Google", async () => {
+    acceptToken("password-token", {
+      email: STAFF,
+      sub: "user-1",
+      amr: [{ method: "password", timestamp: 1_700_000_000 }],
+    });
+
+    const response = await request(app)
+      .get("/api/studio/guides/guide-1")
+      .set("Authorization", "Bearer password-token");
+
+    expect(response.status).toBe(403);
+    expect(mockFind).not.toHaveBeenCalled();
+  });
+
+  it("returns the downloaded markup for a studio account", async () => {
+    const response = await request(app)
+      .get("/api/studio/guides/guide-1")
+      .set("Authorization", "Bearer staff-token");
+
+    expect(response.status).toBe(200);
+    expect(response.body).toEqual({ id: "guide-1", html: "<h1>How to</h1>" });
+  });
+
+  it("404s a guide that no longer exists", async () => {
+    mockFind.mockResolvedValue(null);
+
+    const response = await request(app)
+      .get("/api/studio/guides/gone")
+      .set("Authorization", "Bearer staff-token");
+
+    expect(response.status).toBe(404);
+  });
+
+  // Never requested: the server returns what it downloads, and the URL comes
+  // from a database whose editors are a Notion permission, not the allowlist.
+  it("refuses a pasted link without fetching it", async () => {
+    mockFind.mockResolvedValue(
+      guide({ attachment: { kind: "external", name: "linked.html" } }),
+    );
+
+    const response = await request(app)
+      .get("/api/studio/guides/guide-1")
+      .set("Authorization", "Bearer staff-token");
+
+    expect(response.status).toBe(200);
+    expect(response.body).toEqual({
+      id: "guide-1",
+      unavailable: "not-uploaded",
+    });
+    expect(mockFetch).not.toHaveBeenCalled();
   });
 });

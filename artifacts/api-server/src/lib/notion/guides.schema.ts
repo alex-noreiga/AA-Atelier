@@ -10,11 +10,21 @@
 // TWO THINGS TO KNOW ABOUT THE FILE:
 //
 //  1. **The `url` is Notion-signed and short-lived** (about an hour), exactly
-//     like the review photos. It is a fetch target for this request and nothing
+//     like the review photos. It is a fetch target for one request and nothing
 //     more — never stored, never handed to the browser. The server downloads
 //     the markup and serves that instead, so the dashboard never holds a
 //     credential-bearing URL and a cached response can't rot into a dead link.
-//  2. **A row can legitimately have no file.** The atelier creates the row when
+//  2. **ONLY AN UPLOAD IS FETCHED, never a pasted link.** A Notion `files`
+//     property holds either — `file` for something uploaded to Notion,
+//     `external` for a URL somebody pasted. The review-photo reader accepts
+//     both; this one must not. The server fetches the URL and returns the
+//     response body to the dashboard, so accepting `external` would let anyone
+//     with EDIT ACCESS TO THIS DATABASE — a Notion permission, not membership
+//     of `STUDIO_STAFF_EMAILS` — aim a server-side GET at an address of their
+//     choosing and read the answer. The two groups mostly overlap; "mostly" is
+//     not a security boundary. An external link is reported as `not-uploaded`
+//     rather than silently ignored, and its URL never leaves this module.
+//  3. **A row can legitimately have no file.** The atelier creates the row when
 //     it decides a guide is needed and attaches the file when it's written. So
 //     an absent attachment is a normal state, not an error, and the guide is
 //     still listed — with the reason it can't be rendered.
@@ -26,13 +36,22 @@ export const GUIDE_SECTION_PROPERTY = "Section"; // select
 export const GUIDE_SUMMARY_PROPERTY = "Summary"; // rich_text
 export const GUIDE_ORDER_PROPERTY = "Order"; // number
 
-/** The attachment on a guide row, before anything has been downloaded. */
-export interface GuideAttachment {
-  /** The file's name as Notion holds it — how the HTML check is decided. */
-  name: string;
-  /** Notion-signed and short-lived. A fetch target, never served on. */
-  url: string;
-}
+/**
+ * The attachment on a guide row, before anything has been downloaded.
+ *
+ * A discriminated union rather than a nullable `url`, so the external case
+ * cannot carry one: the fetchable URL exists only on the `upload` variant, and
+ * the compiler is what stops a pasted link reaching {@link fetchGuideDocument}.
+ */
+export type GuideAttachment =
+  | {
+      kind: "upload";
+      /** The file's name as Notion holds it — how the HTML check is decided. */
+      name: string;
+      /** Notion-signed and short-lived. A fetch target, never served on. */
+      url: string;
+    }
+  | { kind: "external"; name: string };
 
 /** One guide row, as the dashboard reads it. */
 export interface GuideRecord {
@@ -105,24 +124,28 @@ function readNumber(page: NotionGuidePage, name: string): number | null {
 }
 
 /**
- * The first usable attachment on the row.
+ * The first attachment on the row.
  *
- * `file.url` is a Notion-hosted upload, `external.url` a link the atelier
- * pasted — the same fallback the review-photo reader uses, and for the same
- * reason: which one a guide arrived as isn't a distinction the dashboard cares
- * about. Only the first is read; a row is one guide, and quietly rendering a
- * second attachment nobody asked about would be a surprise.
+ * A Notion-hosted upload yields a fetchable `upload`; a pasted link yields an
+ * `external` carrying only its name, for the reason in trap 2 above. Only the
+ * first file is read — a row is one guide, and quietly rendering a second
+ * attachment nobody asked about would be a surprise.
  */
 function readAttachment(
   page: NotionGuidePage,
   name: string,
 ): GuideAttachment | undefined {
   const p = page.properties[name];
-  if (p?.type !== "files") return undefined;
+  // Notion always sends the array for a `files` property, but one malformed row
+  // must not throw its way out of a whole-database read.
+  if (p?.type !== "files" || !Array.isArray(p.files)) return undefined;
 
   for (const file of p.files) {
-    const url = file.file?.url ?? file.external?.url;
-    if (url) return { name: (file.name ?? "").trim(), url };
+    const fileName = (file?.name ?? "").trim();
+    if (file?.file?.url) {
+      return { kind: "upload", name: fileName, url: file.file.url };
+    }
+    if (file?.external?.url) return { kind: "external", name: fileName };
   }
   return undefined;
 }
