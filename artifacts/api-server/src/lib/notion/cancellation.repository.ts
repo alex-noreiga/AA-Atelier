@@ -1,46 +1,16 @@
 // Cancellation-request persistence. Like back-in-stock and measurement-change
 // requests, these share the "Website Contact Messages" database with contact-form
 // messages — same inbox, distinguished by the "Request type" property — so this
-// reuses the contact client and needs no database id of its own.
+// reuses the contact client and needs no database id of its own. The write path
+// is the shared `contactDatabaseWriter` (see contact-writer.ts).
 
-import {
-  getContactNotionClient,
-  assertDatabaseConfigured,
-  type NotionClient,
-} from "./client.js";
+import { contactDatabaseWriter } from "./contact-writer.js";
 import {
   buildCancellationProperties,
   type CancellationRow,
 } from "./cancellation.blocks.js";
 
-function assertConfigured(client: NotionClient): void {
-  assertDatabaseConfigured(
-    client,
-    "NOTION_CONTACT_DATABASE_ID is not configured for the contact database",
-  );
-}
-
-export async function createCancellationRequest(
-  row: CancellationRow,
-  client: NotionClient = getContactNotionClient(),
-  clientPageId?: string,
-): Promise<void> {
-  assertConfigured(client);
-
-  const body: Record<string, unknown> = {
-    parent: { database_id: client.databaseId },
-    properties: buildCancellationProperties(row, clientPageId),
-  };
-
-  const response = await client.fetch("/v1/pages", {
-    method: "POST",
-    body: JSON.stringify(body),
-  });
-
-  if (!response.ok) {
-    const errorText = await response.text();
-    throw new Error(
-      `Notion cancellation request creation failed with status ${response.status}: ${errorText}`,
-    );
-  }
-}
+export const createCancellationRequest = contactDatabaseWriter<CancellationRow>(
+  buildCancellationProperties,
+  "cancellation request",
+);

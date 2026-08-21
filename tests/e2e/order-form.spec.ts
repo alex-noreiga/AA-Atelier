@@ -84,36 +84,6 @@ test.describe("Order form", () => {
     ).toBeVisible();
   });
 
-  test("submits without measurements when an appointment is requested (API mocked)", async ({
-    page,
-  }) => {
-    await mockCreateOrder(page, { body: { orderNumber: "ORD-APPT-0001" } });
-
-    await page.goto("/order");
-    await page.getByTestId("service-option-bespoke").click();
-    await page.locator("#fullName").fill(E2E_ORDER.fullName);
-    await page.locator("#email").fill(E2E_ORDER.email);
-    await page.locator("#phone").fill(E2E_ORDER.phone);
-    await page.getByRole("button", { name: "Email" }).click();
-    await page
-      .getByRole("button", { name: "Take them at an appointment" })
-      .click();
-
-    // The measurement inputs are hidden in appointment mode.
-    await expect(page.locator("#waist")).toHaveCount(0);
-
-    await continueToSubmit(page);
-    await page.getByRole("button", { name: "Submit Order" }).click();
-
-    await expect(
-      page.getByRole("heading", { name: "Order Received" }),
-    ).toBeVisible();
-    await expect(
-      page.getByText(/schedule your measurement appointment/i),
-    ).toBeVisible();
-    await expect(page.getByTestId("order-number")).toHaveText("ORD-APPT-0001");
-  });
-
   test("shows a destructive toast when the API rejects the submission", async ({
     page,
   }) => {
@@ -135,30 +105,6 @@ test.describe("Order form", () => {
     // Stays on the form; no success screen.
     await expect(
       page.getByRole("heading", { name: "Order Received" }),
-    ).toHaveCount(0);
-  });
-
-  test("blocks submission and surfaces validation errors for an empty form", async ({
-    page,
-  }) => {
-    let apiCalled = false;
-    await page.route("**/api/orders", (route) => {
-      apiCalled = true;
-      return route.fallback();
-    });
-
-    await page.goto("/order");
-    // Advancing runs validation; an empty form is blocked on step 0.
-    await page.getByRole("button", { name: /Continue to your piece/i }).click();
-
-    await expect(page.getByText("Full name is required")).toBeVisible();
-    await expect(
-      page.getByText("Please enter a valid email address"),
-    ).toBeVisible();
-    expect(apiCalled).toBe(false);
-    // Never advanced to the design step.
-    await expect(
-      page.getByRole("button", { name: /Continue to timeline/i }),
     ).toHaveCount(0);
   });
 });

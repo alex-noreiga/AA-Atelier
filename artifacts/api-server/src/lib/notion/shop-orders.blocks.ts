@@ -34,6 +34,17 @@ export const SHOP_ORDER_ITEMS_PROPERTY = "Inventory Items"; // relation -> inven
 // order's `Cancelled` checkbox — read back so the tracking page shows a
 // cancelled state. See `services/order-cancellation.service.ts`.
 export const SHOP_ORDER_CANCELLED_PROPERTY = "Cancelled"; // checkbox
+// The atelier's own "this order no longer consumes stock" marker, ticked in the
+// same write as `Cancelled`. It is what the order lines' `Counts Toward Sold`
+// formula reads (through their `Order Voided` rollup), so ticking it is how a
+// cancelled order's units go back on the shelf — without it a refunded order
+// would hold its stock forever once lines started being written. Kept as a
+// SEPARATE property from `Cancelled` because they answer different questions:
+// `Cancelled` is the customer-facing state the tracking page renders, `Voided`
+// is the bookkeeping fact the rollups travel, and the atelier ticks `Voided` by
+// hand for an order the app never took money for. See
+// `services/order-lines.service.ts`.
+export const SHOP_ORDER_VOIDED_PROPERTY = "Voided"; // checkbox
 // Set by the return/exchange refund flow (`services/return-refund.service.ts`)
 // after a refund succeeds. Both are ATELIER VISIBILITY ONLY — correctness rests
 // entirely on Stripe's own refund total, so the write is best-effort and a

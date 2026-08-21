@@ -20,6 +20,7 @@ import {
   SHOP_ORDER_STATUS_PROPERTY,
   SHOP_ORDER_TOTAL_PROPERTY,
   SHOP_ORDER_CANCELLED_PROPERTY,
+  SHOP_ORDER_VOIDED_PROPERTY,
   SHOP_ORDER_REFUNDED_PROPERTY,
   SHOP_ORDER_RETURN_PROCESSED_PROPERTY,
   SHOP_ORDER_TRACKING_NUMBER_PROPERTY,
@@ -425,8 +426,17 @@ export async function recordShopOrderRefund(
   }
 }
 
-/** Mark a shop order cancelled by setting its `Cancelled` checkbox. Idempotent,
- * like the custom order's {@link setOrderCancelled}. */
+/** Mark a shop order cancelled by setting its `Cancelled` checkbox — and its
+ * `Voided` checkbox in the same write, which is what puts the order's units back
+ * on the shelf: the order lines' `Counts Toward Sold` formula stops counting a
+ * voided order, so the inventory's `Units Sold (auto)` rollup falls back. The
+ * two are written together because a cancelled-and-refunded order that still
+ * consumed stock would be silently wrong. Idempotent, like the custom order's
+ * {@link setOrderCancelled}.
+ *
+ * A returned/exchanged order deliberately does NOT get voided here — whether a
+ * returned piece goes back on the shelf is the atelier's call (it may come back
+ * unsellable), so `Voided` stays theirs to tick. */
 export async function setShopOrderCancelled(
   pageId: string,
   client: NotionClient = getShopOrdersNotionClient(),
@@ -438,6 +448,7 @@ export async function setShopOrderCancelled(
     body: JSON.stringify({
       properties: {
         [SHOP_ORDER_CANCELLED_PROPERTY]: { checkbox: true },
+        [SHOP_ORDER_VOIDED_PROPERTY]: { checkbox: true },
       },
     }),
   });

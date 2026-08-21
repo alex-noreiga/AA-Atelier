@@ -1,45 +1,15 @@
 // Contact-message persistence against the separate "Website Contact Messages"
-// Notion database. Mirrors the orders repository create path, minus the
-// order-number generation and stage cache.
+// Notion database. The write path itself is the shared `contactDatabaseWriter`
+// (see contact-writer.ts) — this file supplies only the properties builder and
+// the label its errors are named for.
 
-import {
-  getContactNotionClient,
-  assertDatabaseConfigured,
-  type NotionClient,
-} from "./client.js";
+import { contactDatabaseWriter } from "./contact-writer.js";
 import {
   buildContactProperties,
   type CreateContactInput,
 } from "./contact.blocks.js";
 
-function assertConfigured(client: NotionClient): void {
-  assertDatabaseConfigured(
-    client,
-    "NOTION_CONTACT_DATABASE_ID is not configured for the contact database",
-  );
-}
-
-export async function createContactMessage(
-  data: CreateContactInput,
-  client: NotionClient = getContactNotionClient(),
-  clientPageId?: string,
-): Promise<void> {
-  assertConfigured(client);
-
-  const body: Record<string, unknown> = {
-    parent: { database_id: client.databaseId },
-    properties: buildContactProperties(data, clientPageId),
-  };
-
-  const response = await client.fetch("/v1/pages", {
-    method: "POST",
-    body: JSON.stringify(body),
-  });
-
-  if (!response.ok) {
-    const errorText = await response.text();
-    throw new Error(
-      `Notion contact-message creation failed with status ${response.status}: ${errorText}`,
-    );
-  }
-}
+export const createContactMessage = contactDatabaseWriter<CreateContactInput>(
+  buildContactProperties,
+  "contact-message",
+);

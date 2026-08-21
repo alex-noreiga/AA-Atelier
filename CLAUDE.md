@@ -238,7 +238,11 @@ Express app (artifacts/api-server)  ──►  Notion REST API (orders database)
   │                                  "Automated fitting reminders") and a
   │                                  best-effort payment reminder for any invoice
   │                                  deposit/balance coming due or overdue (see
-  │                                  "Payment & deposit due reminders").
+  │                                  "Payment & deposit due reminders"), a
+  │                                  back-in-stock alert sweep, and a best-effort
+  │                                  day-before reminder for every booked
+  │                                  appointment coming up (see "Day-before
+  │                                  appointment reminders").
   │                                  NOT part of the OpenAPI contract.
   ├─ GET  /api/studio/availability
   │                                → the atelier's standing working hours (the
@@ -493,7 +497,7 @@ stages/categories/working-hours.
    Notion DB is not a secrets store, and you can't read Notion settings without the
    API key + the settings DB's own id. The keys that ARE read from settings are
    enumerated in `SETTING_KEYS` (`lib/settings/store.ts`): `RUSH_SURCHARGE_RATE`,
-   `MEASUREMENT_LOCK_FROM_STAGE`, the four `APPOINTMENT_*` policy vars, the reward
+   `MEASUREMENT_LOCK_FROM_STAGE`, the five `APPOINTMENT_*` policy vars, the reward
    amounts, `COLOR_PALETTE` (the intake color picker's palette), and the
    notification **inboxes** (`ATELIER_INBOX_EMAIL`, `ATELIER_CONTACT_INBOX_EMAIL`,
    `ATELIER_APPOINTMENTS_INBOX_EMAIL`, `ALERT_INBOX_EMAIL`). Email **senders**
@@ -560,10 +564,15 @@ Load-bearing points:
    Custom-order payments don't use `processed_payments` — `recordPayment` is
    idempotent via the Notion invoice write alone.
 
-4. **Inventory is manual for v1.** A sale does not decrement Notion stock — the
-   atelier adjusts it by hand. `Quantity Available` is a Notion **formula** and
-   can't be written; auto-decrement would need a new writable count property plus
-   reservation logic. Don't wire it up without that.
+4. **Stock decrements by WRITING ROWS, not by writing a number.** A paid order
+   writes one **"order lines"** row per purchased item (`Item` relation → the
+   inventory row, plus `Qty`, `Unit Price` and `Size`), and the atelier's
+   existing rollups do the arithmetic: inventory's **`Units Sold (auto)`** sums
+   each line's `Counts Toward Sold` formula (its `Qty`, unless the parent order
+   is `Voided`) through that relation, and **`Quantity Available`** subtracts it.
+   That indirection is the whole design — `Quantity Available` is a Notion
+   **formula** and can't be written, so the line row is the only thing there is
+   to write. See "Automatic shop inventory decrement" below.
 
 5. **Shipping rates live in Stripe, not code.** `checkout.service` reads
    `STRIPE_SHIPPING_RATE_IDS` (comma-separated `shr_…` ids the atelier creates and
@@ -650,6 +659,80 @@ One-time setup: create the "Shop Orders" Notion database (properties in
 `shop-orders.blocks.ts`, including the `Order Number` rich_text property) and share
 the integration with it. Local testing uses Stripe test-mode keys +
 `stripe listen --forward-to localhost:3000/api/webhooks/stripe`.
+
+### Automatic shop inventory decrement (the "order lines" rows)
+
+A paid shop order writes one Notion **"order lines"** row per purchased item, and
+that is the shop's stock decrement. The machinery it feeds already existed and had
+never fired: checkout recorded the items only as free-text bullets on the order
+page, so the lines database stayed empty and stock drifted from the day the shop
+opened. Code: `services/order-lines.service.ts`,
+`lib/notion/order-lines.{blocks,repository}.ts`, `getOrderLinesNotionClient`, and
+the `recordShopOrderLines` call at the tail of `processPaidShopOrder`
+(`services/checkout.service.ts`). Load-bearing decisions:
+
+1. **The row IS the decrement — there is no number to write.** Inventory's
+   `Quantity Available` is a **formula** over a **`Units Sold (auto)`** rollup,
+   which sums each line's **`Counts Toward Sold`** formula (its `Qty`, unless the
+   parent order is `Voided`) through the line's **`Item`** relation. So the app
+   writes a row and the atelier's rollups do the arithmetic — no writable count
+   property, and no second store to keep in step. A line **without** an `Item`
+   relation contributes nothing, which is why a Stripe line we can't resolve to an
+   inventory row is **skipped and warned** rather than written as litter.
+
+2. **Best-effort, always — the paid order outranks its bookkeeping.** The lines
+   are written after the order's own Notion page, on the Stripe webhook path. A
+   throw there would 500 the webhook, Stripe would redeliver, and the redelivery
+   would early-return at the dedupe guard — losing the lines anyway and risking a
+   duplicate order. So every failure is caught **per line** (one bad row doesn't
+   cost the rest of the order its stock movement) and logged at **`error`**,
+   because a missed line drifts stock invisibly. Same reason the reclaim path
+   (order page already exists) writes no lines: like the confirmation email and
+   the rewards, they're skipped, not retried.
+
+3. **Quantity, price and size come from Stripe, not the cart.** The webhook
+   re-reads the session (`expand: ["line_items.data.price.product"]`), so what's
+   recorded is what was actually paid for. `checkout.service` stamps the
+   **`size`** onto each ad-hoc product's metadata alongside the `variantId` it
+   already carried — the size is in the display name too, but parsing it back out
+   of a string would be guesswork. `Unit Price` is the **listed** unit price, not
+   the discounted one: the order's `Items Subtotal` rollup is meant to be compared
+   against its `Total` to show shipping, fees and discounts.
+   `resolvePurchasedInventoryIds` (the `Inventory Items` relation) is now **derived
+   from the same** `purchasedLinesFromSession`, so the relation and the line rows
+   can't disagree about which inventory rows an order touched.
+
+4. **Cancelling an order puts its units back, via `Voided`.**
+   `setShopOrderCancelled` ticks the **`Voided`** checkbox in the same PATCH as
+   `Cancelled` — `Voided` is what `Counts Toward Sold` reads, so it's what makes
+   the rollup fall back. The two are separate properties on purpose: `Cancelled`
+   is the customer-facing state the tracking page renders, `Voided` is the
+   bookkeeping fact the rollups travel (and the atelier ticks it by hand for an
+   order the app never took money for). A **return/exchange** refund deliberately
+   does **not** void — whether a returned piece goes back on the shelf is the
+   atelier's call, since it may come back unsellable.
+
+5. **Still no reservation logic, by design.** Stock moves at **payment**, so an
+   abandoned checkout consumes nothing, but nothing is held between session
+   creation and payment either — two simultaneous checkouts can still oversell the
+   last piece. The quantity cap in `toLineItem` (against live `Quantity Available`)
+   remains the only guard. Reserving would need a store of its own; the roadmap
+   card explicitly scoped it out.
+
+6. **Optional, and unset means exactly the old behavior.**
+   `orderLinesConfigured()` gates the whole pass on
+   `NOTION_ORDER_LINES_DATABASE_ID`, so a workspace that hasn't shared the database
+   with the integration records paid orders as before and just doesn't decrement —
+   never a failed order over bookkeeping.
+
+The atelier's one-time setup: share the Notion integration with the **"order
+lines"** database and set **`NOTION_ORDER_LINES_DATABASE_ID`**. Nothing to add in
+Notion — `Line`, `Item`, `Order`, `Qty`, `Unit Price`, `Size` and the two formulas
+already exist, as do inventory's `Units Sold (auto)` / `Quantity Available` and the
+shop order's `Voided`. Note that lines exist only from this deploy onward, so
+reconcile the drift once by adjusting each item's **`Sold (opening)`** — the app
+never writes that property and never reads these rollups back except as
+`Quantity Available`.
 
 ### Custom-order payments (the invoice is the source of truth for all three stages)
 
@@ -1047,6 +1130,89 @@ No new env vars are required; the one optional knob is `PAYMENT_REMINDER_LEAD_DA
 payments"**: add **`First Deposit Due`** / **`Second Deposit Due`** (date) — the balance
 reuses **`Payment Deadline`** — and the three `Reminded` checkboxes (the app writes
 them; leave unchecked). Until those exist the pass is a no-op.
+
+## Day-before appointment reminders
+
+The day before a booked appointment, the customer gets a best-effort email with
+the time, the place, the Meet link if it's virtual, and — the point of it — the
+**reschedule / cancel link**, so someone who can't make it moves the slot instead
+of not turning up. No new endpoint, no new cron, no frontend change, and nothing
+to configure in Notion or Google. Code: `lib/appointments/reminders.ts` (the pure
+policy), `services/appointment-reminder.service.ts` (the sweep),
+`sendDueAppointmentReminders` in `services/schedule.service.ts`,
+`listAppointmentsInRange` / `markAppointmentReminded` in
+`lib/google/calendar.repository.ts`, and `appointmentReminderEmail` in
+`lib/resend/emails.ts`.
+
+This is a second reminder on top of Google's own calendar notification, and it
+earns that: Google's carries none of the manage link, the Meet link, or the
+confirmation code, and goes only to whoever accepted the invite.
+
+1. **A sweep over a window, because there is no appointments database.** A booking
+   exists only as an event on a staff calendar, so there's nothing to hang a
+   per-booking timer on. `listAppointmentsInRange` does one `events.list` per staff
+   calendar over the window and filters **client-side** to events carrying the
+   `aptEmail` stamp — Google ANDs repeated `privateExtendedProperty` params, so
+   "any appointment of ours" can't be asked for server-side the way
+   `listUpcomingAppointmentsByEmail` asks for one customer's.
+
+2. **The window is a calendar day, not a duration.** `reminderWindow` runs from
+   `now` to the **end of the local day `APPOINTMENT_REMINDER_LEAD_DAYS` ahead**
+   (default 1). A "24 hours out" test would miss exactly the bookings this exists
+   for: the nightly run fires around 3am studio time, so a 10am appointment
+   tomorrow is ~31 hours away when the sweep sees it. Starting at `now` rather than
+   at midnight also means a missed run degrades to a **late** reminder, not none.
+   `whenPhrase` renders "today" / "tomorrow" / "on Monday, August 24", so the copy
+   reads correctly whatever lead the atelier sets.
+
+3. **The idempotency marker is a TIME on the event, not a flag.** After sending,
+   `aptRemindedEmail` is stamped on the event with **the start instant that was
+   reminded about** (`sendUpdates=none` — bookkeeping must not fire a second
+   calendar notification). Two behaviors fall out of that shape rather than needing
+   rules of their own: a customer who **reschedules** after being reminded is
+   reminded again (the marker no longer matches the new `start`), and the feature
+   needs no table and no Notion property. A boolean would have silently suppressed
+   every rescheduled booking's reminder.
+
+4. **Send, then mark — the reverse of the back-in-stock sweep, deliberately.**
+   There a lost marker means re-emailing forever, so it claims first. Here the
+   window closes when the appointment passes, so a failed marker risks at most one
+   duplicate, while marking first would risk losing the reminder outright. A marker
+   failure is a `warn`, not a throw, and one unreadable booking never strands the
+   rest of the night's.
+
+5. **It rides the nightly reconciliation.** `sendDueAppointmentReminders` is the
+   fourth notification pass in `reconcileMilestones`, alongside fitting, payment and
+   restock — that cron already fires at the hour a day-before reminder wants, and
+   the studio dashboard's **Reconcile production milestones** tool is the on-demand
+   path for free. A cancelled event, one with no recognizable appointment type (a
+   calendar entry the atelier typed by hand), or one with no email is skipped, and
+   an install with no Google key / no `POSTGRES_URL` reports **unconfigured**
+   quietly rather than alerting the inbox nightly about a feature nobody turned on.
+
+6. **Customer email only + best-effort**, from the **appointments** sender.
+   Deliberately no atelier notification — the studio's calendar is already the day
+   sheet. The manage link needs `SESSION_SECRET` + `PUBLIC_BASE_URL`; unset ⇒ it's
+   omitted and the copy falls back to "reply to us", exactly like the confirmation
+   email.
+
+**Groundwork for SMS** (the roadmap's own later card, since the reminder is the
+natural first text): the customer's **phone is now stamped on the event**
+(`aptPhone`, written by `createCalendarEvent` — nothing reads it, but it's the one
+piece that can't be retro-fitted onto bookings already taken, the same argument
+that made `aptEmail` load-bearing later), the **marker is per-channel** from the
+start (`aptRemindedEmail` / `aptRemindedSms`, so a new channel doesn't inherit the
+email's history and find every booking already "reminded"), and the window, the due
+test and the wording are transport-agnostic. What SMS still needs is a vendor and —
+the real work — an **opt-in**: consent to be texted isn't the same permission as a
+transactional email, `preferredContact` is a "how should we reach you" rather than
+consent, and that belongs on the Client CRM next to the newsletter consent, not
+bolted onto this sweep. See `.agents/memory/appointment-reminders.md`.
+
+Known limits: an appointment the atelier types straight into Google is never
+reminded about (the sweep only recognizes bookings this app made), and there is one
+reminder per booking per start time — an additional "and again an hour before" would
+need a second marker, which the per-channel key scheme extends to cleanly.
 
 ## Post-delivery reviews (capture, then publish)
 
@@ -1840,10 +2006,9 @@ with `SESSION_SECRET`; its `"appointment"` purpose — the only token purpose �
      in `lib/resend/emails.ts`, `pages/appointment-manage.tsx` (+ shared
      `lib/appointment-format.ts`).
 
-A **day-before reminder** is a deliberate fast-follow, not built: it needs a new cron
-doing a net-new `events.list`-by-window plus a per-event `aptReminded` marker — the
-extended-property model above is the groundwork. See
-`.agents/memory/appointment-reschedule-cancel.md`.
+The **day-before reminder** was the deferred half of the same roadmap card and has
+since shipped, built on the extended-property model above — see "Day-before
+appointment reminders" below.
 
 ## Staff availability, edited on the dashboard
 
@@ -2697,14 +2862,47 @@ nonexistent number (the real Notion 404 path), and client-side form validation, 
 **never** creating an order/checkout/booking/contact message or sending an email, so it is
 safe to run against production forever.
 
-It runs **weekly** (not on every push) via `.github/workflows/smoke.yml` (`schedule` cron
+It runs **daily** at 13:00 UTC (not on every push) via `.github/workflows/smoke.yml`
+(`schedule` cron
 
-- `workflow_dispatch`); after every scheduled run it **emails a pass/fail report**
+- `workflow_dispatch`) — daily rather than weekly because the suite is read-only, so
+  running it often is free and it cuts worst-case detection latency for a production
+  break from ~7 days to ~1. The summary **email** is still weekly (Mondays), plus
+  immediately on any failure; after those runs it **emails a pass/fail report**
   (`tests/scripts/email-smoke-report.mjs`, through the app's Resend mailer — needs the
   `RESEND_API_KEY` + `RESEND_FROM_EMAIL` repo secrets, recipient `SMOKE_REPORT_TO`
   defaulting to the atelier inbox; the script self-gates and never fails the job if Resend
   is unset), built from the run's `json` reporter output. On a scheduled failure the
   workflow also opens or updates a single GitHub issue.
+
+**Two optional repo variables sharpen the suite.** Neither is a secret (an order number
+and a boolean aren't sensitive), so they are repo **variables**, not secrets:
+
+| Variable                   | Effect when unset                                             | Effect when set                                                    |
+| -------------------------- | ------------------------------------------------------------- | ------------------------------------------------------------------ |
+| `SMOKE_KNOWN_ORDER_NUMBER` | Falls back to the **`ORD-TEST-00000`** default in `smoke.yml` | Overrides the default with that order                              |
+| `SMOKE_EXPECT_REVIEWS`     | `reviews.smoke.ts` accepts an empty list                      | `1` requires `GET /api/reviews` to return at least one testimonial |
+
+`SMOKE_KNOWN_ORDER_NUMBER` gates the **only** spec that asserts a _successful_ data
+render. Every other data spec proves "the endpoint didn't error" — a regression that broke
+the success timeline (the actual payoff) would sail through an otherwise-green run. It is
+therefore **defaulted in `smoke.yml`** rather than left unset: it _was_ unset for the
+suite's entire life, so that spec never once ran while the job still reported green — a
+check that silently doesn't exist is worse than no check, because the green tells you it
+passed.
+
+The default uses the same shape as `PLAYWRIGHT_BASE_URL`'s apex fallback in that file, and
+a repo variable or secret still overrides it. What makes an order suitable as the
+sentinel: **permanent** (the atelier will never delete it), already at its **final stage**
+so its timeline can't shift under the test, and **studio-owned** rather than a customer's
+record being polled daily. `ORD-TEST-00000` ("Toothless Dress") is Delivered, has
+`Archived` ticked, and is the studio's own. Archiving is a checkbox the app never filters
+on, so an archived order still resolves normally; a **cancelled** one would not suit,
+because the tracking page then renders the cancelled banner instead of the timeline.
+
+Similarly `SMOKE_EXPECT_REVIEWS=1` is worth setting once testimonials are actually live —
+until then `GET /api/reviews` returning `[]` is ambiguous between "nothing published" and
+"the Notion read failed", and the endpoint is degrade-safe so it cannot tell you which.
 
 **CI.** `.github/workflows/ci.yml` runs on every pull request and push to `main`: install
 → `pnpm format:check` → `pnpm typecheck` → `pnpm build:vercel` → `pnpm test:coverage`
@@ -2895,8 +3093,11 @@ in the maintainer's env without edits.
     from transactional above that).
 - **Optional appointment-booking policy env vars:** `APPOINTMENT_TIMEZONE`
   (IANA zone for working hours/slots, default `America/Chicago`),
-  `APPOINTMENT_MIN_LEAD_HOURS` (24), `APPOINTMENT_MAX_ADVANCE_DAYS` (45), and
-  `APPOINTMENT_SLOT_STEP_MINUTES` (15). All have defaults.
+  `APPOINTMENT_MIN_LEAD_HOURS` (24), `APPOINTMENT_MAX_ADVANCE_DAYS` (45),
+  `APPOINTMENT_SLOT_STEP_MINUTES` (15), and `APPOINTMENT_REMINDER_LEAD_DAYS` (1 —
+  how many local days ahead the reminder sweep looks; a value below 1 falls back
+  to the default rather than becoming a morning-of note). All have defaults, and
+  all five are Studio-Settings tunables.
 - **Optional measurement-change env var:** `MEASUREMENT_LOCK_FROM_STAGE` (default
   `Cutting/Pinning`) — the live **Stage** option at/after which an order's
   measurements are frozen and `POST /orders/:n/measurement-change-requests` is
@@ -2978,6 +3179,14 @@ in the maintainer's env without edits.
   400s the whole page-create — so the property must exist first. Unset ⇒ no relation is
   written and the behavior is exactly as before (degrade-safe, like the `Client` link).
   See "Relate requests & orders to their sources" below.
+- **Optional order-lines database:** `NOTION_ORDER_LINES_DATABASE_ID` (the "order
+  lines" database). When set (and the integration is shared with it), a paid shop
+  order writes one line row per purchased item, which is what moves inventory's
+  `Units Sold (auto)` rollup and so `Quantity Available` — the shop's automatic
+  stock decrement. Unset ⇒ no lines are written and stock stays manual, exactly as
+  before (the order itself is recorded either way). Read at first use in
+  `getOrderLinesNotionClient`; gated by `orderLinesConfigured()`. See "Automatic
+  shop inventory decrement" above.
 
 ### Environment variables
 
@@ -3019,6 +3228,7 @@ scope went with the working-hours sheet.
 | ----------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------- |
 | `NOTION_CLIENT_CRM_DATABASE_ID`                                                                                   | CRM linking + all reward paths are skipped                          |
 | `NOTION_SETTINGS_DATABASE_ID`                                                                                     | Studio Settings is env-only (see "Studio Settings")                 |
+| `NOTION_ORDER_LINES_DATABASE_ID`                                                                                  | No order lines written ⇒ shop stock never decrements                |
 | `NOTION_RELATION_LINKS` (`1`/`true`/`yes`)                                                                        | Off — no order/inventory relations written (see "Relate requests…") |
 | `STRIPE_SHIPPING_RATE_IDS`                                                                                        | No shipping charged, no shipping options at checkout                |
 | `STRIPE_BNPL_METHODS`                                                                                             | Payment methods stay dynamic (Dashboard-managed)                    |
@@ -3029,6 +3239,7 @@ scope went with the working-hours sheet.
 | `RESEND_AUDIENCE_ID`                                                                                              | Newsletter sync skipped; the opt-in is still captured in Notion     |
 | `APPOINTMENT_TIMEZONE`                                                                                            | `America/Chicago`                                                   |
 | `APPOINTMENT_MIN_LEAD_HOURS` / `_MAX_ADVANCE_DAYS` / `_SLOT_STEP_MINUTES`                                         | `24` / `45` / `15`                                                  |
+| `APPOINTMENT_REMINDER_LEAD_DAYS`                                                                                  | `1` (the day before)                                                |
 | `MEASUREMENT_LOCK_FROM_STAGE`                                                                                     | `Cutting/Pinning`                                                   |
 | `RUSH_SURCHARGE_RATE`                                                                                             | `0.15` (`0` disables the surcharge line)                            |
 | `VITE_RUSH_WINDOW_DAYS`, `VITE_RUSH_SURCHARGE_NOTE` (build-time)                                                  | `21`, `"a 15% rush surcharge"`                                      |
@@ -3143,6 +3354,7 @@ full detail in `.agents/memory/phase2-workspace-crm-archive-markers.md`.
 | Change the landing page                                  | `artifacts/web-app/src/pages/home.tsx`                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                        |
 | Change the shop (live Notion inventory)                  | `artifacts/web-app/src/pages/shop.tsx` + `services/products.service.ts` + `lib/notion/products.*`                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                             |
 | Change the back-in-stock notify dialog                   | `artifacts/web-app/src/components/notify-dialog.tsx` + `services/notify.service.ts` + `lib/notion/notify.*` (writes to the **contact** database — see below)                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                  |
+| Change the shop's inventory decrement                    | `api-server/src/services/order-lines.service.ts` (`purchasedLinesFromSession` + the best-effort `recordShopOrderLines`) + `lib/notion/order-lines.{blocks,repository}.ts` + `getOrderLinesNotionClient`; called at the tail of `processPaidShopOrder` in `services/checkout.service.ts`. The `Voided` release is `setShopOrderCancelled` in `lib/notion/shop-orders.repository.ts`                                                                                                                                                                                                                                                                                                            |
 | Change shop checkout / payments                          | `artifacts/web-app/src/lib/cart.tsx` + `components/cart-drawer.tsx` + `components/add-to-cart.tsx` (frontend); `api-server/src/services/checkout.service.ts` + `routes/checkout.ts` + `routes/stripe-webhook.ts` + `lib/stripe/*` + `lib/notion/shop-orders.*` (backend)                                                                                                                                                                                                                                                                                                                                                                                                                      |
 | Change shop-order tracking                               | `artifacts/web-app/src/components/shop-order-result.tsx` (rendered by `pages/track.tsx`; + order number on `pages/shop-success.tsx`); `api-server/src/services/shop-orders.service.ts` + `routes/shop-orders.ts` + `lib/notion/shop-orders.{blocks,repository}.ts` + `services/checkout.service.ts` (mints the number)                                                                                                                                                                                                                                                                                                                                                                        |
 | Change the return / exchange request                     | `artifacts/web-app/src/components/return-exchange-dialog.tsx` (opened from `components/shop-order-result.tsx`); `api-server/src/services/return-request.service.ts` + `routes/shop-orders.ts` (`POST /shop-orders/:n/return-requests`) + `lib/notion/return-request.{blocks,repository}.ts` (writes to the **contact** database) + `findShopOrderVerification` in `lib/notion/shop-orders.repository.ts`; policy copy in `pages/shipping-returns.tsx`                                                                                                                                                                                                                                         |
@@ -3153,6 +3365,7 @@ full detail in `.agents/memory/phase2-workspace-crm-archive-markers.md`.
 | Change production-schedule milestones                    | `api-server/src/services/schedule.service.ts` + `routes/cron.ts` + `lib/notion/production-schedule.{blocks,repository}.ts` + `lib/notion/orders.repository.ts` (`findOrdersNeedingMilestones`/`markMilestonesGenerated`); cron in `vercel.json`                                                                                                                                                                                                                                                                                                                                                                                                                                               |
 | Change order status-change emails (+ pipeline graphic)   | `api-server/src/lib/resend/emails.ts` (`orderStageChangeEmail`) + `services/order-notification.service.ts` + `routes/order-notification.ts` + `lib/notion/orders.repository.ts` (`findOrderForStageNotification`); Notion automation → `POST /api/webhooks/notion-stage-change`; on-demand send via the `status-email` studio tool                                                                                                                                                                                                                                                                                                                                                            |
 | Change back-in-stock alerts                              | `services/restock-notification.service.ts` + `services/restock.ts` + `sendDueRestockAlerts` in `services/schedule.service.ts` + `claimRestockAlert` in `lib/db/restock-alerts.repository.ts` + `findPendingBackInStockRequests` in `lib/notion/notify.repository.ts`; the on-demand run is the `restock-alert` studio tool                                                                                                                                                                                                                                                                                                                                                                    |
+| Change day-before appointment reminders                  | `lib/appointments/reminders.ts` (window, per-channel markers, `whenPhrase`) + `services/appointment-reminder.service.ts` (the sweep) + `sendDueAppointmentReminders` in `services/schedule.service.ts` + `listAppointmentsInRange` / `markAppointmentReminded` / the `aptPhone` stamp in `lib/google/calendar.repository.ts` + `appointmentReminderEmail` in `lib/resend/emails.ts`; runs in the milestone cron                                                                                                                                                                                                                                                                               |
 | Change automated fitting reminders                       | `api-server/src/services/schedule.service.ts` (`sendDueFittingReminders`) + `services/fitting-reminder.ts` (env business rule) + `lib/notion/production-schedule.{blocks,repository}.ts` (`findMilestonesNeedingFittingReminder`/`markFittingReminderSent`, `Reminder Sent` prop) + `fittingReminderEmail` in `lib/resend/emails.ts`; runs in the milestone cron                                                                                                                                                                                                                                                                                                                              |
 | Change payment & deposit due reminders                   | `api-server/src/services/schedule.service.ts` (`sendDuePaymentReminders`) + `services/payment-reminder.ts` (env business rule) + `lib/notion/invoice.repository.ts` (`findInvoicesNeedingPaymentReminder`/`markPaymentStageReminded`) + `extractPaymentReminderInvoice` + `PAYMENT_STAGE_REMINDER_FIELDS` in `lib/notion/invoice.schema.ts` + `paymentReminderEmail` in `lib/resend/emails.ts`; runs in the milestone cron                                                                                                                                                                                                                                                                    |
 | Change appointment booking (UI)                          | `artifacts/web-app/src/pages/appointments.tsx`                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                |

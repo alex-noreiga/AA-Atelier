@@ -16,6 +16,8 @@ import {
   getScheduleConfig,
   listBusyInRange,
   listUpcomingAppointmentsByEmail,
+  listAppointmentsInRange,
+  markAppointmentReminded,
   type BookedAppointment,
 } from "../../src/lib/google/calendar.repository.js";
 import {
@@ -172,6 +174,23 @@ describe("createCalendarEvent", () => {
       aptName: "Ada Lovelace",
     });
     expect(body.conferenceData).toBeUndefined();
+    // No phone was given, so no empty property is written.
+    expect(body.extendedProperties.private.aptPhone).toBeUndefined();
+  });
+
+  // Nothing reads the number yet. It is stamped now because a later channel
+  // (the roadmap's SMS card) cannot retro-fit it onto bookings already taken.
+  it("stamps the customer's phone number when they gave one", async () => {
+    const client = fakeClient(() => jsonResponse({ id: "evt-1" }));
+
+    await createCalendarEvent(
+      { ...base, phone: "+1 555 0100" },
+      "Consultation — Ada",
+      client,
+    );
+
+    const body = JSON.parse(client.calls[0].init!.body as string);
+    expect(body.extendedProperties.private.aptPhone).toBe("+1 555 0100");
   });
 
   it("requests a Google Meet link for a virtual booking", async () => {
@@ -368,5 +387,162 @@ describe("listUpcomingAppointmentsByEmail", () => {
     const client = fakeClient(() => jsonResponse({ items: [] }));
     expect(await listUpcomingAppointmentsByEmail("  ", client)).toEqual([]);
     expect(client.calls).toHaveLength(0);
+  });
+});
+
+describe("listAppointmentsInRange", () => {
+  function twoCalendars() {
+    mockSchedule.mockResolvedValue({
+      weeklyHours: [],
+      calendars: new Map([
+        ["Alexandra", "alexandra@atelier.test"],
+        ["Alayna", "alayna@atelier.test"],
+      ]),
+    });
+  }
+
+  it("lists the window on every staff calendar, merged and sorted by start", async () => {
+    twoCalendars();
+    const client = fakeClient((subject) =>
+      subject === "alexandra@atelier.test"
+        ? jsonResponse({
+            items: [
+              {
+                id: "evt-late",
+                status: "confirmed",
+                start: { dateTime: "2026-07-25T18:00:00Z" },
+                end: { dateTime: "2026-07-25T19:00:00Z" },
+                extendedProperties: {
+                  private: { aptEmail: "a@example.com", aptType: "fitting" },
+                },
+              },
+            ],
+          })
+        : jsonResponse({
+            items: [
+              {
+                id: "evt-early",
+                status: "confirmed",
+                start: { dateTime: "2026-07-25T14:00:00Z" },
+                end: { dateTime: "2026-07-25T15:00:00Z" },
+                extendedProperties: {
+                  private: { aptEmail: "b@example.com", aptType: "fitting" },
+                },
+              },
+            ],
+          }),
+    );
+
+    const found = await listAppointmentsInRange(
+      new Date("2026-07-25T00:00:00Z"),
+      new Date("2026-07-26T00:00:00Z"),
+      client,
+    );
+
+    expect(found.map((entry) => entry.event.id)).toEqual([
+      "evt-early",
+      "evt-late",
+    ]);
+    expect(found[0].staff).toBe("Alayna");
+    expect(client.calls[0].path).toContain(
+      "timeMin=2026-07-25T00%3A00%3A00.000Z",
+    );
+    expect(client.calls[0].path).toContain("singleEvents=true");
+  });
+
+  // The window read can't filter to our events server-side (repeating
+  // `privateExtendedProperty` ANDs the pairs), so the staff member's own diary
+  // comes back with it and is dropped here.
+  it("drops calendar entries that aren't appointments this app booked", async () => {
+    mockSchedule.mockResolvedValue({
+      weeklyHours: [],
+      calendars: new Map([["Alexandra", "alexandra@atelier.test"]]),
+    });
+    const client = fakeClient(() =>
+      jsonResponse({
+        items: [
+          {
+            id: "personal",
+            status: "confirmed",
+            start: { dateTime: "2026-07-25T14:00:00Z" },
+            end: { dateTime: "2026-07-25T15:00:00Z" },
+          },
+          {
+            id: "ours",
+            status: "confirmed",
+            start: { dateTime: "2026-07-25T16:00:00Z" },
+            end: { dateTime: "2026-07-25T17:00:00Z" },
+            extendedProperties: { private: { aptEmail: "a@example.com" } },
+          },
+        ],
+      }),
+    );
+
+    const found = await listAppointmentsInRange(
+      new Date("2026-07-25T00:00:00Z"),
+      new Date("2026-07-26T00:00:00Z"),
+      client,
+    );
+
+    expect(found.map((entry) => entry.event.id)).toEqual(["ours"]);
+  });
+
+  it("throws when a calendar read fails", async () => {
+    mockSchedule.mockResolvedValue({
+      weeklyHours: [],
+      calendars: new Map([["Alexandra", "alexandra@atelier.test"]]),
+    });
+    const client = fakeClient(() => jsonResponse({}, 503));
+
+    await expect(
+      listAppointmentsInRange(
+        new Date("2026-07-25T00:00:00Z"),
+        new Date("2026-07-26T00:00:00Z"),
+        client,
+      ),
+    ).rejects.toThrow(/503/);
+  });
+});
+
+describe("markAppointmentReminded", () => {
+  it("re-sends the properties it read plus the marker, notifying nobody", async () => {
+    const client = fakeClient(() => jsonResponse({ id: "evt-1" }));
+
+    await markAppointmentReminded(
+      "Alexandra",
+      "evt-1",
+      { aptEmail: "a@example.com", aptType: "fitting" },
+      { key: "aptRemindedEmail", value: "2026-07-25T14:00:00.000Z" },
+      client,
+    );
+
+    const call = client.calls[0];
+    expect(call.init?.method).toBe("PATCH");
+    // Bookkeeping, not a change to the booking — a reminder must not also
+    // arrive as a second calendar notification.
+    expect(call.path).toContain("sendUpdates=none");
+    expect(JSON.parse(String(call.init?.body))).toEqual({
+      extendedProperties: {
+        private: {
+          aptEmail: "a@example.com",
+          aptType: "fitting",
+          aptRemindedEmail: "2026-07-25T14:00:00.000Z",
+        },
+      },
+    });
+  });
+
+  it("throws when Google rejects the patch", async () => {
+    const client = fakeClient(() => jsonResponse({}, 500));
+
+    await expect(
+      markAppointmentReminded(
+        "Alexandra",
+        "evt-1",
+        {},
+        { key: "aptRemindedEmail", value: "x" },
+        client,
+      ),
+    ).rejects.toThrow(/500/);
   });
 });

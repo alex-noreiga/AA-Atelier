@@ -4,6 +4,7 @@ import {
   minLeadMinutes,
   maxAdvanceDays,
   slotStepMinutes,
+  reminderLeadDays,
 } from "../../src/lib/appointments/settings.js";
 import {
   __setSettingsSnapshot,
@@ -19,6 +20,7 @@ beforeEach(() => {
   delete process.env.APPOINTMENT_MIN_LEAD_HOURS;
   delete process.env.APPOINTMENT_MAX_ADVANCE_DAYS;
   delete process.env.APPOINTMENT_SLOT_STEP_MINUTES;
+  delete process.env.APPOINTMENT_REMINDER_LEAD_DAYS;
 });
 afterEach(() => {
   __resetSettings();
@@ -112,5 +114,34 @@ describe("slotStepMinutes", () => {
   it("floors a fractional configured value", () => {
     process.env.APPOINTMENT_SLOT_STEP_MINUTES = "20.7";
     expect(slotStepMinutes()).toBe(20);
+  });
+});
+
+describe("reminderLeadDays", () => {
+  it("defaults to the day before", () => {
+    expect(reminderLeadDays()).toBe(1);
+  });
+
+  it("uses a longer configured lead", () => {
+    process.env.APPOINTMENT_REMINDER_LEAD_DAYS = "3";
+    expect(reminderLeadDays()).toBe(3);
+  });
+
+  it("prefers the live Studio Settings value over the env var", () => {
+    process.env.APPOINTMENT_REMINDER_LEAD_DAYS = "3";
+    __setSettingsSnapshot({ APPOINTMENT_REMINDER_LEAD_DAYS: "2" });
+    expect(reminderLeadDays()).toBe(2);
+  });
+
+  // Below a day isn't a shorter reminder, it's a different feature (a morning-of
+  // note). Falling back keeps a mistyped value from quietly becoming that.
+  it("falls back rather than degrading to a same-day note", () => {
+    process.env.APPOINTMENT_REMINDER_LEAD_DAYS = "0";
+    expect(reminderLeadDays()).toBe(1);
+  });
+
+  it("falls back for a non-numeric value", () => {
+    process.env.APPOINTMENT_REMINDER_LEAD_DAYS = "soon";
+    expect(reminderLeadDays()).toBe(1);
   });
 });

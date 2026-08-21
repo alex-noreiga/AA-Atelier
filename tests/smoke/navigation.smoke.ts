@@ -38,8 +38,12 @@ test.describe("Production smoke: site navigation", () => {
     { path: "/about", testId: "story-section", name: "About" },
     { path: "/services", testId: "cta-begin-commission", name: "Services" },
     { path: "/contact", testId: "submit-contact", name: "Contact" },
-    // The intake is a three-step flow, so the first thing it renders is the
-    // step-0 continue button — "submit-order" only exists on the last step.
+    // The intake is a THREE-step flow (PR #194, 2026-08-20): "Your details" ->
+    // "Your piece" -> "Timeline". `submit-order` lives on the last step, so it
+    // does not exist on load — asserting it here turned the monitor red the
+    // morning after that shipped, with production perfectly healthy. Assert the
+    // step-1 CTA instead: it is present on load and only renders once the form
+    // itself has mounted, so a white-screened route still fails.
     { path: "/order", testId: "continue-to-design", name: "Order form" },
     { path: "/appointments", testId: "step-purpose", name: "Appointments" },
     // Legal / policy pages (consent + terms live here) — heading-based, since
