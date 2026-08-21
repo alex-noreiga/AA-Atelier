@@ -996,6 +996,7 @@ export const GetStudioGuidesResponse = zod.object({
   "label": zod.string().describe('How the section reads to the atelier, and the other spelling the row\'s `Section` is accepted as (matching ignores case, spacing and punctuation).')
 }).describe('One place on the dashboard a guide can be filed against — the six tools, the panels, and `general` for everything else. Served rather than duplicated in the frontend so the atelier can be shown the accepted `Section` values verbatim, and so a renamed tool has one definition.')).describe('The sections a guide may be filed against, in dashboard order.'),
   "configured": zod.boolean().describe('False when the guides database isn\'t wired up, in which case `guides` is empty and the panel says why rather than reading as \"no guides have been written\".'),
+  "unreachable": zod.boolean().optional().describe('True when the database id IS set but Notion answered 404 — the integration has not been shared with the database, or the id is wrong. `guides` is empty and the panel says what to fix; reported rather than thrown because it is a configuration state only a human can clear, not an outage worth erroring the panel over. Absent when the read worked.'),
   "truncated": zod.boolean().optional().describe('True when more rows exist than the server will read in one page, so the dashboard can say the list is partial instead of looking complete.')
 }).describe('Every guide the atelier has written, with the vocabulary saying where each may be filed.')
 

@@ -431,6 +431,8 @@ export interface StudioGuideList {
   sections: GuideSection[];
   /** False when the guides database isn't wired up, in which case `guides` is empty and the panel says why rather than reading as "no guides have been written". */
   configured: boolean;
+  /** True when the database id IS set but Notion answered 404 — the integration has not been shared with the database, or the id is wrong. `guides` is empty and the panel says what to fix; reported rather than thrown because it is a configuration state only a human can clear, not an outage worth erroring the panel over. Absent when the read worked. */
+  unreachable?: boolean;
   /** True when more rows exist than the server will read in one page, so the dashboard can say the list is partial instead of looking complete. */
   truncated?: boolean;
 }

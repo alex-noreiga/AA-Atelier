@@ -139,6 +139,16 @@ export function StudioGuides() {
           NOTION_STUDIO_GUIDES_DATABASE_ID and share the Notion integration with
           the Studio Guides database.
         </p>
+      ) : data?.unreachable ? (
+        <p
+          className="text-sm text-muted-foreground font-light"
+          data-testid="guides-unreachable"
+        >
+          Notion can’t find the Studio Guides database, so no guides can be
+          shown. Open it in Notion and share it with the integration (⋯ →
+          Connections), and check NOTION_STUDIO_GUIDES_DATABASE_ID holds that
+          database’s id.
+        </p>
       ) : (
         <div className="space-y-3">
           {all.length === 0 && (

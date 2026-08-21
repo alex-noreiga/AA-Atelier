@@ -33,6 +33,7 @@ import {
   assertDatabaseConfigured,
   type NotionClient,
 } from "./client.js";
+import { notionRequestError } from "./errors.js";
 import {
   extractGuide,
   type GuideAttachment,
@@ -84,18 +85,6 @@ export function guidesConfigured(
 }
 
 /**
- * Thrown when Notion says the database isn't there.
- *
- * Distinguished from every other failure because it is the one the atelier
- * causes and can fix: setting the id but never sharing the database with the
- * integration 404s every query. Left as a bare error that would be a permanent
- * 500 plus an alert email on every dashboard load; the service turns it into
- * the same "not connected" the unset id gets, which is what the panel already
- * tells you how to fix.
- */
-export class GuidesDatabaseUnreachableError extends Error {}
-
-/**
  * Every guide row, most recently edited first. Metadata only — no downloads.
  *
  * Deliberately unsorted by the atelier's `Order` at the query: sorting on a
@@ -118,15 +107,14 @@ export async function listGuides(
     },
   );
 
-  if (response.status === 404) {
-    throw new GuidesDatabaseUnreachableError(
-      "Notion returned 404 for the Studio Guides database",
-    );
-  }
   if (!response.ok) {
-    throw new Error(
-      `Notion guides query failed with status ${response.status}`,
-    );
+    // The label and the id ride the error, and a 404 keeps its status as data
+    // so the service can read it as a configuration state rather than an
+    // outage. See `lib/notion/errors.ts`.
+    throw await notionRequestError(response, {
+      label: "Studio Guides",
+      databaseId: client.databaseId,
+    });
   }
 
   const data = (await response.json()) as NotionGuidesQueryResponse;
@@ -145,9 +133,15 @@ export async function findGuideById(
   assertConfigured(client);
 
   const response = await client.fetch(`/v1/pages/${guideId}`);
+  // A 404 here is the ROW, not the database — the listing already proved the
+  // database is reachable — so it is an ordinary "that guide is gone".
   if (response.status === 404) return null;
   if (!response.ok) {
-    throw new Error(`Notion guide read failed with status ${response.status}`);
+    throw await notionRequestError(response, {
+      label: "Studio Guides",
+      databaseId: client.databaseId,
+      operation: "page read",
+    });
   }
 
   return extractGuide((await response.json()) as NotionGuidePage);

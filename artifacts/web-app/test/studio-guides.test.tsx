@@ -245,6 +245,21 @@ describe("StudioGuides", () => {
     expect(screen.queryByTestId("guides-empty")).not.toBeInTheDocument();
   });
 
+  // Distinct from unconfigured: the fix is sharing the database, not setting
+  // the env var, and the panel must name the right one.
+  it("says what to fix when Notion can't see the database", () => {
+    h.guides = {
+      ...h.guides,
+      data: list({ configured: true, unreachable: true }),
+    };
+
+    render(<StudioGuides />);
+
+    expect(screen.getByTestId("guides-unreachable")).toBeInTheDocument();
+    expect(screen.queryByTestId("guides-empty")).not.toBeInTheDocument();
+    expect(screen.queryByTestId("guides-unconfigured")).not.toBeInTheDocument();
+  });
+
   it("says how to add one when nothing has been written", () => {
     render(<StudioGuides />);
     expect(screen.getByTestId("guides-empty")).toBeInTheDocument();

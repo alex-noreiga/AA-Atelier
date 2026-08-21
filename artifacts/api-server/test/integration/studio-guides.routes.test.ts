@@ -2,18 +2,12 @@ import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 
 // Mock the Notion adapter so the real service + route + auth stack runs without
 // the network. The section resolution and the file handling are unit-tested.
-vi.mock("../../src/lib/notion/guides.repository.js", async () => {
-  const actual = await vi.importActual<
-    typeof import("../../src/lib/notion/guides.repository.js")
-  >("../../src/lib/notion/guides.repository.js");
-  return {
-    GuidesDatabaseUnreachableError: actual.GuidesDatabaseUnreachableError,
-    guidesConfigured: vi.fn(),
-    listGuides: vi.fn(),
-    findGuideById: vi.fn(),
-    fetchGuideDocument: vi.fn(),
-  };
-});
+vi.mock("../../src/lib/notion/guides.repository.js", () => ({
+  guidesConfigured: vi.fn(),
+  listGuides: vi.fn(),
+  findGuideById: vi.fn(),
+  fetchGuideDocument: vi.fn(),
+}));
 
 import request from "supertest";
 import app from "../../src/app.js";
@@ -22,8 +16,8 @@ import {
   listGuides,
   findGuideById,
   fetchGuideDocument,
-  GuidesDatabaseUnreachableError,
 } from "../../src/lib/notion/guides.repository.js";
+import { NotionRequestError } from "../../src/lib/notion/errors.js";
 import { __resetStudioGuidesCache } from "../../src/services/studio-guides.service.js";
 import type { GuideRecord } from "../../src/lib/notion/guides.schema.js";
 import {
@@ -201,17 +195,19 @@ describe("GET /api/studio/guides", () => {
   // The id set but the integration never shared 404s every query. Left as a
   // throw that is a permanent 500 plus an alert email on every dashboard load,
   // for a misconfiguration the "not connected" copy already tells you to fix.
-  it("reads an unreachable database as not connected rather than 500ing", async () => {
-    mockList.mockRejectedValue(
-      new GuidesDatabaseUnreachableError("Notion returned 404"),
-    );
+  it("reports an unreachable database rather than 500ing", async () => {
+    mockList.mockRejectedValue(new NotionRequestError("404", 404));
 
     const response = await request(app)
       .get("/api/studio/guides")
       .set("Authorization", "Bearer staff-token");
 
     expect(response.status).toBe(200);
-    expect(response.body).toMatchObject({ guides: [], configured: false });
+    expect(response.body).toMatchObject({
+      guides: [],
+      configured: true,
+      unreachable: true,
+    });
   });
 });
 

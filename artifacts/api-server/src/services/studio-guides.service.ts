@@ -47,8 +47,8 @@ import {
   listGuides,
   findGuideById,
   fetchGuideDocument,
-  GuidesDatabaseUnreachableError,
 } from "../lib/notion/guides.repository.js";
+import { isNotionNotFound } from "../lib/notion/errors.js";
 import type { GuideRecord } from "../lib/notion/guides.schema.js";
 import {
   GUIDE_SECTIONS,
@@ -86,6 +86,10 @@ export interface StudioGuidesResult {
   guides: StudioGuideView[];
   sections: GuideSection[];
   configured: boolean;
+  /** True when the id IS set but Notion answered 404 — never shared with the
+   * integration, or the wrong id. A configuration state, not an outage, so it
+   * is reported rather than thrown; see {@link getStudioGuides}. */
+  unreachable?: boolean;
   truncated?: boolean;
 }
 
@@ -199,17 +203,19 @@ export async function getStudioGuides(): Promise<StudioGuidesResult> {
     // to.
     if (cached) return cached.result;
 
-    // An id set but never shared with the integration 404s every query. Left
-    // as a throw that is a permanent 500 plus an alert email on every dashboard
-    // load — for a misconfiguration whose fix the "not connected" copy already
-    // names. So it degrades to exactly what an unset id gets. Every other
-    // failure still surfaces.
-    if (error instanceof GuidesDatabaseUnreachableError) {
+    // An id set but never shared with the integration 404s every query. Left as
+    // a throw that is a permanent 500 plus an alert email on every dashboard
+    // load — for a configuration mistake only a human can clear, which is the
+    // same KIND of state as an unset id. So it is reported and the panel says
+    // what to fix. Deliberately NOT folded into `configured: false`: the two
+    // have different fixes, and the panel names the right one. Every other
+    // failure still throws — a 502 from Notion IS an outage.
+    if (isNotionNotFound(error)) {
       logger.warn(
         { err: error },
-        "Studio Guides database is set but unreachable — is the Notion integration shared with it?",
+        "Studio Guides database is configured but Notion cannot see it; check the id and that the integration is shared with it",
       );
-      return { guides: [], sections, configured: false };
+      return { guides: [], sections, configured: true, unreachable: true };
     }
     throw error;
   }

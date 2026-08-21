@@ -149,12 +149,21 @@ sandboxed frame beside whatever that section names.
     procedures. Markup is fetched on demand and held by the browser's query
     cache while the guide is open, so replacing a file shows on the next open.
 
-12. **An unreachable database reads as "not connected", not as an error.** The
-    id set but the integration never shared 404s every query. Left as a throw
-    that is a permanent 500 **plus an alert email on every dashboard load** —
-    for the single likeliest setup mistake, and one whose fix the "not
-    connected" copy already names. So a Notion 404 degrades to exactly what an
-    unset id gets, with a pointed `warn`. Every other failure still surfaces.
+12. **An unreachable database is reported, not thrown — and is its OWN state.**
+    The id set but the integration never shared 404s every query. Left as a
+    throw that is a permanent 500 **plus an alert email on every dashboard
+    load**, for the single likeliest setup mistake and a configuration state
+    only a human can clear. So it comes back as `unreachable: true` with
+    `configured: true`, and the panel says what to fix. Deliberately **not**
+    folded into `configured: false`: the two have different fixes (set the env
+    var vs. share the database), and the panel names the right one. Every other
+    failure still throws — a 502 from Notion IS an outage and clears itself.
+
+    This uses the shared `lib/notion/errors.ts` (`notionRequestError` /
+    `isNotionNotFound`), which landed on `main` for the materials panel while
+    this branch was in flight and solves the identical problem. An earlier cut
+    here carried its own `GuidesDatabaseUnreachableError` and conflated 404 with
+    "not configured"; both were replaced rather than left to diverge.
 
 ## OUTSTANDING — atelier steps the code can't do
 

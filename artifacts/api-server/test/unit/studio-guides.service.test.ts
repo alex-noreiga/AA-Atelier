@@ -1,26 +1,19 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 
-vi.mock("../../src/lib/notion/guides.repository.js", async () => {
-  const actual = await vi.importActual<
-    typeof import("../../src/lib/notion/guides.repository.js")
-  >("../../src/lib/notion/guides.repository.js");
-  return {
-    // The real error class, so `instanceof` in the service means what it says.
-    GuidesDatabaseUnreachableError: actual.GuidesDatabaseUnreachableError,
-    guidesConfigured: vi.fn(),
-    listGuides: vi.fn(),
-    findGuideById: vi.fn(),
-    fetchGuideDocument: vi.fn(),
-  };
-});
+vi.mock("../../src/lib/notion/guides.repository.js", () => ({
+  guidesConfigured: vi.fn(),
+  listGuides: vi.fn(),
+  findGuideById: vi.fn(),
+  fetchGuideDocument: vi.fn(),
+}));
 
 import {
   guidesConfigured,
   listGuides,
   findGuideById,
   fetchGuideDocument,
-  GuidesDatabaseUnreachableError,
 } from "../../src/lib/notion/guides.repository.js";
+import { NotionRequestError } from "../../src/lib/notion/errors.js";
 import {
   getStudioGuides,
   getStudioGuideContent,
@@ -193,16 +186,27 @@ describe("getStudioGuides", () => {
 
   // The likeliest setup mistake — id set, integration never shared — 404s every
   // query. Left as a throw it would be a permanent 500 plus an alert email on
-  // every dashboard load, for something the "not connected" copy already tells
-  // you how to fix.
-  it("reads an unreachable database as not connected, not as an error", async () => {
-    mockList.mockRejectedValue(
-      new GuidesDatabaseUnreachableError("Notion returned 404"),
-    );
+  // every dashboard load, for a configuration state only a human can clear.
+  it("reports an unreachable database rather than erroring", async () => {
+    mockList.mockRejectedValue(new NotionRequestError("404", 404));
 
     const result = await getStudioGuides();
 
-    expect(result).toMatchObject({ guides: [], configured: false });
+    expect(result).toMatchObject({
+      guides: [],
+      // Distinct from `configured: false` on purpose — the two have different
+      // fixes, and the panel names the right one.
+      configured: true,
+      unreachable: true,
+    });
+  });
+
+  // A 502 IS an outage: it clears itself, so it must not be reported as a
+  // configuration state the atelier is expected to go and fix.
+  it("still throws on a Notion status that isn't 404", async () => {
+    mockList.mockRejectedValue(new NotionRequestError("bad gateway", 502));
+
+    await expect(getStudioGuides()).rejects.toThrow("bad gateway");
   });
 
   it("caches the listing so a refresh doesn't re-query Notion", async () => {
