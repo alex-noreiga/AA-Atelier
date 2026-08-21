@@ -61,6 +61,7 @@ let contactClient: NotionClient | null = null;
 let inventoryClient: NotionClient | null = null;
 let productCategoriesClient: NotionClient | null = null;
 let shopOrdersClient: NotionClient | null = null;
+let materialsClient: NotionClient | null = null;
 let orderLinesClient: NotionClient | null = null;
 let productionScheduleClient: NotionClient | null = null;
 let clientCrmClient: NotionClient | null = null;
@@ -145,6 +146,25 @@ export function getShopOrdersNotionClient(): NotionClient {
     });
   }
   return shopOrdersClient;
+}
+
+/**
+ * Client for the "materials inventory" database — the atelier's fabrics,
+ * appliqués, crystals, notions and packaging, with the reorder points set
+ * against them. READ-ONLY: the app surfaces the restock alerts, it never writes
+ * stock back. Same lazy construction, reads `NOTION_MATERIALS_DATABASE_ID`.
+ * Optional: when the env var is unset the client's `databaseId` is empty and the
+ * repository treats that as "not configured", so the dashboard panel says so and
+ * the weekly digest no-ops.
+ */
+export function getMaterialsNotionClient(): NotionClient {
+  if (!materialsClient) {
+    materialsClient = createNotionClient({
+      apiKey: process.env.NOTION_API_KEY ?? "",
+      databaseId: process.env.NOTION_MATERIALS_DATABASE_ID ?? "",
+    });
+  }
+  return materialsClient;
 }
 
 /**

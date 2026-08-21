@@ -58,6 +58,7 @@ describe("runStudioTool — milestones", () => {
       paymentRemindersSent: 2,
       restockAlertsSent: 0,
       appointmentRemindersSent: 0,
+      materialsDigestItems: 0,
     });
 
     const result = await runStudioTool("milestones");
@@ -81,6 +82,7 @@ describe("runStudioTool — milestones", () => {
       paymentRemindersSent: 0,
       restockAlertsSent: 4,
       appointmentRemindersSent: 0,
+      materialsDigestItems: 0,
     });
 
     const result = await runStudioTool("milestones");
@@ -99,6 +101,7 @@ describe("runStudioTool — milestones", () => {
       paymentRemindersSent: 0,
       restockAlertsSent: 0,
       appointmentRemindersSent: 2,
+      materialsDigestItems: 0,
     });
 
     const result = await runStudioTool("milestones");
@@ -115,6 +118,7 @@ describe("runStudioTool — milestones", () => {
       paymentRemindersSent: 0,
       restockAlertsSent: 0,
       appointmentRemindersSent: 0,
+      materialsDigestItems: 0,
     });
 
     const result = await runStudioTool("milestones");
@@ -131,6 +135,7 @@ describe("runStudioTool — milestones", () => {
       paymentRemindersSent: 0,
       restockAlertsSent: 0,
       appointmentRemindersSent: 0,
+      materialsDigestItems: 0,
     });
 
     const result = await runStudioTool("milestones");

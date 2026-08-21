@@ -531,6 +531,7 @@ describe("reconcileMilestones", () => {
       paymentRemindersSent: 0,
       restockAlertsSent: 3,
       appointmentRemindersSent: 1,
+      materialsDigestItems: 0,
     });
   });
 });

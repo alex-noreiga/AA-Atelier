@@ -300,6 +300,69 @@ export const ReviewModerationStatus = {
 } as const;
 
 /**
+ * A material at or below its reorder point — something to buy.
+ */
+export interface MaterialAlert {
+  /** The material's Notion page id. */
+  id: string;
+  /** The material as the atelier names it. */
+  name: string;
+  /** Fabric / Applique / Crystal / Packaging / Notions. Omitted when unset. */
+  category?: string;
+  /** Units remaining, from the Notion stock formula. Always a number here — a material whose stock is unknown is never reported as an alert. */
+  stockOnHand: number;
+  /** The reorder point the atelier set. */
+  minimumStock: number;
+  /** How far below the reorder point it is, rounded to two places. `0` when it has landed exactly on it — a reorder point is the level you buy AT, so that still counts. The list is ranked by this. */
+  shortfall: number;
+  /** Where to buy it again, when the atelier recorded a link. */
+  link?: string;
+  /** Dollars per unit, when recorded. */
+  pricePerUnit?: number;
+}
+
+/**
+ * `no-reorder-point` — `Minimum Stock` is unset, so nothing can trip. `stock-unknown` — the stock formula produced no number (typically a material with no intake lines recorded yet).
+ */
+export type UntrackedMaterialReason = typeof UntrackedMaterialReason[keyof typeof UntrackedMaterialReason];
+
+
+export const UntrackedMaterialReason = {
+  'no-reorder-point': 'no-reorder-point',
+  'stock-unknown': 'stock-unknown',
+} as const;
+
+/**
+ * A material no alert can ever fire for, and why — so an unwatched material is visible rather than the alert list just looking quiet.
+ */
+export interface UntrackedMaterial {
+  /** The material's Notion page id. */
+  id: string;
+  name: string;
+  category?: string;
+  /** `no-reorder-point` — `Minimum Stock` is unset, so nothing can trip. `stock-unknown` — the stock formula produced no number (typically a material with no intake lines recorded yet). */
+  reason: UntrackedMaterialReason;
+  /** Present only for `no-reorder-point`, where the stock IS known and only the threshold is missing. */
+  stockOnHand?: number;
+}
+
+/**
+ * The materials panel — what to reorder, and what isn't being watched.
+ */
+export interface MaterialsOverview {
+  /** At or below the reorder point, worst shortfall first. */
+  lowStock: MaterialAlert[];
+  /** Not watched, and why — alphabetical. */
+  untracked: UntrackedMaterial[];
+  /** How many materials the atelier has muted. Reported so the panel can say so rather than the numbers silently not adding up. */
+  suppressedCount: number;
+  /** Every material row read, muted ones included. */
+  totalCount: number;
+  /** False when the materials database isn't wired up, in which case the lists are empty and the panel says why instead of rendering an empty list that reads as "all good". */
+  configured: boolean;
+}
+
+/**
  * One review as the moderation queue shows it. Unlike the public `PublishedReview`, this is the whole row: the atelier is deciding whether to put it on the site, and who wrote it and whether their email matched the order are part of that judgement. Staff-only.
  */
 export interface StudioReview {

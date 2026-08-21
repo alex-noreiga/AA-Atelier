@@ -892,6 +892,80 @@ function renderRowsText(fields: Field[]): string {
   return fields.map(([label, value]) => `${label}: ${value}`).join("\n");
 }
 
+/** One material to reorder, as the weekly digest lists it. */
+export interface MaterialsDigestItem {
+  name: string;
+  category?: string;
+  stockOnHand: number;
+  minimumStock: number;
+  link?: string;
+}
+
+/**
+ * The atelier's weekly "what's running low" list — an INTERNAL email, the only
+ * one here with no customer counterpart. It reports current state rather than
+ * announcing an event, which is what lets it repeat every week without needing
+ * a record of what it has already said.
+ *
+ * Callers only send it when there is something to list, so it never has to
+ * render an empty state.
+ */
+export function materialsDigestEmail(
+  items: MaterialsDigestItem[],
+  to: string,
+): EmailMessage {
+  const line = (item: MaterialsDigestItem) => {
+    const where = item.category ? ` (${item.category})` : "";
+    return `${item.name}${where} — ${item.stockOnHand} left, reorder at ${item.minimumStock}`;
+  };
+
+  const itemsHtml = items
+    .map((item) => {
+      const label = escapeHtml(line(item));
+      const linked = item.link
+        ? `${label} · <a href="${encodeURI(item.link)}" style="color:#2b2622;">reorder</a>`
+        : label;
+      return `<li style="margin:0 0 8px;">${linked}</li>`;
+    })
+    .join("\n        ");
+
+  const count = items.length;
+  const heading = `${count} material${count === 1 ? "" : "s"} to reorder`;
+
+  const html = internalLayout(
+    heading,
+    `<p style="margin:0 0 16px;">These are at or below the reorder point you set in
+        materials inventory, most short first.</p>
+     <ul style="margin:0 0 16px;padding-left:20px;">
+        ${itemsHtml}
+     </ul>
+     <p style="font-size:13px;color:#8a7f74;margin:0;">Set or clear a reorder point on a
+        material in Notion to change what appears here. Tick its restock-alerts
+        checkbox to mute it.</p>`,
+    "weekly stock check",
+  );
+
+  const text = [
+    heading,
+    ``,
+    `At or below the reorder point set in materials inventory, most short first:`,
+    ``,
+    ...items.map(
+      (item) => `- ${line(item)}${item.link ? ` — ${item.link}` : ""}`,
+    ),
+    ``,
+    `Set or clear a reorder point on a material in Notion to change what appears`,
+    `here. Tick its restock-alerts checkbox to mute it.`,
+  ].join("\n");
+
+  return {
+    to,
+    subject: `Running low: ${count} material${count === 1 ? "" : "s"} to reorder`,
+    html,
+    text,
+  };
+}
+
 /** Notify the atelier of a new contact-form message. */
 export function contactNotificationEmail(
   input: CreateContactInput,

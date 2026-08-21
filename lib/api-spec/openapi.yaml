@@ -1456,6 +1456,66 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/ErrorEnvelope"
+  /studio/materials:
+    get:
+      operationId: getStudioMaterials
+      tags: [studio]
+      summary: Materials at or below their reorder point
+      description: >-
+        The atelier's materials inventory, split into what needs buying and what
+        isn't being watched. The reorder points, the stock-on-hand formula and a
+        restock-alert formula have existed in Notion since before the app did;
+        this is the read that puts them somewhere they'll be seen.
+
+
+        The trip is re-derived server-side from `Stock on Hand` vs
+        `Minimum Stock` rather than read off the atelier's own restock-alert
+        formula: a formula derived from rollups can't be filtered on through the
+        Notion API, and its rendered value is display wording nobody promised to
+        keep. Deriving it also yields the `shortfall` the list is ranked by.
+
+
+        Two things are deliberately never alerts. A material whose stock formula
+        produced no number is `stock-unknown` in `untracked` — absent is not
+        zero, and "we have never counted" is not a reason to reorder. A material
+        the atelier has muted is in neither list and only counted, so the numbers
+        still add up.
+
+
+        Same staff gate as the rest of the studio surface: 401 when not signed
+        in, 404 when signed in but not staff, 403 when staff but not signed in
+        with Google.
+      security:
+        - bearerAuth: []
+      responses:
+        "200":
+          description: What to reorder, and what isn't being watched
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MaterialsOverview"
+        "401":
+          description: Not signed in (missing or expired session)
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorEnvelope"
+        "403":
+          description: >-
+            A studio account whose session wasn't established with Google (the
+            default policy).
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorEnvelope"
+        "404":
+          description: >-
+            Signed in, but not a studio account — the same answer a URL that
+            doesn't exist gives.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorEnvelope"
   /studio/reviews:
     get:
       operationId: listStudioReviews
@@ -2133,6 +2193,95 @@ components:
         Where a review stands with the atelier. `pending` is anything not yet
         decided — including the "New" it is captured with — so a review can only
         ever be waiting, shown, or set aside.
+    MaterialAlert:
+      type: object
+      description: A material at or below its reorder point — something to buy.
+      required: [id, name, stockOnHand, minimumStock, shortfall]
+      properties:
+        id:
+          type: string
+          description: The material's Notion page id.
+        name:
+          type: string
+          description: The material as the atelier names it.
+        category:
+          type: string
+          description: Fabric / Applique / Crystal / Packaging / Notions. Omitted when unset.
+        stockOnHand:
+          type: number
+          description: >-
+            Units remaining, from the Notion stock formula. Always a number here
+            — a material whose stock is unknown is never reported as an alert.
+        minimumStock:
+          type: number
+          description: The reorder point the atelier set.
+        shortfall:
+          type: number
+          description: >-
+            How far below the reorder point it is, rounded to two places. `0`
+            when it has landed exactly on it — a reorder point is the level you
+            buy AT, so that still counts. The list is ranked by this.
+        link:
+          type: string
+          description: Where to buy it again, when the atelier recorded a link.
+        pricePerUnit:
+          type: number
+          description: Dollars per unit, when recorded.
+    UntrackedMaterial:
+      type: object
+      description: >-
+        A material no alert can ever fire for, and why — so an unwatched
+        material is visible rather than the alert list just looking quiet.
+      required: [id, name, reason]
+      properties:
+        id:
+          type: string
+          description: The material's Notion page id.
+        name:
+          type: string
+        category:
+          type: string
+        reason:
+          type: string
+          enum: [no-reorder-point, stock-unknown]
+          description: >-
+            `no-reorder-point` — `Minimum Stock` is unset, so nothing can trip.
+            `stock-unknown` — the stock formula produced no number (typically a
+            material with no intake lines recorded yet).
+        stockOnHand:
+          type: number
+          description: >-
+            Present only for `no-reorder-point`, where the stock IS known and
+            only the threshold is missing.
+    MaterialsOverview:
+      type: object
+      description: The materials panel — what to reorder, and what isn't being watched.
+      required: [lowStock, untracked, suppressedCount, totalCount, configured]
+      properties:
+        lowStock:
+          type: array
+          description: At or below the reorder point, worst shortfall first.
+          items:
+            $ref: "#/components/schemas/MaterialAlert"
+        untracked:
+          type: array
+          description: Not watched, and why — alphabetical.
+          items:
+            $ref: "#/components/schemas/UntrackedMaterial"
+        suppressedCount:
+          type: integer
+          description: >-
+            How many materials the atelier has muted. Reported so the panel can
+            say so rather than the numbers silently not adding up.
+        totalCount:
+          type: integer
+          description: Every material row read, muted ones included.
+        configured:
+          type: boolean
+          description: >-
+            False when the materials database isn't wired up, in which case the
+            lists are empty and the panel says why instead of rendering an empty
+            list that reads as "all good".
     StudioReview:
       type: object
       description: >-

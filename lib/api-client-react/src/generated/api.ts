@@ -34,6 +34,7 @@ import type {
   GetAppointmentParams,
   GetPublishedReviewsParams,
   HealthStatus,
+  MaterialsOverview,
   MessageResponse,
   NewAppointmentRequest,
   NewAppointmentResponse,
@@ -2518,6 +2519,90 @@ export const useRunStudioTool = <TError = ErrorType<ErrorEnvelope | OrderNotFoun
       > => {
       return useMutation(getRunStudioToolMutationOptions(options));
     }
+
+export const getGetStudioMaterialsUrl = () => {
+
+
+
+
+  return `/api/studio/materials`
+}
+
+/**
+ * The atelier's materials inventory, split into what needs buying and what isn't being watched. The reorder points, the stock-on-hand formula and a restock-alert formula have existed in Notion since before the app did; this is the read that puts them somewhere they'll be seen.
+ *
+ * The trip is re-derived server-side from `Stock on Hand` vs `Minimum Stock` rather than read off the atelier's own restock-alert formula: a formula derived from rollups can't be filtered on through the Notion API, and its rendered value is display wording nobody promised to keep. Deriving it also yields the `shortfall` the list is ranked by.
+ *
+ * Two things are deliberately never alerts. A material whose stock formula produced no number is `stock-unknown` in `untracked` — absent is not zero, and "we have never counted" is not a reason to reorder. A material the atelier has muted is in neither list and only counted, so the numbers still add up.
+ *
+ * Same staff gate as the rest of the studio surface: 401 when not signed in, 404 when signed in but not staff, 403 when staff but not signed in with Google.
+ * @summary Materials at or below their reorder point
+ */
+export const getStudioMaterials = async ( options?: Parameters<typeof customFetch>[1]): Promise<MaterialsOverview> => {
+
+  return customFetch<MaterialsOverview>(getGetStudioMaterialsUrl(),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
+
+
+
+
+export const getGetStudioMaterialsQueryKey = () => {
+    return [
+    `/api/studio/materials`
+    ] as const;
+    }
+
+
+export const getGetStudioMaterialsQueryOptions = <TData = Awaited<ReturnType<typeof getStudioMaterials>>, TError = ErrorType<ErrorEnvelope>>( options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getStudioMaterials>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getGetStudioMaterialsQueryKey();
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof getStudioMaterials>>> = ({ signal }) => getStudioMaterials({ signal, ...requestOptions });
+
+
+
+
+
+   return  { queryKey, queryFn, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof getStudioMaterials>>, TError, TData> & { queryKey: QueryKey }
+}
+
+export type GetStudioMaterialsQueryResult = NonNullable<Awaited<ReturnType<typeof getStudioMaterials>>>
+export type GetStudioMaterialsQueryError = ErrorType<ErrorEnvelope>
+
+
+/**
+ * @summary Materials at or below their reorder point
+ */
+
+export function useGetStudioMaterials<TData = Awaited<ReturnType<typeof getStudioMaterials>>, TError = ErrorType<ErrorEnvelope>>(
+  options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getStudioMaterials>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+
+ ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+
+  const queryOptions = getGetStudioMaterialsQueryOptions(options)
+
+  const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
+
+  return withQueryKey(query, queryOptions.queryKey);
+}
+
+
+
+
+
+
 
 export const getListStudioReviewsUrl = () => {
 
