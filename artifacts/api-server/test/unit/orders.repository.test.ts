@@ -175,6 +175,68 @@ describe("findOrderByNumber", () => {
     });
   });
 
+  it("narrows the stage list to the order's own service pipeline", async () => {
+    // The order's `Service` decides which of the live superset it walks, so a
+    // repair's customer is never shown Sketching or Pattern Design.
+    const client = makeFakeClient((path) => {
+      if (isSchema(path)) {
+        return jsonResponse(
+          databaseSchemaWithStages([
+            "Consultation",
+            "Sketching",
+            "Sourcing",
+            "Pattern Design",
+            "Sewing/Construction",
+            "Ready for delivery/pickup",
+            "Delivered",
+          ]),
+        );
+      }
+      if (isQuery(path)) {
+        return jsonResponse({
+          results: [
+            orderPage({
+              orderNumber: "000009",
+              orderName: "Ada – Repair",
+              currentStage: "Sourcing",
+              service: "Repairs & Restoration",
+            }),
+          ],
+        });
+      }
+      throw new Error(`unexpected path ${path}`);
+    });
+
+    const record = await repo.findOrderByNumber("000009", client);
+
+    expect(record?.stages).toEqual([
+      "Consultation",
+      "Sourcing",
+      "Sewing/Construction",
+      "Ready for delivery/pickup",
+      "Delivered",
+    ]);
+  });
+
+  it("keeps the whole live list for an order with no service recorded", async () => {
+    const stages = ["Consultation", "Sewing", "Delivery"];
+    const client = makeFakeClient((path) => {
+      if (isSchema(path)) return jsonResponse(databaseSchemaWithStages(stages));
+      if (isQuery(path)) {
+        return jsonResponse({
+          results: [
+            orderPage({ orderNumber: "000010", currentStage: "Sewing" }),
+          ],
+        });
+      }
+      throw new Error(`unexpected path ${path}`);
+    });
+
+    const record = await repo.findOrderByNumber("000010", client);
+
+    expect(record?.stages).toEqual(stages);
+  });
+
   it("returns null when the query yields no results", async () => {
     const client = makeFakeClient((path) => {
       if (isSchema(path)) return jsonResponse(databaseSchemaWithStages([]));
@@ -818,6 +880,9 @@ describe("listOrdersForAnalytics", () => {
         cancelled: false,
         rush: true,
         invoicePageId: "inv-1",
+        // No `Service` on the page, so the order resolves to the bespoke
+        // commission and its pipeline is the whole live list.
+        pipeline: ["Design", "Delivered"],
       },
     ]);
   });

@@ -54,6 +54,29 @@ export interface OrderServiceDef {
    * being reassembled by the mailer.
    */
   emailIntro: string;
+  /**
+   * The production stages this service actually walks, in the order it walks
+   * them — the order's *pipeline*, a declared sequence over the one superset of
+   * `Stage` options the atelier keeps in Notion.
+   *
+   * Omitted (the bespoke commission) means "the whole live list", which is what
+   * every order did before pipelines existed: a service that declares nothing
+   * inherits whatever Notion says, so the atelier can still add, rename, and
+   * reorder stages for the commission pipeline without touching code.
+   *
+   * Declaring one names live option values, the same targeted-business-rule
+   * exception as `STATUS_IN_STOCK` / `MEASUREMENT_LOCK_FROM_STAGE`: it does not
+   * own the list (the superset stays live-read), it selects from it. A name that
+   * no longer matches a live option is dropped by `resolveOrderPipeline`, and a
+   * pipeline that matches nothing at all degrades to the full live list — so a
+   * Notion rename costs a stage from one service's timeline, never the timeline.
+   *
+   * ORDER MATTERS and is this catalog's to decide: an alteration is pinned at a
+   * fitting *before* anything is cut, which is the reverse of the commission
+   * order those two stages sit in. See the `Milestone Status` caveat in
+   * `.agents/memory/service-pipelines.md` before reordering one.
+   */
+  pipeline?: readonly string[];
 }
 
 export const ORDER_SERVICES: readonly OrderServiceDef[] = [
@@ -84,6 +107,17 @@ export const ORDER_SERVICES: readonly OrderServiceDef[] = [
     orderLabel: "Alterations",
     emailIntro:
       "Thank you for trusting us with your costume. We've received your alteration request, and we'll be in touch to arrange a fitting so we can see the piece on you.",
+    // Fitting first: an alteration is pinned on the customer before anything is
+    // cut. There is no sketching, sourcing or pattern drafting — the piece
+    // already exists.
+    pipeline: [
+      "Consultation",
+      "Fitting",
+      "Cutting/Pinning",
+      "Sewing/Construction",
+      "Ready for delivery/pickup",
+      "Delivered",
+    ],
   },
   {
     id: "rhinestoning",
@@ -98,6 +132,14 @@ export const ORDER_SERVICES: readonly OrderServiceDef[] = [
     orderLabel: "Rhinestoning",
     emailIntro:
       "Thank you for trusting us with your costume. We've received your rhinestoning request, and we'll be in touch to confirm the detail, the stones, and the timing.",
+    // Stones are sourced, then applied. Nothing is drafted, cut or constructed.
+    pipeline: [
+      "Consultation",
+      "Sourcing",
+      "Rhinestoning/Detailing",
+      "Ready for delivery/pickup",
+      "Delivered",
+    ],
   },
   {
     id: "repairs",
@@ -112,6 +154,14 @@ export const ORDER_SERVICES: readonly OrderServiceDef[] = [
     orderLabel: "Repair",
     emailIntro:
       "Thank you for trusting us with your costume. We've received your repair request, and we'll be in touch about getting the piece to us.",
+    // Matching materials are sourced, then the mend is sewn.
+    pipeline: [
+      "Consultation",
+      "Sourcing",
+      "Sewing/Construction",
+      "Ready for delivery/pickup",
+      "Delivered",
+    ],
   },
 ];
 
@@ -125,6 +175,36 @@ export const DEFAULT_SERVICE_ID = "bespoke";
 
 export function getOrderService(id: string): OrderServiceDef | undefined {
   return ORDER_SERVICES.find((service) => service.id === id);
+}
+
+/**
+ * The catalog entry for a service as a *stored order* names it, falling back to
+ * the default.
+ *
+ * An order's `Service` Notion property holds the human-readable `name`
+ * ("Fittings & Alterations"), because the atelier reads and filters that column
+ * — while the contract's `service`, deep links, and this catalog's own lookups
+ * use the `id` ("alterations"). So reading a service back off an order has to
+ * accept either, or resolving a stored order would always miss and quietly hand
+ * every order the default pipeline.
+ *
+ * Names are matched case- and whitespace-insensitively, which keeps the
+ * catalog's promise that renaming a `name` is not a breaking change: a rename
+ * that does drift past this match resolves to the bespoke commission, i.e. the
+ * full live stage list — the same widest-form degradation as an unknown id.
+ */
+export function resolveStoredOrderService(value?: string): OrderServiceDef {
+  const trimmed = value?.trim();
+  if (!trimmed) return resolveOrderService(undefined);
+
+  const byId = getOrderService(trimmed);
+  if (byId) return byId;
+
+  const folded = trimmed.toLowerCase();
+  const byName = ORDER_SERVICES.find(
+    (service) => service.name.trim().toLowerCase() === folded,
+  );
+  return byName ?? resolveOrderService(undefined);
 }
 
 /** The catalog entry for an order's `service`, falling back to the default. */
@@ -150,8 +230,15 @@ export function getServiceOptions(): {
 } {
   return {
     services: ORDER_SERVICES.map(
-      ({ orderLabel: _orderLabel, emailIntro: _emailIntro, ...option }) =>
-        option,
+      ({
+        orderLabel: _orderLabel,
+        emailIntro: _emailIntro,
+        // The pipeline is the tracking page's business, not the intake form's:
+        // the form asks what to make, and the order's stage list reaches the
+        // customer on `OrderStatus.stages` once there is an order to track.
+        pipeline: _pipeline,
+        ...option
+      }) => option,
     ),
   };
 }

@@ -1719,9 +1719,11 @@ the per-card links on `pages/services.tsx`. Load-bearing decisions:
 5. **The order records which service it is.** `buildOrderProperties` writes a
    **`Service` select** (`ORDER_SERVICE_PROPERTY`) plus a page-body line, so the
    atelier can filter the pipeline by the kind of work — and, crucially, tell an order
-   with no measurements apart from an incomplete one. Write-only: the app never reads
-   it back, because the **catalog**, not the order, is the authority on what a service
-   needs. Missing property ⇒ dropped by `createPageDroppingUnknownProperties` with a
+   with no measurements apart from an incomplete one. It is read back for exactly one
+   purpose — resolving which stages the order walks (see "A pipeline per service"
+   below) — and the **catalog**, not the order, remains the authority on what a service
+   needs. Note it stores the display `name`, not the id.
+   Missing property ⇒ dropped by `createPageDroppingUnknownProperties` with a
    pointed warn, like every other additive intake property. The emails carry a
    `Service` row and **omit the measurements row entirely** for a service that never
    asked, rather than printing blanks or promising a fitting nobody arranged.
@@ -1736,6 +1738,84 @@ the per-card links on `pages/services.tsx`. Load-bearing decisions:
 **Order Tracking Pipeline** database. Notion auto-creates the options on first write;
 until the property exists the field is dropped and the value still appears in the page
 body. Nothing else — no env var, and the catalog is a deploy-time change.
+
+## A pipeline per service
+
+The four services shared one `Stage` list, because the live list was read once per
+query and attached to every order alike. That is right for a bespoke commission —
+the list _is_ the commission's pipeline — and wrong for the other three: a repair
+customer watched a timeline promising Sketching, Sourcing and Pattern Design, stages
+their order would never reach. **One superset stays in Notion; the catalog declares
+which of it each service walks, and in what order.** Code:
+`lib/service-catalog.ts` (`OrderServiceDef.pipeline`), `lib/order-pipeline.ts`
+(`resolveOrderPipeline`, pure), and `pipelineFor` in `lib/notion/orders.repository.ts`.
+Load-bearing decisions:
+
+1. **Nothing but the repository changed, and that is the design.** The four
+   positional rules were **already parameterized on a stage list**:
+   `orderDelivered` / `orderLifecycleState` (`services/delivery.ts`),
+   `measurementsLocked` (`services/measurement-lock.ts`), `isForwardStageChange`
+   (`services/order-notification.service.ts`), and `remainingStages` +
+   `computeMilestoneSchedule` (`services/schedule.service.ts`). None was touched.
+   Handing each record a **narrower list** re-points all four at the order's own
+   pipeline at once. The frontend needed nothing either — the tracking timeline
+   renders `OrderStatus.stages`, which is now the pipeline. So the whole behavior
+   change is `stages` → `pipelineFor(page, stages)` at each site that builds a record.
+
+2. **A declared pipeline names live option values; it does not own the list.** The
+   same targeted-business-rule exception as `STATUS_IN_STOCK` /
+   `MEASUREMENT_LOCK_FROM_STAGE` / `REVIEW_STATUS_PUBLISHED` — the superset stays
+   live-read, and the **bespoke commission declares nothing**, so it inherits whatever
+   Notion says and the atelier can still add, rename and reorder its stages without a
+   deploy. Renaming a stage another service names costs that service that step (below).
+
+3. **The catalog owns the ORDER, not the live list.** `resolveOrderPipeline` emits the
+   **declared** sequence, because an alteration is pinned at a fitting _before_
+   anything is cut and the superset lists those two the other way round. This is what
+   makes a pipeline more than a filter — and it is why an alterations order moving
+   Fitting → Cutting/Pinning now emails the customer at all: against the global list
+   that reads as a _backward_ edit and the forward-only gate silently dropped it.
+
+4. **Degradation always widens, and never to `[]`.** No declared pipeline, or an
+   absent / retired `service`, ⇒ the live list (exactly the pre-pipeline behavior, so
+   legacy orders are untouched). A **partial** name match is honoured, so one Notion
+   rename costs one step off one service's timeline rather than collapsing it. **No**
+   match ⇒ the live list again: an empty list would report the order as never
+   delivered (`orderDelivered` fails closed on `[]`), strand its milestones, and render
+   a timeline with no steps in it.
+
+5. **The `Service` property stores the display NAME, so resolution accepts either.**
+   `buildOrderProperties` writes `service.name` ("Fittings & Alterations") because the
+   atelier filters that column, while the contract, deep links and the catalog's own
+   lookups use the `id` ("alterations"). `resolveStoredOrderService` matches an id
+   first, then a name case- and whitespace-insensitively. Resolving by id alone would
+   have missed every stored order and made this a silent no-op.
+
+6. **Analytics classify per order but count per superset.** `OrderAnalyticsRecord`
+   carries an optional `pipeline`; `buildPipeline` uses `record.pipeline ?? list` for
+   the lifecycle state (so a repair is completed at the end of _its_ five stages) and
+   the superset for the per-stage buckets. Optional, so a record built without a live
+   list falls back rather than being classified against nothing.
+
+7. **The pipeline is deliberately off the `GET /services` contract.** Like `orderLabel`
+   and `emailIntro`, `getServiceOptions()` strips it: the intake form asks what to
+   make, and the stage list reaches the customer on `OrderStatus.stages` once there is
+   an order to track.
+
+**Known caveat — the Notion formulas still think in the superset.** The Production
+Schedule's `Milestone Status` and Custom Orders' `Stage Index Sys` hardcode the
+11-stage global order (see `.agents/memory/phase2-workspace-cards.md`), so a pipeline
+that **reorders** relative to it — today only **alterations** — renders a milestone's
+state wrongly in the atelier's Notion calendar (an order at Fitting shows its
+Cutting/Pinning milestone as `Completed`). It is display-only and atelier-facing:
+nothing in the app reads either formula, and the customer's timeline is correct. Keep
+new pipelines in superset order unless a reorder is worth it.
+
+**Atelier setup: none.** Every declared stage already exists as a `Stage` option, so
+nothing is added, renamed or reordered in Notion and there is no env var. Orders
+placed before the `Service` property existed resolve to the bespoke commission and
+keep the list they have always been shown. Full detail, the per-service table and the
+caveat live in `.agents/memory/service-pipelines.md`.
 
 ## What the intake records (order form -> Notion + email parity)
 
@@ -3870,6 +3950,7 @@ Three things about it are load-bearing:
 | Change the order-tracking UI (custom + shop)             | `artifacts/web-app/src/pages/track.tsx` (unified lookup) + `components/custom-order-result.tsx` + `components/shop-order-result.tsx`                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                          |
 | Change the order intake form                             | `artifacts/web-app/src/pages/order-form.tsx` — then carry the new field through to Notion + both emails (see "What the intake records"): `lib/notion/orders.{schema,blocks}.ts` for the property + page-body write, and `orderDetailFields` in `lib/resend/emails.ts` for both emails at once                                                                                                                                                                                                                                                                                                                                                                                                 |
 | Change which service an order can be placed for          | `api-server/src/lib/service-catalog.ts` (the catalog + its gates) + `routes/services.ts` (`GET /services`) + `enforceServiceGate` in `services/orders.service.ts`; frontend `web-app/src/lib/order-services.ts` (the fallback + deep-link resolution) + the picker and conditional sections in `pages/order-form.tsx` + the per-card links in `pages/services.tsx`; write-back via `ORDER_SERVICE_PROPERTY` in `lib/notion/orders.{schema,blocks}.ts` and the `Service` row in `orderDetailFields` (`lib/resend/emails.ts`)                                                                                                                                                                   |
+| Change which stages a service's orders walk              | `api-server/src/lib/service-catalog.ts` (`OrderServiceDef.pipeline` — the declared sequence) + `lib/order-pipeline.ts` (`resolveOrderPipeline`, the pure resolver) + `pipelineFor` in `lib/notion/orders.repository.ts` (where the live superset is narrowed per order). The positional rules that consume it are unchanged: `services/delivery.ts`, `services/measurement-lock.ts`, `isForwardStageChange` in `services/order-notification.service.ts`, `remainingStages`/`computeMilestoneSchedule` in `services/schedule.service.ts`. Read the `Milestone Status` caveat in `.agents/memory/service-pipelines.md` before reordering one                                                    |
 | Change the color selector (intake)                       | `artifacts/web-app/src/components/color-picker.tsx` + `pages/order-form.tsx` (frontend, step 2 of the three-step flow); `api-server/src/services/colors.ts` (`intakeColorPalette`/`parseColorPalette` + the built-in default) + `routes/colors.ts` (`GET /api/colors`, the `COLOR_PALETTE` Studio Settings value); `lib/notion/orders.{schema,blocks}.ts` (write-back to the order's `Colors` + `Color Usage`)                                                                                                                                                                                                                                                                                |
 | Change the rush order surcharge                          | `artifacts/web-app/src/lib/rush.ts` (window + disclosure) + `pages/order-form.tsx` (detect/acknowledge/send); `api-server/src/lib/notion/orders.blocks.ts` + `orders.schema.ts` (`Rush Order` record); `api-server/src/services/rush.ts` + `services/invoice-generator.service.ts` (server-priced "Surcharge" line); `web-app/src/lib/invoice-format.ts` ("Surcharge" line display)                                                                                                                                                                                                                                                                                                           |
 | Change referral & returning-skater rewards               | `api-server/src/services/rewards.service.ts` (engine + amount getters) + `lib/stripe/promotions.ts` (`createDiscountCode`) + `lib/notion/clients.repository.ts` (reward reads + `patchClientProperties`); wired from `submitOrder` (capture) + `recordPaidOrder` / `recordPayment` (issue); reward emails in `lib/resend/emails.ts`; `services/account.service.ts` + `web-app/src/pages/account.tsx` (referral card) + `pages/order-form.tsx` (`referralCode` field)                                                                                                                                                                                                                          |

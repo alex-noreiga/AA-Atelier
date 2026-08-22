@@ -13,6 +13,7 @@ import {
 import { buildOrderProperties, buildOrderPageBlocks } from "./orders.blocks.js";
 import { scanDatabase } from "./scan.js";
 import { normalizeEmail } from "../email.js";
+import { resolveOrderPipeline } from "../order-pipeline.js";
 import { logger } from "../logger.js";
 import {
   ORDER_NUMBER_PROPERTY,
@@ -25,6 +26,7 @@ import {
   extractOrderNumber,
   extractOrderName,
   extractCurrentStage,
+  extractOrderService,
   extractInvoiceRelationId,
   extractCostingItemIds,
   extractDueDate,
@@ -69,6 +71,22 @@ async function fetchLiveOrderStages(client: NotionClient): Promise<string[]> {
 
   cachedStages = { stages, fetchedAt: Date.now() };
   return stages;
+}
+
+/**
+ * The ordered stages *this* order walks: its service's declared pipeline over
+ * the live superset (`lib/order-pipeline.ts`).
+ *
+ * Every record this module builds carries a stage list, and each one now
+ * narrows it here rather than handing out the shared superset. That single
+ * substitution is what re-points the positional rules — delivered, the
+ * measurement lock, the forward-only email gate, the milestone spread — at the
+ * order's own pipeline, since all four already read whatever list came with the
+ * record. `fetchLiveOrderStages` is still fetched once per query and shared;
+ * only the narrowing is per page, and it is pure.
+ */
+function pipelineFor(page: NotionOrderPage, stages: string[]): string[] {
+  return resolveOrderPipeline(extractOrderService(page), stages);
 }
 
 function generateOrderNumber(): string {
@@ -224,7 +242,7 @@ export async function findOrderByNumber(
     orderNumber: trimmedOrderNumber,
     orderName: extractOrderName(page),
     currentStage: extractCurrentStage(page),
-    stages,
+    stages: pipelineFor(page, stages),
     pageId: page.id,
     ...(estimatedCompletion !== undefined ? { estimatedCompletion } : {}),
     ...(invoicePageId !== undefined ? { invoicePageId } : {}),
@@ -309,7 +327,7 @@ function pageToOrderSummary(
     orderNumber,
     orderName: extractOrderName(page),
     currentStage: extractCurrentStage(page),
-    stages,
+    stages: pipelineFor(page, stages),
     cancelled: extractCancelled(page),
     ...(estimatedCompletion !== undefined ? { estimatedCompletion } : {}),
     ...(measurements !== undefined ? { measurements } : {}),
@@ -430,7 +448,7 @@ async function queryOrdersByMilestoneState(
       orderName: extractOrderName(page),
       currentStage: extractCurrentStage(page),
       dueDate,
-      stages,
+      stages: pipelineFor(page, stages),
     });
   }
   return orders;
@@ -506,7 +524,7 @@ function buildStageNotification(
     orderName: extractOrderName(page),
     email: extractOrderEmail(page),
     currentStage: extractCurrentStage(page),
-    stages,
+    stages: pipelineFor(page, stages),
     lastNotifiedStage: extractLastNotifiedStage(page),
     ...(estimatedCompletion !== undefined ? { estimatedCompletion } : {}),
   };
@@ -675,7 +693,7 @@ export async function findOrderVerification(
     pageId: page.id,
     email: extractOrderEmail(page),
     currentStage: extractCurrentStage(page),
-    stages,
+    stages: pipelineFor(page, stages),
   };
 }
 
@@ -786,5 +804,14 @@ export async function listOrdersForAnalytics(
     fetchLiveOrderStages(client),
   ]);
 
-  return { orders: pages.map(extractOrderAnalytics), stages };
+  // Each order carries its own pipeline so the aggregator classifies a repair
+  // as delivered at the end of *its* five stages, not the commission's eleven.
+  // `stages` stays the superset, which is what the per-stage buckets count over.
+  return {
+    orders: pages.map((page) => ({
+      ...extractOrderAnalytics(page),
+      pipeline: pipelineFor(page, stages),
+    })),
+    stages,
+  };
 }

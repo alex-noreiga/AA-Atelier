@@ -265,6 +265,10 @@ export function orderPage(opts: {
   rush?: boolean;
   /** Notion's page-creation timestamp, read by the studio analytics. */
   createdTime?: string;
+  /** The `Service` select, as an order stores it (the catalog's display
+   * `name`). Omitted ⇒ no property at all, like an order placed before the
+   * service catalog existed. */
+  service?: string;
 }) {
   return {
     id: opts.id ?? "page-id",
@@ -291,6 +295,9 @@ export function orderPage(opts: {
         type: "email",
         email: opts.email ?? null,
       },
+      ...(opts.service !== undefined
+        ? { Service: { type: "select", select: { name: opts.service } } }
+        : {}),
       Stage: {
         type: "status",
         status:

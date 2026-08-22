@@ -170,9 +170,17 @@ function parseInstant(value: string): Date | null {
 
 // --- The aggregation ---
 
-/** Count a set of orders across their live workflow list. */
+/**
+ * Count a set of orders across their live workflow list.
+ *
+ * `list` is the superset the per-stage buckets are counted over; a record's own
+ * `pipeline` (a custom order's service pipeline) is what decides whether it is
+ * finished, so a repair counts as completed at the end of its own sequence
+ * rather than only at the end of the commission's. Shop orders have one
+ * fulfilment workflow and pass none, falling back to `list`.
+ */
 function buildPipeline(
-  records: Array<{ cancelled: boolean; stage: string }>,
+  records: Array<{ cancelled: boolean; stage: string; pipeline?: string[] }>,
   list: string[],
 ): StudioPipeline {
   const counts = new Map<string, number>(list.map((stage) => [stage, 0]));
@@ -181,7 +189,11 @@ function buildPipeline(
   let cancelled = 0;
 
   for (const record of records) {
-    const state = orderLifecycleState(record.cancelled, record.stage, list);
+    const state = orderLifecycleState(
+      record.cancelled,
+      record.stage,
+      record.pipeline ?? list,
+    );
     if (state === "cancelled") {
       cancelled += 1;
       continue;
@@ -412,14 +424,21 @@ export function aggregateStudioAnalytics(
 
   const activeOrders = input.orders.filter(
     (order) =>
-      orderLifecycleState(order.cancelled, order.stage, input.stages) ===
-      "active",
+      orderLifecycleState(
+        order.cancelled,
+        order.stage,
+        order.pipeline ?? input.stages,
+      ) === "active",
   );
 
   return {
     generatedAt: input.now.toISOString(),
     customOrders: buildPipeline(
-      input.orders.map((o) => ({ cancelled: o.cancelled, stage: o.stage })),
+      input.orders.map((o) => ({
+        cancelled: o.cancelled,
+        stage: o.stage,
+        ...(o.pipeline !== undefined ? { pipeline: o.pipeline } : {}),
+      })),
       input.stages,
     ),
     shopOrders: buildPipeline(
