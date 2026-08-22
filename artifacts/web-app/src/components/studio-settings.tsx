@@ -243,9 +243,11 @@ function SettingRow({
         </span>
       </div>
 
-      <p className="mt-1 text-xs text-muted-foreground font-light">
-        {setting.description}
-      </p>
+      {setting.description && (
+        <p className="mt-1 text-xs text-muted-foreground font-light">
+          {setting.description}
+        </p>
+      )}
 
       <dl className="mt-2 flex flex-wrap gap-x-5 gap-y-1 text-xs font-light text-muted-foreground">
         <div className="flex gap-1.5">

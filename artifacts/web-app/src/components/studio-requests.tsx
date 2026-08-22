@@ -135,8 +135,7 @@ export function StudioRequests({
               className="text-sm text-muted-foreground font-light"
               data-testid="requests-empty"
             >
-              Nothing waiting. Newsletter sign-ups aren&apos;t listed here —
-              they&apos;re a record of consent, not a request to answer.
+              Nothing waiting.
             </p>
           )}
 

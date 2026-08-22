@@ -2879,9 +2879,10 @@ the two handlers in `routes/studio.ts`, and on the frontend
    database and are written by the same shape of writer, but they are a **consent
    record nobody answers** — leaving them in makes a queue that never empties.
    They're dropped in the Notion filter _and_ in the pure extractor (so a row the
-   filter lets through on a casing difference still can't reach the queue), and the
-   panel's empty state says so rather than leaving "six kinds, five listed"
-   unexplained. Same call the Notion ops page's "Open requests" view made.
+   filter lets through on a casing difference still can't reach the queue); the
+   exclusion is no longer spelled out in the panel's empty state, so "six kinds,
+   five listed" is now only explained here. Same call the Notion ops page's "Open
+   requests" view made.
 
 6. **Two bounded queries, not a scan.** The contact inbox is the largest database
    the app reads — every inquiry and opt-in ever filed — so paging it front to back

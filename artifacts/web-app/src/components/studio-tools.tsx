@@ -83,14 +83,14 @@ const TOOLS: ToolSpec[] = [
     tool: "milestones",
     name: "Reconcile production milestones",
     description:
-      "Generates milestones for any order with a due date that hasn't got them, and sends any fitting, payment or appointment reminders now due. This runs itself nightly — press it to catch up sooner.",
+      "Generates milestones for any order with a due date that hasn't got them, and sends any fitting, payment or appointment reminders now due.",
     action: "Run now",
   },
   {
     tool: "invoice-lines",
     name: "Itemize an invoice",
     description:
-      "Writes the invoice's material, labor, and design & finishing lines from the order's costing. Skips an invoice that already has lines — to rebuild one, delete its lines in Notion first.",
+      "Writes the invoice's material, labor, and design & finishing lines from the order's costing.",
     field: orderField("ORD-000002"),
     action: "Itemize",
   },
@@ -98,7 +98,7 @@ const TOOLS: ToolSpec[] = [
     tool: "status-email",
     name: "Send a status update",
     description:
-      "Emails the customer their order's current stage with the pipeline graphic. Sends only when the order has moved forward since the last one, unless you resend.",
+      "Emails the customer their order's current stage with the pipeline graphic.",
     field: orderField("ORD-000002"),
     offersForce: true,
     action: "Send",
@@ -107,7 +107,7 @@ const TOOLS: ToolSpec[] = [
     tool: "cancellation-refund",
     name: "Cancel & refund an order",
     description:
-      "Refunds every payment on a custom or shop order and marks it cancelled. Payments already refunded are left alone, so re-running is safe.",
+      "Refunds every payment on a custom or shop order and marks it cancelled.",
     field: orderField("ORD-000002 or SHP-…"),
     destructive: true,
     action: "Refund & cancel",
@@ -116,7 +116,7 @@ const TOOLS: ToolSpec[] = [
     tool: "return-refund",
     name: "Refund a return",
     description:
-      "Refunds a shop order for a return or exchange. Leave the amount blank to refund in full; an amount is the total that should end up refunded, not an extra refund on top.",
+      "Refunds a shop order for a return or exchange. Leave the amount blank to refund in full; an amount is the total that should end up refunded.",
     field: orderField("SHP-…"),
     offersAmount: true,
     destructive: true,
@@ -126,7 +126,7 @@ const TOOLS: ToolSpec[] = [
     tool: "restock-alert",
     name: "Send back-in-stock alerts",
     description:
-      "Emails everyone waiting on a piece that's come back in stock. This runs itself nightly — press it to go out the same day you restock. Leave the item blank to cover everything currently in stock, or name one piece. It reads live inventory first, and nobody is emailed twice.",
+      "Emails everyone waiting on a piece that's come back in stock.",
     field: {
       key: "item",
       label: "Item name (optional)",
