@@ -26,10 +26,12 @@ const { useGetStudioAccess } = await import("@workspace/api-client-react");
 const mockAccess = vi.mocked(useGetStudioAccess);
 
 /** The subset of the query result the hook reads. */
-function stub(state: { data?: unknown; isLoading?: boolean }) {
+function stub(state: { data?: unknown; isLoading?: boolean; status?: number }) {
   mockAccess.mockReturnValue({
     data: state.data,
     isLoading: state.isLoading ?? false,
+    isError: state.status !== undefined,
+    error: state.status === undefined ? null : { status: state.status },
   } as never);
 }
 
@@ -92,6 +94,43 @@ describe("useStudioAccess", () => {
       const { result } = renderHook(() => useStudioAccess());
       expect(result.current.staff).toBe(false);
     }
+  });
+
+  it("tells a wrong-sign-in-method refusal apart from every other one", () => {
+    // A 403 means an allowlisted address turned away over *how* it signed in.
+    // It is still not `staff` — the dashboard will refuse it too — but the
+    // caller needs to know it happened, because the reason and its fix only
+    // exist on /studio.
+    h.session = { access_token: "jwt" };
+    stub({ status: 403 });
+
+    const { result } = renderHook(() => useStudioAccess());
+
+    expect(result.current.refused).toBe(true);
+    expect(result.current.staff).toBe(false);
+  });
+
+  it("keeps a 404 folded into plain 'not staff'", () => {
+    // The 404 is the answer a stranger who typed the URL gets, and it has to
+    // stay indistinguishable from one — so it must never route anyone to a page
+    // that would tell them the dashboard is there.
+    h.session = { access_token: "jwt" };
+
+    for (const status of [401, 404, 500]) {
+      stub({ status });
+      const { result } = renderHook(() => useStudioAccess());
+      expect(result.current.refused).toBe(false);
+      expect(result.current.staff).toBe(false);
+    }
+  });
+
+  it("reports no refusal on a clean answer", () => {
+    h.session = { access_token: "jwt" };
+    stub({ data: { staff: true } });
+
+    const { result } = renderHook(() => useStudioAccess());
+
+    expect(result.current.refused).toBe(false);
   });
 
   it("reports the answer as pending while the probe is in flight", () => {
