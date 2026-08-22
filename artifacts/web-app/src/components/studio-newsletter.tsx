@@ -95,7 +95,7 @@ export function StudioNewsletter() {
               className="text-sm text-muted-foreground font-light"
               data-testid="newsletter-empty"
             >
-              Nothing waiting — every sign-up has been dealt with.
+              Nothing waiting.
             </p>
           )}
 
@@ -160,18 +160,7 @@ function AudienceNote({ audience }: { audience: NewsletterAudienceStatus }) {
     );
   }
 
-  return (
-    <p
-      className="text-xs text-muted-foreground/80 font-light"
-      data-testid="newsletter-audience-count"
-    >
-      Checked against your Resend audience
-      {typeof audience.contactCount === "number"
-        ? ` — ${audience.contactCount} contact${audience.contactCount === 1 ? "" : "s"} on it`
-        : ""}
-      .
-    </p>
-  );
+  return null;
 }
 
 /** One opt-in: the address, where it came from, and what can be done with it. */
