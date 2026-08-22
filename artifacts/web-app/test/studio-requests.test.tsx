@@ -70,10 +70,10 @@ beforeEach(() => {
 });
 
 describe("StudioRequests", () => {
-  it("counts what is waiting, and says why sign-ups aren't in the list", () => {
+  it("says when nothing is waiting, and counts what is", () => {
     render(<StudioRequests onHandoff={vi.fn()} />);
     expect(screen.getByTestId("requests-empty")).toHaveTextContent(
-      /Newsletter sign-ups aren't listed/i,
+      /Nothing waiting/i,
     );
 
     withQueue([cancellation()]);

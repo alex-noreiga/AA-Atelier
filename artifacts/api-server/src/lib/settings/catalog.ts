@@ -365,8 +365,7 @@ export const SETTING_DEFINITIONS: readonly SettingDefinition[] = [
     label: "Error alert inbox",
     group: "Notifications",
     kind: "email",
-    description:
-      "Where the app emails an alert when something fails silently — an unhandled error, a failed webhook, a rejected email.",
+    description: "Production error alert notification inbox.",
     defaultValue: "alexandra@a3iceanddance.com",
     placeholder: "alexandra@a3iceanddance.com",
     accepts: emailAccepts,
