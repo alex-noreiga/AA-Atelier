@@ -35,7 +35,11 @@ vi.mock("@/lib/auth-context", () => ({
 // Whether this session is studio staff is the server's answer (covered in
 // studio-access.test.tsx); here it's stated outright, because the portal routes
 // on it — staff are handed to the dashboard rather than shown an empty account.
-const staffState = vi.hoisted(() => ({ staff: false, loading: false }));
+const staffState = vi.hoisted(() => ({
+  staff: false,
+  refused: false,
+  loading: false,
+}));
 vi.mock("@/lib/studio-access", () => ({
   useStudioAccess: () => staffState,
 }));
@@ -122,6 +126,7 @@ beforeEach(() => {
   h.signOut.mockReset();
   h.signOut.mockResolvedValue(undefined);
   staffState.staff = false;
+  staffState.refused = false;
   staffState.loading = false;
 });
 
@@ -147,6 +152,17 @@ describe("Account dashboard", () => {
 
   it("hands a studio staff account to the dashboard", () => {
     staffState.staff = true;
+    stubHook(mockOverview, { data: overview });
+    renderPage();
+
+    expect(screen.getByTestId("redirect")).toHaveTextContent("/studio");
+  });
+
+  it("hands a staff account refused over its sign-in method there too", () => {
+    // A staff address the dashboard turns away for signing in with a password
+    // is not a customer: showing it an empty portal is a dead end, because the
+    // reason and the Continue-with-Google button only exist on /studio.
+    staffState.refused = true;
     stubHook(mockOverview, { data: overview });
     renderPage();
 

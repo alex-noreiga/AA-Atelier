@@ -55,12 +55,19 @@ import {
  * A *studio staff* session is handed on to `/studio` instead. Staff don't place
  * orders through the shop, so this page is empty by construction for them —
  * and since sign-in and the OAuth callback both land here by default, doing the
- * hand-off at this one door covers every way in rather than each of them.
+ * hand-off at this one door covers every way in rather than each of them. That
+ * includes a staff address the dashboard *refuses* over its sign-in method: the
+ * reason and its fix live on `/studio`, so sending them anywhere else is
+ * sending them nowhere.
  */
 export default function Account() {
   const [, navigate] = useLocation();
   const { session, loading, signOut } = useAuth();
-  const { staff, loading: staffLoading } = useStudioAccess();
+  const {
+    staff,
+    refused: staffRefused,
+    loading: staffLoading,
+  } = useStudioAccess();
 
   const overview = useGetAccountOverview({
     query: {
@@ -87,7 +94,15 @@ export default function Account() {
   // Studio staff get the dashboard, not a customer portal with nothing in it.
   // The loader below waits on the staff answer as well as the overview, so this
   // is reached with a settled answer and no flash of the wrong page in between.
-  if (staff) {
+  //
+  // A staff address refused over its *sign-in method* (403) is sent the same
+  // way, even though the dashboard will refuse it too — because that refusal is
+  // the only place the reason and the Google re-sign-in button exist. Landing
+  // such a session on an empty customer portal, as this page used to, tells a
+  // staff member nothing at all: no link, no explanation, and no way to find
+  // out what happened. `/studio` renders the panel and stops, so there is no
+  // bounce back here.
+  if (staff || staffRefused) {
     return <Redirect to="/studio" replace />;
   }
 
