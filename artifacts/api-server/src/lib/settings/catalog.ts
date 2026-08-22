@@ -341,8 +341,7 @@ export const SETTING_DEFINITIONS: readonly SettingDefinition[] = [
     label: "Contact inbox",
     group: "Notifications",
     kind: "email",
-    description:
-      "Where contact-form and newsletter notifications land, if they should go somewhere other than the studio inbox.",
+    description: "Where contact-form and newsletter notifications land.",
     defaultValue: "",
     defaultLabel: "The studio inbox above",
     placeholder: "hello@a3iceanddance.com",
@@ -354,8 +353,7 @@ export const SETTING_DEFINITIONS: readonly SettingDefinition[] = [
     label: "Appointments inbox",
     group: "Notifications",
     kind: "email",
-    description:
-      "Where booking notifications land, if they should go somewhere other than the studio inbox.",
+    description: "Where booking notifications land.",
     defaultValue: "",
     defaultLabel: "The studio inbox above",
     placeholder: "bookings@a3iceanddance.com",
