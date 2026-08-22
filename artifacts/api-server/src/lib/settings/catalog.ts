@@ -39,7 +39,7 @@ export type SettingKind =
   | "text"
   | "email"
   | "timezone"
-  | "palette"; // the `Name #hex, …` colour list
+  | "palette"; // the `Name #hex, …` color list
 
 /** The section a setting is shown under. Presentation only. */
 export type SettingGroup =
@@ -166,28 +166,27 @@ export const SETTING_DEFINITIONS: readonly SettingDefinition[] = [
   },
   {
     key: "COLOR_PALETTE",
-    label: "Intake colour palette",
+    label: "Intake color palette",
     group: "Intake",
     kind: "palette",
-    description:
-      "The colours the order form's picker offers, as `Name #hex` entries separated by commas. Leave it blank to use the built-in primary palette.",
+    description: "",
     defaultValue: "",
-    defaultLabel: "The built-in primary palette (12 colours)",
+    defaultLabel: "The built-in primary palette (12 colors)",
     placeholder: "Emerald #0B6E4F, Rose Gold #C5878C, Navy #1F2A44",
     // The runtime keeps whatever parses and drops the rest, so one bad entry
     // still yields a palette.
     accepts: (raw) => parseColorPalette(raw).length > 0,
     // A write is refused unless EVERY entry parses: silently dropping the one
-    // colour that was mistyped is exactly the failure this editor exists to end.
+    // color that was mistyped is exactly the failure this editor exists to end.
     validate: (raw) => {
       const entries = raw
         .split(",")
         .map((entry) => entry.trim())
         .filter((entry) => entry !== "");
-      if (entries.length === 0) return "Add at least one colour.";
+      if (entries.length === 0) return "Add at least one color.";
       const parsed = parseColorPalette(raw);
       if (parsed.length !== entries.length) {
-        return 'Each colour needs a name and a hex code, like "Rose Gold #C5878C".';
+        return 'Each color needs a name and a hex code, like "Rose Gold #C5878C".';
       }
       return null;
     },
@@ -197,8 +196,7 @@ export const SETTING_DEFINITIONS: readonly SettingDefinition[] = [
     label: "Booking timezone",
     group: "Appointments",
     kind: "timezone",
-    description:
-      "The IANA timezone the studio's working hours and every offered slot are read in.",
+    description: "",
     defaultValue: "America/Chicago",
     placeholder: "America/Chicago",
     accepts: nonEmpty,
