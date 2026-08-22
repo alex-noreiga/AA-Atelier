@@ -198,8 +198,7 @@ export interface OrderStageChangeEmailDetails {
 // full sentences for the on-site timeline — these are phrased for the email.)
 const STAGE_FLAVORS: Record<string, string> = {
   Consultation: "discussing your vision, measurements, and design direction.",
-  "Piece Received":
-    "booking your piece in — it has arrived safely at the atelier.",
+  "Piece Received": "booking your piece in.",
   Sketching:
     "translating your ideas into the first designs and technical sketches.",
   Sourcing: "curating the fabrics, laces, and embellishments for your piece.",

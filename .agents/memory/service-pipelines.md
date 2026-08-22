@@ -176,6 +176,6 @@ Timeline (`web-app/src/lib/stage-descriptions.ts`) and status email
 
 | Stage                 | Timeline                                                                 | Email                                                            |
 | --------------------- | ------------------------------------------------------------------------ | ---------------------------------------------------------------- |
-| Piece Received        | "Your piece has arrived safely at the atelier and is booked in with us." | "booking your piece in — it has arrived safely at the atelier."  |
+| Piece Received        | "Your piece has arrived safely at the atelier and is booked in with us." | "booking your piece in."                                         |
 | Alteration/Adjustment | "We're making the adjustments we pinned at your fitting."                | "making the adjustments we pinned at your fitting."              |
 | Repair/Restoration    | "We're carefully mending your piece and bringing it back to its best."   | "carefully mending your piece and bringing it back to its best." |
