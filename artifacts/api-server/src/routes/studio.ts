@@ -6,6 +6,9 @@ import {
   DeleteStaffAvailabilityResponse,
   GetStudioAccessResponse,
   GetStudioAnalyticsResponse,
+  GetStudioGuideContentParams,
+  GetStudioGuideContentResponse,
+  GetStudioGuidesResponse,
   GetStudioMaterialsResponse,
   GetStudioSettingsResponse,
   ListStaffAvailabilityResponse,
@@ -35,6 +38,10 @@ import { studioRateLimiter } from "../middlewares/rate-limit.js";
 import { validate } from "../middlewares/validate.js";
 import { getStudioAnalytics } from "../services/studio-analytics.service.js";
 import { getMaterialsOverview } from "../services/materials.service.js";
+import {
+  getStudioGuides,
+  getStudioGuideContent,
+} from "../services/studio-guides.service.js";
 import {
   runStudioTool,
   type StudioToolArgs,
@@ -200,6 +207,45 @@ router.get(
   async (_req, res) => {
     const overview = await getMaterialsOverview();
     res.json(GetStudioMaterialsResponse.parse(overview));
+  },
+);
+
+// The atelier's how-to guides, rendered beside the tool each one describes.
+// Read-only, and the app stores none of the content: a guide is an HTML file
+// attached to a Notion row, so revising a procedure is replacing a file rather
+// than a deploy — which is the whole reason this is a read at all.
+//
+// This lists what the guides are and where they go, WITHOUT their content. The
+// markup comes one guide at a time from the operation below, because inlining
+// every guide here would put the studio's whole manual in one response — past
+// the serverless payload limit at a handful of screenshot-heavy guides, and
+// downloaded in full by every dashboard load whether or not anyone reads one.
+router.get(
+  "/studio/guides",
+  studioRateLimiter,
+  requireStaff,
+  async (_req, res) => {
+    const guides = await getStudioGuides();
+    res.json(GetStudioGuidesResponse.parse(guides));
+  },
+);
+
+// One guide's markup, downloaded when it is opened.
+//
+// Served exactly as the atelier wrote it, and deliberately not sanitized. It is
+// never executed here and never executed in the browser either: the dashboard
+// renders it in a sandboxed frame granting neither scripts nor same-origin
+// access, because this origin holds a signed-in staff session and the file is
+// not code anybody reviewed.
+router.get(
+  "/studio/guides/:guideId",
+  studioRateLimiter,
+  requireStaff,
+  validate({ params: GetStudioGuideContentParams }),
+  async (_req, res) => {
+    const { guideId } = res.locals.params as { guideId: string };
+    const content = await getStudioGuideContent(guideId);
+    res.json(GetStudioGuideContentResponse.parse(content));
   },
 );
 

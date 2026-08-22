@@ -14,6 +14,16 @@ import type { Mock } from "vitest";
 const h = vi.hoisted(() => ({ mutate: vi.fn(), isPending: false }));
 vi.mock("@workspace/api-client-react", () => ({
   useRunStudioTool: () => ({ mutate: h.mutate, isPending: h.isPending }),
+  // Each tool card carries the guides filed against it; that panel has its own
+  // test file, so here it just needs an inert hook. An empty list renders
+  // nothing at all, which is the behaviour these tests assume.
+  useGetStudioGuides: () => ({
+    data: { guides: [], sections: [], configured: true },
+    isLoading: false,
+    isError: false,
+    error: null,
+  }),
+  getGetStudioGuidesQueryKey: () => ["studio-guides"],
 }));
 
 import { StudioTools } from "@/components/studio-tools";

@@ -18,6 +18,7 @@ import { StudioNewsletter } from "@/components/studio-newsletter";
 import { StudioAvailability } from "@/components/studio-availability";
 import { StudioReviews } from "@/components/studio-reviews";
 import { StudioMaterials } from "@/components/studio-materials";
+import { StudioGuides, GuidesFor } from "@/components/studio-guides";
 import { StudioSettings } from "@/components/studio-settings";
 import { Seo } from "@/components/seo";
 import { useAuth } from "@/lib/auth-context";
@@ -329,19 +330,32 @@ function Dashboard({ data }: { data: StudioAnalytics }) {
 
       <TopItemsPanel items={data.topItems} />
 
+      {/* Each panel carries the guides filed against it, so a procedure sits
+          with the thing it describes rather than in a manual elsewhere on the
+          page. `GuidesFor` renders nothing when there are none. */}
+      <GuidesFor section="figures" />
+
       <StudioMaterials />
+      <GuidesFor section="materials" />
 
       <StudioReviews />
+      <GuidesFor section="reviews" />
 
       <StudioAvailability />
+      <GuidesFor section="availability" />
 
       <StudioSettings />
+      <GuidesFor section="settings" />
 
       <StudioRequests onHandoff={(next) => setHandoff(toolHandoff(next))} />
+      <GuidesFor section="requests" />
 
       <StudioNewsletter />
+      <GuidesFor section="newsletter" />
 
       <StudioTools handoff={handoff} />
+
+      <StudioGuides />
     </div>
   );
 }

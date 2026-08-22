@@ -71,6 +71,8 @@ import type {
   StaffAvailabilityRequest,
   StudioAccess,
   StudioAnalytics,
+  StudioGuideContent,
+  StudioGuideList,
   StudioRequest,
   StudioRequestList,
   StudioReview,
@@ -2761,6 +2763,178 @@ export function useListStudioReviews<TData = Awaited<ReturnType<typeof listStudi
  ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
 
   const queryOptions = getListStudioReviewsQueryOptions(options)
+
+  const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
+
+  return withQueryKey(query, queryOptions.queryKey);
+}
+
+
+
+
+
+
+
+export const getGetStudioGuidesUrl = () => {
+
+
+
+
+  return `/api/studio/guides`
+}
+
+/**
+ * The studio procedures the code can't perform — how an invoice is actually built, when milestones are reconciled, how a refund is decided — written up as HTML files the atelier uploads to a Notion database and rendered here beside the tool or panel each one is about.
+ *
+ * The point of the arrangement is that a guide is revised by replacing the file, not by a deploy. So the app stores nothing: it reads the rows.
+ *
+ * This lists what the guides ARE and where they go; it does not carry their content. A guide's markup is fetched one at a time from `/studio/guides/{guideId}` when that guide is opened, because inlining every guide here would put the studio's whole manual in one response — past the serverless payload limit at a handful of screenshot-heavy guides, taking the small guides down with the large ones.
+ *
+ * The `section` says where the dashboard puts it, resolved from the row's `Section` against the served `sections` vocabulary — anything unrecognized (or blank) resolves to `general` and the guide is still shown, because a guide filed under a name nobody recognized is a guide the atelier wrote and would otherwise never see.
+ *
+ * A row that can't produce markup is listed anyway, with `unavailable` saying why rather than silently vanishing — the same reasoning as the materials panel's untracked list. The reasons visible without a download are decided here, so a broken guide reads as broken before it is opened.
+ *
+ * Same staff gate as the rest of the studio surface: 401 when not signed in, 404 when signed in but not staff, 403 when staff but not signed in with Google.
+ * @summary The atelier's how-to guides, each next to what it describes
+ */
+export const getStudioGuides = async ( options?: Parameters<typeof customFetch>[1]): Promise<StudioGuideList> => {
+
+  return customFetch<StudioGuideList>(getGetStudioGuidesUrl(),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
+
+
+
+
+export const getGetStudioGuidesQueryKey = () => {
+    return [
+    `/api/studio/guides`
+    ] as const;
+    }
+
+
+export const getGetStudioGuidesQueryOptions = <TData = Awaited<ReturnType<typeof getStudioGuides>>, TError = ErrorType<ErrorEnvelope>>( options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getStudioGuides>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getGetStudioGuidesQueryKey();
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof getStudioGuides>>> = ({ signal }) => getStudioGuides({ signal, ...requestOptions });
+
+
+
+
+
+   return  { queryKey, queryFn, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof getStudioGuides>>, TError, TData> & { queryKey: QueryKey }
+}
+
+export type GetStudioGuidesQueryResult = NonNullable<Awaited<ReturnType<typeof getStudioGuides>>>
+export type GetStudioGuidesQueryError = ErrorType<ErrorEnvelope>
+
+
+/**
+ * @summary The atelier's how-to guides, each next to what it describes
+ */
+
+export function useGetStudioGuides<TData = Awaited<ReturnType<typeof getStudioGuides>>, TError = ErrorType<ErrorEnvelope>>(
+  options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getStudioGuides>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+
+ ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+
+  const queryOptions = getGetStudioGuidesQueryOptions(options)
+
+  const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
+
+  return withQueryKey(query, queryOptions.queryKey);
+}
+
+
+
+
+
+
+
+export const getGetStudioGuideContentUrl = (guideId: string,) => {
+
+
+
+
+  return `/api/studio/guides/${guideId}`
+}
+
+/**
+ * Downloads the HTML file attached to one guide row and returns its markup exactly as the atelier wrote it. Called when a guide is opened, so a dashboard nobody reads a guide on downloads nothing at all — and so one slow file can't stall the listing.
+ *
+ * `html` is unmodified and is NOT sanitized server-side. It is rendered in a sandboxed frame that grants neither scripts nor same-origin access, which is what makes serving markup nobody reviewed safe on an origin holding a signed-in staff session. A sanitizer would buy no safety the sandbox doesn't already give while silently mangling the atelier's own markup.
+ *
+ * Only a file UPLOADED to Notion is fetched. A pasted external link is reported as `not-uploaded` and never requested, because the server returns what it downloads and anyone with edit access to the database — a Notion permission, not studio staff membership — could otherwise choose the address.
+ *
+ * Same staff gate as the rest of the studio surface: 401 when not signed in, 404 when signed in but not staff, 403 when staff but not signed in with Google.
+ * @summary One guide's markup
+ */
+export const getStudioGuideContent = async (guideId: string, options?: Parameters<typeof customFetch>[1]): Promise<StudioGuideContent> => {
+
+  return customFetch<StudioGuideContent>(getGetStudioGuideContentUrl(guideId),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
+
+
+
+
+export const getGetStudioGuideContentQueryKey = (guideId: string,) => {
+    return [
+    `/api/studio/guides/${guideId}`
+    ] as const;
+    }
+
+
+export const getGetStudioGuideContentQueryOptions = <TData = Awaited<ReturnType<typeof getStudioGuideContent>>, TError = ErrorType<ErrorEnvelope>>(guideId: string, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getStudioGuideContent>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getGetStudioGuideContentQueryKey(guideId);
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof getStudioGuideContent>>> = ({ signal }) => getStudioGuideContent(guideId, { signal, ...requestOptions });
+
+
+
+
+
+   return  { queryKey, queryFn, enabled: guideId !== null && guideId !== undefined, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof getStudioGuideContent>>, TError, TData> & { queryKey: QueryKey }
+}
+
+export type GetStudioGuideContentQueryResult = NonNullable<Awaited<ReturnType<typeof getStudioGuideContent>>>
+export type GetStudioGuideContentQueryError = ErrorType<ErrorEnvelope>
+
+
+/**
+ * @summary One guide's markup
+ */
+
+export function useGetStudioGuideContent<TData = Awaited<ReturnType<typeof getStudioGuideContent>>, TError = ErrorType<ErrorEnvelope>>(
+ guideId: string, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getStudioGuideContent>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+
+ ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+
+  const queryOptions = getGetStudioGuideContentQueryOptions(guideId,options)
 
   const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
 

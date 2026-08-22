@@ -28,6 +28,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { serverErrorMessage } from "@/lib/api-error";
+import { GuidesFor } from "@/components/studio-guides";
 import type { ToolHandoff } from "@/lib/studio-handoff";
 import {
   Loader2,
@@ -246,6 +247,12 @@ function ToolCard({
       <p className="mt-1 text-sm text-muted-foreground font-light">
         {spec.description}
       </p>
+
+      {/* The atelier's own write-up of this procedure, when it has written one
+          — the part the tool can't do, next to the button that does the rest.
+          `spec.tool` IS the guide section id, so filing a guide against a tool
+          needs no mapping table. Renders nothing when there is no guide. */}
+      <GuidesFor section={spec.tool} />
 
       <div className="mt-4 flex flex-col gap-3 sm:flex-row sm:flex-wrap sm:items-end">
         {field && (

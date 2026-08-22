@@ -967,6 +967,62 @@ export const ListStudioReviewsResponse = zod.object({
 
 
 /**
+ * The studio procedures the code can't perform — how an invoice is actually built, when milestones are reconciled, how a refund is decided — written up as HTML files the atelier uploads to a Notion database and rendered here beside the tool or panel each one is about.
+ *
+ * The point of the arrangement is that a guide is revised by replacing the file, not by a deploy. So the app stores nothing: it reads the rows.
+ *
+ * This lists what the guides ARE and where they go; it does not carry their content. A guide's markup is fetched one at a time from `/studio/guides/{guideId}` when that guide is opened, because inlining every guide here would put the studio's whole manual in one response — past the serverless payload limit at a handful of screenshot-heavy guides, taking the small guides down with the large ones.
+ *
+ * The `section` says where the dashboard puts it, resolved from the row's `Section` against the served `sections` vocabulary — anything unrecognized (or blank) resolves to `general` and the guide is still shown, because a guide filed under a name nobody recognized is a guide the atelier wrote and would otherwise never see.
+ *
+ * A row that can't produce markup is listed anyway, with `unavailable` saying why rather than silently vanishing — the same reasoning as the materials panel's untracked list. The reasons visible without a download are decided here, so a broken guide reads as broken before it is opened.
+ *
+ * Same staff gate as the rest of the studio surface: 401 when not signed in, 404 when signed in but not staff, 403 when staff but not signed in with Google.
+ * @summary The atelier's how-to guides, each next to what it describes
+ */
+export const GetStudioGuidesResponse = zod.object({
+  "guides": zod.array(zod.object({
+  "id": zod.string().describe('The guide\'s Notion page id.'),
+  "title": zod.string().describe('The guide\'s name, as the atelier titled the row.'),
+  "summary": zod.string().optional().describe('A line about what the guide covers, shown before it is opened. Omitted when the row carries none.'),
+  "section": zod.string().describe('Which section id the guide renders under. Always one of the served `sections` — an unrecognized or blank `Section` resolves to `general` rather than dropping the guide.'),
+  "unavailable": zod.enum(['no-file', 'not-uploaded', 'not-html', 'too-large', 'unreadable']).optional().describe('Why this guide has no markup to show, when that is knowable without downloading it: `no-file` — the row has no attachment yet; `not-uploaded` — the attachment is a pasted link rather than a file uploaded to Notion, which is never fetched; `not-html` — it isn\'t an HTML file, so rendering it as markup would be gibberish. The guide is listed either way, so a broken one is visible rather than absent. The two download-time reasons (`too-large`, `unreadable`) can only come back from the content operation.'),
+  "fileName": zod.string().optional().describe('The attached file\'s name, when the row has one.'),
+  "updatedAt": zod.coerce.date().optional().describe('When the Notion row was last edited — i.e. when the guide last changed.'),
+  "notionUrl": zod.string().optional().describe('The guide\'s page in Notion, which is where the file is replaced.')
+}).describe('One how-to guide: a Notion row, the HTML file attached to it, and where on the dashboard it belongs.')).describe('The guides, ordered by the row\'s `Order` where set and by title otherwise. Grouping is the dashboard\'s job — a guide names its section and is rendered wherever that section lives.'),
+  "sections": zod.array(zod.object({
+  "id": zod.string().describe('What `StudioGuide.section` carries, and what the dashboard matches its render points against. For a tool this is the tool\'s own name (`invoice-lines`, `return-refund`, …), so a guide sits inside that tool\'s card.'),
+  "label": zod.string().describe('How the section reads to the atelier, and the other spelling the row\'s `Section` is accepted as (matching ignores case, spacing and punctuation).')
+}).describe('One place on the dashboard a guide can be filed against — the six tools, the panels, and `general` for everything else. Served rather than duplicated in the frontend so the atelier can be shown the accepted `Section` values verbatim, and so a renamed tool has one definition.')).describe('The sections a guide may be filed against, in dashboard order.'),
+  "configured": zod.boolean().describe('False when the guides database isn\'t wired up, in which case `guides` is empty and the panel says why rather than reading as \"no guides have been written\".'),
+  "unreachable": zod.boolean().optional().describe('True when the database id IS set but Notion answered 404 — the integration has not been shared with the database, or the id is wrong. `guides` is empty and the panel says what to fix; reported rather than thrown because it is a configuration state only a human can clear, not an outage worth erroring the panel over. Absent when the read worked.'),
+  "truncated": zod.boolean().optional().describe('True when more rows exist than the server will read in one page, so the dashboard can say the list is partial instead of looking complete.')
+}).describe('Every guide the atelier has written, with the vocabulary saying where each may be filed.')
+
+
+/**
+ * Downloads the HTML file attached to one guide row and returns its markup exactly as the atelier wrote it. Called when a guide is opened, so a dashboard nobody reads a guide on downloads nothing at all — and so one slow file can't stall the listing.
+ *
+ * `html` is unmodified and is NOT sanitized server-side. It is rendered in a sandboxed frame that grants neither scripts nor same-origin access, which is what makes serving markup nobody reviewed safe on an origin holding a signed-in staff session. A sanitizer would buy no safety the sandbox doesn't already give while silently mangling the atelier's own markup.
+ *
+ * Only a file UPLOADED to Notion is fetched. A pasted external link is reported as `not-uploaded` and never requested, because the server returns what it downloads and anyone with edit access to the database — a Notion permission, not studio staff membership — could otherwise choose the address.
+ *
+ * Same staff gate as the rest of the studio surface: 401 when not signed in, 404 when signed in but not staff, 403 when staff but not signed in with Google.
+ * @summary One guide's markup
+ */
+export const GetStudioGuideContentParams = zod.object({
+  "guideId": zod.coerce.string().describe('The guide\'s id, as returned by the list operation.')
+})
+
+export const GetStudioGuideContentResponse = zod.object({
+  "id": zod.string().describe('The guide\'s Notion page id.'),
+  "html": zod.string().optional().describe('The attached file\'s markup, exactly as uploaded and deliberately not sanitized. Absent when `unavailable` says why. It is rendered in a sandboxed frame granting neither scripts nor same-origin access, so it is never executed and never sees the studio session.'),
+  "unavailable": zod.enum(['no-file', 'not-uploaded', 'not-html', 'too-large', 'unreadable']).optional().describe('Why there is no `html`. Beyond the three the listing can already report: `too-large` — the file is over the server\'s per-guide cap; `unreadable` — the download failed, timed out, or was refused.')
+}).describe('One guide\'s markup, downloaded on demand — or the reason there is none.')
+
+
+/**
  * Writes one review's moderation decision to its Notion `Status`. `published` is what puts a testimonial on the site, `rejected` takes it off (and keeps it out of the queue), and `pending` returns it to the queue — so a decision made in error is undone the same way it was made.
  *
  * Publishing requires the customer's own consent to publish, which the atelier cannot supply: without it the request is refused with 409 rather than writing a status the site would then decline to honour. Consent is on the review (`consentToPublish`), so the dashboard can say so before the button is pressed.

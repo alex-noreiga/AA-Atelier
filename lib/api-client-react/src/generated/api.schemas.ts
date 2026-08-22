@@ -350,6 +350,94 @@ export interface UntrackedMaterial {
 }
 
 /**
+ * One place on the dashboard a guide can be filed against — the six tools, the panels, and `general` for everything else. Served rather than duplicated in the frontend so the atelier can be shown the accepted `Section` values verbatim, and so a renamed tool has one definition.
+ */
+export interface GuideSection {
+  /** What `StudioGuide.section` carries, and what the dashboard matches its render points against. For a tool this is the tool's own name (`invoice-lines`, `return-refund`, …), so a guide sits inside that tool's card. */
+  id: string;
+  /** How the section reads to the atelier, and the other spelling the row's `Section` is accepted as (matching ignores case, spacing and punctuation). */
+  label: string;
+}
+
+/**
+ * Why this guide has no markup to show, when that is knowable without downloading it: `no-file` — the row has no attachment yet; `not-uploaded` — the attachment is a pasted link rather than a file uploaded to Notion, which is never fetched; `not-html` — it isn't an HTML file, so rendering it as markup would be gibberish. The guide is listed either way, so a broken one is visible rather than absent. The two download-time reasons (`too-large`, `unreadable`) can only come back from the content operation.
+ */
+export type StudioGuideUnavailable = typeof StudioGuideUnavailable[keyof typeof StudioGuideUnavailable];
+
+
+export const StudioGuideUnavailable = {
+  'no-file': 'no-file',
+  'not-uploaded': 'not-uploaded',
+  'not-html': 'not-html',
+  'too-large': 'too-large',
+  unreadable: 'unreadable',
+} as const;
+
+/**
+ * One how-to guide: a Notion row, the HTML file attached to it, and where on the dashboard it belongs.
+ */
+export interface StudioGuide {
+  /** The guide's Notion page id. */
+  id: string;
+  /** The guide's name, as the atelier titled the row. */
+  title: string;
+  /** A line about what the guide covers, shown before it is opened. Omitted when the row carries none. */
+  summary?: string;
+  /** Which section id the guide renders under. Always one of the served `sections` — an unrecognized or blank `Section` resolves to `general` rather than dropping the guide. */
+  section: string;
+  /** Why this guide has no markup to show, when that is knowable without downloading it: `no-file` — the row has no attachment yet; `not-uploaded` — the attachment is a pasted link rather than a file uploaded to Notion, which is never fetched; `not-html` — it isn't an HTML file, so rendering it as markup would be gibberish. The guide is listed either way, so a broken one is visible rather than absent. The two download-time reasons (`too-large`, `unreadable`) can only come back from the content operation. */
+  unavailable?: StudioGuideUnavailable;
+  /** The attached file's name, when the row has one. */
+  fileName?: string;
+  /** When the Notion row was last edited — i.e. when the guide last changed. */
+  updatedAt?: string;
+  /** The guide's page in Notion, which is where the file is replaced. */
+  notionUrl?: string;
+}
+
+/**
+ * Why there is no `html`. Beyond the three the listing can already report: `too-large` — the file is over the server's per-guide cap; `unreadable` — the download failed, timed out, or was refused.
+ */
+export type StudioGuideContentUnavailable = typeof StudioGuideContentUnavailable[keyof typeof StudioGuideContentUnavailable];
+
+
+export const StudioGuideContentUnavailable = {
+  'no-file': 'no-file',
+  'not-uploaded': 'not-uploaded',
+  'not-html': 'not-html',
+  'too-large': 'too-large',
+  unreadable: 'unreadable',
+} as const;
+
+/**
+ * One guide's markup, downloaded on demand — or the reason there is none.
+ */
+export interface StudioGuideContent {
+  /** The guide's Notion page id. */
+  id: string;
+  /** The attached file's markup, exactly as uploaded and deliberately not sanitized. Absent when `unavailable` says why. It is rendered in a sandboxed frame granting neither scripts nor same-origin access, so it is never executed and never sees the studio session. */
+  html?: string;
+  /** Why there is no `html`. Beyond the three the listing can already report: `too-large` — the file is over the server's per-guide cap; `unreadable` — the download failed, timed out, or was refused. */
+  unavailable?: StudioGuideContentUnavailable;
+}
+
+/**
+ * Every guide the atelier has written, with the vocabulary saying where each may be filed.
+ */
+export interface StudioGuideList {
+  /** The guides, ordered by the row's `Order` where set and by title otherwise. Grouping is the dashboard's job — a guide names its section and is rendered wherever that section lives. */
+  guides: StudioGuide[];
+  /** The sections a guide may be filed against, in dashboard order. */
+  sections: GuideSection[];
+  /** False when the guides database isn't wired up, in which case `guides` is empty and the panel says why rather than reading as "no guides have been written". */
+  configured: boolean;
+  /** True when the database id IS set but Notion answered 404 — the integration has not been shared with the database, or the id is wrong. `guides` is empty and the panel says what to fix; reported rather than thrown because it is a configuration state only a human can clear, not an outage worth erroring the panel over. Absent when the read worked. */
+  unreachable?: boolean;
+  /** True when more rows exist than the server will read in one page, so the dashboard can say the list is partial instead of looking complete. */
+  truncated?: boolean;
+}
+
+/**
  * The materials panel — what to reorder, and what isn't being watched.
  */
 export interface MaterialsOverview {

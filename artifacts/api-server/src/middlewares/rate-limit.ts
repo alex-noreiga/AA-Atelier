@@ -32,9 +32,10 @@ export const accountRateLimiter = rateLimit({
  * `STUDIO_STAFF_EMAILS` allowlist, so the abuse this guards against — token
  * guessing, scraping a stranger's data — is already answered by the gate rather
  * than by the ceiling. What the ceiling has to accommodate instead is a handful
- * of people USING the page: one dashboard load is already six reads (access,
- * analytics, materials, reviews, availability, requests), and working the
- * request queue or the review queue down is one write per decision. At the
+ * of people USING the page: one dashboard load is already nine reads (access,
+ * analytics, materials, reviews, availability, settings, requests, newsletter,
+ * guides) before anyone opens a guide, and working the request queue or the
+ * review queue down is one write per decision. At the
  * account limiter's 30 that is five refreshes, or two dozen clicks, before a
  * staff member is locked out of their own dashboard for a quarter of an hour —
  * which is not a brake, it is a bug.

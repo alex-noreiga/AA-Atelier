@@ -71,6 +71,7 @@ let costingClient: NotionClient | null = null;
 let materialUsageClient: NotionClient | null = null;
 let reviewsClient: NotionClient | null = null;
 let settingsClient: NotionClient | null = null;
+let studioGuidesClient: NotionClient | null = null;
 
 /**
  * Lazily-constructed client reading credentials from the environment. Deferring
@@ -165,6 +166,22 @@ export function getMaterialsNotionClient(): NotionClient {
     });
   }
   return materialsClient;
+}
+
+/**
+ * Client for the "Studio Guides" database — the atelier's own how-to write-ups,
+ * each an HTML file attached to a row and rendered on the studio dashboard next
+ * to the tool it describes. Optional: unset ⇒ the guides panel says it isn't
+ * connected rather than showing an empty list.
+ */
+export function getStudioGuidesNotionClient(): NotionClient {
+  if (!studioGuidesClient) {
+    studioGuidesClient = createNotionClient({
+      apiKey: process.env.NOTION_API_KEY ?? "",
+      databaseId: process.env.NOTION_STUDIO_GUIDES_DATABASE_ID ?? "",
+    });
+  }
+  return studioGuidesClient;
 }
 
 /**
