@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import { resolveOrderPipeline } from "../../src/lib/order-pipeline.js";
 import {
   ORDER_SERVICES,
+  PIECE_IN_HAND_STAGES,
   getOrderService,
   resolveStoredOrderService,
 } from "../../src/lib/service-catalog.js";
@@ -16,9 +17,11 @@ import {
   remainingStages,
 } from "../../src/services/schedule.service.js";
 
-/** The atelier's live superset, in the order Notion lists it. */
+/** The atelier's live superset, in the order Notion lists it — the eleven
+ * commission stages plus the three a piece-in-hand service needs. */
 const SUPERSET = [
   "Consultation",
+  "Piece Received",
   "Sketching",
   "Sourcing",
   "Pattern Design",
@@ -26,38 +29,102 @@ const SUPERSET = [
   "Sewing/Construction",
   "Assembly",
   "Fitting",
+  "Alteration/Adjustment",
+  "Repair/Restoration",
   "Rhinestoning/Detailing",
   "Ready for delivery/pickup",
   "Delivered",
 ];
 
-describe("resolveOrderPipeline", () => {
-  it("gives a bespoke commission the whole live list", () => {
-    expect(resolveOrderPipeline("Bespoke Commission", SUPERSET)).toEqual(
-      SUPERSET,
-    );
-  });
+/** The superset as it stands in Notion before the three options are added —
+ * what the deploy meets on day one. */
+const SUPERSET_BEFORE_SETUP = SUPERSET.filter(
+  (stage) => !PIECE_IN_HAND_STAGES.includes(stage as never),
+);
 
-  it("narrows a repair to the stages it actually walks", () => {
-    expect(resolveOrderPipeline("Repairs & Restoration", SUPERSET)).toEqual([
+describe("resolveOrderPipeline", () => {
+  it("gives a bespoke commission the superset minus the piece-in-hand stages", () => {
+    expect(resolveOrderPipeline("Bespoke Commission", SUPERSET)).toEqual([
       "Consultation",
+      "Sketching",
       "Sourcing",
+      "Pattern Design",
+      "Cutting/Pinning",
       "Sewing/Construction",
+      "Assembly",
+      "Fitting",
+      "Rhinestoning/Detailing",
       "Ready for delivery/pickup",
       "Delivered",
     ]);
   });
 
-  it("keeps the catalog's declared order, not the live list's", () => {
-    // The point of a declared sequence: an alteration is fitted before it is
-    // cut, which is the reverse of how the superset lists those two.
+  it("still adopts a stage the atelier adds, for the commission", () => {
+    // The whole reason bespoke excludes rather than selects: the atelier can add
+    // (or rename, or reorder) a commission stage in Notion with no deploy, which
+    // is the property they had before pipelines existed.
+    const widened = [...SUPERSET];
+    widened.splice(widened.indexOf("Assembly") + 1, 0, "Lining");
+
+    const pipeline = resolveOrderPipeline("bespoke", widened);
+
+    expect(pipeline).toContain("Lining");
+    expect(pipeline.indexOf("Lining")).toBe(pipeline.indexOf("Assembly") + 1);
+  });
+
+  it("keeps the piece-in-hand stages off a commission timeline", () => {
+    const pipeline = resolveOrderPipeline("bespoke", SUPERSET);
+    for (const stage of PIECE_IN_HAND_STAGES) {
+      expect(pipeline).not.toContain(stage);
+    }
+  });
+
+  it("narrows a repair to the stages it actually walks", () => {
+    expect(resolveOrderPipeline("Repairs & Restoration", SUPERSET)).toEqual([
+      "Consultation",
+      "Piece Received",
+      "Sourcing",
+      "Repair/Restoration",
+      "Ready for delivery/pickup",
+      "Delivered",
+    ]);
+  });
+
+  it("degrades a piece-in-hand pipeline before the Notion setup is done", () => {
+    // Until the three options exist, a repair's own stages simply aren't
+    // matched — the customer sees a shorter but still correct timeline rather
+    // than a broken one, and adding the options in Notion completes it with no
+    // deploy.
+    expect(resolveOrderPipeline("repairs", SUPERSET_BEFORE_SETUP)).toEqual([
+      "Consultation",
+      "Sourcing",
+      "Ready for delivery/pickup",
+      "Delivered",
+    ]);
+  });
+
+  it("keeps the catalog's declared order for a selection", () => {
     const pipeline = resolveOrderPipeline("Fittings & Alterations", SUPERSET);
-    expect(pipeline.indexOf("Fitting")).toBeLessThan(
-      pipeline.indexOf("Cutting/Pinning"),
-    );
-    expect(SUPERSET.indexOf("Fitting")).toBeGreaterThan(
-      SUPERSET.indexOf("Cutting/Pinning"),
-    );
+    expect(pipeline).toEqual([
+      "Consultation",
+      "Piece Received",
+      "Fitting",
+      "Alteration/Adjustment",
+      "Ready for delivery/pickup",
+      "Delivered",
+    ]);
+  });
+
+  it("keeps every declared pipeline in the superset's own order", () => {
+    // Not a style rule: the Notion `Milestone Status` / `Stage Index Sys`
+    // formulas index against the superset, so a pipeline that reorders relative
+    // to it renders a milestone's state wrongly in the atelier's calendar. This
+    // is what keeps that caveat theoretical — see the memory note.
+    for (const service of ORDER_SERVICES) {
+      const pipeline = resolveOrderPipeline(service.id, SUPERSET);
+      const positions = pipeline.map((stage) => SUPERSET.indexOf(stage));
+      expect(positions).toEqual([...positions].sort((a, b) => a - b));
+    }
   });
 
   it("resolves a service by its catalog id as well as its stored name", () => {
@@ -72,12 +139,21 @@ describe("resolveOrderPipeline", () => {
     ).toEqual(resolveOrderPipeline("rhinestoning", SUPERSET));
   });
 
-  it("falls back to the whole list for an absent or unknown service", () => {
-    // A legacy order, and an id since retired: both keep the widest list rather
-    // than losing stages they might still walk.
-    expect(resolveOrderPipeline(undefined, SUPERSET)).toEqual(SUPERSET);
-    expect(resolveOrderPipeline("", SUPERSET)).toEqual(SUPERSET);
-    expect(resolveOrderPipeline("embroidery", SUPERSET)).toEqual(SUPERSET);
+  it("treats an absent or unknown service as a bespoke commission", () => {
+    // A legacy order and an id since retired both keep the widest sensible
+    // list — the commission's — rather than losing stages they might walk.
+    const bespoke = resolveOrderPipeline("bespoke", SUPERSET);
+    expect(resolveOrderPipeline(undefined, SUPERSET)).toEqual(bespoke);
+    expect(resolveOrderPipeline("", SUPERSET)).toEqual(bespoke);
+    expect(resolveOrderPipeline("embroidery", SUPERSET)).toEqual(bespoke);
+  });
+
+  it("hands a legacy order exactly the list it always had", () => {
+    // An order placed before the catalog existed carries no service, and the
+    // superset it was placed against was the eleven commission stages.
+    expect(resolveOrderPipeline(undefined, SUPERSET_BEFORE_SETUP)).toEqual(
+      SUPERSET_BEFORE_SETUP,
+    );
   });
 
   it("drops a renamed stage but keeps the rest of the pipeline", () => {
@@ -86,7 +162,8 @@ describe("resolveOrderPipeline", () => {
     );
     expect(resolveOrderPipeline("repairs", renamed)).toEqual([
       "Consultation",
-      "Sewing/Construction",
+      "Piece Received",
+      "Repair/Restoration",
       "Ready for delivery/pickup",
       "Delivered",
     ]);
@@ -107,14 +184,31 @@ describe("resolveOrderPipeline", () => {
     }
   });
 
-  it("gives every declared pipeline a home in the live superset", () => {
+  it("gives every selected stage a home in the live superset", () => {
     // Guards the catalog against a typo: a declared name that matches no live
     // option is silently dropped at runtime, so assert they all resolve.
     for (const service of ORDER_SERVICES) {
-      if (!service.pipeline) continue;
+      if (service.pipeline?.kind !== "select") continue;
       expect(resolveOrderPipeline(service.id, SUPERSET)).toEqual([
-        ...service.pipeline,
+        ...service.pipeline.stages,
       ]);
+    }
+  });
+
+  it("makes the commission decide about every stage another service selects", () => {
+    // The drift guard. Add a stage for one of the piece-in-hand services and
+    // this fails unless the commission either walks it or excludes it — the
+    // alternative being "Repair/Restoration" quietly appearing on a bespoke
+    // customer's tracking page.
+    const commission = resolveOrderPipeline("bespoke", SUPERSET);
+    for (const service of ORDER_SERVICES) {
+      if (service.pipeline?.kind !== "select") continue;
+      for (const stage of service.pipeline.stages) {
+        expect(
+          commission.includes(stage) ||
+            (PIECE_IN_HAND_STAGES as readonly string[]).includes(stage),
+        ).toBe(true);
+      }
     }
   });
 });
@@ -146,7 +240,7 @@ describe("the positional rules over a service pipeline", () => {
     const remaining = remainingStages(repairs, "Sourcing");
     expect(remaining).toEqual([
       "Sourcing",
-      "Sewing/Construction",
+      "Repair/Restoration",
       "Ready for delivery/pickup",
       "Delivered",
     ]);
@@ -164,38 +258,43 @@ describe("the positional rules over a service pipeline", () => {
     });
   });
 
-  it("reads forward movement along the pipeline, not the superset", () => {
-    // An alteration last emailed about at its fitting now reaches cutting.
-    // Against the superset that reads as a *backward* edit and is silently
-    // dropped — the customer never hears the piece went into production. Against
-    // the order's own pipeline it is the forward move it actually is.
-    expect(isForwardStageChange("Fitting", "Cutting/Pinning", SUPERSET)).toBe(
-      false,
-    );
+  it("reads forward movement along the order's own pipeline", () => {
+    // A repair last emailed about at Sourcing now reaches the mend itself. The
+    // superset agrees it is forward here — but only the pipeline knows the two
+    // stages are adjacent, and nothing in between was skipped.
     expect(
-      isForwardStageChange("Fitting", "Cutting/Pinning", alterations),
+      isForwardStageChange("Sourcing", "Repair/Restoration", repairs),
     ).toBe(true);
-    // And the reverse move stays backward, so a correction still can't email.
+    // A correction back down the pipeline still can't email.
     expect(
-      isForwardStageChange("Cutting/Pinning", "Fitting", alterations),
+      isForwardStageChange("Repair/Restoration", "Sourcing", repairs),
+    ).toBe(false);
+    // And a stage the order will never reach can't move it at all: an
+    // alteration is never at Sewing/Construction, so a stray edit to that
+    // option is unknown to the pipeline and fails closed.
+    expect(
+      isForwardStageChange("Fitting", "Sewing/Construction", alterations),
     ).toBe(false);
   });
 
   it("locks measurements from the lock stage's place in the pipeline", () => {
-    // Alterations reach Cutting/Pinning after the fitting, so a fitting-stage
-    // order is still unlocked there while the same stage is past the lock in
-    // the commission list.
-    expect(measurementsLocked("Fitting", alterations)).toBe(false);
-    expect(measurementsLocked("Fitting", SUPERSET)).toBe(true);
-    expect(measurementsLocked("Sewing/Construction", alterations)).toBe(true);
+    // The commission still locks at Cutting/Pinning exactly as before.
+    const bespoke = resolveOrderPipeline("bespoke", SUPERSET);
+    expect(measurementsLocked("Fitting", bespoke)).toBe(true);
+    expect(measurementsLocked("Sketching", bespoke)).toBe(false);
   });
 
   it("fails open when the lock stage isn't in the pipeline at all", () => {
-    // Repairs never cut, so there is no lock point; the change request is
-    // vetted by a human instead, matching measurement-lock's documented bias.
-    expect(getOrderService("repairs")?.pipeline).not.toContain(
-      "Cutting/Pinning",
-    );
-    expect(measurementsLocked("Sewing/Construction", repairs)).toBe(false);
+    // None of the three piece-in-hand services cut, so there is no lock point
+    // on their pipelines; a change request is vetted by a human instead,
+    // matching measurement-lock's documented fail-open bias. They don't collect
+    // measurements at intake either, so there is nothing to freeze.
+    for (const id of ["alterations", "rhinestoning", "repairs"]) {
+      const service = getOrderService(id)!;
+      expect(service.measurements).toBe(false);
+      const pipeline = resolveOrderPipeline(id, SUPERSET);
+      expect(pipeline).not.toContain("Cutting/Pinning");
+      expect(measurementsLocked(pipeline[2], pipeline)).toBe(false);
+    }
   });
 });

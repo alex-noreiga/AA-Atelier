@@ -5,6 +5,8 @@
 const STAGE_DESCRIPTIONS: Record<string, string> = {
   Consultation:
     "We're still discussing your vision, measurements, and stylistic desires.",
+  "Piece Received":
+    "Your piece has arrived safely at the atelier and is booked in with us.",
   Sketching:
     "We're translating your ideas into the preliminary designs and technical flats.",
   Sourcing:
@@ -17,6 +19,10 @@ const STAGE_DESCRIPTIONS: Record<string, string> = {
     "We're currently sewing and constructing the garment by hand and machine.",
   Assembly: "We're now assembling all the pieces of your final costume.",
   Fitting: "We're currently in the process of scheduling your fitting(s)!",
+  "Alteration/Adjustment":
+    "We're making the adjustments we pinned at your fitting.",
+  "Repair/Restoration":
+    "We're carefully mending your piece and bringing it back to its best.",
   "Rhinestoning/Detailing":
     "We're now applying hand-beading, crystals, and all the artistic final touches for your costume.",
   "Ready for delivery/pickup":

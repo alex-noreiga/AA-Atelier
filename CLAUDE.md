@@ -1741,15 +1741,16 @@ body. Nothing else — no env var, and the catalog is a deploy-time change.
 
 ## A pipeline per service
 
-The four services shared one `Stage` list, because the live list was read once per
-query and attached to every order alike. That is right for a bespoke commission —
-the list _is_ the commission's pipeline — and wrong for the other three: a repair
-customer watched a timeline promising Sketching, Sourcing and Pattern Design, stages
-their order would never reach. **One superset stays in Notion; the catalog declares
-which of it each service walks, and in what order.** Code:
-`lib/service-catalog.ts` (`OrderServiceDef.pipeline`), `lib/order-pipeline.ts`
-(`resolveOrderPipeline`, pure), and `pipelineFor` in `lib/notion/orders.repository.ts`.
-Load-bearing decisions:
+The four services shared one `Stage` list, because the live list was read once
+per query and attached to every order alike. That is right for a bespoke
+commission — the list _is_ the commission's pipeline — and wrong for the other
+three: a repair customer watched a timeline promising Sketching, Sourcing and
+Pattern Design, stages their order would never reach. **One superset stays in
+Notion, widened with the three stages a piece the customer already owns needs;
+the catalog declares which of it each service walks.** Code:
+`lib/service-catalog.ts` (`OrderServiceDef.pipeline`, `ServicePipeline`,
+`PIECE_IN_HAND_STAGES`), `lib/order-pipeline.ts` (`resolveOrderPipeline`, pure),
+and `pipelineFor` in `lib/notion/orders.repository.ts`. Load-bearing decisions:
 
 1. **Nothing but the repository changed, and that is the design.** The four
    positional rules were **already parameterized on a stage list**:
@@ -1762,60 +1763,86 @@ Load-bearing decisions:
    renders `OrderStatus.stages`, which is now the pipeline. So the whole behavior
    change is `stages` → `pipelineFor(page, stages)` at each site that builds a record.
 
-2. **A declared pipeline names live option values; it does not own the list.** The
-   same targeted-business-rule exception as `STATUS_IN_STOCK` /
+2. **The superset gained three stages, so the services stop borrowing the
+   commission's vocabulary.** `Piece Received`, `Alteration/Adjustment` and
+   `Repair/Restoration` (`PIECE_IN_HAND_STAGES`). Reusing `Sewing/Construction`
+   for a torn seam was defensible internally and wrong on the customer's
+   tracking page, which is the surface this card exists to fix.
+
+3. **The commission EXCLUDES; the other three SELECT.** Once the superset holds
+   stages no commission walks, "declare nothing and inherit the live list" would
+   put `Repair/Restoration` on a commission's timeline — but giving bespoke a
+   select-list of its eleven would silently cost the property the repo cares
+   most about, that the atelier can **add, rename or reorder a commission stage
+   in Notion with no deploy**. So bespoke declares
+   `{ kind: "exclude", stages: PIECE_IN_HAND_STAGES }` — everything Notion says,
+   minus those three — and a twelfth commission stage still flows straight
+   through. A test pins both halves, plus a **drift guard**: every stage any
+   service selects must be either walked or excluded by the commission, so
+   adding a service stage without deciding about bespoke fails CI.
+
+4. **A declared pipeline names live option values; it does not own the list.**
+   The same targeted-business-rule exception as `STATUS_IN_STOCK` /
    `MEASUREMENT_LOCK_FROM_STAGE` / `REVIEW_STATUS_PUBLISHED` — the superset stays
-   live-read, and the **bespoke commission declares nothing**, so it inherits whatever
-   Notion says and the atelier can still add, rename and reorder its stages without a
-   deploy. Renaming a stage another service names costs that service that step (below).
+   live-read.
 
-3. **The catalog owns the ORDER, not the live list.** `resolveOrderPipeline` emits the
-   **declared** sequence, because an alteration is pinned at a fitting _before_
-   anything is cut and the superset lists those two the other way round. This is what
-   makes a pipeline more than a filter — and it is why an alterations order moving
-   Fitting → Cutting/Pinning now emails the customer at all: against the global list
-   that reads as a _backward_ edit and the forward-only gate silently dropped it.
+5. **The catalog owns the ORDER of a selection.** `resolveOrderPipeline` emits
+   the **declared** sequence, because an alteration is pinned at a fitting
+   _before_ the work is done on it. This is what makes a pipeline more than a
+   filter — and it is why an alterations order advancing past its fitting now
+   emails the customer at all: against the global list that read as a _backward_
+   edit and the forward-only gate silently dropped it.
 
-4. **Degradation always widens, and never to `[]`.** No declared pipeline, or an
-   absent / retired `service`, ⇒ the live list (exactly the pre-pipeline behavior, so
-   legacy orders are untouched). A **partial** name match is honoured, so one Notion
-   rename costs one step off one service's timeline rather than collapsing it. **No**
-   match ⇒ the live list again: an empty list would report the order as never
-   delivered (`orderDelivered` fails closed on `[]`), strand its milestones, and render
-   a timeline with no steps in it.
+6. **Degradation always widens, and never to `[]`.** No declared pipeline ⇒ the
+   live list (the floor for a service that can't be resolved). A **partial**
+   select match ⇒ honoured, so one Notion rename costs one step off one
+   service's timeline rather than collapsing it. **No** match, or an exclusion
+   that removes everything, ⇒ the live list again: an empty list would report
+   the order as never delivered (`orderDelivered` fails closed on `[]`), strand
+   its milestones, and render a timeline with no steps in it. This is also what
+   makes the Notion setup **non-blocking** — until the three options exist a
+   repair's own stages simply aren't matched, and its customer sees a shorter
+   but still correct timeline.
 
-5. **The `Service` property stores the display NAME, so resolution accepts either.**
+7. **The `Service` property stores the display NAME, so resolution accepts either.**
    `buildOrderProperties` writes `service.name` ("Fittings & Alterations") because the
    atelier filters that column, while the contract, deep links and the catalog's own
    lookups use the `id` ("alterations"). `resolveStoredOrderService` matches an id
    first, then a name case- and whitespace-insensitively. Resolving by id alone would
    have missed every stored order and made this a silent no-op.
 
-6. **Analytics classify per order but count per superset.** `OrderAnalyticsRecord`
+8. **Analytics classify per order but count per superset.** `OrderAnalyticsRecord`
    carries an optional `pipeline`; `buildPipeline` uses `record.pipeline ?? list` for
-   the lifecycle state (so a repair is completed at the end of _its_ five stages) and
+   the lifecycle state (so a repair is completed at the end of _its_ six stages) and
    the superset for the per-stage buckets. Optional, so a record built without a live
    list falls back rather than being classified against nothing.
 
-7. **The pipeline is deliberately off the `GET /services` contract.** Like `orderLabel`
+9. **The pipeline is deliberately off the `GET /services` contract.** Like `orderLabel`
    and `emailIntro`, `getServiceOptions()` strips it: the intake form asks what to
    make, and the stage list reaches the customer on `OrderStatus.stages` once there is
    an order to track.
 
-**Known caveat — the Notion formulas still think in the superset.** The Production
-Schedule's `Milestone Status` and Custom Orders' `Stage Index Sys` hardcode the
-11-stage global order (see `.agents/memory/phase2-workspace-cards.md`), so a pipeline
-that **reorders** relative to it — today only **alterations** — renders a milestone's
-state wrongly in the atelier's Notion calendar (an order at Fitting shows its
-Cutting/Pinning milestone as `Completed`). It is display-only and atelier-facing:
-nothing in the app reads either formula, and the customer's timeline is correct. Keep
-new pipelines in superset order unless a reorder is worth it.
+**Stage order in Notion is load-bearing.** The Production Schedule's
+`Milestone Status` and Custom Orders' `Stage Index Sys` formulas index against
+the superset's order (see `.agents/memory/phase2-workspace-cards.md`), so a
+pipeline that **reorders** relative to it renders a milestone's state wrongly in
+the atelier's Notion calendar. In the recommended order below every pipeline is a
+straight subsequence, so the problem does not arise — which is precisely why
+`Alteration/Adjustment` sits _after_ `Fitting`. A unit test asserts the property,
+so a future pipeline that breaks it fails CI.
 
-**Atelier setup: none.** Every declared stage already exists as a `Stage` option, so
-nothing is added, renamed or reordered in Notion and there is no env var. Orders
-placed before the `Service` property existed resolve to the bespoke commission and
-keep the list they have always been shown. Full detail, the per-service table and the
-caveat live in `.agents/memory/service-pipelines.md`.
+**Atelier setup:** add three `Stage` options to the Order Tracking Pipeline, in
+position — **`Piece Received`** after `Consultation`, **`Alteration/Adjustment`**
+after `Fitting`, **`Repair/Restoration`** after that (the superset then runs
+Consultation → Piece Received → Sketching → Sourcing → Pattern Design →
+Cutting/Pinning → Sewing/Construction → Assembly → Fitting →
+Alteration/Adjustment → Repair/Restoration → Rhinestoning/Detailing → Ready for
+delivery/pickup → Delivered). Then extend `Stage Index Sys` + `Milestone Status`
+to the 14 options, or milestones on the new stages read blank. No env var, no new
+property, no new database, and the deploy is safe before any of it. Orders placed
+before the `Service` property existed resolve to the bespoke commission and keep
+the list they have always been shown. Full detail, the per-service table and the
+new stages' customer-facing copy live in `.agents/memory/service-pipelines.md`.
 
 ## What the intake records (order form -> Notion + email parity)
 

@@ -55,29 +55,62 @@ export interface OrderServiceDef {
    */
   emailIntro: string;
   /**
-   * The production stages this service actually walks, in the order it walks
-   * them — the order's *pipeline*, a declared sequence over the one superset of
-   * `Stage` options the atelier keeps in Notion.
+   * Which production stages this service's orders walk — the order's *pipeline*,
+   * over the one superset of `Stage` options the atelier keeps in Notion.
    *
-   * Omitted (the bespoke commission) means "the whole live list", which is what
-   * every order did before pipelines existed: a service that declares nothing
-   * inherits whatever Notion says, so the atelier can still add, rename, and
-   * reorder stages for the commission pipeline without touching code.
+   * Two shapes, because the four services fall into two genuinely different
+   * relationships with that superset:
    *
-   * Declaring one names live option values, the same targeted-business-rule
-   * exception as `STATUS_IN_STOCK` / `MEASUREMENT_LOCK_FROM_STAGE`: it does not
-   * own the list (the superset stays live-read), it selects from it. A name that
-   * no longer matches a live option is dropped by `resolveOrderPipeline`, and a
-   * pipeline that matches nothing at all degrades to the full live list — so a
-   * Notion rename costs a stage from one service's timeline, never the timeline.
+   * - `{ kind: "select" }` — the service walks these named stages, in **this
+   *   order**. Used by the three services performed on a piece the customer
+   *   already owns, each of which touches a handful of the superset.
+   * - `{ kind: "exclude" }` — the service walks the whole live list *except*
+   *   these. Used by the bespoke commission, whose pipeline **is** the superset
+   *   minus the stages that exist only for the other three. Written as an
+   *   exclusion so the atelier keeps the property they have always had: add,
+   *   rename or reorder a commission stage in Notion and it appears on the
+   *   commission timeline with no deploy. A select-list would have quietly
+   *   taken that away the moment the superset stopped being the commission's
+   *   own list.
    *
-   * ORDER MATTERS and is this catalog's to decide: an alteration is pinned at a
-   * fitting *before* anything is cut, which is the reverse of the commission
-   * order those two stages sit in. See the `Milestone Status` caveat in
-   * `.agents/memory/service-pipelines.md` before reordering one.
+   * Either way this names live option values without owning the list — the same
+   * targeted-business-rule exception as `STATUS_IN_STOCK` /
+   * `MEASUREMENT_LOCK_FROM_STAGE`. A selected name that no longer matches a live
+   * option is dropped by `resolveOrderPipeline` (so one Notion rename costs one
+   * step, not the timeline), and a selection matching nothing at all degrades to
+   * the full live list. An excluded name that matches nothing is simply inert.
+   *
+   * For a selection, ORDER MATTERS and is this catalog's to decide: an
+   * alteration is pinned at a fitting *before* the work is done on it. Keep a
+   * selection in the superset's own order where you can — see the
+   * `Milestone Status` note in `.agents/memory/service-pipelines.md`.
+   *
+   * Omitted entirely ⇒ the whole live list. No entry does that today; it is the
+   * floor `resolveOrderPipeline` degrades to for a service it can't resolve.
    */
-  pipeline?: readonly string[];
+  pipeline?: ServicePipeline;
 }
+
+/** How a service's entry selects its stages from the live superset. */
+export type ServicePipeline =
+  | { kind: "select"; stages: readonly string[] }
+  | { kind: "exclude"; stages: readonly string[] };
+
+/**
+ * Stages that exist in the superset for one of the three piece-in-hand services
+ * and have no place on a bespoke commission's timeline.
+ *
+ * Named once, here, because two things must agree about them: the bespoke
+ * exclusion below, and `test/unit/order-pipeline.test.ts`, which asserts every
+ * stage any service selects is either walked or excluded by the commission — so
+ * adding a service stage without deciding about bespoke fails CI rather than
+ * quietly putting "Repair/Restoration" on a commission's tracking page.
+ */
+export const PIECE_IN_HAND_STAGES = [
+  "Piece Received",
+  "Alteration/Adjustment",
+  "Repair/Restoration",
+] as const;
 
 export const ORDER_SERVICES: readonly OrderServiceDef[] = [
   {
@@ -93,6 +126,10 @@ export const ORDER_SERVICES: readonly OrderServiceDef[] = [
     orderLabel: "Custom Costume",
     emailIntro:
       "Thank you for trusting us with your custom piece. We've received your order and our atelier will begin the journey from measurements to finished garment.",
+    // The commission's pipeline IS the superset, minus the stages that only
+    // exist for a piece the customer already owns. Stated as an exclusion so a
+    // stage the atelier adds in Notion still reaches this timeline untouched.
+    pipeline: { kind: "exclude", stages: PIECE_IN_HAND_STAGES },
   },
   {
     id: "alterations",
@@ -107,17 +144,20 @@ export const ORDER_SERVICES: readonly OrderServiceDef[] = [
     orderLabel: "Alterations",
     emailIntro:
       "Thank you for trusting us with your costume. We've received your alteration request, and we'll be in touch to arrange a fitting so we can see the piece on you.",
-    // Fitting first: an alteration is pinned on the customer before anything is
-    // cut. There is no sketching, sourcing or pattern drafting — the piece
-    // already exists.
-    pipeline: [
-      "Consultation",
-      "Fitting",
-      "Cutting/Pinning",
-      "Sewing/Construction",
-      "Ready for delivery/pickup",
-      "Delivered",
-    ],
+    // The piece arrives, is pinned on the customer, then adjusted. There is no
+    // sketching, sourcing or pattern drafting — the garment already exists, and
+    // "Cutting/Pinning" would describe building one from scratch.
+    pipeline: {
+      kind: "select",
+      stages: [
+        "Consultation",
+        "Piece Received",
+        "Fitting",
+        "Alteration/Adjustment",
+        "Ready for delivery/pickup",
+        "Delivered",
+      ],
+    },
   },
   {
     id: "rhinestoning",
@@ -132,14 +172,19 @@ export const ORDER_SERVICES: readonly OrderServiceDef[] = [
     orderLabel: "Rhinestoning",
     emailIntro:
       "Thank you for trusting us with your costume. We've received your rhinestoning request, and we'll be in touch to confirm the detail, the stones, and the timing.",
-    // Stones are sourced, then applied. Nothing is drafted, cut or constructed.
-    pipeline: [
-      "Consultation",
-      "Sourcing",
-      "Rhinestoning/Detailing",
-      "Ready for delivery/pickup",
-      "Delivered",
-    ],
+    // The piece arrives, stones are sourced, then applied. Nothing is drafted,
+    // cut or constructed.
+    pipeline: {
+      kind: "select",
+      stages: [
+        "Consultation",
+        "Piece Received",
+        "Sourcing",
+        "Rhinestoning/Detailing",
+        "Ready for delivery/pickup",
+        "Delivered",
+      ],
+    },
   },
   {
     id: "repairs",
@@ -154,14 +199,20 @@ export const ORDER_SERVICES: readonly OrderServiceDef[] = [
     orderLabel: "Repair",
     emailIntro:
       "Thank you for trusting us with your costume. We've received your repair request, and we'll be in touch about getting the piece to us.",
-    // Matching materials are sourced, then the mend is sewn.
-    pipeline: [
-      "Consultation",
-      "Sourcing",
-      "Sewing/Construction",
-      "Ready for delivery/pickup",
-      "Delivered",
-    ],
+    // The piece arrives, matching materials are sourced, then it is mended.
+    // "Sewing/Construction" would read to a customer as their garment being
+    // built from scratch, which is the opposite of what a repair is.
+    pipeline: {
+      kind: "select",
+      stages: [
+        "Consultation",
+        "Piece Received",
+        "Sourcing",
+        "Repair/Restoration",
+        "Ready for delivery/pickup",
+        "Delivered",
+      ],
+    },
   },
 ];
 

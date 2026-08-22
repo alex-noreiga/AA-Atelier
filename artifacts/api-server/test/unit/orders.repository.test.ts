@@ -183,10 +183,12 @@ describe("findOrderByNumber", () => {
         return jsonResponse(
           databaseSchemaWithStages([
             "Consultation",
+            "Piece Received",
             "Sketching",
             "Sourcing",
             "Pattern Design",
             "Sewing/Construction",
+            "Repair/Restoration",
             "Ready for delivery/pickup",
             "Delivered",
           ]),
@@ -211,14 +213,17 @@ describe("findOrderByNumber", () => {
 
     expect(record?.stages).toEqual([
       "Consultation",
+      "Piece Received",
       "Sourcing",
-      "Sewing/Construction",
+      "Repair/Restoration",
       "Ready for delivery/pickup",
       "Delivered",
     ]);
   });
 
   it("keeps the whole live list for an order with no service recorded", async () => {
+    // No service ⇒ the bespoke commission, whose pipeline is the live list minus
+    // the piece-in-hand stages — none of which this database has.
     const stages = ["Consultation", "Sewing", "Delivery"];
     const client = makeFakeClient((path) => {
       if (isSchema(path)) return jsonResponse(databaseSchemaWithStages(stages));
