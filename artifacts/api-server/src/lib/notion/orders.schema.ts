@@ -97,8 +97,10 @@ export const ORDER_REFERRAL_CODE_PROPERTY = "Referral Code"; // rich_text
 // It decides what the intake asked for, so recording it is what lets the atelier
 // tell an order with no measurements apart from an incomplete one. A `select`,
 // so it filters and groups; Notion auto-creates the option on first write.
-// Write-only — the app never reads it back (the catalog, not the order, is the
-// authority on what a service needs).
+// Read back by `extractOrderService` for one purpose only: resolving the order's
+// *pipeline* — which stages this order walks (`lib/order-pipeline.ts`). The
+// catalog, not the order, remains the authority on what a service needs; the
+// order only says which catalog entry to ask.
 export const ORDER_SERVICE_PROPERTY = "Service"; // select
 
 /** Validated new-order payload, derived from the OpenAPI contract. */
@@ -217,6 +219,7 @@ export interface NotionOrderPage {
     Height?: { type: "number"; number: number | null };
     "Body Girth"?: { type: "number"; number: number | null };
     "Measurement Unit"?: { type: "select"; select: { name: string } | null };
+    Service?: { type: "select"; select: { name: string } | null };
     Stage?: { type: "status"; status: { name: string } | null };
     Invoices?: { type: "relation"; relation: Array<{ id: string }> };
     "Costing Items"?: { type: "relation"; relation: Array<{ id: string }> };
@@ -265,6 +268,14 @@ export function extractOrderName(page: NotionOrderPage): string {
 
 export function extractCurrentStage(page: NotionOrderPage): string {
   return page.properties[STAGE_PROPERTY_NAME]?.status?.name ?? "";
+}
+
+/** The service the order was placed for (`bespoke`, `alterations`, …), or
+ * undefined when the property is absent, empty, or predates the catalog. An
+ * undefined id resolves to the bespoke commission — the widest pipeline — so a
+ * legacy order keeps exactly the stage list it has always been shown. */
+export function extractOrderService(page: NotionOrderPage): string | undefined {
+  return page.properties[ORDER_SERVICE_PROPERTY]?.select?.name || undefined;
 }
 
 /** The linked invoice's page id (the `Invoices` relation is limit-1 in Notion),
@@ -394,6 +405,11 @@ export interface OrderAnalyticsRecord {
   rush: boolean;
   /** The linked invoice's page id, when the order has one. */
   invoicePageId?: string;
+  /** The stages this order's service actually walks, in order. Absent only for
+   * a record built without a live stage list to narrow (the aggregator then
+   * falls back to the superset), so an order is never classified against a
+   * pipeline it doesn't walk. */
+  pipeline?: string[];
 }
 
 /** Notion's page-creation timestamp, or an empty string on a payload that
