@@ -7,6 +7,7 @@
  */
 import type { Invoice } from './invoice';
 import type { InvoiceDeposit } from './invoiceDeposit';
+import type { OrderFulfilment } from './orderFulfilment';
 import type { OrderStatusMilestonesItem } from './orderStatusMilestonesItem';
 
 export interface OrderStatus {
@@ -25,4 +26,5 @@ export interface OrderStatus {
   invoice?: Invoice;
   /** True once the atelier has cancelled the order (the `Cancelled` marker on the Notion order). When true the tracking page shows a cancelled banner and suppresses the deposit / invoice / request affordances. Absent/false for an active order. */
   cancelled?: boolean;
+  fulfilment?: OrderFulfilment;
 }

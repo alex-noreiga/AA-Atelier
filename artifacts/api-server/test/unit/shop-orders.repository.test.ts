@@ -23,6 +23,11 @@ import {
   SHOP_ORDER_TRACKING_NUMBER_PROPERTY,
   SHOP_ORDER_TRACKING_CARRIER_PROPERTY,
   SHOP_ORDER_TRACKING_URL_PROPERTY,
+  SHOP_ORDER_DELIVERY_METHOD_PROPERTY,
+  SHOP_ORDER_SHIP_BY_PROPERTY,
+  SHOP_ORDER_PICKUP_TIME_PROPERTY,
+  SHOP_ORDER_PICKUP_LOCATION_PROPERTY,
+  SHOP_ORDER_SHIPPING_PROPERTY,
 } from "../../src/lib/notion/shop-orders.blocks.js";
 import {
   makeFakeClient,
@@ -41,6 +46,11 @@ function shopOrderResultPage(opts: {
   trackingNumber?: string;
   trackingCarrier?: string;
   trackingUrl?: string;
+  deliveryMethod?: string;
+  shipBy?: string;
+  pickupAt?: string;
+  pickupLocation?: string;
+  shippingAddress?: string;
 }) {
   return {
     id: "so-page",
@@ -84,6 +94,30 @@ function shopOrderResultPage(opts: {
       [SHOP_ORDER_TRACKING_URL_PROPERTY]: {
         type: "url",
         url: opts.trackingUrl ?? null,
+      },
+      [SHOP_ORDER_DELIVERY_METHOD_PROPERTY]: {
+        type: "select",
+        select: opts.deliveryMethod ? { name: opts.deliveryMethod } : null,
+      },
+      [SHOP_ORDER_SHIP_BY_PROPERTY]: {
+        type: "date",
+        date: opts.shipBy ? { start: opts.shipBy, end: null } : null,
+      },
+      [SHOP_ORDER_PICKUP_TIME_PROPERTY]: {
+        type: "date",
+        date: opts.pickupAt ? { start: opts.pickupAt, end: null } : null,
+      },
+      [SHOP_ORDER_PICKUP_LOCATION_PROPERTY]: {
+        type: "rich_text",
+        rich_text: opts.pickupLocation
+          ? [{ plain_text: opts.pickupLocation }]
+          : [],
+      },
+      [SHOP_ORDER_SHIPPING_PROPERTY]: {
+        type: "rich_text",
+        rich_text: opts.shippingAddress
+          ? [{ plain_text: opts.shippingAddress }]
+          : [],
       },
     },
   };
@@ -252,7 +286,10 @@ describe("findShopOrderByNumber", () => {
     expect(order?.cancelled).toBe(true);
   });
 
-  it("surfaces carrier tracking with the carrier and url when all are set", async () => {
+  // The repository reads the shipping/collection columns VERBATIM — what any of
+  // it means (ship vs pickup, whether there's anything worth showing) is
+  // `lib/fulfilment.ts`'s call, tested in fulfilment.test.ts.
+  it("reads the carrier tracking columns into the raw fulfilment fields", async () => {
     const client = makeFakeClient(() =>
       jsonResponse({
         results: [
@@ -268,44 +305,66 @@ describe("findShopOrderByNumber", () => {
       }),
     );
     const order = await findShopOrderByNumber("SHP-1", client);
-    expect(order?.tracking).toEqual({
-      number: "9400111899",
+    expect(order?.fulfilmentFields).toEqual({
+      trackingNumber: "9400111899",
       carrier: "USPS",
-      url: "https://tools.usps.com/go/TrackConfirmAction?tLabels=9400111899",
+      trackingUrl:
+        "https://tools.usps.com/go/TrackConfirmAction?tLabels=9400111899",
     });
   });
 
-  it("omits the carrier and url from tracking when only a number is set", async () => {
+  it("reads the delivery method, pickup time, location and ship-by date", async () => {
+    const client = makeFakeClient(() =>
+      jsonResponse({
+        results: [
+          shopOrderResultPage({
+            orderNumber: "SHP-1",
+            status: "Packed",
+            deliveryMethod: "Local pickup",
+            pickupAt: "2026-09-03T14:00:00.000-05:00",
+            pickupLocation: "The studio",
+            shipBy: "2026-09-01",
+          }),
+        ],
+      }),
+    );
+    const order = await findShopOrderByNumber("SHP-1", client);
+    expect(order?.fulfilmentFields).toEqual({
+      method: "Local pickup",
+      pickupAt: "2026-09-03T14:00:00.000-05:00",
+      pickupLocation: "The studio",
+      shipBy: "2026-09-01",
+    });
+  });
+
+  it("omits the fulfilment fields entirely when none are set", async () => {
+    const client = makeFakeClient(() =>
+      jsonResponse({
+        results: [
+          shopOrderResultPage({ orderNumber: "SHP-1", status: "Processing" }),
+        ],
+      }),
+    );
+    const order = await findShopOrderByNumber("SHP-1", client);
+    expect(order?.fulfilmentFields).toBeUndefined();
+  });
+
+  it("never returns the customer's shipping address", async () => {
+    // The lookup is gated by order number alone — anyone holding the number
+    // would otherwise be handed the customer's home address.
     const client = makeFakeClient(() =>
       jsonResponse({
         results: [
           shopOrderResultPage({
             orderNumber: "SHP-1",
             status: "Shipped",
-            trackingNumber: "9400111899",
+            shippingAddress: "1 Private Road, Dallas TX",
           }),
         ],
       }),
     );
     const order = await findShopOrderByNumber("SHP-1", client);
-    expect(order?.tracking).toEqual({ number: "9400111899" });
-  });
-
-  it("omits tracking entirely when no tracking number is set", async () => {
-    const client = makeFakeClient(() =>
-      jsonResponse({
-        results: [
-          // A carrier/url without a number is meaningless — the number gates it.
-          shopOrderResultPage({
-            orderNumber: "SHP-1",
-            status: "Processing",
-            trackingCarrier: "USPS",
-          }),
-        ],
-      }),
-    );
-    const order = await findShopOrderByNumber("SHP-1", client);
-    expect(order?.tracking).toBeUndefined();
+    expect(JSON.stringify(order)).not.toContain("Private Road");
   });
 });
 

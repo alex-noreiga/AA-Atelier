@@ -60,6 +60,18 @@ export const SHOP_ORDER_RETURN_PROCESSED_PROPERTY = "Return Processed"; // check
 export const SHOP_ORDER_TRACKING_NUMBER_PROPERTY = "Tracking Number"; // rich_text
 export const SHOP_ORDER_TRACKING_CARRIER_PROPERTY = "Carrier"; // rich_text
 export const SHOP_ORDER_TRACKING_URL_PROPERTY = "Tracking URL"; // url
+// The other half of "where is my order?": a local customer collects in person,
+// so their order has no tracking number and never will. `Delivery Method` says
+// which kind of order it is (unset ⇒ inferred from whether a pickup is
+// scheduled), and the two pickup columns say when and where. `Ship By` is the
+// send-by date the atelier already manages on its "🚚 To Ship" board, shown to
+// the customer only until the parcel actually ships. All read-only, all
+// additive, all absent ⇒ the order behaves exactly as it did before. See
+// `lib/fulfilment.ts`.
+export const SHOP_ORDER_DELIVERY_METHOD_PROPERTY = "Delivery Method"; // select (Ship | Local pickup)
+export const SHOP_ORDER_SHIP_BY_PROPERTY = "Ship By"; // date
+export const SHOP_ORDER_PICKUP_TIME_PROPERTY = "Pickup Time"; // date (include a time)
+export const SHOP_ORDER_PICKUP_LOCATION_PROPERTY = "Pickup Location"; // rich_text
 
 /**
  * A human-readable shop order number the customer can track their order by

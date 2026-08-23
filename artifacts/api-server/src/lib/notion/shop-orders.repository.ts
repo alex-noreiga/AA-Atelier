@@ -26,20 +26,17 @@ import {
   SHOP_ORDER_TRACKING_NUMBER_PROPERTY,
   SHOP_ORDER_TRACKING_CARRIER_PROPERTY,
   SHOP_ORDER_TRACKING_URL_PROPERTY,
+  SHOP_ORDER_DELIVERY_METHOD_PROPERTY,
+  SHOP_ORDER_SHIP_BY_PROPERTY,
+  SHOP_ORDER_PICKUP_TIME_PROPERTY,
+  SHOP_ORDER_PICKUP_LOCATION_PROPERTY,
   SHOP_ORDER_ITEMS_PROPERTY,
 } from "./shop-orders.blocks.js";
+import type { FulfilmentFields } from "../fulfilment.js";
 import { logger } from "../logger.js";
 
 interface NotionQueryResponse {
   results: Array<{ id: string }>;
-}
-
-/** Carrier tracking details for a shipped shop order, present only once the
- * atelier has filled in a tracking number. `carrier`/`url` are optional. */
-export interface ShopOrderTracking {
-  number: string;
-  carrier?: string;
-  url?: string;
 }
 
 /** A shop order as read back for the customer-facing tracking lookup. */
@@ -49,18 +46,23 @@ export interface ShopOrderRecord {
   total?: number;
   /** True once the atelier has cancelled the order (`Cancelled` checkbox). */
   cancelled?: boolean;
-  /** Carrier tracking, once the atelier fills in a tracking number. */
-  tracking?: ShopOrderTracking;
+  /** The raw shipping/collection columns — carrier tracking, the ship-by date,
+   * or a scheduled local pickup. Unresolved on purpose: `getShopOrderStatus`
+   * needs the live status list to know whether the order is already fulfilled
+   * before it can decide what to say. Absent when none are set. */
+  fulfilmentFields?: FulfilmentFields;
 }
 
 // Raw Notion property shapes we read back (only the types we touch).
 type NotionReadProperty =
   | { type: "rich_text"; rich_text: Array<{ plain_text: string }> }
   | { type: "status"; status: { name: string } | null }
+  | { type: "select"; select: { name: string } | null }
   | { type: "number"; number: number | null }
   | { type: "email"; email: string | null }
   | { type: "checkbox"; checkbox: boolean }
   | { type: "url"; url: string | null }
+  | { type: "date"; date: { start: string; end: string | null } | null }
   | { type: "relation"; relation: Array<{ id: string }> };
 
 interface NotionLookupResponse {
@@ -105,6 +107,11 @@ function readStatus(prop: NotionReadProperty | undefined): string {
   return prop.status?.name ?? "";
 }
 
+function readSelect(prop: NotionReadProperty | undefined): string {
+  if (prop?.type !== "select") return "";
+  return prop.select?.name ?? "";
+}
+
 function readNumber(prop: NotionReadProperty | undefined): number | null {
   if (prop?.type !== "number") return null;
   return prop.number;
@@ -130,22 +137,50 @@ function readRelationIds(prop: NotionReadProperty | undefined): string[] {
   return prop.relation.map((entry) => entry.id);
 }
 
-/** Read the carrier tracking off a page, or undefined when no tracking number
- * is set yet (the number gates the whole block — carrier/url are display extras
- * that make no sense on their own). */
-function readTracking(
+/** A Notion `date` property's `start`, or "" when unset. */
+function readDate(prop: NotionReadProperty | undefined): string {
+  if (prop?.type !== "date") return "";
+  return prop.date?.start ?? "";
+}
+
+/**
+ * Read the order's shipping/collection columns verbatim into the shared
+ * {@link FulfilmentFields} — what any of it means is decided by
+ * `lib/fulfilment.ts`, the same rules the custom orders go through.
+ *
+ * A shop order has no `Fulfilment` select of its own: its `Status` workflow IS
+ * the fulfilment state, and the tracking page already renders that as the
+ * timeline, so `state` is deliberately left unset rather than repeating it.
+ *
+ * `Shipping Address` is deliberately not read: this lookup is gated by order
+ * number alone, so returning the customer's own address would hand it to anyone
+ * holding the number. The pickup *location* is the studio's address, so it's safe.
+ */
+function readFulfilmentFields(
   properties: Record<string, NotionReadProperty | undefined>,
-): ShopOrderTracking | undefined {
-  const number = readRichText(properties[SHOP_ORDER_TRACKING_NUMBER_PROPERTY]);
-  if (!number) return undefined;
+): FulfilmentFields {
+  const method = readSelect(properties[SHOP_ORDER_DELIVERY_METHOD_PROPERTY]);
+  const trackingNumber = readRichText(
+    properties[SHOP_ORDER_TRACKING_NUMBER_PROPERTY],
+  );
   const carrier = readRichText(
     properties[SHOP_ORDER_TRACKING_CARRIER_PROPERTY],
   );
-  const url = readUrl(properties[SHOP_ORDER_TRACKING_URL_PROPERTY]);
+  const trackingUrl = readUrl(properties[SHOP_ORDER_TRACKING_URL_PROPERTY]);
+  const shipBy = readDate(properties[SHOP_ORDER_SHIP_BY_PROPERTY]);
+  const pickupAt = readDate(properties[SHOP_ORDER_PICKUP_TIME_PROPERTY]);
+  const pickupLocation = readRichText(
+    properties[SHOP_ORDER_PICKUP_LOCATION_PROPERTY],
+  );
+
   return {
-    number,
+    ...(method ? { method } : {}),
+    ...(trackingNumber ? { trackingNumber } : {}),
     ...(carrier ? { carrier } : {}),
-    ...(url ? { url } : {}),
+    ...(trackingUrl ? { trackingUrl } : {}),
+    ...(shipBy ? { shipBy } : {}),
+    ...(pickupAt ? { pickupAt } : {}),
+    ...(pickupLocation ? { pickupLocation } : {}),
   };
 }
 
@@ -301,7 +336,7 @@ export async function findShopOrderByNumber(
   if (!page) return null;
 
   const total = readNumber(page.properties[SHOP_ORDER_TOTAL_PROPERTY]);
-  const tracking = readTracking(page.properties);
+  const fulfilmentFields = readFulfilmentFields(page.properties);
   return {
     orderNumber:
       readRichText(page.properties[SHOP_ORDER_NUMBER_PROPERTY]) || trimmed,
@@ -310,7 +345,7 @@ export async function findShopOrderByNumber(
     ...(readCheckbox(page.properties[SHOP_ORDER_CANCELLED_PROPERTY])
       ? { cancelled: true }
       : {}),
-    ...(tracking ? { tracking } : {}),
+    ...(Object.keys(fulfilmentFields).length > 0 ? { fulfilmentFields } : {}),
   };
 }
 

@@ -32,6 +32,7 @@ import {
   extractDueDate,
   extractRush,
   extractCancelled,
+  extractFulfilmentFields,
   extractOrderEmail,
   extractMeasurements,
   extractLastNotifiedStage,
@@ -238,6 +239,7 @@ export async function findOrderByNumber(
   const estimatedCompletion = extractDueDate(page);
   const invoicePageId = extractInvoiceRelationId(page);
   const costingItemIds = extractCostingItemIds(page);
+  const fulfilmentFields = extractFulfilmentFields(page);
   return {
     orderNumber: trimmedOrderNumber,
     orderName: extractOrderName(page),
@@ -249,6 +251,9 @@ export async function findOrderByNumber(
     ...(costingItemIds.length > 0 ? { costingItemIds } : {}),
     ...(extractRush(page) ? { rush: true } : {}),
     ...(extractCancelled(page) ? { cancelled: true } : {}),
+    // Raw: the order's own stage list decides whether it has been delivered, so
+    // resolving these into the customer view is `getOrderStatus`'s job.
+    ...(Object.keys(fulfilmentFields).length > 0 ? { fulfilmentFields } : {}),
   };
 }
 

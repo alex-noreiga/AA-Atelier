@@ -329,6 +329,81 @@ describe("Status estimated completion", () => {
   });
 });
 
+describe("Status fulfilment panel (custom order)", () => {
+  it("shows nothing until the atelier has something to say", async () => {
+    setHook({ data: orderRecord() });
+    await submitLookup();
+    expect(screen.queryByTestId("tracking-details")).not.toBeInTheDocument();
+    expect(screen.queryByTestId("pickup-details")).not.toBeInTheDocument();
+  });
+
+  it("shows carrier tracking once the order ships", async () => {
+    setHook({
+      data: {
+        ...orderRecord(),
+        fulfilment: {
+          method: "ship",
+          state: "Shipped",
+          tracking: {
+            number: "9400111899",
+            carrier: "USPS",
+            url: "https://tools.usps.com/track?t=9400111899",
+          },
+        },
+      },
+    });
+    await submitLookup();
+
+    const panel = screen.getByTestId("tracking-details");
+    expect(within(panel).getByTestId("tracking-link")).toHaveAttribute(
+      "href",
+      "https://tools.usps.com/track?t=9400111899",
+    );
+    expect(panel).toHaveTextContent("USPS");
+    expect(panel).toHaveTextContent(/on its way to you/i);
+  });
+
+  it("shows the collection details for a customer picking up locally", async () => {
+    setHook({
+      data: {
+        ...orderRecord(),
+        fulfilment: {
+          method: "pickup",
+          state: "Packed",
+          pickup: {
+            at: "2026-09-03T19:00:00.000Z",
+            location: "The studio — 12 Rink Road",
+            timezone: "America/Chicago",
+          },
+        },
+      },
+    });
+    await submitLookup();
+
+    const panel = screen.getByTestId("pickup-details");
+    expect(within(panel).getByTestId("pickup-time")).toHaveTextContent(
+      "September 3",
+    );
+    expect(within(panel).getByTestId("pickup-location")).toHaveTextContent(
+      "12 Rink Road",
+    );
+    expect(panel).toHaveTextContent(/ready for you to collect/i);
+    expect(screen.queryByTestId("tracking-details")).not.toBeInTheDocument();
+  });
+
+  it("suppresses the panel on a cancelled order", async () => {
+    setHook({
+      data: {
+        ...orderRecord(),
+        cancelled: true,
+        fulfilment: { method: "ship", tracking: { number: "9400111899" } },
+      },
+    });
+    await submitLookup();
+    expect(screen.queryByTestId("tracking-details")).not.toBeInTheDocument();
+  });
+});
+
 describe("Status per-stage milestone dates", () => {
   it("renders a target date under each stage that has one", async () => {
     setHook({

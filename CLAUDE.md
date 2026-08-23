@@ -101,7 +101,12 @@ Express app (artifacts/api-server)  ──►  Notion REST API (orders database)
   │                                  but not staff (indistinguishable from a URL
   │                                  that doesn't exist, by design), 403 staff
   │                                  but not signed in with Google
-  ├─ GET  /api/orders/:orderNumber → order status + stage list
+  ├─ GET  /api/orders/:orderNumber → order status + stage list, plus how the
+  │                                  piece reaches the customer: carrier tracking
+  │                                  and a ship-by date, or — for a local skater
+  │                                  collecting in person — their scheduled
+  │                                  pickup. One `OrderFulfilment` shape, shared
+  │                                  with the shop-order lookup below
   ├─ POST /api/orders              → creates a Notion page, returns order number,
   │                                  sends an order-confirmation email, best-effort
   │                                  upserts a Client CRM record by email. Optional
@@ -168,7 +173,10 @@ Express app (artifacts/api-server)  ──►  Notion REST API (orders database)
   │                                  database ⇒ an empty list, not an error
   ├─ GET  /api/shop-orders/:orderNumber
   │                                → a shop order's current fulfillment Status +
-  │                                  the live status list (tracking timeline)
+  │                                  the live status list (tracking timeline) +
+  │                                  the same `OrderFulfilment` the custom order
+  │                                  above carries (this replaced the old
+  │                                  shop-only `tracking` field)
   ├─ POST /api/shop-orders/:n/cancellation-requests
   │                                → shop-order cancellation request into the same
   │                                  contact database. Gated on email match only
@@ -744,12 +752,9 @@ Load-bearing points:
 
    Once the order ships the atelier can add **carrier tracking** — three optional,
    additive properties the app only reads: `Tracking Number` (rich_text), `Carrier`
-   (rich_text, a display label), and `Tracking URL` (url).
-   `findShopOrderByNumber` reads them via `readTracking`, gated on the number (a
-   carrier/url with no number is dropped), into `ShopOrderRecord.tracking` → the
-   contract's `ShopOrderStatus.tracking`. `shop-order-result.tsx` renders a
-   "Tracking" panel below the timeline, suppressed on a cancelled order. No new env
-   var and nothing to write.
+   (rich_text, a display label), and `Tracking URL` (url). They now reach the
+   customer through the shared `OrderFulfilment` view, alongside the local-pickup
+   half — see "Order tracking: shipping and local pickup" below.
 
 9. **Matching add-ons are a self-relation on the inventory, resolved client-side.** A
    product can offer companion items (a skate soaker → its matching blade towel) via
@@ -1090,6 +1095,87 @@ than the `&amount=180` a formula link had to have hand-edited onto its URL. Code
 `services/return-refund.service.ts`, `services/studio-tools.service.ts`,
 `lib/stripe/refunds.ts` (the shared Stripe refund primitives), and
 `recordShopOrderRefund` in `lib/notion/shop-orders.repository.ts`.
+
+## Order tracking: shipping and local pickup
+
+"Where is my order?" is answered by one shape, `OrderFulfilment`, carried by
+**both** `OrderStatus` and `ShopOrderStatus` — so a custom order and a shop order
+answer it identically. It replaced the shop-only `ShopOrderStatus.tracking`
+rather than sitting beside it: one shape, one component, no way for the two order
+kinds to drift. Code: `lib/fulfilment.ts` (the pure resolver both services call),
+`extractFulfilmentFields` in `notion/orders.schema.ts` + `readFulfilmentFields` in
+`notion/shop-orders.repository.ts` (the reads), and on the frontend
+`components/fulfilment-panel.tsx` + `lib/fulfilment-format.ts`, rendered below the
+timeline by `custom-order-result.tsx` and `shop-order-result.tsx`.
+
+1. **Local pickup is the point, not a footnote.** Plenty of the studio's skaters
+   collect at the studio or the rink, so their order has **no tracking number and
+   never will** — and a tracking panel that stays empty forever reads as the site
+   being broken rather than as "there is nothing to track". A pickup order answers
+   with its scheduled collection time and place instead, and says plainly that it
+   is being collected in person. It shows **even before a time is arranged** ("We'll
+   arrange a pickup time with you"), because that the order _is_ a pickup is itself
+   the answer. A shipped order, by contrast, shows nothing until the atelier gives
+   it something — a tracking number, a ship-by date, or a handoff state — since an
+   empty shipping panel on a garment still being sewn is noise.
+
+2. **A label with nothing behind it loses to a fact.** The declared
+   `Delivery Method` decides ship vs pickup — _unless_ the order carries the facts
+   of the other kind and none of its own: a "Ship" order with a pickup time and no
+   tracking is a pickup, a "Local pickup" order with a tracking number and no
+   pickup details is a shipment. That symmetric rule is what makes a wrong default
+   on the database template (every new order pre-set to one method) cost nothing.
+   Unset ⇒ inferred the same way, defaulting to `ship`, so an untouched order
+   behaves exactly as it always did. `Ship By` is deliberately **not** counted as a
+   shipping fact — on a pickup order the atelier reads it as "ready by", so
+   counting it would flip every scheduled collection back to a shipment.
+
+3. **A promise is dropped the moment it stops being true.** Once a tracking number
+   exists — or the order reaches its final stage (the positional `orderDelivered`
+   test, never a stage name) — the ship-by date is dropped: the tracking is the
+   answer, and a past "expected to ship by" reads as a broken promise rather than
+   as history. The handoff state goes at the final stage for the same reason. The
+   **tracking number itself is never dropped** (a delivered order still wants its
+   link), and the whole object is omitted on a **cancelled** order.
+
+4. **`Fulfilment` is read now — but never as completion.** The custom order's
+   4-step `Fulfilment` select (To pack → Packed → Shipped → Delivered/Picked up)
+   rides along as `state`, said in customer words by `fulfilmentStateNote` and
+   falling back to the atelier's own word for an option this map doesn't know
+   (cosmetic, same graceful fallback as `stage-descriptions.ts`). `Stage` remains
+   the single source of truth for "is it done?" — see
+   `.agents/memory/order-stage-vs-fulfilment.md`, whose "the app never reads
+   Fulfilment" line this supersedes. Shop orders send no `state`: their `Status`
+   workflow **is** the fulfilment state, already rendered as the timeline.
+
+5. **The customer's own address is never returned.** `Ship-to Address` /
+   `Shipping Address` are read by neither repository, and both carry a comment
+   saying why: the tracking lookup is gated by **order number alone**, so echoing
+   the address back would hand a customer's home address to anyone holding their
+   number. The pickup **location** is the studio's own address, which is why that
+   one is safe to serve.
+
+6. **A pickup time is an instant; a ship-by is a calendar day.** A pickup datetime
+   is rendered in the studio's `APPOINTMENT_TIMEZONE`, carried on the response as
+   `pickup.timezone` (same contract as `AppointmentDetails.timezone`), so a
+   customer in another state is told the studio's local time. A **bare** pickup
+   date carries no zone and goes through `formatDate` (pinned to UTC) — parsed as
+   UTC midnight and formatted in a western zone it would otherwise slip to the day
+   before. `shipBy` is reduced to its date half server-side for the same reason.
+
+**Atelier setup (optional, additive, nothing blocking the deploy).** On **Custom
+Orders** and **shop orders** alike, add `Delivery Method` (select — `Ship` /
+`Local pickup`), `Pickup Time` (date, **include a time**) and `Pickup Location`
+(rich_text). Custom Orders may also gain `Carrier` (rich_text) and `Tracking URL`
+(url) to match shop orders; until they exist a custom order's tracking number
+simply shows unlinked and unlabelled. `Fulfilment`, `Ship By` and `Tracking
+Number` already exist on Custom Orders — those are the "fields the app never
+reads" the roadmap card named. The app **writes none of it**, so a missing
+property costs only the thing it would have said (reading a property Notion
+doesn't have is safe; only writing one 400s the page). Leaving `Delivery Method`
+unset works too — scheduling a `Pickup Time` is enough to make an order read as a
+pickup. Known limit: **nobody chooses pickup at checkout** — the shop cart has no
+"collect in store" option, so the atelier marks the order afterwards.
 
 ## Production schedule (auto-generated stage milestones)
 
@@ -3998,6 +4084,7 @@ Three things about it are load-bearing:
 | Change the materials restock alerts                      | `api-server/src/services/materials.service.ts` (the pure `classifyMaterials` + `getMaterialsOverview`) + `lib/notion/materials.{schema,repository}.ts` + `getMaterialsNotionClient` + the `/studio/materials` route in `routes/studio.ts`; the weekly email is `services/materials-digest.service.ts` + `materialsDigestEmail` in `lib/resend/emails.ts`, run by `sendDueMaterialsDigest` in `services/schedule.service.ts`; panel in `web-app/src/components/studio-materials.tsx`                                                                                                                                                                                                           |
 | Change the shop's inventory decrement                    | `api-server/src/services/order-lines.service.ts` (`purchasedLinesFromSession` + the best-effort `recordShopOrderLines`) + `lib/notion/order-lines.{blocks,repository}.ts` + `getOrderLinesNotionClient`; called at the tail of `processPaidShopOrder` in `services/checkout.service.ts`. The `Voided` release is `setShopOrderCancelled` in `lib/notion/shop-orders.repository.ts`                                                                                                                                                                                                                                                                                                            |
 | Change shop checkout / payments                          | `artifacts/web-app/src/lib/cart.tsx` + `components/cart-drawer.tsx` + `components/add-to-cart.tsx` (frontend); `api-server/src/services/checkout.service.ts` + `routes/checkout.ts` + `routes/stripe-webhook.ts` + `lib/stripe/*` + `lib/notion/shop-orders.*` (backend)                                                                                                                                                                                                                                                                                                                                                                                                                      |
+| Change what the tracking page says about shipping/pickup | `api-server/src/lib/fulfilment.ts` (the pure ship-vs-pickup rules + what's worth showing) + `extractFulfilmentFields` in `lib/notion/orders.schema.ts` / `readFulfilmentFields` in `lib/notion/shop-orders.repository.ts` (the reads) + the resolve calls in `services/orders.service.ts` and `services/shop-orders.service.ts`; frontend `web-app/src/components/fulfilment-panel.tsx` + `lib/fulfilment-format.ts` (the pickup-time formatting + the handoff-state wording). Contract: `OrderFulfilment` in `openapi.yaml`, on both `OrderStatus` and `ShopOrderStatus`                                                                                                                     |
 | Change shop-order tracking                               | `artifacts/web-app/src/components/shop-order-result.tsx` (rendered by `pages/track.tsx`; + order number on `pages/shop-success.tsx`); `api-server/src/services/shop-orders.service.ts` + `routes/shop-orders.ts` + `lib/notion/shop-orders.{blocks,repository}.ts` + `services/checkout.service.ts` (mints the number)                                                                                                                                                                                                                                                                                                                                                                        |
 | Change the return / exchange request                     | `artifacts/web-app/src/components/return-exchange-dialog.tsx` (opened from `components/shop-order-result.tsx`); `api-server/src/services/return-request.service.ts` + `routes/shop-orders.ts` (`POST /shop-orders/:n/return-requests`) + `lib/notion/return-request.{blocks,repository}.ts` (writes to the **contact** database) + `findShopOrderVerification` in `lib/notion/shop-orders.repository.ts`; policy copy in `pages/shipping-returns.tsx`                                                                                                                                                                                                                                         |
 | Change return / exchange refunds (atelier action)        | `api-server/src/services/return-refund.service.ts` (the target-total refund engine + `parseRefundTarget`) + the `return-refund` studio tool (`services/studio-tools.service.ts`) + `lib/stripe/refunds.ts` (shared Stripe refund primitives) + `recordShopOrderRefund` / `SHOP_ORDER_REFUNDED_PROPERTY` / `SHOP_ORDER_RETURN_PROCESSED_PROPERTY` in `lib/notion/shop-orders.{repository,blocks}.ts` + `returnRefundEmail` in `lib/resend/emails.ts`                                                                                                                                                                                                                                           |

@@ -99,10 +99,13 @@ describe("ShopOrderStatus render states", () => {
         orderNumber: "SHP-1",
         status: "Shipped",
         statuses: ["Payment Confirmed", "Processing", "Shipped"],
-        tracking: {
-          number: "9400111899",
-          carrier: "USPS",
-          url: "https://tools.usps.com/track?t=9400111899",
+        fulfilment: {
+          method: "ship",
+          tracking: {
+            number: "9400111899",
+            carrier: "USPS",
+            url: "https://tools.usps.com/track?t=9400111899",
+          },
         },
       },
     });
@@ -123,7 +126,7 @@ describe("ShopOrderStatus render states", () => {
         orderNumber: "SHP-1",
         status: "Shipped",
         statuses: ["Payment Confirmed", "Processing", "Shipped"],
-        tracking: { number: "9400111899" },
+        fulfilment: { method: "ship", tracking: { number: "9400111899" } },
       },
     });
     await submitLookup("SHP-1");
@@ -144,6 +147,70 @@ describe("ShopOrderStatus render states", () => {
     });
     await submitLookup("SHP-1");
     expect(screen.queryByTestId("tracking-details")).not.toBeInTheDocument();
+  });
+
+  it("shows the expected ship-by date before the order goes out", async () => {
+    setHook({
+      data: {
+        orderNumber: "SHP-1",
+        status: "Packed",
+        statuses: ["Payment Confirmed", "Packed", "Shipped"],
+        fulfilment: { method: "ship", shipBy: "2026-09-01" },
+      },
+    });
+    await submitLookup("SHP-1");
+
+    expect(screen.getByTestId("ship-by-date")).toHaveTextContent(
+      "September 1, 2026",
+    );
+    expect(screen.queryByTestId("tracking-details")).not.toBeInTheDocument();
+  });
+
+  it("shows the collection details, and says why there is no tracking, for a local pickup", async () => {
+    setHook({
+      data: {
+        orderNumber: "SHP-1",
+        status: "Packed",
+        statuses: ["Payment Confirmed", "Packed", "Shipped"],
+        fulfilment: {
+          method: "pickup",
+          pickup: {
+            at: "2026-09-03T19:00:00.000Z",
+            location: "The studio — 12 Rink Road",
+            timezone: "America/Chicago",
+          },
+        },
+      },
+    });
+    await submitLookup("SHP-1");
+
+    const panel = screen.getByTestId("pickup-details");
+    expect(within(panel).getByTestId("pickup-time")).toHaveTextContent(
+      "September 3",
+    );
+    expect(within(panel).getByTestId("pickup-location")).toHaveTextContent(
+      "12 Rink Road",
+    );
+    expect(panel).toHaveTextContent(/no tracking number/i);
+    // A pickup order must never render an empty tracking panel — that reads as
+    // the site being broken rather than as "there is nothing to track".
+    expect(screen.queryByTestId("tracking-details")).not.toBeInTheDocument();
+  });
+
+  it("still names a pickup before a time has been arranged", async () => {
+    setHook({
+      data: {
+        orderNumber: "SHP-1",
+        status: "Processing",
+        statuses: ["Payment Confirmed", "Processing", "Shipped"],
+        fulfilment: { method: "pickup", pickup: {} },
+      },
+    });
+    await submitLookup("SHP-1");
+
+    expect(screen.getByTestId("pickup-time")).toHaveTextContent(
+      /arrange a pickup time/i,
+    );
   });
 
   it("offers the cancellation request for an active shop order", async () => {
