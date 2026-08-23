@@ -137,37 +137,62 @@ asserts this property, so a future pipeline that breaks it fails CI.
 Put the options somewhere else and the caveat comes back for whichever pipeline
 now disagrees.
 
-## Atelier setup
+## Atelier setup — DONE (2026-08-23)
 
-**Three `Stage` options to add**, on the **Custom Orders** (Order Tracking
-Pipeline) database, positioned as above:
+Both steps are applied in the live workspace; nothing is outstanding.
 
-1. **`Piece Received`** — immediately after `Consultation`.
-2. **`Alteration/Adjustment`** — immediately after `Fitting`.
-3. **`Repair/Restoration`** — immediately after `Alteration/Adjustment`.
+**1. Three `Stage` options added** to Custom Orders
+(`collection://944a7e5a-b47f-40e4-87d2-f4743f08428f`), in position. The live
+option order is now the fourteen below, and `resolveOrderPipeline` was run
+against exactly this list to confirm each service resolves as intended:
 
-Nothing else: no env var, no new property, no new database. The deploy is safe
-before this is done (point 5) and completes itself the moment the options exist,
-since the stage list is read live.
+| #     | Stage               |     | #      | Stage                     |
+| ----- | ------------------- | --- | ------ | ------------------------- |
+| 0     | Consultation        |     | 7      | Assembly                  |
+| **1** | **Piece Received**  |     | 8      | Fitting                   |
+| 2     | Sketching           |     | **9**  | **Alteration/Adjustment** |
+| 3     | Sourcing            |     | **10** | **Repair/Restoration**    |
+| 4     | Pattern Design      |     | 11     | Rhinestoning/Detailing    |
+| 5     | Cutting/Pinning     |     | 12     | Ready for delivery/pickup |
+| 6     | Sewing/Construction |     | 13     | Delivered                 |
 
-**Then update the two formulas**, or milestones sitting on the new stages read
-blank. `Stage Index Sys` on Custom Orders maps the live `Stage` → its index and
-currently enumerates 11 options; it needs the three new ones at their new
-positions (so the list runs 0–13), and `Milestone Status` on Production Schedule
-needs the matching literals. Both already degrade to blank for an option they
-don't know, so the failure mode is a blank calendar cell rather than a wrong one
-— but it is worth doing in the same pass. Watch the DDL gotchas in
-`phase2-workspace-cards.md` (drop and re-add a formula in **separate** calls, and
-no parens in a column name).
+**2. Both formulas extended to 0–13.** `Stage Index Sys` is a flat 14-branch
+nested `if` on `prop("Stage")` with a `-1` fallback; `Milestone Status` is a
+14-branch nested `if` on `prop("Production Stage")`, each branch comparing
+`prop("Order Stage Index")` to that stage's literal index (`>` ⇒ Completed, `<`
+⇒ Not Started, `=` ⇒ In Progress), with `Delivered` collapsing to
+`< 13 ⇒ Not Started, else Completed` and `""` as the final fallback. Verified
+branch-by-branch across all 14 stages and all four pipelines (229 stage/milestone
+pairs) plus paren balance — not by eye, because Notion formula **values are not
+readable through the API** (`formulaResult://` refs) and the **bodies are not
+readable either** (`formulaCode://` handles only). The bodies had to be pasted in
+by hand to be checked at all.
 
-Orders placed before the `Service` property existed carry no service, resolve to
-the bespoke commission, and keep exactly the stage list they have always been
-shown.
+Two things that fell out of the check and are worth keeping:
 
-Renaming a `Stage` option a pipeline selects silently drops that step from that
-service's timeline (point 5) — the same class of breakage a rename already causes
-for `MEASUREMENT_LOCK_FROM_STAGE`. Update `pipeline` in `lib/service-catalog.ts`
-when renaming one.
+- **`prop("Stage") == "Consultation"` is valid** for a `status` property in a
+  same-row formula. (The "type error" gotcha in `phase2-workspace-cards.md`
+  applies to a **rollup** of a status, not to reading one directly.)
+- **The fitting-reminder gate now behaves correctly for alterations.** The
+  `Fitting` milestone reads `Completed` exactly once the order passes
+  `Alteration/Adjustment` (index 9 > 8), so `sendDueFittingReminders` stops
+  nudging. Under the old 11-stage formula an alterations order at a new stage
+  indexed `-1`, leaving `Fitting` permanently "Not Started" and risking a
+  reminder to book a fitting the customer had already had. This is the one place
+  the formulas are **read by the app** rather than being atelier display — the
+  fitting-reminder query evaluates `Milestone Status` client-side.
+
+**Standing cost.** The two formulas hardcode fourteen stage names and positions.
+Renaming or reordering a `Stage` option means updating both — a reorder makes
+them silently _wrong_ rather than blank — **and** the matching `pipeline` entry
+in `lib/service-catalog.ts`, where a rename instead drops that step from one
+service's timeline (point 5). Watch the DDL gotchas in
+`phase2-workspace-cards.md` if editing a formula through the API: drop and re-add
+in **separate** calls, and no parens in a column name.
+
+**Not needed, then or now:** `Production Stage` on Production Schedule is a
+**select**, so the app auto-creates its options as it writes milestones; it still
+carried only the original eleven at the time of writing and needs no manual work.
 
 ## Customer-facing copy added with the stages
 

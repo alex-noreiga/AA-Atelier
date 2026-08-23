@@ -1831,18 +1831,25 @@ straight subsequence, so the problem does not arise — which is precisely why
 `Alteration/Adjustment` sits _after_ `Fitting`. A unit test asserts the property,
 so a future pipeline that breaks it fails CI.
 
-**Atelier setup:** add three `Stage` options to the Order Tracking Pipeline, in
-position — **`Piece Received`** after `Consultation`, **`Alteration/Adjustment`**
-after `Fitting`, **`Repair/Restoration`** after that (the superset then runs
-Consultation → Piece Received → Sketching → Sourcing → Pattern Design →
-Cutting/Pinning → Sewing/Construction → Assembly → Fitting →
-Alteration/Adjustment → Repair/Restoration → Rhinestoning/Detailing → Ready for
-delivery/pickup → Delivered). Then extend `Stage Index Sys` + `Milestone Status`
-to the 14 options, or milestones on the new stages read blank. No env var, no new
-property, no new database, and the deploy is safe before any of it. Orders placed
-before the `Service` property existed resolve to the bespoke commission and keep
-the list they have always been shown. Full detail, the per-service table and the
-new stages' customer-facing copy live in `.agents/memory/service-pipelines.md`.
+**Atelier setup: DONE (2026-08-23) — nothing outstanding.** The three `Stage`
+options were added to the Order Tracking Pipeline in position, so the live
+superset now runs Consultation → **Piece Received** → Sketching → Sourcing →
+Pattern Design → Cutting/Pinning → Sewing/Construction → Assembly → Fitting →
+**Alteration/Adjustment** → **Repair/Restoration** → Rhinestoning/Detailing →
+Ready for delivery/pickup → Delivered, and `Stage Index Sys` +
+`Milestone Status` were extended to all fourteen (0–13). Every pipeline resolves
+as intended against that live list and is a straight subsequence of it, so the
+reorder caveat above stays theoretical; both formulas were verified branch by
+branch across all 14 stages. Never needed an env var, a property, or a database.
+Orders placed before the `Service` property existed resolve to the bespoke
+commission and keep the list they have always been shown.
+
+The standing cost is that the two Notion formulas now hardcode **fourteen** stage
+names and positions. Renaming or reordering a `Stage` option means updating both
+(a reorder makes them silently _wrong_, not blank) **and** the matching
+`pipeline` entry in `lib/service-catalog.ts`. Full detail, the per-service table,
+the verified formula bodies and the new stages' customer-facing copy live in
+`.agents/memory/service-pipelines.md`.
 
 ## What the intake records (order form -> Notion + email parity)
 
