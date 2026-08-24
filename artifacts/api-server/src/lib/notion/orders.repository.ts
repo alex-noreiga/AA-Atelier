@@ -11,6 +11,7 @@ import {
   type NotionClient,
 } from "./client.js";
 import { buildOrderProperties, buildOrderPageBlocks } from "./orders.blocks.js";
+import { createPageDroppingUnknownProperties } from "./create-page.js";
 import { scanDatabase } from "./scan.js";
 import { normalizeEmail } from "../email.js";
 import { resolveOrderPipeline } from "../order-pipeline.js";
@@ -32,6 +33,7 @@ import {
   extractDueDate,
   extractRush,
   extractCancelled,
+  extractFulfilmentFields,
   extractOrderEmail,
   extractMeasurements,
   extractLastNotifiedStage,
@@ -122,84 +124,6 @@ export async function createOrder(
   return { orderNumber, pageId: created.id };
 }
 
-/** Notion's message when a page names a property the database doesn't have. It
- * rejects the WHOLE page, so one un-added property would otherwise fail intake. */
-const UNKNOWN_PROPERTY_PATTERN = /^(.+?) is not a property that exists/;
-
-/**
- * Create the order page, dropping any property the database doesn't have yet and
- * retrying.
- *
- * Every optional property this writes (`Colors`, `Rush Order`, `Referral Code`,
- * the measurements, …) is additive atelier setup, and Notion fails a page create
- * that names a property the database lacks — so without this, adding a field here
- * breaks order intake until the property is added in Notion. Dropping the field
- * and keeping the order is the right way to be wrong: the order (and the page
- * body, which carries the same values as text) survives, and the `warn` names the
- * property to add. Bounded so a persistent 400 still surfaces as an error.
- */
-async function createPageDroppingUnknownProperties(
-  client: NotionClient,
-  properties: Record<string, unknown>,
-  children: unknown[],
-  maxAttempts = 5,
-): Promise<{ id: string }> {
-  let remaining = properties;
-
-  for (let attempt = 0; ; attempt += 1) {
-    const response = await client.fetch("/v1/pages", {
-      method: "POST",
-      body: JSON.stringify({
-        parent: { database_id: client.databaseId },
-        properties: remaining,
-        children,
-      }),
-    });
-
-    if (response.ok) {
-      return (await response.json()) as { id: string };
-    }
-
-    const errorText = await response.text();
-    const missing =
-      attempt + 1 < maxAttempts
-        ? findUnknownProperty(errorText, remaining)
-        : undefined;
-    if (!missing) {
-      throw new Error(
-        `Notion page creation failed with status ${response.status}: ${errorText}`,
-      );
-    }
-
-    logger.warn(
-      { property: missing },
-      "The orders database has no such property; recording the order without it. Add the property in Notion to capture this field.",
-    );
-    const { [missing]: _dropped, ...rest } = remaining;
-    remaining = rest;
-  }
-}
-
-/** The name of the property Notion rejected, when it is one we sent. Matching
- * against what we sent keeps an unrelated 400 from being read as a missing
- * property (and looping). */
-function findUnknownProperty(
-  errorText: string,
-  properties: Record<string, unknown>,
-): string | undefined {
-  let message: string;
-  try {
-    message = String(
-      (JSON.parse(errorText) as { message?: unknown }).message ?? "",
-    );
-  } catch {
-    return undefined;
-  }
-
-  const name = UNKNOWN_PROPERTY_PATTERN.exec(message)?.[1];
-  return name && name in properties ? name : undefined;
-}
-
 export async function findOrderByNumber(
   orderNumber: string,
   client: NotionClient = getNotionClient(),
@@ -238,6 +162,7 @@ export async function findOrderByNumber(
   const estimatedCompletion = extractDueDate(page);
   const invoicePageId = extractInvoiceRelationId(page);
   const costingItemIds = extractCostingItemIds(page);
+  const fulfilmentFields = extractFulfilmentFields(page);
   return {
     orderNumber: trimmedOrderNumber,
     orderName: extractOrderName(page),
@@ -249,6 +174,9 @@ export async function findOrderByNumber(
     ...(costingItemIds.length > 0 ? { costingItemIds } : {}),
     ...(extractRush(page) ? { rush: true } : {}),
     ...(extractCancelled(page) ? { cancelled: true } : {}),
+    // Raw: the order's own stage list decides whether it has been delivered, so
+    // resolving these into the customer view is `getOrderStatus`'s job.
+    ...(Object.keys(fulfilmentFields).length > 0 ? { fulfilmentFields } : {}),
   };
 }
 

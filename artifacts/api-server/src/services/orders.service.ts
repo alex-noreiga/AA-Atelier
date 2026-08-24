@@ -12,7 +12,10 @@ import { upsertClientIndex } from "../lib/db/clients.repository.js";
 import { writeOrderIndex } from "../lib/db/order-index.repository.js";
 import { captureReferralOnOrder } from "./rewards.service.js";
 import { measurementsLocked } from "./measurement-lock.js";
+import { orderDelivered } from "./delivery.js";
 import { getInvoicePaymentInfo } from "./invoice.service.js";
+import { resolveFulfilment } from "../lib/fulfilment.js";
+import { appointmentTimezone } from "../lib/appointments/settings.js";
 import type {
   CreateOrderInput,
   OrderStatusResult,
@@ -63,7 +66,19 @@ export async function getOrderStatus(
   // itemized invoice view. No invoice ⇒ empty deposits + null invoice.
   const { deposits, invoice } = await getInvoicePaymentInfo(order);
 
-  const { pageId, invoicePageId, ...rest } = order;
+  // How the piece reaches the customer: a carrier tracking number and ship-by
+  // date, or — for the local skaters who collect in person — their scheduled
+  // pickup. Resolved here rather than in the repository because the "has it been
+  // delivered?" test needs the order's own pipeline, and dropped entirely on a
+  // cancelled order, where the piece isn't coming at all.
+  const fulfilment = order.cancelled
+    ? undefined
+    : resolveFulfilment(order.fulfilmentFields ?? {}, {
+        timezone: appointmentTimezone(),
+        delivered: orderDelivered(order.currentStage, stages),
+      });
+
+  const { pageId, invoicePageId, fulfilmentFields, ...rest } = order;
   return {
     ...rest,
     stages,
@@ -71,6 +86,7 @@ export async function getOrderStatus(
     ...(deposits.length ? { deposits } : {}),
     ...(invoice ? { invoice } : {}),
     ...(milestones.length ? { milestones } : {}),
+    ...(fulfilment ? { fulfilment } : {}),
   };
 }
 

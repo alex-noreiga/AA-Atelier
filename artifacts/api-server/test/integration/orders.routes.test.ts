@@ -115,6 +115,77 @@ describe("GET /api/orders/:orderNumber", () => {
     });
   });
 
+  it("surfaces carrier tracking once the atelier fills it in", async () => {
+    mockFind.mockResolvedValue({
+      ...orderRecord({
+        orderNumber: "000004",
+        currentStage: "Ready for delivery/pickup",
+        stages: ["Consultation", "Ready for delivery/pickup", "Delivered"],
+      }),
+      fulfilmentFields: {
+        trackingNumber: "9400111899",
+        carrier: "USPS",
+        state: "Shipped",
+        shipBy: "2026-08-01",
+      },
+    });
+
+    const res = await request(app).get("/api/orders/000004");
+
+    expect(res.status).toBe(200);
+    expect(res.body.fulfilment).toEqual({
+      method: "ship",
+      state: "Shipped",
+      tracking: { number: "9400111899", carrier: "USPS" },
+    });
+  });
+
+  it("reports a scheduled local pickup instead of tracking", async () => {
+    // The point of the whole feature: a local skater collects in person, so
+    // there is no tracking number and the page must say why rather than sit
+    // silent.
+    mockFind.mockResolvedValue({
+      ...orderRecord({
+        orderNumber: "000005",
+        currentStage: "Ready for delivery/pickup",
+        stages: ["Consultation", "Ready for delivery/pickup", "Delivered"],
+      }),
+      fulfilmentFields: {
+        method: "Local pickup",
+        pickupAt: "2026-09-03T14:00:00.000-05:00",
+        pickupLocation: "The studio — 12 Rink Road",
+        state: "Packed",
+      },
+    });
+
+    const res = await request(app).get("/api/orders/000005");
+
+    expect(res.status).toBe(200);
+    expect(res.body.fulfilment).toEqual({
+      method: "pickup",
+      state: "Packed",
+      pickup: {
+        at: "2026-09-03T14:00:00.000-05:00",
+        location: "The studio — 12 Rink Road",
+        timezone: "America/Chicago",
+      },
+    });
+  });
+
+  it("omits the fulfilment view on a cancelled order", async () => {
+    mockFind.mockResolvedValue({
+      ...orderRecord({ orderNumber: "000006" }),
+      cancelled: true,
+      fulfilmentFields: { trackingNumber: "9400111899" },
+    });
+
+    const res = await request(app).get("/api/orders/000006");
+
+    expect(res.status).toBe(200);
+    expect(res.body.cancelled).toBe(true);
+    expect(res.body.fulfilment).toBeUndefined();
+  });
+
   it("returns 404 with a message when the order is missing (async error is forwarded to the handler)", async () => {
     mockFind.mockResolvedValue(null);
 

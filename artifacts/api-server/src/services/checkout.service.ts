@@ -476,9 +476,11 @@ async function processPaidShopOrder(
 ): Promise<boolean> {
   // The webhook's session object omits line items; retrieve them for the record.
   // Expand each line's product so we can read back the `variantId` metadata we
-  // stamped at checkout (toLineItem) — Stripe drops it from the line item itself.
+  // stamped at checkout (toLineItem) — Stripe drops it from the line item itself
+  // — and the chosen shipping rate, whose display name is how we tell a local
+  // pickup from a posting (`chosePickupRate`).
   const full = await stripe.checkout.sessions.retrieve(session.id, {
-    expand: ["line_items.data.price.product"],
+    expand: ["line_items.data.price.product", "shipping_cost.shipping_rate"],
   });
 
   if (full.payment_status !== "paid") {

@@ -24,8 +24,14 @@ finish, which used to invite "done in one place, in-progress in the other":
   production-schedule milestones, and the review gate.
 - **`Fulfilment` owns "how did it get to the customer?"** — the physical shipping
   sub-workflow, and only becomes meaningful once `Stage` reaches "Ready for
-  delivery/pickup". It is **atelier-facing only** (the "🚚 To Ship" board view);
-  nothing in the app reads it.
+  delivery/pickup". It drives the atelier's "🚚 To Ship" board.
+
+> **Update (Aug 2026):** the app now **reads** `Fulfilment` — but only as
+> advisory copy about the shipping leg on the tracking page, never as a
+> completion signal, and the server drops it once the order is delivered so the
+> two can't contradict each other at the finish. See
+> `order-fulfilment-tracking.md`. Everything below still holds; only the
+> "referenced nowhere in the codebase" sentence is out of date.
 
 The one apparent overlap — `Stage = "Delivered"` vs `Fulfilment = "Delivered/
 Picked up"` — is intentional at two different granularities: `Stage."Delivered"`
@@ -40,8 +46,9 @@ The app's "delivered" test is positional off the **live Stage list**, not a stag
 name and not `Fulfilment`: `orderDelivered(currentStage, stages)` returns true
 only when the current stage is the _last_ in the list (`services/delivery.ts`;
 the same rule the production schedule uses). The Custom Orders `Fulfilment` select
-is referenced **nowhere** in the codebase (the only "Fulfilment/Fulfilled"
-matches in the repo are the unrelated _shop order_ status workflow). So keeping
+was referenced **nowhere** in the codebase when this was written; it is now read
+only for the tracking page's fulfilment panel (above), and by nothing that
+decides whether an order is finished. So keeping
 `Stage` ending in "Delivered" preserves every app behavior; the boundary above is
 a workflow convention for the atelier, enforced by "don't read Fulfilment in code."
 

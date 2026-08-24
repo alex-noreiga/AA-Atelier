@@ -45,10 +45,11 @@ describe("GET /api/shop-orders/:orderNumber", () => {
     mockFind.mockResolvedValue({
       orderNumber: "SHP-1",
       status: "Shipped",
-      tracking: {
-        number: "9400111899",
+      fulfilmentFields: {
+        trackingNumber: "9400111899",
         carrier: "USPS",
-        url: "https://tools.usps.com/go/TrackConfirmAction?tLabels=9400111899",
+        trackingUrl:
+          "https://tools.usps.com/go/TrackConfirmAction?tLabels=9400111899",
       },
     });
     mockStatuses.mockResolvedValue([
@@ -60,11 +61,56 @@ describe("GET /api/shop-orders/:orderNumber", () => {
     const res = await request(app).get("/api/shop-orders/SHP-1");
 
     expect(res.status).toBe(200);
-    expect(res.body.tracking).toEqual({
-      number: "9400111899",
-      carrier: "USPS",
-      url: "https://tools.usps.com/go/TrackConfirmAction?tLabels=9400111899",
+    expect(res.body.fulfilment).toEqual({
+      method: "ship",
+      tracking: {
+        number: "9400111899",
+        carrier: "USPS",
+        url: "https://tools.usps.com/go/TrackConfirmAction?tLabels=9400111899",
+      },
     });
+  });
+
+  it("reports a scheduled local pickup instead of tracking", async () => {
+    mockFind.mockResolvedValue({
+      orderNumber: "SHP-1",
+      status: "Packed",
+      fulfilmentFields: {
+        method: "Local pickup",
+        pickupAt: "2026-09-03T14:00:00.000-05:00",
+        pickupLocation: "The studio — 12 Rink Road",
+      },
+    });
+    mockStatuses.mockResolvedValue(["Payment Confirmed", "Packed", "Shipped"]);
+
+    const res = await request(app).get("/api/shop-orders/SHP-1");
+
+    expect(res.status).toBe(200);
+    expect(res.body.fulfilment).toEqual({
+      method: "pickup",
+      pickup: {
+        at: "2026-09-03T14:00:00.000-05:00",
+        location: "The studio — 12 Rink Road",
+        timezone: "America/Chicago",
+      },
+    });
+    expect(res.body.fulfilment.tracking).toBeUndefined();
+  });
+
+  it("drops the fulfilment view entirely on a cancelled order", async () => {
+    mockFind.mockResolvedValue({
+      orderNumber: "SHP-1",
+      status: "Cancelled",
+      cancelled: true,
+      fulfilmentFields: { trackingNumber: "9400111899" },
+    });
+    mockStatuses.mockResolvedValue(["Payment Confirmed", "Processing"]);
+
+    const res = await request(app).get("/api/shop-orders/SHP-1");
+
+    expect(res.status).toBe(200);
+    expect(res.body.cancelled).toBe(true);
+    expect(res.body.fulfilment).toBeUndefined();
   });
 
   it("appends an off-list current status to the timeline", async () => {
