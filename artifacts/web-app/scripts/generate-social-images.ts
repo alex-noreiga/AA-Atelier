@@ -45,8 +45,7 @@ const MUTED = "#cfc0b4"; // --muted-foreground: 35 20% 75%
 const ART: Record<string, { headline: string; subline: string }> = {
   "/": {
     headline: "Custom costumes,\nmade to measure",
-    subline:
-      "Figure skating & dance, handcrafted from first sketch to final stitch.",
+    subline: "Skating & dance, handcrafted from first sketch to final stitch.",
   },
   "/services": {
     headline: "Bespoke commissions\n& fittings",
@@ -54,12 +53,12 @@ const ART: Record<string, { headline: string; subline: string }> = {
       "Custom builds, alterations, hand-applied rhinestoning, and repairs.",
   },
   "/about": {
-    headline: "The atelier\nbehind the ice",
-    subline: "Meet A.A Atelier — our timelines, measuring, and pricing.",
+    headline: "The atelier\nbehind the costumes",
+    subline: "Meet A.A Atelier: our timelines, measuring, and pricing.",
   },
   "/shop": {
     headline: "Ready to wear",
-    subline: "In-stock figure skating and dance pieces, ready to ship.",
+    subline: "In-stock skating and dance pieces, ready to ship.",
   },
   "/order": {
     headline: "Begin your\ncommission",

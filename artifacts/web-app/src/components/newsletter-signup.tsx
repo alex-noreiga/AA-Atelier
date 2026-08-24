@@ -75,7 +75,7 @@ export function NewsletterSignup({ source }: NewsletterSignupProps) {
           className="w-4 h-4 text-primary shrink-0"
           strokeWidth={1.5}
         />
-        You're on the list — thank you for subscribing.
+        You're on the list. Thank you for subscribing.
       </div>
     );
   }

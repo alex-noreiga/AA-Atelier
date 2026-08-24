@@ -18,7 +18,7 @@ export default function ShippingReturns() {
       <LegalSection title="Processing times">
         <p>
           Ready-to-wear shop items typically ship within a few business days of
-          your order. Custom commissions are made to order — your timeline is
+          your order. Custom commissions are made to order, so your timeline is
           agreed when you place the order and depends on the design and our
           current queue.
         </p>
@@ -36,8 +36,8 @@ export default function ShippingReturns() {
       <LegalSection title="Custom orders are final sale">
         <p>
           Because custom, made-to-measure garments are crafted specifically for
-          you, they cannot be returned or exchanged. We work closely with you —
-          through measurements, notes, and fittings where offered — to get it
+          you, they cannot be returned or exchanged. We work closely with you,
+          through measurements, notes, and fittings where offered, to get it
           right. If something isn't as agreed when your piece arrives, contact
           us right away and we'll make it right.
         </p>
@@ -51,8 +51,8 @@ export default function ShippingReturns() {
           <Link href="/track" className="text-primary hover:underline">
             order tracking page
           </Link>{" "}
-          and choose “Request a return or exchange” — you'll confirm the email
-          on your order and tell us what you'd like to do, and we'll follow up.
+          and choose “Request a return or exchange”. You'll confirm the email on
+          your order and tell us what you'd like to do, and we'll follow up.
           Return shipping is the customer's responsibility unless the item
           arrived damaged or incorrect.
         </p>
@@ -65,8 +65,8 @@ export default function ShippingReturns() {
           <Link href="/track" className="text-primary hover:underline">
             order tracking page
           </Link>{" "}
-          within 7 days of delivery — choose “Arrived damaged or defective” as
-          your reason — and we'll arrange a replacement or refund. You can also{" "}
+          within 7 days of delivery, choosing “Arrived damaged or defective” as
+          your reason, and we'll arrange a replacement or refund. You can also{" "}
           <a
             href={`mailto:${CONTACT_EMAIL}`}
             className="text-primary hover:underline"

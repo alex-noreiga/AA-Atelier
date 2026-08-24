@@ -203,7 +203,7 @@ export default function InvoicePage() {
   return (
     <PageShell align="center">
       <Seo
-        title="Invoice — A.A Atelier"
+        title="Invoice | A.A Atelier"
         description="Your custom order invoice and outstanding balance."
         path={`/invoice/${orderNumber}`}
         noindex

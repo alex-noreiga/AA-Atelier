@@ -58,7 +58,7 @@ export function SizeSelector({
                   <button
                     type="button"
                     onClick={open}
-                    title={`${size.name} is sold out — get notified when it's back`}
+                    title={`${size.name} is sold out. Get notified when it's back`}
                     className="group inline-flex items-center gap-1.5 rounded-full border border-border/40 px-3 py-1 text-xs text-muted-foreground/60 transition-colors hover:border-primary hover:text-primary"
                     data-testid={`size-notify-${variant.id}-${slug(size.name)}`}
                   >

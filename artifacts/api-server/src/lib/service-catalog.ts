@@ -122,7 +122,7 @@ export const ORDER_SERVICES: readonly OrderServiceDef[] = [
     detailsRequired: false,
     detailsLabel: "Description",
     detailsHelp:
-      "Tell us about your vision — style, silhouette, special requirements...",
+      "Tell us about your vision: style, silhouette, special requirements...",
     orderLabel: "Custom Costume",
     emailIntro:
       "Thank you for trusting us with your custom piece. We've received your order and our atelier will begin the journey from measurements to finished garment.",
@@ -140,7 +140,7 @@ export const ORDER_SERVICES: readonly OrderServiceDef[] = [
     detailsRequired: true,
     detailsLabel: "The piece and what needs adjusting",
     detailsHelp:
-      "Tell us about the costume and what you'd like changed — where it's tight or loose, hem length, straps...",
+      "Tell us about the costume and what you'd like changed: where it's tight or loose, hem length, straps...",
     orderLabel: "Alterations",
     emailIntro:
       "Thank you for trusting us with your costume. We've received your alteration request, and we'll be in touch to arrange a fitting so we can see the piece on you.",
@@ -168,7 +168,7 @@ export const ORDER_SERVICES: readonly OrderServiceDef[] = [
     detailsRequired: true,
     detailsLabel: "The piece and the stoning you'd like",
     detailsHelp:
-      "Tell us about the costume and the coverage you're picturing — full stoning, bodice only, a scattered pattern...",
+      "Tell us about the costume and the coverage you're picturing: full stoning, bodice only, a scattered pattern...",
     orderLabel: "Rhinestoning",
     emailIntro:
       "Thank you for trusting us with your costume. We've received your rhinestoning request, and we'll be in touch to confirm the detail, the stones, and the timing.",
@@ -195,7 +195,7 @@ export const ORDER_SERVICES: readonly OrderServiceDef[] = [
     detailsRequired: true,
     detailsLabel: "The piece and what needs repairing",
     detailsHelp:
-      "Tell us about the costume and what's happened to it — lost stones, a torn seam, worn elastic...",
+      "Tell us about the costume and what's happened to it: lost stones, a torn seam, worn elastic...",
     orderLabel: "Repair",
     emailIntro:
       "Thank you for trusting us with your costume. We've received your repair request, and we'll be in touch about getting the piece to us.",

@@ -84,7 +84,7 @@ export default function ShopSuccess() {
           {data?.email ? (
             <>
               {" "}
-              — a receipt is on its way to{" "}
+              and a receipt is on its way to{" "}
               <span className="text-foreground">{data.email}</span>
             </>
           ) : null}
@@ -106,7 +106,7 @@ export default function ShopSuccess() {
               {data.orderNumber}
             </p>
             <p className="mt-3 text-sm text-muted-foreground font-light">
-              Save this — you can{" "}
+              Save this so you can{" "}
               <a
                 href={`/track?orderNumber=${encodeURIComponent(
                   data.orderNumber,

@@ -29,7 +29,7 @@ export default function CookieConsentBanner() {
       <div className="mx-auto flex max-w-6xl flex-col gap-4 px-6 py-5 sm:flex-row sm:items-center sm:justify-between">
         <p className="max-w-2xl text-sm font-light leading-relaxed text-muted-foreground">
           We use privacy-friendly analytics to understand how our site is used.
-          These are optional — essential cookies that keep the site working are
+          These are optional. Essential cookies that keep the site working are
           always on. Read our{" "}
           <Link
             to="/privacy"

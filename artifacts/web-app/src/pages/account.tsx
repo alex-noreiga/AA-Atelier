@@ -310,7 +310,7 @@ function cardClass(state: AccountOrderState): string {
     : "rounded-sm border border-border/60 bg-card/20 p-5";
 }
 
-/** The customer's referral code + a standing returning-skater discount, when
+/** The customer's referral code + a standing returning-customer discount, when
  * earned. The code redeems as a Stripe promotion code at any checkout. */
 function ReferralCard({ referral }: { referral: AccountReferral }) {
   const [copied, setCopied] = useState<string | null>(null);
@@ -338,8 +338,8 @@ function ReferralCard({ referral }: { referral: AccountReferral }) {
       </h2>
       <p className="text-sm text-muted-foreground font-light mb-4">
         {creditLabel
-          ? `Share your code with a fellow skater. When they place their first order, you'll earn ${creditLabel} in credit — and they'll get a welcome discount too.`
-          : "Share your code with a fellow skater. When they place their first order, you'll earn a credit — and they'll get a welcome discount too."}
+          ? `Share your code with a friend. When they place their first order, you'll earn ${creditLabel} in credit, and they'll get a welcome discount too.`
+          : "Share your code with a friend. When they place their first order, you'll earn a credit, and they'll get a welcome discount too."}
       </p>
       <CodeRow
         code={referral.code}
@@ -351,7 +351,7 @@ function ReferralCard({ referral }: { referral: AccountReferral }) {
       {referral.returningCode && (
         <div className="mt-5 pt-4 border-t border-border/60">
           <p className="text-[11px] tracking-widest uppercase text-muted-foreground/70 mb-2">
-            Your returning-skater discount
+            Your returning customer discount
           </p>
           <CodeRow
             code={referral.returningCode}
