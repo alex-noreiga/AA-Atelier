@@ -22,8 +22,10 @@ import {
   buildReviewPageBlocks,
   REVIEW_STATUS_PROPERTY,
   REVIEW_CONSENT_PROPERTY,
+  REVIEW_EMAIL_PROPERTY,
   type ReviewRow,
 } from "./reviews.blocks.js";
+import { normalizeEmail } from "../email.js";
 import {
   extractPublishedReviews,
   extractStudioReview,
@@ -218,6 +220,51 @@ export async function listReviewsForModeration(
     records: extractStudioReviews(data.results),
     truncated: Boolean(data.has_more),
   };
+}
+
+/**
+ * Every review this customer has written, newest first — the reviews half of
+ * their data export.
+ *
+ * Reuses the staff projection rather than the public one, and that is the
+ * point: a review the atelier never published is still the customer's own
+ * words, and an export that showed only the published ones would answer "what
+ * do you hold about me?" with "what we chose to show". The service narrows it
+ * to what belongs to the customer (the internal Notion link and the
+ * email-verified flag are the studio's bookkeeping and stay here).
+ */
+export async function listReviewsByEmail(
+  email: string,
+  client: NotionClient = getReviewsNotionClient(),
+): Promise<StudioReviewRecord[]> {
+  assertConfigured(client);
+
+  const normalized = normalizeEmail(email);
+  if (!normalized) return [];
+
+  const response = await client.fetch(
+    `/v1/databases/${client.databaseId}/query`,
+    {
+      method: "POST",
+      body: JSON.stringify({
+        page_size: MODERATION_PAGE_SIZE,
+        filter: {
+          property: REVIEW_EMAIL_PROPERTY,
+          email: { equals: normalized },
+        },
+        sorts: [{ timestamp: "created_time", direction: "descending" }],
+      }),
+    },
+  );
+
+  if (!response.ok) {
+    throw new Error(
+      `Notion review lookup by email failed with status ${response.status}`,
+    );
+  }
+
+  const data = (await response.json()) as NotionReviewsQueryResponse;
+  return extractStudioReviews(data.results);
 }
 
 /** One review by page id, or null when Notion no longer has it (the row may

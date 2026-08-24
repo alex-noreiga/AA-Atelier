@@ -20,6 +20,8 @@ import type {
 } from '@tanstack/react-query';
 
 import type {
+  AccountDataExport,
+  AccountDeletionRequestResult,
   AccountOverview,
   AppointmentAvailability,
   AppointmentDetails,
@@ -37,6 +39,7 @@ import type {
   HealthStatus,
   MaterialsOverview,
   MessageResponse,
+  NewAccountDeletionRequest,
   NewAppointmentRequest,
   NewAppointmentResponse,
   NewCancellationRequest,
@@ -2240,6 +2243,162 @@ export function useGetAccountOverview<TData = Awaited<ReturnType<typeof getAccou
 
 
 
+
+export const getExportAccountDataUrl = () => {
+
+
+
+
+  return `/api/account/export`
+}
+
+/**
+ * Gathers every record keyed on the signed-in customer's email — their custom and shop orders, upcoming appointments, Client CRM record, the requests they have filed with the studio, the reviews they have written, and whether they are on the marketing list — for a data-access (GDPR / CCPA) request the customer can serve themselves. Read-only.
+ *
+ * Every source degrades independently: one that can't be read is named in `unavailable` rather than silently omitted, so a partial export is visibly partial. Photographs the customer uploaded (reference images, review photos) are NOT included — they live as image blocks on a Notion page behind short-lived signed URLs, so they are requested from the studio by email instead.
+ * @summary Everything the studio holds about the signed-in customer
+ */
+export const exportAccountData = async ( options?: Parameters<typeof customFetch>[1]): Promise<AccountDataExport> => {
+
+  return customFetch<AccountDataExport>(getExportAccountDataUrl(),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
+
+
+
+
+export const getExportAccountDataQueryKey = () => {
+    return [
+    `/api/account/export`
+    ] as const;
+    }
+
+
+export const getExportAccountDataQueryOptions = <TData = Awaited<ReturnType<typeof exportAccountData>>, TError = ErrorType<ErrorEnvelope>>( options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof exportAccountData>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getExportAccountDataQueryKey();
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof exportAccountData>>> = ({ signal }) => exportAccountData({ signal, ...requestOptions });
+
+
+
+
+
+   return  { queryKey, queryFn, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof exportAccountData>>, TError, TData> & { queryKey: QueryKey }
+}
+
+export type ExportAccountDataQueryResult = NonNullable<Awaited<ReturnType<typeof exportAccountData>>>
+export type ExportAccountDataQueryError = ErrorType<ErrorEnvelope>
+
+
+/**
+ * @summary Everything the studio holds about the signed-in customer
+ */
+
+export function useExportAccountData<TData = Awaited<ReturnType<typeof exportAccountData>>, TError = ErrorType<ErrorEnvelope>>(
+  options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof exportAccountData>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+
+ ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+
+  const queryOptions = getExportAccountDataQueryOptions(options)
+
+  const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
+
+  return withQueryKey(query, queryOptions.queryKey);
+}
+
+
+
+
+
+
+
+export const getRequestAccountDeletionUrl = () => {
+
+
+
+
+  return `/api/account/deletion-requests`
+}
+
+/**
+ * Files an erasure request for the signed-in customer. The request lands as a tagged row in the studio's contact inbox for a person to action — this endpoint deliberately deletes nothing itself, because orders, invoices and payment records are business records the studio is required to keep for a period, and what may be erased is a judgement rather than a switch.
+ *
+ * The one erasure it DOES perform immediately is the marketing list: the customer is unsubscribed from the studio's Resend audience, which is their own action to take and needs nobody's review.
+ *
+ * Filing is idempotent while a request is open — a second press reports the request already on file rather than adding a duplicate row to the inbox.
+ * @summary Ask the studio to delete the signed-in customer's data
+ */
+export const requestAccountDeletion = async (newAccountDeletionRequest: NewAccountDeletionRequest, options?: Parameters<typeof customFetch>[1]): Promise<AccountDeletionRequestResult> => {
+
+  return customFetch<AccountDeletionRequestResult>(getRequestAccountDeletionUrl(),
+  {
+    ...options,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    body: JSON.stringify(newAccountDeletionRequest)
+  }
+);}
+
+
+
+
+
+export const getRequestAccountDeletionMutationOptions = <TError = ErrorType<ErrorEnvelope>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof requestAccountDeletion>>, TError,{data: BodyType<NewAccountDeletionRequest>}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof requestAccountDeletion>>, TError,{data: BodyType<NewAccountDeletionRequest>}, TContext> => {
+
+const mutationKey = ['requestAccountDeletion'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof requestAccountDeletion>>, {data: BodyType<NewAccountDeletionRequest>}> = (props) => {
+          const {data} = props ?? {};
+
+          return  requestAccountDeletion(data,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type RequestAccountDeletionMutationResult = NonNullable<Awaited<ReturnType<typeof requestAccountDeletion>>>
+    export type RequestAccountDeletionMutationBody = BodyType<NewAccountDeletionRequest>
+    export type RequestAccountDeletionMutationError = ErrorType<ErrorEnvelope>
+
+    /**
+ * @summary Ask the studio to delete the signed-in customer's data
+ */
+export const useRequestAccountDeletion = <TError = ErrorType<ErrorEnvelope>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof requestAccountDeletion>>, TError,{data: BodyType<NewAccountDeletionRequest>}, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof requestAccountDeletion>>,
+        TError,
+        {data: BodyType<NewAccountDeletionRequest>},
+        TContext
+      > => {
+      return useMutation(getRequestAccountDeletionMutationOptions(options));
+    }
 
 export const getListStaffAvailabilityUrl = () => {
 

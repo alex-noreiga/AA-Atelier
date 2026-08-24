@@ -119,6 +119,73 @@ export async function upsertAudienceContactBestEffort(
   }
 }
 
+/**
+ * What removing an email from the audience actually did.
+ *
+ * Three-valued for the same reason the studio panel's membership is: "we
+ * couldn't ask" is its own answer. Telling a customer who asked to be erased
+ * that they are off the mailing list when in truth the list was unreachable is
+ * the one way this can be wrong that matters — so `unavailable` is reported and
+ * the erasure request says the studio must do it by hand.
+ */
+export type AudienceRemoval = "unsubscribed" | "absent" | "unavailable";
+
+/**
+ * Unsubscribe an email from the configured Resend Audience.
+ *
+ * Unsubscribes rather than deletes, deliberately. Resend is the subscription
+ * authority (it owns the one-click unsubscribe on every broadcast and honours
+ * it), and a *deleted* contact is one Resend no longer knows to suppress — so
+ * deleting the row would leave nothing standing between the customer and the
+ * next time their address is added from an old list. `unsubscribed: true` is
+ * the suppression the customer asked for; erasing the contact record itself is
+ * part of what the studio actions by hand.
+ *
+ * Never throws: a self-gated (unconfigured) call, a 404 for a contact that was
+ * never on the list, and a Resend failure are all answers rather than errors,
+ * because this runs inside a request the customer must not lose over it.
+ */
+export async function unsubscribeAudienceContact(
+  email: string,
+  deps: AudienceDeps = {},
+): Promise<AudienceRemoval> {
+  const apiKey = deps.apiKey ?? process.env.RESEND_API_KEY ?? "";
+  const audience = deps.audienceId ?? audienceId();
+  const trimmed = email.trim();
+  if (!apiKey || !audience || !trimmed) return "unavailable";
+
+  const doFetch: FetchImpl = deps.fetchImpl ?? fetch;
+
+  try {
+    const response = await doFetch(
+      `${RESEND_BASE_URL}/audiences/${audience}/contacts/${encodeURIComponent(trimmed)}`,
+      {
+        method: "PATCH",
+        headers: authHeaders(apiKey),
+        body: JSON.stringify({ unsubscribed: true }),
+      },
+    );
+
+    if (response.ok) return "unsubscribed";
+    if (response.status === 404) return "absent";
+
+    const detail = await response.text().catch(() => "");
+    logger.warn(
+      { status: response.status, detail },
+      "Could not unsubscribe the customer from the Resend audience; " +
+        "the erasure request records that it must be done by hand",
+    );
+    return "unavailable";
+  } catch (err) {
+    logger.warn(
+      { err },
+      "Could not reach Resend to unsubscribe the customer; " +
+        "the erasure request records that it must be done by hand",
+    );
+    return "unavailable";
+  }
+}
+
 // --- Reading the audience back -------------------------------------------
 //
 // The studio's newsletter panel asks "did this opt-in actually reach the

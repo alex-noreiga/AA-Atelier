@@ -1,11 +1,11 @@
 // The studio dashboard's customer-request queue.
 //
-// Six kinds of request have been landing in the atelier's shared contact inbox
-// since each flow shipped — a measurement change, a cancellation, a return or
-// exchange, a back-in-stock ask, a website inquiry — and the app only ever wrote
-// them. Working one meant opening Notion, reading the row, and re-typing its
-// order number into one of the tools below. This is that queue, on the surface
-// where the tools already are.
+// Several kinds of request land in the atelier's shared contact inbox — a
+// measurement change, a cancellation, a return or exchange, a back-in-stock ask,
+// a waitlist entry, a website inquiry, a data-deletion request — and the app
+// only ever wrote them. Working one meant opening Notion, reading the row, and
+// re-typing its order number into one of the tools below. This is that queue, on
+// the surface where the tools already are.
 //
 // What the panel is responsible for, beyond a list:
 //
@@ -61,6 +61,7 @@ const KIND_LABELS: Record<StudioRequestKind, string> = {
   cancellation: "Cancellation",
   return: "Return or exchange",
   waitlist: "Waitlist",
+  "data-deletion": "Data deletion",
   // Never reaches this queue — an opt-in is filtered out server-side and has
   // its own panel. The map stays total so a kind added later can't be missed.
   newsletter: "Newsletter sign-up",
@@ -75,6 +76,11 @@ const MANUAL_GUIDANCE: Partial<Record<StudioRequestKind, string>> = {
   inquiry: "Answer this by email, then mark it replied.",
   waitlist:
     "Nothing to run — this is someone waiting for the books to reopen. Write to them when a space opens up, or reopen intake under Studio settings.",
+  // The one request in the queue with a legal clock on it, and the one the app
+  // has deliberately done almost none of: it takes them off the mailing list
+  // and files this. Everything else is a judgement about which records may go.
+  "data-deletion":
+    "Answer within a month. The app has only unsubscribed them from the mailing list — decide what may be erased, then remove the Notion rows, the Client CRM record and the sign-in account (in Supabase) by hand, and write to them to confirm.",
 };
 
 /** The verb on each tool's hand-off button, matching the tool card it fills. */

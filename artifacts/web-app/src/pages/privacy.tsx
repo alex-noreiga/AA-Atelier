@@ -1,3 +1,4 @@
+import { Link } from "wouter";
 import { LegalPage, LegalSection } from "@/components/legal-page";
 import { ROUTE_SEO } from "@/lib/seo-routes";
 import { CONTACT_EMAIL } from "@/lib/contact-info";
@@ -44,7 +45,7 @@ export default function Privacy() {
       seo={ROUTE_SEO["/privacy"]}
       heading="Privacy Policy"
       intro="This policy explains what personal information A.A Atelier collects, how we use it, and the choices you have."
-      lastUpdated="July 28, 2026"
+      lastUpdated="August 24, 2026"
     >
       <LegalSection title="Information we collect">
         <p>
@@ -107,8 +108,13 @@ export default function Privacy() {
             (including unsubscribes).
           </li>
           <li>
-            <strong>Google</strong> (Calendar and Sheets) powers appointment
-            scheduling and booking.
+            <strong>Google Calendar</strong> powers appointment scheduling and
+            booking.
+          </li>
+          <li>
+            <strong>Supabase</strong> holds the sign-in account behind the
+            customer portal — your email address and, if you set one, your
+            password.
           </li>
         </ul>
       </LegalSection>
@@ -145,16 +151,33 @@ export default function Privacy() {
       <LegalSection title="Your choices">
         <p>
           You can ask us what information we hold about you, correct it, or
-          request its deletion. You can opt out of marketing emails at any time
-          using the unsubscribe link in any such email, or by emailing us. To
-          make a request, email us at{" "}
+          request its deletion. If you have an account with us, both are in{" "}
+          <Link href="/account" className="text-primary hover:underline">
+            your account
+          </Link>
+          , under <strong>Your data</strong>: <strong>Download my data</strong>{" "}
+          gives you a file containing everything we hold under your email
+          address, straight away, and <strong>Request deletion</strong> takes
+          you off our mailing list and sends your request to the studio for
+          review.
+        </p>
+        <p>
+          Deletion is reviewed by a person rather than done automatically,
+          because some records — an invoice or a payment record, for instance —
+          are business records we are required to keep for a period. We will
+          tell you if that applies to anything of yours.
+        </p>
+        <p>
+          You can opt out of marketing emails at any time using the unsubscribe
+          link in any such email. If you would rather not use the account pages,
+          or you have no account, email us at{" "}
           <a
             href={`mailto:${CONTACT_EMAIL}`}
             className="text-primary hover:underline"
           >
             {CONTACT_EMAIL}
-          </a>
-          .
+          </a>{" "}
+          and we will handle your request the same way.
         </p>
       </LegalSection>
 

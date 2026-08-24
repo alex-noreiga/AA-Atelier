@@ -292,6 +292,105 @@ export async function findClientByReferralCode(
   };
 }
 
+// ---------------------------------------------------------------------------
+// The customer's own view of their CRM row, for a data export.
+//
+// Deliberately a second read rather than a widening of `getClientRewardRowByEmail`:
+// that one exists to drive reward idempotency and reads the fields that decide
+// it, and giving it fields nobody needs for that decision would blur what it is
+// for. This one reads the contact card — the personal data the studio holds
+// about a person, which is the question an export answers.
+// ---------------------------------------------------------------------------
+
+/** The Client CRM row as the customer is entitled to see it. Every field is
+ * optional: a CRM row is created from whatever a touchpoint knew, so most rows
+ * carry only a name and an email. The rollups (order count, lifetime value)
+ * are deliberately absent — they are sums over the orders the export already
+ * lists in full, and the app has never read them. */
+export interface ClientProfileRow {
+  name: string;
+  email: string;
+  phone: string;
+  status: string;
+  lastContact: string;
+  referralCode: string;
+  referredByEmail: string;
+  firstPaidOrder: string;
+}
+
+/** The plain text of a Notion title property, or "" when empty/absent. */
+function titleText(prop: unknown): string {
+  const title = (prop as { title?: Array<{ plain_text?: string }> } | null)
+    ?.title;
+  return (title?.map((t) => t.plain_text ?? "").join("") ?? "").trim();
+}
+
+function phoneValue(prop: unknown): string {
+  return (
+    (prop as { phone_number?: string | null } | null)?.phone_number ?? ""
+  ).trim();
+}
+
+function statusValue(prop: unknown): string {
+  return (
+    (prop as { status?: { name?: string } | null } | null)?.status?.name ?? ""
+  ).trim();
+}
+
+function dateStart(prop: unknown): string {
+  return (
+    (prop as { date?: { start?: string } | null } | null)?.date?.start ?? ""
+  ).trim();
+}
+
+/**
+ * The customer's Client CRM row, or null when the CRM database isn't
+ * configured, the email is blank, or no row matches. Keyed on the same
+ * normalized email every other CRM read uses, so a differently-cased address
+ * still finds its record.
+ */
+export async function findClientProfileByEmail(
+  email: string,
+  client: NotionClient = getClientCrmNotionClient(),
+): Promise<ClientProfileRow | null> {
+  const normalized = normalizeEmail(email);
+  if (!client.databaseId || !normalized) return null;
+
+  const response = await client.fetch(
+    `/v1/databases/${client.databaseId}/query`,
+    {
+      method: "POST",
+      body: JSON.stringify({
+        filter: {
+          property: CLIENT_EMAIL_PROPERTY,
+          email: { equals: normalized },
+        },
+        page_size: 1,
+      }),
+    },
+  );
+  if (!response.ok) {
+    throw new Error(
+      `Notion client profile lookup failed with status ${response.status}`,
+    );
+  }
+
+  const page = ((await response.json()) as CrmPageQueryResponse).results[0];
+  if (!page) return null;
+
+  const p = page.properties;
+  return {
+    name: titleText(p[CLIENT_NAME_PROPERTY]),
+    email: emailValue(p[CLIENT_EMAIL_PROPERTY]),
+    phone: phoneValue(p[CLIENT_PHONE_PROPERTY]),
+    status: statusValue(p[CLIENT_STATUS_PROPERTY]),
+    lastContact: dateStart(p[CLIENT_LAST_CONTACT_PROPERTY]),
+    referralCode: richText(p[CLIENT_REFERRAL_CODE_PROPERTY]),
+    referredByEmail: richText(p[CLIENT_REFERRED_BY_PROPERTY]),
+    firstPaidOrder: richText(p[CLIENT_FIRST_PAID_ORDER_PROPERTY]),
+  };
+}
+
 /**
  * PATCH arbitrary properties onto a Client CRM page. The generic write path for
  * reward state (referral code, the idempotency checkboxes, the audit codes),

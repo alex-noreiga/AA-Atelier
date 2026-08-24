@@ -3,6 +3,7 @@ import {
   audienceConfigured,
   listAudienceContacts,
   membershipIn,
+  unsubscribeAudienceContact,
   upsertAudienceContact,
   upsertAudienceContactBestEffort,
 } from "../../src/lib/resend/audience.js";
@@ -204,5 +205,64 @@ describe("audienceConfigured", () => {
     expect(audienceConfigured(config)).toBe(true);
     expect(audienceConfigured({ ...config, apiKey: "" })).toBe(false);
     expect(audienceConfigured({ ...config, audienceId: "" })).toBe(false);
+  });
+});
+
+describe("unsubscribeAudienceContact", () => {
+  it("reports unavailable without asking when the audience isn't configured", async () => {
+    const { impl, calls } = fakeFetch([ok()]);
+    await expect(
+      unsubscribeAudienceContact("grace@example.com", {
+        ...config,
+        audienceId: "",
+        fetchImpl: impl,
+      }),
+    ).resolves.toBe("unavailable");
+    expect(calls).toHaveLength(0);
+  });
+
+  it("suppresses rather than deletes the contact — Resend owns the opt-out", async () => {
+    const { impl, calls } = fakeFetch([ok()]);
+    const result = await unsubscribeAudienceContact("grace@example.com", {
+      ...config,
+      fetchImpl: impl,
+    });
+
+    expect(result).toBe("unsubscribed");
+    expect(calls).toHaveLength(1);
+    expect(calls[0].init?.method).toBe("PATCH");
+    expect(calls[0].url).toContain("grace%40example.com");
+    expect(JSON.parse(String(calls[0].init?.body))).toEqual({
+      unsubscribed: true,
+    });
+  });
+
+  it("reports a contact Resend has never heard of as absent", async () => {
+    const { impl } = fakeFetch([new Response("not found", { status: 404 })]);
+    await expect(
+      unsubscribeAudienceContact("grace@example.com", {
+        ...config,
+        fetchImpl: impl,
+      }),
+    ).resolves.toBe("absent");
+  });
+
+  it("never throws into the request — a Resend failure is 'unavailable'", async () => {
+    const { impl } = fakeFetch([new Response("boom", { status: 500 })]);
+    await expect(
+      unsubscribeAudienceContact("grace@example.com", {
+        ...config,
+        fetchImpl: impl,
+      }),
+    ).resolves.toBe("unavailable");
+
+    await expect(
+      unsubscribeAudienceContact("grace@example.com", {
+        ...config,
+        fetchImpl: () => {
+          throw new Error("network down");
+        },
+      }),
+    ).resolves.toBe("unavailable");
   });
 });

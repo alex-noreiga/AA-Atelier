@@ -608,7 +608,7 @@ export interface ReviewStatusRequest {
 }
 
 /**
- * What a customer is asking for, DERIVED from the row's `Request type` select rather than enumerated from it. Seven kinds name the values the app writes; `other` is anything else — a blank select, or a type the atelier invented — so an unrecognized row appears in the queue asking to be looked at rather than vanishing from it.
+ * What a customer is asking for, DERIVED from the row's `Request type` select rather than enumerated from it. Eight kinds name the values the app writes; `other` is anything else — a blank select, or a type the atelier invented — so an unrecognized row appears in the queue asking to be looked at rather than vanishing from it.
  *
  * `newsletter` never appears in the request QUEUE — an opt-in is a consent record nobody answers, so it has its own panel (see `/studio/newsletter`) and is filtered out of the queue. The kind still exists because the queue's state operation is shared across the whole contact inbox, and it answers with the row it wrote.
  */
@@ -623,6 +623,7 @@ export const StudioRequestKind = {
   return: 'return',
   waitlist: 'waitlist',
   newsletter: 'newsletter',
+  'data-deletion': 'data-deletion',
   other: 'other',
 } as const;
 
@@ -1352,6 +1353,141 @@ export interface AccountOverview {
   /** The customer's upcoming appointments, read live from Google Calendar by the email stamped on each booking, soonest first. Empty when none are upcoming, when the calendar integration isn't configured, or (a best-effort read) when the calendar can't be reached. Bookings made before the customer email was stamped on the event are not listed. */
   appointments: AccountAppointmentSummary[];
   referral?: AccountReferral;
+}
+
+/**
+ * The customer's Client CRM record — the studio's own contact card for them. Absent when the CRM isn't configured, when the customer has no record, or when the CRM couldn't be read (in which case it is named in `unavailable`).
+ */
+export interface ExportedClientRecord {
+  name?: string;
+  email?: string;
+  phone?: string;
+  /** How the studio files them (Lead, Active, …). */
+  status?: string;
+  /** The date of the studio's last recorded contact (YYYY-MM-DD). */
+  lastContact?: string;
+  /** The customer's own shareable referral code. */
+  referralCode?: string;
+  /** The email of the customer who referred them, when they used a code. */
+  referredByEmail?: string;
+  /** The order number of their first paid order, once they have one. */
+  firstPaidOrder?: string;
+}
+
+/**
+ * One row the customer filed in the studio's shared inbox. A narrower projection than the studio queue's — the internal Notion link and the tool that actions it are staff-facing and stay on the server.
+ */
+export interface ExportedRequest {
+  kind: StudioRequestKind;
+  /** The request type exactly as the studio's inbox holds it, when set. */
+  rawType?: string;
+  subject: string;
+  message?: string;
+  item?: string;
+  size?: string;
+  orderNumber?: string;
+  state: StudioRequestState;
+  submittedAt?: string;
+}
+
+/**
+ * One review the customer wrote. The photographs attached to it are not included — see the endpoint description.
+ */
+export interface ExportedReview {
+  /**
+     * @minimum 1
+     * @maximum 5
+     */
+  rating: number;
+  comment: string;
+  /** How they asked to be credited, when they gave a name. */
+  customerName?: string;
+  orderNumber?: string;
+  consentToPublish: boolean;
+  status: ReviewModerationStatus;
+  submittedAt?: string;
+}
+
+/**
+ * `subscribed` — on the list; `absent` — not on it; `unknown` — the list isn't configured or couldn't be reached, which is reported rather than rendered as "not on it".
+ */
+export type ExportedMarketingStatus = typeof ExportedMarketingStatus[keyof typeof ExportedMarketingStatus];
+
+
+export const ExportedMarketingStatus = {
+  subscribed: 'subscribed',
+  absent: 'absent',
+  unknown: 'unknown',
+} as const;
+
+/**
+ * Where the customer stands on the studio's marketing mailing list.
+ */
+export interface ExportedMarketing {
+  /** `subscribed` — on the list; `absent` — not on it; `unknown` — the list isn't configured or couldn't be reached, which is reported rather than rendered as "not on it". */
+  status: ExportedMarketingStatus;
+}
+
+/**
+ * Everything the studio holds about the signed-in customer, gathered for a data-access request. Identity is the email on the session, exactly as it is for the dashboard, so this is the same lookups widened to every store the app writes personal data into.
+ *
+ * The Postgres layer is deliberately not a source of its own: it holds an email-keyed discovery index (order numbers and page ids) derived from the Notion orders already listed here, so exporting it separately would repeat the same facts in a less readable form.
+ */
+export interface AccountDataExport {
+  /** When this export was assembled. */
+  generatedAt: string;
+  /** The signed-in email every record below was looked up by. */
+  email: string;
+  /** The customer's sign-in account id (the Supabase user id). The only thing the studio holds that is not keyed on the email. */
+  userId?: string;
+  /** The customer's custom (bespoke) orders, including the measurements on file. */
+  customOrders: AccountOrderSummary[];
+  /** The customer's ready-to-wear shop orders. */
+  shopOrders: AccountShopOrderSummary[];
+  /** The customer's upcoming appointments. Past bookings are not listed — the calendar is only searched forward, the same read the dashboard makes. Deliberately without the signed manage token the dashboard carries: that token is a credential, and an export is a file people forward. */
+  appointments: AppointmentDetails[];
+  client?: ExportedClientRecord;
+  /** Everything the customer has filed with the studio — inquiries, back-in-stock asks, measurement changes, cancellations, returns, waitlist entries and marketing opt-ins. Newest first. */
+  requests: ExportedRequest[];
+  /** The reviews the customer has written, whether or not they were published. */
+  reviews: ExportedReview[];
+  marketing: ExportedMarketing;
+  /** The sources that could not be read for this export, by their customer-facing name ("Custom orders", "Reviews"). Empty on a complete export. Named rather than silently omitted: an export missing a source without saying so is a wrong answer to a legal request, not a slightly smaller one. */
+  unavailable: string[];
+}
+
+/**
+ * An erasure request. The customer is identified by their session, so the body carries only optional context for the person who will action it.
+ */
+export interface NewAccountDeletionRequest {
+  /**
+     * Anything the customer wants the studio to know — which records they mean, or that an order should be finished first.
+     * @maxLength 2000
+     */
+  note?: string;
+}
+
+/**
+ * The one erasure performed on the spot. `unsubscribed` — removed from the marketing list; `absent` — they were not on it; `unavailable` — the list isn't configured or couldn't be reached, so the studio does it by hand.
+ */
+export type AccountDeletionRequestResultMarketing = typeof AccountDeletionRequestResultMarketing[keyof typeof AccountDeletionRequestResultMarketing];
+
+
+export const AccountDeletionRequestResultMarketing = {
+  unsubscribed: 'unsubscribed',
+  absent: 'absent',
+  unavailable: 'unavailable',
+} as const;
+
+/**
+ * What the studio did with the erasure request, said plainly.
+ */
+export interface AccountDeletionRequestResult {
+  received: boolean;
+  /** True when a request from this customer was already open, so no second row was filed. The marketing opt-out is still applied. */
+  alreadyRequested: boolean;
+  /** The one erasure performed on the spot. `unsubscribed` — removed from the marketing list; `absent` — they were not on it; `unavailable` — the list isn't configured or couldn't be reached, so the studio does it by hand. */
+  marketing: AccountDeletionRequestResultMarketing;
 }
 
 /**
