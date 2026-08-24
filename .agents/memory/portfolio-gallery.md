@@ -33,6 +33,35 @@ The design answer was to make the filters **derived rather than declared**, so
 the gallery is correct on day one with only `Type` and grows chips as the atelier
 fills the other properties in. Nothing about that needs a deploy.
 
+## The second pass (August 2026, same branch)
+
+The atelier added `Show on website`, `Discipline`, `Colorway` and `Competition`,
+published one piece (Toothless), and **deleted the `Order Form Submissions`
+relation**. A review of the model then produced four changes:
+
+- **A row is a design, not a picture.** `Type` forced one row per artefact, so a
+  finished dress and the sketch it began as were two unrelated cards — which the
+  page copy explicitly promises they aren't. Images are now gathered across
+  `Finished` / `Image / Sketch` / `Mockup` / `Sketch` in cover order, so a design
+  is one card whose lightbox carousels from the finished piece back to the
+  sketch. Putting several images in the existing single property works too, with
+  nothing to add in Notion.
+- **`Type` is being renamed to `Stage`**, from "what medium is this image" to
+  "where is this design" (Concept / In progress / Delivered), which is the
+  question that survives the change above. Not done yet in Notion.
+- **Facet dimensions can name several properties.** `FacetDefinition.properties`
+  is a preference list, so the `Type` → `Stage` rename can happen at any time
+  without silently dropping the chip row. This is the general fix for a class of
+  failure this repo keeps hitting, not a one-off for that rename.
+- **Ordering is by a `Completed` date, falling back to created time.** The old
+  order was "when somebody typed the row", which for the existing data is already
+  wrong: Toothless was made before Stateside and sorts below it. `completedAt` is
+  internal and stripped by the response parse — the client gets the ordering, not
+  the field.
+
+`Season` and `Technique` were also added as facet dimensions. `Season` is
+deliberately **not** the sort key: "2026-27" is a label, not an instant.
+
 ## Decisions worth not re-litigating
 
 - **One publish gate, `Show on website`, failing closed.** Named to match the
@@ -87,8 +116,16 @@ reason, as `SMOKE_EXPECT_REVIEWS`.
 - One flat list: no pagination and no per-piece page, so a piece can't be deep
   linked or shared the way `/shop/:productId` can. Fine at sketchbook scale;
   revisit past a few hundred rows.
-- The `Order Form Submissions` relation is read by nothing. Surfacing "made for
-  a skater competing at X" would need the customer's consent, which is a
-  different feature from the atelier publishing its own photographs.
+- The order relation is read by nothing, and has since been deleted in Notion.
+  Restoring it is worth it for the atelier's own click-through (photograph →
+  commission → measurements → invoice); it stays off the contract and out of the
+  mapping, so no customer data can leak. Surfacing "made for a skater competing
+  at X" publicly would need that skater's consent, which is a different feature
+  from the atelier publishing its own photographs.
+- **A second `Client OK` gate was considered and NOT built.** Adding a required
+  checkbox the database doesn't have would read as `false` everywhere and
+  unpublish every piece the moment it deployed — the fail-closed gate working
+  exactly as designed, against us. If it is ever wanted, the property has to
+  exist and be ticked _before_ the code enforces it.
 - Images are Notion-hosted, so they inherit that dependency (and the roadmap's
   "object storage for order images & photos" card would move them).

@@ -29,8 +29,34 @@
 
 /** The row's name, and the gallery card's caption. */
 const PORTFOLIO_TITLE_PROPERTY = "Name"; // title
-/** The photographs / sketches themselves. */
-const PORTFOLIO_IMAGES_PROPERTY = "Image / Sketch"; // files
+/**
+ * The file properties a piece's images are read from, **in cover order** — the
+ * first image found anywhere in this list is the gallery card's cover.
+ *
+ * It is a list rather than one property because a design is one thing with
+ * several pictures of it: the finished photograph, the mockup, and the sketch it
+ * began as. Modelling that as one row per image would put a dress and its own
+ * sketch on the grid as two unrelated cards, which is precisely what the page's
+ * "finished costumes and the sketches they began as" promises it isn't.
+ *
+ * The atelier can do this two ways and both work: drop every picture into the
+ * single `Image / Sketch` property (nothing to add, order is theirs), or split
+ * them into `Finished` / `Mockup` / `Sketch` for a per-stage record. A finished
+ * photograph leads either way — it is always the better cover — and a property
+ * the database doesn't have simply contributes nothing.
+ */
+const PORTFOLIO_IMAGE_PROPERTIES = [
+  "Finished",
+  "Image / Sketch",
+  "Mockup",
+  "Sketch",
+] as const; // files
+
+/**
+ * When the piece itself was finished, as opposed to when its row happened to be
+ * typed into Notion. Optional; see {@link portfolioSortKey} for why it matters.
+ */
+const PORTFOLIO_COMPLETED_PROPERTY = "Completed"; // date
 /**
  * The single publication gate. Named to match the shop inventory's own
  * `Show on website` checkbox — one convention across both public catalogues.
@@ -43,26 +69,46 @@ export const PORTFOLIO_PUBLISH_PROPERTY = "Show on website"; // checkbox
 /**
  * A filter dimension offered above the gallery.
  *
- * `property` names a Notion property that may be a **select or a
- * multi_select** — see {@link extractFacetValues}. `Type` already exists on the
- * database; the other three are additive, and a dimension whose property the
- * atelier hasn't added simply never yields a value, so it is omitted from the
- * response rather than rendering an empty chip group.
+ * Each names one or more Notion properties that may be a **select, a
+ * multi_select, or rich_text** — see {@link extractFacetValues}. A dimension
+ * whose property the atelier hasn't added never yields a value, so it is
+ * omitted from the response rather than rendering an empty chip group.
  */
 export interface FacetDefinition {
   /** Stable id on the wire. Renaming one is a breaking change for a shared URL. */
   id: string;
   /** The chip group's heading, as the visitor reads it. */
   label: string;
-  /** The Notion property it is read from. */
-  property: string;
+  /**
+   * The Notion properties this dimension may be read from, in preference order
+   * — the first one the row actually carries wins.
+   *
+   * The list exists so a property RENAME isn't a flag day. Renaming `Type` in
+   * Notion while the code still read only `Type` would drop that whole chip row
+   * silently: no error, no log, just a filter that stopped existing. Listing the
+   * new name alongside the old one means the rename and the deploy can happen in
+   * either order, days apart. Only the `label` then needs a follow-up line,
+   * which is cosmetic and visible rather than silent.
+   */
+  properties: readonly string[];
 }
 
 export const FACET_DEFINITIONS: readonly FacetDefinition[] = [
-  { id: "type", label: "Type", property: "Type" },
-  { id: "discipline", label: "Discipline", property: "Discipline" },
-  { id: "colorway", label: "Colorway", property: "Colorway" },
-  { id: "competition", label: "Competition", property: "Competition" },
+  // `Stage` is the intended rename of `Type` — from "what medium is this
+  // image" (Preliminary Sketch / Completed Dress) to "where is this design"
+  // (Concept / In progress / Delivered), which is what the property means once
+  // a row is a design rather than a single picture. Both are read; update the
+  // label to "Stage" once the atelier has renamed it.
+  { id: "type", label: "Type", properties: ["Stage", "Type"] },
+  { id: "discipline", label: "Discipline", properties: ["Discipline"] },
+  { id: "season", label: "Season", properties: ["Season"] },
+  { id: "colorway", label: "Colorway", properties: ["Colorway"] },
+  {
+    id: "technique",
+    label: "Technique",
+    properties: ["Techniques", "Technique"],
+  },
+  { id: "competition", label: "Competition", properties: ["Competition"] },
 ] as const;
 
 /** One piece's values for a single dimension. Never present when empty. */
@@ -79,6 +125,16 @@ export interface PortfolioPieceRecord {
   /** Cover first. Never empty: a row with no image isn't published. */
   images: string[];
   facets: PortfolioFacetRecord[];
+  /**
+   * When the piece was finished, from the optional `Completed` date. Absent
+   * when the atelier hasn't dated it.
+   *
+   * The gallery's primary sort key, and **internal**: it is not on the contract,
+   * so the response's zod parse strips it before anything reaches the browser.
+   * Same shape as `OrderSummary.cancelled` — the ordering it produces is what
+   * the client is served, not the field that produced it.
+   */
+  completedAt?: string;
   /** The row's Notion `created_time`, ISO-8601. Absent when Notion didn't
    * return one — the contract makes it optional, and an empty string would
    * fail the response's date-time parse. */
@@ -106,6 +162,7 @@ type NotionPropertyValue =
   | { type: "select"; select: { name: string } | null }
   | { type: "multi_select"; multi_select: Array<{ name: string }> }
   | { type: "checkbox"; checkbox: boolean }
+  | { type: "date"; date: { start: string | null } | null }
   | { type: "files"; files: NotionFileValue[] };
 
 export interface NotionPortfolioPage {
@@ -152,6 +209,48 @@ function extractFiles(page: NotionPortfolioPage, name: string): string[] {
 }
 
 /**
+ * Every image on a piece, gathered across {@link PORTFOLIO_IMAGE_PROPERTIES} in
+ * cover order and de-duplicated (the same file pasted into two properties is one
+ * picture, not two slides of the same thing).
+ */
+export function extractPortfolioImages(page: NotionPortfolioPage): string[] {
+  const seen = new Set<string>();
+  const images: string[] = [];
+  for (const property of PORTFOLIO_IMAGE_PROPERTIES) {
+    for (const url of extractFiles(page, property)) {
+      if (seen.has(url)) continue;
+      seen.add(url);
+      images.push(url);
+    }
+  }
+  return images;
+}
+
+/** A date property's start, or "" when unset / not a date property. */
+function extractDate(page: NotionPortfolioPage, name: string): string {
+  const p = page.properties[name];
+  if (p?.type !== "date") return "";
+  return p.date?.start ?? "";
+}
+
+/**
+ * What the gallery is ordered by: **when the piece was finished**, falling back
+ * to the row's Notion created time.
+ *
+ * The fallback alone is what the order used to be, and it is close to arbitrary
+ * — it is when somebody happened to type the row, so a piece made last spring
+ * and added last week leads a piece made last week and added last spring.
+ * `Completed` is optional, so the two coexist: a dated piece sorts by its date,
+ * an undated one by when it was recorded, and both are ISO-8601 so one string
+ * comparison orders the mixture. Deliberately NOT `Season` — "2026-27" is a
+ * label, not a point in time, and sorting text like that against dates would be
+ * a silent mess.
+ */
+export function portfolioSortKey(record: PortfolioPieceRecord): string {
+  return record.completedAt ?? record.publishedAt ?? "";
+}
+
+/**
  * One dimension's values off a page, tolerating either single- or multi-select.
  *
  * The tolerance is deliberate rather than defensive. Three of the four facet
@@ -168,9 +267,12 @@ function extractFiles(page: NotionPortfolioPage, name: string): string[] {
  */
 export function extractFacetValues(
   page: NotionPortfolioPage,
-  property: string,
+  properties: readonly string[],
 ): string[] {
-  const p = page.properties[property];
+  // First property the row actually carries wins; see FacetDefinition.properties
+  // for why a dimension can name more than one.
+  const name = properties.find((property) => page.properties[property]);
+  const p = name ? page.properties[name] : undefined;
   const raw: string[] =
     p?.type === "multi_select"
       ? p.multi_select.map((o) => o.name)
@@ -203,7 +305,7 @@ export function extractFacetValues(
 export function isPublishable(page: NotionPortfolioPage): boolean {
   return (
     extractCheckbox(page, PORTFOLIO_PUBLISH_PROPERTY) &&
-    extractFiles(page, PORTFOLIO_IMAGES_PROPERTY).length > 0
+    extractPortfolioImages(page).length > 0
   );
 }
 
@@ -225,24 +327,27 @@ export function extractPortfolioPieces(
 
     const facets: PortfolioFacetRecord[] = [];
     for (const facet of FACET_DEFINITIONS) {
-      const values = extractFacetValues(page, facet.property);
+      const values = extractFacetValues(page, facet.properties);
       if (values.length > 0) facets.push({ id: facet.id, values });
     }
+
+    const completedAt = extractDate(page, PORTFOLIO_COMPLETED_PROPERTY);
 
     records.push({
       id: page.id,
       title: extractTitle(page, PORTFOLIO_TITLE_PROPERTY),
-      images: extractFiles(page, PORTFOLIO_IMAGES_PROPERTY),
+      images: extractPortfolioImages(page),
       facets,
+      ...(completedAt ? { completedAt } : {}),
       ...(page.created_time ? { publishedAt: page.created_time } : {}),
     });
   }
 
-  // Newest first, like the testimonials. Notion's own sort can't be trusted to
-  // survive the scan's paging, and the order is not something the atelier
-  // should have to maintain a property for.
+  // Newest first, by {@link portfolioSortKey}. Notion's own sort can't be
+  // trusted to survive the scan's paging, and the order is not something the
+  // atelier should have to maintain a position property for.
   records.sort((a, b) =>
-    (b.publishedAt ?? "").localeCompare(a.publishedAt ?? ""),
+    portfolioSortKey(b).localeCompare(portfolioSortKey(a)),
   );
   return records;
 }

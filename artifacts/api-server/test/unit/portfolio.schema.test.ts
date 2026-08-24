@@ -4,8 +4,10 @@ import {
   PORTFOLIO_PUBLISH_PROPERTY,
   derivePortfolioFilters,
   extractFacetValues,
+  extractPortfolioImages,
   extractPortfolioPieces,
   isPublishable,
+  portfolioSortKey,
   type NotionPortfolioPage,
 } from "../../src/lib/notion/portfolio.schema.js";
 
@@ -71,7 +73,7 @@ describe("extractFacetValues", () => {
         multi_select: [{ name: "Ice Dance" }, { name: "Freestyle" }],
       },
     });
-    expect(extractFacetValues(page, "Discipline")).toEqual([
+    expect(extractFacetValues(page, ["Discipline"])).toEqual([
       "Ice Dance",
       "Freestyle",
     ]);
@@ -81,7 +83,7 @@ describe("extractFacetValues", () => {
     const page = piecePage({
       Discipline: { type: "select", select: { name: "Ice Dance" } },
     });
-    expect(extractFacetValues(page, "Discipline")).toEqual(["Ice Dance"]);
+    expect(extractFacetValues(page, ["Discipline"])).toEqual(["Ice Dance"]);
   });
 
   it("reads rich_text, for a competition name typed rather than picked", () => {
@@ -91,13 +93,13 @@ describe("extractFacetValues", () => {
         rich_text: [{ plain_text: "Midwest " }, { plain_text: "Sectionals" }],
       },
     });
-    expect(extractFacetValues(page, "Competition")).toEqual([
+    expect(extractFacetValues(page, ["Competition"])).toEqual([
       "Midwest Sectionals",
     ]);
   });
 
   it("yields nothing for a property the database doesn't have", () => {
-    expect(extractFacetValues(piecePage(), "Colorway")).toEqual([]);
+    expect(extractFacetValues(piecePage(), ["Colorway"])).toEqual([]);
   });
 
   it("drops blanks and duplicates", () => {
@@ -111,7 +113,7 @@ describe("extractFacetValues", () => {
         ],
       },
     });
-    expect(extractFacetValues(page, "Colorway")).toEqual(["Emerald"]);
+    expect(extractFacetValues(page, ["Colorway"])).toEqual(["Emerald"]);
   });
 });
 
@@ -262,5 +264,173 @@ describe("derivePortfolioFilters", () => {
         ),
       ).toBe(true);
     }
+  });
+});
+
+describe("facet property aliases", () => {
+  it("reads the renamed property when the atelier has moved on", () => {
+    const page = piecePage({
+      Stage: { type: "select", select: { name: "Delivered" } },
+    });
+    delete page.properties.Type;
+
+    expect(extractFacetValues(page, ["Stage", "Type"])).toEqual(["Delivered"]);
+  });
+
+  it("still reads the old property when the rename hasn't happened yet", () => {
+    const page = piecePage({
+      Type: { type: "select", select: { name: "Completed Dress" } },
+    });
+
+    expect(extractFacetValues(page, ["Stage", "Type"])).toEqual([
+      "Completed Dress",
+    ]);
+  });
+
+  it("prefers the first listed property when a row carries both", () => {
+    const page = piecePage({
+      Stage: { type: "select", select: { name: "Delivered" } },
+      Type: { type: "select", select: { name: "Completed Dress" } },
+    });
+
+    expect(extractFacetValues(page, ["Stage", "Type"])).toEqual(["Delivered"]);
+  });
+
+  it("declares Season and Technique alongside the original four", () => {
+    expect(FACET_DEFINITIONS.map((f) => f.id)).toEqual([
+      "type",
+      "discipline",
+      "season",
+      "colorway",
+      "technique",
+      "competition",
+    ]);
+  });
+});
+
+describe("extractPortfolioImages", () => {
+  const files = (...urls: string[]) => ({
+    type: "files",
+    files: urls.map((url) => ({ type: "file", file: { url } })),
+  });
+
+  it("gathers a design's pictures across every image property", () => {
+    const page = piecePage({
+      Sketch: files("https://notion.test/sketch.png"),
+      Mockup: files("https://notion.test/mockup.png"),
+      Finished: files("https://notion.test/finished.png"),
+      "Image / Sketch": files("https://notion.test/general.png"),
+    });
+
+    // Cover order: the finished photograph always leads, then whatever sits in
+    // the general property, then the mockup and the sketch it began as.
+    expect(extractPortfolioImages(page)).toEqual([
+      "https://notion.test/finished.png",
+      "https://notion.test/general.png",
+      "https://notion.test/mockup.png",
+      "https://notion.test/sketch.png",
+    ]);
+  });
+
+  it("still works with everything in the one original property", () => {
+    const page = piecePage({
+      "Image / Sketch": files(
+        "https://notion.test/a.png",
+        "https://notion.test/b.png",
+      ),
+    });
+
+    expect(extractPortfolioImages(page)).toEqual([
+      "https://notion.test/a.png",
+      "https://notion.test/b.png",
+    ]);
+  });
+
+  it("counts the same file in two properties once", () => {
+    const page = piecePage({
+      Finished: files("https://notion.test/same.png"),
+      "Image / Sketch": files("https://notion.test/same.png"),
+    });
+
+    expect(extractPortfolioImages(page)).toEqual([
+      "https://notion.test/same.png",
+    ]);
+  });
+
+  it("publishes a row whose only picture is in a new property", () => {
+    const page = piecePage({
+      Finished: files("https://notion.test/finished.png"),
+      "Image / Sketch": { type: "files", files: [] },
+    });
+
+    expect(isPublishable(page)).toBe(true);
+  });
+});
+
+describe("portfolioSortKey", () => {
+  const dated = (id: string, completed: string, created: string) =>
+    extractPortfolioPieces([
+      piecePage(
+        { Completed: { type: "date", date: { start: completed } } },
+        { id, created_time: created },
+      ),
+    ])[0]!;
+
+  it("orders by when the piece was finished, not when the row was typed", () => {
+    // The regression this exists for: a piece made first but recorded later
+    // used to lead the gallery purely because its row was newer.
+    const pieces = extractPortfolioPieces([
+      piecePage(
+        { Completed: { type: "date", date: { start: "2026-01-10" } } },
+        { id: "made-first", created_time: "2026-08-01T00:00:00.000Z" },
+      ),
+      piecePage(
+        { Completed: { type: "date", date: { start: "2026-07-10" } } },
+        { id: "made-second", created_time: "2026-02-01T00:00:00.000Z" },
+      ),
+    ]);
+
+    expect(pieces.map((p) => p.id)).toEqual(["made-second", "made-first"]);
+  });
+
+  it("falls back to the row's created time when a piece isn't dated", () => {
+    const [piece] = extractPortfolioPieces([
+      piecePage(
+        {},
+        { id: "undated", created_time: "2026-03-01T00:00:00.000Z" },
+      ),
+    ]);
+
+    expect(piece).not.toHaveProperty("completedAt");
+    expect(portfolioSortKey(piece!)).toBe("2026-03-01T00:00:00.000Z");
+  });
+
+  it("orders dated and undated pieces against each other", () => {
+    const pieces = extractPortfolioPieces([
+      piecePage(
+        {},
+        { id: "undated-2026-04", created_time: "2026-04-01T00:00:00.000Z" },
+      ),
+      piecePage(
+        { Completed: { type: "date", date: { start: "2026-06-01" } } },
+        { id: "dated-2026-06", created_time: "2026-01-01T00:00:00.000Z" },
+      ),
+      piecePage(
+        { Completed: { type: "date", date: { start: "2026-02-01" } } },
+        { id: "dated-2026-02", created_time: "2026-12-01T00:00:00.000Z" },
+      ),
+    ]);
+
+    expect(pieces.map((p) => p.id)).toEqual([
+      "dated-2026-06",
+      "undated-2026-04",
+      "dated-2026-02",
+    ]);
+  });
+
+  it("carries the completion date on the record", () => {
+    expect(
+      dated("d", "2026-05-05", "2026-01-01T00:00:00.000Z").completedAt,
+    ).toBe("2026-05-05");
   });
 });

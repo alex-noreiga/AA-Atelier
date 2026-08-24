@@ -75,6 +75,19 @@ describe("GET /api/portfolio", () => {
     ]);
   });
 
+  it("strips the internal completion date — nothing renders it", async () => {
+    mockList.mockResolvedValue([
+      { ...piece(), completedAt: "2026-05-05" } as PortfolioPieceRecord,
+    ]);
+
+    const res = await request(app).get("/api/portfolio");
+
+    expect(res.status).toBe(200);
+    expect(res.body.pieces[0]).not.toHaveProperty("completedAt");
+    // The ordering it drives is still what the client gets.
+    expect(res.body.pieces[0]).toHaveProperty("publishedAt");
+  });
+
   it("caches at the edge for less than Notion's signed-image lifetime", async () => {
     mockList.mockResolvedValue([]);
 

@@ -353,7 +353,7 @@ export interface PortfolioPiece {
   images: string[];
   /** The piece's values for each filter dimension it has one for, in the server's declared facet order. Dimensions the piece carries no value for are omitted rather than sent empty. */
   facets: PortfolioFacetValues[];
-  /** When the row was created in Notion, used to order the gallery newest-first. Omitted when Notion returned no created time. */
+  /** When the row was created in Notion. Omitted when Notion returned no created time. The gallery is ordered newest-first by the piece's optional "Completed" date and falls back to this when it has none — that completion date is a server-side sort key and is deliberately not served, since nothing renders it. */
   publishedAt?: string;
 }
 

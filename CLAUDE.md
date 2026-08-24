@@ -1590,20 +1590,29 @@ Read-only: the app never writes that database. Code:
    checkbox is where it is recorded.)
 
 2. **The facet DIMENSIONS are code; the facet OPTIONS are read live.** Which
-   questions the gallery can be filtered by — type, discipline, colorway,
-   competition — is `FACET_DEFINITIONS` in `portfolio.schema.ts`, the same
-   targeted-business-rule exception as the appointment catalog, because the UI
-   has to mirror it. What the answers _are_ is derived from the published rows on
-   every read, so the atelier adds a discipline by typing it on a piece, never by
-   asking for a deploy. **Never hardcode an option list here.**
+   questions the gallery can be filtered by — type/stage, discipline, season,
+   colorway, technique, competition — is `FACET_DEFINITIONS` in
+   `portfolio.schema.ts`, the same targeted-business-rule exception as the
+   appointment catalog, because the UI has to mirror it. What the answers _are_
+   is derived from the published rows on every read, so the atelier adds a
+   discipline by typing it on a piece, never by asking for a deploy. **Never
+   hardcode an option list here.**
 
    A dimension is offered **only when the published work actually varies along
    it** (two or more distinct values). Fewer than that means every piece answers
    it the same way, or none answers it at all, and a chip that filters nothing is
    worse than no chip — it invites a click that changes the grid not at all. That
-   one rule is what lets all four dimensions be declared up front while the
-   gallery shows only the ones that mean something today: right now the database
-   carries only `Type`, so `Type` is the only chip row that renders.
+   one rule is what lets every dimension be declared up front while the gallery
+   shows only the ones that mean something today.
+
+   **A dimension may name SEVERAL properties, in preference order** — the first
+   one a row carries wins (`FacetDefinition.properties`). That exists so a Notion
+   **rename isn't a flag day**: renaming `Type` while the code read only `Type`
+   would drop that entire chip row silently — no error, no log, just a filter
+   that stopped existing. Listing the new name beside the old lets the rename and
+   the deploy happen days apart, in either order. Only the `label` then needs a
+   follow-up line, which is cosmetic and visible rather than silent. `type` reads
+   `Stage` then `Type` for exactly this reason (see the atelier-setup table).
 
 3. **A facet property may be a `select`, a `multi_select`, or `rich_text`.**
    Three of the four don't exist yet — the atelier creates them — and a reader
@@ -1614,7 +1623,28 @@ Read-only: the app never writes that database. Code:
    tolerance**, not an exception to "property types must match the live schema" —
    the values are still trimmed, de-duplicated, and dropped when blank.
 
-4. **A bounded scan, not a filtered query — because the gate doesn't exist yet.**
+4. **A row is a DESIGN, not a picture — so images are gathered across several
+   properties.** `PORTFOLIO_IMAGE_PROPERTIES` reads `Finished`, `Image / Sketch`,
+   `Mockup` and `Sketch` in that order and concatenates them, de-duplicated; the
+   first image found anywhere is the card's cover, which is why a finished
+   photograph leads. One row per image would put a dress and its own sketch on
+   the grid as two unrelated cards — precisely what the page's "finished costumes
+   and the sketches they began as" promises it isn't. The atelier can either drop
+   every picture into the single `Image / Sketch` property (nothing to add) or
+   split them per stage; a property the database lacks contributes nothing.
+
+5. **The gallery is ordered by when the piece was FINISHED, not when its row was
+   typed.** `portfolioSortKey` reads the optional `Completed` date and falls back
+   to the Notion `created_time`. The fallback alone is close to arbitrary — a
+   piece made last spring but recorded last week would lead one made last week
+   and recorded last spring. Both are ISO-8601, so one string comparison orders a
+   mixture of dated and undated pieces. `completedAt` is **internal**: it isn't on
+   the contract, so the response's zod parse strips it (same shape as
+   `OrderSummary.cancelled`) — the client is served the ordering, not the field
+   that produced it. Deliberately **not** `Season`: "2026-27" is a label, not a
+   point in time, and sorting that text against dates would be a silent mess.
+
+6. **A bounded scan, not a filtered query — because the gate doesn't exist yet.**
    A Notion `filter` naming a property the database lacks answers **400**, so
    pushing `Show on website` into the query would make the gallery fail loudly for
    exactly as long as it took the atelier to add the column. The publish gate is
@@ -1623,7 +1653,7 @@ Read-only: the app never writes that database. Code:
    every published row anyway, and the database is a costume studio's sketchbook,
    nowhere near `scanDatabase`'s cap.
 
-5. **Degrade to an empty gallery for the states only a human can clear; throw for
+7. **Degrade to an empty gallery for the states only a human can clear; throw for
    the rest.** An unset `NOTION_PORTFOLIO_DATABASE_ID` and a Notion **404** (wrong
    id, or the integration was never shared) are configuration, not outages — they
    cannot fix themselves, so erroring a marketing page and alerting the inbox on
@@ -1633,37 +1663,70 @@ Read-only: the app never writes that database. Code:
    would hold the gallery blank for another minute after they did. Otherwise the
    read is the usual 60s TTL + fall-back-to-stale-on-error.
 
-6. **The edge cache is capped by Notion's signed image URLs.** A `files` property
+8. **The edge cache is capped by Notion's signed image URLs.** A `files` property
    yields URLs that expire in about an hour, so `s-maxage=120` +
    `stale-while-revalidate=600` (≈12 min total) stays well inside that — the same
    reasoning, and the same numbers, as `/products`. An integration test asserts
    the total stays under an hour so nobody raises it casually.
 
-7. **The projection is narrow.** A row relates to the **Order Form Submission** it
+9. **The projection is narrow.** A row relates to the **Order Form Submission** it
    was made for; neither that order nor the customer behind it is in the contract
    or the mapping. `PortfolioPiece` carries an id, a title, the image URLs, its
    facet values, and the Notion created time it is ordered by — nothing else.
 
-8. **The page renders what it is given.** It never hardcodes a filter option and
-   never assumes a dimension exists; chips are read back through the server's
-   current options, so a visitor is never stranded on an option the atelier just
-   unpublished. Dimensions AND, values within a dimension OR. Four terminal states
-   — loading, error, nothing published, nothing matching the filters — because a
-   gallery that is merely empty reads as broken.
+10. **The page renders what it is given.** It never hardcodes a filter option and
+    never assumes a dimension exists; chips are read back through the server's
+    current options, so a visitor is never stranded on an option the atelier just
+    unpublished. Dimensions AND, values within a dimension OR. Four terminal states
+    — loading, error, nothing published, nothing matching the filters — because a
+    gallery that is merely empty reads as broken.
 
-**Atelier setup.** One required step and three optional ones, all additive:
+**Atelier setup.** One required property; everything else is additive, and a
+property the database lacks simply contributes nothing.
 
-| Property          | Type                      | Effect                                                       |
-| ----------------- | ------------------------- | ------------------------------------------------------------ |
-| `Show on website` | checkbox — **required**   | Ticking it publishes that piece. Until it exists, nothing is |
-| `Discipline`      | multi_select _(optional)_ | Adds a Discipline chip row once two pieces differ            |
-| `Colorway`        | multi_select _(optional)_ | Adds a Colorway chip row once two pieces differ              |
-| `Competition`     | select _(optional)_       | Adds a Competition chip row once two pieces differ           |
+| Property          | Type                       | Effect                                                                      |
+| ----------------- | -------------------------- | --------------------------------------------------------------------------- |
+| `Show on website` | checkbox — **required**    | Ticking it publishes that piece. Until it exists, nothing is published      |
+| `Completed`       | date _(optional)_          | Orders the gallery by when the piece was made rather than when it was typed |
+| `Stage`           | select _(optional)_        | The rename of `Type` — see below; both are read                             |
+| `Discipline`      | multi_select _(optional)_  | Adds a Discipline chip row once two published pieces differ                 |
+| `Season`          | select / text _(optional)_ | Adds a Season chip row; match the Competitions database's `2026-27` form    |
+| `Colorway`        | multi_select _(optional)_  | Adds a Colorway chip row. Reuse the intake picker's colour names            |
+| `Techniques`      | multi_select _(optional)_  | Adds a Technique chip row (Rhinestoning, Appliqué, Hand-beading, …)         |
+| `Competition`     | select _(optional)_        | Adds a Competition chip row                                                 |
+| `Finished`        | files _(optional)_         | A design's finished photographs; leads the card, ahead of every other image |
+| `Mockup`          | files _(optional)_         | A design's digital mockups                                                  |
+| `Sketch`          | files _(optional)_         | The sketch it began as                                                      |
 
-`Name`, `Image / Sketch` and `Type` already exist and are read as they are. Then
-share the Notion integration with the database and set
+`Name`, `Image / Sketch` and `Type` already exist and are read as they are.
+Then share the Notion integration with the database and set
 **`NOTION_PORTFOLIO_DATABASE_ID`** — unset ⇒ `/portfolio` serves an empty gallery
 and says so, rather than erroring.
+
+**`Type` → `Stage` is a rename the code is ready for but hasn't been told about.**
+`Type` currently answers "what medium is this image" (Preliminary Sketch /
+Completed Dress / Digital Mockup), which only makes sense while a row is a single
+picture. Once a row is a design carrying several images, the useful question is
+"where is this design" — `Concept` / `In progress` / `Delivered`. Both property
+names are read, so the rename is safe at any time; afterwards change that facet's
+`label` from `"Type"` to `"Stage"` in `FACET_DEFINITIONS`, which is the one line
+the alias doesn't cover.
+
+**The colour vocabulary is shared with the intake form.** `Colorway`'s options
+should be the same names as the order form's colour picker (the `COLOR_PALETTE`
+Studio Setting, or the built-in primary palette when it's unset: Red, Orange,
+Yellow, Green, Blue, Purple, Pink, Black, White, Ivory, Gold, Silver). A visitor
+who filters the portfolio by one word and meets a different word on the order
+form has hit a seam. Broad buckets also filter better than exact fabric shades,
+which mostly match one piece each. Nothing in code enforces the correspondence —
+change both together.
+
+**Two properties the app deliberately never reads**, worth having anyway: an
+`Order Form Submissions` relation back to the commission (the atelier's
+click-through from a photograph to the measurements and the invoice — it is
+absent from the contract and the mapping on purpose, so no customer data can
+leak), and a relation to the materials database, which is what turns the archive
+from a gallery into a reference library.
 
 `Competition` is deliberately a plain property rather than a relation to the
 **🏆 Competitions** database: that one is the _marketing calendar_ (when to start
