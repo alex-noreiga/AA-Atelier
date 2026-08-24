@@ -468,7 +468,7 @@ export function findOrdersNeedingMilestones(
 
 /**
  * Count the capacity-gated orders currently in production — the number the
- * seasonal-capacity gate weighs against `COMMISSION_CAPACITY`.
+ * commission-capacity gate weighs against `COMMISSION_CAPACITY`.
  *
  * Deliberately a *filtered* query rather than the analytics' full scan, because
  * this one is reached from a PUBLIC endpoint on every intake-form load. The

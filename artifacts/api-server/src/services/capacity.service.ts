@@ -1,4 +1,4 @@
-// The seasonal-capacity use-case: count what's in production, ask the policy in
+// The commission-capacity use-case: count what's in production, ask the policy in
 // `capacity.ts`, and serve the answer to the intake form and the `POST /orders`
 // gate.
 //
@@ -10,8 +10,6 @@
 // serve-the-one-definition shape as `GET /services` and its gate.
 
 import { listOpenOrderServices } from "../lib/notion/orders.repository.js";
-import { listUpcomingCompetitions } from "../lib/notion/competitions.repository.js";
-import type { CompetitionRecord } from "../lib/notion/competitions.schema.js";
 import { resolveStoredOrderService } from "../lib/service-catalog.js";
 import {
   closedMessage,
@@ -88,16 +86,10 @@ export interface CapacityView {
   open: boolean;
   waitlistOpen: boolean;
   message: string;
-  events: CompetitionRecord[];
 }
 
 /**
- * The intake status plus the competitions a waitlist entry can be pinned to.
- *
- * The two reads run together rather than in sequence: the events are wanted
- * whether or not the books are closed (the form has to be ready to render the
- * waitlist the moment it learns they are), and awaiting them separately would
- * put a second Notion round-trip in the intake form's critical path.
+ * The intake decision as the order form reads it.
  *
  * Deliberately carries NO counts. How many commissions the studio is holding is
  * the studio's own business, and this endpoint is anonymous — "3 of 8 slots
@@ -105,10 +97,7 @@ export interface CapacityView {
  * is on the dashboard, behind the staff gate.
  */
 export async function getCapacityStatus(): Promise<CapacityView> {
-  const [status, events] = await Promise.all([
-    getIntakeStatus(),
-    listUpcomingCompetitions(),
-  ]);
+  const status = await getIntakeStatus();
 
   return {
     open: status.open,
@@ -119,6 +108,5 @@ export async function getCapacityStatus(): Promise<CapacityView> {
     // Empty when open — there is nothing to explain, and shipping the closed
     // wording to every visitor invites a page to render it by accident.
     message: status.open ? "" : closedMessage(),
-    events,
   };
 }

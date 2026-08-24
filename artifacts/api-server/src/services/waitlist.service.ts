@@ -18,7 +18,6 @@ import {
   type CreateWaitlistInput,
   type WaitlistTarget,
 } from "../lib/notion/waitlist.blocks.js";
-import { listUpcomingCompetitions } from "../lib/notion/competitions.repository.js";
 import { upsertClientByEmail } from "../lib/notion/clients.repository.js";
 import {
   waitlistConfirmationEmail,
@@ -29,53 +28,28 @@ import { fromAddress, atelierInbox } from "../lib/resend/config.js";
 import { logger } from "../lib/logger.js";
 
 /**
- * Resolve what the entry is for, server-side.
+ * What the entry is for: the customer's own words for what they're skating, and
+ * the date they need the piece by.
  *
- * A picked `eventId` is resolved back against the live competition list and the
- * event's OWN name and date are used — the client's `eventName` is ignored
- * entirely in that case. This matters for the same reason checkout reprices the
- * cart: a label the browser sent is a label the browser chose, and an inbox the
- * atelier sorts by event is only worth sorting if the event names are the
- * atelier's own. An id that resolves to nothing (a competition archived between
- * the form loading and the submit) degrades to the typed name, so the entry is
- * still captured with whatever the customer told us.
- *
- * The date is the event's when there is one and the customer's `neededBy`
- * otherwise, so the atelier can work the list in date order either way.
+ * Both are free text from the browser and neither is resolved against anything.
+ * That is the deliberate scope of this feature: the studio can't keep a list of
+ * every competition run nationally and internationally, and doesn't need one —
+ * the skater knows theirs, and all the atelier needs is a label to group by and
+ * a date to work the list in.
  */
-async function resolveTarget(
-  input: CreateWaitlistInput,
-): Promise<WaitlistTarget> {
-  const neededBy = isoDateOnly(input.neededBy) || undefined;
-  const typed = input.eventName?.trim() || undefined;
-
-  if (input.eventId) {
-    try {
-      const events = await listUpcomingCompetitions();
-      const match = events.find((event) => event.id === input.eventId);
-      if (match) {
-        return { eventName: match.name, date: match.date };
-      }
-    } catch (err) {
-      // The competitions read is already degrade-safe, but a throw here must
-      // not cost the entry — the customer's own words are enough to act on.
-      logger.warn(
-        { err },
-        "Failed to resolve the waitlist event; recording the entry as typed",
-      );
-    }
-  }
-
+function resolveTarget(input: CreateWaitlistInput): WaitlistTarget {
+  const eventName = input.eventName?.trim() || undefined;
+  const date = isoDateOnly(input.neededBy) || undefined;
   return {
-    ...(typed ? { eventName: typed } : {}),
-    ...(neededBy ? { date: neededBy } : {}),
+    ...(eventName ? { eventName } : {}),
+    ...(date ? { date } : {}),
   };
 }
 
 export async function joinWaitlist(
   input: CreateWaitlistInput,
 ): Promise<{ success: true }> {
-  const target = await resolveTarget(input);
+  const target = resolveTarget(input);
 
   // Best-effort: mirror the customer into the Client CRM (dedupe by email) so
   // the entry links to a durable record and the atelier can see this is someone

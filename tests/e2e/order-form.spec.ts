@@ -198,12 +198,11 @@ test.describe("Order form — live Notion (opt-in)", () => {
   });
 });
 
-test.describe("Order form — seasonal capacity", () => {
+test.describe("Order form — commission capacity", () => {
   const CLOSED = {
     open: false,
     waitlistOpen: true,
     message: "Full for the 2026-27 season.",
-    events: [{ id: "comp-1", name: "Rocket City Classic", date: "2027-01-16" }],
   };
 
   test.beforeEach(async ({ page }) => {
@@ -248,7 +247,7 @@ test.describe("Order form — seasonal capacity", () => {
 
     await page.getByTestId("input-waitlist-name").fill("Ada Skater");
     await page.getByTestId("input-waitlist-email").fill("ada@example.com");
-    await page.getByTestId("select-waitlist-event").selectOption("comp-1");
+    await page.getByTestId("input-waitlist-event").fill("Rocket City Classic");
     await page.getByTestId("button-join-waitlist").click();
 
     await expect(page.getByTestId("waitlist-success")).toBeVisible();
@@ -256,8 +255,8 @@ test.describe("Order form — seasonal capacity", () => {
     expect(entries[0]).toMatchObject({
       name: "Ada Skater",
       email: "ada@example.com",
-      // The id, not a label the browser chose — the server resolves the name.
-      eventId: "comp-1",
+      // Free text: the skater names their own competition.
+      eventName: "Rocket City Classic",
     });
   });
 });

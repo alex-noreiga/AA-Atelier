@@ -42,7 +42,6 @@ const CLOSED = {
   open: false,
   waitlistOpen: true,
   message: "Full for the 2026-27 season.",
-  events: [],
 };
 
 beforeEach(() => {
@@ -79,7 +78,7 @@ async function fillAndSubmit(user: ReturnType<typeof userEvent.setup>) {
   await user.click(submit);
 }
 
-describe("OrderForm — seasonal capacity", () => {
+describe("OrderForm — commission capacity", () => {
   it("shows the intake form while the capacity answer is still unknown", async () => {
     // Degrading toward the form is the safe direction: the server still refuses
     // the submit, so the cost of being wrong here is a 409, not a lost order.
@@ -141,31 +140,16 @@ describe("OrderForm — seasonal capacity", () => {
     expect(screen.queryByTestId("waitlist-form")).toBeNull();
   });
 
-  it("asks for a date when no competitions are dated, and a picker when they are", async () => {
+  it("asks what they're skating and when, both as plain optional fields", async () => {
     const user = userEvent.setup();
     capacityResult.current = { data: CLOSED };
-    const { unmount } = render(<OrderForm />);
-    await user.click(screen.getByTestId("service-option-bespoke"));
-    // The state the Competitions database is in today: nothing dated ahead.
-    expect(screen.getByTestId("input-waitlist-needed-by")).toBeTruthy();
-    expect(screen.queryByTestId("select-waitlist-event")).toBeNull();
-    unmount();
-
-    capacityResult.current = {
-      data: {
-        ...CLOSED,
-        events: [{ id: "c1", name: "Rocket City Classic", date: "2027-01-16" }],
-      },
-    };
     render(<OrderForm />);
     await user.click(screen.getByTestId("service-option-bespoke"));
-    expect(screen.getByTestId("select-waitlist-event")).toBeTruthy();
-    expect(screen.queryByTestId("input-waitlist-needed-by")).toBeNull();
-    expect(
-      screen.getByRole("option", {
-        name: /Rocket City Classic — Jan 16, 2027/,
-      }),
-    ).toBeTruthy();
+
+    // Free text, not a picker: the studio can't hold a list of every
+    // competition, and the skater knows theirs.
+    expect(screen.getByTestId("input-waitlist-event")).toBeTruthy();
+    expect(screen.getByTestId("input-waitlist-needed-by")).toBeTruthy();
   });
 
   it("moves a customer to the waitlist when the server refuses with 409", async () => {
@@ -183,14 +167,9 @@ describe("OrderForm — seasonal capacity", () => {
     expect(await screen.findByTestId("waitlist-form")).toBeTruthy();
   });
 
-  it("sends the picked event id, letting the server resolve its name", async () => {
+  it("sends the customer's own words for what they're skating", async () => {
     const user = userEvent.setup();
-    capacityResult.current = {
-      data: {
-        ...CLOSED,
-        events: [{ id: "c1", name: "Rocket City Classic", date: "2027-01-16" }],
-      },
-    };
+    capacityResult.current = { data: CLOSED };
     render(<OrderForm />);
     await user.click(screen.getByTestId("service-option-bespoke"));
 
@@ -199,14 +178,17 @@ describe("OrderForm — seasonal capacity", () => {
       screen.getByTestId("input-waitlist-email"),
       "ada@example.com",
     );
-    await user.selectOptions(screen.getByTestId("select-waitlist-event"), "c1");
+    await user.type(
+      screen.getByTestId("input-waitlist-event"),
+      "Rocket City Classic",
+    );
     await user.click(screen.getByTestId("button-join-waitlist"));
 
     expect(joinMutate).toHaveBeenCalledWith({
       data: expect.objectContaining({
         name: "Ada Skater",
         email: "ada@example.com",
-        eventId: "c1",
+        eventName: "Rocket City Classic",
       }),
     });
     // No order was placed — the waitlist never creates one.

@@ -138,4 +138,3 @@ export * from './studioTopItem';
 export * from './unknownSettingRow';
 export * from './untrackedMaterial';
 export * from './untrackedMaterialReason';
-export * from './waitlistEvent';

@@ -55,7 +55,7 @@ afterEach(() => {
   }
 });
 
-describe("POST /api/orders — the seasonal capacity gate", () => {
+describe("POST /api/orders — the commission capacity gate", () => {
   it("refuses a commission with 409 when the books are closed", async () => {
     // The form asks `GET /capacity` before it renders, so in practice this
     // fires on a stale tab or a direct POST. It exists because a rule the

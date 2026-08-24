@@ -1,10 +1,7 @@
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
-import {
-  useJoinWaitlist,
-  type WaitlistEvent,
-} from "@workspace/api-client-react";
+import { useJoinWaitlist } from "@workspace/api-client-react";
 import { CalendarClock, CheckCircle, Loader2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -25,7 +22,6 @@ const formSchema = z.object({
   name: z.string().min(1, "Please enter your name"),
   email: z.string().email("Please enter a valid email address"),
   phone: z.string().optional(),
-  eventId: z.string().optional(),
   eventName: z.string().optional(),
   neededBy: z.string().optional(),
   notes: z.string().optional(),
@@ -34,30 +30,9 @@ const formSchema = z.object({
 
 type FormValues = z.infer<typeof formSchema>;
 
-/** Render a competition as one option: "Rocket City Classic — Jan 16, 2027". */
-function eventLabel(event: WaitlistEvent): string {
-  const when = new Date(`${event.date}T00:00:00Z`);
-  const date = Number.isNaN(when.getTime())
-    ? event.date
-    : new Intl.DateTimeFormat("en-US", {
-        timeZone: "UTC",
-        year: "numeric",
-        month: "short",
-        day: "numeric",
-      }).format(when);
-  return `${event.name} — ${date}`;
-}
-
 interface WaitlistFormProps {
   /** The atelier's own explanation of why the books are closed. */
   message: string;
-  /**
-   * Dated competitions from the studio's Notion calendar, offered as a picker.
-   * Empty when that database isn't configured or holds nothing dated ahead —
-   * which is the state it is in today — so the form falls back to asking for a
-   * date. That fallback is the normal path, not an error case.
-   */
-  events: WaitlistEvent[];
 }
 
 /**
@@ -70,8 +45,14 @@ interface WaitlistFormProps {
  * already own are still open. The last is the one most likely to be useful
  * today, and is invisible if we don't say it — the form they were sent to is
  * the one that just closed.
+ *
+ * Deliberately light: someone told the studio is full is being asked for their
+ * patience, and a five-step intake is a poor way to ask for it. Name and email
+ * are all that's required; what they're skating and when they need it are free
+ * text, because the studio can't hold a list of every competition and doesn't
+ * need one to work a list of names in date order.
  */
-export function WaitlistForm({ message, events }: WaitlistFormProps) {
+export function WaitlistForm({ message }: WaitlistFormProps) {
   const { toast } = useToast();
 
   const join = useJoinWaitlist({
@@ -104,9 +85,6 @@ export function WaitlistForm({ message, events }: WaitlistFormProps) {
         name: values.name,
         email: values.email,
         ...(values.phone ? { phone: values.phone } : {}),
-        // Both are sent; the server prefers the id and resolves it against its
-        // own competition list, ignoring any label the browser chose.
-        ...(values.eventId ? { eventId: values.eventId } : {}),
         ...(values.eventName ? { eventName: values.eventName } : {}),
         ...(values.neededBy ? { neededBy: values.neededBy } : {}),
         ...(values.notes ? { notes: values.notes } : {}),
@@ -194,32 +172,23 @@ export function WaitlistForm({ message, events }: WaitlistFormProps) {
           />
         </div>
 
-        {/* The seasonal half. With a dated calendar the customer picks the
-            competition they're skating; without one they give a date. Both
-            answer the same question — when is this actually needed — which is
-            the order the atelier works the list in. */}
-        {events.length > 0 ? (
+        {/* What the piece is for. Both are free text: the studio can't keep a
+            list of every competition run nationally and internationally, but
+            the skater knows theirs — and the date is what the atelier works
+            the list in order of. */}
+        <div className="grid sm:grid-cols-2 gap-6">
           <div className="space-y-2">
             <Label htmlFor="waitlist-event">
               What are you skating?{" "}
               <span className="text-muted-foreground">(optional)</span>
             </Label>
-            <select
+            <Input
               id="waitlist-event"
-              data-testid="select-waitlist-event"
-              className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
-              defaultValue=""
-              {...register("eventId")}
-            >
-              <option value="">Not sure yet</option>
-              {events.map((event) => (
-                <option key={event.id} value={event.id}>
-                  {eventLabel(event)}
-                </option>
-              ))}
-            </select>
+              placeholder="Competition, test session, show..."
+              data-testid="input-waitlist-event"
+              {...register("eventName")}
+            />
           </div>
-        ) : (
           <div className="space-y-2">
             <Label htmlFor="waitlist-needed-by">
               When do you need it?{" "}
@@ -232,7 +201,7 @@ export function WaitlistForm({ message, events }: WaitlistFormProps) {
               {...register("neededBy")}
             />
           </div>
-        )}
+        </div>
 
         <div className="space-y-2">
           <Label htmlFor="waitlist-notes">

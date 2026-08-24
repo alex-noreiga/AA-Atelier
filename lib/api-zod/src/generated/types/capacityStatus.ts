@@ -5,10 +5,9 @@
  * API specification
  * OpenAPI spec version: 0.1.0
  */
-import type { WaitlistEvent } from './waitlistEvent';
 
 /**
- * Whether the capacity-gated services are accepting orders, the wording to show when they aren't, and the dated events a waitlist entry can be pinned to.
+ * Whether the capacity-gated services are accepting orders, and the wording to show when they aren't.
  */
 export interface CapacityStatus {
   /** True when a capacity-gated service can be ordered. False means the intake form should offer the waitlist instead. */
@@ -17,6 +16,4 @@ export interface CapacityStatus {
   waitlistOpen: boolean;
   /** The customer-facing explanation to show when closed, from the atelier-editable `COMMISSION_CLOSED_MESSAGE` setting. Empty when open — there is nothing to explain. */
   message: string;
-  /** Upcoming dated competitions from the studio's Competitions database, soonest first, offered as the "what are you skating?" picker on the waitlist form. Empty when that database isn't configured, has no dated future rows, or can't be read — the form then asks for a plain date instead. Never an error. */
-  events: WaitlistEvent[];
 }

@@ -16,9 +16,7 @@ export interface NewWaitlistRequest {
   phone?: string;
   /** When the customer needs the piece, if they know. Used by the atelier to work the list in date order. */
   neededBy?: Date;
-  /** The `WaitlistEvent.id` the customer picked, when they chose one from the competition list. The server resolves it back to the event's own name and date rather than trusting a client-sent label. */
-  eventId?: string;
-  /** What they're skating, typed by hand — used when the competition list was empty or held nothing matching. Ignored when `eventId` resolves. */
+  /** What they're skating, in the customer's own words. Free text on purpose: the studio can't keep a list of every competition run nationally and internationally, but the skater knows theirs. Used only to label the entry for the atelier — nothing resolves or validates it. */
   eventName?: string;
   /** A line about the piece they have in mind. Optional. */
   notes?: string;

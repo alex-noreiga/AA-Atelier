@@ -1,4 +1,4 @@
-// Seasonal capacity: the pure rules behind "are the studio's books open?".
+// Commission capacity: the pure rules behind "are the studio's books open?".
 //
 // A bespoke commission consumes weeks of the atelier's making time, so there is
 // a real ceiling on how many can be in production at once. Past it, the honest

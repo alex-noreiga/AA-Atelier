@@ -116,7 +116,7 @@ function enforceServiceGate(
 }
 
 /**
- * The seasonal-capacity gate — the server's half of `GET /capacity`.
+ * The commission-capacity gate — the server's half of `GET /capacity`.
  *
  * The intake form asks the same question before it renders, so in practice this
  * fires only on a stale tab, a resubmitted form, or a direct POST. It exists

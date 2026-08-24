@@ -131,7 +131,7 @@ export interface StudioAnalyticsResult {
   capacity: StudioCapacity;
 }
 
-/** The seasonal-capacity gate, as the studio's own panel shows it. */
+/** The commission-capacity gate, as the studio's own panel shows it. */
 export interface StudioCapacity {
   open: boolean;
   reason: IntakeReason;
@@ -473,7 +473,7 @@ export function aggregateStudioAnalytics(
 }
 
 /**
- * The seasonal-capacity gate, computed from the orders this scan already read.
+ * The commission-capacity gate, computed from the orders this scan already read.
  *
  * The public `GET /capacity` runs its own narrow, filtered count — this one is
  * free here, because the aggregation has every order in hand and has already

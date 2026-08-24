@@ -23,7 +23,7 @@ const {
   // Likewise for the service catalog — an empty result is the degraded path
   // where the form falls back to the bespoke shape.
   servicesResult: { current: { data: undefined as unknown } },
-  // The seasonal-capacity answer. Undefined is the degraded/loading path, in
+  // The commission-capacity answer. Undefined is the degraded/loading path, in
   // which the intake form renders as it always has; a test closing the books
   // swaps in a definite `open: false`.
   capacityResult: { current: { data: undefined as unknown } },

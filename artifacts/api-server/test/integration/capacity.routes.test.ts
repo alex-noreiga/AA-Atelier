@@ -6,16 +6,10 @@ vi.mock("../../src/lib/notion/orders.repository.js", async () => {
   >("../../src/lib/notion/orders.repository.js");
   return { ...actual, listOpenOrderServices: vi.fn() };
 });
-vi.mock("../../src/lib/notion/competitions.repository.js", () => ({
-  listUpcomingCompetitions: vi.fn(),
-  competitionsConfigured: vi.fn(() => false),
-  __resetCompetitionsCache: vi.fn(),
-}));
 
 import request from "supertest";
 import app from "../../src/app.js";
 import { listOpenOrderServices } from "../../src/lib/notion/orders.repository.js";
-import { listUpcomingCompetitions } from "../../src/lib/notion/competitions.repository.js";
 import { __resetCapacityCache } from "../../src/services/capacity.service.js";
 import { DEFAULT_CLOSED_MESSAGE } from "../../src/services/capacity.js";
 
@@ -36,7 +30,6 @@ function configure(values: Record<string, string>): void {
 }
 
 const mockOpenOrders = vi.mocked(listOpenOrderServices);
-const mockCompetitions = vi.mocked(listUpcomingCompetitions);
 
 beforeEach(() => {
   __resetCapacityCache();
@@ -44,7 +37,6 @@ beforeEach(() => {
     savedEnv.set(key, process.env[key]);
     delete process.env[key];
   }
-  mockCompetitions.mockResolvedValue([]);
 });
 
 afterEach(() => {
@@ -148,32 +140,9 @@ describe("GET /api/capacity", () => {
     // This endpoint is anonymous — "1 of 2 slots left" is a figure anyone can
     // poll. The numbers live behind the staff gate.
     expect(Object.keys(res.body).sort()).toEqual([
-      "events",
       "message",
       "open",
       "waitlistOpen",
-    ]);
-  });
-
-  it("serves the dated competitions a waitlist entry can be pinned to", async () => {
-    mockCompetitions.mockResolvedValue([
-      {
-        id: "comp-1",
-        name: "Rocket City Classic",
-        date: "2027-01-16",
-        season: "2026-27",
-      },
-    ]);
-
-    const res = await request(app).get("/api/capacity");
-
-    expect(res.body.events).toEqual([
-      {
-        id: "comp-1",
-        name: "Rocket City Classic",
-        date: "2027-01-16",
-        season: "2026-27",
-      },
     ]);
   });
 });

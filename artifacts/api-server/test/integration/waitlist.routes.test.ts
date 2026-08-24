@@ -6,21 +6,14 @@ vi.mock("../../src/lib/notion/waitlist.repository.js", () => ({
 vi.mock("../../src/lib/notion/clients.repository.js", () => ({
   upsertClientByEmail: vi.fn(),
 }));
-vi.mock("../../src/lib/notion/competitions.repository.js", () => ({
-  listUpcomingCompetitions: vi.fn(),
-  competitionsConfigured: vi.fn(() => true),
-  __resetCompetitionsCache: vi.fn(),
-}));
 
 import request from "supertest";
 import app from "../../src/app.js";
 import { createWaitlistEntry } from "../../src/lib/notion/waitlist.repository.js";
 import { upsertClientByEmail } from "../../src/lib/notion/clients.repository.js";
-import { listUpcomingCompetitions } from "../../src/lib/notion/competitions.repository.js";
 
 const mockCreate = vi.mocked(createWaitlistEntry);
 const mockUpsert = vi.mocked(upsertClientByEmail);
-const mockCompetitions = vi.mocked(listUpcomingCompetitions);
 
 const entry = { name: "Ada Skater", email: "ada@example.com" };
 
@@ -43,7 +36,6 @@ function post(body: object) {
 beforeEach(() => {
   mockCreate.mockResolvedValue(undefined);
   mockUpsert.mockResolvedValue(null);
-  mockCompetitions.mockResolvedValue([]);
 });
 
 describe("POST /api/waitlist", () => {
@@ -62,18 +54,13 @@ describe("POST /api/waitlist", () => {
     expect(res.status).toBe(201);
   });
 
-  it("resolves a picked event to the competition's OWN name and date", async () => {
-    mockCompetitions.mockResolvedValue([
-      { id: "comp-1", name: "Rocket City Classic", date: "2027-01-16" },
-    ]);
-
+  it("records what the customer says they're skating, in their own words", async () => {
+    // Free text on purpose — the studio can't keep a list of every competition
+    // run nationally and internationally, and the skater knows theirs.
     await post({
       ...entry,
-      eventId: "comp-1",
-      // A label the browser chose. Ignored — an inbox the atelier sorts by
-      // event is only worth sorting if the names are the atelier's own.
-      eventName: "Something Else Entirely",
-      neededBy: "2030-01-01",
+      eventName: "  Rocket City Classic  ",
+      neededBy: "2027-01-16",
     });
 
     expect(mockCreate).toHaveBeenCalledWith(
@@ -85,30 +72,21 @@ describe("POST /api/waitlist", () => {
     );
   });
 
-  it("falls back to the typed event when the id resolves to nothing", async () => {
-    // A competition archived between the form loading and the submit must not
-    // cost us the entry.
-    await post({
-      ...entry,
-      eventId: "gone",
-      eventName: "Owensboro",
-      neededBy: "2027-02-01",
-    });
-
-    expect(mockCreate).toHaveBeenCalledWith(
-      expect.objectContaining({
-        target: { eventName: "Owensboro", date: "2027-02-01" },
-      }),
-      undefined,
-      undefined,
-    );
-  });
-
   it("records a bare needed-by date when no event was named", async () => {
     await post({ ...entry, neededBy: "2027-02-01" });
 
     expect(mockCreate).toHaveBeenCalledWith(
       expect.objectContaining({ target: { date: "2027-02-01" } }),
+      undefined,
+      undefined,
+    );
+  });
+
+  it("records an empty target when the customer skipped both", async () => {
+    await post(entry);
+
+    expect(mockCreate).toHaveBeenCalledWith(
+      expect.objectContaining({ target: {} }),
       undefined,
       undefined,
     );

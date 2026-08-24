@@ -286,15 +286,8 @@ export const SubscribeNewsletterResponse = zod.object({
 export const GetCapacityResponse = zod.object({
   "open": zod.boolean().describe('True when a capacity-gated service can be ordered. False means the intake form should offer the waitlist instead.'),
   "waitlistOpen": zod.boolean().describe('Whether `POST \/waitlist` should be offered. Today this is the inverse of `open`, but it is stated rather than derived so the atelier can later close the books without collecting names.'),
-  "message": zod.string().describe('The customer-facing explanation to show when closed, from the atelier-editable `COMMISSION_CLOSED_MESSAGE` setting. Empty when open — there is nothing to explain.'),
-  "events": zod.array(zod.object({
-  "id": zod.string().describe('The competition row\'s Notion page id — opaque to the browser.'),
-  "name": zod.string().describe('The competition\'s name, e.g. \"Rocket City Classic\".'),
-  "date": zod.string().describe('The day it starts, as an ISO date (yyyy-mm-dd). A response pass-through, kept as a string (no `format: date`) so it isn\'t coerced to a `Date` and re-serialized as a full timestamp — the same convention as `estimatedCompletion` and the milestone target dates.'),
-  "season": zod.string().optional().describe('The season it belongs to, e.g. \"2026-27\", when the atelier set one.'),
-  "location": zod.string().optional().describe('Where it is held, when the atelier set one.')
-}).describe('One dated competition a customer can say they\'re aiming at.')).describe('Upcoming dated competitions from the studio\'s Competitions database, soonest first, offered as the \"what are you skating?\" picker on the waitlist form. Empty when that database isn\'t configured, has no dated future rows, or can\'t be read — the form then asks for a plain date instead. Never an error.')
-}).describe('Whether the capacity-gated services are accepting orders, the wording to show when they aren\'t, and the dated events a waitlist entry can be pinned to.')
+  "message": zod.string().describe('The customer-facing explanation to show when closed, from the atelier-editable `COMMISSION_CLOSED_MESSAGE` setting. Empty when open — there is nothing to explain.')
+}).describe('Whether the capacity-gated services are accepting orders, and the wording to show when they aren\'t.')
 
 
 /**
@@ -312,8 +305,7 @@ export const JoinWaitlistBody = zod.object({
   "email": zod.string().email(),
   "phone": zod.string().optional(),
   "neededBy": zod.coerce.date().optional().describe('When the customer needs the piece, if they know. Used by the atelier to work the list in date order.'),
-  "eventId": zod.string().optional().describe('The `WaitlistEvent.id` the customer picked, when they chose one from the competition list. The server resolves it back to the event\'s own name and date rather than trusting a client-sent label.'),
-  "eventName": zod.string().optional().describe('What they\'re skating, typed by hand — used when the competition list was empty or held nothing matching. Ignored when `eventId` resolves.'),
+  "eventName": zod.string().optional().describe('What they\'re skating, in the customer\'s own words. Free text on purpose: the studio can\'t keep a list of every competition run nationally and internationally, but the skater knows theirs. Used only to label the entry for the atelier — nothing resolves or validates it.'),
   "notes": zod.string().optional().describe('A line about the piece they have in mind. Optional.'),
   "website": zod.string().optional().describe('Anti-spam honeypot. A hidden field that real visitors never fill; a non-empty value marks the submission as spam and it is silently dropped. Always send empty (or omit).'),
   "elapsedMs": zod.number().int().min(joinWaitlistBodyElapsedMsMin).optional().describe('Anti-spam timing signal: milliseconds the visitor spent on the form before submitting. Implausibly fast submissions are dropped. Omit when unmeasurable (treated as human).')

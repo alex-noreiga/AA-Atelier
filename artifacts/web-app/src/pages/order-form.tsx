@@ -623,7 +623,6 @@ export default function OrderForm() {
                 capacityData?.message ||
                 "Our books are full for the current season. Join the waitlist and we'll be in touch the moment a space opens up."
               }
-              events={capacityData?.events ?? []}
             />
           </div>
         </div>

@@ -1,6 +1,6 @@
 ---
-name: Seasonal capacity & the commission waitlist
-description: When the studio's books are full, the intake form offers a waitlist instead of a bespoke commission. A counted cap plus an atelier override, gated per service, failing open in every direction — and the Competitions database read only to pin a waitlist entry to the event it's for.
+name: Commission capacity & the waitlist
+description: When the studio's books are full, the intake form offers a waitlist instead of a bespoke commission. A counted cap plus an atelier override, gated per service, failing open in every direction. The Competitions database was tried as the "seasonal" signal and deliberately removed — read decision 1 before reintroducing it.
 ---
 
 Roadmap card ③ ("Seasonal capacity & waitlist"): _"When the season is fully
@@ -10,9 +10,8 @@ the demand signal to read."_
 
 ## What shipped
 
-- **`GET /api/capacity`** (public, contract-first) — are the books open, the
-  atelier's closed-books wording, and the dated competitions a waitlist entry
-  can be pinned to.
+- **`GET /api/capacity`** (public, contract-first) — are the books open, and the
+  atelier's closed-books wording.
 - **`POST /api/waitlist`** (public, contract-first) — files a
   `Request type = "Waitlist"` row in the contact inbox, with the same
   honeypot / fill-time / per-IP anti-spam as the other anonymous forms.
@@ -26,24 +25,35 @@ the demand signal to read."_
 
 ## The decisions worth remembering
 
-**1. What "fully booked" means was a real fork, and the Competitions database
-could not answer it.** The card names Competitions as the demand signal, but
-**every row in it is undated** — three rows, all with a blank `Date` and a blank
-`Season`, only a `Lead time (weeks)` and a location. A season-window rule
-computed from those rows would have shipped completely inert, and looked
-correct. So capacity is **counted** instead: `COMMISSION_CAPACITY` against the
-number of capacity-gated orders neither delivered nor cancelled, which works
-from the first deploy with nothing to fill in.
+**1. The Competitions database was tried as the "seasonal" signal and REMOVED.
+Don't reintroduce it.** The roadmap card names it as the demand signal to read,
+and the first cut did: `NOTION_COMPETITIONS_DATABASE_ID`, a
+`lib/notion/competitions.{schema,repository}.ts` pair, dated rows served on
+`GET /capacity` and offered as a picker on the waitlist form. Two things killed
+it, in order of importance:
 
-**2. Competitions is still read — for the thing it can actually answer.** Not
-"when do we reopen" (its `Push starts` formula answers "when should we start
-advertising", a different question, and the app never reads it), but **what is
-this customer waiting for**. The waitlist offers the dated competitions as a
-picker, so the atelier can work the list by the date the piece is genuinely
-needed. Undated rows are dropped rather than rendered as blank options, so
-**today the picker doesn't appear at all** and the form asks for a date — that
-fallback is the normal path, not an error case. Filling in `Date` on those rows
-is what turns the picker on; nothing needs deploying.
+- **The atelier's own objection, which is the decisive one:** _"I'm not going to
+  know about every single competition going on nationally and internationally."_
+  A curated list of events is either a standing maintenance burden or a picker
+  that silently omits the event the customer actually came for — and the skater
+  knows theirs. Free text moves the knowledge to the person who has it.
+- **The data agreed.** Every row in that database was (and is) **undated** —
+  three rows with a blank `Date` and a blank `Season`, only a
+  `Lead time (weeks)` and a location. Anything computed from those rows would
+  have shipped completely inert while looking correct.
+
+So the waitlist asks two plain optional fields — what are you skating, and when
+do you need it — and resolves neither against anything. The atelier needs a
+label to group the inbox by and a date to work the list in order of; free text
+gives both, with no database, no env var and nothing to keep current. The whole
+Competitions layer (client factory, schema, repository, env var, its tests, and
+`WaitlistEvent`/`eventId` on the contract) is **deleted**, not disabled.
+
+**2. Capacity is therefore just a number.** `COMMISSION_CAPACITY` against the
+count of capacity-gated orders neither delivered nor cancelled, which works from
+the first deploy with nothing to fill in. "Seasonal" is expressed by the atelier
+setting the cap and the switch as their season demands, not by the app inferring
+a season from a calendar it can't be expected to maintain.
 
 **3. It fails OPEN everywhere, which is the opposite of most gates here.** No
 cap configured, an unparseable cap, a negative cap, an unreadable order count —
@@ -103,12 +113,12 @@ studio's own history counts against capacity exactly as a new commission does.
 (Same trap as `service-pipelines.md`: matching on id alone makes it a no-op.)
 
 **11. The waitlist needs no new Notion property.** Seventh writer to "Website
-Contact Messages", and the event it's for reuses the shared **`Item`**
+Contact Messages", and what the piece is for reuses the shared **`Item`**
 rich_text that back-in-stock introduced and return/exchange already borrows — so
-the atelier can group the waitlist by competition in a Notion view without a
-column being added. The event name written there is always **resolved
-server-side** from the picked `eventId`; the browser's `eventName` is ignored
-when the id resolves, for the same reason checkout reprices the cart.
+the atelier can group the waitlist by event in a Notion view without a column
+being added. `waitlistItemLabel` composes it as `"<event> (<date>)"`, falling
+back to whichever half it has and omitting the property entirely when it has
+neither, rather than writing it blank.
 
 **12. A waitlist entry gets an atelier notification, unlike a newsletter
 opt-in.** Both are "somebody gave us their email", but a waitlist entry is
@@ -120,15 +130,11 @@ queue says to write to them or reopen intake under Studio settings.
 
 ## Setup
 
-**Nothing is required.** `COMMISSION_CAPACITY` defaults to `0` (no cap) and
-`COMMISSION_INTAKE` to `auto`, so the feature is inert until the atelier sets a
-number under `/studio` → **Studio settings**.
-
-Optional, for the seasonal half: set **`NOTION_COMPETITIONS_DATABASE_ID`**
-(`7e9de299-3413-4bb7-a38b-ce2b3b4d45b5`), share the Notion integration with
-**🏆 Competitions**, and fill in `Date` (and ideally `Season`) on the rows. Until
-then the waitlist asks for a plain date. The `Waitlist` `Request type` option
-auto-creates on first write.
+**Nothing at all — no database, no env var, nothing to keep current.**
+`COMMISSION_CAPACITY` defaults to `0` (no cap) and `COMMISSION_INTAKE` to
+`auto`, so the feature is inert until the atelier sets a number under `/studio`
+→ **Studio settings**. The `Waitlist` `Request type` option auto-creates on
+first write.
 
 ## Known limits
 
@@ -142,5 +148,8 @@ auto-creates on first write.
   above ducks.
 - **The count is per-instance cached**, like every other live Notion read, so two
   warm serverless instances can be up to 60s apart on whether the books are open.
-- **A competition renamed or archived between the form loading and the submit**
-  degrades to the customer's typed name, not an error.
+- **Nothing validates what the customer types as their event.** That is the
+  trade in decision 1: a typo or an abbreviation reaches the inbox as written,
+  and grouping a Notion view by `Item` will show near-duplicates. The atelier
+  reads the rows either way, and the alternative was a list nobody can keep
+  current.

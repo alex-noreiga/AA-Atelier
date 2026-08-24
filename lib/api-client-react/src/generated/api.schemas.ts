@@ -798,23 +798,7 @@ export interface NewContactResponse {
 }
 
 /**
- * One dated competition a customer can say they're aiming at.
- */
-export interface WaitlistEvent {
-  /** The competition row's Notion page id — opaque to the browser. */
-  id: string;
-  /** The competition's name, e.g. "Rocket City Classic". */
-  name: string;
-  /** The day it starts, as an ISO date (yyyy-mm-dd). A response pass-through, kept as a string (no `format: date`) so it isn't coerced to a `Date` and re-serialized as a full timestamp — the same convention as `estimatedCompletion` and the milestone target dates. */
-  date: string;
-  /** The season it belongs to, e.g. "2026-27", when the atelier set one. */
-  season?: string;
-  /** Where it is held, when the atelier set one. */
-  location?: string;
-}
-
-/**
- * Whether the capacity-gated services are accepting orders, the wording to show when they aren't, and the dated events a waitlist entry can be pinned to.
+ * Whether the capacity-gated services are accepting orders, and the wording to show when they aren't.
  */
 export interface CapacityStatus {
   /** True when a capacity-gated service can be ordered. False means the intake form should offer the waitlist instead. */
@@ -823,8 +807,6 @@ export interface CapacityStatus {
   waitlistOpen: boolean;
   /** The customer-facing explanation to show when closed, from the atelier-editable `COMMISSION_CLOSED_MESSAGE` setting. Empty when open — there is nothing to explain. */
   message: string;
-  /** Upcoming dated competitions from the studio's Competitions database, soonest first, offered as the "what are you skating?" picker on the waitlist form. Empty when that database isn't configured, has no dated future rows, or can't be read — the form then asks for a plain date instead. Never an error. */
-  events: WaitlistEvent[];
 }
 
 /**
@@ -837,9 +819,7 @@ export interface NewWaitlistRequest {
   phone?: string;
   /** When the customer needs the piece, if they know. Used by the atelier to work the list in date order. */
   neededBy?: string;
-  /** The `WaitlistEvent.id` the customer picked, when they chose one from the competition list. The server resolves it back to the event's own name and date rather than trusting a client-sent label. */
-  eventId?: string;
-  /** What they're skating, typed by hand — used when the competition list was empty or held nothing matching. Ignored when `eventId` resolves. */
+  /** What they're skating, in the customer's own words. Free text on purpose: the studio can't keep a list of every competition run nationally and internationally, but the skater knows theirs. Used only to label the entry for the atelier — nothing resolves or validates it. */
   eventName?: string;
   /** A line about the piece they have in mind. Optional. */
   notes?: string;

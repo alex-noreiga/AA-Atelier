@@ -59,17 +59,11 @@ export function isoDateOnly(value: Date | string | undefined): string {
   return iso.slice(0, 10);
 }
 
-/**
- * What the entry is *for*, as one line — resolved server-side.
- *
- * `eventName` is only ever the customer's own typing; when they picked from the
- * competition list the service resolves the id against Notion and passes the
- * real name and date here, so a client can't relabel an event it doesn't own.
- */
+/** What the entry is *for*, as the row records it. */
 export interface WaitlistTarget {
-  /** The competition's name, picked or typed. */
+  /** What the customer said they're skating, in their own words. */
   eventName?: string;
-  /** ISO `yyyy-mm-dd` — the event's date, or the customer's own needed-by. */
+  /** ISO `yyyy-mm-dd` — when they need the piece by. */
   date?: string;
 }
 

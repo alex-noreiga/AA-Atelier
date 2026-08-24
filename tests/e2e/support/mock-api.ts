@@ -105,10 +105,10 @@ export async function mockServices(
 
 /**
  * Mock `GET /api/capacity` (whether the studio is taking bespoke commissions).
- * Defaults to open with no competitions, which is the state every existing spec
- * assumes — the intake form rather than the waitlist. Pass
- * `body: { open: false, waitlistOpen: true, message: "...", events: [] }` to
- * drive the closed-books path.
+ * Defaults to open, which is the state every existing spec assumes — the intake
+ * form rather than the waitlist. Pass
+ * `body: { open: false, waitlistOpen: true, message: "..." }` to drive the
+ * closed-books path.
  */
 export async function mockCapacity(
   page: Page,
@@ -119,7 +119,7 @@ export async function mockCapacity(
     await json(
       route,
       opts.status ?? 200,
-      opts.body ?? { open: true, waitlistOpen: false, message: "", events: [] },
+      opts.body ?? { open: true, waitlistOpen: false, message: "" },
     );
   });
 }
