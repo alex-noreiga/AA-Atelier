@@ -264,8 +264,7 @@ export default function Portfolio() {
           </h1>
           <p className="mx-auto max-w-xl text-lg font-light leading-relaxed text-muted-foreground md:text-xl">
             Finished costumes and the{" "}
-            <span className="italic text-primary">sketches</span> they began as
-            — a record of pieces made to measure for skaters and dancers.
+            <span className="italic text-primary">sketches</span> they began as.
           </p>
         </div>
 
