@@ -53,18 +53,33 @@ function normalize(value: string | undefined): string {
 }
 
 /**
+ * Whether a human label means "the customer collects this in person".
+ *
+ * Matched on words rather than an exact value, because the label is the
+ * atelier's to write and this must not hinge on them spelling it the way the
+ * code does: "Local pickup", "Pick up at studio" and "Customer collects" all
+ * read as pickup.
+ *
+ * Shared deliberately: it decides both what the Notion `Delivery Method` select
+ * means and — at checkout — whether the shipping rate the customer chose in
+ * Stripe is a collection rather than a posting. One vocabulary, so the rate the
+ * customer picks and the column the atelier reads can't disagree about what
+ * counts as a pickup.
+ */
+export function looksLikePickup(raw: string | undefined): boolean {
+  return /\b(pickup|pick up|collect|collects|collection)\b/.test(
+    normalize(raw),
+  );
+}
+
+/**
  * What the atelier's `Delivery Method` select says, or undefined when it's
- * blank or says something neither vocabulary recognizes. Matched on substrings
- * so "Local pickup", "Pick up at studio" and "Customer collects" all read as
- * pickup — the option list is the atelier's to word, and this must not hinge on
- * them spelling it the way the code does.
+ * blank or says something neither vocabulary recognizes.
  */
 function declaredMethod(raw: string | undefined): DeliveryMethod | undefined {
   const value = normalize(raw);
   if (!value) return undefined;
-  if (/\b(pickup|pick up|collect|collects|collection)\b/.test(value)) {
-    return "pickup";
-  }
+  if (looksLikePickup(value)) return "pickup";
   if (
     /\b(ship|shipping|shipped|mail|post|courier|deliver|delivery)\b/.test(value)
   ) {

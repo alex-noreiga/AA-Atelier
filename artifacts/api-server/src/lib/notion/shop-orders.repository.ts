@@ -33,6 +33,7 @@ import {
   SHOP_ORDER_ITEMS_PROPERTY,
 } from "./shop-orders.blocks.js";
 import type { FulfilmentFields } from "../fulfilment.js";
+import { createPageDroppingUnknownProperties } from "./create-page.js";
 import { logger } from "../logger.js";
 
 interface NotionQueryResponse {
@@ -277,25 +278,16 @@ export async function createShopOrder(
 ): Promise<string> {
   assertConfigured(client);
 
-  const body: Record<string, unknown> = {
-    parent: { database_id: client.databaseId },
-    properties: buildShopOrderProperties(session, clientPageId, itemPageIds),
-    children: buildShopOrderPageBlocks(session),
-  };
-
-  const response = await client.fetch("/v1/pages", {
-    method: "POST",
-    body: JSON.stringify(body),
-  });
-
-  if (!response.ok) {
-    const errorText = await response.text();
-    throw new Error(
-      `Notion shop-order creation failed with status ${response.status}: ${errorText}`,
-    );
-  }
-
-  const created = (await response.json()) as { id: string };
+  // Dropping-and-retrying an un-added property matters more here than on the
+  // intake form: this runs on the Stripe webhook, so a 400 over `Delivery
+  // Method` would lose a PAID order until the atelier added the column (the
+  // redelivery would fail the same way). Same helper the order intake uses.
+  const created = await createPageDroppingUnknownProperties(
+    client,
+    buildShopOrderProperties(session, clientPageId, itemPageIds),
+    buildShopOrderPageBlocks(session),
+    "shop orders",
+  );
   return created.id;
 }
 

@@ -166,7 +166,7 @@ describe("ShopOrderStatus render states", () => {
     expect(screen.queryByTestId("tracking-details")).not.toBeInTheDocument();
   });
 
-  it("shows the collection details, and says why there is no tracking, for a local pickup", async () => {
+  it("shows the collection details for a local pickup", async () => {
     setHook({
       data: {
         orderNumber: "SHP-1",
@@ -191,7 +191,6 @@ describe("ShopOrderStatus render states", () => {
     expect(within(panel).getByTestId("pickup-location")).toHaveTextContent(
       "12 Rink Road",
     );
-    expect(panel).toHaveTextContent(/no tracking number/i);
     // A pickup order must never render an empty tracking panel — that reads as
     // the site being broken rather than as "there is nothing to track".
     expect(screen.queryByTestId("tracking-details")).not.toBeInTheDocument();

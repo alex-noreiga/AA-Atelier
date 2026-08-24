@@ -26,6 +26,9 @@ reads as the site being broken rather than as "there is nothing to track".
   rendered below the timeline by `custom-order-result.tsx` and
   `shop-order-result.tsx`.
 
+- `chosePickupRate` in `shop-orders.blocks.ts` — the one **write**: a shop order
+  paid with the atelier's local-pickup Stripe shipping rate marks itself.
+
 **No new env var, no new database, and nothing the atelier must do before the
 deploy is safe.** Three of those columns already existed on Custom Orders —
 `Fulfilment`, `Ship By` and `Tracking Number`, exactly the "fields the app never
@@ -110,13 +113,30 @@ would have said (reading a property Notion doesn't have is safe — only _writin
 one 400s the whole page). Leaving `Delivery Method` unset works too: scheduling a
 `Pickup Time` is enough to make an order read as a pickup.
 
+9. **A shop customer chooses pickup at checkout, and the order marks itself.**
+   The atelier added a **local-pickup Stripe shipping rate** (an ordinary
+   `shr_…` in `STRIPE_SHIPPING_RATE_IDS`), and `chosePickupRate` writes
+   `Delivery Method = "Local pickup"` on the Notion order when that's the rate
+   the customer chose. Decided from the rate's **display name** through the same
+   `looksLikePickup` the Notion select goes through — one vocabulary, so the rate
+   the customer picks and the column the atelier reads can't disagree. The name
+   **not the id**: ids are mode-scoped, so pinning to one would mean a second env
+   var to keep in step with `STRIPE_SHIPPING_RATE_IDS` across two Stripe modes,
+   silently breaking the day a rate is replaced. A posted rate writes nothing (an
+   order with no method reads as a shipment anyway). Needs
+   `shipping_cost.shipping_rate` expanded on the webhook's session retrieve.
+
+   This is the **only** write in the feature, and it forced one refactor:
+   `createPageDroppingUnknownProperties` moved out of `orders.repository.ts` into
+   `lib/notion/create-page.ts` so `createShopOrder` shares it. That write lands on
+   the **Stripe webhook**, where a 400 over an un-added `Delivery Method` would
+   lose a **paid** order — and the redelivery would fail identically.
+
 ## Known limits
 
-- **Nobody chooses pickup at checkout.** The shop cart has no "collect in store"
-  option; the atelier sets the method on the order afterwards. A `$0` "Local
-  pickup" Stripe shipping rate would be the natural way to offer it, and the
-  panel would then read whatever the atelier records — but the two aren't wired
-  together, so a customer who picks that rate still needs the order marked by hand.
+- **A custom order's method is still set by hand.** It isn't bought through the
+  cart, so there is no rate to read; the atelier sets `Delivery Method` (or just
+  a `Pickup Time`) on the order.
 - **No pickup reminder email.** The day-before appointment sweep covers Google
   Calendar bookings, not pickup times on an order; a pickup slot is only visible
   on the tracking page and in whatever the atelier sends by hand.

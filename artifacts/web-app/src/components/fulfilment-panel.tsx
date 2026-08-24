@@ -163,9 +163,6 @@ function PickupPanel({
           </span>
         ),
         stateNote,
-        // Said once, plainly, because "why haven't I got a tracking number?" is
-        // the question this panel exists to answer.
-        "This order is being collected in person, so there's no tracking number to follow.",
       ]}
     >
       <p className="mt-1 font-serif text-2xl" data-testid="pickup-time">

@@ -11,6 +11,7 @@
 import type Stripe from "stripe";
 
 import { normalizeEmail } from "../email.js";
+import { looksLikePickup } from "../fulfilment.js";
 
 // Live-schema property names (a Notion rename is a one-line change here).
 export const SHOP_ORDER_TITLE_PROPERTY = "Order Name"; // title
@@ -144,6 +145,36 @@ interface AddressParts {
 }
 
 /**
+ * The `Delivery Method` value written for an order the customer is collecting.
+ * A targeted business rule naming one option value, like `STATUS_IN_STOCK` —
+ * the resolver matches it on words, so the atelier can reword their own option;
+ * this is only what the app writes when it mints one.
+ */
+export const DELIVERY_METHOD_PICKUP = "Local pickup";
+
+/**
+ * Whether the customer picked a **collection** shipping rate at checkout rather
+ * than a posted one, read from the rate's own display name (the words the
+ * customer chose between) via the shared `looksLikePickup`.
+ *
+ * The name, not the id: the atelier creates and prices shipping rates in the
+ * Stripe Dashboard, and the ids are mode-scoped — pinning this to an id would
+ * mean a second env var to keep in step with `STRIPE_SHIPPING_RATE_IDS`, in two
+ * Stripe modes, that silently stops working the day a rate is replaced. The name
+ * is what both the customer and the atelier already read.
+ *
+ * Needs `shipping_cost.shipping_rate` expanded on the retrieved session; an
+ * unexpanded id, no shipping rate at all (nothing configured, or a free order),
+ * or a name that doesn't say collection all read as a posting — the shape the
+ * app has always assumed.
+ */
+export function chosePickupRate(session: Stripe.Checkout.Session): boolean {
+  const rate = session.shipping_cost?.shipping_rate;
+  if (!rate || typeof rate === "string") return false;
+  return looksLikePickup(rate.display_name ?? undefined);
+}
+
+/**
  * Notion page `properties` for a paid shop order. When `clientPageId` is given
  * (the webhook upserted a Client CRM record for the buyer's email), the order is
  * linked to it through the `Client` relation — the same pattern as custom orders.
@@ -194,6 +225,16 @@ export function buildShopOrderProperties(
   if (shipping) {
     properties[SHOP_ORDER_SHIPPING_PROPERTY] = {
       rich_text: [{ text: { content: shipping } }],
+    };
+  }
+  // The customer chose the atelier's local-pickup shipping rate at checkout, so
+  // record that on the order rather than making the atelier notice and mark it.
+  // Nothing is written when they chose a posted rate: an order with no method
+  // reads as a shipment anyway, so writing "Ship" would only add a value to
+  // maintain. Notion auto-creates the select option on first write.
+  if (chosePickupRate(session)) {
+    properties[SHOP_ORDER_DELIVERY_METHOD_PROPERTY] = {
+      select: { name: DELIVERY_METHOD_PICKUP },
     };
   }
   if (clientPageId) {

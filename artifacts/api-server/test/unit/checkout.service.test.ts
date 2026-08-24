@@ -558,7 +558,9 @@ describe("recordPaidOrder", () => {
     await recordPaidOrder({ id: "cs_1" } as Stripe.Checkout.Session, stripe);
 
     expect(retrieve).toHaveBeenCalledWith("cs_1", {
-      expand: ["line_items.data.price.product"],
+      // The product carries the `variantId` we stamped at checkout; the shipping
+      // rate carries the display name that tells a local pickup from a posting.
+      expand: ["line_items.data.price.product", "shipping_cost.shipping_rate"],
     });
     // No customer email on this session -> no CRM upsert, no client link.
     expect(mockUpsertClient).not.toHaveBeenCalled();

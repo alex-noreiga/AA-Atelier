@@ -1,11 +1,40 @@
 import { describe, it, expect } from "vitest";
 import {
+  looksLikePickup,
   resolveDeliveryMethod,
   resolveFulfilment,
 } from "../../src/lib/fulfilment.js";
 
 const TZ = "America/Chicago";
 const ctx = { timezone: TZ };
+
+describe("looksLikePickup", () => {
+  // One vocabulary, shared by the Notion `Delivery Method` select and the
+  // display name of the shipping rate the customer picks in Stripe — so the two
+  // can't disagree about what counts as a collection.
+  it("recognizes a collection however it's worded", () => {
+    for (const label of [
+      "Local pickup",
+      "Pick up at the studio",
+      "Studio collection",
+      "Customer collects",
+      "PICKUP (free)",
+    ]) {
+      expect(looksLikePickup(label)).toBe(true);
+    }
+  });
+
+  it("does not mistake a posted rate for one", () => {
+    for (const label of [
+      "USPS Priority Mail",
+      "Standard shipping",
+      undefined,
+      "",
+    ]) {
+      expect(looksLikePickup(label)).toBe(false);
+    }
+  });
+});
 
 describe("resolveDeliveryMethod", () => {
   it("defaults to shipping when nothing is set", () => {

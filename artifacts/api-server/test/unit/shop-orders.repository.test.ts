@@ -226,6 +226,34 @@ describe("createShopOrder", () => {
       /status 400: validation_error: bad property/,
     );
   });
+
+  it("drops a property the database doesn't have and records the order anyway", async () => {
+    // This runs on the Stripe webhook, so a 400 over an un-added additive
+    // property (`Delivery Method`) would lose a PAID order until the atelier
+    // added the column — the redelivery would fail identically.
+    const client = makeFakeClient((path, init) => {
+      const body = JSON.parse(init!.body as string);
+      if (SHOP_ORDER_DELIVERY_METHOD_PROPERTY in body.properties) {
+        return jsonResponse(
+          {
+            message: `${SHOP_ORDER_DELIVERY_METHOD_PROPERTY} is not a property that exists`,
+          },
+          400,
+        );
+      }
+      return jsonResponse({ id: "new-page" }, 200);
+    });
+
+    const pageId = await createShopOrder(
+      session({
+        shipping_cost: { shipping_rate: { display_name: "Local pickup" } },
+      }),
+      client,
+    );
+
+    expect(pageId).toBe("new-page");
+    expect(client.calls).toHaveLength(2);
+  });
 });
 
 describe("findShopOrderByNumber", () => {
