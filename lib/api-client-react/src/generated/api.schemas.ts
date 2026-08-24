@@ -332,6 +332,49 @@ export interface ReviewList {
 }
 
 /**
+ * One piece's values for a single filter dimension. Modelled as an ordered list rather than a map so a new dimension is a server-side change with no contract edit, and so clients render facets in the order the server declares them.
+ */
+export interface PortfolioFacetValues {
+  /** The facet's stable id, matching a `PortfolioFilter.id` in the same response (for example "type" or "discipline"). Never shown to the visitor — the filter's `label` is. */
+  id: string;
+  /** This piece's values for that dimension. A single-value dimension (a select) carries one entry; a multi-select carries several. Never empty — a piece with no value for a dimension omits the facet entirely rather than carrying an empty list. */
+  values: string[];
+}
+
+/**
+ * One published piece of the atelier's work. Deliberately narrow: the Notion row relates to the order it was made for, and neither that order nor the customer behind it is served here.
+ */
+export interface PortfolioPiece {
+  /** The piece's Notion page id, used only as a render key. */
+  id: string;
+  /** The piece's name, as the atelier titled the row. */
+  title: string;
+  /** The piece's photographs or sketches, in the order the atelier arranged them; the first is the gallery cover. These are Notion-signed URLs that expire in about an hour, which is why this response's edge cache is deliberately shorter than that. Never empty — a row with no image is not published. */
+  images: string[];
+  /** The piece's values for each filter dimension it has one for, in the server's declared facet order. Dimensions the piece carries no value for are omitted rather than sent empty. */
+  facets: PortfolioFacetValues[];
+  /** When the row was created in Notion. Omitted when Notion returned no created time. The gallery is ordered newest-first by the piece's optional "Completed" date and falls back to this when it has none — that completion date is a server-side sort key and is deliberately not served, since nothing renders it. */
+  publishedAt?: string;
+}
+
+/**
+ * One filter dimension offered above the gallery, with the options DERIVED from the published pieces rather than enumerated in code. A dimension no published piece carries a value for is omitted from the response entirely, so the chips reflect the atelier's actual work with no redeploy and clients must not hardcode either the options or which dimensions exist.
+ */
+export interface PortfolioFilter {
+  /** Stable id, matching `PortfolioFacetValues.id` on the pieces. */
+  id: string;
+  /** The human label for the chip group, e.g. "Discipline". */
+  label: string;
+  /** The distinct values published pieces carry for this dimension, alphabetically. Always two or more — a dimension every published piece answers the same way filters nothing and is omitted. */
+  options: string[];
+}
+
+export interface PortfolioList {
+  pieces: PortfolioPiece[];
+  filters: PortfolioFilter[];
+}
+
+/**
  * Where a review stands with the atelier. `pending` is anything not yet decided — including the "New" it is captured with — so a review can only ever be waiting, shown, or set aside.
  */
 export type ReviewModerationStatus = typeof ReviewModerationStatus[keyof typeof ReviewModerationStatus];

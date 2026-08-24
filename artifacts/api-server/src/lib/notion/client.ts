@@ -72,6 +72,7 @@ let materialUsageClient: NotionClient | null = null;
 let reviewsClient: NotionClient | null = null;
 let settingsClient: NotionClient | null = null;
 let studioGuidesClient: NotionClient | null = null;
+let portfolioClient: NotionClient | null = null;
 
 /**
  * Lazily-constructed client reading credentials from the environment. Deferring
@@ -309,6 +310,24 @@ export function getReviewsNotionClient(): NotionClient {
     });
   }
   return reviewsClient;
+}
+
+/**
+ * Client for the "Design Portfolio & Sketch Library" database — the atelier's
+ * finished costumes, preliminary sketches and digital mockups, which the public
+ * portfolio gallery reads. READ-ONLY: the atelier curates the rows in Notion and
+ * the app only serves the ones it published. Optional: when the env var is unset
+ * the client's `databaseId` is empty and the repository treats that as "not
+ * configured", so `/portfolio` serves an empty gallery rather than erroring.
+ */
+export function getPortfolioNotionClient(): NotionClient {
+  if (!portfolioClient) {
+    portfolioClient = createNotionClient({
+      apiKey: process.env.NOTION_API_KEY ?? "",
+      databaseId: process.env.NOTION_PORTFOLIO_DATABASE_ID ?? "",
+    });
+  }
+  return portfolioClient;
 }
 
 /**

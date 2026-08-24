@@ -1562,6 +1562,188 @@ minutes behind the edge cache.
    authoritative over the other. See "Curating which reviews show" below and
    `.agents/memory/reviews-curation-views.md`.
 
+## Portfolio & finished-work gallery
+
+`/portfolio` is the public showcase of the atelier's work — finished costumes and
+the sketches they began as — read from the **"🎨 Design Portfolio & Sketch
+Library"** Notion database the atelier has kept since long before the site
+existed, and served by `GET /api/portfolio` (contract-first, `useGetPortfolio`).
+Read-only: the app never writes that database. Code:
+`lib/notion/portfolio.{schema,repository}.ts`, `getPortfolioNotionClient`,
+`services/portfolio.service.ts`, `routes/portfolio.ts`, and on the frontend
+`web-app/src/pages/portfolio.tsx`. Load-bearing decisions:
+
+1. **One gate, and it fails closed: `Show on website`.** The database is the
+   atelier's private sketchbook first — it holds work in progress and pieces made
+   for named customers — so publication is opt-in per row, and an absent
+   property, an unticked box, **or a row with no image** all read as "not
+   published". The last is not a formality: a card with no photograph is a hole
+   in the grid, and a row whose picture hasn't been attached yet is exactly the
+   one somebody ticks the box on in advance. The property name deliberately
+   matches the shop inventory's own `Show on website`, so the atelier learns one
+   convention across both public catalogues.
+
+   It is **not** the reviews' two-gate curation, on purpose: a testimonial is the
+   customer's words and needs their consent, while these are photographs of the
+   atelier's own work and the decision to show one is theirs alone. (The atelier
+   still owns that judgement for a commission made for a named skater — the
+   checkbox is where it is recorded.)
+
+2. **The facet DIMENSIONS are code; the facet OPTIONS are read live.** Which
+   questions the gallery can be filtered by — type/stage, discipline, season,
+   colorway, technique, competition — is `FACET_DEFINITIONS` in
+   `portfolio.schema.ts`, the same targeted-business-rule exception as the
+   appointment catalog, because the UI has to mirror it. What the answers _are_
+   is derived from the published rows on every read, so the atelier adds a
+   discipline by typing it on a piece, never by asking for a deploy. **Never
+   hardcode an option list here.**
+
+   A dimension is offered **only when the published work actually varies along
+   it** (two or more distinct values). Fewer than that means every piece answers
+   it the same way, or none answers it at all, and a chip that filters nothing is
+   worse than no chip — it invites a click that changes the grid not at all. That
+   one rule is what lets every dimension be declared up front while the gallery
+   shows only the ones that mean something today.
+
+   **A dimension may name SEVERAL properties, in preference order** — the first
+   one a row carries wins (`FacetDefinition.properties`). That exists so a Notion
+   **rename isn't a flag day**: renaming `Type` while the code read only `Type`
+   would drop that entire chip row silently — no error, no log, just a filter
+   that stopped existing. Listing the new name beside the old lets the rename and
+   the deploy happen days apart, in either order. Only the `label` then needs a
+   follow-up line, which is cosmetic and visible rather than silent. `type` reads
+   `Stage` then `Type` for exactly this reason (see the atelier-setup table).
+
+3. **A facet property may be a `select`, a `multi_select`, or `rich_text`.**
+   Three of the four don't exist yet — the atelier creates them — and a reader
+   insisting on `multi_select` would answer a `select` named `Discipline` with
+   silence: no error, no log, just a chip group that never appears. A facet value
+   is the same string whichever way the property was made, so accepting all three
+   removes a whole silent-failure class for three lines. This is a **documented
+   tolerance**, not an exception to "property types must match the live schema" —
+   the values are still trimmed, de-duplicated, and dropped when blank.
+
+4. **A row is a DESIGN, not a picture — so images are gathered across several
+   properties.** `PORTFOLIO_IMAGE_PROPERTIES` reads `Finished`, `Image / Sketch`,
+   `Mockup` and `Sketch` in that order and concatenates them, de-duplicated; the
+   first image found anywhere is the card's cover, which is why a finished
+   photograph leads. One row per image would put a dress and its own sketch on
+   the grid as two unrelated cards — precisely what the page's "finished costumes
+   and the sketches they began as" promises it isn't. The atelier can either drop
+   every picture into the single `Image / Sketch` property (nothing to add) or
+   split them per stage; a property the database lacks contributes nothing.
+
+5. **The gallery is ordered by when the piece was FINISHED, not when its row was
+   typed.** `portfolioSortKey` reads the optional `Completed` date and falls back
+   to the Notion `created_time`. The fallback alone is close to arbitrary — a
+   piece made last spring but recorded last week would lead one made last week
+   and recorded last spring. Both are ISO-8601, so one string comparison orders a
+   mixture of dated and undated pieces. `completedAt` is **internal**: it isn't on
+   the contract, so the response's zod parse strips it (same shape as
+   `OrderSummary.cancelled`) — the client is served the ordering, not the field
+   that produced it. Deliberately **not** `Season`: "2026-27" is a label, not a
+   point in time, and sorting that text against dates would be a silent mess.
+
+6. **A bounded scan, not a filtered query — because the gate doesn't exist yet.**
+   A Notion `filter` naming a property the database lacks answers **400**, so
+   pushing `Show on website` into the query would make the gallery fail loudly for
+   exactly as long as it took the atelier to add the column. The publish gate is
+   applied in the pure extractor instead (`isPublishable`), where a missing
+   property simply reads as `false`. Nothing is lost: deriving the chips needs
+   every published row anyway, and the database is a costume studio's sketchbook,
+   nowhere near `scanDatabase`'s cap.
+
+7. **Degrade to an empty gallery for the states only a human can clear; throw for
+   the rest.** An unset `NOTION_PORTFOLIO_DATABASE_ID` and a Notion **404** (wrong
+   id, or the integration was never shared) are configuration, not outages — they
+   cannot fix themselves, so erroring a marketing page and alerting the inbox on
+   every visit would be noise. Any **other** status still throws, because an
+   outage clears itself and is worth the one alert. The 404 is deliberately **not
+   cached**: the fix is a human sharing the database, and caching the empty result
+   would hold the gallery blank for another minute after they did. Otherwise the
+   read is the usual 60s TTL + fall-back-to-stale-on-error.
+
+8. **The edge cache is capped by Notion's signed image URLs.** A `files` property
+   yields URLs that expire in about an hour, so `s-maxage=120` +
+   `stale-while-revalidate=600` (≈12 min total) stays well inside that — the same
+   reasoning, and the same numbers, as `/products`. An integration test asserts
+   the total stays under an hour so nobody raises it casually.
+
+9. **The projection is narrow.** A row relates to the **Order Form Submission** it
+   was made for; neither that order nor the customer behind it is in the contract
+   or the mapping. `PortfolioPiece` carries an id, a title, the image URLs, its
+   facet values, and the Notion created time it is ordered by — nothing else.
+
+10. **The page renders what it is given.** It never hardcodes a filter option and
+    never assumes a dimension exists; chips are read back through the server's
+    current options, so a visitor is never stranded on an option the atelier just
+    unpublished. Dimensions AND, values within a dimension OR. Four terminal states
+    — loading, error, nothing published, nothing matching the filters — because a
+    gallery that is merely empty reads as broken.
+
+**Atelier setup.** One required property; everything else is additive, and a
+property the database lacks simply contributes nothing.
+
+| Property          | Type                       | Effect                                                                       |
+| ----------------- | -------------------------- | ---------------------------------------------------------------------------- |
+| `Show on website` | checkbox — **required**    | Ticking it publishes that piece. Until it exists, nothing is published       |
+| `Completed`       | date _(optional)_          | Orders the gallery by when the piece was made rather than when it was typed  |
+| `Stage`           | select _(optional)_        | `Concept` / `In progress` / `Delivered`; the rename of `Type`, both are read |
+| `Discipline`      | multi_select _(optional)_  | Adds a Discipline chip row once two published pieces differ                  |
+| `Season`          | select / text _(optional)_ | Adds a Season chip row; match the Competitions database's `2026-27` form     |
+| `Colorway`        | multi_select _(optional)_  | Adds a Colorway chip row. Reuse the intake picker's colour names             |
+| `Techniques`      | multi_select _(optional)_  | Adds a Technique chip row (Rhinestoning, Appliqué, Hand-beading, …)          |
+| `Competition`     | select _(optional)_        | Adds a Competition chip row                                                  |
+| `Finished`        | files _(optional)_         | A design's finished photographs; leads the card, ahead of every other image  |
+| `Mockup`          | files _(optional)_         | A design's digital mockups                                                   |
+| `Sketch`          | files _(optional)_         | The sketch it began as                                                       |
+
+`Name`, `Image / Sketch` and `Type` already exist and are read as they are.
+Then share the Notion integration with the database and set
+**`NOTION_PORTFOLIO_DATABASE_ID`** — unset ⇒ `/portfolio` serves an empty gallery
+and says so, rather than erroring.
+
+**`Type` was renamed to `Stage`** (August 2026) — from "what medium is this
+image" (Preliminary Sketch / Completed Dress / Digital Mockup) to "where is this
+design" (`Concept` / `In progress` / `Delivered`), which is the question that
+survives a row being a design carrying several images rather than one picture.
+The facet's `label` is `"Stage"` to match. `Type` is still read behind it: the
+alias costs nothing, and a workspace restored from an older backup would
+otherwise silently lose that whole chip row.
+
+Note the rename **did not carry the row values across** — Notion replaced the
+option list, so every row's `Stage` came back empty and had to be re-stamped by
+hand. Worth remembering before renaming a select's options on a database that
+already has rows in it.
+
+**The colour vocabulary is shared with the intake form.** `Colorway`'s options
+should be the same names as the order form's colour picker (the `COLOR_PALETTE`
+Studio Setting, or the built-in primary palette when it's unset: Red, Orange,
+Yellow, Green, Blue, Purple, Pink, Black, White, Ivory, Gold, Silver). A visitor
+who filters the portfolio by one word and meets a different word on the order
+form has hit a seam. Broad buckets also filter better than exact fabric shades,
+which mostly match one piece each. Nothing in code enforces the correspondence —
+change both together.
+
+**Two properties the app deliberately never reads**, worth having anyway: an
+`Order Form Submissions` relation back to the commission (the atelier's
+click-through from a photograph to the measurements and the invoice — it is
+absent from the contract and the mapping on purpose, so no customer data can
+leak), and a relation to the materials database, which is what turns the archive
+from a gallery into a reference library.
+
+`Competition` is deliberately a plain property rather than a relation to the
+**🏆 Competitions** database: that one is the _marketing calendar_ (when to start
+a push ahead of an event, with `Active` / `Push starts` / `Lead time`), not
+portfolio metadata, so relating to it would couple a filter chip to a scheduling
+tool and cost a second database share for a string.
+
+**Known limits.** The gallery is one flat list — there is no pagination and no
+per-piece page, so a portfolio grown past a few hundred rows wants both, and a
+piece cannot be deep-linked or shared on its own the way `/shop/:productId` can.
+`SMOKE_EXPECT_PORTFOLIO=1` is worth setting once pieces are live, for the same
+reason as `SMOKE_EXPECT_REVIEWS`.
+
 ### Curating which reviews show (Notion views)
 
 Selecting a testimonial is normally a **dashboard action** now (see the section
@@ -3581,6 +3763,7 @@ and a boolean aren't sensitive), so they are repo **variables**, not secrets:
 | -------------------------- | ------------------------------------------------------------- | ------------------------------------------------------------------ |
 | `SMOKE_KNOWN_ORDER_NUMBER` | Falls back to the **`ORD-TEST-00000`** default in `smoke.yml` | Overrides the default with that order                              |
 | `SMOKE_EXPECT_REVIEWS`     | `reviews.smoke.ts` accepts an empty list                      | `1` requires `GET /api/reviews` to return at least one testimonial |
+| `SMOKE_EXPECT_PORTFOLIO`   | `portfolio.smoke.ts` accepts an empty gallery                 | `1` requires `GET /api/portfolio` to return at least one piece     |
 
 `SMOKE_KNOWN_ORDER_NUMBER` gates the **only** spec that asserts a _successful_ data
 render. Every other data spec proves "the endpoint didn't error" — a regression that broke
@@ -3905,6 +4088,13 @@ in the maintainer's env without edits.
   replacing the file, never a deploy. Unset ⇒ the guides panel says it isn't
   connected. Read at first use in `getStudioGuidesNotionClient`; gated by
   `guidesConfigured()`. See "How-to guides on the studio dashboard" above.
+- **Optional portfolio database:** `NOTION_PORTFOLIO_DATABASE_ID` (the "🎨 Design
+  Portfolio & Sketch Library" database). When set (and the integration is shared
+  with it), `/portfolio` shows every row whose **`Show on website`** checkbox is
+  ticked, with filter chips derived from the published rows. Read-only — the app
+  never writes that database. Unset (or a Notion 404) ⇒ the gallery is empty and
+  says so, rather than erroring a marketing page. Read at first use in
+  `getPortfolioNotionClient`. See "Portfolio & finished-work gallery" above.
 
 ### Environment variables
 
@@ -3949,6 +4139,7 @@ scope went with the working-hours sheet.
 | `NOTION_ORDER_LINES_DATABASE_ID`                                                                                  | No order lines written ⇒ shop stock never decrements                |
 | `NOTION_MATERIALS_DATABASE_ID`                                                                                    | No materials panel (`configured: false`) and no weekly digest       |
 | `NOTION_STUDIO_GUIDES_DATABASE_ID`                                                                                | No how-to guides; the dashboard panel says it isn't connected       |
+| `NOTION_PORTFOLIO_DATABASE_ID`                                                                                    | No portfolio pieces; `/portfolio` shows its empty state             |
 | `MATERIALS_DIGEST_WEEKDAY`                                                                                        | `Monday` (read in the studio timezone)                              |
 | `NOTION_RELATION_LINKS` (`1`/`true`/`yes`)                                                                        | Off — no order/inventory relations written (see "Relate requests…") |
 | `STRIPE_SHIPPING_RATE_IDS`                                                                                        | No shipping charged, no shipping options at checkout                |
@@ -4101,6 +4292,7 @@ Three things about it are load-bearing:
 | Change the newsletter panel on the dashboard             | `web-app/src/components/studio-newsletter.tsx` (rendered by `pages/studio.tsx`); `services/studio-newsletter.service.ts` + the `/studio/newsletter` handlers in `routes/studio.ts` + the newsletter half of `lib/notion/requests.{schema,repository}.ts` + the read side of `lib/resend/audience.ts` (`listAudienceContacts` / `membershipIn` — membership is never stored)                                                                                                                                                                                                                                                                                                                                                                                     |
 | Change post-delivery review capture                      | `artifacts/web-app/src/components/review-dialog.tsx` (opened from `components/custom-order-result.tsx` for delivered orders); `api-server/src/services/review.service.ts` + `services/delivery.ts` + `routes/orders.ts` + `lib/notion/reviews.{blocks,repository}.ts` (writes to the **Reviews** database)                                                                                                                                                                                                                                                                                                                                                                                                                                                      |
 | Change the published testimonials                        | `artifacts/web-app/src/components/testimonials.tsx` (rendered by `pages/home.tsx` + `pages/about.tsx`); `getPublishedReviews` in `api-server/src/services/review.service.ts` + `routes/reviews.ts` + `lib/notion/reviews.schema.ts`                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                             |
+| Change the portfolio gallery                             | `artifacts/web-app/src/pages/portfolio.tsx` (the grid, chips and lightbox); `api-server/src/lib/notion/portfolio.schema.ts` (`FACET_DEFINITIONS` — the filter DIMENSIONS; the options are derived, never hardcoded) + `portfolio.repository.ts` (the bounded scan + degrade rules) + `services/portfolio.service.ts` + `routes/portfolio.ts`. Reads the "Design Portfolio & Sketch Library" database via `NOTION_PORTFOLIO_DATABASE_ID`; the app never writes it                                                                                                                                                                                                                                                                                                |
 | Change the studio's daily Notion ops page                | The **🧭 Studio Operations** page under **{ A.A. Atelier }** — four linked views over Custom Orders / Production Schedule / Reviews / Website Contact Messages; no code; see `.agents/memory/studio-operations-page.md`                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                         |
 | Curate which reviews show on the site                    | The **Reviews** Notion database's saved views (Curate / Live on the site / Awaiting curation / Published but not showing) — no code; see `.agents/memory/reviews-curation-views.md`                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                             |
 | Change order cancellation & refunds                      | `artifacts/web-app/src/components/cancellation-request-dialog.tsx` (rendered by `components/custom-order-result.tsx` + `shop-order-result.tsx`); customer request in `api-server/src/services/cancellation.service.ts` + `routes/orders.ts` + `routes/shop-orders.ts` + `lib/notion/cancellation.{blocks,repository}.ts` (writes to the **contact** database); atelier refund in `services/order-cancellation.service.ts` + the `cancellation-refund` studio tool (`services/studio-tools.service.ts`) + the `Cancelled`/`setOrderCancelled`/`setShopOrderCancelled` writers                                                                                                                                                                                    |

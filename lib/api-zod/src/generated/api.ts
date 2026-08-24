@@ -322,6 +322,29 @@ export const GetProductsResponse = zod.object({
 
 
 /**
+ * Returns the finished costumes, sketches and mockups the atelier has published from its "Design Portfolio & Sketch Library" Notion database, newest first, alongside the filter facets derived from those same rows. Read-only and anonymous: a piece is served only when its "Show on website" checkbox is ticked, and the customer it was made for is never named. When the portfolio database is not configured — or the Notion integration has not been shared with it — the list is empty rather than an error, so a site without a portfolio simply shows none.
+ * @summary List the atelier's published portfolio pieces
+ */
+export const GetPortfolioResponse = zod.object({
+  "pieces": zod.array(zod.object({
+  "id": zod.string().describe('The piece\'s Notion page id, used only as a render key.'),
+  "title": zod.string().describe('The piece\'s name, as the atelier titled the row.'),
+  "images": zod.array(zod.string()).describe('The piece\'s photographs or sketches, in the order the atelier arranged them; the first is the gallery cover. These are Notion-signed URLs that expire in about an hour, which is why this response\'s edge cache is deliberately shorter than that. Never empty — a row with no image is not published.'),
+  "facets": zod.array(zod.object({
+  "id": zod.string().describe('The facet\'s stable id, matching a `PortfolioFilter.id` in the same response (for example \"type\" or \"discipline\"). Never shown to the visitor — the filter\'s `label` is.'),
+  "values": zod.array(zod.string()).describe('This piece\'s values for that dimension. A single-value dimension (a select) carries one entry; a multi-select carries several. Never empty — a piece with no value for a dimension omits the facet entirely rather than carrying an empty list.')
+}).describe('One piece\'s values for a single filter dimension. Modelled as an ordered list rather than a map so a new dimension is a server-side change with no contract edit, and so clients render facets in the order the server declares them.')).describe('The piece\'s values for each filter dimension it has one for, in the server\'s declared facet order. Dimensions the piece carries no value for are omitted rather than sent empty.'),
+  "publishedAt": zod.coerce.date().optional().describe('When the row was created in Notion. Omitted when Notion returned no created time. The gallery is ordered newest-first by the piece\'s optional \"Completed\" date and falls back to this when it has none — that completion date is a server-side sort key and is deliberately not served, since nothing renders it.')
+}).describe('One published piece of the atelier\'s work. Deliberately narrow: the Notion row relates to the order it was made for, and neither that order nor the customer behind it is served here.')),
+  "filters": zod.array(zod.object({
+  "id": zod.string().describe('Stable id, matching `PortfolioFacetValues.id` on the pieces.'),
+  "label": zod.string().describe('The human label for the chip group, e.g. \"Discipline\".'),
+  "options": zod.array(zod.string()).describe('The distinct values published pieces carry for this dimension, alphabetically. Always two or more — a dimension every published piece answers the same way filters nothing and is omitted.')
+}).describe('One filter dimension offered above the gallery, with the options DERIVED from the published pieces rather than enumerated in code. A dimension no published piece carries a value for is omitted from the response entirely, so the chips reflect the atelier\'s actual work with no redeploy and clients must not hardcode either the options or which dimensions exist.'))
+})
+
+
+/**
  * Returns the studio's color palette for the custom-order intake form's color picker. The palette is an atelier-editable "Studio Settings" value (`COLOR_PALETTE`), falling back to a built-in primary-color palette, so this always returns a non-empty list.
  * @summary List custom-order palette colors
  */

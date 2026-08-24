@@ -13,6 +13,7 @@ import appointmentsRouter from "./appointments.js";
 import accountRouter from "./account.js";
 import studioRouter from "./studio.js";
 import reviewsRouter from "./reviews.js";
+import portfolioRouter from "./portfolio.js";
 
 const router = Router();
 
@@ -30,5 +31,6 @@ router.use(appointmentsRouter);
 router.use(accountRouter);
 router.use(studioRouter);
 router.use(reviewsRouter);
+router.use(portfolioRouter);
 
 export default router;

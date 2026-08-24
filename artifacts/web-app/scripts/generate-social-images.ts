@@ -61,6 +61,10 @@ const ART: Record<string, { headline: string; subline: string }> = {
     headline: "Ready to wear",
     subline: "In-stock figure skating and dance pieces, ready to ship.",
   },
+  "/portfolio": {
+    headline: "Finished work\n& first sketches",
+    subline: "A gallery of costumes made to measure for skaters and dancers.",
+  },
   "/order": {
     headline: "Begin your\ncommission",
     subline:
