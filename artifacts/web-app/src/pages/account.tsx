@@ -16,6 +16,7 @@ import { Button } from "@/components/ui/button";
 import { PageShell } from "@/components/page-shell";
 import { Seo } from "@/components/seo";
 import { AppointmentManagePanel } from "@/components/appointment-manage-panel";
+import { AccountData } from "@/components/account-data";
 import { useAuth } from "@/lib/auth-context";
 import { useStudioAccess } from "@/lib/studio-access";
 import { ROUTE_SEO } from "@/lib/seo-routes";
@@ -160,6 +161,14 @@ export default function Account() {
             )}
 
             <Dashboard data={overview.data} />
+
+            {/* Below the orders, and outside `Dashboard`, because it is the one
+                section that is worth showing to an account with nothing in it:
+                a customer with no orders may still have sent us an inquiry and
+                be on the mailing list. */}
+            <div className="mt-12">
+              <AccountData />
+            </div>
           </>
         )}
       </div>

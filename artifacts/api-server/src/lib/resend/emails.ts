@@ -22,6 +22,7 @@ import {
   type CreateReturnInput,
 } from "../notion/return-request.blocks.js";
 import type { CreateReviewInput } from "../notion/reviews.blocks.js";
+import type { MarketingOptOutResult } from "../notion/data-deletion.blocks.js";
 import type { EmailMessage } from "./client.js";
 
 const ATELIER_NAME = "A.A Atelier";
@@ -832,6 +833,68 @@ export function newsletterWelcomeEmail(
   return {
     to: input.email,
     subject: `Welcome to ${ATELIER_NAME}`,
+    html,
+    text,
+  };
+}
+
+/**
+ * What the acknowledgement says about the mailing list, which is the only part
+ * of an erasure request the app completes on the spot. `unavailable` promises
+ * nothing — the studio does it by hand — because a customer told they were
+ * removed from a list the app couldn't reach has been told something untrue
+ * about the one thing that was supposed to have happened already.
+ */
+const DELETION_MARKETING_LINES: Record<MarketingOptOutResult, string> = {
+  unsubscribed:
+    "We've already taken you off our mailing list, so you won't receive any more studio news.",
+  absent:
+    "You weren't on our mailing list, so there was nothing to remove there.",
+  unavailable:
+    "We'll also make sure you're taken off our mailing list as part of this.",
+};
+
+/** Acknowledges a customer's request to have their data deleted. Deliberately
+ * says what has NOT happened yet: the studio reviews it by hand, and records it
+ * is required to keep may remain. */
+export function dataDeletionRequestConfirmationEmail(
+  email: string,
+  marketing: MarketingOptOutResult,
+): EmailMessage {
+  const marketingLine = DELETION_MARKETING_LINES[marketing];
+
+  const html = layout(
+    "We've received your request",
+    `<p>Hi there,</p>
+     <p>Thank you, we've received your request to delete the personal
+        information we hold about you. Someone from the studio will review it
+        and write to you to confirm what has been removed.</p>
+     <p>${marketingLine}</p>
+     <p>Some records we may need to keep for a period — an invoice or a payment
+        record, for instance, is a business record we're required to hold on to.
+        We'll tell you if that applies to anything of yours.</p>
+     <p>If you have an order with us in progress, do let us know whether you'd
+        like us to finish it first.</p>`,
+  );
+
+  const text = [
+    `Hi there,`,
+    ``,
+    `Thank you, we've received your request to delete the personal information we hold about you. Someone from the studio will review it and write to you to confirm what has been removed.`,
+    ``,
+    marketingLine,
+    ``,
+    `Some records we may need to keep for a period — an invoice or a payment record, for instance, is a business record we're required to hold on to. We'll tell you if that applies to anything of yours.`,
+    ``,
+    `If you have an order with us in progress, do let us know whether you'd like us to finish it first.`,
+    ``,
+    `Thank you,`,
+    `The ${ATELIER_NAME} team`,
+  ].join("\n");
+
+  return {
+    to: email,
+    subject: `We've received your data deletion request`,
     html,
     text,
   };
@@ -1761,6 +1824,53 @@ export function cancellationRequestNotificationEmail(
     replyTo: details.email,
     subject: `Cancellation requested — order ${details.orderNumber}`,
     html: internalLayout("Cancellation request", renderRowsHtml(fields)),
+    text: renderRowsText(fields),
+  };
+}
+
+/**
+ * Tells the atelier a customer has asked to be erased.
+ *
+ * The one internal notification with a clock on it: a data-subject request
+ * carries a statutory deadline, and unlike a refund or a restock there is no
+ * dashboard tool that will eventually catch it — a person has to decide what
+ * may go and remove it by hand. So the mail names the deadline-bearing facts
+ * (who, their sign-in account id) and says plainly what the app did and did not
+ * already do.
+ */
+export function dataDeletionRequestNotificationEmail(
+  details: {
+    email: string;
+    userId?: string;
+    note?: string;
+    marketing: MarketingOptOutResult;
+  },
+  to: string,
+): EmailMessage {
+  const marketing: Record<MarketingOptOutResult, string> = {
+    unsubscribed: "Unsubscribed by the app",
+    absent: "Was not on the audience",
+    unavailable: "NOT done — unsubscribe them by hand",
+  };
+
+  const fields: Field[] = [
+    ["Email", details.email],
+    ...(details.userId
+      ? [["Sign-in account id", details.userId] as Field]
+      : []),
+    ["Mailing list", marketing[details.marketing]],
+    ...(details.note ? [["Their note", details.note] as Field] : []),
+    [
+      "Still to do",
+      "Decide what may be erased, then remove the Notion rows, the Client CRM record and the sign-in account by hand. Nothing else has been deleted.",
+    ],
+  ];
+
+  return {
+    to,
+    replyTo: details.email,
+    subject: `Data deletion requested — ${details.email}`,
+    html: internalLayout("Data deletion request", renderRowsHtml(fields)),
     text: renderRowsText(fields),
   };
 }

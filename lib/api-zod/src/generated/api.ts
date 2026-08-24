@@ -711,6 +711,116 @@ export const GetAccountOverviewResponse = zod.object({
 
 
 /**
+ * Gathers every record keyed on the signed-in customer's email — their custom and shop orders, upcoming appointments, Client CRM record, the requests they have filed with the studio, the reviews they have written, and whether they are on the marketing list — for a data-access (GDPR / CCPA) request the customer can serve themselves. Read-only.
+ *
+ * Every source degrades independently: one that can't be read is named in `unavailable` rather than silently omitted, so a partial export is visibly partial. Photographs the customer uploaded (reference images, review photos) are NOT included — they live as image blocks on a Notion page behind short-lived signed URLs, so they are requested from the studio by email instead.
+ * @summary Everything the studio holds about the signed-in customer
+ */
+export const exportAccountDataResponseReviewsItemRatingMax = 5;
+
+
+
+export const ExportAccountDataResponse = zod.object({
+  "generatedAt": zod.coerce.date().describe('When this export was assembled.'),
+  "email": zod.string().describe('The signed-in email every record below was looked up by.'),
+  "userId": zod.string().optional().describe('The customer\'s sign-in account id (the Supabase user id). The only thing the studio holds that is not keyed on the email.'),
+  "customOrders": zod.array(zod.object({
+  "orderNumber": zod.string(),
+  "orderName": zod.string(),
+  "currentStage": zod.string(),
+  "state": zod.enum(['active', 'completed', 'cancelled']).describe('Where an order sits in its lifecycle, derived server-side so the dashboard never has to infer it from a stage\/status name. \"completed\" means the order has reached the final stage\/status in its live list (delivered for a custom order, fulfilled for a shop order); \"cancelled\" means the atelier has cancelled it (and takes precedence over \"completed\"); everything else is \"active\".'),
+  "stages": zod.array(zod.string()).describe('The live ordered stage list, so the dashboard can show progress (e.g. \"3 of 6\").'),
+  "estimatedCompletion": zod.string().optional().describe('The order\'s target completion date (its Due Date) as an ISO date (yyyy-mm-dd). A pass-through string (no format: date). Absent until the atelier sets one.'),
+  "measurements": zod.object({
+  "unit": zod.enum(['inches', 'cm']).describe('The unit the measurement values are expressed in.'),
+  "waist": zod.number().optional(),
+  "bust": zod.number().optional(),
+  "hips": zod.number().optional(),
+  "height": zod.number().optional(),
+  "bodyGirth": zod.number().optional()
+}).optional().describe('The measurements on file for a custom order, read from the order\'s Notion properties. Absent when the customer chose to have measurements taken at a fitting, or for orders placed before measurements were stored as readable properties (those values remain only in the order\'s page body). Individual values may be absent for a partially-filled order.')
+}).describe('A custom order as shown on the account dashboard (links out to the full tracking + invoice views).')).describe('The customer\'s custom (bespoke) orders, including the measurements on file.'),
+  "shopOrders": zod.array(zod.object({
+  "orderNumber": zod.string(),
+  "status": zod.string().describe('The order\'s current fulfilment status.'),
+  "state": zod.enum(['active', 'completed', 'cancelled']).describe('Where an order sits in its lifecycle, derived server-side so the dashboard never has to infer it from a stage\/status name. \"completed\" means the order has reached the final stage\/status in its live list (delivered for a custom order, fulfilled for a shop order); \"cancelled\" means the atelier has cancelled it (and takes precedence over \"completed\"); everything else is \"active\".'),
+  "total": zod.number().optional().describe('The order total in dollars, when recorded.')
+}).describe('A ready-to-wear shop order as shown on the account dashboard.')).describe('The customer\'s ready-to-wear shop orders.'),
+  "appointments": zod.array(zod.object({
+  "status": zod.enum(['confirmed', 'cancelled']).describe('Whether the appointment is still on the calendar or was cancelled.'),
+  "timezone": zod.string().describe('IANA timezone the atelier\'s hours and slot times are expressed in, for the client to render the appointment\'s times.'),
+  "confirmationCode": zod.string(),
+  "typeId": zod.string().describe('The appointment type\'s id, so the reschedule flow can re-query availability for the same type.'),
+  "typeName": zod.string(),
+  "staff": zod.string(),
+  "location": zod.enum(['in-person', 'virtual']),
+  "locationLabel": zod.string(),
+  "start": zod.coerce.date(),
+  "end": zod.coerce.date(),
+  "meetingUrl": zod.string().optional().describe('The Google Meet link for a virtual appointment, when one exists.'),
+  "canModify": zod.boolean().describe('Whether the appointment can still be rescheduled or cancelled — false once it has started or been cancelled.')
+}).describe('A booked appointment\'s current state, read live from Google Calendar for the self-service reschedule \/ cancel page.')).describe('The customer\'s upcoming appointments. Past bookings are not listed — the calendar is only searched forward, the same read the dashboard makes. Deliberately without the signed manage token the dashboard carries: that token is a credential, and an export is a file people forward.'),
+  "client": zod.object({
+  "name": zod.string().optional(),
+  "email": zod.string().optional(),
+  "phone": zod.string().optional(),
+  "status": zod.string().optional().describe('How the studio files them (Lead, Active, …).'),
+  "lastContact": zod.string().optional().describe('The date of the studio\'s last recorded contact (YYYY-MM-DD).'),
+  "referralCode": zod.string().optional().describe('The customer\'s own shareable referral code.'),
+  "referredByEmail": zod.string().optional().describe('The email of the customer who referred them, when they used a code.'),
+  "firstPaidOrder": zod.string().optional().describe('The order number of their first paid order, once they have one.')
+}).optional().describe('The customer\'s Client CRM record — the studio\'s own contact card for them. Absent when the CRM isn\'t configured, when the customer has no record, or when the CRM couldn\'t be read (in which case it is named in `unavailable`).'),
+  "requests": zod.array(zod.object({
+  "kind": zod.enum(['inquiry', 'back-in-stock', 'measurement', 'cancellation', 'return', 'waitlist', 'newsletter', 'data-deletion', 'other']).describe('What a customer is asking for, DERIVED from the row\'s `Request type` select rather than enumerated from it. Eight kinds name the values the app writes; `other` is anything else — a blank select, or a type the atelier invented — so an unrecognized row appears in the queue asking to be looked at rather than vanishing from it.\n\n`newsletter` never appears in the request QUEUE — an opt-in is a consent record nobody answers, so it has its own panel (see `\/studio\/newsletter`) and is filtered out of the queue. The kind still exists because the queue\'s state operation is shared across the whole contact inbox, and it answers with the row it wrote.'),
+  "rawType": zod.string().optional().describe('The request type exactly as the studio\'s inbox holds it, when set.'),
+  "subject": zod.string(),
+  "message": zod.string().optional(),
+  "item": zod.string().optional(),
+  "size": zod.string().optional(),
+  "orderNumber": zod.string().optional(),
+  "state": zod.enum(['new', 'replied', 'closed']).describe('Where a request stands in the inbox, derived from its Notion `Stage`. `closed` is the only value that takes it off the queue, so a row with a blank or unrecognized stage reads as `new` — an untriaged request should appear rather than disappear.'),
+  "submittedAt": zod.coerce.date().optional()
+}).describe('One row the customer filed in the studio\'s shared inbox. A narrower projection than the studio queue\'s — the internal Notion link and the tool that actions it are staff-facing and stay on the server.')).describe('Everything the customer has filed with the studio — inquiries, back-in-stock asks, measurement changes, cancellations, returns, waitlist entries and marketing opt-ins. Newest first.'),
+  "reviews": zod.array(zod.object({
+  "rating": zod.number().int().min(1).max(exportAccountDataResponseReviewsItemRatingMax),
+  "comment": zod.string(),
+  "customerName": zod.string().optional().describe('How they asked to be credited, when they gave a name.'),
+  "orderNumber": zod.string().optional(),
+  "consentToPublish": zod.boolean(),
+  "status": zod.enum(['pending', 'published', 'rejected']).describe('Where a review stands with the atelier. `pending` is anything not yet decided — including the \"New\" it is captured with — so a review can only ever be waiting, shown, or set aside.'),
+  "submittedAt": zod.coerce.date().optional()
+}).describe('One review the customer wrote. The photographs attached to it are not included — see the endpoint description.')).describe('The reviews the customer has written, whether or not they were published.'),
+  "marketing": zod.object({
+  "status": zod.enum(['subscribed', 'absent', 'unknown']).describe('`subscribed` — on the list; `absent` — not on it; `unknown` — the list isn\'t configured or couldn\'t be reached, which is reported rather than rendered as \"not on it\".')
+}).describe('Where the customer stands on the studio\'s marketing mailing list.'),
+  "unavailable": zod.array(zod.string()).describe('The sources that could not be read for this export, by their customer-facing name (\"Custom orders\", \"Reviews\"). Empty on a complete export. Named rather than silently omitted: an export missing a source without saying so is a wrong answer to a legal request, not a slightly smaller one.')
+}).describe('Everything the studio holds about the signed-in customer, gathered for a data-access request. Identity is the email on the session, exactly as it is for the dashboard, so this is the same lookups widened to every store the app writes personal data into.\n\nThe Postgres layer is deliberately not a source of its own: it holds an email-keyed discovery index (order numbers and page ids) derived from the Notion orders already listed here, so exporting it separately would repeat the same facts in a less readable form.')
+
+
+/**
+ * Files an erasure request for the signed-in customer. The request lands as a tagged row in the studio's contact inbox for a person to action — this endpoint deliberately deletes nothing itself, because orders, invoices and payment records are business records the studio is required to keep for a period, and what may be erased is a judgement rather than a switch.
+ *
+ * The one erasure it DOES perform immediately is the marketing list: the customer is unsubscribed from the studio's Resend audience, which is their own action to take and needs nobody's review.
+ *
+ * Filing is idempotent while a request is open — a second press reports the request already on file rather than adding a duplicate row to the inbox.
+ * @summary Ask the studio to delete the signed-in customer's data
+ */
+export const requestAccountDeletionBodyNoteMax = 2000;
+
+
+
+export const RequestAccountDeletionBody = zod.object({
+  "note": zod.string().max(requestAccountDeletionBodyNoteMax).optional().describe('Anything the customer wants the studio to know — which records they mean, or that an order should be finished first.')
+}).describe('An erasure request. The customer is identified by their session, so the body carries only optional context for the person who will action it.')
+
+export const RequestAccountDeletionResponse = zod.object({
+  "received": zod.boolean(),
+  "alreadyRequested": zod.boolean().describe('True when a request from this customer was already open, so no second row was filed. The marketing opt-out is still applied.'),
+  "marketing": zod.enum(['unsubscribed', 'absent', 'unavailable']).describe('The one erasure performed on the spot. `unsubscribed` — removed from the marketing list; `absent` — they were not on it; `unavailable` — the list isn\'t configured or couldn\'t be reached, so the studio does it by hand.')
+}).describe('What the studio did with the erasure request, said plainly.')
+
+
+/**
  * The standing working hours the slot calculator uses as its positive availability grid — one entry per staff member per block of hours, with the weekdays it repeats on and the locations it can be booked for. This is the schedule the atelier edits on the dashboard; it used to live in a Google Sheet. Same staff gate as the rest of the studio surface: 401 when not signed in, 404 when signed in but not staff, 403 when staff but not signed in with Google.
  * @summary The staff working-hours schedule
  */
@@ -1200,7 +1310,7 @@ export const SetStudioSettingResponse = zod.object({
 export const ListStudioRequestsResponse = zod.object({
   "open": zod.array(zod.object({
   "id": zod.string().describe('The request\'s Notion page id; also what a state change is addressed to.'),
-  "kind": zod.enum(['inquiry', 'back-in-stock', 'measurement', 'cancellation', 'return', 'waitlist', 'newsletter', 'other']).describe('What a customer is asking for, DERIVED from the row\'s `Request type` select rather than enumerated from it. Seven kinds name the values the app writes; `other` is anything else — a blank select, or a type the atelier invented — so an unrecognized row appears in the queue asking to be looked at rather than vanishing from it.\n\n`newsletter` never appears in the request QUEUE — an opt-in is a consent record nobody answers, so it has its own panel (see `\/studio\/newsletter`) and is filtered out of the queue. The kind still exists because the queue\'s state operation is shared across the whole contact inbox, and it answers with the row it wrote.'),
+  "kind": zod.enum(['inquiry', 'back-in-stock', 'measurement', 'cancellation', 'return', 'waitlist', 'newsletter', 'data-deletion', 'other']).describe('What a customer is asking for, DERIVED from the row\'s `Request type` select rather than enumerated from it. Eight kinds name the values the app writes; `other` is anything else — a blank select, or a type the atelier invented — so an unrecognized row appears in the queue asking to be looked at rather than vanishing from it.\n\n`newsletter` never appears in the request QUEUE — an opt-in is a consent record nobody answers, so it has its own panel (see `\/studio\/newsletter`) and is filtered out of the queue. The kind still exists because the queue\'s state operation is shared across the whole contact inbox, and it answers with the row it wrote.'),
   "rawType": zod.string().optional().describe('The `Request type` select exactly as Notion holds it, when set. Shown for a row the app reads as `other`, so \"why is this here?\" is answerable without opening Notion.'),
   "subject": zod.string().describe('The row\'s title, as the writer composed it.'),
   "customerName": zod.string().optional().describe('Who wrote it, when the request records a name (inquiries do).'),
@@ -1222,7 +1332,7 @@ export const ListStudioRequestsResponse = zod.object({
 }).describe('One customer request as the queue shows it — the row from the shared contact inbox, plus what can be done about it. Staff-only.')).describe('Still waiting, OLDEST first — the queue proper. Anything not closed counts, including a row whose stage was never set.'),
   "closed": zod.array(zod.object({
   "id": zod.string().describe('The request\'s Notion page id; also what a state change is addressed to.'),
-  "kind": zod.enum(['inquiry', 'back-in-stock', 'measurement', 'cancellation', 'return', 'waitlist', 'newsletter', 'other']).describe('What a customer is asking for, DERIVED from the row\'s `Request type` select rather than enumerated from it. Seven kinds name the values the app writes; `other` is anything else — a blank select, or a type the atelier invented — so an unrecognized row appears in the queue asking to be looked at rather than vanishing from it.\n\n`newsletter` never appears in the request QUEUE — an opt-in is a consent record nobody answers, so it has its own panel (see `\/studio\/newsletter`) and is filtered out of the queue. The kind still exists because the queue\'s state operation is shared across the whole contact inbox, and it answers with the row it wrote.'),
+  "kind": zod.enum(['inquiry', 'back-in-stock', 'measurement', 'cancellation', 'return', 'waitlist', 'newsletter', 'data-deletion', 'other']).describe('What a customer is asking for, DERIVED from the row\'s `Request type` select rather than enumerated from it. Eight kinds name the values the app writes; `other` is anything else — a blank select, or a type the atelier invented — so an unrecognized row appears in the queue asking to be looked at rather than vanishing from it.\n\n`newsletter` never appears in the request QUEUE — an opt-in is a consent record nobody answers, so it has its own panel (see `\/studio\/newsletter`) and is filtered out of the queue. The kind still exists because the queue\'s state operation is shared across the whole contact inbox, and it answers with the row it wrote.'),
   "rawType": zod.string().optional().describe('The `Request type` select exactly as Notion holds it, when set. Shown for a row the app reads as `other`, so \"why is this here?\" is answerable without opening Notion.'),
   "subject": zod.string().describe('The row\'s title, as the writer composed it.'),
   "customerName": zod.string().optional().describe('Who wrote it, when the request records a name (inquiries do).'),
@@ -1262,7 +1372,7 @@ export const SetStudioRequestStateBody = zod.object({
 
 export const SetStudioRequestStateResponse = zod.object({
   "id": zod.string().describe('The request\'s Notion page id; also what a state change is addressed to.'),
-  "kind": zod.enum(['inquiry', 'back-in-stock', 'measurement', 'cancellation', 'return', 'waitlist', 'newsletter', 'other']).describe('What a customer is asking for, DERIVED from the row\'s `Request type` select rather than enumerated from it. Seven kinds name the values the app writes; `other` is anything else — a blank select, or a type the atelier invented — so an unrecognized row appears in the queue asking to be looked at rather than vanishing from it.\n\n`newsletter` never appears in the request QUEUE — an opt-in is a consent record nobody answers, so it has its own panel (see `\/studio\/newsletter`) and is filtered out of the queue. The kind still exists because the queue\'s state operation is shared across the whole contact inbox, and it answers with the row it wrote.'),
+  "kind": zod.enum(['inquiry', 'back-in-stock', 'measurement', 'cancellation', 'return', 'waitlist', 'newsletter', 'data-deletion', 'other']).describe('What a customer is asking for, DERIVED from the row\'s `Request type` select rather than enumerated from it. Eight kinds name the values the app writes; `other` is anything else — a blank select, or a type the atelier invented — so an unrecognized row appears in the queue asking to be looked at rather than vanishing from it.\n\n`newsletter` never appears in the request QUEUE — an opt-in is a consent record nobody answers, so it has its own panel (see `\/studio\/newsletter`) and is filtered out of the queue. The kind still exists because the queue\'s state operation is shared across the whole contact inbox, and it answers with the row it wrote.'),
   "rawType": zod.string().optional().describe('The `Request type` select exactly as Notion holds it, when set. Shown for a row the app reads as `other`, so \"why is this here?\" is answerable without opening Notion.'),
   "subject": zod.string().describe('The row\'s title, as the writer composed it.'),
   "customerName": zod.string().optional().describe('Who wrote it, when the request records a name (inquiries do).'),

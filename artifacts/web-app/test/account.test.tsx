@@ -57,6 +57,16 @@ vi.mock("@workspace/api-client-react", () => ({
   getGetAppointmentAvailabilityQueryKey: () => ["availability"],
   useRescheduleAppointment: () => ({ mutate: vi.fn(), isPending: false }),
   useCancelAppointment: () => ({ mutate: vi.fn(), isPending: false }),
+  // The "Your data" panel mounts below the orders (its own behavior is covered
+  // in account-data.test.tsx); it fetches nothing until pressed.
+  useExportAccountData: () => ({ refetch: vi.fn(), isFetching: false }),
+  getExportAccountDataQueryKey: () => ["account-export"],
+  useRequestAccountDeletion: () => ({
+    mutate: vi.fn(),
+    isPending: false,
+    isError: false,
+    error: null,
+  }),
 }));
 
 import { useGetAccountOverview } from "@workspace/api-client-react";

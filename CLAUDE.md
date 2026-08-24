@@ -83,6 +83,22 @@ Express app (artifacts/api-server)  ──►  Notion REST API (orders database)
   │                                  on a calendar outage). Bearer-JWT gated (401).
   │                                  Sign-in runs on Supabase Auth in the browser;
   │                                  there is NO server login/logout/verify route
+  ├─ GET  /api/account/export      → everything the studio holds about the
+  │                                  signed-in customer, for a GDPR/CCPA access
+  │                                  request they serve themselves: orders, shop
+  │                                  orders, appointments, their Client CRM
+  │                                  record, the requests they've filed, the
+  │                                  reviews they've written, and their mailing-
+  │                                  list membership (read live from Resend).
+  │                                  Same Bearer JWT as the overview. Each source
+  │                                  degrades on its own and one that can't be
+  │                                  read is NAMED in `unavailable`
+  ├─ POST /api/account/deletion-requests
+  │                                → files an erasure request in the contact
+  │                                  database, tagged Request type = "Data
+  │                                  deletion". Deletes nothing itself except the
+  │                                  marketing opt-out, which it applies on the
+  │                                  spot; idempotent while a request is open
   ├─ GET  /api/studio/access       → "am I studio staff?" — the probe behind the
   │                                  navbar's staff-only Dashboard link, so the
   │                                  dashboard has a way in without the URL being
@@ -489,15 +505,16 @@ and a `*.repository.ts` for reads/writes). Three rules:
    `notion/product-categories.schema.ts`). These name values, not the list — rename
    those options in Notion and you must update them here too.
 
-3. **The contact database has seven writers.** "Website Contact Messages" holds
+3. **The contact database has eight writers.** "Website Contact Messages" holds
    contact-form messages (`contact.blocks.ts`), back-in-stock requests
    (`notify.blocks.ts`), measurement-change requests
    (`measurement-change.blocks.ts`), newsletter opt-ins (`newsletter.blocks.ts`),
    cancellation requests (`cancellation.blocks.ts`), shop-order return/exchange
-   requests (`return-request.blocks.ts`), and commission waitlist entries
-   (`waitlist.blocks.ts`), separated by the **Request type** select
+   requests (`return-request.blocks.ts`), commission waitlist entries
+   (`waitlist.blocks.ts`), and data-deletion requests
+   (`data-deletion.blocks.ts`), separated by the **Request type** select
    (`Inquiry` / `Back in stock` / `Measurement update` / `Newsletter` /
-   `Cancellation` / `Return / exchange` / `Waitlist`). A restock request carries **Item** and
+   `Cancellation` / `Return / exchange` / `Waitlist` / `Data deletion`). A restock request carries **Item** and
    **Size** as real properties, a measurement-change request carries the order
    number + requested measurements, and a return/exchange request carries the shop
    order number + kind + reason (reusing the shared **Item** property), so the
@@ -506,17 +523,19 @@ and a `*.repository.ts` for reads/writes). Three rules:
    order form) is folded into the subject.
 
    The property names these writers share are exported from `contact.blocks.ts` and
-   imported by the other six — and now by `requests.schema.ts`, which reads the
+   imported by the other seven — and by `requests.schema.ts`, which reads the
    same rows back for the studio dashboard's request queue (see "Customer requests
-   on the studio dashboard"). Keep it that way so they can't drift (the return and
+   on the studio dashboard") and for the customer's own data export. Keep it that
+   way so they can't drift (the return and
    waitlist writers also reuse `NOTIFY_ITEM_PROPERTY` from `notify.blocks.ts`).
-   All seven also
+   All eight also
    best-effort **link to the Client CRM** (the shared `Client` relation,
    `CONTACT_CLIENT_PROPERTY`) via the same `upsertClientByEmail` the order flow
    uses: an inquiry / back-in-stock request / newsletter opt-in creates a `Lead`; a
    measurement change / cancellation / return reuses the order's existing (`Active`)
-   client; a waitlist entry creates a `Lead`. See
-   `.agents/memory/notion-p2-duplicates.md`.
+   client; a waitlist entry creates a `Lead`; a data-deletion request reuses the
+   record it is asking to have deleted, which is the link the atelier follows to
+   delete it. See `.agents/memory/notion-p2-duplicates.md`.
 
 ### Newsletter opt-in and the mailing list
 
@@ -2871,6 +2890,98 @@ orders have no readable measurements). The Supabase auth email copy (confirm /
 magic-link / reset) is version-controlled in `.agents/memory/supabase-auth-emails.md`
 and pasted into the Supabase dashboard.
 
+## Data export & deletion requests (the customer's data rights)
+
+The privacy policy has always promised a customer could ask what the studio holds
+about them and ask for it to be deleted, and the only way to do either was to
+email the atelier and have a person assemble it by hand across Notion, Google and
+Resend. `/account` → **Your data** is that promise made self-service:
+`GET /account/export` gathers everything keyed on the signed-in email, and
+`POST /account/deletion-requests` files an erasure request. Both are
+contract-first, behind the same `requireCustomer` Bearer gate and
+`accountRateLimiter` as the overview. Code: `services/account-data.service.ts`,
+the two handlers in `routes/account.ts`, `lib/notion/data-deletion.{blocks,repository}.ts`,
+the by-email reads (`listRequestsByEmail`, `listReviewsByEmail`,
+`findClientProfileByEmail`), `unsubscribeAudienceContact` in `lib/resend/audience.ts`,
+the two email builders, and on the frontend `components/account-data.tsx`.
+
+1. **The export RUNS; the deletion ASKS, and that asymmetry is the design.**
+   Everything the export gathers is already readable by this customer, so serving
+   it is nobody's decision. Erasure is: orders, invoices and payment records are
+   business records the studio must keep for a period, and the customer's records
+   also live in Stripe, Google Calendar and Supabase Auth — which the app cannot
+   even reach for a delete (the portal holds the **anon** Supabase key, so it
+   cannot remove an auth user at all). A "delete everything" button would be
+   irreversible where it worked and untrue where it didn't, so it files one item
+   of work into the inbox the atelier already works down, carrying the account id
+   a human needs to finish the job. The row and the notification email both say
+   outright that nothing else has been deleted.
+
+2. **The one erasure performed on the spot is the marketing list**, because it is
+   the customer's own opt-out and needs nobody's judgement.
+   `unsubscribeAudienceContact` **suppresses rather than deletes** the Resend
+   contact — Resend is the subscription authority, and a deleted contact is one it
+   no longer knows to suppress if the address is ever re-added from an old list.
+   It never throws (the request must not be lost over it) and is three-valued:
+   `unsubscribed` / `absent` / **`unavailable`**, the last being "we couldn't ask",
+   which the customer email, the Notion row and the dashboard all render as still
+   to do rather than as done.
+
+3. **A source the export can't read is NAMED, never dropped.** Every read goes
+   through `readSource`, which catches, logs, and pushes a customer-facing label
+   onto `unavailable` — including the orders, which the studio queue would fail
+   loudly on. The reasoning differs because the reader differs: a legal request
+   has a deadline, so a labelled partial export beats a 500, and nothing is ever
+   silently absent. `marketing` is the exception that proves it: its own
+   `unknown` status already says "we couldn't ask" where the customer is reading,
+   so it isn't also listed.
+
+4. **It reuses the dashboard's own lookups.** `listCustomOrders` /
+   `listShopOrders` / `upcomingAppointments` are exported from
+   `account.service.ts` and called here, so the export and the portal can't
+   disagree about what the studio holds. The appointment's **signed manage token
+   is stripped**: it authorizes rescheduling and cancelling with no further
+   sign-in, and an export is a file people forward.
+
+5. **Every projection is narrowed to what is the customer's.** An exported
+   request drops the internal Notion URL and the tool that actions it; an
+   exported review drops `emailVerified` (the studio's check on the submission,
+   not something the customer told us) — but includes reviews the atelier never
+   published, because answering "what do you hold about me?" with "what we chose
+   to show" is not an answer. The requests read is the one place a **newsletter
+   opt-in is included** rather than filtered out: the queue excludes it because
+   nobody answers one, and the export includes it because a record of consent is
+   exactly what a customer is entitled to see.
+
+6. **Filing is idempotent while a request is open.** `hasOpenDataDeletionRequest`
+   (`Request type` + `Email` + `Stage != Closed`) means a second press reports the
+   request already on file instead of adding a duplicate row — erasure is the
+   request a worried customer presses twice, and unlike a cancellation there is no
+   order to hang the second press on. The opt-out still runs on a repeat, so a
+   first attempt that couldn't reach Resend gets another go.
+
+7. **Photographs are not in the export**, and the copy says so. Reference images
+   and review photos are image blocks on a Notion page behind signed URLs that
+   expire in about an hour, so a file full of dead links would be worse than an
+   honest omission plus "email us and we'll send them".
+
+8. **Postgres is deliberately not a source of its own.** `clients` /
+   `order_index` hold an email-keyed discovery index (order numbers, page ids,
+   order names) derived from the Notion orders the export already lists in full,
+   so exporting it separately would repeat the same facts less readably.
+
+On the studio side the request appears in the dashboard's **Customer requests**
+queue as the `data-deletion` kind, with **no tool** — like a measurement change,
+it is done by hand — and the panel's guidance names the deadline and the steps
+(remove the Notion rows, the Client CRM record and the Supabase auth user, then
+write to the customer).
+
+**Atelier setup: none.** No env var, no new database, no Notion property — it
+reads and writes the same contact database, the same `Client` relation, and the
+same Resend audience as before; the `Data deletion` `Request type` option
+auto-creates on first write. `RESEND_AUDIENCE_ID` unset ⇒ the marketing opt-out
+reports `unavailable` and the request says to do it by hand.
+
 ## Studio analytics dashboard (internal, staff-gated)
 
 The atelier's own numbers in one place — `pages/studio.tsx` at **`/studio`**, fed
@@ -4357,6 +4468,7 @@ Three things about it are load-bearing:
 | Change who can see the Dashboard nav link                | `web-app/src/lib/studio-access.ts` (the probe) + `useNavLinks()` / `DASHBOARD_LINK` in `components/navbar.tsx` (where it renders, in Account's place) + the staff hand-off in `pages/account.tsx` + the `/studio/access` route in `api-server/src/routes/studio.ts`; the gate itself is `requireStaff` (`middlewares/auth.ts`) + `lib/staff.ts`                                                                                                                                                                                                                                                                                                                                                                                                                                                       |
 | Change which API calls carry the auth token              | `artifacts/web-app/src/lib/api-auth.ts` (`requiresAuthToken`) + the getter in `lib/auth-context.tsx` + the `AuthTokenGetter` seam in `lib/api-client-react/src/custom-fetch.ts`; pinned to the spec by `web-app/test/api-auth.test.ts`                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                |
 | Change the customer account portal (Supabase Auth)       | `artifacts/web-app/src/pages/account.tsx` (+ `components/appointment-manage-panel.tsx`, shared with `pages/appointment-manage.tsx`) + `pages/account-login.tsx` / `account-callback.tsx` / `account-reset.tsx` + `lib/supabase.ts` + `lib/auth-context.tsx` (frontend); `api-server/src/services/account.service.ts` + `routes/account.ts` + `middlewares/auth.ts` + `lib/supabase/client.ts`; queries `findOrdersByEmail` / `findShopOrdersByEmail` + `listUpcomingAppointmentsByEmail` (`lib/google/calendar.repository.ts`, mapped via `lib/appointments/event-details.ts`) + `extractMeasurements` (`lib/notion/orders.schema.ts`). Auth emails: `.agents/memory/supabase-auth-emails.md`                                                                                                         |
+| Change the customer data export / deletion request       | `web-app/src/components/account-data.tsx` (rendered by `pages/account.tsx`) + the "Your choices" section of `pages/privacy.tsx`; `api-server/src/services/account-data.service.ts` + the two `/account` handlers in `routes/account.ts` + `lib/notion/data-deletion.{blocks,repository}.ts` + the by-email reads (`listRequestsByEmail`, `listReviewsByEmail`, `findClientProfileByEmail`) + `unsubscribeAudienceContact` in `lib/resend/audience.ts` + the two `dataDeletionRequest*Email` builders. The dashboard side is the `data-deletion` kind in `lib/notion/requests.schema.ts` + `components/studio-requests.tsx`                                                                                                                                                                            |
 | Change the internal studio dashboard                     | `artifacts/web-app/src/pages/studio.tsx` (+ the `/studio` route in `App.tsx`, `noindex` entry in `lib/seo-routes.ts`); `api-server/src/services/studio-analytics.service.ts` (the pure `aggregateStudioAnalytics` + the cached use-case) + `routes/studio.ts` + `requireStaff` in `middlewares/auth.ts` + `lib/staff.ts` (the `STUDIO_STAFF_EMAILS` allowlist + the `amr` Google check); the 403 panel's re-sign-in lands back via `web-app/src/lib/post-signin.ts` (read by `pages/account-callback.tsx`); reads via `lib/notion/scan.ts` + `listOrdersForAnalytics` / `listShopOrdersForAnalytics` / `listInvoicesForAnalytics`                                                                                                                                                                     |
 | Change the studio's how-to guides                        | `api-server/src/lib/guide-sections.ts` (the sections a guide can be filed against — a tool's id is its `StudioToolName`) + `lib/notion/guides.{schema,repository}.ts` (the Notion row + the file download) + `services/studio-guides.service.ts` (assembly, the HTML check, the 60s cache) + the `/studio/guides` route in `routes/studio.ts`; frontend `web-app/src/components/studio-guides.tsx` (`StudioGuides` panel + the `GuidesFor` slots), mounted by `pages/studio.tsx` and per tool by `components/studio-tools.tsx`. The sandboxed frame in that component is a security boundary — see the section above                                                                                                                                                                                  |
 | Change the studio's internal tools (generators, refunds) | `api-server/src/services/studio-tools.service.ts` (the dispatcher + the composed result wording) + `routes/studio.ts` (`POST /studio/tools/:tool`, `requireStaff`) + `web-app/src/components/studio-tools.tsx` (rendered by `pages/studio.tsx`); the underlying work stays in `services/{schedule,invoice-generator,order-notification,order-cancellation,return-refund}.service.ts`. Contract in `openapi.yaml` (`StudioTool` / `StudioToolRequest` / `StudioToolRun`)                                                                                                                                                                                                                                                                                                                               |
