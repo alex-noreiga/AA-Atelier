@@ -3166,10 +3166,15 @@ per tool, by `components/studio-tools.tsx`).
    and would make the sandbox read as defence-in-depth rather than the boundary
    it is. `web-app/test/studio-guides.test.tsx` asserts the two absent tokens.
 
-3. **A tool id IS a section id, and resolution fails OPEN.** The six tool
+3. **A tool id IS a section id, and resolution fails OPEN.** The seven tool
    sections are the same strings as `StudioToolName`, so
    `<GuidesFor section={spec.tool} />` inside a tool card needs no mapping
-   table. `resolveGuideSection` matches the row's `Section` against the served
+   table. Every tool must have one: a tool card still renders its `GuidesFor`
+   slot, so a missing section is a render point nothing resolves to and the
+   guide lands in the bottom panel instead, silently (`quote` shipped that way).
+   `test/unit/guide-sections.test.ts` drives the contract's own `StudioTool`
+   enum and fails when a tool has no section.
+   `resolveGuideSection` matches the row's `Section` against the served
    vocabulary — id **or** label, ignoring case, spacing and punctuation — and
    falls back to `general` for anything blank or unrecognized, so a misfiled
    guide loses its position on the page, never its existence (the opposite of

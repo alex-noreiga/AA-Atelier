@@ -1,4 +1,5 @@
 import { describe, it, expect } from "vitest";
+import { RunStudioToolParams } from "@workspace/api-zod";
 import {
   GUIDE_SECTIONS,
   GENERAL_GUIDE_SECTION,
@@ -46,5 +47,18 @@ describe("resolveGuideSection", () => {
 
   it("ends with general, which is the section the panel renders", () => {
     expect(GUIDE_SECTIONS.at(-1)?.id).toBe(GENERAL_GUIDE_SECTION);
+  });
+
+  // The dashboard renders `<GuidesFor section={spec.tool} />` inside every tool
+  // card, so a tool with no section here is a render point nothing can resolve
+  // to: the guide still exists, it just silently never appears beside its
+  // button. `quote` was missing for exactly that reason. Driven off the
+  // contract's own enum rather than a hand-copied list, so a tool added to the
+  // spec without a section fails here.
+  it("has a section for every studio tool, so no tool card is unreachable", () => {
+    const tools = RunStudioToolParams.shape.tool.options;
+    const ids = new Set(GUIDE_SECTIONS.map((section) => section.id));
+    const missing = tools.filter((tool) => !ids.has(tool));
+    expect(missing).toEqual([]);
   });
 });
