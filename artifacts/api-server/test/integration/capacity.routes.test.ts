@@ -131,6 +131,20 @@ describe("GET /api/capacity", () => {
     expect(mockOpenOrders).not.toHaveBeenCalled();
   });
 
+  it("closes the books on the switch alone, with no cap configured", async () => {
+    // The atelier shutting intake for a month without ever picking a capacity
+    // number — the switch's main use, and the state the settings sit in today.
+    configure({ COMMISSION_INTAKE: "closed" });
+
+    const res = await request(app).get("/api/capacity");
+
+    expect(res.body.open).toBe(false);
+    expect(res.body.waitlistOpen).toBe(true);
+    expect(res.body.message).toBe(DEFAULT_CLOSED_MESSAGE);
+    // Nothing to count when the atelier has said so outright.
+    expect(mockOpenOrders).not.toHaveBeenCalled();
+  });
+
   it("never reports how much work the studio is holding", async () => {
     configure({ COMMISSION_CAPACITY: "2" });
     mockOpenOrders.mockResolvedValue(["Bespoke Commission"]);

@@ -85,6 +85,33 @@ describe("POST /api/orders — the commission capacity gate", () => {
     expect(mockOpenOrders).not.toHaveBeenCalled();
   });
 
+  it("refuses a commission on the switch alone, with no cap configured", async () => {
+    // The switch overrides in both directions and is checked first, so it does
+    // not need a capacity number behind it to shut the door.
+    process.env.COMMISSION_INTAKE = "closed";
+
+    const res = await postOrder(createOrderInput({ service: "bespoke" }));
+
+    expect(res.status).toBe(409);
+    expect(mockCreate).not.toHaveBeenCalled();
+    expect(mockOpenOrders).not.toHaveBeenCalled();
+  });
+
+  it("holds the books open over the cap when the atelier forces it", async () => {
+    // The other direction: the count says full, the atelier says take it.
+    process.env.COMMISSION_CAPACITY = "1";
+    process.env.COMMISSION_INTAKE = "open";
+    mockOpenOrders.mockResolvedValue([
+      "Bespoke Commission",
+      "Bespoke Commission",
+    ]);
+
+    const res = await postOrder(createOrderInput({ service: "bespoke" }));
+
+    expect(res.status).toBe(201);
+    expect(mockCreate).toHaveBeenCalledOnce();
+  });
+
   it("takes a commission when the books are open", async () => {
     process.env.COMMISSION_CAPACITY = "5";
     mockOpenOrders.mockResolvedValue(["Bespoke Commission"]);

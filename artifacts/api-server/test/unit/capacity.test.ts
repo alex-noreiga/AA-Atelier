@@ -89,6 +89,19 @@ describe("resolveIntake", () => {
     });
   });
 
+  it("closes the books with NO cap set, which is the switch's main use", () => {
+    // The likeliest real use: the atelier wants the books shut for a month and
+    // has never picked a capacity number. `closed` is checked before the
+    // no-cap branch precisely so this works without one.
+    expect(
+      resolveIntake(undefined, { capacity: 0, override: "closed" }),
+    ).toEqual({ open: false, reason: "forced-closed" });
+    expect(resolveIntake(12, { capacity: 0, override: "closed" })).toEqual({
+      open: false,
+      reason: "forced-closed",
+    });
+  });
+
   it("checks the switch before the count, so an unreadable count can't override it", () => {
     expect(
       resolveIntake(undefined, { capacity: 5, override: "closed" }),
