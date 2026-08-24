@@ -96,7 +96,7 @@ export default function Footer() {
               A.A Atelier
             </Link>
             <p className="text-sm text-muted-foreground font-light leading-relaxed max-w-xs">
-              Bespoke figure skating and dance costumes, handcrafted and made to
+              Bespoke skating and dance costumes, handcrafted and made to
               measure.
             </p>
           </div>

@@ -17,8 +17,8 @@ export default function Terms() {
       <LegalSection title="Using this site">
         <p>
           By placing an order, booking an appointment, or making a purchase, you
-          agree to these terms. Please provide accurate information — including
-          your measurements and design notes — so we can craft your piece
+          agree to these terms. Please provide accurate information, including
+          your measurements and design notes, so we can craft your piece
           correctly.
         </p>
       </LegalSection>

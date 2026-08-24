@@ -278,7 +278,7 @@ export default function Appointments() {
         </div>
         <p className="text-sm text-muted-foreground">
           We've sent a calendar invitation and a confirmation email. Need to
-          reschedule or cancel? Use the link in that email — you can manage your
+          reschedule or cancel? Use the link in that email to manage your
           appointment any time.
         </p>
       </SuccessScreen>
@@ -295,7 +295,7 @@ export default function Appointments() {
             Book an Appointment
           </h1>
           <p className="text-muted-foreground font-light text-lg">
-            Consultations, fittings, and design reviews — choose a time that
+            Consultations, fittings, and design reviews. Choose a time that
             suits you.
           </p>
         </div>
@@ -559,7 +559,7 @@ export default function Appointments() {
                   />
                   <p className="text-xs text-muted-foreground/70 mt-1.5">
                     This appointment is for existing orders. Enter your order
-                    number — use the same email you placed the order with so we
+                    number, using the same email you placed the order with so we
                     can match it.
                   </p>
                   {errors.orderNumber && (

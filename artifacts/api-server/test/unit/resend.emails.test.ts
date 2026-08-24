@@ -205,7 +205,7 @@ describe("backInStockConfirmationEmail", () => {
       notifyInput({ item: "Bow Fleece Soaker — Black", size: "Adult S" }),
     );
 
-    expect(email.html).toContain("Bow Fleece Soaker — Black — Adult S");
+    expect(email.html).toContain("Bow Fleece Soaker — Black · Adult S");
   });
 });
 
@@ -454,7 +454,7 @@ describe("shopOrderConfirmationEmail", () => {
     expect(email.html).toContain("$1.08");
     expect(email.html).toContain("$53.08");
     expect(email.html).toContain("123 Rink Rd");
-    expect(email.text).toContain("2 × Bow Fleece Soaker — Black — $44.00");
+    expect(email.text).toContain("2 × Bow Fleece Soaker — Black: $44.00");
     expect(email.text).toContain("Total: $53.08");
   });
 
@@ -970,7 +970,7 @@ describe("backInStockAlertEmail", () => {
       size: "M",
     });
 
-    expect(email.subject).toBe("Back in stock: Bow Fleece Soaker — Black — M");
+    expect(email.subject).toBe("Back in stock: Bow Fleece Soaker — Black · M");
   });
 
   it("renders the shop button when a product URL is supplied", () => {

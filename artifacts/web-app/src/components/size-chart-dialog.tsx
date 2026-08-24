@@ -279,7 +279,7 @@ export function SizeChartDialog({
             </div>
 
             <p className="text-muted-foreground/70 text-xs font-light leading-relaxed mt-2">
-              Between two sizes? Size up — soakers stretch to fit. The
+              Between two sizes? Size up, as soakers stretch to fit. The
               skate-size column is approximate; measuring your blade is the
               reliable guide. Not sure? Reach out and we'll help you choose.
             </p>

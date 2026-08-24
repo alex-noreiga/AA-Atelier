@@ -88,7 +88,7 @@ interface TestimonialsProps {
  */
 export function Testimonials({
   eyebrow = "In Their Words",
-  title = "From our skaters",
+  title = "From our clients",
   className = "mt-24",
 }: TestimonialsProps) {
   const { data } = useGetPublishedReviews({ limit: TESTIMONIAL_LIMIT });

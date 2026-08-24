@@ -145,7 +145,7 @@ export function AppointmentManagePanel({
         >
           <p className="text-sm text-foreground">
             Cancel this appointment? This frees the time for others and
-            can&apos;t be undone — you&apos;d need to book again.
+            can&apos;t be undone, and you&apos;d need to book again.
           </p>
           <div className="flex flex-wrap gap-3">
             <Button

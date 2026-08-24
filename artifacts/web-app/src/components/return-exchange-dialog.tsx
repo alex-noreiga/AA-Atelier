@@ -275,7 +275,7 @@ export function ReturnExchangeDialog({
                   <Input
                     id="re-items"
                     {...register("items")}
-                    placeholder="e.g. Bow Fleece Soaker — Black, size M"
+                    placeholder="e.g. Bow Fleece Soaker in black, size M"
                     data-testid="return-exchange-items"
                     className={REQUEST_FORM_INPUT_CLASS}
                   />
