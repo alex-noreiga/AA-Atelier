@@ -154,6 +154,52 @@ describe("getInvoicePaymentInfo", () => {
     expect(info.deposits).toEqual(DEPOSITS);
     expect(info.invoice?.balanceDue).toBe(115.5);
   });
+
+  // A repair is quoted and paid once, so "First deposit" would tell the
+  // customer a second instalment is coming. The stages themselves are
+  // untouched — only what they're called. See `services/payment-labels.ts`.
+  it("calls a lone deposit on a repair just 'Deposit'", async () => {
+    mockFindInvoice.mockResolvedValue(
+      invoice({
+        ready: false,
+        deposits: [
+          {
+            stage: "first_deposit",
+            label: "First deposit",
+            amount: 100,
+            paid: false,
+          },
+        ],
+      }),
+    );
+    const info = await getInvoicePaymentInfo(
+      order({ service: "Repairs & Restoration" }),
+    );
+    expect(info.deposits[0]).toMatchObject({
+      stage: "first_deposit",
+      label: "Deposit",
+      amount: 100,
+    });
+  });
+
+  it("keeps the commission's staged wording", async () => {
+    mockFindInvoice.mockResolvedValue(invoice({ ready: false }));
+    const info = await getInvoicePaymentInfo(
+      order({ service: "Bespoke Commission" }),
+    );
+    expect(info.deposits.map((d) => d.label)).toEqual([
+      "First deposit",
+      "Second deposit",
+    ]);
+  });
+
+  // An order placed before the `Service` property existed resolves to the
+  // bespoke commission, i.e. exactly the wording it has always been shown.
+  it("leaves a legacy order with no service untouched", async () => {
+    mockFindInvoice.mockResolvedValue(invoice({ ready: false }));
+    const info = await getInvoicePaymentInfo(order({ service: undefined }));
+    expect(info.deposits).toEqual(DEPOSITS);
+  });
 });
 
 describe("createPaymentCheckout", () => {

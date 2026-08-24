@@ -646,6 +646,7 @@ export type StudioTool = typeof StudioTool[keyof typeof StudioTool];
 export const StudioTool = {
   milestones: 'milestones',
   'invoice-lines': 'invoice-lines',
+  quote: 'quote',
   'status-email': 'status-email',
   'cancellation-refund': 'cancellation-refund',
   'return-refund': 'return-refund',
@@ -1528,17 +1529,22 @@ export interface StudioAnalytics {
  */
 export interface StudioToolRequest {
   /**
-     * The order the tool acts on — `ORD-…` for a custom order, `SHP-…` for a shop order. Required by `invoice-lines`, `status-email` and the two refunds; `milestones` sweeps the whole pipeline and `restock-alert` takes an optional `item` instead.
+     * The order the tool acts on — `ORD-…` for a custom order, `SHP-…` for a shop order. Required by `invoice-lines`, `quote`, `status-email` and the two refunds; `milestones` sweeps the whole pipeline and `restock-alert` takes an optional `item` instead.
      * @maxLength 64
      */
   orderNumber?: string;
   /** `status-email` only. Resend the status update even when the order hasn't moved forward since the customer was last emailed. A forced resend never rewinds the high-water marker. */
   force?: boolean;
   /**
-     * `return-refund` only. The TARGET total to have refunded on the order, in dollars — not an increment, so a repeated run can't double-refund. Omit to refund in full.
+     * Dollars, read by two tools. For `return-refund` it is the TARGET total to have refunded on the order — not an increment, so a repeated run can't double-refund; omit to refund in full. For `quote` it is the price of the work and is REQUIRED, since a quote with no amount is nothing to pay.
      * @minimum 0
      */
   amount?: number;
+  /**
+     * `quote` only, and optional even there. What the work is, as the customer should read it on their invoice — "Re-stone bodice", "Replace shoulder elastic". Omitted ⇒ the line is named after the order's service ("Repair", "Rhinestoning", "Alterations").
+     * @maxLength 200
+     */
+  description?: string;
   /**
      * `restock-alert` only, and optional even there. The exact `Item Name` of one inventory row to alert on, as it appears in Notion — the same text a back-in-stock request stores. Omit it to sweep every piece that is currently in stock, which is what the nightly run does.
      * @maxLength 200

@@ -317,6 +317,10 @@ describe("sendDuePaymentReminders", () => {
       pageId: "inv-1",
       invoiceId: "Toothless",
       orderPageId: "order-1",
+      // Two deposits set, so the reminder keeps the staged ordinals whatever
+      // the order's service — the relabelling case has its own tests in
+      // `payment-labels.test.ts`.
+      depositCount: 2,
       stages: [
         {
           stage: "second_deposit" as const,

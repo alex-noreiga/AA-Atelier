@@ -36,6 +36,7 @@
 
 import { reconcileMilestones } from "./schedule.service.js";
 import { generateInvoiceLineItems } from "./invoice-generator.service.js";
+import { quoteOrder } from "./quote.service.js";
 import {
   notifyOrderStageChange,
   type StageChangeNotificationResult,
@@ -60,6 +61,7 @@ import { logger } from "../lib/logger.js";
 export type StudioToolName =
   | "milestones"
   | "invoice-lines"
+  | "quote"
   | "status-email"
   | "cancellation-refund"
   | "return-refund"
@@ -76,6 +78,7 @@ export interface StudioToolArgs {
   force?: boolean;
   amount?: number;
   item?: string;
+  description?: string;
 }
 
 /** One run's outcome, already composed for display. */
@@ -206,6 +209,51 @@ async function runInvoiceLines(
     title: "Invoice itemized",
     message: `Added ${listPhrase(parts)} to invoice ${result.orderNumber}, totalling ${money(result.invoiceTotal)}.`,
     details: [],
+  };
+}
+
+/** Quote a flat price for work with no costing behind it — a repair, a stoning
+ * job, an alteration. Writes one priced line to the order's invoice and ticks
+ * `Invoice Ready`, which is what makes the order payable online at all. */
+async function runQuote(args: StudioToolArgs): Promise<StudioToolRunResult> {
+  const result = await quoteOrder({
+    orderNumber: requireOrderNumber(args),
+    // `amount` is optional on the shared request body (each tool takes a
+    // different subset), so an omitted price arrives here as NaN and the
+    // service rejects it with the message the atelier needs to read.
+    amount: args.amount ?? Number.NaN,
+    ...(args.description !== undefined
+      ? { description: args.description }
+      : {}),
+  });
+
+  if (result.alreadyPresent) {
+    return {
+      tool: "quote",
+      status: "noop",
+      title: "Already quoted",
+      message: `Invoice ${result.orderNumber} already has line items, so nothing was added.`,
+      details: [
+        "To re-quote it, delete the existing lines in Notion and run this again.",
+      ],
+    };
+  }
+
+  const details = [
+    `The customer can now pay ${money(result.invoiceTotal)} from their tracking page.`,
+  ];
+  if (result.rushSurcharge > 0) {
+    details.push(
+      `This is a rush order, so a surcharge of ${money(result.rushSurcharge)} was added on top of the quote — the same fee they acknowledged at intake.`,
+    );
+  }
+
+  return {
+    tool: "quote",
+    status: "ok",
+    title: "Quote sent",
+    message: `Priced "${result.lineName}" at ${money(result.amount)} on invoice ${result.orderNumber} and marked it ready to pay.`,
+    details,
   };
 }
 
@@ -461,6 +509,8 @@ function dispatch(
       return runMilestones();
     case "invoice-lines":
       return runInvoiceLines(args);
+    case "quote":
+      return runQuote(args);
     case "status-email":
       return runStatusEmail(args);
     case "cancellation-refund":

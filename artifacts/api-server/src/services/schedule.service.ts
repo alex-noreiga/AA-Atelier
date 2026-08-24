@@ -11,6 +11,8 @@ import { reportError } from "./alert.service.js";
 import { notifyRestock } from "./restock-notification.service.js";
 import { sendWeeklyMaterialsDigest } from "./materials-digest.service.js";
 import { notifyUpcomingAppointments } from "./appointment-reminder.service.js";
+import { paymentStageLabel } from "./payment-labels.js";
+import { resolveStoredOrderService } from "../lib/service-catalog.js";
 import {
   fittingReminderLeadDays,
   fittingReminderStages,
@@ -318,7 +320,12 @@ export async function sendDuePaymentReminders(
             ...paymentReminderEmail({
               email: order.email,
               orderNumber: order.orderNumber,
-              stageLabel: stage.label,
+              stageLabel: paymentStageLabel(
+                stage.stage,
+                resolveStoredOrderService(order.service).payment,
+                stage.label,
+                { soleDeposit: invoice.depositCount === 1 },
+              ),
               dueDate: stage.dueDate,
               overdue: isPaymentOverdue(stage.dueDate, todayIso),
               ...(stage.amount !== undefined ? { amount: stage.amount } : {}),
