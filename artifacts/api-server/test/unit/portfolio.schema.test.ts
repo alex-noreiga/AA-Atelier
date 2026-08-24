@@ -196,7 +196,7 @@ describe("derivePortfolioFilters", () => {
     expect(filters).toEqual([
       {
         id: "type",
-        label: "Type",
+        label: "Stage",
         options: ["Completed Dress", "Preliminary Sketch"],
       },
     ]);

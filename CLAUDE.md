@@ -1684,33 +1684,37 @@ Read-only: the app never writes that database. Code:
 **Atelier setup.** One required property; everything else is additive, and a
 property the database lacks simply contributes nothing.
 
-| Property          | Type                       | Effect                                                                      |
-| ----------------- | -------------------------- | --------------------------------------------------------------------------- |
-| `Show on website` | checkbox — **required**    | Ticking it publishes that piece. Until it exists, nothing is published      |
-| `Completed`       | date _(optional)_          | Orders the gallery by when the piece was made rather than when it was typed |
-| `Stage`           | select _(optional)_        | The rename of `Type` — see below; both are read                             |
-| `Discipline`      | multi_select _(optional)_  | Adds a Discipline chip row once two published pieces differ                 |
-| `Season`          | select / text _(optional)_ | Adds a Season chip row; match the Competitions database's `2026-27` form    |
-| `Colorway`        | multi_select _(optional)_  | Adds a Colorway chip row. Reuse the intake picker's colour names            |
-| `Techniques`      | multi_select _(optional)_  | Adds a Technique chip row (Rhinestoning, Appliqué, Hand-beading, …)         |
-| `Competition`     | select _(optional)_        | Adds a Competition chip row                                                 |
-| `Finished`        | files _(optional)_         | A design's finished photographs; leads the card, ahead of every other image |
-| `Mockup`          | files _(optional)_         | A design's digital mockups                                                  |
-| `Sketch`          | files _(optional)_         | The sketch it began as                                                      |
+| Property          | Type                       | Effect                                                                       |
+| ----------------- | -------------------------- | ---------------------------------------------------------------------------- |
+| `Show on website` | checkbox — **required**    | Ticking it publishes that piece. Until it exists, nothing is published       |
+| `Completed`       | date _(optional)_          | Orders the gallery by when the piece was made rather than when it was typed  |
+| `Stage`           | select _(optional)_        | `Concept` / `In progress` / `Delivered`; the rename of `Type`, both are read |
+| `Discipline`      | multi_select _(optional)_  | Adds a Discipline chip row once two published pieces differ                  |
+| `Season`          | select / text _(optional)_ | Adds a Season chip row; match the Competitions database's `2026-27` form     |
+| `Colorway`        | multi_select _(optional)_  | Adds a Colorway chip row. Reuse the intake picker's colour names             |
+| `Techniques`      | multi_select _(optional)_  | Adds a Technique chip row (Rhinestoning, Appliqué, Hand-beading, …)          |
+| `Competition`     | select _(optional)_        | Adds a Competition chip row                                                  |
+| `Finished`        | files _(optional)_         | A design's finished photographs; leads the card, ahead of every other image  |
+| `Mockup`          | files _(optional)_         | A design's digital mockups                                                   |
+| `Sketch`          | files _(optional)_         | The sketch it began as                                                       |
 
 `Name`, `Image / Sketch` and `Type` already exist and are read as they are.
 Then share the Notion integration with the database and set
 **`NOTION_PORTFOLIO_DATABASE_ID`** — unset ⇒ `/portfolio` serves an empty gallery
 and says so, rather than erroring.
 
-**`Type` → `Stage` is a rename the code is ready for but hasn't been told about.**
-`Type` currently answers "what medium is this image" (Preliminary Sketch /
-Completed Dress / Digital Mockup), which only makes sense while a row is a single
-picture. Once a row is a design carrying several images, the useful question is
-"where is this design" — `Concept` / `In progress` / `Delivered`. Both property
-names are read, so the rename is safe at any time; afterwards change that facet's
-`label` from `"Type"` to `"Stage"` in `FACET_DEFINITIONS`, which is the one line
-the alias doesn't cover.
+**`Type` was renamed to `Stage`** (August 2026) — from "what medium is this
+image" (Preliminary Sketch / Completed Dress / Digital Mockup) to "where is this
+design" (`Concept` / `In progress` / `Delivered`), which is the question that
+survives a row being a design carrying several images rather than one picture.
+The facet's `label` is `"Stage"` to match. `Type` is still read behind it: the
+alias costs nothing, and a workspace restored from an older backup would
+otherwise silently lose that whole chip row.
+
+Note the rename **did not carry the row values across** — Notion replaced the
+option list, so every row's `Stage` came back empty and had to be re-stamped by
+hand. Worth remembering before renaming a select's options on a database that
+already has rows in it.
 
 **The colour vocabulary is shared with the intake form.** `Colorway`'s options
 should be the same names as the order form's colour picker (the `COLOR_PALETTE`

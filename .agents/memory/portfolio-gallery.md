@@ -46,9 +46,14 @@ relation**. A review of the model then produced four changes:
   is one card whose lightbox carousels from the finished piece back to the
   sketch. Putting several images in the existing single property works too, with
   nothing to add in Notion.
-- **`Type` is being renamed to `Stage`**, from "what medium is this image" to
-  "where is this design" (Concept / In progress / Delivered), which is the
-  question that survives the change above. Not done yet in Notion.
+- **`Type` was renamed to `Stage`**, from "what medium is this image" to "where
+  is this design" (Concept / In progress / Delivered), which is the question
+  that survives the change above. Done in Notion, and the facet label follows.
+  **Renaming the options did not carry the row values across** — Notion replaced
+  the option list and every row's `Stage` came back empty, so the three existing
+  rows had to be re-stamped from the old values (Completed Dress → Delivered,
+  Preliminary Sketch → Concept). Remember that before renaming a select's
+  options on a database that already has rows.
 - **Facet dimensions can name several properties.** `FacetDefinition.properties`
   is a preference list, so the `Type` → `Stage` rename can happen at any time
   without silently dropping the chip row. This is the general fix for a class of
@@ -129,3 +134,28 @@ reason, as `SMOKE_EXPECT_REVIEWS`.
   exist and be ticked _before_ the code enforces it.
 - Images are Notion-hosted, so they inherit that dependency (and the roadmap's
   "object storage for order images & photos" card would move them).
+
+## The Notion database as it now stands (August 2026)
+
+Properties: `Name`, `Image / Sketch`, `Finished`, `Mockup`, `Sketch` (files),
+`Show on website` (checkbox), `Stage`, `Season`, `Competition` (select),
+`Discipline`, `Colorway`, `Techniques` (multi_select), `Completed` (date).
+`Colorway`'s options are the intake picker's twelve palette names, deliberately.
+
+Four views beyond the original **Visual Gallery**, each verified by querying it
+back rather than trusted because the DSL accepted it — the failure mode here is
+a filter that compiles and silently matches nothing (see
+`studio-operations-page.md` for the same lesson):
+
+| View                 | Filter                                                       |
+| -------------------- | ------------------------------------------------------------ |
+| **Live on the site** | `Show on website` is ticked — what the public sees           |
+| **Ready to publish** | not ticked AND any of the four image properties is not empty |
+| **Needs a photo**    | `Stage` = Delivered AND all four image properties are empty  |
+| **By season**        | board grouped by `Season`                                    |
+
+The two work-queue views OR/AND across **all four** image properties, so they
+mirror the code's own "has at least one image anywhere" rule. Add an image
+property in code and these views need the same clause, or they start lying.
+
+The **order relation was deleted by the atelier and deliberately not restored.**

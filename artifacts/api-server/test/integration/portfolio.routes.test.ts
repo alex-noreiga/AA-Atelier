@@ -69,7 +69,7 @@ describe("GET /api/portfolio", () => {
     expect(res.body.filters).toEqual([
       {
         id: "type",
-        label: "Type",
+        label: "Stage",
         options: ["Completed Dress", "Preliminary Sketch"],
       },
     ]);

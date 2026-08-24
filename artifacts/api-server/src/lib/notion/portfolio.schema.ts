@@ -94,12 +94,13 @@ export interface FacetDefinition {
 }
 
 export const FACET_DEFINITIONS: readonly FacetDefinition[] = [
-  // `Stage` is the intended rename of `Type` — from "what medium is this
-  // image" (Preliminary Sketch / Completed Dress) to "where is this design"
-  // (Concept / In progress / Delivered), which is what the property means once
-  // a row is a design rather than a single picture. Both are read; update the
-  // label to "Stage" once the atelier has renamed it.
-  { id: "type", label: "Type", properties: ["Stage", "Type"] },
+  // The atelier renamed `Type` to `Stage` (Aug 2026) — from "what medium is
+  // this image" (Preliminary Sketch / Completed Dress) to "where is this
+  // design" (Concept / In progress / Delivered), which is what the property
+  // means once a row is a design rather than a single picture. `Type` is still
+  // read behind it: the alias costs nothing and a workspace restored from an
+  // older backup would otherwise silently lose the whole chip row.
+  { id: "type", label: "Stage", properties: ["Stage", "Type"] },
   { id: "discipline", label: "Discipline", properties: ["Discipline"] },
   { id: "season", label: "Season", properties: ["Season"] },
   { id: "colorway", label: "Colorway", properties: ["Colorway"] },
