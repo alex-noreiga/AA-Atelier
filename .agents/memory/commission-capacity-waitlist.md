@@ -42,8 +42,12 @@ it, in order of importance:
   `Lead time (weeks)` and a location. Anything computed from those rows would
   have shipped completely inert while looking correct.
 
-So the waitlist asks two plain optional fields — what are you skating, and when
-do you need it — and resolves neither against anything. The atelier needs a
+So the waitlist asks two plain optional fields — what's it for, and when do you
+need it — and resolves neither against anything. The wording matters as much as
+the mechanism: the studio makes **dancewear as well as skating costumes**, so
+"What are you skating?" would read as the wrong shop to half the people seeing
+it. "What's it for?" with a "Competition, recital, showcase…" placeholder covers
+both without naming either. The atelier needs a
 label to group the inbox by and a date to work the list in order of; free text
 gives both, with no database, no env var and nothing to keep current. The whole
 Competitions layer (client factory, schema, repository, env var, its tests, and

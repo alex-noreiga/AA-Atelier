@@ -28,14 +28,15 @@ import { fromAddress, atelierInbox } from "../lib/resend/config.js";
 import { logger } from "../lib/logger.js";
 
 /**
- * What the entry is for: the customer's own words for what they're skating, and
- * the date they need the piece by.
+ * What the entry is for: the customer's own words for the event, and the date
+ * they need the piece by.
  *
  * Both are free text from the browser and neither is resolved against anything.
- * That is the deliberate scope of this feature: the studio can't keep a list of
- * every competition run nationally and internationally, and doesn't need one —
- * the skater knows theirs, and all the atelier needs is a label to group by and
- * a date to work the list in.
+ * That is the deliberate scope of this feature: the studio makes for skating and
+ * dance alike, so the events its customers work towards run from competitions to
+ * recitals to showcases — no list the studio could keep would cover them, and it
+ * doesn't need one. All the atelier needs is a label to group by and a date to
+ * work the list in, and the customer supplies both.
  */
 function resolveTarget(input: CreateWaitlistInput): WaitlistTarget {
   const eventName = input.eventName?.trim() || undefined;

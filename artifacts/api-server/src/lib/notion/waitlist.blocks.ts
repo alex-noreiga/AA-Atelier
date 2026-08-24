@@ -61,7 +61,7 @@ export function isoDateOnly(value: Date | string | undefined): string {
 
 /** What the entry is *for*, as the row records it. */
 export interface WaitlistTarget {
-  /** What the customer said they're skating, in their own words. */
+  /** The event the piece is for, in the customer's own words. */
   eventName?: string;
   /** ISO `yyyy-mm-dd` — when they need the piece by. */
   date?: string;

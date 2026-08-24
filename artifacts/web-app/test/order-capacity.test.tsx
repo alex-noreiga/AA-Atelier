@@ -140,14 +140,14 @@ describe("OrderForm — commission capacity", () => {
     expect(screen.queryByTestId("waitlist-form")).toBeNull();
   });
 
-  it("asks what they're skating and when, both as plain optional fields", async () => {
+  it("asks what the piece is for and when, both as plain optional fields", async () => {
     const user = userEvent.setup();
     capacityResult.current = { data: CLOSED };
     render(<OrderForm />);
     await user.click(screen.getByTestId("service-option-bespoke"));
 
-    // Free text, not a picker: the studio can't hold a list of every
-    // competition, and the skater knows theirs.
+    // Free text, not a picker: the studio makes for skating and dance alike
+    // and can't hold a list of every event its customers work towards.
     expect(screen.getByTestId("input-waitlist-event")).toBeTruthy();
     expect(screen.getByTestId("input-waitlist-needed-by")).toBeTruthy();
   });
@@ -167,7 +167,7 @@ describe("OrderForm — commission capacity", () => {
     expect(await screen.findByTestId("waitlist-form")).toBeTruthy();
   });
 
-  it("sends the customer's own words for what they're skating", async () => {
+  it("sends the customer's own words for what the piece is for", async () => {
     const user = userEvent.setup();
     capacityResult.current = { data: CLOSED };
     render(<OrderForm />);

@@ -305,7 +305,7 @@ export const JoinWaitlistBody = zod.object({
   "email": zod.string().email(),
   "phone": zod.string().optional(),
   "neededBy": zod.coerce.date().optional().describe('When the customer needs the piece, if they know. Used by the atelier to work the list in date order.'),
-  "eventName": zod.string().optional().describe('What they\'re skating, in the customer\'s own words. Free text on purpose: the studio can\'t keep a list of every competition run nationally and internationally, but the skater knows theirs. Used only to label the entry for the atelier — nothing resolves or validates it.'),
+  "eventName": zod.string().optional().describe('What the piece is for, in the customer\'s own words — a competition, a recital, a showcase. Free text on purpose: the studio makes for skating and dance alike and can\'t keep a list of every event its customers work towards, but the customer knows theirs. Used only to label the entry for the atelier — nothing resolves or validates it.'),
   "notes": zod.string().optional().describe('A line about the piece they have in mind. Optional.'),
   "website": zod.string().optional().describe('Anti-spam honeypot. A hidden field that real visitors never fill; a non-empty value marks the submission as spam and it is silently dropped. Always send empty (or omit).'),
   "elapsedMs": zod.number().int().min(joinWaitlistBodyElapsedMsMin).optional().describe('Anti-spam timing signal: milliseconds the visitor spent on the form before submitting. Implausibly fast submissions are dropped. Omit when unmeasurable (treated as human).')

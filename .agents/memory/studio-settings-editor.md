@@ -109,3 +109,29 @@ what is in force and where it came from, and which rows aren't settings at all.
   setting from `/studio` after deploy and check the row in Notion, particularly
   the create path and the `Description` retry.
 - **No new env var, no atelier setup.** Same database, same three properties.
+
+## The Notion rows are seeded, and nothing enforces that
+
+**2026-08-24:** the live "Studio Settings" database
+(`b54ed806-446b-4ef6-b069-0781d9065af3`, data source
+`collection://77fe38d6-c8b1-4a4f-a375-17d1b6f529e1`) held only **11 of the 19**
+catalog keys — `COLOR_PALETTE`, `APPOINTMENT_REMINDER_LEAD_DAYS`, the three
+reward percentages/amounts and the three new `COMMISSION_*` keys had never been
+written, because a row is only created the first time someone saves that key
+from the dashboard. All eight were seeded with a **blank `Value`** and a
+`Description` in the existing rows' house style ("… Default: X. … Leave Value
+blank to use the default."). A blank value reads as unset everywhere, so the
+seeding changed **no runtime behaviour** — it makes the set browsable in Notion.
+
+Worth remembering:
+
+- **The missing rows were invisible from the dashboard**, which is the surface
+  that would normally catch this: the editor renders every _catalog_ key whether
+  or not a row exists, so all 19 looked present there. Only querying the database
+  showed the gap. The panel's "unknown rows" detection is the mirror image — a
+  row that isn't a key — and cannot report a key that isn't a row.
+- **Adding a setting is now three things, not two**: the getter, the
+  `SETTING_DEFINITIONS` entry, and a Notion row. The catalog test guards the
+  first two against each other; the third is live data no test can reach.
+- `REWARD_CODE_EXPIRES_DAYS` carries a real override (`180`, against a catalog
+  default of `90`) and was left alone — it is the one row in force.

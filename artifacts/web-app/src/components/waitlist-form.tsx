@@ -48,9 +48,10 @@ interface WaitlistFormProps {
  *
  * Deliberately light: someone told the studio is full is being asked for their
  * patience, and a five-step intake is a poor way to ask for it. Name and email
- * are all that's required; what they're skating and when they need it are free
- * text, because the studio can't hold a list of every competition and doesn't
- * need one to work a list of names in date order.
+ * are all that's required; what the piece is for and when they need it are free
+ * text, because the studio can't hold a list of every competition, recital and
+ * showcase its customers are working towards — and doesn't need one to work a
+ * list of names in date order.
  */
 export function WaitlistForm({ message }: WaitlistFormProps) {
   const { toast } = useToast();
@@ -173,18 +174,20 @@ export function WaitlistForm({ message }: WaitlistFormProps) {
         </div>
 
         {/* What the piece is for. Both are free text: the studio can't keep a
-            list of every competition run nationally and internationally, but
-            the skater knows theirs — and the date is what the atelier works
-            the list in order of. */}
+            list of every event its customers compete, dance or perform at, but
+            the customer knows theirs — and the date is what the atelier works
+            the list in order of. Worded for skating AND dance: the studio makes
+            for both, so "what are you skating?" would read as the wrong shop to
+            half the people seeing it. */}
         <div className="grid sm:grid-cols-2 gap-6">
           <div className="space-y-2">
             <Label htmlFor="waitlist-event">
-              What are you skating?{" "}
+              What&rsquo;s it for?{" "}
               <span className="text-muted-foreground">(optional)</span>
             </Label>
             <Input
               id="waitlist-event"
-              placeholder="Competition, test session, show..."
+              placeholder="Competition, recital, showcase..."
               data-testid="input-waitlist-event"
               {...register("eventName")}
             />
@@ -211,7 +214,7 @@ export function WaitlistForm({ message }: WaitlistFormProps) {
           <Textarea
             id="waitlist-notes"
             rows={3}
-            placeholder="A line about the piece — discipline, style, colours..."
+            placeholder="A line about the piece — style, colours, anything you're picturing..."
             data-testid="input-waitlist-notes"
             {...register("notes")}
           />

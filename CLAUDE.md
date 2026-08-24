@@ -166,7 +166,7 @@ Express app (artifacts/api-server)  ──►  Notion REST API (orders database)
   │                                  gates POST /orders. Fails OPEN — see
   │                                  "Commission capacity"
   ├─ POST /api/waitlist            → joins the commission waitlist (name + email,
-  │                                  optional phone, what they're skating, a
+  │                                  optional phone, what the piece is for, a
   │                                  needed-by date and a note), filed in the
   │                                  contact database tagged Request type =
   │                                  "Waitlist". Accepted whether or not the
@@ -596,6 +596,17 @@ stages/categories/working-hours.
    stops the two drifting, not a convention.
 
 See "Studio settings, edited on the dashboard" below for the editor built on it.
+
+**Every key in `SETTING_DEFINITIONS` has a row in the live database**, seeded
+with a blank `Value` and a `Description` giving its default and accepted format
+— so the whole set is browsable and editable in Notion, not only through the
+dashboard. A blank `Value` reads as unset, so a seeded row changes nothing at
+runtime; it documents the key. Adding a setting therefore means three things
+together: the getter, the `SETTING_DEFINITIONS` entry, and a row in Notion
+(saving the key once from the dashboard creates the row for you). Nothing
+enforces the third — `test/unit/settings.catalog.test.ts` guards code-side drift,
+but the Notion rows are live data no test can reach, so a key added without one
+is simply invisible to anyone reading the database directly.
 
 One-time setup (all optional — unset ⇒ env-only): create the "Studio Settings"
 database (a `Setting` title, a `Value` text, a `Description` text), share the
@@ -1834,10 +1845,13 @@ Load-bearing decisions:
    database and offered its rows as a picker; that was **removed on the atelier's
    call** — the studio cannot keep a list of every competition run nationally and
    internationally, so such a list is either a maintenance burden or a picker
-   that silently omits the event the customer actually came for. The skater knows
-   theirs. What the atelier needs from it is a label to group the inbox by and a
-   date to work the list in order of, and free text gives both with no database,
-   no env var and nothing to keep current. `NOTION_COMPETITIONS_DATABASE_ID` and
+   that silently omits the event the customer actually came for. The customer
+   knows theirs. It is also why the field is worded **"What's it for?"** rather
+   than "What are you skating?" — the studio makes for skating and dance alike,
+   and a skating-only question reads as the wrong shop to half the people seeing
+   it. What the atelier needs from it is a label to group the inbox by and a date
+   to work the list in order of, and free text gives both with no database, no
+   env var and nothing to keep current. `NOTION_COMPETITIONS_DATABASE_ID` and
    `lib/notion/competitions.*` are gone; don't reintroduce them.
 
 9. **The waitlist needs no new Notion property.** It is the seventh writer to the

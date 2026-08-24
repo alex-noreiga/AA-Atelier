@@ -819,7 +819,7 @@ export interface NewWaitlistRequest {
   phone?: string;
   /** When the customer needs the piece, if they know. Used by the atelier to work the list in date order. */
   neededBy?: string;
-  /** What they're skating, in the customer's own words. Free text on purpose: the studio can't keep a list of every competition run nationally and internationally, but the skater knows theirs. Used only to label the entry for the atelier — nothing resolves or validates it. */
+  /** What the piece is for, in the customer's own words — a competition, a recital, a showcase. Free text on purpose: the studio makes for skating and dance alike and can't keep a list of every event its customers work towards, but the customer knows theirs. Used only to label the entry for the atelier — nothing resolves or validates it. */
   eventName?: string;
   /** A line about the piece they have in mind. Optional. */
   notes?: string;

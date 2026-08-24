@@ -54,9 +54,10 @@ describe("POST /api/waitlist", () => {
     expect(res.status).toBe(201);
   });
 
-  it("records what the customer says they're skating, in their own words", async () => {
-    // Free text on purpose — the studio can't keep a list of every competition
-    // run nationally and internationally, and the skater knows theirs.
+  it("records what the piece is for, in the customer's own words", async () => {
+    // Free text on purpose — the studio makes for skating and dance alike, so
+    // the events its customers work towards run from competitions to recitals
+    // to showcases, and no list the studio could keep would cover them.
     await post({
       ...entry,
       eventName: "  Rocket City Classic  ",
