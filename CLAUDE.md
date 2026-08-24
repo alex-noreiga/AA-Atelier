@@ -3508,6 +3508,16 @@ and a boolean aren't sensitive), so they are repo **variables**, not secrets:
 | `SMOKE_KNOWN_ORDER_NUMBER` | Falls back to the **`ORD-TEST-00000`** default in `smoke.yml` | Overrides the default with that order                              |
 | `SMOKE_EXPECT_REVIEWS`     | `reviews.smoke.ts` accepts an empty list                      | `1` requires `GET /api/reviews` to return at least one testimonial |
 
+`edge-cache.smoke.ts` watches the four public reads (`/reviews`, `/services`,
+`/colors`, `/products`) still being **served by the CDN**: it asserts each sets
+`s-maxage`, that `x-vercel-cache` is not `BYPASS`, and that none answers with a
+`Set-Cookie`. This is the one production failure that is completely invisible
+from the outside — the site stays correct and merely gets slow, because every
+visitor then pays a cold start on a function that at this traffic level is never
+warm. Being anonymous it covers only the server half; the client half (a
+signed-in visitor's requests carrying a token again, which is uncacheable at the
+edge) is pinned on every PR by `web-app/test/api-auth.test.ts` instead.
+
 `SMOKE_KNOWN_ORDER_NUMBER` gates the **only** spec that asserts a _successful_ data
 render. Every other data spec proves "the endpoint didn't error" — a regression that broke
 the success timeline (the actual payoff) would sail through an otherwise-green run. It is
