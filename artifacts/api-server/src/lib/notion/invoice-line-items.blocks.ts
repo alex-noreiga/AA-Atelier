@@ -28,7 +28,7 @@ export const LINE_ITEM_MATERIAL_USAGE_RELATION_PROPERTY = "Material Usage Line";
 // `Invoice`), and nothing reads it (roadmap: "prune the redundant invoice link").
 // The stale Notion property is removed out-of-band after this ships.
 
-// The three `Line Type` option values the generator writes. Named option values
+// The `Line Type` option values the app writes. Named option values
 // coupled to code (like `STATUS_IN_STOCK`) — rename them in Notion and update
 // here too. "Adjustment" carries the reconciling margin line (see the service).
 export const LINE_TYPE_MATERIAL = "Material";
@@ -39,6 +39,14 @@ export const LINE_TYPE_ADJUSTMENT = "Adjustment";
 // the others so the invoice display can group and order it (last, after
 // Adjustments — mirrors `TYPE_ORDER` in the web app's `invoice-format.ts`).
 export const LINE_TYPE_SURCHARGE = "Surcharge";
+// A whole job priced as one figure — what the atelier quotes for a repair, a
+// stoning job or an alteration, where there is no garment costing to itemize
+// from (see `services/quote.service.ts`). Its own type rather than "Labor"
+// (which would be a lie: the price covers materials too) or "Garment" (which
+// reads wrong above "Replace shoulder elastic"). Notion auto-creates a select
+// option on first write, so this needs nothing added by hand; the web app's
+// `invoice-format.ts` gives it a heading and sorts it first.
+export const LINE_TYPE_SERVICE = "Service";
 
 /** The customer-facing title for the reconciling margin/adjustment line — the
  * single line that folds the costing item's margin into the itemized total so it

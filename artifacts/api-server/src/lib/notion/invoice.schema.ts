@@ -232,6 +232,13 @@ export interface PaymentReminderInvoice {
   orderPageId?: string;
   /** Stages that have a due date set (unpaid or not — the caller filters). */
   stages: PaymentReminderStage[];
+  /** How many deposits carry an amount on this invoice (0, 1 or 2), by the same
+   * rule `extractInvoiceDeposits` uses. Not about reminding — it is what lets
+   * the reminder email call a lone deposit on a repair "Deposit" rather than
+   * "First deposit", matching the tracking page (`services/payment-labels.ts`).
+   * Counted from the amounts rather than from `stages`, which only holds the
+   * stages that were given a due date. */
+  depositCount: number;
 }
 
 // --- Raw Notion payload typing (only the property types we read) ---
@@ -462,6 +469,7 @@ export function extractPaymentReminderInvoice(
     invoiceId: extractTitle(page, INVOICE_ID_PROPERTY),
     ...(orderPageId !== undefined ? { orderPageId } : {}),
     stages,
+    depositCount: extractInvoiceDeposits(page).length,
   };
 }
 

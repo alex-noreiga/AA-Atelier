@@ -12,4 +12,5 @@ export {
   setAuthTokenGetter,
   setBaseUrl,
   type AuthTokenGetter,
+  type AuthTokenRequest,
 } from "./custom-fetch";

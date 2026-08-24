@@ -146,7 +146,7 @@ function VariantGallery({
             <AspectRatio ratio={3 / 4}>
               <img
                 src={photo}
-                alt={`${variant.name} — photo ${i + 1}`}
+                alt={`${variant.name}, photo ${i + 1}`}
                 className="h-full w-full object-cover rounded-xl"
               />
             </AspectRatio>
@@ -505,7 +505,7 @@ export default function Shop() {
           <p className="text-muted-foreground font-light text-lg md:text-xl max-w-xl mx-auto leading-relaxed">
             Finished pieces{" "}
             <span className="italic text-primary">ready to ship</span>,
-            alongside the small skate accessories we keep on hand.
+            alongside the small accessories we keep on hand.
           </p>
         </div>
 

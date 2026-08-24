@@ -110,8 +110,8 @@ export function WaitlistForm({ message }: WaitlistFormProps) {
         </h2>
         <p className="text-muted-foreground font-light">
           Thank you for your patience. We&rsquo;ll write to you as soon as a
-          space opens up &mdash; before we reopen commissions publicly. Nothing
-          is booked and there&rsquo;s nothing to pay.
+          space opens up, before we reopen commissions publicly. Nothing is
+          booked and there&rsquo;s nothing to pay.
         </p>
       </div>
     );
@@ -214,7 +214,7 @@ export function WaitlistForm({ message }: WaitlistFormProps) {
           <Textarea
             id="waitlist-notes"
             rows={3}
-            placeholder="A line about the piece — style, colours, anything you're picturing..."
+            placeholder="A line about the piece: style, colours, anything you're picturing..."
             data-testid="input-waitlist-notes"
             {...register("notes")}
           />

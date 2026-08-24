@@ -47,32 +47,77 @@ export async function fetchStudioSettings(
     return new Map();
   }
 
-  if (
-    cachedSettings &&
-    Date.now() - cachedSettings.fetchedAt < SETTINGS_CACHE_TTL_MS
-  ) {
-    return cachedSettings.settings;
+  const cached = cachedSettings;
+
+  if (cached && Date.now() - cached.fetchedAt < SETTINGS_CACHE_TTL_MS) {
+    return cached.settings;
   }
 
-  let response: Response;
+  if (cached) {
+    // Stale, but usable — so serve it and refresh behind the response.
+    //
+    // This is the one place in the repo that departs from the shared
+    // "60s TTL, block on a miss, fall back to stale on error" idiom
+    // (`fetchLiveOrderStages`, `listCategoryRecords`, …), and the asymmetry is
+    // the reason: those are each read by ONE endpoint, whereas this one is
+    // primed on EVERY request (the middleware in `app.ts`). Blocking there puts
+    // a Notion round-trip in front of whichever unlucky request crosses the TTL
+    // boundary, including routes that read no setting at all. Staleness stays
+    // bounded at one extra TTL, and the values served are the last good ones —
+    // never nothing.
+    //
+    // The timestamp is bumped BEFORE the refresh starts, so a burst fires one
+    // refresh rather than one per request, and a refresh that fails retries at
+    // the next TTL instead of on every request in between. There is deliberately
+    // no in-flight lock to get stuck: a serverless instance can freeze the
+    // moment it responds, and a lock left set by a refresh that never settled
+    // would pin this instance to stale values for good.
+    cachedSettings = { settings: cached.settings, fetchedAt: Date.now() };
+    void refreshStudioSettings(client);
+    return cached.settings;
+  }
+
+  // Nothing cached at all: block. Skipping the fetch here would serve
+  // env/defaults while silently ignoring every value the atelier has set —
+  // and at this traffic level almost every request is on a cold instance, so
+  // "first request" is very nearly "most requests". A dashboard save clears the
+  // cache outright (`cachedSettings = null`), which lands here too, so an edit
+  // is never a TTL behind.
+  return refreshStudioSettings(client);
+}
+
+/**
+ * Fetch and replace the cached settings. Never rejects — it is called both
+ * awaited (cold) and detached (the stale-while-revalidate path above, where a
+ * rejection would surface as an unhandled one after the response has gone out).
+ * Any failure keeps whatever is already cached, degrading to env/defaults only
+ * when there is nothing.
+ */
+async function refreshStudioSettings(
+  client: NotionClient,
+): Promise<Map<string, string>> {
   try {
-    response = await client.fetch(`/v1/databases/${client.databaseId}/query`, {
-      method: "POST",
-      body: JSON.stringify({ page_size: 100 }),
-    });
+    const response = await client.fetch(
+      `/v1/databases/${client.databaseId}/query`,
+      {
+        method: "POST",
+        body: JSON.stringify({ page_size: 100 }),
+      },
+    );
+
+    if (!response.ok) {
+      return cachedSettings?.settings ?? new Map();
+    }
+
+    const data = (await response.json()) as { results: NotionSettingsPage[] };
+    const settings = extractSettings(data.results ?? []);
+    cachedSettings = { settings, fetchedAt: Date.now() };
+    return settings;
   } catch {
-    // Network error — serve stale if we have it, else degrade to env/defaults.
+    // Network error, a malformed body, or an unreadable row — serve stale if we
+    // have it, else degrade to env/defaults.
     return cachedSettings?.settings ?? new Map();
   }
-
-  if (!response.ok) {
-    return cachedSettings?.settings ?? new Map();
-  }
-
-  const data = (await response.json()) as { results: NotionSettingsPage[] };
-  const settings = extractSettings(data.results ?? []);
-  cachedSettings = { settings, fetchedAt: Date.now() };
-  return settings;
 }
 
 /** Test seam: drop the module cache so a case starts from a clean fetch. */

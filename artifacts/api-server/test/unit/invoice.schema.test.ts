@@ -128,6 +128,7 @@ describe("extractPaymentReminderInvoice", () => {
     expect(view.pageId).toBe("inv-1");
     expect(view.invoiceId).toBe("Toothless");
     expect(view.orderPageId).toBe("order-1");
+    expect(view.depositCount).toBe(2);
     expect(view.stages).toEqual([
       {
         stage: "first_deposit",
@@ -236,5 +237,38 @@ describe("extractInvoiceAnalytics", () => {
       finalBalance: 500,
     }) as NotionInvoicePage;
     expect(extractInvoiceAnalytics(page).balancePaid).toBe(true);
+  });
+});
+
+// `depositCount` is counted from the AMOUNTS, not from `stages` — a deposit the
+// atelier priced but gave no due date is still a deposit, and it is what decides
+// whether the reminder email calls a lone one "Deposit" rather than "First
+// deposit" (`services/payment-labels.ts`).
+describe("extractPaymentReminderInvoice — depositCount", () => {
+  it("counts a priced deposit that carries no due date", () => {
+    const page = invoicePage({
+      id: "inv-1",
+      firstDepositAmount: 100,
+      firstDepositDue: "2026-08-01",
+      secondDepositAmount: 80, // priced, but never given a due date
+    }) as NotionInvoicePage;
+
+    const view = extractPaymentReminderInvoice(page);
+    expect(view.stages).toHaveLength(1);
+    expect(view.depositCount).toBe(2);
+  });
+
+  it("counts one when only a single deposit is priced", () => {
+    const page = invoicePage({
+      id: "inv-1",
+      firstDepositAmount: 100,
+      firstDepositDue: "2026-08-01",
+    }) as NotionInvoicePage;
+    expect(extractPaymentReminderInvoice(page).depositCount).toBe(1);
+  });
+
+  it("counts none on an invoice with no deposits set", () => {
+    const page = invoicePage({ id: "inv-1" }) as NotionInvoicePage;
+    expect(extractPaymentReminderInvoice(page).depositCount).toBe(0);
   });
 });

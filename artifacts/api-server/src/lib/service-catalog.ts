@@ -42,6 +42,25 @@ export interface OrderServiceDef {
   /** Placeholder / prompt for `description` on this service's form. */
   detailsHelp: string;
   /**
+   * How this service's work is paid for.
+   *
+   * `"staged"` is the bespoke commission's schedule and the shape the whole
+   * payment system was built around: a first deposit once the sketch is
+   * finalized, a second at the first fitting, then the final balance after
+   * delivery. `"single"` is the three piece-in-hand services — a repair, a
+   * stoning job or an alteration is quoted as one price and paid once, because
+   * there is no sketch to finalize and (for two of the three) no fitting to
+   * take a second deposit at.
+   *
+   * This changes NOTHING about what the invoice can hold — all three stages
+   * stay available on every order, because the atelier may genuinely want money
+   * up front on an expensive restoration. It changes only what the stages are
+   * CALLED (`services/payment-labels.ts`): "First deposit" is wrong wording on a
+   * one-off job, and wrong wording on a payment screen is how a customer comes
+   * to believe there is a second instalment coming.
+   */
+  payment: PaymentSchedule;
+  /**
    * Suffix for the Notion order title (`"<name> – <orderLabel>"`) and the word
    * the confirmation email uses for the work. Server-side only — it is the
    * atelier's and the customer's wording, not something the form renders, so it
@@ -106,6 +125,14 @@ export interface OrderServiceDef {
   pipeline?: ServicePipeline;
 }
 
+/**
+ * How a service's payments are scheduled — see `OrderServiceDef.payment`.
+ * Deliberately a two-value union rather than a list of stage labels: the stages
+ * themselves are fixed by the invoice's Notion properties, so a service chooses
+ * between two ways of describing them, not its own set.
+ */
+export type PaymentSchedule = "staged" | "single";
+
 /** How a service's entry selects its stages from the live superset. */
 export type ServicePipeline =
   | { kind: "select"; stages: readonly string[] }
@@ -137,7 +164,8 @@ export const ORDER_SERVICES: readonly OrderServiceDef[] = [
     detailsRequired: false,
     detailsLabel: "Description",
     detailsHelp:
-      "Tell us about your vision — style, silhouette, special requirements...",
+      "Tell us about your vision: style, silhouette, special requirements...",
+    payment: "staged",
     capacityGated: true,
     orderLabel: "Custom Costume",
     emailIntro:
@@ -156,7 +184,8 @@ export const ORDER_SERVICES: readonly OrderServiceDef[] = [
     detailsRequired: true,
     detailsLabel: "The piece and what needs adjusting",
     detailsHelp:
-      "Tell us about the costume and what you'd like changed — where it's tight or loose, hem length, straps...",
+      "Tell us about the costume and what you'd like changed: where it's tight or loose, hem length, straps...",
+    payment: "single",
     capacityGated: false,
     orderLabel: "Alterations",
     emailIntro:
@@ -185,7 +214,8 @@ export const ORDER_SERVICES: readonly OrderServiceDef[] = [
     detailsRequired: true,
     detailsLabel: "The piece and the stoning you'd like",
     detailsHelp:
-      "Tell us about the costume and the coverage you're picturing — full stoning, bodice only, a scattered pattern...",
+      "Tell us about the costume and the coverage you're picturing: full stoning, bodice only, a scattered pattern...",
+    payment: "single",
     capacityGated: false,
     orderLabel: "Rhinestoning",
     emailIntro:
@@ -213,7 +243,8 @@ export const ORDER_SERVICES: readonly OrderServiceDef[] = [
     detailsRequired: true,
     detailsLabel: "The piece and what needs repairing",
     detailsHelp:
-      "Tell us about the costume and what's happened to it — lost stones, a torn seam, worn elastic...",
+      "Tell us about the costume and what's happened to it: lost stones, a torn seam, worn elastic...",
+    payment: "single",
     capacityGated: false,
     orderLabel: "Repair",
     emailIntro:
@@ -304,6 +335,10 @@ export function getServiceOptions(): {
       ({
         orderLabel: _orderLabel,
         emailIntro: _emailIntro,
+        // How the work is paid for is the invoice's business, not the intake
+        // form's: the form asks what to make, and the payment stages reach the
+        // customer on `OrderStatus.deposits` once there is an invoice to pay.
+        payment: _payment,
         // The pipeline is the tracking page's business, not the intake form's:
         // the form asks what to make, and the order's stage list reaches the
         // customer on `OrderStatus.stages` once there is an order to track.

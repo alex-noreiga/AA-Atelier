@@ -897,31 +897,34 @@ export const GetStudioAnalyticsResponse = zod.object({
 
 
 /**
- * Runs one of the atelier's internal actions — milestone reconciliation, invoice line-item generation, an order status-change email, a cancellation refund, a return refund, or a back-in-stock alert — from the signed-in studio dashboard. Most were previously triggered by opening a link that carried a shared secret in its query string; the work is unchanged, the authorization is not: this requires the same Supabase access token as the rest of the studio surface, with the caller's email on the staff allowlist. 401 when not signed in, 404 when signed in but not staff, 403 when staff but not signed in with Google.
+ * Runs one of the atelier's internal actions — milestone reconciliation, invoice line-item generation, a flat service quote, an order status-change email, a cancellation refund, a return refund, or a back-in-stock alert — from the signed-in studio dashboard. Most were previously triggered by opening a link that carried a shared secret in its query string; the work is unchanged, the authorization is not: this requires the same Supabase access token as the rest of the studio surface, with the caller's email on the staff allowlist. 401 when not signed in, 404 when signed in but not staff, 403 when staff but not signed in with Google.
  * Every tool is idempotent — a repeat run reports `noop` rather than doing the work twice — but two of them move money, so the dashboard confirms before calling those.
  * @summary Run an internal atelier tool
  */
 export const RunStudioToolParams = zod.object({
-  "tool": zod.enum(['milestones', 'invoice-lines', 'status-email', 'cancellation-refund', 'return-refund', 'restock-alert'])
+  "tool": zod.enum(['milestones', 'invoice-lines', 'quote', 'status-email', 'cancellation-refund', 'return-refund', 'restock-alert'])
 })
 
 export const runStudioToolBodyOrderNumberMax = 64;
 
 export const runStudioToolBodyAmountMin = 0;
 
+export const runStudioToolBodyDescriptionMax = 200;
+
 export const runStudioToolBodyItemMax = 200;
 
 
 
 export const RunStudioToolBody = zod.object({
-  "orderNumber": zod.string().max(runStudioToolBodyOrderNumberMax).optional().describe('The order the tool acts on — `ORD-…` for a custom order, `SHP-…` for a shop order. Required by `invoice-lines`, `status-email` and the two refunds; `milestones` sweeps the whole pipeline and `restock-alert` takes an optional `item` instead.'),
+  "orderNumber": zod.string().max(runStudioToolBodyOrderNumberMax).optional().describe('The order the tool acts on — `ORD-…` for a custom order, `SHP-…` for a shop order. Required by `invoice-lines`, `quote`, `status-email` and the two refunds; `milestones` sweeps the whole pipeline and `restock-alert` takes an optional `item` instead.'),
   "force": zod.boolean().optional().describe('`status-email` only. Resend the status update even when the order hasn\'t moved forward since the customer was last emailed. A forced resend never rewinds the high-water marker.'),
-  "amount": zod.number().min(runStudioToolBodyAmountMin).optional().describe('`return-refund` only. The TARGET total to have refunded on the order, in dollars — not an increment, so a repeated run can\'t double-refund. Omit to refund in full.'),
+  "amount": zod.number().min(runStudioToolBodyAmountMin).optional().describe('Dollars, read by two tools. For `return-refund` it is the TARGET total to have refunded on the order — not an increment, so a repeated run can\'t double-refund; omit to refund in full. For `quote` it is the price of the work and is REQUIRED, since a quote with no amount is nothing to pay.'),
+  "description": zod.string().max(runStudioToolBodyDescriptionMax).optional().describe('`quote` only, and optional even there. What the work is, as the customer should read it on their invoice — \"Re-stone bodice\", \"Replace shoulder elastic\". Omitted ⇒ the line is named after the order\'s service (\"Repair\", \"Rhinestoning\", \"Alterations\").'),
   "item": zod.string().max(runStudioToolBodyItemMax).optional().describe('`restock-alert` only, and optional even there. The exact `Item Name` of one inventory row to alert on, as it appears in Notion — the same text a back-in-stock request stores. Omit it to sweep every piece that is currently in stock, which is what the nightly run does.')
 }).describe('The arguments for one internal tool run. Every field is optional here because each tool takes a different subset; the server rejects a run that is missing what its own tool needs. This replaces the query string of the retired `?secret=` links, so the argument names mirror them.')
 
 export const RunStudioToolResponse = zod.object({
-  "tool": zod.enum(['milestones', 'invoice-lines', 'status-email', 'cancellation-refund', 'return-refund', 'restock-alert']).describe('Which internal tool to run. Each names an action the atelier used to trigger by opening a shared-secret link from Notion — or, for `restock-alert`, one that would have needed such a link.'),
+  "tool": zod.enum(['milestones', 'invoice-lines', 'quote', 'status-email', 'cancellation-refund', 'return-refund', 'restock-alert']).describe('Which internal tool to run. Each names an action the atelier used to trigger by opening a shared-secret link from Notion — or, for `restock-alert`, one that would have needed such a link.'),
   "status": zod.enum(['ok', 'noop', 'attention']).describe('`ok` — the tool did something. `noop` — there was nothing to do (every tool is idempotent, so this is the normal result of a repeat run). `attention` — the run completed but left something for the atelier to fix, e.g. a refund Stripe rejected, which leaves the order uncancelled so a re-run can retry it. A failure the tool couldn\'t start at all is an HTTP error, not a status here.'),
   "title": zod.string().describe('A short headline for the result, e.g. \"Invoice itemized\".'),
   "message": zod.string().describe('One sentence summarizing what happened.'),
@@ -1211,7 +1214,7 @@ export const ListStudioRequestsResponse = zod.object({
   "rawStage": zod.string().optional().describe('The `Stage` select exactly as Notion holds it, when set.'),
   "submittedAt": zod.coerce.date().optional().describe('When the request was filed (its Notion created time).'),
   "action": zod.object({
-  "tool": zod.enum(['milestones', 'invoice-lines', 'status-email', 'cancellation-refund', 'return-refund', 'restock-alert']).describe('Which internal tool to run. Each names an action the atelier used to trigger by opening a shared-secret link from Notion — or, for `restock-alert`, one that would have needed such a link.'),
+  "tool": zod.enum(['milestones', 'invoice-lines', 'quote', 'status-email', 'cancellation-refund', 'return-refund', 'restock-alert']).describe('Which internal tool to run. Each names an action the atelier used to trigger by opening a shared-secret link from Notion — or, for `restock-alert`, one that would have needed such a link.'),
   "orderNumber": zod.string().optional().describe('The order the tool should act on, read off the request. Absent when it couldn\'t be recovered — a row whose title was rewritten by hand, say — in which case the action is not offered at all rather than offered blank.'),
   "item": zod.string().optional().describe('The inventory item name, for a back-in-stock request.')
 }).optional().describe('The dashboard tool that actions this request, and the argument it needs. Present only where the app can action the request at all: the two refunds and the back-in-stock sweep. A measurement change is applied to the order by hand and an inquiry is answered by email, so neither carries one.'),
@@ -1233,7 +1236,7 @@ export const ListStudioRequestsResponse = zod.object({
   "rawStage": zod.string().optional().describe('The `Stage` select exactly as Notion holds it, when set.'),
   "submittedAt": zod.coerce.date().optional().describe('When the request was filed (its Notion created time).'),
   "action": zod.object({
-  "tool": zod.enum(['milestones', 'invoice-lines', 'status-email', 'cancellation-refund', 'return-refund', 'restock-alert']).describe('Which internal tool to run. Each names an action the atelier used to trigger by opening a shared-secret link from Notion — or, for `restock-alert`, one that would have needed such a link.'),
+  "tool": zod.enum(['milestones', 'invoice-lines', 'quote', 'status-email', 'cancellation-refund', 'return-refund', 'restock-alert']).describe('Which internal tool to run. Each names an action the atelier used to trigger by opening a shared-secret link from Notion — or, for `restock-alert`, one that would have needed such a link.'),
   "orderNumber": zod.string().optional().describe('The order the tool should act on, read off the request. Absent when it couldn\'t be recovered — a row whose title was rewritten by hand, say — in which case the action is not offered at all rather than offered blank.'),
   "item": zod.string().optional().describe('The inventory item name, for a back-in-stock request.')
 }).optional().describe('The dashboard tool that actions this request, and the argument it needs. Present only where the app can action the request at all: the two refunds and the back-in-stock sweep. A measurement change is applied to the order by hand and an inquiry is answered by email, so neither carries one.'),
@@ -1273,7 +1276,7 @@ export const SetStudioRequestStateResponse = zod.object({
   "rawStage": zod.string().optional().describe('The `Stage` select exactly as Notion holds it, when set.'),
   "submittedAt": zod.coerce.date().optional().describe('When the request was filed (its Notion created time).'),
   "action": zod.object({
-  "tool": zod.enum(['milestones', 'invoice-lines', 'status-email', 'cancellation-refund', 'return-refund', 'restock-alert']).describe('Which internal tool to run. Each names an action the atelier used to trigger by opening a shared-secret link from Notion — or, for `restock-alert`, one that would have needed such a link.'),
+  "tool": zod.enum(['milestones', 'invoice-lines', 'quote', 'status-email', 'cancellation-refund', 'return-refund', 'restock-alert']).describe('Which internal tool to run. Each names an action the atelier used to trigger by opening a shared-secret link from Notion — or, for `restock-alert`, one that would have needed such a link.'),
   "orderNumber": zod.string().optional().describe('The order the tool should act on, read off the request. Absent when it couldn\'t be recovered — a row whose title was rewritten by hand, say — in which case the action is not offered at all rather than offered blank.'),
   "item": zod.string().optional().describe('The inventory item name, for a back-in-stock request.')
 }).optional().describe('The dashboard tool that actions this request, and the argument it needs. Present only where the app can action the request at all: the two refunds and the back-in-stock sweep. A measurement change is applied to the order by hand and an inquiry is answered by email, so neither carries one.'),

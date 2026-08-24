@@ -182,7 +182,7 @@ export default function AppointmentManage() {
           </p>
         ) : appt.canModify ? (
           <p className="text-muted-foreground font-light text-lg">
-            Reschedule or cancel below — we'll update your calendar invitation
+            Reschedule or cancel below and we'll update your calendar invitation
             automatically.
           </p>
         ) : (

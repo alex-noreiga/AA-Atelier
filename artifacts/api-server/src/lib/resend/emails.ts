@@ -127,7 +127,7 @@ export function orderConfirmationEmail(
     "Your order is in our hands",
     `<p>Hi ${firstName},</p>
      <p>${emailIntro}</p>
-     <p>Your order number is <strong>${orderNumber}</strong>. Keep it handy — you can
+     <p>Your order number is <strong>${orderNumber}</strong>. Keep it handy so you can
         follow each stage of your garment's progress on our website using this number.</p>
      <p style="margin-bottom:10px;">Here's what we have on file:</p>
      <div style="border-left:2px solid #e7e0d8;padding:2px 0 2px 16px;margin:0 0 20px;font-size:15px;">
@@ -143,7 +143,7 @@ export function orderConfirmationEmail(
     ``,
     emailIntro,
     ``,
-    `Your order number is ${orderNumber}. Keep it handy — you can follow each stage`,
+    `Your order number is ${orderNumber}. Keep it handy so you can follow each stage`,
     `of your garment's progress on our website using this number.`,
     ``,
     `Here's what we have on file:`,
@@ -220,9 +220,9 @@ const STAGE_FLAVORS: Record<string, string> = {
   "Rhinestoning/Detailing":
     "adding the hand-beading, crystals, and final artistic touches.",
   "Ready for delivery/pickup":
-    "wrapping up — your garment is complete and ready for delivery or pickup.",
+    "wrapping up. Your garment is complete and ready for delivery or pickup.",
   Delivered:
-    "all finished — your costume has been delivered. We hope you love it!",
+    "all finished. Your costume has been delivered. We hope you love it!",
 };
 
 function stageFlavor(stage: string): string {
@@ -383,7 +383,7 @@ export function fittingReminderEmail(
     `<p>Hi there,</p>
      ${timingHtml}
      <p>A fitting lets us perfect the shape and fit of your garment before the final
-        finishing touches. Please book — or confirm — your fitting appointment at your
+        finishing touches. Please book or confirm your fitting appointment at your
         earliest convenience so we can keep your custom item on schedule.</p>
      ${ctaHtml}
      <p style="color:#8a7f74;margin:0;">Order number: <strong>${escapeHtml(orderNumber)}</strong></p>`,
@@ -397,7 +397,7 @@ export function fittingReminderEmail(
       : `Your custom item is approaching its fitting stage.`,
     ``,
     `A fitting lets us perfect the shape and fit of your garment before the final`,
-    `finishing touches. Please book — or confirm — your fitting appointment at your`,
+    `finishing touches. Please book or confirm your fitting appointment at your`,
     `earliest convenience so we can keep your custom item on schedule.`,
     ...(bookingUrl ? [``, `Book your fitting: ${bookingUrl}`] : []),
     ``,
@@ -469,7 +469,7 @@ export function paymentReminderEmail(
     `<p>Hi there,</p>
      <p>${escapeHtml(timingSentence)}${escapeHtml(amountSentence)}</p>
      <p>You can pay securely online from your order page. If you've already sent
-        this payment, please disregard this note — it may have crossed with your
+        this payment, please disregard this note. It may have crossed with your
         payment, and it will clear on our end shortly.</p>
      ${ctaHtml}
      <p style="color:#8a7f74;margin:0;">Order number: <strong>${escapeHtml(orderNumber)}</strong></p>`,
@@ -481,7 +481,7 @@ export function paymentReminderEmail(
     `${timingSentence}${amountSentence}`,
     ``,
     `You can pay securely online from your order page. If you've already sent this`,
-    `payment, please disregard this note — it may have crossed with your payment,`,
+    `payment, please disregard this note. It may have crossed with your payment,`,
     `and it will clear on our end shortly.`,
     ...(payUrl ? [``, `Pay now: ${payUrl}`] : []),
     ``,
@@ -534,9 +534,9 @@ export function referralWelcomeEmail(
   const { code, percent } = details;
 
   const html = layout(
-    "Welcome — a gift for your first piece",
+    "Welcome, a gift for your first piece",
     `<p>Hi there,</p>
-     <p>A fellow skater sent you our way, and we're so glad they did. As a welcome,
+     <p>A friend sent you our way, and we're so glad they did. As a welcome,
         here's <strong>${percent}% off</strong> your first order:</p>
      ${codeBlockHtml(code)}
      ${redeemNoteHtml()}
@@ -546,7 +546,7 @@ export function referralWelcomeEmail(
   const text = [
     `Hi there,`,
     ``,
-    `A fellow skater sent you our way, and we're so glad they did. As a welcome,`,
+    `A friend sent you our way, and we're so glad they did. As a welcome,`,
     `here's ${percent}% off your first order:`,
     ``,
     `    ${code}`,
@@ -585,7 +585,7 @@ export function referralCreditEmail(
   const html = layout(
     "Thank you for the referral",
     `<p>Hi there,</p>
-     <p>Someone you referred just began their own custom piece with us — thank you for
+     <p>Someone you referred just began their own custom piece with us. Thank you for
         sharing our atelier. Here's <strong>${escapeHtml(amountLabel)} in credit</strong>
         toward your next order:</p>
      ${codeBlockHtml(code)}
@@ -596,7 +596,7 @@ export function referralCreditEmail(
   const text = [
     `Hi there,`,
     ``,
-    `Someone you referred just began their own custom piece with us — thank you for`,
+    `Someone you referred just began their own custom piece with us. Thank you for`,
     `sharing our atelier. Here's ${amountLabel} in credit toward your next order:`,
     ``,
     `    ${code}`,
@@ -635,7 +635,7 @@ export function returningSkaterRewardEmail(
     "A thank-you for coming back",
     `<p>Hi there,</p>
      <p>It means a great deal that you've returned to us. As our thanks, here's a
-        standing <strong>${percent}% off</strong> — yours to use on your future orders:</p>
+        standing <strong>${percent}% off</strong>, yours to use on your future orders:</p>
      ${codeBlockHtml(code)}
      ${redeemNoteHtml()}
      <p>We look forward to creating with you again.</p>`,
@@ -645,7 +645,7 @@ export function returningSkaterRewardEmail(
     `Hi there,`,
     ``,
     `It means a great deal that you've returned to us. As our thanks, here's a`,
-    `standing ${percent}% off — yours to use on your future orders:`,
+    `standing ${percent}% off, yours to use on your future orders:`,
     ``,
     `    ${code}`,
     ``,
@@ -699,7 +699,7 @@ export function backInStockConfirmationEmail(
   input: CreateNotifyInput,
 ): EmailMessage {
   // Mirror the subject phrasing used for the Notion inbox row in notify.blocks.ts.
-  const piece = input.size ? `${input.item} — ${input.size}` : input.item;
+  const piece = input.size ? `${input.item} · ${input.size}` : input.item;
 
   const html = layout(
     "We'll let you know",
@@ -739,7 +739,7 @@ export function backInStockConfirmationEmail(
 /** The details needed to render a back-in-stock alert. */
 export interface BackInStockAlertDetails {
   email: string;
-  /** The inventory row's name, e.g. "Bow Fleece Soaker — Black". */
+  /** The inventory row's name, e.g. "Bow Fleece Soaker, Black". */
   item: string;
   /** The size band the customer asked about, when they asked about one. */
   size?: string;
@@ -753,7 +753,7 @@ export function backInStockAlertEmail(
 ): EmailMessage {
   // Mirror the phrasing of the request confirmation, so the two read as a pair.
   const piece = details.size
-    ? `${details.item} — ${details.size}`
+    ? `${details.item} · ${details.size}`
     : details.item;
   const { productUrl } = details;
 
@@ -769,7 +769,7 @@ export function backInStockAlertEmail(
   const html = layout(
     "It’s back in stock",
     `<p>Hi there,</p>
-     <p>Good news — <strong>${escapeHtml(piece)}</strong> is back in stock. You asked
+     <p>Good news, <strong>${escapeHtml(piece)}</strong> is back in stock. You asked
         us to let you know when it returned, so here we are.</p>
      ${ctaHtml}
      <p>Our ready-to-wear pieces are made in small numbers, so it may not stay on the
@@ -779,7 +779,7 @@ export function backInStockAlertEmail(
   const text = [
     `Hi there,`,
     ``,
-    `Good news — ${piece} is back in stock. You asked us to let you know when it`,
+    `Good news, ${piece} is back in stock. You asked us to let you know when it`,
     `returned, so here we are.`,
     ...(productUrl ? [``, `View it in the shop: ${productUrl}`] : []),
     ``,
@@ -812,7 +812,7 @@ export function newsletterWelcomeEmail(
     `<p>Hi there,</p>
      <p>Thank you for joining our mailing list. From time to time we'll share new
         collections, behind-the-scenes glimpses of pieces in progress, and the
-        occasional studio note — nothing more.</p>
+        occasional studio note.</p>
      <p>We're glad to have you with us.</p>`,
   );
 
@@ -821,7 +821,7 @@ export function newsletterWelcomeEmail(
     ``,
     `Thank you for joining our mailing list. From time to time we'll share new`,
     `collections, behind-the-scenes glimpses of pieces in progress, and the`,
-    `occasional studio note — nothing more.`,
+    `occasional studio note.`,
     ``,
     `We're glad to have you with us.`,
     ``,
@@ -844,7 +844,7 @@ export function newsletterWelcomeEmail(
  */
 function waitlistTargetLine(target: WaitlistTarget): string {
   const when = target.date ? formatCalendarDate(target.date) : "";
-  if (target.eventName && when) return `${target.eventName} — ${when}`;
+  if (target.eventName && when) return `${target.eventName} · ${when}`;
   return target.eventName || when;
 }
 
@@ -858,9 +858,9 @@ export function waitlistConfirmationEmail(
   const html = layout(
     "You're on the waitlist",
     `<p>Hi ${escapeHtml(input.name)},</p>
-     <p>Thank you for your patience — our books are full for the current season,
-        and you're on the list. We'll write to you as soon as a space opens up,
-        before we reopen commissions publicly.</p>
+     <p>Thank you for your patience. Our books are full for the current
+        season, and you're on the list. We'll write to you as soon as a space
+        opens up, before we reopen commissions publicly.</p>
      ${
        forLine
          ? `<p>We've noted that you're planning for <strong>${escapeHtml(forLine)}</strong>.</p>`
@@ -868,16 +868,16 @@ export function waitlistConfirmationEmail(
      }
      <p>Nothing is booked yet and there's nothing to pay. If your plans change,
         just reply to this email and let us know.</p>
-     <p>In the meantime, alterations, rhinestoning and repairs are still open —
-        if you have a piece already, we'd be glad to look at it.</p>`,
+     <p>In the meantime, alterations, rhinestoning and repairs are still
+        open. If you have a piece already, we'd be glad to look at it.</p>`,
   );
 
   const text = [
     `Hi ${input.name},`,
     ``,
-    `Thank you for your patience — our books are full for the current season, and`,
-    `you're on the list. We'll write to you as soon as a space opens up, before we`,
-    `reopen commissions publicly.`,
+    `Thank you for your patience. Our books are full for the current season,`,
+    `and you're on the list. We'll write to you as soon as a space opens up,`,
+    `before we reopen commissions publicly.`,
     ...(forLine
       ? [``, `We've noted that you're planning for ${forLine}.`]
       : []),
@@ -885,8 +885,8 @@ export function waitlistConfirmationEmail(
     `Nothing is booked yet and there's nothing to pay. If your plans change, just`,
     `reply to this email and let us know.`,
     ``,
-    `In the meantime, alterations, rhinestoning and repairs are still open — if you`,
-    `have a piece already, we'd be glad to look at it.`,
+    `In the meantime, alterations, rhinestoning and repairs are still open. If`,
+    `you have a piece already, we'd be glad to look at it.`,
     ``,
     `Thank you,`,
     `The ${ATELIER_NAME} team`,
@@ -1151,7 +1151,7 @@ export function measurementChangeConfirmationEmail(
   const html = layout(
     "We've received your measurement change",
     `<p>Hi there,</p>
-     <p>Thank you — we've received your request to update the measurements on order
+     <p>Thank you, we've received your request to update the measurements on order
         <strong>${orderNumber}</strong>.</p>
      ${detailHtml}`,
   );
@@ -1159,7 +1159,7 @@ export function measurementChangeConfirmationEmail(
   const text = [
     `Hi there,`,
     ``,
-    `Thank you — we've received your request to update the measurements on order ${orderNumber}.`,
+    `Thank you, we've received your request to update the measurements on order ${orderNumber}.`,
     ``,
     detailText,
     ``,
@@ -1184,7 +1184,7 @@ export function cancellationRequestConfirmationEmail(
   const html = layout(
     "We've received your cancellation request",
     `<p>Hi there,</p>
-     <p>Thank you — we've received your request to cancel order
+     <p>Thank you, we've received your request to cancel order
         <strong>${orderNumber}</strong>. Our team will review it and be in touch
         shortly to confirm the next steps.</p>
      <p>If a refund applies, we'll process it to your original payment method.</p>`,
@@ -1193,7 +1193,7 @@ export function cancellationRequestConfirmationEmail(
   const text = [
     `Hi there,`,
     ``,
-    `Thank you — we've received your request to cancel order ${orderNumber}. Our team will review it and be in touch shortly to confirm the next steps.`,
+    `Thank you, we've received your request to cancel order ${orderNumber}. Our team will review it and be in touch shortly to confirm the next steps.`,
     ``,
     `If a refund applies, we'll process it to your original payment method.`,
     ``,
@@ -1319,7 +1319,7 @@ export function reviewConfirmationEmail(
     "Thank you for your review",
     `<p>Hi there,</p>
      <p>Thank you for taking a moment to share your thoughts on order
-        <strong>${orderNumber}</strong> — it means the world to a small atelier.</p>
+        <strong>${orderNumber}</strong>. It means the world to a small atelier.</p>
      <p>We've passed your words to the team, and we hope your piece brings you
         confidence every time you wear it.</p>`,
   );
@@ -1327,8 +1327,8 @@ export function reviewConfirmationEmail(
   const text = [
     `Hi there,`,
     ``,
-    `Thank you for taking a moment to share your thoughts on order ${orderNumber} —`,
-    `it means the world to a small atelier.`,
+    `Thank you for taking a moment to share your thoughts on order ${orderNumber}.`,
+    `It means the world to a small atelier.`,
     ``,
     `We've passed your words to the team, and we hope your piece brings you`,
     `confidence every time you wear it.`,
@@ -1616,7 +1616,7 @@ export function appointmentCancelledEmail(
      <p>Your <strong>${details.typeName}</strong> with <strong>${details.staff}</strong>
         on ${details.when} has been cancelled, and the time released.</p>
      <p>We're sorry to miss you this time. Whenever you're ready, you can book a
-        new time on our appointments page — we'd love to see you.</p>`,
+        new time on our appointments page, and we'd love to see you.</p>`,
   );
 
   const text = [
@@ -1626,7 +1626,7 @@ export function appointmentCancelledEmail(
     `cancelled, and the time released.`,
     ``,
     `We're sorry to miss you this time. Whenever you're ready, you can book a new`,
-    `time on our appointments page — we'd love to see you.`,
+    `time on our appointments page, and we'd love to see you.`,
     ``,
     `Thank you,`,
     `The ${ATELIER_NAME} team`,
@@ -1775,7 +1775,7 @@ export function returnRequestConfirmationEmail(
   const html = layout(
     `We've received your ${kindWord} request`,
     `<p>Hi there,</p>
-     <p>Thank you — we've received your request to ${kindWord} order
+     <p>Thank you, we've received your request to ${kindWord} order
         <strong>${escapeHtml(orderNumber)}</strong>. Our team will review it and
         be in touch with the next steps, including any return-shipping details.</p>`,
   );
@@ -1783,7 +1783,7 @@ export function returnRequestConfirmationEmail(
   const text = [
     `Hi there,`,
     ``,
-    `Thank you — we've received your request to ${kindWord} order ${orderNumber}.`,
+    `Thank you, we've received your request to ${kindWord} order ${orderNumber}.`,
     `Our team will review it and be in touch with the next steps, including any`,
     `return-shipping details.`,
     ``,
@@ -1933,7 +1933,7 @@ export function shopOrderConfirmationEmail(
 
   const itemsText = details.lineItems.map(
     (item) =>
-      `${item.quantity} × ${item.description} — ${formatUsd(item.amount)}`,
+      `${item.quantity} × ${item.description}: ${formatUsd(item.amount)}`,
   );
   const totalsText = [
     ...totals.map(([label, amount]) => `${label}: ${formatUsd(amount)}`),

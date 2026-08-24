@@ -526,8 +526,7 @@ export default function OrderForm() {
           </p>
         </div>
         <p className="text-sm text-muted-foreground mb-8">
-          Save this number — you can use it to track your order status at any
-          time.
+          Save this number so you can track your order status at any time.
         </p>
       </SuccessScreen>
     );
@@ -608,8 +607,8 @@ export default function OrderForm() {
               Join the Waitlist
             </h1>
             <p className="text-muted-foreground font-light text-lg">
-              We&rsquo;re not taking new commissions just now &mdash; leave us
-              your details and we&rsquo;ll come to you first when we are.
+              We&rsquo;re not taking new commissions just now. Leave us your
+              details and we&rsquo;ll come to you first when we are.
             </p>
           </div>
 
@@ -902,8 +901,8 @@ export default function OrderForm() {
                   ) : (
                     <div className="border border-border rounded-lg p-6 bg-muted/20">
                       <p className="text-sm font-light text-foreground/90 leading-relaxed">
-                        No problem — we'll take your measurements for you. Book
-                        a fitting now and we'll take them then, or we'll arrange
+                        No problem, we'll take your measurements for you. Book a
+                        fitting now and we'll take them then, or we'll arrange
                         it when you place your order.
                       </p>
                       <CtaLink
@@ -955,7 +954,7 @@ export default function OrderForm() {
                     Colors
                   </h2>
                   <p className="text-muted-foreground font-light text-sm mb-6">
-                    Optional — pick the colors you're picturing (choose as many
+                    Optional. Pick the colors you're picturing (choose as many
                     as you like), or skip this and we'll settle it together at
                     your consultation.
                   </p>
@@ -1171,8 +1170,8 @@ export default function OrderForm() {
                     className="mt-1.5 bg-transparent border-0 border-b border-border rounded-none px-0 py-3 focus-visible:ring-0 focus-visible:border-primary transition-colors shadow-none w-64"
                   />
                   <p className="text-muted-foreground/60 text-xs mt-1.5">
-                    Referred by another skater? Enter their code and we'll send
-                    you a welcome discount.
+                    Referred by a friend? Enter their code and we'll send you a
+                    welcome discount.
                   </p>
                 </div>
               </section>
@@ -1189,8 +1188,8 @@ export default function OrderForm() {
                   className="mt-1 h-4 w-4 shrink-0 rounded-sm border-border text-primary accent-primary focus-visible:ring-primary"
                 />
                 <span className="text-sm font-light text-muted-foreground group-hover:text-foreground transition-colors">
-                  Keep me posted with new collections and studio notes. No
-                  noise, and you can unsubscribe anytime.
+                  Keep me posted with new collections and studio notes. You can
+                  unsubscribe anytime.
                 </span>
               </label>
 
@@ -1198,7 +1197,7 @@ export default function OrderForm() {
                 className="text-center text-xs font-light text-muted-foreground/70 max-w-md mx-auto"
                 data-testid="deposit-note"
               >
-                This starts your order — it isn't a payment. Once we've reviewed
+                This starts your order. It isn't a payment. Once we've reviewed
                 your details and quoted your piece, we'll send a deposit to
                 reserve your place in the atelier's schedule.
               </p>

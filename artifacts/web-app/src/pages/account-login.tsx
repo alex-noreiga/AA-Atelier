@@ -194,7 +194,7 @@ export default function AccountLogin() {
             <p className="text-muted-foreground font-light">
               {notice.kind === "magic" && "Your sign-in link is on its way to "}
               {notice.kind === "verify" &&
-                "Confirm your email to finish creating your account — we sent a link to "}
+                "Confirm your email to finish creating your account. We sent a link to "}
               {notice.kind === "reset" &&
                 "If that email has an account, a password-reset link is on its way to "}
               <span className="text-foreground break-all">{notice.email}</span>.

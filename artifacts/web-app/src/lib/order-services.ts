@@ -27,7 +27,7 @@ export const SERVICE_FALLBACK: ServiceRules = {
   detailsRequired: false,
   detailsLabel: "Description",
   detailsHelp:
-    "Tell us about your vision — style, silhouette, special requirements...",
+    "Tell us about your vision: style, silhouette, special requirements...",
   // `true`, unlike the other flags, is NOT the widest option here — it is the
   // one that matches the server. An order with no `service` resolves to the
   // bespoke commission on the way in, so the capacity gate applies to it; a

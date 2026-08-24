@@ -136,6 +136,14 @@ export interface OrderRecord {
    * Surfaced in the status response so the tracking page shows a cancelled
    * banner and suppresses the payment/request affordances. */
   cancelled?: boolean;
+  /** The raw `Service` property value — the service's display NAME, since that
+   * is what the atelier filters on (`resolveStoredOrderService` accepts either
+   * that or an id). Undefined for an order placed before the property existed,
+   * which resolves to the bespoke commission like everywhere else. Read to
+   * decide the payment-stage wording (`services/payment-labels.ts`) and the
+   * default line name on a flat quote. Stripped from the HTTP response by the
+   * `GetOrderStatusResponse` zod parse. */
+  service?: string;
 }
 
 /** The measurements on file for an order, read from its Notion properties.

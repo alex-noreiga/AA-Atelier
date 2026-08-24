@@ -249,7 +249,7 @@ describe("notifyRestock — sending", () => {
     await notifyRestock();
 
     expect(mockSend.mock.calls[0][0].subject).toBe(
-      "Back in stock: Bow Fleece Soaker — Black — M",
+      "Back in stock: Bow Fleece Soaker — Black · M",
     );
   });
 

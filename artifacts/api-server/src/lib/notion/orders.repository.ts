@@ -239,6 +239,7 @@ export async function findOrderByNumber(
   const estimatedCompletion = extractDueDate(page);
   const invoicePageId = extractInvoiceRelationId(page);
   const costingItemIds = extractCostingItemIds(page);
+  const service = extractOrderService(page);
   return {
     orderNumber: trimmedOrderNumber,
     orderName: extractOrderName(page),
@@ -250,6 +251,7 @@ export async function findOrderByNumber(
     ...(costingItemIds.length > 0 ? { costingItemIds } : {}),
     ...(extractRush(page) ? { rush: true } : {}),
     ...(extractCancelled(page) ? { cancelled: true } : {}),
+    ...(service !== undefined ? { service } : {}),
   };
 }
 
@@ -570,6 +572,10 @@ export interface OrderStageNotification {
   /** The furthest stage already emailed about; empty when never notified. */
   lastNotifiedStage: string;
   estimatedCompletion?: string;
+  /** The raw `Service` property value, for the payment-reminder email's stage
+   * wording (`services/payment-labels.ts`) — this record is how that pass
+   * resolves an invoice back to its order. Undefined for a legacy order. */
+  service?: string;
 }
 
 /** Map a Notion order page (+ the live stage list) to the notification view. */
@@ -579,6 +585,7 @@ function buildStageNotification(
   fallbackNumber = "",
 ): OrderStageNotification {
   const estimatedCompletion = extractDueDate(page);
+  const service = extractOrderService(page);
   return {
     pageId: page.id,
     orderNumber: extractOrderNumber(page) || fallbackNumber,
@@ -588,6 +595,7 @@ function buildStageNotification(
     stages: pipelineFor(page, stages),
     lastNotifiedStage: extractLastNotifiedStage(page),
     ...(estimatedCompletion !== undefined ? { estimatedCompletion } : {}),
+    ...(service !== undefined ? { service } : {}),
   };
 }
 

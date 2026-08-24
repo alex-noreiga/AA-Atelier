@@ -36,6 +36,7 @@ import {
   type OrderServiceDef,
 } from "../lib/service-catalog.js";
 import { logger } from "../lib/logger.js";
+import { deferBestEffort } from "../lib/background.js";
 
 export async function getOrderStatus(
   orderNumber: string,
@@ -200,32 +201,50 @@ export async function submitOrder(
   // Best-effort: capture a referral code (if the customer entered one) — stamp
   // the referrer link and email this new customer their welcome discount. A
   // failure (or an unknown/self code, or no CRM) must never fail the order.
+  //
+  // Deferred for the same reason as the emails below: this is a Notion read, a
+  // Notion write, a Stripe promotion-code create and a Resend send, none of
+  // which the response depends on. The `try/catch` stays *inside* the deferred
+  // task so a referral failure keeps its `warn` level — it is explicitly "the
+  // order is unaffected", not the error-level surprise `deferBestEffort` logs.
   if (input.referralCode) {
-    try {
-      await captureReferralOnOrder({
-        referralCode: input.referralCode,
-        email: input.email,
-      });
-    } catch (err) {
-      logger.warn(
-        { err },
-        "Failed to capture referral on order; the order is unaffected",
-      );
-    }
-  }
-
-  // Best-effort emails; a mail failure must not fail the order.
-  const from = fromAddress("orders");
-  await sendEmailBestEffort({
-    ...orderConfirmationEmail(input, orderNumber),
-    from,
-  });
-  const inbox = atelierInbox("orders");
-  if (inbox) {
-    await sendEmailBestEffort({
-      ...orderNotificationEmail(input, orderNumber, inbox),
-      from,
+    const referralCode = input.referralCode;
+    const { email } = input;
+    await deferBestEffort("referral capture", async () => {
+      try {
+        await captureReferralOnOrder({ referralCode, email });
+      } catch (err) {
+        logger.warn(
+          { err },
+          "Failed to capture referral on order; the order is unaffected",
+        );
+      }
     });
   }
+
+  // Best-effort emails; a mail failure must not fail the order. Because the
+  // response is identical either way, they are handed off with `deferBestEffort`
+  // rather than awaited inline: two sequential Resend round-trips were a large
+  // part of this endpoint's 1.6-3.0s, all of it spent after the order was
+  // already safely recorded in Notion. Where the platform offers no `waitUntil`
+  // (local dev, tests) that helper awaits inline, so the emails are never traded
+  // away for the latency — see lib/background.ts.
+  //
+  // The sender and inbox are resolved *here*, while the request's primed
+  // settings snapshot is current, so only the network calls are deferred.
+  const from = fromAddress("orders");
+  const inbox = atelierInbox("orders");
+  const confirmation = { ...orderConfirmationEmail(input, orderNumber), from };
+  const notification = inbox
+    ? { ...orderNotificationEmail(input, orderNumber, inbox), from }
+    : null;
+
+  await deferBestEffort("order confirmation emails", async () => {
+    await sendEmailBestEffort(confirmation);
+    if (notification) {
+      await sendEmailBestEffort(notification);
+    }
+  });
+
   return { orderNumber };
 }

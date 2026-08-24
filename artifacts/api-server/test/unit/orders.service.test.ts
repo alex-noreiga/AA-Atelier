@@ -1,4 +1,4 @@
-import { describe, it, expect, vi, afterEach } from "vitest";
+import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import { createOrderInput, orderRecord } from "@workspace/test-fixtures";
 import type { OrderRecord } from "../../src/lib/notion/orders.schema.js";
 
@@ -283,6 +283,83 @@ describe("submitOrder", () => {
     expect(notification).toBeDefined();
     expect(notification?.replyTo).toBe("ada@example.com");
     expect(notification?.subject).toContain("ORD-XYZ-987");
+  });
+
+  describe("when the platform offers a waitUntil (Vercel)", () => {
+    const REQUEST_CONTEXT = Symbol.for("@vercel/request-context");
+    let handed: Promise<unknown>[];
+
+    beforeEach(() => {
+      handed = [];
+      (globalThis as unknown as Record<symbol, unknown>)[REQUEST_CONTEXT] = {
+        get: () => ({
+          waitUntil: (p: Promise<unknown>) => void handed.push(p),
+        }),
+      };
+    });
+
+    afterEach(() => {
+      delete (globalThis as unknown as Record<symbol, unknown>)[
+        REQUEST_CONTEXT
+      ];
+    });
+
+    it("returns the order number without waiting for the emails", async () => {
+      process.env.ATELIER_INBOX_EMAIL = "orders@a3iceanddance.com";
+      mockCreate.mockResolvedValue({
+        orderNumber: "ORD-XYZ-987",
+        pageId: "page-1",
+      });
+      // A send that never settles. If the order path still awaited the mailer,
+      // this test could only time out — which is the property being pinned, and
+      // one that an instantly-resolving mock cannot distinguish. `...Once` so
+      // it cannot leak into the next test: `clearMocks` resets calls, not
+      // implementations.
+      mockSend.mockImplementationOnce(() => new Promise<void>(() => {}));
+
+      const result = await submitOrder(
+        createOrderInput({ email: "ada@example.com" }),
+      );
+
+      // The whole point of the change: the customer gets their order number
+      // before the two Resend round-trips, not after.
+      expect(result).toEqual({ orderNumber: "ORD-XYZ-987" });
+      expect(handed).toHaveLength(1);
+    });
+
+    it("still sends both emails, once the deferred work settles", async () => {
+      process.env.ATELIER_INBOX_EMAIL = "orders@a3iceanddance.com";
+      mockCreate.mockResolvedValue({
+        orderNumber: "ORD-XYZ-987",
+        pageId: "page-1",
+      });
+
+      await submitOrder(createOrderInput({ email: "ada@example.com" }));
+      await handed[0];
+
+      // Deferring must not become dropping — this is what `waitUntil` buys.
+      expect(mockSend).toHaveBeenCalledTimes(2);
+      const recipients = mockSend.mock.calls.map((c) => c[0].to);
+      expect(recipients).toContain("ada@example.com");
+      expect(recipients).toContain("orders@a3iceanddance.com");
+    });
+
+    it("records the order even if the deferred emails fail", async () => {
+      mockCreate.mockResolvedValue({
+        orderNumber: "ORD-XYZ-987",
+        pageId: "page-1",
+      });
+      mockSend.mockRejectedValueOnce(new Error("Resend is down"));
+
+      const result = await submitOrder(
+        createOrderInput({ email: "ada@example.com" }),
+      );
+
+      expect(result).toEqual({ orderNumber: "ORD-XYZ-987" });
+      // The handed-off promise must not reject: it settles after the response
+      // has gone out, where a rejection is an unhandled one.
+      await expect(handed[0]).resolves.toBeUndefined();
+    });
   });
 
   it("does not notify the atelier when ATELIER_INBOX_EMAIL is unset", async () => {

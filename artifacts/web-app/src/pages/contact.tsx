@@ -105,7 +105,7 @@ export default function Contact() {
       <SuccessScreen
         icon={CheckCircle}
         title="Message Sent"
-        description="Thank you for reaching out — we'll be in touch soon."
+        description="Thank you for reaching out. We'll be in touch soon."
         footer={
           <Link
             to="/"

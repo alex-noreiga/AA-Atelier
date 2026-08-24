@@ -25,7 +25,7 @@ const SERVICES: { icon: LucideIcon; title: string; description: string }[] = [
     icon: Scissors,
     title: "Bespoke Commissions",
     description:
-      "Designed and made entirely for you — from first sketch to final hand-finishing.",
+      "Designed and made entirely for you, from first sketch to final hand-finishing.",
   },
   {
     icon: Ruler,
@@ -37,13 +37,13 @@ const SERVICES: { icon: LucideIcon; title: string; description: string }[] = [
     icon: Sparkles,
     title: "Rhinestoning & Embellishment",
     description:
-      "Hand-applied crystals and detailing that catch the light — on our work or your own.",
+      "Hand-applied crystals and detailing that catch the light, on our work or your own.",
   },
   {
     icon: Heart,
     title: "Repairs & Restoration",
     description:
-      "Mending and restoring beloved costumes for another season on the ice.",
+      "Mending and restoring beloved costumes for another season on the ice or on stage.",
   },
 ];
 
@@ -53,7 +53,7 @@ const TRUST_POINTS: string[] = [
   "Founded by figure skaters",
   "Women-owned",
   "Handmade to measure",
-  "4–8 week turnaround",
+  "4 to 8 week turnaround",
 ];
 
 // A trimmed teaser of the four-step process on /services (see PROCESS there) —
@@ -63,7 +63,7 @@ const PROCESS: { step: string; title: string; description: string }[] = [
     step: "01",
     title: "Consultation",
     description:
-      "We talk through your vision, program, measurements, and timeline.",
+      "We talk through your vision, your routine, measurements, and timeline.",
   },
   {
     step: "02",
@@ -93,7 +93,7 @@ export default function Home() {
         <div className="min-h-[62vh] flex flex-col justify-center text-center">
           {/* Eyebrow */}
           <p className="text-primary text-xs tracking-[0.35em] uppercase mb-8">
-            A Custom Figure Skating Costume Atelier
+            A Custom Skating &amp; Dance Costume Atelier
           </p>
 
           {/* Headline */}
@@ -241,7 +241,7 @@ export default function Home() {
           />
           <p className="max-w-xl mx-auto text-muted-foreground font-light text-lg leading-relaxed">
             Not ready for a full commission? Browse ready-made costumes and
-            accessories — pieces you can order today, with the same handcrafted
+            accessories, pieces you can order today, with the same handcrafted
             care.
           </p>
           <div className="mt-10">
@@ -257,9 +257,9 @@ export default function Home() {
           <SectionHeader eyebrow="Our Story" title="Founded by skaters" />
           <p className="max-w-2xl mx-auto text-center text-muted-foreground font-light text-lg leading-relaxed">
             A.A. Atelier is a local, women owned business founded by figure
-            skaters. Our mission is to bring your ideas to life — custom
-            costumes and accessories that are as unique as you are, handmade
-            with care, creativity, and attention to detail.
+            skaters. Our mission is to bring your ideas to life with custom
+            costumes and accessories for the ice and the stage, as unique as you
+            are and handmade with care, creativity, and attention to detail.
           </p>
           <p className="mt-12 text-center font-serif italic text-2xl md:text-3xl text-primary">
             Come with a vision and leave with confidence.
