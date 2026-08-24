@@ -12,6 +12,10 @@ import { resolveOrderService } from "../service-catalog.js";
 import type { CreateContactInput } from "../notion/contact.blocks.js";
 import type { CreateNotifyInput } from "../notion/notify.blocks.js";
 import type { CreateNewsletterInput } from "../notion/newsletter.blocks.js";
+import type {
+  CreateWaitlistInput,
+  WaitlistTarget,
+} from "../notion/waitlist.blocks.js";
 import type { CreateMeasurementChangeInput } from "../notion/measurement-change.blocks.js";
 import {
   RETURN_REASON_LABELS,
@@ -833,6 +837,69 @@ export function newsletterWelcomeEmail(
   };
 }
 
+/**
+ * A line naming what the customer is waiting for, for both mail bodies — or
+ * empty when they told us neither an event nor a date, in which case the copy
+ * simply doesn't mention it rather than saying "for: nothing".
+ */
+function waitlistTargetLine(target: WaitlistTarget): string {
+  const when = target.date ? formatCalendarDate(target.date) : "";
+  if (target.eventName && when) return `${target.eventName} · ${when}`;
+  return target.eventName || when;
+}
+
+/** Acknowledgement that a customer has been added to the commission waitlist. */
+export function waitlistConfirmationEmail(
+  input: CreateWaitlistInput,
+  target: WaitlistTarget,
+): EmailMessage {
+  const forLine = waitlistTargetLine(target);
+
+  const html = layout(
+    "You're on the waitlist",
+    `<p>Hi ${escapeHtml(input.name)},</p>
+     <p>Thank you for your patience. Our books are full for the current
+        season, and you're on the list. We'll write to you as soon as a space
+        opens up, before we reopen commissions publicly.</p>
+     ${
+       forLine
+         ? `<p>We've noted that you're planning for <strong>${escapeHtml(forLine)}</strong>.</p>`
+         : ""
+     }
+     <p>Nothing is booked yet and there's nothing to pay. If your plans change,
+        just reply to this email and let us know.</p>
+     <p>In the meantime, alterations, rhinestoning and repairs are still
+        open. If you have a piece already, we'd be glad to look at it.</p>`,
+  );
+
+  const text = [
+    `Hi ${input.name},`,
+    ``,
+    `Thank you for your patience. Our books are full for the current season,`,
+    `and you're on the list. We'll write to you as soon as a space opens up,`,
+    `before we reopen commissions publicly.`,
+    ...(forLine
+      ? [``, `We've noted that you're planning for ${forLine}.`]
+      : []),
+    ``,
+    `Nothing is booked yet and there's nothing to pay. If your plans change, just`,
+    `reply to this email and let us know.`,
+    ``,
+    `In the meantime, alterations, rhinestoning and repairs are still open. If`,
+    `you have a piece already, we'd be glad to look at it.`,
+    ``,
+    `Thank you,`,
+    `The ${ATELIER_NAME} team`,
+  ].join("\n");
+
+  return {
+    to: input.email,
+    subject: `You're on the ${ATELIER_NAME} waitlist`,
+    html,
+    text,
+  };
+}
+
 // Account sign-in emails (verify address, magic link, password reset) are sent
 // by Supabase Auth from its own templates (over the studio's Resend SMTP), not
 // from here — so there's no account-portal email builder in this file anymore.
@@ -1037,6 +1104,33 @@ export function backInStockNotificationEmail(
     replyTo: input.email,
     subject: `Back-in-stock request — ${input.item}`,
     html: internalLayout("New back-in-stock request", renderRowsHtml(fields)),
+    text: renderRowsText(fields),
+  };
+}
+
+/** Tells the atelier somebody has joined the commission waitlist — the signal
+ * they reopen the books on, so unlike a newsletter opt-in it is worth an email. */
+export function waitlistNotificationEmail(
+  input: CreateWaitlistInput,
+  target: WaitlistTarget,
+  to: string,
+): EmailMessage {
+  const forLine = waitlistTargetLine(target);
+  const fields: Field[] = [
+    ["Name", input.name],
+    ["Email", input.email],
+    ...(input.phone ? [["Phone", input.phone] as Field] : []),
+    ...(forLine ? [["Waiting for", forLine] as Field] : []),
+    ...(input.notes?.trim() ? [["Notes", input.notes.trim()] as Field] : []),
+  ];
+
+  return {
+    to,
+    replyTo: input.email,
+    subject: forLine
+      ? `Waitlist — ${input.name} (${forLine})`
+      : `Waitlist — ${input.name}`,
+    html: internalLayout("New waitlist entry", renderRowsHtml(fields)),
     text: renderRowsText(fields),
   };
 }

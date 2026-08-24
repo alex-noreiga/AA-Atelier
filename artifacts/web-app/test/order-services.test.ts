@@ -30,6 +30,9 @@ describe("serviceRules", () => {
       detailsRequired: true,
       detailsLabel: "The piece and what needs repairing",
       detailsHelp: "Tell us what's happened to it...",
+      // A repair is worked on a piece the customer already owns, so it keeps
+      // taking orders when the commission book is full.
+      capacityGated: false,
     });
   });
 

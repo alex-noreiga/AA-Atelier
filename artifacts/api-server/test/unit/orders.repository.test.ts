@@ -886,7 +886,10 @@ describe("listOrdersForAnalytics", () => {
         rush: true,
         invoicePageId: "inv-1",
         // No `Service` on the page, so the order resolves to the bespoke
-        // commission and its pipeline is the whole live list.
+        // commission and its pipeline is the whole live list. The raw value is
+        // passed through empty rather than resolved here — the catalog owns
+        // what a service value means, and the capacity count is what asks it.
+        service: "",
         pipeline: ["Design", "Delivered"],
       },
     ]);

@@ -103,6 +103,38 @@ export async function mockServices(
   });
 }
 
+/**
+ * Mock `GET /api/capacity` (whether the studio is taking bespoke commissions).
+ * Defaults to open, which is the state every existing spec assumes — the intake
+ * form rather than the waitlist. Pass
+ * `body: { open: false, waitlistOpen: true, message: "..." }` to drive the
+ * closed-books path.
+ */
+export async function mockCapacity(
+  page: Page,
+  opts: { status?: number; body?: unknown } = {},
+): Promise<void> {
+  await page.route("**/api/capacity", async (route) => {
+    if (route.request().method() !== "GET") return route.fallback();
+    await json(
+      route,
+      opts.status ?? 200,
+      opts.body ?? { open: true, waitlistOpen: false, message: "" },
+    );
+  });
+}
+
+/** Mock `POST /api/waitlist`. */
+export async function mockJoinWaitlist(
+  page: Page,
+  opts: { status?: number; body?: unknown } = {},
+): Promise<void> {
+  await page.route("**/api/waitlist", async (route) => {
+    if (route.request().method() !== "POST") return route.fallback();
+    await json(route, opts.status ?? 201, opts.body ?? { success: true });
+  });
+}
+
 /** Mock `POST /api/contact`. */
 export async function mockCreateContact(
   page: Page,

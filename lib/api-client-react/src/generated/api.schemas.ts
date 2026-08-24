@@ -608,7 +608,7 @@ export interface ReviewStatusRequest {
 }
 
 /**
- * What a customer is asking for, DERIVED from the row's `Request type` select rather than enumerated from it. Six kinds name the values the app writes; `other` is anything else — a blank select, or a type the atelier invented — so an unrecognized row appears in the queue asking to be looked at rather than vanishing from it.
+ * What a customer is asking for, DERIVED from the row's `Request type` select rather than enumerated from it. Seven kinds name the values the app writes; `other` is anything else — a blank select, or a type the atelier invented — so an unrecognized row appears in the queue asking to be looked at rather than vanishing from it.
  *
  * `newsletter` never appears in the request QUEUE — an opt-in is a consent record nobody answers, so it has its own panel (see `/studio/newsletter`) and is filtered out of the queue. The kind still exists because the queue's state operation is shared across the whole contact inbox, and it answers with the row it wrote.
  */
@@ -621,6 +621,7 @@ export const StudioRequestKind = {
   measurement: 'measurement',
   cancellation: 'cancellation',
   return: 'return',
+  waitlist: 'waitlist',
   newsletter: 'newsletter',
   other: 'other',
 } as const;
@@ -797,6 +798,45 @@ export interface NewContactResponse {
   success: boolean;
 }
 
+/**
+ * Whether the capacity-gated services are accepting orders, and the wording to show when they aren't.
+ */
+export interface CapacityStatus {
+  /** True when a capacity-gated service can be ordered. False means the intake form should offer the waitlist instead. */
+  open: boolean;
+  /** Whether `POST /waitlist` should be offered. Today this is the inverse of `open`, but it is stated rather than derived so the atelier can later close the books without collecting names. */
+  waitlistOpen: boolean;
+  /** The customer-facing explanation to show when closed, from the atelier-editable `COMMISSION_CLOSED_MESSAGE` setting. Empty when open — there is nothing to explain. */
+  message: string;
+}
+
+/**
+ * A request to be told when the studio's books reopen. Deliberately lighter than an order: enough to get back in touch and to know what the piece is for.
+ */
+export interface NewWaitlistRequest {
+  /** @minLength 1 */
+  name: string;
+  email: string;
+  phone?: string;
+  /** When the customer needs the piece, if they know. Used by the atelier to work the list in date order. */
+  neededBy?: string;
+  /** What the piece is for, in the customer's own words — a competition, a recital, a showcase. Free text on purpose: the studio makes for skating and dance alike and can't keep a list of every event its customers work towards, but the customer knows theirs. Used only to label the entry for the atelier — nothing resolves or validates it. */
+  eventName?: string;
+  /** A line about the piece they have in mind. Optional. */
+  notes?: string;
+  /** Anti-spam honeypot. A hidden field that real visitors never fill; a non-empty value marks the submission as spam and it is silently dropped. Always send empty (or omit). */
+  website?: string;
+  /**
+     * Anti-spam timing signal: milliseconds the visitor spent on the form before submitting. Implausibly fast submissions are dropped. Omit when unmeasurable (treated as human).
+     * @minimum 0
+     */
+  elapsedMs?: number;
+}
+
+export interface NewWaitlistResponse {
+  success: boolean;
+}
+
 export interface NewNotifyRequest {
   email: string;
   /**
@@ -965,6 +1005,8 @@ export interface Service {
   detailsLabel: string;
   /** Placeholder / prompt for `description` on this service's form. */
   detailsHelp: string;
+  /** Whether this service is paused when the studio's books are closed (see `GET /capacity`). True only for work that consumes the atelier's making capacity — a bespoke commission. A piece the customer already owns is quick work the studio keeps taking, so alterations, rhinestoning and repairs are never gated. */
+  capacityGated: boolean;
 }
 
 export interface ServiceList {
@@ -1509,6 +1551,35 @@ export interface StudioTopItem {
 }
 
 /**
+ * What decided it. `unlimited` means no capacity is configured; `forced-*` means the atelier's manual switch overrode the count; `unknown` means the count couldn't be read and the books stayed open rather than closing on a bad read.
+ */
+export type StudioCapacityReason = typeof StudioCapacityReason[keyof typeof StudioCapacityReason];
+
+
+export const StudioCapacityReason = {
+  unlimited: 'unlimited',
+  'under-capacity': 'under-capacity',
+  'at-capacity': 'at-capacity',
+  'forced-open': 'forced-open',
+  'forced-closed': 'forced-closed',
+  unknown: 'unknown',
+} as const;
+
+/**
+ * The seasonal-capacity gate as the studio sees it — whether the books are open, why, and the count behind it. The public `GET /capacity` carries the decision but deliberately none of these numbers; how much work the studio is holding is the studio's own business.
+ */
+export interface StudioCapacity {
+  /** Whether a bespoke commission can currently be ordered. */
+  open: boolean;
+  /** What decided it. `unlimited` means no capacity is configured; `forced-*` means the atelier's manual switch overrode the count; `unknown` means the count couldn't be read and the books stayed open rather than closing on a bad read. */
+  reason: StudioCapacityReason;
+  /** The configured `COMMISSION_CAPACITY`. `0` means no limit is being enforced. */
+  limit: number;
+  /** How many capacity-gated orders are neither delivered nor cancelled. Absent when the count wasn't read — which is not the same as zero, and the panel says so rather than showing a nought. */
+  inProduction?: number;
+}
+
+/**
  * The atelier's own figures, aggregated from the live Notion databases for the internal studio dashboard. Every money value is US dollars.
  */
 export interface StudioAnalytics {
@@ -1522,6 +1593,7 @@ export interface StudioAnalytics {
   payments: StudioPaymentTotals;
   /** The shop's best sellers, most-ordered first. Empty when no shop order carries its inventory relation (legacy orders, or the relation-links flag being off) — item-level figures are only as good as that link. */
   topItems: StudioTopItem[];
+  capacity: StudioCapacity;
 }
 
 /**

@@ -9,22 +9,31 @@ import {
 
 // Capture what the create-order mutation is called with, without hitting the
 // network. `vi.hoisted` makes the spy available inside the hoisted vi.mock.
-const { mutate, subscribeMutate, colorsResult, servicesResult } = vi.hoisted(
-  () => ({
-    mutate: vi.fn(),
-    subscribeMutate: vi.fn(),
-    // Mutable so a test can swap in an empty/errored colors result.
-    colorsResult: { current: { data: undefined as unknown } },
-    // Likewise for the service catalog — an empty result is the degraded path
-    // where the form falls back to the bespoke shape.
-    servicesResult: { current: { data: undefined as unknown } },
-  }),
-);
+const {
+  mutate,
+  subscribeMutate,
+  colorsResult,
+  servicesResult,
+  capacityResult,
+} = vi.hoisted(() => ({
+  mutate: vi.fn(),
+  subscribeMutate: vi.fn(),
+  // Mutable so a test can swap in an empty/errored colors result.
+  colorsResult: { current: { data: undefined as unknown } },
+  // Likewise for the service catalog — an empty result is the degraded path
+  // where the form falls back to the bespoke shape.
+  servicesResult: { current: { data: undefined as unknown } },
+  // The commission-capacity answer. Undefined is the degraded/loading path, in
+  // which the intake form renders as it always has; a test closing the books
+  // swaps in a definite `open: false`.
+  capacityResult: { current: { data: undefined as unknown } },
+}));
 vi.mock("@workspace/api-client-react", () => ({
   useCreateOrder: () => ({ mutate, isPending: false }),
   useSubscribeNewsletter: () => ({ mutate: subscribeMutate, isPending: false }),
   useGetColors: () => colorsResult.current,
   useGetServices: () => servicesResult.current,
+  useGetCapacity: () => capacityResult.current,
 }));
 
 import OrderForm from "@/pages/order-form";
@@ -34,6 +43,7 @@ import OrderForm from "@/pages/order-form";
 beforeEach(() => {
   colorsResult.current = { data: colorList() };
   servicesResult.current = { data: serviceList() };
+  capacityResult.current = { data: undefined };
 });
 
 function byId(id: string): HTMLElement {

@@ -20,6 +20,8 @@ vi.mock("@workspace/api-client-react", () => ({
   // No catalog: the form falls back to the bespoke shape, which is the one that
   // reaches the fitting/consultation offers this file is about.
   useGetServices: () => ({ data: undefined }),
+  // No capacity answer: the intake form renders, which is what this file drives.
+  useGetCapacity: () => ({ data: undefined }),
 }));
 
 import OrderForm from "@/pages/order-form";

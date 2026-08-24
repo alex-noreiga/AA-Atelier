@@ -35,6 +35,7 @@ describe("requestKind", () => {
     expect(requestKind(page({ requestType: "Return / exchange" }))).toBe(
       "return",
     );
+    expect(requestKind(page({ requestType: "Waitlist" }))).toBe("waitlist");
     // Never reaches the queue (see extractStudioRequests), but the shared state
     // operation answers with the row it wrote, and that row can be an opt-in.
     expect(requestKind(page({ requestType: "Newsletter" }))).toBe("newsletter");
@@ -137,6 +138,12 @@ describe("requestAction", () => {
       requestAction("measurement", { orderNumber: "ORD-000002" }),
     ).toBeUndefined();
     expect(requestAction("inquiry", {})).toBeUndefined();
+    // A waitlist entry is answered by writing to the customer, or by reopening
+    // intake under Studio settings — there is no tool to hand it to, and an
+    // order number it happened to mention is not an order it concerns.
+    expect(
+      requestAction("waitlist", { orderNumber: "ORD-000002", item: "Gala" }),
+    ).toBeUndefined();
     expect(
       requestAction("other", { orderNumber: "ORD-000002" }),
     ).toBeUndefined();
@@ -250,6 +257,21 @@ describe("extractStudioRequests", () => {
     ]);
 
     expect(records.map((r) => r.id)).toEqual(["keep", "keep-2"]);
+  });
+
+  // The newsletter exclusion is the ONLY one. A waitlist entry is somebody
+  // waiting on an answer, so it belongs in the queue with the rest.
+  it("keeps waitlist entries in the queue", () => {
+    const records = extractStudioRequests([
+      page({ id: "wait", requestType: "Waitlist" }),
+      page({ id: "drop", requestType: "Newsletter" }),
+    ]);
+
+    expect(records.map((r) => r.id)).toEqual(["wait"]);
+    expect(records[0].kind).toBe("waitlist");
+    // No tool, and no order number parsed — a waitlist entry concerns no order.
+    expect(records[0].action).toBeUndefined();
+    expect(records[0].orderNumber).toBeUndefined();
   });
 });
 

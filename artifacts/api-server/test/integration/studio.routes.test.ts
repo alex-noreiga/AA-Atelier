@@ -153,6 +153,7 @@ describe("GET /api/studio/analytics", () => {
           dueDate: "2099-01-01",
           cancelled: false,
           rush: true,
+          service: "Bespoke Commission",
           invoicePageId: "inv-1",
         },
       ],

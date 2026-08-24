@@ -34,6 +34,10 @@ tags:
     description: Published customer testimonials, curated by the atelier
   - name: services
     description: The intake service catalog a custom order is placed against
+  - name: capacity
+    description: Whether the studio's books are open for new bespoke commissions
+  - name: waitlist
+    description: The waitlist collected while the studio's books are closed
 paths:
   /health:
     get:
@@ -78,7 +82,11 @@ paths:
       operationId: createOrder
       tags: [orders]
       summary: Submit a new custom dress order
-      description: Creates a new custom dress order and saves it to Notion
+      description: >-
+        Creates a new custom dress order and saves it to Notion. Refused with
+        409 when the order is for a capacity-gated service and the studio's
+        books are closed (see `GET /capacity`) — the customer is offered
+        `POST /waitlist` instead.
       requestBody:
         required: true
         content:
@@ -94,6 +102,14 @@ paths:
                 $ref: "#/components/schemas/NewOrderResponse"
         "400":
           description: Validation error
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorEnvelope"
+        "409":
+          description: >-
+            The studio's books are closed for this service; join the waitlist
+            instead.
           content:
             application/json:
               schema:
@@ -426,6 +442,81 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/NewNewsletterResponse"
+        "400":
+          description: Validation error
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorEnvelope"
+        "500":
+          description: Server error
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorEnvelope"
+  /capacity:
+    get:
+      operationId: getCapacity
+      tags: [capacity]
+      summary: Whether the studio is taking new bespoke commissions
+      description: >-
+        Reports whether the atelier's books are open for the capacity-gated
+        services (today, the bespoke commission — see `Service.capacityGated`),
+        so the intake form can offer the waitlist instead of a form that would
+        be refused. The same decision gates `POST /orders`, so the form and the
+        server can't disagree.
+
+        Closed means one of two things: the atelier paused intake by hand, or
+        the number of commissions in production has reached the studio's
+        capacity. Both are atelier-editable Studio Settings
+        (`COMMISSION_INTAKE`, `COMMISSION_CAPACITY`).
+
+        Deliberately degrade-safe and fail-OPEN: with no capacity configured, or
+        when the order count can't be read, this reports open. Turning a
+        customer away because of an outage is the worst way to be wrong.
+
+        Carries no order counts — how much work the studio is holding is the
+        studio's business, not the visitor's.
+      responses:
+        "200":
+          description: The current intake status
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CapacityStatus"
+        "500":
+          description: Server error
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorEnvelope"
+  /waitlist:
+    post:
+      operationId: joinWaitlist
+      tags: [waitlist]
+      summary: Join the waitlist for a bespoke commission
+      description: >-
+        Records a customer's request to be told when the studio's books reopen,
+        as a tagged row in the Notion contact-messages inbox (and a best-effort
+        Client CRM lead), and sends a best-effort acknowledgement. Accepted
+        whether or not intake is currently closed — a customer planning ahead is
+        not a mistake to reject.
+
+        This never creates an order and never holds a slot. The atelier answers
+        a waitlist entry by hand when capacity frees.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/NewWaitlistRequest"
+      responses:
+        "201":
+          description: Waitlist entry received
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/NewWaitlistResponse"
         "400":
           description: Validation error
           content:
@@ -3326,11 +3417,12 @@ components:
         - measurement
         - cancellation
         - return
+        - waitlist
         - newsletter
         - other
       description: >-
         What a customer is asking for, DERIVED from the row's `Request type`
-        select rather than enumerated from it. Six kinds name the values the
+        select rather than enumerated from it. Seven kinds name the values the
         app writes; `other` is anything else — a blank select, or a type the
         atelier invented — so an unrecognized row appears in the queue asking
         to be looked at rather than vanishing from it.
@@ -3605,6 +3697,88 @@ components:
             before submitting. Implausibly fast submissions are dropped. Omit
             when the client can't measure it (treated as human).
     NewContactResponse:
+      type: object
+      required:
+        - success
+      properties:
+        success:
+          type: boolean
+    CapacityStatus:
+      type: object
+      required:
+        - open
+        - waitlistOpen
+        - message
+      description: >-
+        Whether the capacity-gated services are accepting orders, and the
+        wording to show when they aren't.
+      properties:
+        open:
+          type: boolean
+          description: >-
+            True when a capacity-gated service can be ordered. False means the
+            intake form should offer the waitlist instead.
+        waitlistOpen:
+          type: boolean
+          description: >-
+            Whether `POST /waitlist` should be offered. Today this is the
+            inverse of `open`, but it is stated rather than derived so the
+            atelier can later close the books without collecting names.
+        message:
+          type: string
+          description: >-
+            The customer-facing explanation to show when closed, from the
+            atelier-editable `COMMISSION_CLOSED_MESSAGE` setting. Empty when
+            open — there is nothing to explain.
+    NewWaitlistRequest:
+      type: object
+      required:
+        - name
+        - email
+      description: >-
+        A request to be told when the studio's books reopen. Deliberately
+        lighter than an order: enough to get back in touch and to know what the
+        piece is for.
+      properties:
+        name:
+          type: string
+          minLength: 1
+        email:
+          type: string
+          format: email
+        phone:
+          type: string
+        neededBy:
+          type: string
+          format: date
+          description: >-
+            When the customer needs the piece, if they know. Used by the atelier
+            to work the list in date order.
+        eventName:
+          type: string
+          description: >-
+            What the piece is for, in the customer's own words — a competition,
+            a recital, a showcase. Free text on purpose: the studio makes for
+            skating and dance alike and can't keep a list of every event its
+            customers work towards, but the customer knows theirs. Used only to
+            label the entry for the atelier — nothing resolves or validates it.
+        notes:
+          type: string
+          description: A line about the piece they have in mind. Optional.
+        website:
+          type: string
+          description: >-
+            Anti-spam honeypot. A hidden field that real visitors never fill; a
+            non-empty value marks the submission as spam and it is silently
+            dropped. Always send empty (or omit).
+        elapsedMs:
+          type: integer
+          minimum: 0
+          description: >-
+            Anti-spam timing signal: milliseconds the visitor spent on the form
+            before submitting. Implausibly fast submissions are dropped. Omit
+            when unmeasurable (treated as human).
+    NewWaitlistResponse:
       type: object
       required:
         - success
@@ -3888,6 +4062,7 @@ components:
         - detailsRequired
         - detailsLabel
         - detailsHelp
+        - capacityGated
       description: >-
         One service a custom order can be placed for, with the rules that decide
         what the intake form asks for. The flags are the contract's half of a
@@ -3928,6 +4103,14 @@ components:
         detailsHelp:
           type: string
           description: Placeholder / prompt for `description` on this service's form.
+        capacityGated:
+          type: boolean
+          description: >-
+            Whether this service is paused when the studio's books are closed
+            (see `GET /capacity`). True only for work that consumes the
+            atelier's making capacity — a bespoke commission. A piece the
+            customer already owns is quick work the studio keeps taking, so
+            alterations, rhinestoning and repairs are never gated.
     ServiceList:
       type: object
       required:
@@ -4640,6 +4823,7 @@ components:
           revenue,
           payments,
           topItems,
+          capacity,
         ]
       properties:
         generatedAt:
@@ -4672,6 +4856,45 @@ components:
             as that link.
           items:
             $ref: "#/components/schemas/StudioTopItem"
+        capacity:
+          $ref: "#/components/schemas/StudioCapacity"
+    StudioCapacity:
+      type: object
+      description: >-
+        The seasonal-capacity gate as the studio sees it — whether the books are
+        open, why, and the count behind it. The public `GET /capacity` carries
+        the decision but deliberately none of these numbers; how much work the
+        studio is holding is the studio's own business.
+      required: [open, reason, limit]
+      properties:
+        open:
+          type: boolean
+          description: Whether a bespoke commission can currently be ordered.
+        reason:
+          type: string
+          enum:
+            - unlimited
+            - under-capacity
+            - at-capacity
+            - forced-open
+            - forced-closed
+            - unknown
+          description: >-
+            What decided it. `unlimited` means no capacity is configured;
+            `forced-*` means the atelier's manual switch overrode the count;
+            `unknown` means the count couldn't be read and the books stayed open
+            rather than closing on a bad read.
+        limit:
+          type: integer
+          description: >-
+            The configured `COMMISSION_CAPACITY`. `0` means no limit is being
+            enforced.
+        inProduction:
+          type: integer
+          description: >-
+            How many capacity-gated orders are neither delivered nor cancelled.
+            Absent when the count wasn't read — which is not the same as zero,
+            and the panel says so rather than showing a nought.
     StudioPipeline:
       type: object
       description: >-

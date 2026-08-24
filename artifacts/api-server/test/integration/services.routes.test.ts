@@ -25,6 +25,7 @@ describe("GET /api/services", () => {
       // The atelier-facing wording (the Notion title suffix, the confirmation
       // email's opening line) stays on the server.
       expect(Object.keys(service).sort()).toEqual([
+        "capacityGated",
         "colors",
         "detailsHelp",
         "detailsLabel",
@@ -46,11 +47,25 @@ describe("GET /api/services", () => {
     expect(byId.bespoke).toMatchObject({
       measurements: true,
       detailsRequired: false,
+      capacityGated: true,
     });
     expect(byId.repairs).toMatchObject({
       measurements: false,
       colors: false,
       detailsRequired: true,
+      capacityGated: false,
     });
+  });
+
+  it("gates only the bespoke commission on capacity", async () => {
+    const res = await request(app).get("/api/services");
+
+    // The three services performed on a piece the customer already owns keep
+    // taking orders when the commission book is full — closing them would
+    // refuse hours of work over weeks of it.
+    const gated = res.body.services
+      .filter((s: { capacityGated: boolean }) => s.capacityGated)
+      .map((s: { id: string }) => s.id);
+    expect(gated).toEqual(["bespoke"]);
   });
 });
