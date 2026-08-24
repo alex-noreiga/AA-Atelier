@@ -19,6 +19,7 @@ import OrderForm from "@/pages/order-form";
 import Services from "@/pages/services";
 import About from "@/pages/about";
 import Shop from "@/pages/shop";
+import Portfolio from "@/pages/portfolio";
 import ShopSuccess from "@/pages/shop-success";
 import InvoicePage from "@/pages/invoice";
 import Contact from "@/pages/contact";
@@ -54,6 +55,7 @@ function Router() {
       <Route path="/" component={Home} />
       <Route path="/services" component={Services} />
       <Route path="/about" component={About} />
+      <Route path="/portfolio" component={Portfolio} />
       <Route path="/shop" component={Shop} />
       <Route path="/shop/success" component={ShopSuccess} />
       <Route path="/track" component={Track} />

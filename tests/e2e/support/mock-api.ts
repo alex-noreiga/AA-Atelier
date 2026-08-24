@@ -261,3 +261,20 @@ export async function mockPublishedReviews(
     await json(route, opts.status ?? 200, opts.body);
   });
 }
+
+/**
+ * Mock `GET /api/portfolio` (the gallery and its derived filter chips). The
+ * server decides both halves, so a spec states them together — a `filters`
+ * entry the pieces don't back would be a payload the real API can't produce.
+ */
+export async function mockPortfolio(
+  page: Page,
+  opts: { status?: number; body: unknown } = {
+    body: { pieces: [], filters: [] },
+  },
+): Promise<void> {
+  await page.route("**/api/portfolio*", async (route) => {
+    if (route.request().method() !== "GET") return route.fallback();
+    await json(route, opts.status ?? 200, opts.body);
+  });
+}

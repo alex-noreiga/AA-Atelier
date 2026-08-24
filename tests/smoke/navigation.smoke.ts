@@ -37,6 +37,7 @@ test.describe("Production smoke: site navigation", () => {
   }[] = [
     { path: "/about", testId: "story-section", name: "About" },
     { path: "/services", testId: "cta-begin-commission", name: "Services" },
+    { path: "/portfolio", heading: "The Portfolio", name: "Portfolio" },
     { path: "/contact", testId: "submit-contact", name: "Contact" },
     // The intake is a THREE-step flow (PR #194, 2026-08-20): "Your details" ->
     // "Your piece" -> "Timeline". `submit-order` lives on the last step, so it
