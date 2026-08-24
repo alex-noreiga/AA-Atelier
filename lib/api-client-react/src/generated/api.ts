@@ -26,6 +26,8 @@ import type {
   AppointmentAvailability,
   AppointmentDetails,
   AppointmentOptions,
+  AppointmentStaffing,
+  AppointmentStaffingRequest,
   CancelAppointmentRequest,
   CapacityStatus,
   CheckoutSessionResponse,
@@ -3497,6 +3499,164 @@ export const useSetStudioSetting = <TError = ErrorType<ErrorEnvelope | OrderNotF
         TContext
       > => {
       return useMutation(getSetStudioSettingMutationOptions(options));
+    }
+
+export const getGetAppointmentStaffingUrl = () => {
+
+
+
+
+  return `/api/studio/appointment-staff`
+}
+
+/**
+ * The studio's appointment staffing: for every bookable type, who currently performs it, and who the built-in catalog would put on it if nothing were set.
+ *
+ * This is the routing the slot calculator uses — it only ever offers a type's assigned staff — so it decides both which times a customer is shown and which bookings the server will accept. Everything else about a type (its length, where it can be held, whether it needs an order behind it) is fixed in code and returned here as context, not as something to edit.
+ *
+ * Same staff gate as the rest of the studio surface: 401 when not signed in, 404 when signed in but not staff, 403 when staff but not signed in with Google.
+ * @summary Which staff member offers which appointment type
+ */
+export const getAppointmentStaffing = async ( options?: Parameters<typeof customFetch>[1]): Promise<AppointmentStaffing> => {
+
+  return customFetch<AppointmentStaffing>(getGetAppointmentStaffingUrl(),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
+
+
+
+
+export const getGetAppointmentStaffingQueryKey = () => {
+    return [
+    `/api/studio/appointment-staff`
+    ] as const;
+    }
+
+
+export const getGetAppointmentStaffingQueryOptions = <TData = Awaited<ReturnType<typeof getAppointmentStaffing>>, TError = ErrorType<ErrorEnvelope | OrderNotFound>>( options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getAppointmentStaffing>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getGetAppointmentStaffingQueryKey();
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof getAppointmentStaffing>>> = ({ signal }) => getAppointmentStaffing({ signal, ...requestOptions });
+
+
+
+
+
+   return  { queryKey, queryFn, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof getAppointmentStaffing>>, TError, TData> & { queryKey: QueryKey }
+}
+
+export type GetAppointmentStaffingQueryResult = NonNullable<Awaited<ReturnType<typeof getAppointmentStaffing>>>
+export type GetAppointmentStaffingQueryError = ErrorType<ErrorEnvelope | OrderNotFound>
+
+
+/**
+ * @summary Which staff member offers which appointment type
+ */
+
+export function useGetAppointmentStaffing<TData = Awaited<ReturnType<typeof getAppointmentStaffing>>, TError = ErrorType<ErrorEnvelope | OrderNotFound>>(
+  options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getAppointmentStaffing>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+
+ ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+
+  const queryOptions = getGetAppointmentStaffingQueryOptions(options)
+
+  const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
+
+  return withQueryKey(query, queryOptions.queryKey);
+}
+
+
+
+
+
+
+
+export const getSetAppointmentStaffingUrl = () => {
+
+
+
+
+  return `/api/studio/appointment-staff`
+}
+
+/**
+ * Reassigns the staff on one or more appointment types. Only the types named are changed; any left out keep the staffing they already have.
+ *
+ * Every type must be left with at least one person on it: a type nobody is assigned to still appears on the booking page and simply never offers a time, which is the silent failure this editor exists to prevent. Retiring a type is a code change, not an empty selection. A PERSON with no types, on the other hand, is an ordinary way to say they aren't taking appointments — their working hours stay on record and their existing bookings can still be rescheduled.
+ *
+ * Staffing that matches the built-in catalog exactly is stored as a blank value, which reads as unset — so an atelier that has never differed from the defaults still picks up a change to them, rather than being pinned to whatever they were the day Save was first pressed.
+ * @summary Change who offers which appointment type
+ */
+export const setAppointmentStaffing = async (appointmentStaffingRequest: AppointmentStaffingRequest, options?: Parameters<typeof customFetch>[1]): Promise<AppointmentStaffing> => {
+
+  return customFetch<AppointmentStaffing>(getSetAppointmentStaffingUrl(),
+  {
+    ...options,
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    body: JSON.stringify(appointmentStaffingRequest)
+  }
+);}
+
+
+
+
+
+export const getSetAppointmentStaffingMutationOptions = <TError = ErrorType<ErrorEnvelope | OrderNotFound>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof setAppointmentStaffing>>, TError,{data: BodyType<AppointmentStaffingRequest>}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof setAppointmentStaffing>>, TError,{data: BodyType<AppointmentStaffingRequest>}, TContext> => {
+
+const mutationKey = ['setAppointmentStaffing'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof setAppointmentStaffing>>, {data: BodyType<AppointmentStaffingRequest>}> = (props) => {
+          const {data} = props ?? {};
+
+          return  setAppointmentStaffing(data,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type SetAppointmentStaffingMutationResult = NonNullable<Awaited<ReturnType<typeof setAppointmentStaffing>>>
+    export type SetAppointmentStaffingMutationBody = BodyType<AppointmentStaffingRequest>
+    export type SetAppointmentStaffingMutationError = ErrorType<ErrorEnvelope | OrderNotFound>
+
+    /**
+ * @summary Change who offers which appointment type
+ */
+export const useSetAppointmentStaffing = <TError = ErrorType<ErrorEnvelope | OrderNotFound>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof setAppointmentStaffing>>, TError,{data: BodyType<AppointmentStaffingRequest>}, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof setAppointmentStaffing>>,
+        TError,
+        {data: BodyType<AppointmentStaffingRequest>},
+        TContext
+      > => {
+      return useMutation(getSetAppointmentStaffingMutationOptions(options));
     }
 
 export const getListStudioRequestsUrl = () => {

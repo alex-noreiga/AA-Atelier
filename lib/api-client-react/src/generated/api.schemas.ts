@@ -1506,6 +1506,75 @@ export const StaffWeekday = {
   Sunday: 'Sunday',
 } as const;
 
+export type AppointmentStaffingTypeLocationsItem = typeof AppointmentStaffingTypeLocationsItem[keyof typeof AppointmentStaffingTypeLocationsItem];
+
+
+export const AppointmentStaffingTypeLocationsItem = {
+  'in-person': 'in-person',
+  virtual: 'virtual',
+} as const;
+
+/**
+ * One bookable appointment type, with the staff who currently perform it. Everything but `staff` is fixed in code and shown for context — a type's length, where it can be held, and whether it needs an order behind it are not things the dashboard changes.
+ */
+export interface AppointmentStaffingType {
+  /** The type's stable id, as used when saving staffing. */
+  id: string;
+  /** How the type reads to a customer, e.g. "Fitting & Measurements". */
+  name: string;
+  description: string;
+  durationMinutes: number;
+  /** Where this type can be held. */
+  locations: AppointmentStaffingTypeLocationsItem[];
+  /** Who offers it right now — the staffing actually in force, which is the set the slot calculator draws from. Never empty. */
+  staff: string[];
+  /** Who the built-in catalog assigns to it, so the editor can show what resetting would mean and mark a type that has been moved away from it. */
+  defaultStaff: string[];
+  /** Present and true when this type can only be booked against an existing order — worth knowing when reassigning it, since it is not a type new customers can reach. */
+  requiresOrder?: boolean;
+}
+
+/**
+ * The studio's appointment staffing: every bookable type, who performs it, and the roster it may be assigned from.
+ */
+export interface AppointmentStaffing {
+  /** Whether there is a Studio Settings database to write to. False means the staffing shown is real but can only be changed in the environment, and a save answers 409. */
+  configured: boolean;
+  /** Everyone the studio books appointments with. Deliberately the whole roster, not only the people currently assigned to something — a person with no types is how the atelier says they aren't taking appointments at the moment. */
+  staff: string[];
+  types: AppointmentStaffingType[];
+  /** True when the staffing in force is the catalog's own, i.e. nothing is stored and a future change to the defaults would be picked up. */
+  usingDefaults: boolean;
+}
+
+export type AppointmentStaffingRequestTypesItem = {
+  /**
+     * An appointment type's id, as returned by the read.
+     * @minLength 1
+     * @maxLength 80
+     */
+  id: string;
+  /**
+     * Who should offer it. Must name people the studio books, and must not be empty — a type with nobody on it never offers a time and never says why.
+     * @minItems 1
+     * @maxItems 50
+     * @items.minLength 1
+     * @items.maxLength 120
+     */
+  staff: string[];
+};
+
+/**
+ * The staffing to save. Only the types named are changed; any left out keep what they have.
+ */
+export interface AppointmentStaffingRequest {
+  /**
+     * @minItems 1
+     * @maxItems 50
+     */
+  types: AppointmentStaffingRequestTypesItem[];
+}
+
 export type StaffAvailabilityEntryLocationsItem = typeof StaffAvailabilityEntryLocationsItem[keyof typeof StaffAvailabilityEntryLocationsItem];
 
 

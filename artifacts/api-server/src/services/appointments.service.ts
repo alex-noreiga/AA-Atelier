@@ -2,10 +2,13 @@
 // these with already-validated input and turn the result (or thrown domain
 // errors) into a response.
 //
-// The booking flow never trusts the client: it re-derives the type/duration/
-// staff from the code catalog and re-runs the exact same slot computation the
-// availability endpoint uses before writing, so a stale or forged slot can't be
-// booked. The same `computeSlots` powers both, so the two can't disagree.
+// The booking flow never trusts the client: it re-derives the type, its
+// duration and its staffing server-side and re-runs the exact same slot
+// computation the availability endpoint uses before writing, so a stale or
+// forged slot can't be booked. The same `computeSlots` powers both, so the two
+// can't disagree — and both read the type through `resolveAppointmentTypes()`,
+// so the atelier's own staffing is what gates a booking as well as what the
+// booking page offers.
 
 import type { z } from "zod";
 import type {
@@ -13,13 +16,18 @@ import type {
   CreateAppointmentBody,
 } from "@workspace/api-zod";
 import {
-  APPOINTMENT_TYPES,
   LOCATION_LABELS,
-  getAppointmentType,
   isAppointmentLocation,
   type AppointmentLocation,
   type AppointmentTypeDef,
 } from "../lib/appointments/catalog.js";
+// Types are read through the routing resolver, never straight off the catalog:
+// the `staff` list on each one is the atelier's, edited on the dashboard, and
+// reaching for `APPOINTMENT_TYPES` here would quietly ignore it.
+import {
+  resolveAppointmentType,
+  resolveAppointmentTypes,
+} from "../lib/appointments/routing.js";
 import { computeSlots } from "../lib/appointments/availability.js";
 import {
   addCalendarDays,
@@ -78,7 +86,7 @@ interface OptionsResult {
 export function getAppointmentOptions(): OptionsResult {
   return {
     timezone: appointmentTimezone(),
-    types: APPOINTMENT_TYPES.map((type) => ({
+    types: resolveAppointmentTypes().map((type) => ({
       id: type.id,
       name: type.name,
       durationMinutes: type.durationMinutes,
@@ -100,7 +108,7 @@ interface SlotResult {
 export async function getAppointmentAvailability(
   params: AvailabilityParams,
 ): Promise<SlotResult> {
-  const type = getAppointmentType(params.typeId);
+  const type = resolveAppointmentType(params.typeId);
   if (!type) {
     throw new BadRequestError("We don't recognize that appointment type.");
   }
@@ -224,7 +232,7 @@ interface BookResult {
 
 /** Book a slot: re-validate, re-check availability, persist, and email. */
 export async function bookAppointment(input: BookInput): Promise<BookResult> {
-  const type = getAppointmentType(input.typeId);
+  const type = resolveAppointmentType(input.typeId);
   if (!type) {
     throw new BadRequestError("We don't recognize that appointment type.");
   }

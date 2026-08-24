@@ -4,6 +4,7 @@ import {
   CreateStaffAvailabilityResponse,
   DeleteStaffAvailabilityParams,
   DeleteStaffAvailabilityResponse,
+  GetAppointmentStaffingResponse,
   GetStudioAccessResponse,
   GetStudioAnalyticsResponse,
   GetStudioGuideContentParams,
@@ -24,6 +25,8 @@ import {
   SetStudioReviewStatusBody,
   SetStudioReviewStatusParams,
   SetStudioReviewStatusResponse,
+  SetAppointmentStaffingBody,
+  SetAppointmentStaffingResponse,
   SetStudioSettingBody,
   SetStudioSettingParams,
   SetStudioSettingResponse,
@@ -65,6 +68,11 @@ import {
   getStudioSettings,
   saveStudioSetting,
 } from "../services/studio-settings.service.js";
+import {
+  getAppointmentStaffing,
+  saveAppointmentStaffing,
+  type AppointmentStaffingInput,
+} from "../services/appointment-staffing.service.js";
 import {
   getStaffAvailability,
   addStaffAvailability,
@@ -195,6 +203,36 @@ router.delete(
         message: "Those hours have been removed from the schedule.",
       }),
     );
+  },
+);
+
+// Which staff member offers which appointment type. The working-hours editor
+// above says WHEN each person is available; this says WHAT they are available
+// for, and the two together are the whole of the positive grid a customer is
+// offered times out of.
+//
+// It reads and writes one Studio Settings row rather than a table of its own —
+// four short lists that change a couple of times a year don't earn a database —
+// so the read needs no I/O beyond the settings snapshot every request primes.
+router.get(
+  "/studio/appointment-staff",
+  studioRateLimiter,
+  requireStaff,
+  (_req, res) => {
+    res.json(GetAppointmentStaffingResponse.parse(getAppointmentStaffing()));
+  },
+);
+
+router.put(
+  "/studio/appointment-staff",
+  studioRateLimiter,
+  requireStaff,
+  validate({ body: SetAppointmentStaffingBody }),
+  async (_req, res) => {
+    const staffing = await saveAppointmentStaffing(
+      res.locals.body as AppointmentStaffingInput,
+    );
+    res.json(SetAppointmentStaffingResponse.parse(staffing));
   },
 );
 

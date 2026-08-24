@@ -1298,6 +1298,73 @@ export const SetStudioSettingResponse = zod.object({
 
 
 /**
+ * The studio's appointment staffing: for every bookable type, who currently performs it, and who the built-in catalog would put on it if nothing were set.
+ *
+ * This is the routing the slot calculator uses — it only ever offers a type's assigned staff — so it decides both which times a customer is shown and which bookings the server will accept. Everything else about a type (its length, where it can be held, whether it needs an order behind it) is fixed in code and returned here as context, not as something to edit.
+ *
+ * Same staff gate as the rest of the studio surface: 401 when not signed in, 404 when signed in but not staff, 403 when staff but not signed in with Google.
+ * @summary Which staff member offers which appointment type
+ */
+export const GetAppointmentStaffingResponse = zod.object({
+  "configured": zod.boolean().describe('Whether there is a Studio Settings database to write to. False means the staffing shown is real but can only be changed in the environment, and a save answers 409.'),
+  "staff": zod.array(zod.string()).describe('Everyone the studio books appointments with. Deliberately the whole roster, not only the people currently assigned to something — a person with no types is how the atelier says they aren\'t taking appointments at the moment.'),
+  "types": zod.array(zod.object({
+  "id": zod.string().describe('The type\'s stable id, as used when saving staffing.'),
+  "name": zod.string().describe('How the type reads to a customer, e.g. \"Fitting & Measurements\".'),
+  "description": zod.string(),
+  "durationMinutes": zod.number().int(),
+  "locations": zod.array(zod.enum(['in-person', 'virtual'])).describe('Where this type can be held.'),
+  "staff": zod.array(zod.string()).describe('Who offers it right now — the staffing actually in force, which is the set the slot calculator draws from. Never empty.'),
+  "defaultStaff": zod.array(zod.string()).describe('Who the built-in catalog assigns to it, so the editor can show what resetting would mean and mark a type that has been moved away from it.'),
+  "requiresOrder": zod.boolean().optional().describe('Present and true when this type can only be booked against an existing order — worth knowing when reassigning it, since it is not a type new customers can reach.')
+}).describe('One bookable appointment type, with the staff who currently perform it. Everything but `staff` is fixed in code and shown for context — a type\'s length, where it can be held, and whether it needs an order behind it are not things the dashboard changes.')),
+  "usingDefaults": zod.boolean().describe('True when the staffing in force is the catalog\'s own, i.e. nothing is stored and a future change to the defaults would be picked up.')
+}).describe('The studio\'s appointment staffing: every bookable type, who performs it, and the roster it may be assigned from.')
+
+
+/**
+ * Reassigns the staff on one or more appointment types. Only the types named are changed; any left out keep the staffing they already have.
+ *
+ * Every type must be left with at least one person on it: a type nobody is assigned to still appears on the booking page and simply never offers a time, which is the silent failure this editor exists to prevent. Retiring a type is a code change, not an empty selection. A PERSON with no types, on the other hand, is an ordinary way to say they aren't taking appointments — their working hours stay on record and their existing bookings can still be rescheduled.
+ *
+ * Staffing that matches the built-in catalog exactly is stored as a blank value, which reads as unset — so an atelier that has never differed from the defaults still picks up a change to them, rather than being pinned to whatever they were the day Save was first pressed.
+ * @summary Change who offers which appointment type
+ */
+export const setAppointmentStaffingBodyTypesItemIdMax = 80;
+
+export const setAppointmentStaffingBodyTypesItemStaffItemMax = 120;
+
+export const setAppointmentStaffingBodyTypesItemStaffMax = 50;
+
+export const setAppointmentStaffingBodyTypesMax = 50;
+
+
+
+export const SetAppointmentStaffingBody = zod.object({
+  "types": zod.array(zod.object({
+  "id": zod.string().min(1).max(setAppointmentStaffingBodyTypesItemIdMax).describe('An appointment type\'s id, as returned by the read.'),
+  "staff": zod.array(zod.string().min(1).max(setAppointmentStaffingBodyTypesItemStaffItemMax)).min(1).max(setAppointmentStaffingBodyTypesItemStaffMax).describe('Who should offer it. Must name people the studio books, and must not be empty — a type with nobody on it never offers a time and never says why.')
+})).min(1).max(setAppointmentStaffingBodyTypesMax)
+}).describe('The staffing to save. Only the types named are changed; any left out keep what they have.')
+
+export const SetAppointmentStaffingResponse = zod.object({
+  "configured": zod.boolean().describe('Whether there is a Studio Settings database to write to. False means the staffing shown is real but can only be changed in the environment, and a save answers 409.'),
+  "staff": zod.array(zod.string()).describe('Everyone the studio books appointments with. Deliberately the whole roster, not only the people currently assigned to something — a person with no types is how the atelier says they aren\'t taking appointments at the moment.'),
+  "types": zod.array(zod.object({
+  "id": zod.string().describe('The type\'s stable id, as used when saving staffing.'),
+  "name": zod.string().describe('How the type reads to a customer, e.g. \"Fitting & Measurements\".'),
+  "description": zod.string(),
+  "durationMinutes": zod.number().int(),
+  "locations": zod.array(zod.enum(['in-person', 'virtual'])).describe('Where this type can be held.'),
+  "staff": zod.array(zod.string()).describe('Who offers it right now — the staffing actually in force, which is the set the slot calculator draws from. Never empty.'),
+  "defaultStaff": zod.array(zod.string()).describe('Who the built-in catalog assigns to it, so the editor can show what resetting would mean and mark a type that has been moved away from it.'),
+  "requiresOrder": zod.boolean().optional().describe('Present and true when this type can only be booked against an existing order — worth knowing when reassigning it, since it is not a type new customers can reach.')
+}).describe('One bookable appointment type, with the staff who currently perform it. Everything but `staff` is fixed in code and shown for context — a type\'s length, where it can be held, and whether it needs an order behind it are not things the dashboard changes.')),
+  "usingDefaults": zod.boolean().describe('True when the staffing in force is the catalog\'s own, i.e. nothing is stored and a future change to the defaults would be picked up.')
+}).describe('The studio\'s appointment staffing: every bookable type, who performs it, and the roster it may be assigned from.')
+
+
+/**
  * The customer requests waiting on the atelier — measurement changes, cancellations, returns and exchanges, back-in-stock asks and website inquiries — read back out of the shared "Website Contact Messages" inbox. Until this, the app only ever WROTE those rows: actioning one meant reading it in Notion and re-typing its order number into a tool on this dashboard.
  *
  * So each row carries its own `action` where one exists: the tool that actions it and the argument it needs, derived server-side from the request type next to the code that writes it. A cancellation hands its order number to `cancellation-refund`, a return to `return-refund`, a back-in-stock ask hands its item to `restock-alert`. A measurement change or an inquiry carries none — those are answered by hand, and saying so is more honest than offering a button that does nothing.

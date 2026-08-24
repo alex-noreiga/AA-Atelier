@@ -30,6 +30,12 @@
 
 import { parseColorPalette } from "../../services/colors.js";
 import { DEFAULT_CLOSED_MESSAGE } from "../../services/capacity.js";
+import { APPOINTMENT_TYPES } from "../appointments/catalog.js";
+import {
+  formatStaffRouting,
+  parseStaffRouting,
+  staffRoutingProblem,
+} from "../appointments/routing.js";
 
 /** How the dashboard should render (and the server should read) a value. */
 export type SettingKind =
@@ -135,6 +141,14 @@ const emailAccepts = nonEmpty;
  * the env var name 1:1 — that identity is what keeps the Notion row, the
  * environment variable and this catalog from ever meaning different things.
  */
+/** The catalog's built-in appointment staffing, in the form the setting is
+ * written in — restated here as this entry's default, like every other. */
+function defaultStaffRouting(): string {
+  return formatStaffRouting(
+    new Map(APPOINTMENT_TYPES.map((type) => [type.id, [...type.staff]])),
+  );
+}
+
 export const SETTING_DEFINITIONS: readonly SettingDefinition[] = [
   {
     key: "RUSH_SURCHARGE_RATE",
@@ -314,6 +328,22 @@ export const SETTING_DEFINITIONS: readonly SettingDefinition[] = [
     step: 1,
     accepts: (raw) => numberIn(raw, 1),
     validate: numberRule(1, 30, { integer: true, unit: "days" }),
+  },
+  {
+    key: "APPOINTMENT_STAFF_ROUTING",
+    label: "Who offers which appointment",
+    group: "Appointments",
+    kind: "text",
+    description:
+      'Which staff member takes which kind of appointment, as "consultation: Alayna; fitting: Alexandra, Alayna". A type left out keeps the built-in staffing. Easier to edit on the dashboard\u2019s Appointment staffing panel, which writes this same row.',
+    defaultValue: defaultStaffRouting(),
+    placeholder: "consultation: Alayna; fitting: Alexandra, Alayna",
+    // Parity with the getter, which keeps every entry it can read and ignores
+    // the value entirely when it can read none.
+    accepts: (raw) => parseStaffRouting(raw).size > 0,
+    // Stricter on purpose: a misspelt name is dropped by the reader, so half a
+    // line would save happily and stay half in force.
+    validate: staffRoutingProblem,
   },
   {
     key: "REFERRAL_CREDIT_AMOUNT",

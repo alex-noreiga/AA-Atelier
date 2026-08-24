@@ -40,8 +40,8 @@ vi.mock("@workspace/api-client-react", () => ({
   getGetStudioAnalyticsQueryKey: () => ["studio-analytics"],
   // The materials panel, the moderation queue, the request queue, the newsletter
   // panel, the settings editor, the internal tools panel, and the working-hours
-  // editor ride along at the bottom of the dashboard; each has its own test
-  // file, so here they just need inert hooks to render.
+  // and appointment-staffing editors ride along at the bottom of the dashboard;
+  // each has its own test file, so here they just need inert hooks to render.
   useRunStudioTool: () => ({ mutate: vi.fn(), isPending: false }),
   useListStaffAvailability: () => ({
     data: { entries: [], staff: [] },
@@ -53,6 +53,19 @@ vi.mock("@workspace/api-client-react", () => ({
   useUpdateStaffAvailability: () => ({ mutate: vi.fn(), isPending: false }),
   useDeleteStaffAvailability: () => ({ mutate: vi.fn(), isPending: false }),
   getListStaffAvailabilityQueryKey: () => ["studio-availability"],
+  useGetAppointmentStaffing: () => ({
+    data: {
+      configured: true,
+      staff: [],
+      types: [],
+      usingDefaults: true,
+    },
+    isLoading: false,
+    isError: false,
+    error: null,
+  }),
+  useSetAppointmentStaffing: () => ({ mutate: vi.fn(), isPending: false }),
+  getGetAppointmentStaffingQueryKey: () => ["studio-appointment-staff"],
   useListStudioReviews: () => ({
     data: { pending: [], decided: [] },
     isLoading: false,

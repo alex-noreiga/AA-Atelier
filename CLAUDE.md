@@ -281,6 +281,17 @@ Express app (artifacts/api-server)  ──►  Notion REST API (orders database)
   │                                  staff gate as the figures above; this
   │                                  replaced the Google Sheet the schedule used
   │                                  to live in
+  ├─ GET  /api/studio/appointment-staff
+  │                                → which staff member offers which appointment
+  │                                  type — the routing the slot calculator draws
+  │                                  from, so it decides both what a customer is
+  │                                  offered and what a booking gate accepts. PUT
+  │                                  the same path reassigns it. Everything else
+  │                                  about a type (length, locations, gates) is
+  │                                  fixed in code and returned as context. Stored
+  │                                  in one Studio Settings row, so an unmentioned
+  │                                  type keeps the catalog's default. Same staff
+  │                                  gate as the figures above
   ├─ GET  /api/studio/reviews      → the review moderation queue: every review
   │                                  awaiting a decision (with its rating,
   │                                  testimonial, author, and the photos read
@@ -594,7 +605,8 @@ stages/categories/working-hours.
    API key + the settings DB's own id. The keys that ARE read from settings are
    enumerated in `SETTING_DEFINITIONS` (`lib/settings/catalog.ts`): `RUSH_SURCHARGE_RATE`,
    `MEASUREMENT_LOCK_FROM_STAGE`, the three `COMMISSION_*` capacity tunables, the
-   five `APPOINTMENT_*` policy vars, the reward
+   five `APPOINTMENT_*` policy vars, `APPOINTMENT_STAFF_ROUTING` (who offers
+   which appointment type), the reward
    amounts, `COLOR_PALETTE` (the intake color picker's palette), and the
    notification **inboxes** (`ATELIER_INBOX_EMAIL`, `ATELIER_CONTACT_INBOX_EMAIL`,
    `ATELIER_APPOINTMENTS_INBOX_EMAIL`, `ALERT_INBOX_EMAIL`). Email **senders**
@@ -2515,13 +2527,15 @@ Notion): free/busy is the conflict source and each booking is a calendar event. 
 `lib/appointments/*` (pure logic + config), `lib/google/*` (Calendar + Sheets I/O),
 `services/appointments.service.ts`, `routes/appointments.ts`.
 
-1. **The type catalog is a targeted business rule in code.** `lib/appointments/catalog.ts`
-   names the four types, their durations, and their routing rules (consultations are
-   Alayna only; fittings, design reviews, and general appointments can be booked with
-   either Alexandra or Alayna; fittings are in-person only). Duration drives the slot
-   math and staff/locations drive UI + validation, so these are coupled to code. Retune a
-   duration or rename a staff member here; the staff names must match the `Staff` column
-   in the working-hours sheet.
+1. **The type catalog is a targeted business rule in code — except its staffing.**
+   `lib/appointments/catalog.ts` names the four types, their durations, their locations
+   and their gates. Duration drives the slot math and locations drive UI + validation, so
+   those are coupled to code: retune a duration or rename a type here. Its **`staff`
+   lists are the DEFAULT routing only** — the atelier reassigns who offers what from
+   `/studio` → **Appointment staffing**, so every scheduling path reads
+   `resolveAppointmentTypes()` (`lib/appointments/routing.ts`), never `APPOINTMENT_TYPES`
+   directly. See "Appointment staffing, edited on the dashboard". The staff names must
+   match the `staff` column of the working-hours table.
 
    **Booking gates split by who a type is for.** Each type carries one of two optional
    flags. Order-scoped types (**fittings, design reviews**) set `requiresOrder` —
@@ -2731,6 +2745,95 @@ can be deleted from Vercel and the "Staff Availability" Notion database archived
 `APPOINTMENT_SHEET_ID` / `APPOINTMENT_SHEET_RANGE` were already retired, the
 Sheets API can be disabled on the Google Cloud project, and the old sheet
 unshared from the service account. Full walkthrough in `SETUP.md` (Part C).
+
+## Appointment staffing, edited on the dashboard
+
+The working hours above say **when** each person is available; this says **what
+for**. Which staff member offers which appointment type was four `staff:` arrays
+in `lib/appointments/catalog.ts` — a deploy to say that Alexandra is taking
+consultations this season, or that Alayna has stopped doing fittings — and it is
+the booking setting with the most invisible consequence in the stack:
+`computeSlots` only ever offers a type's routed staff, so getting it wrong
+raises nothing, it just quietly stops offering times. `/studio` → **Appointment
+staffing** is that decision made editable, as a type × staff grid. Code:
+`lib/appointments/routing.ts` (the read side + the write guard),
+`services/appointment-staffing.service.ts`, the two `/studio/appointment-staff`
+handlers in `routes/studio.ts`, and
+`web-app/src/components/studio-appointment-staff.tsx`.
+
+1. **The catalog still owns what a type IS; only its staffing moved.** Duration,
+   locations, the order/project-details gates and the copy stay coupled to code
+   for the reasons the catalog's own header gives — they drive the slot math and
+   the form. The staffing is the one part that is an operational fact rather
+   than a code fact, so it resolves like every other tunable: **Notion → env →
+   the catalog's default**, under `APPOINTMENT_STAFF_ROUTING`. It needs **no new
+   database, no migration and no atelier setup** — four short lists that change
+   a couple of times a year don't earn a table, and the value stays repairable
+   by hand in the Notion row (`consultation: Alayna; fitting: Alexandra,
+Alayna`).
+
+2. **Every consumer reads `resolveAppointmentTypes()`, never `APPOINTMENT_TYPES`.**
+   That's the whole seam: `getAppointmentOptions` (what the booking page
+   offers), `getAppointmentAvailability` and `bookAppointment` (what the server
+   will accept), and `resolveEventType` all go through it, so the page and the
+   gate can't disagree about who does what. Reaching for the catalog directly
+   silently ignores the atelier's setting.
+
+3. **Degradation always widens, never narrows.** A type nobody is routed to
+   offers no times at all and says nothing about why, so every unreadable case
+   hands the type back to the catalog rather than to nothing: an **unmentioned**
+   type keeps its default (the override is sparse, so a hand-typed line naming
+   one type retunes only that one), an entry whose names **all** fail to resolve
+   is dropped entirely (`fitting: Alexandre` is a typo, not an instruction to
+   stop offering fittings), and a single bad name inside a good entry is dropped
+   while the rest stands. Same direction as `resolveOrderPipeline`, and the
+   opposite of `orderDelivered`'s fail-closed.
+
+4. **The editor is stricter than the reader, and that asymmetry is the point.**
+   `accepts` mirrors the getter (a value is in force if anything in it parses);
+   `staffRoutingProblem` guards a write and refuses a misspelt name outright,
+   because a half-readable line would otherwise save happily and stay half in
+   force. The panel refuses a type left with **nobody** ticked and says why
+   before the round trip; the server refuses it too, and its wording is what a
+   refusal shows.
+
+5. **A type with nobody on it is refused; a PERSON with nothing to do is not.**
+   Unticking somebody everywhere is the ordinary way to say they aren't taking
+   appointments this season — which is exactly why `bookableStaff()` (the
+   working-hours editor's staff picker) now returns the **roster**
+   (`STAFF_ROSTER`) rather than deriving from the routing. Derived, it would
+   drop that person out of the hours editor the moment they were unassigned from
+   their last type, stranding the hours already saved against them behind a
+   validation error. Whose hours these are and which types they cover are two
+   different questions, and only the second is seasonal. Retiring a _type_
+   remains a code change.
+
+6. **Staffing equal to the catalog's is stored as BLANK.** A blank value reads
+   as unset everywhere, so "use the studio's usual staffing" is a clear rather
+   than a pin — and a change to the built-in defaults in a future deploy still
+   reaches an atelier who never differed from them. Same rule as the settings
+   editor's "a blank value is a CLEAR, not a rejection".
+
+7. **The person who holds a booking stays eligible for it.** A reschedule
+   re-runs the same `computeSlots` as a fresh booking, so taking somebody off a
+   type would otherwise strand every appointment already in their diary — the
+   customer's manage link would find no times and blame the slot.
+   `withBookedStaff` unions the booked staff member back in, for the reschedule
+   path only: moving a booking already made is not the same act as taking a new
+   one.
+
+8. **It is also an ordinary Studio Setting.** `APPOINTMENT_STAFF_ROUTING` has a
+   `SETTING_DEFINITIONS` entry, so it appears in the **Studio settings** panel
+   with its source and its default like every other key, and the two editors
+   write the same row. The panel above is the friendly surface; the settings
+   editor is where you see _where the value came from_. An unconfigured settings
+   database is said plainly and a save answers **409**, rather than offering a
+   Save with nowhere to write.
+
+Same `requireStaff` gate (401 / 404 / 403) and studio rate limiter as the rest
+of the dashboard, and contract-first like it. **Atelier setup: none** — no env
+var, no database, no Notion property; saving the key once from the dashboard
+creates its row.
 
 ## Customer account portal (Supabase Auth)
 
@@ -4120,6 +4223,15 @@ in the maintainer's env without edits.
   how many local days ahead the reminder sweep looks; a value below 1 falls back
   to the default rather than becoming a morning-of note). All have defaults, and
   all five are Studio-Settings tunables.
+- **Optional appointment-staffing env var:** `APPOINTMENT_STAFF_ROUTING` — which
+  staff member offers which appointment type, as
+  `consultation: Alayna; fitting: Alexandra, Alayna`. A type the value doesn't
+  name keeps the catalog's built-in staffing, and an entry that resolves to
+  nobody is ignored rather than leaving a type unbookable — the degradation
+  always widens. A Studio-Settings tunable, normally edited from the dashboard's
+  **Appointment staffing** panel rather than set here; read in
+  `lib/appointments/routing.ts`. See "Appointment staffing, edited on the
+  dashboard".
 - **Optional measurement-change env var:** `MEASUREMENT_LOCK_FROM_STAGE` (default
   `Cutting/Pinning`) — the live **Stage** option at/after which an order's
   measurements are frozen and `POST /orders/:n/measurement-change-requests` is
@@ -4147,7 +4259,8 @@ in the maintainer's env without edits.
 - **Optional live-config database:** `NOTION_SETTINGS_DATABASE_ID` (the "Studio
   Settings" key/value database). When set (and the integration is shared with it),
   the atelier can retune the runtime business tunables — `RUSH_SURCHARGE_RATE`,
-  `MEASUREMENT_LOCK_FROM_STAGE`, the five `APPOINTMENT_*` policy vars, the four
+  `MEASUREMENT_LOCK_FROM_STAGE`, the five `APPOINTMENT_*` policy vars,
+  `APPOINTMENT_STAFF_ROUTING` (who offers which appointment type), the four
   reward amounts, `COLOR_PALETTE` (the intake color picker's palette), and the
   notification inboxes (`ATELIER_INBOX_EMAIL`, `ATELIER_CONTACT_INBOX_EMAIL`,
   `ATELIER_APPOINTMENTS_INBOX_EMAIL`, `ALERT_INBOX_EMAIL`) — from the studio
@@ -4295,6 +4408,7 @@ scope went with the working-hours sheet.
 | `APPOINTMENT_TIMEZONE`                                                                                            | `America/Chicago`                                                   |
 | `APPOINTMENT_MIN_LEAD_HOURS` / `_MAX_ADVANCE_DAYS` / `_SLOT_STEP_MINUTES`                                         | `24` / `45` / `15`                                                  |
 | `APPOINTMENT_REMINDER_LEAD_DAYS`                                                                                  | `1` (the day before)                                                |
+| `APPOINTMENT_STAFF_ROUTING`                                                                                       | The catalog's built-in staffing (see the section above)             |
 | `MEASUREMENT_LOCK_FROM_STAGE`                                                                                     | `Cutting/Pinning`                                                   |
 | `RUSH_SURCHARGE_RATE`                                                                                             | `0.15` (`0` disables the surcharge line)                            |
 | `VITE_RUSH_WINDOW_DAYS`, `VITE_RUSH_SURCHARGE_NOTE` (build-time)                                                  | `21`, `"a 15% rush surcharge"`                                      |
@@ -4464,6 +4578,7 @@ Three things about it are load-bearing:
 | Change appointment reschedule / cancel                   | `artifacts/web-app/src/pages/appointment-manage.tsx` (+ shared `lib/appointment-format.ts`); `api-server/src/services/appointment-manage.service.ts` + `routes/appointments.ts` (`/appointments/manage`, `/reschedule`, `/cancel`) + `lib/google/calendar.repository.ts` (`getCalendarEvent`/`updateCalendarEvent`/`cancelCalendarEvent`) + the reschedule/cancel builders in `lib/resend/emails.ts`; token `"appointment"` purpose in `lib/auth/tokens.ts`                                                                                                                                                                                                                                                                                                                                           |
 | Change appointment types / routing rules                 | `api-server/src/lib/appointments/catalog.ts` (targeted business rule — durations, which staff, which locations)                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                       |
 | Change staff working hours / calendars                   | `/studio` → **Working hours** (`web-app/src/components/studio-availability.tsx`); `api-server/src/services/staff-availability.service.ts` + the `/studio/availability` routes in `routes/studio.ts` + `lib/db/staff-availability.repository.ts` (schema in `supabase/migrations/0004_staff_availability.sql`), read through `lib/appointments/schedule.ts` and mapped by `buildSchedule` in `lib/appointments/staff.ts`                                                                                                                                                                                                                                                                                                                                                                               |
+| Change who offers which appointment type                 | `/studio` → **Appointment staffing** (`web-app/src/components/studio-appointment-staff.tsx`); `api-server/src/lib/appointments/routing.ts` (the `APPOINTMENT_STAFF_ROUTING` read side, the write guard, and `resolveAppointmentTypes` — the accessor every scheduling path uses) + `services/appointment-staffing.service.ts` + the `/studio/appointment-staff` handlers in `routes/studio.ts`; the built-in defaults are the `staff` lists in `lib/appointments/catalog.ts`                                                                                                                                                                                                                                                                                                                          |
 | Change appointment slot logic / policy                   | `api-server/src/lib/appointments/availability.ts` (`computeSlots`) + `time.ts` + `settings.ts`; `services/appointments.service.ts` + `routes/appointments.ts` + `lib/google/*` (Calendar free/busy + event insert)                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                    |
 | Change who can see the Dashboard nav link                | `web-app/src/lib/studio-access.ts` (the probe) + `useNavLinks()` / `DASHBOARD_LINK` in `components/navbar.tsx` (where it renders, in Account's place) + the staff hand-off in `pages/account.tsx` + the `/studio/access` route in `api-server/src/routes/studio.ts`; the gate itself is `requireStaff` (`middlewares/auth.ts`) + `lib/staff.ts`                                                                                                                                                                                                                                                                                                                                                                                                                                                       |
 | Change which API calls carry the auth token              | `artifacts/web-app/src/lib/api-auth.ts` (`requiresAuthToken`) + the getter in `lib/auth-context.tsx` + the `AuthTokenGetter` seam in `lib/api-client-react/src/custom-fetch.ts`; pinned to the spec by `web-app/test/api-auth.test.ts`                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                |

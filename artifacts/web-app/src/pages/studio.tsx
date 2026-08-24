@@ -17,6 +17,7 @@ import { StudioTools } from "@/components/studio-tools";
 import { StudioRequests } from "@/components/studio-requests";
 import { StudioNewsletter } from "@/components/studio-newsletter";
 import { StudioAvailability } from "@/components/studio-availability";
+import { StudioAppointmentStaff } from "@/components/studio-appointment-staff";
 import { StudioReviews } from "@/components/studio-reviews";
 import { StudioMaterials } from "@/components/studio-materials";
 import { StudioGuides, GuidesFor } from "@/components/studio-guides";
@@ -347,6 +348,9 @@ function Dashboard({ data }: { data: StudioAnalytics }) {
 
       <StudioAvailability />
       <GuidesFor section="availability" />
+
+      <StudioAppointmentStaff />
+      <GuidesFor section="appointment-staff" />
 
       <StudioSettings />
       <GuidesFor section="settings" />
