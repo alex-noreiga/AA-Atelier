@@ -30,6 +30,7 @@ import {
   type OrderServiceDef,
 } from "../lib/service-catalog.js";
 import { logger } from "../lib/logger.js";
+import { deferBestEffort } from "../lib/background.js";
 
 export async function getOrderStatus(
   orderNumber: string,
@@ -182,18 +183,29 @@ export async function submitOrder(
     }
   }
 
-  // Best-effort emails; a mail failure must not fail the order.
+  // Best-effort emails; a mail failure must not fail the order. Because the
+  // response is identical either way, they are handed off with `deferBestEffort`
+  // rather than awaited inline: two sequential Resend round-trips were a large
+  // part of this endpoint's 1.6-3.0s, all of it spent after the order was
+  // already safely recorded in Notion. Where the platform offers no `waitUntil`
+  // (local dev, tests) that helper awaits inline, so the emails are never traded
+  // away for the latency — see lib/background.ts.
+  //
+  // The sender and inbox are resolved *here*, while the request's primed
+  // settings snapshot is current, so only the network calls are deferred.
   const from = fromAddress("orders");
-  await sendEmailBestEffort({
-    ...orderConfirmationEmail(input, orderNumber),
-    from,
-  });
   const inbox = atelierInbox("orders");
-  if (inbox) {
-    await sendEmailBestEffort({
-      ...orderNotificationEmail(input, orderNumber, inbox),
-      from,
-    });
-  }
+  const confirmation = { ...orderConfirmationEmail(input, orderNumber), from };
+  const notification = inbox
+    ? { ...orderNotificationEmail(input, orderNumber, inbox), from }
+    : null;
+
+  await deferBestEffort("order confirmation emails", async () => {
+    await sendEmailBestEffort(confirmation);
+    if (notification) {
+      await sendEmailBestEffort(notification);
+    }
+  });
+
   return { orderNumber };
 }
