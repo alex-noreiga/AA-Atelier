@@ -25,6 +25,7 @@ import type {
   AppointmentDetails,
   AppointmentOptions,
   CancelAppointmentRequest,
+  CapacityStatus,
   CheckoutSessionResponse,
   CheckoutSessionStatus,
   ColorList,
@@ -54,6 +55,8 @@ import type {
   NewReturnResponse,
   NewReviewRequest,
   NewReviewResponse,
+  NewWaitlistRequest,
+  NewWaitlistResponse,
   NewsletterSignup,
   NewsletterSignupList,
   OrderNotFound,
@@ -277,7 +280,7 @@ export const getCreateOrderUrl = () => {
 }
 
 /**
- * Creates a new custom dress order and saves it to Notion
+ * Creates a new custom dress order and saves it to Notion. Refused with 409 when the order is for a capacity-gated service and the studio's books are closed (see `GET /capacity`) — the customer is offered `POST /waitlist` instead.
  * @summary Submit a new custom dress order
  */
 export const createOrder = async (newOrderRequest: NewOrderRequest, options?: Parameters<typeof customFetch>[1]): Promise<NewOrderResponse> => {
@@ -847,6 +850,160 @@ export const useSubscribeNewsletter = <TError = ErrorType<ErrorEnvelope>,
         TContext
       > => {
       return useMutation(getSubscribeNewsletterMutationOptions(options));
+    }
+
+export const getGetCapacityUrl = () => {
+
+
+
+
+  return `/api/capacity`
+}
+
+/**
+ * Reports whether the atelier's books are open for the capacity-gated services (today, the bespoke commission — see `Service.capacityGated`), so the intake form can offer the waitlist instead of a form that would be refused. The same decision gates `POST /orders`, so the form and the server can't disagree.
+ * Closed means one of two things: the atelier paused intake by hand, or the number of commissions in production has reached the studio's capacity. Both are atelier-editable Studio Settings (`COMMISSION_INTAKE`, `COMMISSION_CAPACITY`).
+ * Deliberately degrade-safe and fail-OPEN: with no capacity configured, or when the order count can't be read, this reports open. Turning a customer away because of an outage is the worst way to be wrong.
+ * Carries no order counts — how much work the studio is holding is the studio's business, not the visitor's.
+ * @summary Whether the studio is taking new bespoke commissions
+ */
+export const getCapacity = async ( options?: Parameters<typeof customFetch>[1]): Promise<CapacityStatus> => {
+
+  return customFetch<CapacityStatus>(getGetCapacityUrl(),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
+
+
+
+
+export const getGetCapacityQueryKey = () => {
+    return [
+    `/api/capacity`
+    ] as const;
+    }
+
+
+export const getGetCapacityQueryOptions = <TData = Awaited<ReturnType<typeof getCapacity>>, TError = ErrorType<ErrorEnvelope>>( options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getCapacity>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getGetCapacityQueryKey();
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof getCapacity>>> = ({ signal }) => getCapacity({ signal, ...requestOptions });
+
+
+
+
+
+   return  { queryKey, queryFn, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof getCapacity>>, TError, TData> & { queryKey: QueryKey }
+}
+
+export type GetCapacityQueryResult = NonNullable<Awaited<ReturnType<typeof getCapacity>>>
+export type GetCapacityQueryError = ErrorType<ErrorEnvelope>
+
+
+/**
+ * @summary Whether the studio is taking new bespoke commissions
+ */
+
+export function useGetCapacity<TData = Awaited<ReturnType<typeof getCapacity>>, TError = ErrorType<ErrorEnvelope>>(
+  options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getCapacity>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+
+ ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+
+  const queryOptions = getGetCapacityQueryOptions(options)
+
+  const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
+
+  return withQueryKey(query, queryOptions.queryKey);
+}
+
+
+
+
+
+
+
+export const getJoinWaitlistUrl = () => {
+
+
+
+
+  return `/api/waitlist`
+}
+
+/**
+ * Records a customer's request to be told when the studio's books reopen, as a tagged row in the Notion contact-messages inbox (and a best-effort Client CRM lead), and sends a best-effort acknowledgement. Accepted whether or not intake is currently closed — a customer planning ahead is not a mistake to reject.
+ * This never creates an order and never holds a slot. The atelier answers a waitlist entry by hand when capacity frees.
+ * @summary Join the waitlist for a bespoke commission
+ */
+export const joinWaitlist = async (newWaitlistRequest: NewWaitlistRequest, options?: Parameters<typeof customFetch>[1]): Promise<NewWaitlistResponse> => {
+
+  return customFetch<NewWaitlistResponse>(getJoinWaitlistUrl(),
+  {
+    ...options,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    body: JSON.stringify(newWaitlistRequest)
+  }
+);}
+
+
+
+
+
+export const getJoinWaitlistMutationOptions = <TError = ErrorType<ErrorEnvelope>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof joinWaitlist>>, TError,{data: BodyType<NewWaitlistRequest>}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof joinWaitlist>>, TError,{data: BodyType<NewWaitlistRequest>}, TContext> => {
+
+const mutationKey = ['joinWaitlist'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof joinWaitlist>>, {data: BodyType<NewWaitlistRequest>}> = (props) => {
+          const {data} = props ?? {};
+
+          return  joinWaitlist(data,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type JoinWaitlistMutationResult = NonNullable<Awaited<ReturnType<typeof joinWaitlist>>>
+    export type JoinWaitlistMutationBody = BodyType<NewWaitlistRequest>
+    export type JoinWaitlistMutationError = ErrorType<ErrorEnvelope>
+
+    /**
+ * @summary Join the waitlist for a bespoke commission
+ */
+export const useJoinWaitlist = <TError = ErrorType<ErrorEnvelope>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof joinWaitlist>>, TError,{data: BodyType<NewWaitlistRequest>}, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof joinWaitlist>>,
+        TError,
+        {data: BodyType<NewWaitlistRequest>},
+        TContext
+      > => {
+      return useMutation(getJoinWaitlistMutationOptions(options));
     }
 
 export const getGetProductsUrl = () => {

@@ -1,6 +1,11 @@
 import { test, expect } from "./support/test";
 import { createOrderInput, GENERIC_ERROR } from "@workspace/test-fixtures";
-import { mockCreateOrder, mockColors, mockServices } from "./support/mock-api";
+import {
+  mockCreateOrder,
+  mockColors,
+  mockServices,
+  mockCapacity,
+} from "./support/mock-api";
 
 // Measurements come from the shared fixture, but the *identity* stays
 // Playwright-specific on purpose: the opt-in live-Notion test below submits
@@ -58,6 +63,7 @@ test.describe("Order form", () => {
   test.beforeEach(async ({ page }) => {
     await mockColors(page);
     await mockServices(page);
+    await mockCapacity(page);
   });
 
   test("submits a valid order and shows the returned order number (API mocked)", async ({
@@ -113,6 +119,7 @@ test.describe("Order form — per-service intake", () => {
   test.beforeEach(async ({ page }) => {
     await mockColors(page);
     await mockServices(page);
+    await mockCapacity(page);
   });
 
   test("a service deep link preselects it and asks only for what it needs", async ({
@@ -188,5 +195,69 @@ test.describe("Order form — live Notion (opt-in)", () => {
 
     const orderNumber = await page.getByTestId("order-number").textContent();
     expect(orderNumber).toMatch(/^ORD-[A-Z0-9]+-[A-Z0-9]+$/);
+  });
+});
+
+test.describe("Order form — seasonal capacity", () => {
+  const CLOSED = {
+    open: false,
+    waitlistOpen: true,
+    message: "Full for the 2026-27 season.",
+    events: [{ id: "comp-1", name: "Rocket City Classic", date: "2027-01-16" }],
+  };
+
+  test.beforeEach(async ({ page }) => {
+    await mockColors(page);
+    await mockServices(page);
+    await mockCapacity(page, { body: CLOSED });
+  });
+
+  test("offers the waitlist for a commission and still takes a repair", async ({
+    page,
+  }) => {
+    const entries: unknown[] = [];
+    await page.route("**/api/waitlist", async (route) => {
+      if (route.request().method() !== "POST") return route.fallback();
+      entries.push(route.request().postDataJSON());
+      await route.fulfill({
+        status: 201,
+        contentType: "application/json",
+        body: JSON.stringify({ success: true }),
+      });
+    });
+
+    await page.goto("/order");
+
+    // Nothing picked yet: the closed sign is an answer about a service, so the
+    // picker comes first.
+    await expect(page.getByTestId("service-picker")).toBeVisible();
+    await expect(page.getByTestId("waitlist-form")).toHaveCount(0);
+
+    // A repair is worked on a piece the customer already owns, so it keeps
+    // taking orders while the commission book is full.
+    await page.getByTestId("service-option-repairs").click();
+    await expect(page.locator("#fullName")).toBeVisible();
+    await expect(page.getByTestId("waitlist-form")).toHaveCount(0);
+
+    // The commission is the one that's paused.
+    await page.getByTestId("service-option-bespoke").click();
+    await expect(page.getByTestId("waitlist-form")).toBeVisible();
+    await expect(page.getByText("Full for the 2026-27 season.")).toBeVisible();
+    // No intake fields behind it.
+    await expect(page.locator("#waist")).toHaveCount(0);
+
+    await page.getByTestId("input-waitlist-name").fill("Ada Skater");
+    await page.getByTestId("input-waitlist-email").fill("ada@example.com");
+    await page.getByTestId("select-waitlist-event").selectOption("comp-1");
+    await page.getByTestId("button-join-waitlist").click();
+
+    await expect(page.getByTestId("waitlist-success")).toBeVisible();
+    expect(entries).toHaveLength(1);
+    expect(entries[0]).toMatchObject({
+      name: "Ada Skater",
+      email: "ada@example.com",
+      // The id, not a label the browser chose — the server resolves the name.
+      eventId: "comp-1",
+    });
   });
 });

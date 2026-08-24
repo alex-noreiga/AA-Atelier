@@ -231,6 +231,12 @@ const analytics = {
     { name: "Bow Soaker", orders: 6 },
     { name: "Blade Towel", orders: 2 },
   ],
+  capacity: {
+    open: true,
+    reason: "under-capacity" as const,
+    limit: 8,
+    inProduction: 5,
+  },
 };
 
 beforeEach(() => {
@@ -358,6 +364,46 @@ describe("studio dashboard — figures", () => {
       "5 on record",
     );
     expect(screen.getByTestId("pipeline-shop")).toHaveTextContent("Shipped");
+  });
+
+  it("shows the commission capacity, with the count the public endpoint withholds", () => {
+    renderPage();
+    const panel = screen.getByTestId("panel-capacity");
+    expect(panel).toHaveTextContent("Books open");
+    expect(panel).toHaveTextContent("5 of 8 in production");
+  });
+
+  it("says the books are closed and why", () => {
+    stubAnalytics({
+      data: {
+        ...analytics,
+        capacity: {
+          open: false,
+          reason: "forced-closed" as const,
+          limit: 8,
+          inProduction: 2,
+        },
+      },
+    });
+    renderPage();
+    const panel = screen.getByTestId("panel-capacity");
+    expect(panel).toHaveTextContent("Books closed");
+    // "Closed" alone can't tell the atelier whether they hit their own limit
+    // or left the switch on `closed` last season.
+    expect(panel).toHaveTextContent("Closed by hand");
+  });
+
+  it("says the count wasn't read rather than rendering it as zero", () => {
+    stubAnalytics({
+      data: {
+        ...analytics,
+        capacity: { open: true, reason: "unknown" as const, limit: 8 },
+      },
+    });
+    renderPage();
+    expect(screen.getByTestId("panel-capacity")).toHaveTextContent(
+      "not counted",
+    );
   });
 
   it("shows the two revenue series separately, never summed", () => {

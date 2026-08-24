@@ -29,6 +29,7 @@
 // drift — that test is the guard, not a convention.
 
 import { parseColorPalette } from "../../services/colors.js";
+import { DEFAULT_CLOSED_MESSAGE } from "../../services/capacity.js";
 
 /** How the dashboard should render (and the server should read) a value. */
 export type SettingKind =
@@ -163,6 +164,56 @@ export const SETTING_DEFINITIONS: readonly SettingDefinition[] = [
     placeholder: "Cutting/Pinning",
     accepts: nonEmpty,
     validate: textRule(100, "The stage name"),
+  },
+  {
+    key: "COMMISSION_INTAKE",
+    label: "Commission intake",
+    group: "Orders & pricing",
+    kind: "text",
+    description:
+      'Whether new bespoke commissions can be ordered. "auto" lets the capacity number below decide; "closed" shuts the books whatever the count says; "open" keeps them open over it. Alterations, rhinestoning and repairs are never affected.',
+    defaultValue: "auto",
+    placeholder: "auto",
+    // Parity with `intakeSwitch()`, which reads anything else as "auto" — so a
+    // typed value that isn't one of the three IS honoured, as "auto", and the
+    // dashboard must not claim it was thrown away.
+    accepts: () => true,
+    // Stricter than the runtime, deliberately: "paused" would silently behave
+    // as "auto" and look like a closed sign that isn't closing anything, which
+    // is precisely the silent-failure this editor exists to end.
+    validate: (raw) =>
+      ["auto", "open", "closed"].includes(raw.trim().toLowerCase())
+        ? null
+        : 'That has to be "auto", "open" or "closed".',
+  },
+  {
+    key: "COMMISSION_CAPACITY",
+    label: "Commissions in production at once",
+    group: "Orders & pricing",
+    kind: "integer",
+    description:
+      "How many bespoke commissions the studio can have in production before the books close and the order form offers the waitlist instead. An order counts from the day it is placed until it is delivered or cancelled. 0 means no limit.",
+    defaultValue: "0",
+    defaultLabel: "No limit — the books never close on the count",
+    min: 0,
+    max: 500,
+    step: 1,
+    placeholder: "8",
+    accepts: (raw) => numberIn(raw, 0),
+    validate: numberRule(0, 500, { integer: true }),
+  },
+  {
+    key: "COMMISSION_CLOSED_MESSAGE",
+    label: "Closed-books message",
+    group: "Orders & pricing",
+    kind: "text",
+    description:
+      "What the order form tells a customer when the books are closed. Shown above the waitlist form, and returned as the reason if an order is submitted anyway.",
+    defaultValue: "",
+    defaultLabel: DEFAULT_CLOSED_MESSAGE,
+    placeholder: DEFAULT_CLOSED_MESSAGE,
+    accepts: nonEmpty,
+    validate: textRule(400, "The message"),
   },
   {
     key: "COLOR_PALETTE",

@@ -37,6 +37,13 @@ import { listVariants } from "../lib/notion/products.repository.js";
 import { dateInZone, addCalendarDays } from "../lib/appointments/time.js";
 import { appointmentTimezone } from "../lib/appointments/settings.js";
 import { orderLifecycleState } from "./delivery.js";
+import { resolveStoredOrderService } from "../lib/service-catalog.js";
+import {
+  commissionCapacity,
+  intakeSwitch,
+  resolveIntake,
+  type IntakeReason,
+} from "./capacity.js";
 import { logger } from "../lib/logger.js";
 
 /** How many trailing months the revenue series covers (this month included). */
@@ -121,6 +128,15 @@ export interface StudioAnalyticsResult {
   revenue: StudioRevenueMonth[];
   payments: StudioPaymentTotals;
   topItems: StudioTopItem[];
+  capacity: StudioCapacity;
+}
+
+/** The seasonal-capacity gate, as the studio's own panel shows it. */
+export interface StudioCapacity {
+  open: boolean;
+  reason: IntakeReason;
+  limit: number;
+  inProduction?: number;
 }
 
 /** Everything the aggregation reads, so it stays pure and testable. */
@@ -452,7 +468,38 @@ export function aggregateStudioAnalytics(
     revenue: buildRevenue(input, invoiceByOrderPage),
     payments: buildPayments(input.invoices, cancelledOrderPages),
     topItems: buildTopItems(input.shopOrders, input.itemNames),
+    capacity: buildCapacity(activeOrders),
   };
+}
+
+/**
+ * The seasonal-capacity gate, computed from the orders this scan already read.
+ *
+ * The public `GET /capacity` runs its own narrow, filtered count — this one is
+ * free here, because the aggregation has every order in hand and has already
+ * classified them. The two can differ by up to a minute (each caches its own
+ * read), which is fine: this panel is the atelier looking at their own numbers,
+ * not the decision that gates an order.
+ *
+ * `activeOrders` is `orderLifecycleState === "active"` over each order's OWN
+ * pipeline, which is the same test the count's Notion filter approximates — so
+ * "in production" means the same thing on both sides.
+ */
+function buildCapacity(
+  activeOrders: readonly OrderAnalyticsRecord[],
+): StudioCapacity {
+  const inProduction = activeOrders.filter(
+    (order) => resolveStoredOrderService(order.service).capacityGated,
+  ).length;
+  const limit = commissionCapacity();
+  const { open, reason } = resolveIntake(inProduction, {
+    capacity: limit,
+    override: intakeSwitch(),
+  });
+
+  // Always present here, unlike the public read: the scan is the dashboard, so
+  // a failure surfaces as a 500 rather than an unknown count.
+  return { open, reason, limit, inProduction };
 }
 
 // --- The use-case ---

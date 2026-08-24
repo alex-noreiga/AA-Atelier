@@ -60,6 +60,7 @@ const KIND_LABELS: Record<StudioRequestKind, string> = {
   measurement: "Measurement change",
   cancellation: "Cancellation",
   return: "Return or exchange",
+  waitlist: "Waitlist",
   // Never reaches this queue — an opt-in is filtered out server-side and has
   // its own panel. The map stays total so a kind added later can't be missed.
   newsletter: "Newsletter sign-up",
@@ -72,6 +73,8 @@ const MANUAL_GUIDANCE: Partial<Record<StudioRequestKind, string>> = {
   measurement:
     "Apply the new measurements to the order in Notion — the app never edits an order's measurements itself.",
   inquiry: "Answer this by email, then mark it replied.",
+  waitlist:
+    "Nothing to run — this is someone waiting for the books to reopen. Write to them when a space opens up, or reopen intake under Studio settings.",
 };
 
 /** The verb on each tool's hand-off button, matching the tool card it fills. */

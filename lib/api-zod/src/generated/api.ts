@@ -63,7 +63,7 @@ export const GetOrderStatusResponse = zod.object({
 
 
 /**
- * Creates a new custom dress order and saves it to Notion
+ * Creates a new custom dress order and saves it to Notion. Refused with 409 when the order is for a capacity-gated service and the studio's books are closed (see `GET /capacity`) — the customer is offered `POST /waitlist` instead.
  * @summary Submit a new custom dress order
  */
 
@@ -277,6 +277,54 @@ export const SubscribeNewsletterResponse = zod.object({
 
 
 /**
+ * Reports whether the atelier's books are open for the capacity-gated services (today, the bespoke commission — see `Service.capacityGated`), so the intake form can offer the waitlist instead of a form that would be refused. The same decision gates `POST /orders`, so the form and the server can't disagree.
+ * Closed means one of two things: the atelier paused intake by hand, or the number of commissions in production has reached the studio's capacity. Both are atelier-editable Studio Settings (`COMMISSION_INTAKE`, `COMMISSION_CAPACITY`).
+ * Deliberately degrade-safe and fail-OPEN: with no capacity configured, or when the order count can't be read, this reports open. Turning a customer away because of an outage is the worst way to be wrong.
+ * Carries no order counts — how much work the studio is holding is the studio's business, not the visitor's.
+ * @summary Whether the studio is taking new bespoke commissions
+ */
+export const GetCapacityResponse = zod.object({
+  "open": zod.boolean().describe('True when a capacity-gated service can be ordered. False means the intake form should offer the waitlist instead.'),
+  "waitlistOpen": zod.boolean().describe('Whether `POST \/waitlist` should be offered. Today this is the inverse of `open`, but it is stated rather than derived so the atelier can later close the books without collecting names.'),
+  "message": zod.string().describe('The customer-facing explanation to show when closed, from the atelier-editable `COMMISSION_CLOSED_MESSAGE` setting. Empty when open — there is nothing to explain.'),
+  "events": zod.array(zod.object({
+  "id": zod.string().describe('The competition row\'s Notion page id — opaque to the browser.'),
+  "name": zod.string().describe('The competition\'s name, e.g. \"Rocket City Classic\".'),
+  "date": zod.string().describe('The day it starts, as an ISO date (yyyy-mm-dd). A response pass-through, kept as a string (no `format: date`) so it isn\'t coerced to a `Date` and re-serialized as a full timestamp — the same convention as `estimatedCompletion` and the milestone target dates.'),
+  "season": zod.string().optional().describe('The season it belongs to, e.g. \"2026-27\", when the atelier set one.'),
+  "location": zod.string().optional().describe('Where it is held, when the atelier set one.')
+}).describe('One dated competition a customer can say they\'re aiming at.')).describe('Upcoming dated competitions from the studio\'s Competitions database, soonest first, offered as the \"what are you skating?\" picker on the waitlist form. Empty when that database isn\'t configured, has no dated future rows, or can\'t be read — the form then asks for a plain date instead. Never an error.')
+}).describe('Whether the capacity-gated services are accepting orders, the wording to show when they aren\'t, and the dated events a waitlist entry can be pinned to.')
+
+
+/**
+ * Records a customer's request to be told when the studio's books reopen, as a tagged row in the Notion contact-messages inbox (and a best-effort Client CRM lead), and sends a best-effort acknowledgement. Accepted whether or not intake is currently closed — a customer planning ahead is not a mistake to reject.
+ * This never creates an order and never holds a slot. The atelier answers a waitlist entry by hand when capacity frees.
+ * @summary Join the waitlist for a bespoke commission
+ */
+
+export const joinWaitlistBodyElapsedMsMin = 0;
+
+
+
+export const JoinWaitlistBody = zod.object({
+  "name": zod.string().min(1),
+  "email": zod.string().email(),
+  "phone": zod.string().optional(),
+  "neededBy": zod.coerce.date().optional().describe('When the customer needs the piece, if they know. Used by the atelier to work the list in date order.'),
+  "eventId": zod.string().optional().describe('The `WaitlistEvent.id` the customer picked, when they chose one from the competition list. The server resolves it back to the event\'s own name and date rather than trusting a client-sent label.'),
+  "eventName": zod.string().optional().describe('What they\'re skating, typed by hand — used when the competition list was empty or held nothing matching. Ignored when `eventId` resolves.'),
+  "notes": zod.string().optional().describe('A line about the piece they have in mind. Optional.'),
+  "website": zod.string().optional().describe('Anti-spam honeypot. A hidden field that real visitors never fill; a non-empty value marks the submission as spam and it is silently dropped. Always send empty (or omit).'),
+  "elapsedMs": zod.number().int().min(joinWaitlistBodyElapsedMsMin).optional().describe('Anti-spam timing signal: milliseconds the visitor spent on the form before submitting. Implausibly fast submissions are dropped. Omit when unmeasurable (treated as human).')
+}).describe('A request to be told when the studio\'s books reopen. Deliberately lighter than an order: enough to get back in touch and to know what the piece is for.')
+
+export const JoinWaitlistResponse = zod.object({
+  "success": zod.boolean()
+})
+
+
+/**
  * Returns published, in-stock shop items from the Notion inventory database, grouped into cards with selectable variants.
  * @summary List shop products
  */
@@ -332,7 +380,8 @@ export const GetServicesResponse = zod.object({
   "colors": zod.boolean().describe('Whether this service offers the studio colour palette and the \"how would you like these used\" note.'),
   "detailsRequired": zod.boolean().describe('Whether the order\'s free-text `description` is required. True for the services performed on a piece the customer already owns, where that description IS the brief; false for a bespoke commission, whose design notes are optional.'),
   "detailsLabel": zod.string().describe('Field label for `description` on this service\'s form.'),
-  "detailsHelp": zod.string().describe('Placeholder \/ prompt for `description` on this service\'s form.')
+  "detailsHelp": zod.string().describe('Placeholder \/ prompt for `description` on this service\'s form.'),
+  "capacityGated": zod.boolean().describe('Whether this service is paused when the studio\'s books are closed (see `GET \/capacity`). True only for work that consumes the atelier\'s making capacity — a bespoke commission. A piece the customer already owns is quick work the studio keeps taking, so alterations, rhinestoning and repairs are never gated.')
 }).describe('One service a custom order can be placed for, with the rules that decide what the intake form asks for. The flags are the contract\'s half of a targeted business rule held in server code (like the appointment-type catalog): the same definitions gate `POST \/orders`.')).describe('The intake service catalog, in the order the form should offer it. Always non-empty; the first entry is the default when a new order names no service.')
 })
 
@@ -845,7 +894,13 @@ export const GetStudioAnalyticsResponse = zod.object({
   "topItems": zod.array(zod.object({
   "name": zod.string(),
   "orders": zod.number().int()
-}).describe('One best-selling shop piece. The count is orders containing the piece, not units — the order\'s inventory relation records which pieces were bought, not how many of each.')).describe('The shop\'s best sellers, most-ordered first. Empty when no shop order carries its inventory relation (legacy orders, or the relation-links flag being off) — item-level figures are only as good as that link.')
+}).describe('One best-selling shop piece. The count is orders containing the piece, not units — the order\'s inventory relation records which pieces were bought, not how many of each.')).describe('The shop\'s best sellers, most-ordered first. Empty when no shop order carries its inventory relation (legacy orders, or the relation-links flag being off) — item-level figures are only as good as that link.'),
+  "capacity": zod.object({
+  "open": zod.boolean().describe('Whether a bespoke commission can currently be ordered.'),
+  "reason": zod.enum(['unlimited', 'under-capacity', 'at-capacity', 'forced-open', 'forced-closed', 'unknown']).describe('What decided it. `unlimited` means no capacity is configured; `forced-\*` means the atelier\'s manual switch overrode the count; `unknown` means the count couldn\'t be read and the books stayed open rather than closing on a bad read.'),
+  "limit": zod.number().int().describe('The configured `COMMISSION_CAPACITY`. `0` means no limit is being enforced.'),
+  "inProduction": zod.number().int().optional().describe('How many capacity-gated orders are neither delivered nor cancelled. Absent when the count wasn\'t read — which is not the same as zero, and the panel says so rather than showing a nought.')
+}).describe('The seasonal-capacity gate as the studio sees it — whether the books are open, why, and the count behind it. The public `GET \/capacity` carries the decision but deliberately none of these numbers; how much work the studio is holding is the studio\'s own business.')
 }).describe('The atelier\'s own figures, aggregated from the live Notion databases for the internal studio dashboard. Every money value is US dollars.')
 
 
@@ -1150,7 +1205,7 @@ export const SetStudioSettingResponse = zod.object({
 export const ListStudioRequestsResponse = zod.object({
   "open": zod.array(zod.object({
   "id": zod.string().describe('The request\'s Notion page id; also what a state change is addressed to.'),
-  "kind": zod.enum(['inquiry', 'back-in-stock', 'measurement', 'cancellation', 'return', 'newsletter', 'other']).describe('What a customer is asking for, DERIVED from the row\'s `Request type` select rather than enumerated from it. Six kinds name the values the app writes; `other` is anything else — a blank select, or a type the atelier invented — so an unrecognized row appears in the queue asking to be looked at rather than vanishing from it.\n\n`newsletter` never appears in the request QUEUE — an opt-in is a consent record nobody answers, so it has its own panel (see `\/studio\/newsletter`) and is filtered out of the queue. The kind still exists because the queue\'s state operation is shared across the whole contact inbox, and it answers with the row it wrote.'),
+  "kind": zod.enum(['inquiry', 'back-in-stock', 'measurement', 'cancellation', 'return', 'waitlist', 'newsletter', 'other']).describe('What a customer is asking for, DERIVED from the row\'s `Request type` select rather than enumerated from it. Seven kinds name the values the app writes; `other` is anything else — a blank select, or a type the atelier invented — so an unrecognized row appears in the queue asking to be looked at rather than vanishing from it.\n\n`newsletter` never appears in the request QUEUE — an opt-in is a consent record nobody answers, so it has its own panel (see `\/studio\/newsletter`) and is filtered out of the queue. The kind still exists because the queue\'s state operation is shared across the whole contact inbox, and it answers with the row it wrote.'),
   "rawType": zod.string().optional().describe('The `Request type` select exactly as Notion holds it, when set. Shown for a row the app reads as `other`, so \"why is this here?\" is answerable without opening Notion.'),
   "subject": zod.string().describe('The row\'s title, as the writer composed it.'),
   "customerName": zod.string().optional().describe('Who wrote it, when the request records a name (inquiries do).'),
@@ -1172,7 +1227,7 @@ export const ListStudioRequestsResponse = zod.object({
 }).describe('One customer request as the queue shows it — the row from the shared contact inbox, plus what can be done about it. Staff-only.')).describe('Still waiting, OLDEST first — the queue proper. Anything not closed counts, including a row whose stage was never set.'),
   "closed": zod.array(zod.object({
   "id": zod.string().describe('The request\'s Notion page id; also what a state change is addressed to.'),
-  "kind": zod.enum(['inquiry', 'back-in-stock', 'measurement', 'cancellation', 'return', 'newsletter', 'other']).describe('What a customer is asking for, DERIVED from the row\'s `Request type` select rather than enumerated from it. Six kinds name the values the app writes; `other` is anything else — a blank select, or a type the atelier invented — so an unrecognized row appears in the queue asking to be looked at rather than vanishing from it.\n\n`newsletter` never appears in the request QUEUE — an opt-in is a consent record nobody answers, so it has its own panel (see `\/studio\/newsletter`) and is filtered out of the queue. The kind still exists because the queue\'s state operation is shared across the whole contact inbox, and it answers with the row it wrote.'),
+  "kind": zod.enum(['inquiry', 'back-in-stock', 'measurement', 'cancellation', 'return', 'waitlist', 'newsletter', 'other']).describe('What a customer is asking for, DERIVED from the row\'s `Request type` select rather than enumerated from it. Seven kinds name the values the app writes; `other` is anything else — a blank select, or a type the atelier invented — so an unrecognized row appears in the queue asking to be looked at rather than vanishing from it.\n\n`newsletter` never appears in the request QUEUE — an opt-in is a consent record nobody answers, so it has its own panel (see `\/studio\/newsletter`) and is filtered out of the queue. The kind still exists because the queue\'s state operation is shared across the whole contact inbox, and it answers with the row it wrote.'),
   "rawType": zod.string().optional().describe('The `Request type` select exactly as Notion holds it, when set. Shown for a row the app reads as `other`, so \"why is this here?\" is answerable without opening Notion.'),
   "subject": zod.string().describe('The row\'s title, as the writer composed it.'),
   "customerName": zod.string().optional().describe('Who wrote it, when the request records a name (inquiries do).'),
@@ -1212,7 +1267,7 @@ export const SetStudioRequestStateBody = zod.object({
 
 export const SetStudioRequestStateResponse = zod.object({
   "id": zod.string().describe('The request\'s Notion page id; also what a state change is addressed to.'),
-  "kind": zod.enum(['inquiry', 'back-in-stock', 'measurement', 'cancellation', 'return', 'newsletter', 'other']).describe('What a customer is asking for, DERIVED from the row\'s `Request type` select rather than enumerated from it. Six kinds name the values the app writes; `other` is anything else — a blank select, or a type the atelier invented — so an unrecognized row appears in the queue asking to be looked at rather than vanishing from it.\n\n`newsletter` never appears in the request QUEUE — an opt-in is a consent record nobody answers, so it has its own panel (see `\/studio\/newsletter`) and is filtered out of the queue. The kind still exists because the queue\'s state operation is shared across the whole contact inbox, and it answers with the row it wrote.'),
+  "kind": zod.enum(['inquiry', 'back-in-stock', 'measurement', 'cancellation', 'return', 'waitlist', 'newsletter', 'other']).describe('What a customer is asking for, DERIVED from the row\'s `Request type` select rather than enumerated from it. Seven kinds name the values the app writes; `other` is anything else — a blank select, or a type the atelier invented — so an unrecognized row appears in the queue asking to be looked at rather than vanishing from it.\n\n`newsletter` never appears in the request QUEUE — an opt-in is a consent record nobody answers, so it has its own panel (see `\/studio\/newsletter`) and is filtered out of the queue. The kind still exists because the queue\'s state operation is shared across the whole contact inbox, and it answers with the row it wrote.'),
   "rawType": zod.string().optional().describe('The `Request type` select exactly as Notion holds it, when set. Shown for a row the app reads as `other`, so \"why is this here?\" is answerable without opening Notion.'),
   "subject": zod.string().describe('The row\'s title, as the writer composed it.'),
   "customerName": zod.string().optional().describe('Who wrote it, when the request records a name (inquiries do).'),

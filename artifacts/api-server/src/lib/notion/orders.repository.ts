@@ -22,6 +22,7 @@ import {
   ORDER_MILESTONES_GENERATED_PROPERTY,
   ORDER_LAST_NOTIFIED_STAGE_PROPERTY,
   ORDER_CANCELLED_PROPERTY,
+  ORDER_STAGE_PROPERTY,
   extractStageOptions,
   extractOrderNumber,
   extractOrderName,
@@ -463,6 +464,66 @@ export function findOrdersNeedingMilestones(
   client: NotionClient = getNotionClient(),
 ): Promise<PendingMilestoneOrder[]> {
   return queryOrdersByMilestoneState(client, false);
+}
+
+/**
+ * Count the capacity-gated orders currently in production — the number the
+ * seasonal-capacity gate weighs against `COMMISSION_CAPACITY`.
+ *
+ * Deliberately a *filtered* query rather than the analytics' full scan, because
+ * this one is reached from a PUBLIC endpoint on every intake-form load. The
+ * filter asks Notion for the orders that are neither cancelled nor at the final
+ * stage, so what comes back is bounded by the studio's real open workload (a
+ * handful of rows) rather than by every order ever placed. There is no `count`
+ * API, so the rows still have to be read — this just keeps the set small.
+ *
+ * The two terminal conditions mirror `orderLifecycleState` exactly: `Cancelled`
+ * ticked, or the current stage being the last of the live list. Note this
+ * excludes on the *superset's* final stage, which is `Delivered` for every
+ * pipeline (a service's stages are a subsequence ending there), so a repair is
+ * counted as open until it is delivered just like a commission — the same
+ * answer `orderLifecycleState` would give, without a per-row pipeline resolve.
+ *
+ * Which of those open orders are capacity-gated is the *catalog's* call, not
+ * this module's, so each row's stored `Service` rides back untouched and
+ * `capacity.service.ts` decides. That keeps the "what a service means" rule in
+ * the one place that owns it.
+ *
+ * A stage list that comes back empty (a Notion hiccup on the schema read) drops
+ * the stage half of the filter rather than guessing a name: the count then
+ * over-reports (delivered orders are included), which closes the books early —
+ * so the caller treats a *failed* read as unknown and this near-miss as the
+ * conservative-but-harmless case it is, since the atelier's manual switch
+ * overrides either way.
+ */
+export async function listOpenOrderServices(
+  client: NotionClient = getNotionClient(),
+): Promise<string[]> {
+  assertConfigured(client);
+
+  const stages = await fetchLiveOrderStages(client);
+  const finalStage = stages[stages.length - 1];
+
+  const conditions: Record<string, unknown>[] = [
+    // An absent checkbox reads as false, so `equals: false` matches the orders
+    // of a workspace that hasn't added the property as well as the un-cancelled
+    // ones of a workspace that has.
+    { property: ORDER_CANCELLED_PROPERTY, checkbox: { equals: false } },
+  ];
+  if (finalStage) {
+    // "Stage" is a Notion `status` property, not a select — see
+    // `.agents/memory/notion-status-filters.md`.
+    conditions.push({
+      property: ORDER_STAGE_PROPERTY,
+      status: { does_not_equal: finalStage },
+    });
+  }
+
+  const rows = await scanDatabase<NotionOrderPage>(client, "open orders", {
+    filter: { and: conditions },
+  });
+
+  return rows.map((page) => extractOrderService(page) ?? "");
 }
 
 /**

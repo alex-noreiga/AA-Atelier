@@ -5,6 +5,7 @@
  * API specification
  * OpenAPI spec version: 0.1.0
  */
+import type { StudioCapacity } from './studioCapacity';
 import type { StudioPaymentTotals } from './studioPaymentTotals';
 import type { StudioPipeline } from './studioPipeline';
 import type { StudioProductionLoad } from './studioProductionLoad';
@@ -25,4 +26,5 @@ export interface StudioAnalytics {
   payments: StudioPaymentTotals;
   /** The shop's best sellers, most-ordered first. Empty when no shop order carries its inventory relation (legacy orders, or the relation-links flag being off) — item-level figures are only as good as that link. */
   topItems: StudioTopItem[];
+  capacity: StudioCapacity;
 }

@@ -46,6 +46,7 @@ import { MEASUREMENT_CHANGE_REQUEST_TYPE } from "./measurement-change.blocks.js"
 import { CANCELLATION_REQUEST_TYPE } from "./cancellation.blocks.js";
 import { RETURN_REQUEST_TYPE } from "./return-request.blocks.js";
 import { NEWSLETTER_REQUEST_TYPE } from "./newsletter.blocks.js";
+import { WAITLIST_REQUEST_TYPE } from "./waitlist.blocks.js";
 
 /**
  * The `Stage` values the inbox has always carried, beyond the `New` every
@@ -75,6 +76,7 @@ export type RequestKind =
   | "measurement"
   | "cancellation"
   | "return"
+  | "waitlist"
   | "newsletter"
   | "other";
 
@@ -89,6 +91,7 @@ const KIND_BY_REQUEST_TYPE: Record<string, RequestKind> = {
   [MEASUREMENT_CHANGE_REQUEST_TYPE]: "measurement",
   [CANCELLATION_REQUEST_TYPE]: "cancellation",
   [RETURN_REQUEST_TYPE]: "return",
+  [WAITLIST_REQUEST_TYPE]: "waitlist",
   [NEWSLETTER_REQUEST_TYPE]: "newsletter",
 };
 

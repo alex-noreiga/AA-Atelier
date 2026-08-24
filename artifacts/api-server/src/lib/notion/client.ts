@@ -71,6 +71,7 @@ let costingClient: NotionClient | null = null;
 let materialUsageClient: NotionClient | null = null;
 let reviewsClient: NotionClient | null = null;
 let settingsClient: NotionClient | null = null;
+let competitionsClient: NotionClient | null = null;
 let studioGuidesClient: NotionClient | null = null;
 
 /**
@@ -326,4 +327,23 @@ export function getSettingsNotionClient(): NotionClient {
     });
   }
   return settingsClient;
+}
+
+/**
+ * Client for the optional "🏆 Competitions" database — the atelier's calendar of
+ * the events their customers skate, which is what makes capacity *seasonal*:
+ * a waitlist entry is pinned to the competition it is for, so the atelier can
+ * work the list by the date the piece is actually needed. Same lazy
+ * construction, reads `NOTION_COMPETITIONS_DATABASE_ID`. Optional: unset ⇒ the
+ * `databaseId` is empty and the repository reports no events, so the waitlist
+ * asks for a plain date instead. Read-only — the app never writes a competition.
+ */
+export function getCompetitionsNotionClient(): NotionClient {
+  if (!competitionsClient) {
+    competitionsClient = createNotionClient({
+      apiKey: process.env.NOTION_API_KEY ?? "",
+      databaseId: process.env.NOTION_COMPETITIONS_DATABASE_ID ?? "",
+    });
+  }
+  return competitionsClient;
 }

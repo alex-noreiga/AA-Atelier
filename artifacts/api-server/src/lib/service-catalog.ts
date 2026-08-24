@@ -55,6 +55,21 @@ export interface OrderServiceDef {
    */
   emailIntro: string;
   /**
+   * Whether this service is paused when the studio's books are closed (see
+   * `services/capacity.ts`).
+   *
+   * True only for a **bespoke commission**, because that is the work that
+   * consumes the atelier's making capacity — weeks of drafting, cutting and
+   * construction per garment. The other three are performed on a piece the
+   * customer already owns and are measured in hours, so turning them away when
+   * the commission book is full would refuse work the studio can still do.
+   *
+   * Like the two gates above, this is served (`GET /services`) *and* enforced
+   * (`enforceCapacityGate` in `orders.service.ts`) from this one flag, so the
+   * form can't offer an order the server would refuse.
+   */
+  capacityGated: boolean;
+  /**
    * Which production stages this service's orders walk — the order's *pipeline*,
    * over the one superset of `Stage` options the atelier keeps in Notion.
    *
@@ -123,6 +138,7 @@ export const ORDER_SERVICES: readonly OrderServiceDef[] = [
     detailsLabel: "Description",
     detailsHelp:
       "Tell us about your vision — style, silhouette, special requirements...",
+    capacityGated: true,
     orderLabel: "Custom Costume",
     emailIntro:
       "Thank you for trusting us with your custom piece. We've received your order and our atelier will begin the journey from measurements to finished garment.",
@@ -141,6 +157,7 @@ export const ORDER_SERVICES: readonly OrderServiceDef[] = [
     detailsLabel: "The piece and what needs adjusting",
     detailsHelp:
       "Tell us about the costume and what you'd like changed — where it's tight or loose, hem length, straps...",
+    capacityGated: false,
     orderLabel: "Alterations",
     emailIntro:
       "Thank you for trusting us with your costume. We've received your alteration request, and we'll be in touch to arrange a fitting so we can see the piece on you.",
@@ -169,6 +186,7 @@ export const ORDER_SERVICES: readonly OrderServiceDef[] = [
     detailsLabel: "The piece and the stoning you'd like",
     detailsHelp:
       "Tell us about the costume and the coverage you're picturing — full stoning, bodice only, a scattered pattern...",
+    capacityGated: false,
     orderLabel: "Rhinestoning",
     emailIntro:
       "Thank you for trusting us with your costume. We've received your rhinestoning request, and we'll be in touch to confirm the detail, the stones, and the timing.",
@@ -196,6 +214,7 @@ export const ORDER_SERVICES: readonly OrderServiceDef[] = [
     detailsLabel: "The piece and what needs repairing",
     detailsHelp:
       "Tell us about the costume and what's happened to it — lost stones, a torn seam, worn elastic...",
+    capacityGated: false,
     orderLabel: "Repair",
     emailIntro:
       "Thank you for trusting us with your costume. We've received your repair request, and we'll be in touch about getting the piece to us.",
@@ -277,6 +296,7 @@ export function getServiceOptions(): {
     detailsRequired: boolean;
     detailsLabel: string;
     detailsHelp: string;
+    capacityGated: boolean;
   }>;
 } {
   return {

@@ -21,7 +21,11 @@ export const ORDER_NUMBER_PROPERTY = "Order Number";
 // back to verify a measurement-change request (order lookup itself never
 // exposes it). Orders created before this property existed read back empty.
 export const ORDER_EMAIL_PROPERTY = "Email";
-const STAGE_PROPERTY_NAME = "Stage";
+// The production pipeline column. A Notion `status` property, not a select — a
+// filter on it must use `status: {...}` or Notion 400s the query (see
+// `.agents/memory/notion-status-filters.md`). Exported because the capacity
+// count filters on it; everything else here reads it off a fetched page.
+export const ORDER_STAGE_PROPERTY = "Stage";
 // Relation to the order's invoice in the "invoices & payments" database (limit 1
 // in Notion, so at most one). The invoice is the source of truth for everything
 // the customer pays online (both deposits + the balance); the invoice flow
@@ -244,7 +248,7 @@ export interface NotionQueryResponse {
 /** Read the live "Stage" status options from a fetched database schema. */
 export function extractStageOptions(schema: NotionDatabaseSchema): string[] {
   return (
-    schema.properties[STAGE_PROPERTY_NAME]?.status?.options.map(
+    schema.properties[ORDER_STAGE_PROPERTY]?.status?.options.map(
       (option) => option.name,
     ) ?? []
   );
@@ -267,7 +271,7 @@ export function extractOrderName(page: NotionOrderPage): string {
 }
 
 export function extractCurrentStage(page: NotionOrderPage): string {
-  return page.properties[STAGE_PROPERTY_NAME]?.status?.name ?? "";
+  return page.properties[ORDER_STAGE_PROPERTY]?.status?.name ?? "";
 }
 
 /** The service the order was placed for (`bespoke`, `alterations`, …), or
@@ -410,6 +414,12 @@ export interface OrderAnalyticsRecord {
    * falls back to the superset), so an order is never classified against a
    * pipeline it doesn't walk. */
   pipeline?: string[];
+  /** The order's stored `Service`, verbatim — the display NAME the atelier
+   * filters on, not the catalog id. Empty for an order placed before that
+   * property existed. Passed through rather than resolved here so the catalog
+   * stays the only thing that decides what a service value means; the capacity
+   * count is what reads it. */
+  service: string;
 }
 
 /** Notion's page-creation timestamp, or an empty string on a payload that
@@ -432,6 +442,7 @@ export function extractOrderAnalytics(
     createdTime: extractCreatedTime(page),
     cancelled: extractCancelled(page),
     rush: extractRush(page),
+    service: extractOrderService(page) ?? "",
     ...(dueDate !== undefined ? { dueDate } : {}),
     ...(invoicePageId !== undefined ? { invoicePageId } : {}),
   };

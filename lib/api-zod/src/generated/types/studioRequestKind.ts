@@ -7,7 +7,7 @@
  */
 
 /**
- * What a customer is asking for, DERIVED from the row's `Request type` select rather than enumerated from it. Six kinds name the values the app writes; `other` is anything else — a blank select, or a type the atelier invented — so an unrecognized row appears in the queue asking to be looked at rather than vanishing from it.
+ * What a customer is asking for, DERIVED from the row's `Request type` select rather than enumerated from it. Seven kinds name the values the app writes; `other` is anything else — a blank select, or a type the atelier invented — so an unrecognized row appears in the queue asking to be looked at rather than vanishing from it.
  *
  * `newsletter` never appears in the request QUEUE — an opt-in is a consent record nobody answers, so it has its own panel (see `/studio/newsletter`) and is filtered out of the queue. The kind still exists because the queue's state operation is shared across the whole contact inbox, and it answers with the row it wrote.
  */
@@ -20,6 +20,7 @@ export const StudioRequestKind = {
   measurement: 'measurement',
   cancellation: 'cancellation',
   return: 'return',
+  waitlist: 'waitlist',
   newsletter: 'newsletter',
   other: 'other',
 } as const;

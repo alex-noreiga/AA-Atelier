@@ -12,12 +12,18 @@ import { upsertClientIndex } from "../lib/db/clients.repository.js";
 import { writeOrderIndex } from "../lib/db/order-index.repository.js";
 import { captureReferralOnOrder } from "./rewards.service.js";
 import { measurementsLocked } from "./measurement-lock.js";
+import { getIntakeStatus } from "./capacity.service.js";
+import { closedMessage } from "./capacity.js";
 import { getInvoicePaymentInfo } from "./invoice.service.js";
 import type {
   CreateOrderInput,
   OrderStatusResult,
 } from "../lib/notion/orders.schema.js";
-import { NotFoundError, ValidationError } from "../lib/errors.js";
+import {
+  ConflictError,
+  NotFoundError,
+  ValidationError,
+} from "../lib/errors.js";
 import {
   orderConfirmationEmail,
   orderNotificationEmail,
@@ -109,11 +115,37 @@ function enforceServiceGate(
   }
 }
 
+/**
+ * The seasonal-capacity gate — the server's half of `GET /capacity`.
+ *
+ * The intake form asks the same question before it renders, so in practice this
+ * fires only on a stale tab, a resubmitted form, or a direct POST. It exists
+ * anyway for the reason `checkout.service` reprices the cart: a rule the browser
+ * is trusted to apply is not a rule. Refusing here is also what makes the
+ * capacity number mean something — otherwise the books close for everyone who
+ * loads the page fresh and stay open for everyone who already had it.
+ *
+ * A `ConflictError` (409), not a validation error: nothing about the order is
+ * wrong, and the customer may well be able to place the very same order next
+ * month. The message is the atelier's own closed wording, so the refusal reads
+ * as the page does. Services that aren't capacity-gated skip the check entirely
+ * — and with it the Notion read behind it.
+ */
+async function enforceCapacityGate(service: OrderServiceDef): Promise<void> {
+  if (!service.capacityGated) return;
+
+  const { open } = await getIntakeStatus();
+  if (!open) {
+    throw new ConflictError(closedMessage());
+  }
+}
+
 export async function submitOrder(
   input: CreateOrderInput,
 ): Promise<{ orderNumber: string }> {
   const service = resolveOrderService(input.service);
   enforceServiceGate(service, input);
+  await enforceCapacityGate(service);
 
   // Best-effort: mirror the customer into the Client CRM (dedupe by email) so we
   // can link the order to a durable client record. A CRM failure must never fail

@@ -30,6 +30,9 @@ function order(
     createdTime: "2026-08-01T10:00:00.000Z",
     cancelled: false,
     rush: false,
+    // The bespoke commission's display name — the value a real order carries,
+    // and the one the capacity count reads as gated.
+    service: "Bespoke Commission",
     ...overrides,
   };
 }

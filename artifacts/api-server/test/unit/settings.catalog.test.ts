@@ -12,6 +12,12 @@ import { rushSurchargeRate } from "../../src/services/rush.js";
 import { lockFromStage } from "../../src/services/measurement-lock.js";
 import { intakeColorPalette } from "../../src/services/colors.js";
 import {
+  closedMessage,
+  commissionCapacity,
+  intakeSwitch,
+  DEFAULT_CLOSED_MESSAGE,
+} from "../../src/services/capacity.js";
+import {
   appointmentTimezone,
   minLeadMinutes,
   maxAdvanceDays,
@@ -72,6 +78,29 @@ const CASES: Case[] = [
     key: "MEASUREMENT_LOCK_FROM_STAGE",
     read: lockFromStage,
     sample: "Cutting",
+  },
+  {
+    key: "COMMISSION_INTAKE",
+    read: intakeSwitch,
+    sample: "closed",
+    // No `unusable` entry: the getter reads anything it doesn't recognise as
+    // "auto" rather than discarding it, so `accepts` returns true for every
+    // value — there is nothing the dashboard could honestly report as ignored.
+    // The write guard is what refuses a typo, and that's asserted below.
+  },
+  {
+    key: "COMMISSION_CAPACITY",
+    read: () => String(commissionCapacity()),
+    sample: "8",
+    unusable: "eight",
+  },
+  {
+    key: "COMMISSION_CLOSED_MESSAGE",
+    read: closedMessage,
+    // Like the palette, the fallback is a built-in rather than a value the
+    // catalog can restate as text — hence the `defaultLabel`.
+    expectedDefault: DEFAULT_CLOSED_MESSAGE,
+    sample: "We reopen for the 2027-28 season in March.",
   },
   {
     key: "COLOR_PALETTE",

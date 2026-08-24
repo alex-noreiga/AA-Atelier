@@ -5,6 +5,7 @@ import { z } from "zod";
 import { Link, useSearch } from "wouter";
 import {
   useCreateOrder,
+  useGetCapacity,
   useGetColors,
   useGetServices,
   useSubscribeNewsletter,
@@ -17,6 +18,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { PageShell } from "@/components/page-shell";
 import { ReferenceImageUpload } from "@/components/reference-image-upload";
 import { ColorPicker } from "@/components/color-picker";
+import { WaitlistForm } from "@/components/waitlist-form";
 import { SuccessScreen } from "@/components/success-screen";
 import { Seo } from "@/components/seo";
 import { ROUTE_SEO } from "@/lib/seo-routes";
@@ -213,6 +215,11 @@ export default function OrderForm() {
   // Which step of the three-step flow is showing (0 = details, 1 = design,
   // 2 = timeline).
   const [step, setStep] = useState(0);
+  // Set when the server refuses an order because the books closed (409) — a
+  // stale tab, or capacity reached while the customer was filling the form in.
+  // Showing them the waitlist is the honest recovery; a toast saying "we're
+  // full" with the form still in front of them is not.
+  const [refusedForCapacity, setRefusedForCapacity] = useState(false);
   const { toast } = useToast();
 
   const createOrder = useCreateOrder({
@@ -227,6 +234,10 @@ export default function OrderForm() {
           error.data?.error ||
           error.message ||
           "Something went wrong. Please try again.";
+        if (error.status === 409) {
+          setRefusedForCapacity(true);
+          return;
+        }
         toast({
           variant: "destructive",
           title: "Submission failed",
@@ -268,6 +279,17 @@ export default function OrderForm() {
   const { data: servicesData } = useGetServices();
   const services = servicesData?.services ?? [];
 
+  // Whether the studio is taking bespoke commissions, and the competitions a
+  // waitlist entry can be pinned to. The same decision gates `POST /orders`, so
+  // this is asking the server rather than deciding anything here.
+  //
+  // Degrade-safe in the direction that keeps the form usable: while the query
+  // is in flight, or if it errors, `capacityData` is undefined and the intake
+  // form renders as it always has. A closed door is only ever drawn on a
+  // definite answer — the server still refuses the submit, and the 409 above
+  // brings the customer to the same waitlist.
+  const { data: capacityData } = useGetCapacity();
+
   // The resolver is indirected through a ref so that changing service
   // re-validates against the new service's rules without re-creating the form,
   // which would drop every value the customer has already entered. Its current
@@ -305,6 +327,13 @@ export default function OrderForm() {
     () => zodResolver(buildFormSchema(rules)),
     [rules],
   );
+
+  // The books are closed to THIS customer when the studio says they're closed
+  // and the service they picked is one that consumes making capacity. A repair
+  // is unaffected, which is why this is a per-service test rather than a flag
+  // on the page.
+  const booksClosed =
+    refusedForCapacity || (capacityData?.open === false && rules.capacityGated);
 
   // Deep-link: `/order?service=<id>` (the per-service links on the Services
   // page) preselects that service once the catalog has loaded, mirroring
@@ -504,6 +533,104 @@ export default function OrderForm() {
     );
   }
 
+  // The service picker, hoisted out of step 0 because the closed-books
+  // branch below renders it too: a customer sent to the waitlist has to be
+  // able to switch to a repair, which is still open, without going back.
+  const servicePicker = (
+    <>
+      {/* The service comes first: it decides what the rest of the form
+        asks for. Hidden entirely when the catalog couldn't be read,
+        in which case the form falls back to the bespoke shape rather
+        than blocking behind a choice it can't offer. */}
+      {services.length > 0 && (
+        <section>
+          <h2 className="text-xs tracking-[0.2em] uppercase text-muted-foreground mb-6 pb-2 border-b border-border">
+            What can we make for you?
+          </h2>
+          <div
+            className="grid sm:grid-cols-2 gap-3"
+            data-testid="service-picker"
+          >
+            {services.map((option) => (
+              <button
+                key={option.id}
+                type="button"
+                onClick={() =>
+                  setValue("service", option.id, {
+                    shouldValidate: true,
+                  })
+                }
+                aria-pressed={pickedService === option.id}
+                data-testid={`service-option-${option.id}`}
+                className={`text-left px-4 py-3 rounded-lg border transition-all ${
+                  pickedService === option.id
+                    ? "border-primary bg-primary/10"
+                    : "border-border hover:border-primary/50"
+                }`}
+              >
+                <span
+                  className={`block text-sm tracking-wide ${
+                    pickedService === option.id
+                      ? "text-primary"
+                      : "text-foreground"
+                  }`}
+                >
+                  {option.name}
+                </span>
+                <span className="block text-xs font-light text-muted-foreground mt-1 leading-relaxed">
+                  {option.summary}
+                </span>
+              </button>
+            ))}
+          </div>
+          {errors.service && (
+            <p className="text-destructive text-xs mt-2">
+              {errors.service.message}
+            </p>
+          )}
+        </section>
+      )}
+    </>
+  );
+
+  // The studio's books are closed for the service this customer picked, so the
+  // waitlist takes the intake form's place. The header and the service picker
+  // stay: the three services worked on a piece the customer already owns are
+  // unaffected, and switching to one has to be a click rather than a back
+  // button.
+  if (booksClosed) {
+    return (
+      <PageShell align="top" noise={false}>
+        <Seo {...ROUTE_SEO["/order"]} />
+        <div className="max-w-2xl mx-auto px-6 pt-24 pb-20">
+          <div className="mb-10">
+            <h1 className="text-4xl md:text-5xl font-serif text-foreground mb-3">
+              Join the Waitlist
+            </h1>
+            <p className="text-muted-foreground font-light text-lg">
+              We&rsquo;re not taking new commissions just now &mdash; leave us
+              your details and we&rsquo;ll come to you first when we are.
+            </p>
+          </div>
+
+          <div className="space-y-12">
+            {servicePicker}
+            <WaitlistForm
+              // The atelier's own wording when the server sent it. The 409 path
+              // has no capacity payload to read, so it falls back to the same
+              // sentence the server's default message carries.
+              message={
+                capacityData?.message ||
+                "Our books are full for the current season. Join the waitlist and we'll be in touch the moment a space opens up."
+              }
+              events={capacityData?.events ?? []}
+            />
+          </div>
+        </div>
+      </PageShell>
+    );
+  }
+
   return (
     <PageShell align="top" noise={false}>
       <Seo {...ROUTE_SEO["/order"]} />
@@ -580,58 +707,7 @@ export default function OrderForm() {
 
           {step === 0 && (
             <div className="space-y-12">
-              {/* The service comes first: it decides what the rest of the form
-                  asks for. Hidden entirely when the catalog couldn't be read,
-                  in which case the form falls back to the bespoke shape rather
-                  than blocking behind a choice it can't offer. */}
-              {services.length > 0 && (
-                <section>
-                  <h2 className="text-xs tracking-[0.2em] uppercase text-muted-foreground mb-6 pb-2 border-b border-border">
-                    What can we make for you?
-                  </h2>
-                  <div
-                    className="grid sm:grid-cols-2 gap-3"
-                    data-testid="service-picker"
-                  >
-                    {services.map((option) => (
-                      <button
-                        key={option.id}
-                        type="button"
-                        onClick={() =>
-                          setValue("service", option.id, {
-                            shouldValidate: true,
-                          })
-                        }
-                        aria-pressed={pickedService === option.id}
-                        data-testid={`service-option-${option.id}`}
-                        className={`text-left px-4 py-3 rounded-lg border transition-all ${
-                          pickedService === option.id
-                            ? "border-primary bg-primary/10"
-                            : "border-border hover:border-primary/50"
-                        }`}
-                      >
-                        <span
-                          className={`block text-sm tracking-wide ${
-                            pickedService === option.id
-                              ? "text-primary"
-                              : "text-foreground"
-                          }`}
-                        >
-                          {option.name}
-                        </span>
-                        <span className="block text-xs font-light text-muted-foreground mt-1 leading-relaxed">
-                          {option.summary}
-                        </span>
-                      </button>
-                    ))}
-                  </div>
-                  {errors.service && (
-                    <p className="text-destructive text-xs mt-2">
-                      {errors.service.message}
-                    </p>
-                  )}
-                </section>
-              )}
+              {servicePicker}
 
               <section>
                 <h2 className="text-xs tracking-[0.2em] uppercase text-muted-foreground mb-6 pb-2 border-b border-border">

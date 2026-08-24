@@ -8,6 +8,7 @@ import {
   type StudioRevenueMonth,
   type StudioPaymentTotals,
   type StudioTopItem,
+  type StudioCapacity,
 } from "@workspace/api-client-react";
 import { Button } from "@/components/ui/button";
 import { PageShell } from "@/components/page-shell";
@@ -42,6 +43,7 @@ import {
   Star,
   AlertTriangle,
   Zap,
+  CalendarClock,
 } from "lucide-react";
 
 /**
@@ -308,6 +310,8 @@ function Dashboard({ data }: { data: StudioAnalytics }) {
         />
       </div>
 
+      <CapacityPanel capacity={data.capacity} />
+
       <ProductionPanel production={data.production} />
 
       <PipelinePanel
@@ -466,6 +470,65 @@ function BarRow({
 function PanelSummary({ children }: { children: React.ReactNode }) {
   return (
     <p className="mb-4 text-xs text-muted-foreground font-light">{children}</p>
+  );
+}
+
+/**
+ * Whether the books are open for bespoke commissions, and the count behind it.
+ *
+ * These numbers are deliberately absent from the public `GET /capacity` — how
+ * much work the studio is holding is the studio's own business — so this panel
+ * is the only place they are readable. It reports the *reason*, not just the
+ * state, because "closed" alone can't tell the atelier whether they hit their
+ * own limit or left the switch on `closed` last season.
+ */
+function CapacityPanel({ capacity }: { capacity: StudioCapacity }) {
+  const { open, reason, limit, inProduction } = capacity;
+
+  const explanation: Record<StudioCapacity["reason"], string> = {
+    unlimited:
+      "No limit is set, so the books never close on the count. Set “Commissions in production at once” under Studio settings to turn this on.",
+    "under-capacity": "Under the limit, so new commissions can be ordered.",
+    "at-capacity":
+      "The limit is reached, so the order form is offering the waitlist instead of a commission.",
+    "forced-open":
+      "Held open by hand — the count is being ignored. Set “Commission intake” back to auto to let the limit decide again.",
+    "forced-closed":
+      "Closed by hand, whatever the count says. Set “Commission intake” back to auto or open to start taking commissions again.",
+    unknown:
+      "The order count couldn't be read, so the books stayed open rather than closing on a bad read.",
+  };
+
+  return (
+    <Section
+      icon={<CalendarClock className="w-4 h-4" strokeWidth={1.5} />}
+      title="Commission capacity"
+      testId="panel-capacity"
+    >
+      <div className="flex flex-wrap items-baseline gap-x-3 gap-y-1 mb-3">
+        <span
+          className={`text-sm tracking-wide ${open ? "text-foreground" : "text-primary"}`}
+          data-testid="capacity-state"
+        >
+          {open ? "Books open" : "Books closed"}
+        </span>
+        <span className="text-sm text-muted-foreground font-light tabular-nums">
+          {/* An absent count is NOT zero — it means the read failed — so it is
+              said in words rather than rendered as a nought. */}
+          {inProduction === undefined
+            ? "commissions in production: not counted"
+            : limit > 0
+              ? `${inProduction} of ${limit} in production`
+              : `${inProduction} in production`}
+        </span>
+      </div>
+      <p
+        className="text-xs text-muted-foreground font-light"
+        data-testid="capacity-reason"
+      >
+        {explanation[reason]}
+      </p>
+    </Section>
   );
 }
 
