@@ -301,21 +301,25 @@ Express app (artifacts/api-server)  ──►  Notion REST API (orders database)
   │                                  away; refused (409) with no audience
   │                                  configured or no address. Dismissing without
   │                                  adding is the request-state operation above
-  └─ POST /api/studio/tools/:tool  → the atelier's five internal actions, run from
-                                     the signed-in studio dashboard: milestone
+  └─ POST /api/studio/tools/:tool  → the atelier's internal actions, run from the
+                                     signed-in studio dashboard: milestone
                                      reconciliation (`milestones`, the same sweep
                                      the cron runs, on demand), invoice
                                      itemization from the costing
-                                     (`invoice-lines`), an order status-change
-                                     email (`status-email`, with a `force`
-                                     resend), the cancellation refund
-                                     (`cancellation-refund`) and the return /
+                                     (`invoice-lines`), a flat service quote
+                                     (`quote` — a required `amount` + an optional
+                                     `description`, for work with no costing
+                                     behind it; see "Flat-price quotes"), an order
+                                     status-change email (`status-email`, with a
+                                     `force` resend), the cancellation refund
+                                     (`cancellation-refund`), the return /
                                      exchange refund (`return-refund`, with an
-                                     optional `amount` TARGET total). Staff-gated
-                                     (`requireStaff`) — see "Internal tools on the
-                                     studio dashboard". Each returns a composed
-                                     `{ status, title, message, details }` the
-                                     dashboard renders. IS part of the OpenAPI
+                                     optional `amount` TARGET total) and the
+                                     back-in-stock sweep (`restock-alert`).
+                                     Staff-gated (`requireStaff`) — see "Internal
+                                     tools on the studio dashboard". Each returns a
+                                     composed `{ status, title, message, details }`
+                                     the dashboard renders. IS part of the OpenAPI
                                      contract, unlike the links it replaced.
 ```
 
@@ -977,6 +981,115 @@ orders)** and the **material usage database**; and set `NOTION_COSTING_DATABASE_
   This is the "one costing engine" standardized model (Phase-2 card ①) — don't "fix"
   the formula to match the stale description, and don't add a `Channel` branch (it
   would duplicate the Pricing Settings relation). See `.agents/memory/invoice-building.md`.
+
+### Flat-price quotes (work with no costing behind it)
+
+The section above itemizes an invoice from the atelier's **costing** system,
+which models a whole garment — a costing item, its material usage lines, a labor
+formula, a margin-loaded `Suggested Price`. That is right for a bespoke
+commission and wrong for the three services performed on a piece the customer
+already owns: nobody builds a costing to re-stone a bodice, and the generator
+**refuses** an order with no `Costing Items` relation ("This order has no costing
+items to itemize"). The consequence was silent and total — no line items ⇒
+`buildInvoiceView` computes a `$0` subtotal ⇒ the balance checkout throws
+"There's no balance due on this order" — so **a repair, a stoning job or an
+alteration could not be paid for online at all**. The only workaround was to put
+the whole price in `First Deposit Amount`, which charges correctly and labels the
+payment "First deposit".
+
+`POST /api/studio/tools/quote` (`{ orderNumber, amount, description? }`, staff-
+gated like every other tool) closes that: the atelier types the price they
+quoted, and it becomes an ordinary invoice. Code: `services/quote.service.ts`,
+the `quote` runner in `services/studio-tools.service.ts`, `LINE_TYPE_SERVICE` in
+`lib/notion/invoice-line-items.blocks.ts`, `setInvoiceReady` in
+`lib/notion/invoice.repository.ts`, and the card in
+`web-app/src/components/studio-tools.tsx`.
+
+1. **It writes a line, not a total — so nothing downstream learns a new trick.**
+   The typed figure becomes one priced `Invoice Line Item`, exactly like a
+   generated one (`Manual Unit Price` at quantity 1, no `Costing Item` link). The
+   invoice stays the single source of truth for money, and the tracking page, the
+   balance checkout, the payment reminders, the refunds and the studio analytics
+   all see an ordinary invoice with no idea a human typed the number. That is the
+   whole reason this is a **second writer of the same shape** rather than a
+   parallel "flat price" field on the order.
+
+2. **The line has its own `Line Type`, `Service`.** Not `Labor` (the price covers
+   materials too, so that would be a lie the customer can read) and not `Garment`
+   (which reads wrong above "Replace shoulder elastic"). Notion auto-creates a
+   select option on first write, so this needs **nothing added by hand**; the web
+   app's `invoice-format.ts` heads it **"Work"** and sorts it first, and the PDF
+   shares that grouping.
+
+3. **Idempotent by the generator's own rule, and deliberately not re-quotable.**
+   An invoice that already has line items — from a previous quote, the costing
+   generator, or the atelier's hand — is left alone and reported as a `noop`, so
+   a double press can never bill twice and the two writers can't fight over one
+   invoice. Re-quoting means deleting the line in Notion first, which is the
+   right amount of friction for changing a price somebody may already have been
+   shown.
+
+4. **It ticks `Invoice Ready` itself, last.** A quote is a finished invoice by
+   construction — there is nothing further to itemize — so leaving the atelier to
+   tick a box in Notion afterwards would just be a step to forget. The costing
+   generator deliberately does **not** do this: an itemized commission is
+   reviewed before it goes out, and `Invoice Ready` is where that review is
+   recorded. Ticked last, so a failure part-way through never exposes a
+   half-written invoice to pay.
+
+5. **A rush order still gets its surcharge.** Priced off the quote at
+   `RUSH_SURCHARGE_RATE` and written as its own `Surcharge` line, for the same
+   reason the costing generator adds one: the customer ticked a box accepting
+   that fee at intake, so the invoice has to match what they were told.
+
+6. **The money is validated before Notion is touched.** The generated zod schema
+   only promises a non-negative number, so `$0`, `NaN` and `Infinity` all reach
+   the service — each a way to write an invoice nobody can pay. A quote above
+   `MAX_QUOTE` ($100,000) is refused as a typo, since a stray digit on a
+   hand-typed figure is the one input error that matters when the number becomes
+   what a customer is charged.
+
+7. **It is NOT restricted to the three services.** An order is a candidate for a
+   flat quote because it has no costing, not because of what its `Service`
+   property says — and a commission the atelier chooses to quote as one figure is
+   their business. The service is read for one thing only: naming the line when
+   no `description` is given ("Repair", "Rhinestoning", "Alterations", "Custom
+   Costume").
+
+**Atelier setup: none.** No env var, no new database, no Notion property — it
+writes the `Invoice Line Items` and `Invoice Ready` that already exist, and
+Notion creates the `Service` option itself.
+
+### What a payment stage is CALLED, per service
+
+The invoice holds the same three stages for every custom order (they are Notion
+properties, not something a service redefines), but their names were written for
+a commission's schedule: a first deposit once the sketch is finalized, a second
+at the first fitting, the balance after delivery. A repair has no sketch and
+mostly no fitting, so "First deposit" on a one-off job tells the customer a
+second instalment is coming that nobody ever intended. `OrderServiceDef.payment`
+(`"staged"` for bespoke, `"single"` for the other three) drives the pure
+relabeller in `services/payment-labels.ts`, applied in `getInvoicePaymentInfo`
+(the tracking page + account portal + the Stripe line name) and in the
+payment-reminder email.
+
+1. **It renames, and does nothing else.** No stage is added, removed, reordered
+   or repriced — all three stay available on every order, because the atelier
+   may genuinely want money up front on an expensive restoration. `labelDeposits`
+   returns a staged service's list by identity and never mutates its input (the
+   records come from a cached read).
+
+2. **A lone deposit becomes "Deposit"; two keep their ordinals.** This is the
+   load-bearing condition. If the atelier deliberately staged two deposits, two
+   payments both called "Deposit" would let a customer pay the first and believe
+   they were square — so the ordinal survives, and only a _sole_ deposit is
+   renamed. The reminder email reads the same rule from `PaymentReminderInvoice
+.depositCount`, counted from the deposit **amounts** rather than from the
+   stages that happen to carry a due date.
+
+3. **A legacy order with no `Service` resolves to bespoke**, i.e. keeps exactly
+   the wording it has always been shown — the same widest-form degradation as
+   everywhere else the stored service is read.
 
 ### Order cancellation & refunds
 
@@ -2750,10 +2863,10 @@ already uses.
 
 ## Internal tools on the studio dashboard
 
-The atelier's five internal actions — **reconcile production milestones**,
-**itemize an invoice**, **send a status update**, **cancel & refund an order**,
-**refund a return** — are run from the signed-in `/studio` page, through
-`POST /api/studio/tools/:tool`. None of the underlying work changed; who is
+The atelier's internal actions — **reconcile production milestones**, **itemize
+an invoice**, **quote a flat price**, **send a status update**, **cancel &
+refund an order**, **refund a return**, **send back-in-stock alerts** — are run
+from the signed-in `/studio` page, through `POST /api/studio/tools/:tool`. None of the underlying work changed; who is
 allowed to trigger it did. This is the roadmap's "Staff authentication for
 internal tools" + "Retire the copy-a-secret buttons". Code:
 `services/studio-tools.service.ts` (the dispatcher + the wording),
@@ -4010,6 +4123,8 @@ Three things about it are load-bearing:
 | Change return / exchange refunds (atelier action)        | `api-server/src/services/return-refund.service.ts` (the target-total refund engine + `parseRefundTarget`) + the `return-refund` studio tool (`services/studio-tools.service.ts`) + `lib/stripe/refunds.ts` (shared Stripe refund primitives) + `recordShopOrderRefund` / `SHOP_ORDER_REFUNDED_PROPERTY` / `SHOP_ORDER_RETURN_PROCESSED_PROPERTY` in `lib/notion/shop-orders.{repository,blocks}.ts` + `returnRefundEmail` in `lib/resend/emails.ts`                                                                                                                                                                                                                                           |
 | Change the footer / legal pages                          | `artifacts/web-app/src/components/footer.tsx` (global, in `App.tsx`) + `pages/{privacy,terms,shipping-returns}.tsx` + `components/legal-page.tsx`; shared studio contact details in `lib/contact-info.ts`                                                                                                                                                                                                                                                                                                                                                                                                                                                                                     |
 | Change custom-order payments (deposits + balance)        | `artifacts/web-app/src/components/custom-order-result.tsx` (`DepositsSection`, rendered by `pages/track.tsx`) + `pages/invoice.tsx`; `api-server/src/services/invoice.service.ts` (`createPaymentCheckout`/`recordPayment`) + `routes/orders.ts` (`POST /orders/:n/payments/:stage`) + `lib/notion/invoice.{schema,repository}.ts` + `routes/stripe-webhook.ts`                                                                                                                                                                                                                                                                                                                               |
+| Quote a flat price for work with no costing              | `api-server/src/services/quote.service.ts` + the `quote` runner in `services/studio-tools.service.ts` + `LINE_TYPE_SERVICE` in `lib/notion/invoice-line-items.blocks.ts` + `setInvoiceReady` in `lib/notion/invoice.repository.ts`; the card is in `web-app/src/components/studio-tools.tsx` and the display heading in `web-app/src/lib/invoice-format.ts`                                                                                                                                                                                                                                                                                                                                   |
+| Change what a payment stage is called                    | `OrderServiceDef.payment` in `api-server/src/lib/service-catalog.ts` (which service is `staged` vs `single`) + `services/payment-labels.ts` (the pure relabeller); applied in `getInvoicePaymentInfo` (`services/invoice.service.ts`) and `sendDuePaymentReminders` (`services/schedule.service.ts`)                                                                                                                                                                                                                                                                                                                                                                                          |
 | Change invoice line-item generation (from costing)       | `api-server/src/services/invoice-generator.service.ts` + the `invoice-lines` studio tool (`services/studio-tools.service.ts`) + `lib/notion/costing.{schema,repository}.ts` + `lib/notion/invoice-line-items.blocks.ts` + `createInvoiceLineItem`/`setInvoiceTitle` in `lib/notion/invoice.repository.ts`                                                                                                                                                                                                                                                                                                                                                                                     |
 | Change production-schedule milestones                    | `api-server/src/services/schedule.service.ts` + `routes/cron.ts` + `lib/notion/production-schedule.{blocks,repository}.ts` + `lib/notion/orders.repository.ts` (`findOrdersNeedingMilestones`/`markMilestonesGenerated`); cron in `vercel.json`                                                                                                                                                                                                                                                                                                                                                                                                                                               |
 | Change order status-change emails (+ pipeline graphic)   | `api-server/src/lib/resend/emails.ts` (`orderStageChangeEmail`) + `services/order-notification.service.ts` + `routes/order-notification.ts` + `lib/notion/orders.repository.ts` (`findOrderForStageNotification`); Notion automation → `POST /api/webhooks/notion-stage-change`; on-demand send via the `status-email` studio tool                                                                                                                                                                                                                                                                                                                                                            |

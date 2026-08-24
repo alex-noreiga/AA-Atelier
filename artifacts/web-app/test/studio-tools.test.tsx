@@ -198,6 +198,98 @@ describe("StudioTools", () => {
     ).not.toBeInTheDocument();
   });
 
+  // The flat quote is the one tool whose amount is REQUIRED — a $0 quote is an
+  // invoice nobody can pay — so the button stays disabled until it is a real
+  // price, rather than letting the atelier make the round trip to find out.
+  it("keeps the quote button disabled until a positive price is entered", async () => {
+    render(<StudioTools />);
+    const run = screen.getByTestId("tool-quote-run");
+
+    await userEvent.type(screen.getByTestId("tool-quote-order"), "ORD-000002");
+    expect(run).toBeDisabled();
+
+    await userEvent.type(screen.getByTestId("tool-quote-amount"), "0");
+    expect(run).toBeDisabled();
+
+    await userEvent.clear(screen.getByTestId("tool-quote-amount"));
+    await userEvent.type(screen.getByTestId("tool-quote-amount"), "85");
+    expect(run).toBeEnabled();
+  });
+
+  it("sends a quote's price as a number and its description as typed", async () => {
+    succeedWith({
+      tool: "quote",
+      status: "ok",
+      title: "Quote sent",
+      message: 'Priced "Re-stone bodice" at $85.00 on invoice ORD-000002.',
+    });
+    render(<StudioTools />);
+
+    await userEvent.type(screen.getByTestId("tool-quote-order"), "ORD-000002");
+    await userEvent.type(screen.getByTestId("tool-quote-amount"), "85");
+    await userEvent.type(
+      screen.getByTestId("tool-quote-description"),
+      "Re-stone bodice",
+    );
+    await userEvent.click(screen.getByTestId("tool-quote-run"));
+
+    expect(mutate).toHaveBeenCalledWith(
+      {
+        tool: "quote",
+        data: {
+          orderNumber: "ORD-000002",
+          amount: 85,
+          description: "Re-stone bodice",
+        },
+      },
+      expect.anything(),
+    );
+    expect(screen.getByTestId("tool-quote-result")).toHaveTextContent(
+      "Quote sent",
+    );
+  });
+
+  // Blank ⇒ omitted, so the server names the line after the order's service
+  // rather than writing an empty title onto a customer's invoice.
+  it("omits a blank quote description rather than sending an empty string", async () => {
+    succeedWith({
+      tool: "quote",
+      status: "ok",
+      title: "Quote sent",
+      message: "Priced the work.",
+    });
+    render(<StudioTools />);
+
+    await userEvent.type(screen.getByTestId("tool-quote-order"), "ORD-000002");
+    await userEvent.type(screen.getByTestId("tool-quote-amount"), "40");
+    await userEvent.type(screen.getByTestId("tool-quote-description"), "   ");
+    await userEvent.click(screen.getByTestId("tool-quote-run"));
+
+    expect(mutate).toHaveBeenCalledWith(
+      { tool: "quote", data: { orderNumber: "ORD-000002", amount: 40 } },
+      expect.anything(),
+    );
+  });
+
+  // Quoting is not a refund, so it deliberately has no confirmation step — but
+  // it is also not undoable from here, which the idempotency guard covers.
+  it("quotes without asking for confirmation", async () => {
+    succeedWith({
+      tool: "quote",
+      status: "ok",
+      title: "Quote sent",
+      message: "Priced the work.",
+    });
+    render(<StudioTools />);
+
+    await userEvent.type(screen.getByTestId("tool-quote-order"), "ORD-000002");
+    await userEvent.type(screen.getByTestId("tool-quote-amount"), "40");
+    await userEvent.click(screen.getByTestId("tool-quote-run"));
+
+    expect(screen.queryByTestId("tool-quote-confirm")).toBeNull();
+    expect(mutate).toHaveBeenCalledTimes(1);
+  });
+
   it("sends a partial refund amount as a number, and omits a blank one", async () => {
     succeedWith({
       tool: "return-refund",

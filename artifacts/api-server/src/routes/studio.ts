@@ -107,8 +107,10 @@ router.get(
 
 // The internal tools — the atelier actions that used to be links carrying
 // `CRON_SECRET` in their query string (milestone reconciliation, invoice
-// itemization, a status-change email, the two refunds). Same `requireStaff`
-// gate as the figures above: the work is unchanged, only who may trigger it.
+// itemization, a status-change email, the two refunds), plus the two that never
+// had a link to retire: the back-in-stock sweep and the flat service quote. Same
+// `requireStaff` gate as the figures above: for the retired links the work is
+// unchanged and only who may trigger it moved.
 //
 // Unlike those links this is contract-first, because it's an ordinary SPA JSON
 // call from the dashboard rather than a browser tab the atelier opens by hand —

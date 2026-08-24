@@ -34,6 +34,8 @@ import {
   type InvoiceView,
 } from "../lib/notion/invoice.schema.js";
 import type { OrderRecord } from "../lib/notion/orders.schema.js";
+import { resolveStoredOrderService } from "../lib/service-catalog.js";
+import { labelDeposits } from "./payment-labels.js";
 import { getStripeClient } from "../lib/stripe/client.js";
 import { bnplPaymentMethodTypes } from "../lib/stripe/payment-methods.js";
 import { siteBaseUrl } from "../lib/site.js";
@@ -104,10 +106,16 @@ export async function getInvoicePaymentInfo(
   if (!order.invoicePageId) return { deposits: [], invoice: null };
   const invoice = await findInvoice(order.invoicePageId);
   if (!invoice) return { deposits: [], invoice: null };
-  if (!invoice.ready) return { deposits: invoice.deposits, invoice: null };
+  // The invoice holds the same three stages for every order; the order's service
+  // decides what they're CALLED. A repair paid in one go reads "Deposit", not
+  // "First deposit" — see `services/payment-labels.ts`. Nothing about the
+  // amounts, the stages or which are payable changes here.
+  const { payment } = resolveStoredOrderService(order.service);
+  const deposits = labelDeposits(invoice.deposits, payment);
+  if (!invoice.ready) return { deposits, invoice: null };
   const lineItems = await listInvoiceLineItems(invoice.pageId);
   return {
-    deposits: invoice.deposits,
+    deposits,
     invoice: buildInvoiceView(invoice, lineItems),
   };
 }
@@ -135,6 +143,14 @@ export async function createPaymentCheckout(
     throw new BadRequestError("There's nothing to pay on this order yet.");
   }
 
+  // Same relabelling as the status page, so the wording on Stripe's hosted
+  // checkout matches the button the customer pressed to get there. (Only the
+  // deposits are affected — the balance already reads "Balance" for everyone.)
+  const deposits = labelDeposits(
+    invoice.deposits,
+    resolveStoredOrderService(order.service).payment,
+  );
+
   let unitAmount: number;
   let productName: string;
   let taxed = false;
@@ -155,7 +171,7 @@ export async function createPaymentCheckout(
     productName = `Balance — ${order.orderName}`;
     taxed = true;
   } else {
-    const deposit = invoice.deposits.find((d) => d.stage === stage);
+    const deposit = deposits.find((d) => d.stage === stage);
     if (!deposit || deposit.amount <= 0) {
       throw new BadRequestError("There's no deposit due for this stage.");
     }
