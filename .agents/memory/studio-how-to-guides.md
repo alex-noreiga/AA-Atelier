@@ -40,12 +40,25 @@ sandboxed frame beside whatever that section names.
 ## Load-bearing decisions
 
 1. **The vocabulary tracks the dashboard's panels.** A section exists for each
-   of the six tools and each panel. Three were added mid-branch as `main` grew
+   of the seven tools and each panel. Three were added mid-branch as `main` grew
    panels this branch hadn't seen — `settings`, then `requests` and
    `newsletter`. A new panel that never gets a section is a panel no guide can
    be filed against, so adding one belongs with adding the panel, not to a
    follow-up. If you add a panel to `pages/studio.tsx`, add its section here and
    a `<GuidesFor>` beside it.
+
+   **A tool missing from this list fails silently, and one was** (2026-08-24).
+   `quote` shipped with no section while `studio-tools.tsx` rendered
+   `<GuidesFor section={spec.tool} />` in its card like every other tool, so the
+   slot was a value `resolveGuideSection` could never return: a guide filed
+   against "Quote a flat price" resolved to `general` and appeared in the bottom
+   panel instead. Nothing errored and nothing logged — the card was just always
+   empty, which is indistinguishable from "no guide written yet". The guard is
+   now `test/unit/guide-sections.test.ts`, driving the contract's own
+   `RunStudioToolParams` enum rather than a hand-copied list, so a tool added to
+   `openapi.yaml` without a section fails CI. The Notion `Section` select needs
+   the matching option too (the app resolves the label, but the atelier can only
+   pick what the select offers).
 
 2. **Listing and content are separate operations — this was a correction.** The
    first cut inlined every guide's markup into the listing, so the dashboard
@@ -177,8 +190,15 @@ sandboxed frame beside whatever that section names.
 
 The **"Studio Guides" database has been created** (2026-08-21), under the Notion
 **website** page alongside Website Contact Messages, with all five properties
-and the eleven `Section` options pre-filled. Database id:
+and the `Section` options pre-filled. Database id:
 `d9c893301efc480d9d8861d28e887c72`.
+
+`Quote a flat price` was added to that select on 2026-08-24, bringing it to
+twelve options. It is still short of the code's fourteen sections: **Studio
+settings**, **Customer requests** and **Newsletter sign-ups** have no option, so
+a guide for those three panels can only be filed by typing the id
+(`settings` / `requests` / `newsletter`) or it lands under General. Add them to
+the select when one of those guides is written.
 
 What is left cannot be done through the MCP connector, because it authenticates
 as a different identity than the app's own integration:
@@ -190,12 +210,18 @@ as a different identity than the app's own integration:
 - [ ] **2. Set `NOTION_STUDIO_GUIDES_DATABASE_ID=d9c893301efc480d9d8861d28e887c72`**
       in Vercel, and redeploy. Until then the panel reports it isn't connected,
       which is the intended unconfigured state rather than a fault.
-- [ ] **3. Attach `invoicing-guide.html` to the seeded "Building an invoice"
-      row** (`Section = Itemize an invoice`, already set). The file currently
-      lives as an embed block at the bottom of the Notion **finances** page; it
-      could not be copied automatically, because a file uploaded by one
-      integration isn't readable by another. Once it renders on the dashboard,
-      delete that embed.
+- [x] **3. Attach `invoicing-guide.html` to the seeded row** — done 2026-08-24.
+      The row is now **"Invoicing an order"** (`Section = Itemize an invoice`,
+      `Order = 1`) and carries a rewritten guide covering both ways onto an
+      invoice: the costing itemizer and the flat quote. Uploaded through the MCP
+      connector's `create-attachment` with the markup inline, which is worth
+      knowing: a `files` **property** will not accept a `file-upload://` id, and
+      the `file://…attachment:<id>…` value it does take only exists once the
+      upload is attached to something. The route that worked was insert the
+      upload into the row's page body as an embed, read the attachment id back
+      off that block, then write the property with it. The embed stays as a
+      preview; the property is what the dashboard reads. The old embed on the
+      **finances** page can now be deleted.
 
 The seeded row is the only one, deliberately: an empty row renders as "No file
 attached yet", so pre-creating one per section would put ten placeholders across
