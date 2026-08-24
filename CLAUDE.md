@@ -343,6 +343,21 @@ as a **best-effort** side effect after the Notion write: a failed send is
 logged-and-swallowed and never changes the response status
 (`artifacts/api-server/src/lib/resend/`).
 
+Because the response is identical whether such a send succeeds or not, it does
+not belong on the response path. `POST /api/orders` hands its two sends to
+**`deferBestEffort`** (`lib/background.ts`), which passes them to the platform's
+**`waitUntil`** so the order number returns without waiting on Resend — two
+sequential round-trips that were a large part of that endpoint's measured
+1.6–3.0s. The fallback is the load-bearing part: where no `waitUntil` exists
+(local dev, tests, or a runtime that stops exposing it) the helper **awaits
+inline exactly as before**, so a missing platform hook can only cost latency,
+never an unsent email. A bare fire-and-forget would be wrong here — the instance
+can be frozen once the response is sent, and the send would silently never
+complete. The sender and inbox are resolved _before_ the handoff, while the
+request's primed settings snapshot is current; only the network calls are
+deferred. The other best-effort senders still await inline; they are the same
+shape and can move the same way.
+
 Order **status-change** emails are the one notification the app can't fire from a
 request — stage changes happen inside Notion and there is no Notion→app trigger.
 They ride a Notion **database automation** calling
@@ -560,12 +575,28 @@ stages/categories/working-hours.
 3. **Sync getters, primed once per request.** The getters are synchronous; Notion
    I/O is async. `app.ts` mounts a middleware that `await primeSettings()` at the
    start of every request, refreshing the in-memory snapshot the sync getters read;
-   the read itself is the usual **60s TTL cache + fallback**
+   the read itself is a **60s TTL cache + fallback**
    (`lib/notion/settings.repository.ts`, self-gating to an empty map when
    `NOTION_SETTINGS_DATABASE_ID` is unset or a fetch fails, so a settings hiccup
    never errors a request). Until primed (tests, first request) the snapshot is
    empty and everything falls back to env. Test seams: `__setSettingsSnapshot` /
    `__resetSettings` (store) and `__resetSettingsCache` (repository).
+
+   **This is the one live read that serves stale while it revalidates**, and the
+   asymmetry is the reason: every other cached Notion read
+   (`fetchLiveOrderStages`, `listCategoryRecords`, …) backs a single endpoint,
+   while this one is primed on **every** request — so blocking on the refresh
+   puts a Notion round-trip in front of whichever request crosses the TTL
+   boundary, including routes that read no setting at all. A **stale** snapshot
+   is therefore returned immediately and refreshed behind the response; a
+   **cold** one still blocks, because serving env/defaults there would silently
+   ignore every value the atelier has set. The entry's timestamp is bumped
+   before the refresh starts, so a burst fires one refresh and a failed refresh
+   retries at the next TTL rather than on every request; there is deliberately
+   no in-flight lock, since a serverless instance can freeze the moment it
+   responds and a lock left set would pin it to stale values for good. A
+   dashboard save still clears the cache outright, which lands on the blocking
+   path — an edit is never a TTL behind.
 
 4. **Each key is a typed catalog entry, and that's what the dashboard renders.**
    `lib/settings/catalog.ts` holds one `SettingDefinition` per key — its label,
@@ -2033,7 +2064,12 @@ delivered as **Stripe promotion codes** redeemed in the checkout promo box
    **referrer credit** (only once the referred order is paid — anti-abuse) and the
    **returning-skater standing discount**.
 
-2. **Everything is best-effort + CRM/Stripe-optional.** A reward failure must never fail
+2. **Everything is best-effort + CRM/Stripe-optional, and the capture is deferred.**
+   `captureReferralOnOrder` is a Notion read, a Notion write, a Stripe promotion-code
+   create and a Resend send, none of which `POST /orders` depends on — so `submitOrder`
+   hands it to **`deferBestEffort`** alongside the two order emails (its own `try/catch`
+   stays _inside_ the deferred task, keeping a referral failure at `warn`: it is
+   explicitly "the order is unaffected"). A reward failure must never fail
    an order or 500 the webhook (a throw into the webhook makes Stripe retry, and the
    retry early-returns at the dedupe guard, so the reward would be lost) — every entry
    point is `try/catch` + `logger.warn`. When `NOTION_CLIENT_CRM_DATABASE_ID` is unset
@@ -2577,6 +2613,22 @@ and Google Calendar stay the system of record, still matched by **email**. Front
    accepted for the standard Bearer model. (`custom-fetch.ts` still passes
    `credentials: "include"` for any incidental same-origin cookie, but the portal
    authenticates by the header.)
+
+   **The token is scoped to the endpoints that verify one** — `/account/*` and
+   `/studio/*`, decided by `requiresAuthToken` (`web-app/src/lib/api-auth.ts`),
+   which the getter consults per request (the seam hands it the method + URL).
+   This is not tidiness: **Vercel's CDN does not serve cached content to a
+   request carrying an `Authorization` header**, so attaching one unconditionally
+   sent every signed-in visitor past the edge cache on the four public
+   `s-maxage` reads (`/reviews`, `/services`, `/colors`, `/products`) and onto a
+   cold serverless function — which, at this traffic level, is the difference
+   between an edge hit and a full cold start. It also skips the
+   `supabase.auth.getSession()` await on those calls. The allowlist is a
+   hand-maintained mirror of the server's gates, so `test/api-auth.test.ts` pins
+   it to the **OpenAPI spec's own `security: bearerAuth` blocks**: a gated
+   endpoint added outside those two prefixes fails CI rather than 401-ing in
+   production. It fails **closed** (an unrecognized path gets no token), so a
+   miss is a loud 401 in development rather than a silently uncached response.
 
 4. **The server only verifies the JWT — it holds no session.** `requireCustomer`
    (`middlewares/auth.ts`) reads the Bearer token and verifies it with
@@ -3590,6 +3642,16 @@ and a boolean aren't sensitive), so they are repo **variables**, not secrets:
 | `SMOKE_KNOWN_ORDER_NUMBER` | Falls back to the **`ORD-TEST-00000`** default in `smoke.yml` | Overrides the default with that order                              |
 | `SMOKE_EXPECT_REVIEWS`     | `reviews.smoke.ts` accepts an empty list                      | `1` requires `GET /api/reviews` to return at least one testimonial |
 
+`edge-cache.smoke.ts` watches the four public reads (`/reviews`, `/services`,
+`/colors`, `/products`) still being **served by the CDN**: it asserts each sets
+`s-maxage`, that `x-vercel-cache` is not `BYPASS`, and that none answers with a
+`Set-Cookie`. This is the one production failure that is completely invisible
+from the outside — the site stays correct and merely gets slow, because every
+visitor then pays a cold start on a function that at this traffic level is never
+warm. Being anonymous it covers only the server half; the client half (a
+signed-in visitor's requests carrying a token again, which is uncacheable at the
+edge) is pinned on every PR by `web-app/test/api-auth.test.ts` instead.
+
 `SMOKE_KNOWN_ORDER_NUMBER` gates the **only** spec that asserts a _successful_ data
 render. Every other data spec proves "the endpoint didn't error" — a regression that broke
 the success timeline (the actual payoff) would sail through an otherwise-green run. It is
@@ -4091,6 +4153,7 @@ Three things about it are load-bearing:
 | Change an API request/response shape                     | `lib/api-spec/openapi.yaml` → run codegen                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                     |
 | Change order use-case logic                              | `artifacts/api-server/src/services/orders.service.ts`                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                         |
 | Change Notion I/O                                        | `artifacts/api-server/src/lib/notion/*`                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                       |
+| Run best-effort work after the response                  | `artifacts/api-server/src/lib/background.ts` (`deferBestEffort` — platform `waitUntil`, falling back to an inline await). Used by `submitOrder` for the two order emails                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                      |
 | Change a customer email / template                       | `artifacts/api-server/src/lib/resend/*` (`emails.ts` copy, `send.ts` transport, `client.ts` config)                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                           |
 | Add/modify an API route                                  | `artifacts/api-server/src/routes/*`                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                           |
 | Add request validation / error mapping                   | `artifacts/api-server/src/middlewares/*`                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                      |
@@ -4138,6 +4201,7 @@ Three things about it are load-bearing:
 | Change staff working hours / calendars                   | `/studio` → **Working hours** (`web-app/src/components/studio-availability.tsx`); `api-server/src/services/staff-availability.service.ts` + the `/studio/availability` routes in `routes/studio.ts` + `lib/db/staff-availability.repository.ts` (schema in `supabase/migrations/0004_staff_availability.sql`), read through `lib/appointments/schedule.ts` and mapped by `buildSchedule` in `lib/appointments/staff.ts`                                                                                                                                                                                                                                                                       |
 | Change appointment slot logic / policy                   | `api-server/src/lib/appointments/availability.ts` (`computeSlots`) + `time.ts` + `settings.ts`; `services/appointments.service.ts` + `routes/appointments.ts` + `lib/google/*` (Calendar free/busy + event insert)                                                                                                                                                                                                                                                                                                                                                                                                                                                                            |
 | Change who can see the Dashboard nav link                | `web-app/src/lib/studio-access.ts` (the probe) + `useNavLinks()` / `DASHBOARD_LINK` in `components/navbar.tsx` (where it renders, in Account's place) + the staff hand-off in `pages/account.tsx` + the `/studio/access` route in `api-server/src/routes/studio.ts`; the gate itself is `requireStaff` (`middlewares/auth.ts`) + `lib/staff.ts`                                                                                                                                                                                                                                                                                                                                               |
+| Change which API calls carry the auth token              | `artifacts/web-app/src/lib/api-auth.ts` (`requiresAuthToken`) + the getter in `lib/auth-context.tsx` + the `AuthTokenGetter` seam in `lib/api-client-react/src/custom-fetch.ts`; pinned to the spec by `web-app/test/api-auth.test.ts`                                                                                                                                                                                                                                                                                                                                                                                                                                                        |
 | Change the customer account portal (Supabase Auth)       | `artifacts/web-app/src/pages/account.tsx` (+ `components/appointment-manage-panel.tsx`, shared with `pages/appointment-manage.tsx`) + `pages/account-login.tsx` / `account-callback.tsx` / `account-reset.tsx` + `lib/supabase.ts` + `lib/auth-context.tsx` (frontend); `api-server/src/services/account.service.ts` + `routes/account.ts` + `middlewares/auth.ts` + `lib/supabase/client.ts`; queries `findOrdersByEmail` / `findShopOrdersByEmail` + `listUpcomingAppointmentsByEmail` (`lib/google/calendar.repository.ts`, mapped via `lib/appointments/event-details.ts`) + `extractMeasurements` (`lib/notion/orders.schema.ts`). Auth emails: `.agents/memory/supabase-auth-emails.md` |
 | Change the internal studio dashboard                     | `artifacts/web-app/src/pages/studio.tsx` (+ the `/studio` route in `App.tsx`, `noindex` entry in `lib/seo-routes.ts`); `api-server/src/services/studio-analytics.service.ts` (the pure `aggregateStudioAnalytics` + the cached use-case) + `routes/studio.ts` + `requireStaff` in `middlewares/auth.ts` + `lib/staff.ts` (the `STUDIO_STAFF_EMAILS` allowlist + the `amr` Google check); the 403 panel's re-sign-in lands back via `web-app/src/lib/post-signin.ts` (read by `pages/account-callback.tsx`); reads via `lib/notion/scan.ts` + `listOrdersForAnalytics` / `listShopOrdersForAnalytics` / `listInvoicesForAnalytics`                                                             |
 | Change the studio's how-to guides                        | `api-server/src/lib/guide-sections.ts` (the sections a guide can be filed against — a tool's id is its `StudioToolName`) + `lib/notion/guides.{schema,repository}.ts` (the Notion row + the file download) + `services/studio-guides.service.ts` (assembly, the HTML check, the 60s cache) + the `/studio/guides` route in `routes/studio.ts`; frontend `web-app/src/components/studio-guides.tsx` (`StudioGuides` panel + the `GuidesFor` slots), mounted by `pages/studio.tsx` and per tool by `components/studio-tools.tsx`. The sandboxed frame in that component is a security boundary — see the section above                                                                          |

@@ -4,7 +4,8 @@ import { existsSync } from "node:fs";
 // Production smoke tests — a separate, deliberately non-mocking Playwright
 // project that drives the REAL deployed site to catch production breakage
 // (Notion / Google / Vercel outages, a bad deploy, a broken build) that the
-// mocked `e2e/` suite can't see. Run weekly by `.github/workflows/smoke.yml`.
+// mocked `e2e/` suite can't see. Run DAILY by `.github/workflows/smoke.yml`;
+// the summary email is the weekly part, not the run.
 //
 // Two hard rules distinguish this from `playwright.config.ts`:
 //  1. It NEVER intercepts `/api/*` — every request goes to the live backend, so
@@ -12,8 +13,8 @@ import { existsSync } from "node:fs";
 //     appointment catalog, the health check) actually work end to end. It does
 //     NOT reuse `e2e/support/test.ts`, whose fixture fails any unmocked call.
 //  2. Every spec is READ-ONLY. Nothing here creates an order, a checkout, a
-//     booking, a contact message, or sends an email — the weekly monitor must
-//     be safe to run against production forever.
+//     booking, a contact message, or sends an email — a monitor that runs
+//     unattended every day must be safe to run against production forever.
 //
 // The target is set by PLAYWRIGHT_BASE_URL (defaulting to the canonical apex
 // domain) so the same suite can be pointed at a Vercel preview by overriding it.
