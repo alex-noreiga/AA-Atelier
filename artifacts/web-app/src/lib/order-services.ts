@@ -27,7 +27,7 @@ export const SERVICE_FALLBACK: ServiceRules = {
   detailsRequired: false,
   detailsLabel: "Description",
   detailsHelp:
-    "Tell us about your vision — style, silhouette, special requirements...",
+    "Tell us about your vision: style, silhouette, special requirements...",
 };
 
 /** What the form needs to know about the chosen service to render + validate. */

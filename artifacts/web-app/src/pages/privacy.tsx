@@ -5,8 +5,8 @@ import { Button } from "@/components/ui/button";
 import { useConsent } from "@/lib/consent";
 
 const CONSENT_LABEL: Record<string, string> = {
-  granted: "Accepted — analytics is on",
-  denied: "Declined — analytics is off",
+  granted: "Accepted, analytics is on",
+  denied: "Declined, analytics is off",
   unset: "Not set yet",
 };
 
@@ -49,7 +49,7 @@ export default function Privacy() {
       <LegalSection title="Information we collect">
         <p>
           When you place a custom order, request a quote, book an appointment,
-          or contact us, we collect the details you provide — your name, email
+          or contact us, we collect the details you provide: your name, email
           address, phone number, body measurements, and any notes about your
           design. When you buy from our shop, our payment processor collects
           your shipping address and payment details on our behalf.
@@ -72,15 +72,15 @@ export default function Privacy() {
 
       <LegalSection title="Marketing emails">
         <p>
-          If you join our mailing list — from the footer sign-up or by ticking
-          the box when you place an order — we use your email address to send
+          If you join our mailing list, from the footer sign-up or by ticking
+          the box when you place an order, we use your email address to send
           occasional studio news, such as new collections and behind-the-scenes
           notes. This is separate from the order, appointment, and inquiry
           confirmations above, and we only send it if you opt in.
         </p>
         <p>
           Every marketing email includes a one-click unsubscribe link, and you
-          can opt out at any time — you will still receive the transactional
+          can opt out at any time. You will still receive the transactional
           emails about any active order or booking. Our email provider,
           <strong> Resend</strong>, manages the mailing list and honors
           unsubscribes on our behalf.
@@ -116,12 +116,12 @@ export default function Privacy() {
       <LegalSection title="Cookies and analytics">
         <p>
           We keep cookies to a minimum. A strictly necessary cookie keeps you
-          signed in to your account when you use the customer portal — this is
+          signed in to your account when you use the customer portal. This is
           always on, because the site can't work without it.
         </p>
         <p>
           With your permission, we also use privacy-friendly web analytics to
-          understand how our site is used — which pages are visited, and a few
+          understand how our site is used: which pages are visited, and a few
           key actions such as adding an item to the cart, starting checkout, or
           placing an order, so we can see where visitors drop off and improve
           the experience. These measurements are not linked to your name or

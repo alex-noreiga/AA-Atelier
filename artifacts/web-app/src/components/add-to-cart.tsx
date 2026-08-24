@@ -96,7 +96,7 @@ export function AddToCartButton({
       addItem(toCartLine(addOn));
     }
     const names = [
-      size ? `${variant.name} — ${size}` : variant.name,
+      size ? `${variant.name} · ${size}` : variant.name,
       ...addedAddOns.map((a) => a.name),
     ];
     analytics(AnalyticsEvent.AddToCart, {
@@ -140,7 +140,7 @@ export function AddToCartButton({
                 {typeof addOn.price === "number" && (
                   <span className="text-primary">
                     {" "}
-                    — {formatPrice(addOn.price)}
+                    · {formatPrice(addOn.price)}
                   </span>
                 )}
               </span>

@@ -73,7 +73,7 @@ const MESSAGES: Record<string, string> = {
   // The provider handed us back an error — misconfiguration, an outage, a
   // rejected token exchange. Never the customer's fault.
   server_error:
-    "We couldn't finish signing you in. This one is on our end — please try again in a moment, or email us and we'll get you in.",
+    "We couldn't finish signing you in. This one is on our end, so please try again in a moment, or email us and we'll get you in.",
   // e.g. the provider isn't enabled on our side.
   validation_failed:
     "That sign-in method isn't available right now. Please use your email and password below, or email us and we'll help.",

@@ -43,7 +43,7 @@ export function buildNotifyProperties(
 ): Record<string, unknown> {
   // The subject names the exact piece, so the inbox row reads on its own.
   const subject = data.size
-    ? `Back in stock: ${data.item} — ${data.size}`
+    ? `Back in stock: ${data.item} · ${data.size}`
     : `Back in stock: ${data.item}`;
 
   const properties: Record<string, unknown> = {

@@ -149,7 +149,7 @@ export const ORDER_SERVICES: readonly OrderServiceDef[] = [
     detailsRequired: false,
     detailsLabel: "Description",
     detailsHelp:
-      "Tell us about your vision — style, silhouette, special requirements...",
+      "Tell us about your vision: style, silhouette, special requirements...",
     payment: "staged",
     orderLabel: "Custom Costume",
     emailIntro:
@@ -168,7 +168,7 @@ export const ORDER_SERVICES: readonly OrderServiceDef[] = [
     detailsRequired: true,
     detailsLabel: "The piece and what needs adjusting",
     detailsHelp:
-      "Tell us about the costume and what you'd like changed — where it's tight or loose, hem length, straps...",
+      "Tell us about the costume and what you'd like changed: where it's tight or loose, hem length, straps...",
     payment: "single",
     orderLabel: "Alterations",
     emailIntro:
@@ -197,7 +197,7 @@ export const ORDER_SERVICES: readonly OrderServiceDef[] = [
     detailsRequired: true,
     detailsLabel: "The piece and the stoning you'd like",
     detailsHelp:
-      "Tell us about the costume and the coverage you're picturing — full stoning, bodice only, a scattered pattern...",
+      "Tell us about the costume and the coverage you're picturing: full stoning, bodice only, a scattered pattern...",
     payment: "single",
     orderLabel: "Rhinestoning",
     emailIntro:
@@ -225,7 +225,7 @@ export const ORDER_SERVICES: readonly OrderServiceDef[] = [
     detailsRequired: true,
     detailsLabel: "The piece and what needs repairing",
     detailsHelp:
-      "Tell us about the costume and what's happened to it — lost stones, a torn seam, worn elastic...",
+      "Tell us about the costume and what's happened to it: lost stones, a torn seam, worn elastic...",
     payment: "single",
     orderLabel: "Repair",
     emailIntro:

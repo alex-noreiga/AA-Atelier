@@ -38,7 +38,7 @@ describe("buildNotifyProperties", () => {
 
     expect(props.Size.rich_text[0].text.content).toBe("Adult S");
     expect(props["Message (subject)"].title[0].text.content).toBe(
-      "Back in stock: Bow Fleece Soaker — Black — Adult S",
+      "Back in stock: Bow Fleece Soaker — Black · Adult S",
     );
   });
 

@@ -52,7 +52,7 @@ describe("productMetaDescription", () => {
 
   it("falls back to title and category when there is no note", () => {
     expect(productMetaDescription(product())).toBe(
-      "Aurora Dress — Competition Dresses from A.A Atelier.",
+      "Aurora Dress, Competition Dresses from A.A Atelier.",
     );
   });
 
@@ -81,7 +81,10 @@ describe("productImages", () => {
     // Notion serves the photo and its pixel size is unknown here — declaring
     // one would describe the wrong aspect ratio to a scraper.
     expect(productImages(product())).toEqual([
-      { url: "https://notion.test/a.jpg", alt: "Aurora Dress — A.A Atelier" },
+      {
+        url: "https://notion.test/a.jpg",
+        alt: "Aurora Dress from A.A Atelier",
+      },
     ]);
   });
 

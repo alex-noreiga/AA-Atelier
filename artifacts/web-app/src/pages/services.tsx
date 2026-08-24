@@ -37,7 +37,7 @@ const SERVICES: Service[] = [
     icon: Scissors,
     title: "Bespoke Commissions",
     description:
-      "Designed and made entirely for you — from first consultation and sketch through pattern-making, construction, and hand-finishing. Each costume is built from scratch to suit your body, your program, and your vision.",
+      "Designed and made entirely for you, from first consultation and sketch through pattern-making, construction, and hand-finishing. Each costume is built from scratch to suit your body, your routine, and your vision.",
     price: "From a $100 deposit",
     serviceId: "bespoke",
     cta: "Begin a commission",
@@ -46,7 +46,7 @@ const SERVICES: Service[] = [
     icon: Ruler,
     title: "Fittings & Alterations",
     description:
-      "In-person fittings and precise adjustments to perfect line, comfort, and movement — so your costume feels like a second skin, whether you're competing or performing.",
+      "In-person fittings and precise adjustments to perfect line, comfort, and movement, so your costume feels like a second skin, whether you're competing or performing.",
     price: "From $50",
     serviceId: "alterations",
     cta: "Request an alteration",
@@ -64,7 +64,7 @@ const SERVICES: Service[] = [
     icon: Heart,
     title: "Repairs & Restoration",
     description:
-      "Mending, refreshing, and restoring beloved costumes — from re-securing stones to reworking seams — giving a treasured piece another season.",
+      "Mending, refreshing, and restoring beloved costumes, from re-securing stones to reworking seams, giving a treasured piece another season.",
     price: "From $50",
     serviceId: "repairs",
     cta: "Request a repair",
@@ -87,9 +87,9 @@ const PRICING_STAGES: {
   {
     step: "02",
     title: "Second deposit",
-    amount: "$50–$100",
+    amount: "$50 to $100",
     description:
-      "Due at your first fitting — the amount depends on the detailing and customization your piece calls for.",
+      "Due at your first fitting. The amount depends on the detailing and customization your piece calls for.",
   },
   {
     step: "03",
@@ -105,7 +105,7 @@ const PROCESS: { step: string; title: string; description: string }[] = [
     step: "01",
     title: "Consultation",
     description:
-      "We talk through your vision, program, measurements, and timeline.",
+      "We talk through your vision, your routine, measurements, and timeline.",
   },
   {
     step: "02",
@@ -169,7 +169,7 @@ export default function Services() {
           </h1>
           <p className="text-muted-foreground font-light text-lg md:text-xl max-w-xl mx-auto leading-relaxed">
             Every piece begins as a conversation and ends as something made only
-            for you —{" "}
+            for you:{" "}
             <span className="italic text-primary">
               bespoke costumes crafted by hand
             </span>{" "}
@@ -219,7 +219,7 @@ export default function Services() {
         <div className="mt-24" data-testid="pricing-section">
           <SectionHeader eyebrow="Pricing" title="What to expect" />
           <p className="text-muted-foreground font-light text-lg leading-relaxed max-w-2xl mx-auto text-center">
-            Every commission is priced individually — the final cost reflects
+            Every commission is priced individually. The final cost reflects
             your fabric, the amount of embellishment, and the complexity of the
             design. You'll receive an itemized quote after your consultation,
             and pay in clear stages rather than all at once.
