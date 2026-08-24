@@ -24,6 +24,134 @@ function settingPage(key: string, value: string) {
   };
 }
 
+describe("fetchStudioSettings — stale-while-revalidate", () => {
+  // This read is primed on EVERY request, so once there is something cached it
+  // must not put a Notion round-trip in front of a request. It serves the last
+  // good values and refreshes behind the response.
+  const TTL_MS = 60_000;
+
+  it("serves the stale map without waiting, then refreshes behind it", async () => {
+    let value = "first@x.com";
+    const client = makeFakeClient(() =>
+      jsonResponse({ results: [settingPage("ALERT_INBOX_EMAIL", value)] }),
+    );
+
+    const initial = await repo.fetchStudioSettings(client);
+    expect(initial.get("ALERT_INBOX_EMAIL")).toBe("first@x.com");
+    expect(client.calls).toHaveLength(1);
+
+    vi.useFakeTimers();
+    try {
+      vi.setSystemTime(Date.now() + TTL_MS + 1);
+      value = "second@x.com";
+
+      // Stale: answered from cache, so this call must not await the refresh.
+      const stale = await repo.fetchStudioSettings(client);
+      expect(stale.get("ALERT_INBOX_EMAIL")).toBe("first@x.com");
+    } finally {
+      vi.useRealTimers();
+    }
+
+    // ...but the refresh was started, and lands for a later caller. Polled on
+    // the VALUE rather than the call count: the count rises when the fetch is
+    // invoked, which is before the new map has replaced the cache.
+    await vi.waitFor(async () => {
+      const refreshed = await repo.fetchStudioSettings(client);
+      expect(refreshed.get("ALERT_INBOX_EMAIL")).toBe("second@x.com");
+    });
+  });
+
+  it("blocks on a cold cache, so a first request never silently sees env/defaults", async () => {
+    const client = makeFakeClient(() =>
+      jsonResponse({
+        results: [settingPage("ALERT_INBOX_EMAIL", "ops@x.com")],
+      }),
+    );
+
+    // Nothing cached: the value must be present in the very first result, not
+    // arrive later — the whole Studio Settings feature depends on it.
+    const settings = await repo.fetchStudioSettings(client);
+    expect(settings.get("ALERT_INBOX_EMAIL")).toBe("ops@x.com");
+    expect(client.calls).toHaveLength(1);
+  });
+
+  it("fires one refresh for a burst of stale reads, not one per read", async () => {
+    const client = makeFakeClient(() =>
+      jsonResponse({
+        results: [settingPage("ALERT_INBOX_EMAIL", "ops@x.com")],
+      }),
+    );
+    await repo.fetchStudioSettings(client);
+
+    vi.useFakeTimers();
+    try {
+      vi.setSystemTime(Date.now() + TTL_MS + 1);
+      await Promise.all([
+        repo.fetchStudioSettings(client),
+        repo.fetchStudioSettings(client),
+        repo.fetchStudioSettings(client),
+      ]);
+    } finally {
+      vi.useRealTimers();
+    }
+
+    await vi.waitFor(() => expect(client.calls).toHaveLength(2));
+    expect(client.calls).toHaveLength(2);
+  });
+
+  it("keeps serving the last good values when the background refresh fails", async () => {
+    let fail = false;
+    const client = makeFakeClient(() =>
+      fail
+        ? errorResponse(500)
+        : jsonResponse({
+            results: [settingPage("ALERT_INBOX_EMAIL", "ops@x.com")],
+          }),
+    );
+    await repo.fetchStudioSettings(client);
+
+    fail = true;
+    vi.useFakeTimers();
+    try {
+      vi.setSystemTime(Date.now() + TTL_MS + 1);
+      const stale = await repo.fetchStudioSettings(client);
+      expect(stale.get("ALERT_INBOX_EMAIL")).toBe("ops@x.com");
+    } finally {
+      vi.useRealTimers();
+    }
+
+    await vi.waitFor(() => expect(client.calls).toHaveLength(2));
+    // A failed refresh must not empty the map — that would silently swap every
+    // atelier-set value for its env/default.
+    const after = await repo.fetchStudioSettings(client);
+    expect(after.get("ALERT_INBOX_EMAIL")).toBe("ops@x.com");
+  });
+
+  it("does not reject when the background refresh throws", async () => {
+    const client = makeFakeClient(() =>
+      jsonResponse({
+        results: [settingPage("ALERT_INBOX_EMAIL", "ops@x.com")],
+      }),
+    );
+    await repo.fetchStudioSettings(client);
+
+    // A detached rejection would land after the response has already gone out.
+    const throwing = makeFakeClient(() => {
+      throw new Error("socket hang up");
+    });
+
+    vi.useFakeTimers();
+    try {
+      vi.setSystemTime(Date.now() + TTL_MS + 1);
+      await expect(repo.fetchStudioSettings(throwing)).resolves.toBeInstanceOf(
+        Map,
+      );
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+});
+
 describe("fetchStudioSettings", () => {
   it("returns an empty map when the database is not configured (self-gate)", async () => {
     const client = makeFakeClient(() => jsonResponse({ results: [] }), "");

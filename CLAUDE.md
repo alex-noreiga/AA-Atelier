@@ -571,12 +571,28 @@ stages/categories/working-hours.
 3. **Sync getters, primed once per request.** The getters are synchronous; Notion
    I/O is async. `app.ts` mounts a middleware that `await primeSettings()` at the
    start of every request, refreshing the in-memory snapshot the sync getters read;
-   the read itself is the usual **60s TTL cache + fallback**
+   the read itself is a **60s TTL cache + fallback**
    (`lib/notion/settings.repository.ts`, self-gating to an empty map when
    `NOTION_SETTINGS_DATABASE_ID` is unset or a fetch fails, so a settings hiccup
    never errors a request). Until primed (tests, first request) the snapshot is
    empty and everything falls back to env. Test seams: `__setSettingsSnapshot` /
    `__resetSettings` (store) and `__resetSettingsCache` (repository).
+
+   **This is the one live read that serves stale while it revalidates**, and the
+   asymmetry is the reason: every other cached Notion read
+   (`fetchLiveOrderStages`, `listCategoryRecords`, …) backs a single endpoint,
+   while this one is primed on **every** request — so blocking on the refresh
+   puts a Notion round-trip in front of whichever request crosses the TTL
+   boundary, including routes that read no setting at all. A **stale** snapshot
+   is therefore returned immediately and refreshed behind the response; a
+   **cold** one still blocks, because serving env/defaults there would silently
+   ignore every value the atelier has set. The entry's timestamp is bumped
+   before the refresh starts, so a burst fires one refresh and a failed refresh
+   retries at the next TTL rather than on every request; there is deliberately
+   no in-flight lock, since a serverless instance can freeze the moment it
+   responds and a lock left set would pin it to stale values for good. A
+   dashboard save still clears the cache outright, which lands on the blocking
+   path — an edit is never a TTL behind.
 
 4. **Each key is a typed catalog entry, and that's what the dashboard renders.**
    `lib/settings/catalog.ts` holds one `SettingDefinition` per key — its label,
@@ -1935,7 +1951,12 @@ delivered as **Stripe promotion codes** redeemed in the checkout promo box
    **referrer credit** (only once the referred order is paid — anti-abuse) and the
    **returning-skater standing discount**.
 
-2. **Everything is best-effort + CRM/Stripe-optional.** A reward failure must never fail
+2. **Everything is best-effort + CRM/Stripe-optional, and the capture is deferred.**
+   `captureReferralOnOrder` is a Notion read, a Notion write, a Stripe promotion-code
+   create and a Resend send, none of which `POST /orders` depends on — so `submitOrder`
+   hands it to **`deferBestEffort`** alongside the two order emails (its own `try/catch`
+   stays _inside_ the deferred task, keeping a referral failure at `warn`: it is
+   explicitly "the order is unaffected"). A reward failure must never fail
    an order or 500 the webhook (a throw into the webhook makes Stripe retry, and the
    retry early-returns at the dedupe guard, so the reward would be lost) — every entry
    point is `try/catch` + `logger.warn`. When `NOTION_CLIENT_CRM_DATABASE_ID` is unset

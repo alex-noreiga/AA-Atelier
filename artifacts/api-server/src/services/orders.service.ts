@@ -169,18 +169,25 @@ export async function submitOrder(
   // Best-effort: capture a referral code (if the customer entered one) — stamp
   // the referrer link and email this new customer their welcome discount. A
   // failure (or an unknown/self code, or no CRM) must never fail the order.
+  //
+  // Deferred for the same reason as the emails below: this is a Notion read, a
+  // Notion write, a Stripe promotion-code create and a Resend send, none of
+  // which the response depends on. The `try/catch` stays *inside* the deferred
+  // task so a referral failure keeps its `warn` level — it is explicitly "the
+  // order is unaffected", not the error-level surprise `deferBestEffort` logs.
   if (input.referralCode) {
-    try {
-      await captureReferralOnOrder({
-        referralCode: input.referralCode,
-        email: input.email,
-      });
-    } catch (err) {
-      logger.warn(
-        { err },
-        "Failed to capture referral on order; the order is unaffected",
-      );
-    }
+    const referralCode = input.referralCode;
+    const { email } = input;
+    await deferBestEffort("referral capture", async () => {
+      try {
+        await captureReferralOnOrder({ referralCode, email });
+      } catch (err) {
+        logger.warn(
+          { err },
+          "Failed to capture referral on order; the order is unaffected",
+        );
+      }
+    });
   }
 
   // Best-effort emails; a mail failure must not fail the order. Because the
