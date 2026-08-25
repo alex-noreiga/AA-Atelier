@@ -15,6 +15,7 @@ import {
   SHOP_ORDER_SHIPPING_PROPERTY,
   SHOP_ORDER_CLIENT_PROPERTY,
   SHOP_ORDER_ITEMS_PROPERTY,
+  SHOP_ORDER_DELIVERY_METHOD_PROPERTY,
   SHOP_ORDER_CHANNEL_PROPERTY,
   SHOP_ORDER_ONLINE_STORE_CHANNEL,
   SHOP_ORDER_DATE_PROPERTY,
@@ -149,6 +150,50 @@ describe("buildShopOrderProperties", () => {
     expect(
       (props[SHOP_ORDER_TITLE_PROPERTY] as any).title[0].text.content,
     ).toBe("Shop order — cs_test_123");
+  });
+
+  it("marks the order a local pickup when the customer chose that shipping rate", () => {
+    const props = buildShopOrderProperties(
+      session({
+        shipping_cost: { shipping_rate: { display_name: "Local pickup" } },
+      }),
+    ) as Record<string, unknown>;
+
+    expect(props[SHOP_ORDER_DELIVERY_METHOD_PROPERTY]).toEqual({
+      select: { name: "Local pickup" },
+    });
+  });
+
+  it("reads the rate's own wording, not a fixed name", () => {
+    // The atelier writes the rate's display name in the Stripe Dashboard; this
+    // must not hinge on them wording it the way the code does.
+    const props = buildShopOrderProperties(
+      session({
+        shipping_cost: {
+          shipping_rate: { display_name: "Collect at the rink (free)" },
+        },
+      }),
+    ) as Record<string, unknown>;
+
+    expect(props[SHOP_ORDER_DELIVERY_METHOD_PROPERTY]).toEqual({
+      select: { name: "Local pickup" },
+    });
+  });
+
+  it("writes no delivery method for a posted order, or no shipping at all", () => {
+    // An order with no method reads as a shipment anyway, so writing "Ship"
+    // would only add a value to maintain.
+    for (const shipping_cost of [
+      { shipping_rate: { display_name: "USPS Priority" } },
+      // Unexpanded (an id) or absent — both read as a posting.
+      { shipping_rate: "shr_123" },
+      null,
+    ]) {
+      const props = buildShopOrderProperties(
+        session({ shipping_cost }),
+      ) as Record<string, unknown>;
+      expect(props[SHOP_ORDER_DELIVERY_METHOD_PROPERTY]).toBeUndefined();
+    }
   });
 });
 

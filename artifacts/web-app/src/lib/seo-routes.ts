@@ -187,6 +187,14 @@ export const ROUTE_SEO: Record<string, RouteSeo> = {
     changefreq: "weekly",
     priority: 0.9,
   },
+  "/portfolio": {
+    path: "/portfolio",
+    title: "Portfolio — Finished Skating & Dance Costumes | A.A Atelier",
+    description:
+      "A gallery of finished figure skating and dance costumes by A.A Atelier, and the sketches they began as. Filter by discipline, colorway, or competition.",
+    changefreq: "weekly",
+    priority: 0.8,
+  },
   "/order": {
     path: "/order",
     title: "Place a Custom Costume Order | A.A Atelier",

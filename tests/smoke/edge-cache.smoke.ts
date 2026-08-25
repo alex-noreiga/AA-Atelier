@@ -1,6 +1,6 @@
 import { test, expect, type APIRequestContext } from "@playwright/test";
 
-// The five public reads that are supposed to be served by Vercel's CDN rather
+// The six public reads that are supposed to be served by Vercel's CDN rather
 // than by a serverless function.
 //
 // This exists because the failure it watches for is invisible from the outside:
@@ -50,6 +50,7 @@ const CACHED_READS = [
   { path: "/api/colors", route: "routes/colors.ts" },
   { path: "/api/products", route: "routes/products.ts" },
   { path: "/api/capacity", route: "routes/capacity.ts" },
+  { path: "/api/portfolio", route: "routes/portfolio.ts" },
 ];
 
 /**

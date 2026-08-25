@@ -81,11 +81,9 @@ export async function createPageDroppingUnknownProperties(
  * against what we sent keeps an unrelated 400 from being read as a missing
  * property (and looping).
  *
- * Exported because a page CREATE is not the only write that meets a property
- * the atelier hasn't added yet: `updateOrderMeasurements` reads the same 400
- * to decide the opposite thing (throw rather than drop, since there the value
- * IS the write). One parser, so the two can't disagree about what Notion said.
- */
+ * Exported because `updateOrderMeasurements` needs the same question answered
+ * about a property PATCH, where the answer is a thrown
+ * `MeasurementPropertiesMissingError` rather than a dropped field. */
 export function findUnknownProperty(
   errorText: string,
   properties: Record<string, unknown>,

@@ -5,8 +5,10 @@
 import {
   findShopOrderByNumber,
   fetchLiveShopOrderStatuses,
-  type ShopOrderTracking,
 } from "../lib/notion/shop-orders.repository.js";
+import { resolveFulfilment, type FulfilmentView } from "../lib/fulfilment.js";
+import { appointmentTimezone } from "../lib/appointments/settings.js";
+import { orderDelivered } from "./delivery.js";
 import { NotFoundError } from "../lib/errors.js";
 
 export interface ShopOrderStatusView {
@@ -15,7 +17,9 @@ export interface ShopOrderStatusView {
   statuses: string[];
   total?: number;
   cancelled?: boolean;
-  tracking?: ShopOrderTracking;
+  /** How the order reaches the customer — carrier tracking, or a scheduled
+   * local pickup for a customer collecting in person. */
+  fulfilment?: FulfilmentView;
 }
 
 export async function getShopOrderStatus(
@@ -37,12 +41,23 @@ export async function getShopOrderStatus(
       ? [...statuses, order.status]
       : statuses;
 
+  // The same fulfilment view the custom orders get, off the same rules: carrier
+  // tracking once the parcel is on its way, or the collection details when the
+  // customer is picking up in person. Dropped on a cancelled order, where
+  // nothing is coming.
+  const fulfilment = order.cancelled
+    ? undefined
+    : resolveFulfilment(order.fulfilmentFields ?? {}, {
+        timezone: appointmentTimezone(),
+        delivered: orderDelivered(order.status, timeline),
+      });
+
   return {
     orderNumber: order.orderNumber,
     status: order.status,
     statuses: timeline,
     ...(order.total !== undefined ? { total: order.total } : {}),
     ...(order.cancelled ? { cancelled: true } : {}),
-    ...(order.tracking ? { tracking: order.tracking } : {}),
+    ...(fulfilment ? { fulfilment } : {}),
   };
 }

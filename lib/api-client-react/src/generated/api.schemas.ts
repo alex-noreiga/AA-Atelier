@@ -72,6 +72,59 @@ export interface Invoice {
   paymentDeadline?: string;
 }
 
+/**
+ * Whether the order is being shipped or collected in person. Read from the atelier's `Delivery Method` select when set; otherwise inferred from which fields are filled in (a pickup time or location means pickup), defaulting to `ship`.
+ */
+export type OrderFulfilmentMethod = typeof OrderFulfilmentMethod[keyof typeof OrderFulfilmentMethod];
+
+
+export const OrderFulfilmentMethod = {
+  ship: 'ship',
+  pickup: 'pickup',
+} as const;
+
+/**
+ * The carrier tracking details, surfaced once the atelier fills them in on the Notion order (a `Tracking Number`, an optional `Carrier` label, and an optional `Tracking URL`). Absent until a tracking number is set, and never present on a pickup order. When present the tracking page shows the number, linked to the URL when one is given.
+ */
+export type OrderFulfilmentTracking = {
+  /** The carrier tracking number, shown to the customer. */
+  number: string;
+  /** An optional human carrier label, e.g. "USPS" or "UPS". */
+  carrier?: string;
+  /** An optional carrier tracking URL; when present the number is rendered as a link to it. */
+  url?: string;
+};
+
+/**
+ * The collection details for a local-pickup order. Always present when `method` is `pickup`, even before a time is arranged — that the order is a pickup at all is itself the answer to "is there tracking?".
+ */
+export type OrderFulfilmentPickup = {
+  /** When the customer is expected to collect, as the atelier entered it: an ISO datetime (`2026-09-03T14:00:00-05:00`) when they picked a time, or a bare ISO date (`2026-09-03`) when they picked only a day. A pass-through string — the client renders a datetime in `timezone` and a bare date as-is, so a date never slips a day. Absent until a pickup is scheduled. */
+  at?: string;
+  /** Where to collect from (the studio's own address or a rink), as free text. The customer's own shipping address is deliberately never returned — this lookup is gated by order number alone. */
+  location?: string;
+  /** The IANA zone `at` should be read in (the studio's APPOINTMENT_TIMEZONE), so a customer in another timezone still sees the studio's local time. Same contract as AppointmentDetails.timezone. */
+  timezone?: string;
+};
+
+/**
+ * How the finished piece reaches the customer, and everything that can be said about that right now. One shape for both order kinds (custom and shop), so the tracking page answers "where is my order?" the same way either side.
+ * `method` decides which half is filled in. A shipped order carries `tracking` once the atelier has entered a tracking number, and `shipBy` until then. A **local-pickup** order carries `pickup` instead: local customers collect in person, so there is no tracking number to show and the order must not read as though something is missing — the scheduled pickup time is the answer.
+ * Absent entirely when there is nothing yet to say (a shipped order with no tracking number and no ship-by date), and never present on an order the atelier has cancelled.
+ */
+export interface OrderFulfilment {
+  /** Whether the order is being shipped or collected in person. Read from the atelier's `Delivery Method` select when set; otherwise inferred from which fields are filled in (a pickup time or location means pickup), defaulting to `ship`. */
+  method: OrderFulfilmentMethod;
+  /** The atelier's own handoff state for the order (the custom order's `Fulfilment` select — e.g. "Packed", "Shipped"). Display-only and advisory: it describes the shipping/collection leg, never whether the order is complete — the stage/status timeline owns that. Omitted once the order reaches its final stage, and absent for shop orders, whose fulfilment state IS the timeline. */
+  state?: string;
+  /** The carrier tracking details, surfaced once the atelier fills them in on the Notion order (a `Tracking Number`, an optional `Carrier` label, and an optional `Tracking URL`). Absent until a tracking number is set, and never present on a pickup order. When present the tracking page shows the number, linked to the URL when one is given. */
+  tracking?: OrderFulfilmentTracking;
+  /** The date the atelier plans to send the order by (its `Ship By`), as an ISO date (yyyy-mm-dd). A pass-through string (no format: date), same as estimatedCompletion. Present only while the order has not shipped — once a tracking number exists, or the order reaches its final stage, the tracking is the answer and this is dropped rather than left to read as an overdue promise. */
+  shipBy?: string;
+  /** The collection details for a local-pickup order. Always present when `method` is `pickup`, even before a time is arranged — that the order is a pickup at all is itself the answer to "is there tracking?". */
+  pickup?: OrderFulfilmentPickup;
+}
+
 export interface OrderStatus {
   orderNumber: string;
   orderName: string;
@@ -88,23 +141,12 @@ export interface OrderStatus {
   invoice?: Invoice;
   /** True once the atelier has cancelled the order (the `Cancelled` marker on the Notion order). When true the tracking page shows a cancelled banner and suppresses the deposit / invoice / request affordances. Absent/false for an active order. */
   cancelled?: boolean;
+  fulfilment?: OrderFulfilment;
 }
 
 export interface OrderNotFound {
   message: string;
 }
-
-/**
- * The carrier tracking details, surfaced once the atelier fills them in on the Notion order (a `Tracking Number`, an optional `Carrier` label, and an optional `Tracking URL`). Absent until a tracking number is set. When present the tracking page shows the number, linked to the URL when one is given.
- */
-export type ShopOrderStatusTracking = {
-  /** The carrier tracking number, shown to the customer. */
-  number: string;
-  /** An optional human carrier label, e.g. "USPS" or "UPS". */
-  carrier?: string;
-  /** An optional carrier tracking URL; when present the number is rendered as a link to it. */
-  url?: string;
-};
 
 export interface ShopOrderStatus {
   orderNumber: string;
@@ -116,8 +158,7 @@ export interface ShopOrderStatus {
   total?: number;
   /** True once the atelier has cancelled the shop order (the `Cancelled` marker on the Notion order). When true the tracking page shows a cancelled banner and suppresses the request affordance. Absent/false for an active order. */
   cancelled?: boolean;
-  /** The carrier tracking details, surfaced once the atelier fills them in on the Notion order (a `Tracking Number`, an optional `Carrier` label, and an optional `Tracking URL`). Absent until a tracking number is set. When present the tracking page shows the number, linked to the URL when one is given. */
-  tracking?: ShopOrderStatusTracking;
+  fulfilment?: OrderFulfilment;
 }
 
 export type NewOrderRequestPreferredContact = typeof NewOrderRequestPreferredContact[keyof typeof NewOrderRequestPreferredContact];
@@ -357,6 +398,49 @@ export interface PublishedReview {
 
 export interface ReviewList {
   reviews: PublishedReview[];
+}
+
+/**
+ * One piece's values for a single filter dimension. Modelled as an ordered list rather than a map so a new dimension is a server-side change with no contract edit, and so clients render facets in the order the server declares them.
+ */
+export interface PortfolioFacetValues {
+  /** The facet's stable id, matching a `PortfolioFilter.id` in the same response (for example "type" or "discipline"). Never shown to the visitor — the filter's `label` is. */
+  id: string;
+  /** This piece's values for that dimension. A single-value dimension (a select) carries one entry; a multi-select carries several. Never empty — a piece with no value for a dimension omits the facet entirely rather than carrying an empty list. */
+  values: string[];
+}
+
+/**
+ * One published piece of the atelier's work. Deliberately narrow: the Notion row relates to the order it was made for, and neither that order nor the customer behind it is served here.
+ */
+export interface PortfolioPiece {
+  /** The piece's Notion page id, used only as a render key. */
+  id: string;
+  /** The piece's name, as the atelier titled the row. */
+  title: string;
+  /** The piece's photographs or sketches, in the order the atelier arranged them; the first is the gallery cover. These are Notion-signed URLs that expire in about an hour, which is why this response's edge cache is deliberately shorter than that. Never empty — a row with no image is not published. */
+  images: string[];
+  /** The piece's values for each filter dimension it has one for, in the server's declared facet order. Dimensions the piece carries no value for are omitted rather than sent empty. */
+  facets: PortfolioFacetValues[];
+  /** When the row was created in Notion. Omitted when Notion returned no created time. The gallery is ordered newest-first by the piece's optional "Completed" date and falls back to this when it has none — that completion date is a server-side sort key and is deliberately not served, since nothing renders it. */
+  publishedAt?: string;
+}
+
+/**
+ * One filter dimension offered above the gallery, with the options DERIVED from the published pieces rather than enumerated in code. A dimension no published piece carries a value for is omitted from the response entirely, so the chips reflect the atelier's actual work with no redeploy and clients must not hardcode either the options or which dimensions exist.
+ */
+export interface PortfolioFilter {
+  /** Stable id, matching `PortfolioFacetValues.id` on the pieces. */
+  id: string;
+  /** The human label for the chip group, e.g. "Discipline". */
+  label: string;
+  /** The distinct values published pieces carry for this dimension, alphabetically. Always two or more — a dimension every published piece answers the same way filters nothing and is omitted. */
+  options: string[];
+}
+
+export interface PortfolioList {
+  pieces: PortfolioPiece[];
+  filters: PortfolioFilter[];
 }
 
 /**
