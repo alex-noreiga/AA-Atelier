@@ -3177,6 +3177,18 @@ components:
         category:
           type: string
           description: Fabric / Applique / Crystal / Packaging / Notions. Omitted when unset.
+        fabricTypes:
+          type: array
+          description: >-
+            Which fabric(s) this is — Satin, Power Mesh, Lining, … — in the
+            order the atelier holds them in Notion. A MULTI-select, so a
+            material can carry several (a power mesh that is also a lining);
+            the dashboard groups it under the FIRST and shows the rest as
+            labels, because a shopping list you might count twice is worse
+            than one where a secondary type is only a label. Omitted when
+            none are tagged, which is every non-fabric material.
+          items:
+            type: string
         stockOnHand:
           type: number
           description: >-
@@ -3211,6 +3223,18 @@ components:
           type: string
         category:
           type: string
+        fabricTypes:
+          type: array
+          description: >-
+            Which fabric(s) this is — Satin, Power Mesh, Lining, … — in the
+            order the atelier holds them in Notion. A MULTI-select, so a
+            material can carry several (a power mesh that is also a lining);
+            the dashboard groups it under the FIRST and shows the rest as
+            labels, because a shopping list you might count twice is worse
+            than one where a secondary type is only a label. Omitted when
+            none are tagged, which is every non-fabric material.
+          items:
+            type: string
         reason:
           type: string
           enum: [no-reorder-point, stock-unknown]

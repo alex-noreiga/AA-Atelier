@@ -16,6 +16,8 @@ export interface MaterialAlert {
   name: string;
   /** Fabric / Applique / Crystal / Packaging / Notions. Omitted when unset. */
   category?: string;
+  /** Which fabric(s) this is — Satin, Power Mesh, Lining, … — in the order the atelier holds them in Notion. A MULTI-select, so a material can carry several (a power mesh that is also a lining); the dashboard groups it under the FIRST and shows the rest as labels, because a shopping list you might count twice is worse than one where a secondary type is only a label. Omitted when none are tagged, which is every non-fabric material. */
+  fabricTypes?: string[];
   /** Units remaining, from the Notion stock formula. Always a number here — a material whose stock is unknown is never reported as an alert. */
   stockOnHand: number;
   /** The reorder point the atelier set. */

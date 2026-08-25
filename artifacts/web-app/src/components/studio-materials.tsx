@@ -8,8 +8,14 @@
 //
 // What the panel is responsible for, beyond listing rows:
 //
-//  - **Ranking by what to buy first.** The server sorts by shortfall, so the
-//    material furthest under its reorder point is at the top.
+//  - **Grouping the way the atelier shops.** By category, and fabric by fabric
+//    type — because fabric is one supplier and one errand, packaging is
+//    another, and a flat list ranked purely by shortfall interleaves them. The
+//    rules live in `lib/material-groups.ts`; the one worth knowing here is that
+//    a material appears exactly ONCE even when it carries several fabric types.
+//  - **Ranking by what to buy first, within each group.** The server sorts by
+//    shortfall, and the group holding the worst shortfall leads — so the top of
+//    the panel is still the thing to buy first.
 //  - **Making the unwatched visible.** Most materials have no reorder point set,
 //    so a strict alert list would look reassuringly empty while saying nothing
 //    about the other forty. Those are listed separately, collapsed.
@@ -26,6 +32,11 @@ import {
   type UntrackedMaterial,
 } from "@workspace/api-client-react";
 import { serverErrorMessage } from "@/lib/api-error";
+import {
+  groupMaterials,
+  secondaryFabricTypes,
+  type MaterialGroup,
+} from "@/lib/material-groups";
 import { ExternalLink, Loader2, PackageSearch } from "lucide-react";
 
 export function StudioMaterials() {
@@ -90,7 +101,7 @@ export function StudioMaterials() {
           holds that database’s id.
         </p>
       ) : (
-        <div className="space-y-3">
+        <div className="space-y-5">
           {lowStock.length === 0 && (
             <p
               className="text-sm text-muted-foreground font-light"
@@ -101,18 +112,32 @@ export function StudioMaterials() {
             </p>
           )}
 
-          {lowStock.map((material) => (
-            <MaterialRow key={material.id} material={material} />
-          ))}
+          {groupMaterials(lowStock, (material) => material.shortfall).map(
+            (group) => (
+              <MaterialCategory
+                key={group.label}
+                group={group}
+                render={(material) => (
+                  <MaterialRow key={material.id} material={material} />
+                )}
+              />
+            ),
+          )}
 
           {untracked.length > 0 && (
             <details className="pt-2" data-testid="materials-untracked">
               <summary className="cursor-pointer text-xs tracking-[0.15em] uppercase text-muted-foreground/80">
                 No reorder point set ({untracked.length})
               </summary>
-              <div className="mt-3 space-y-2">
-                {untracked.map((material) => (
-                  <UntrackedRow key={material.id} material={material} />
+              <div className="mt-3 space-y-4">
+                {groupMaterials(untracked).map((group) => (
+                  <MaterialCategory
+                    key={group.label}
+                    group={group}
+                    render={(material) => (
+                      <UntrackedRow key={material.id} material={material} />
+                    )}
+                  />
                 ))}
               </div>
             </details>
@@ -123,8 +148,54 @@ export function StudioMaterials() {
   );
 }
 
-/** One material to reorder. */
+/**
+ * One category, with its rows — sub-headed by fabric type where the rows carry
+ * one. `render` rather than a shared row component because the two lists show
+ * genuinely different things: a card with a reorder link, and a one-line note
+ * about why nothing can alert.
+ */
+function MaterialCategory<T extends { id: string }>({
+  group,
+  render,
+}: {
+  group: MaterialGroup<T>;
+  render: (item: T) => React.ReactNode;
+}) {
+  return (
+    <section
+      className="space-y-2"
+      data-testid={`material-category-${group.label.toLowerCase().replace(/\s+/g, "-")}`}
+    >
+      <h3 className="flex items-baseline gap-2 text-xs tracking-[0.15em] uppercase text-muted-foreground/80">
+        {group.label}
+        <span className="text-[10px] tracking-normal text-muted-foreground/60">
+          {group.items.length}
+        </span>
+      </h3>
+
+      {group.subGroups
+        ? group.subGroups.map((sub) => (
+            <div
+              key={sub.label}
+              className="space-y-2 border-l border-border/60 pl-3"
+              data-testid={`material-fabric-${sub.label.toLowerCase().replace(/\s+/g, "-")}`}
+            >
+              <p className="text-[10px] tracking-[0.15em] uppercase text-muted-foreground/60">
+                {sub.label}
+              </p>
+              {sub.items.map(render)}
+            </div>
+          ))
+        : group.items.map(render)}
+    </section>
+  );
+}
+
+/** One material to reorder. The category is the heading above it now, so the
+ * meta line spends its room on the fabric types the heading can't show. */
 function MaterialRow({ material }: { material: MaterialAlert }) {
+  const alsoTagged = secondaryFabricTypes(material);
+
   return (
     <div
       className="rounded-sm border border-border bg-card/40 p-3 sm:p-4 flex items-baseline justify-between gap-3 sm:gap-4"
@@ -134,7 +205,7 @@ function MaterialRow({ material }: { material: MaterialAlert }) {
         <p className="text-sm font-light truncate">{material.name}</p>
         <p className="text-xs text-muted-foreground font-light mt-1">
           {material.stockOnHand} left · reorder at {material.minimumStock}
-          {material.category ? ` · ${material.category}` : ""}
+          {alsoTagged.length > 0 ? ` · also ${alsoTagged.join(", ")}` : ""}
         </p>
       </div>
       {material.link && (

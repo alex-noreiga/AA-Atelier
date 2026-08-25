@@ -1,7 +1,11 @@
 // The materials restock panel. The generated hook is mocked, so what's tested
-// is the panel's own job: leading with what to reorder, making the unwatched
+// is the panel's own job: leading with what to reorder, grouping it the way the
+// atelier shops (by category, fabric by fabric type), making the unwatched
 // materials visible rather than letting an empty alert list read as "all good",
 // and saying plainly when the database isn't connected.
+//
+// The grouping RULES are pinned in `material-groups.test.ts`; what's asserted
+// here is that the panel actually renders them.
 
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import { render, screen } from "@testing-library/react";
@@ -144,5 +148,119 @@ describe("StudioMaterials", () => {
     expect(screen.getByTestId("materials-unreachable")).toBeInTheDocument();
     expect(screen.queryByTestId("materials-unconfigured")).toBeNull();
     expect(screen.queryByTestId("materials-empty")).toBeNull();
+  });
+});
+
+describe("StudioMaterials — grouping", () => {
+  const FABRIC_MESH = {
+    ...LOW,
+    id: "mesh",
+    name: "Black Power Mesh",
+    category: "Fabric",
+    fabricTypes: ["Power Mesh", "Lining"],
+    shortfall: 3,
+  };
+  const FABRIC_SATIN = {
+    ...LOW,
+    id: "satin",
+    name: "Ivory Satin",
+    category: "Fabric",
+    fabricTypes: ["Satin"],
+    shortfall: 1,
+  };
+  const BOX = {
+    ...LOW,
+    id: "box",
+    name: "Garment bags",
+    category: "Packaging",
+    shortfall: 2,
+  };
+
+  it("heads each category, and leads with the one holding the worst shortfall", () => {
+    h.materials.data = overview({ lowStock: [FABRIC_MESH, BOX, FABRIC_SATIN] });
+    const { container } = render(<StudioMaterials />);
+
+    expect(screen.getByTestId("material-category-fabric")).toBeInTheDocument();
+    expect(
+      screen.getByTestId("material-category-packaging"),
+    ).toBeInTheDocument();
+
+    const headings = [...container.querySelectorAll("h3")].map(
+      (h3) => h3.textContent ?? "",
+    );
+    expect(headings[0]).toMatch(/Fabric/);
+    expect(headings[1]).toMatch(/Packaging/);
+  });
+
+  it("sub-heads fabric by its type", () => {
+    h.materials.data = overview({ lowStock: [FABRIC_MESH, FABRIC_SATIN] });
+    render(<StudioMaterials />);
+
+    expect(screen.getByTestId("material-fabric-power-mesh")).toHaveTextContent(
+      "Black Power Mesh",
+    );
+    expect(screen.getByTestId("material-fabric-satin")).toHaveTextContent(
+      "Ivory Satin",
+    );
+  });
+
+  it("shows a multi-typed fabric once, with the other type as a label", () => {
+    h.materials.data = overview({ lowStock: [FABRIC_MESH] });
+    render(<StudioMaterials />);
+
+    // Under its first type only — not repeated under "Lining".
+    expect(screen.getAllByTestId("material-row")).toHaveLength(1);
+    expect(screen.queryByTestId("material-fabric-lining")).toBeNull();
+    // But the secondary type isn't lost.
+    expect(screen.getByTestId("material-row")).toHaveTextContent("also Lining");
+  });
+
+  it("doesn't sub-head a category with no fabric types", () => {
+    h.materials.data = overview({ lowStock: [BOX] });
+    render(<StudioMaterials />);
+
+    expect(screen.getByTestId("material-category-packaging")).toBeVisible();
+    expect(screen.queryByTestId("material-fabric-unspecified")).toBeNull();
+  });
+
+  it("groups the unwatched list the same way", () => {
+    h.materials.data = overview({
+      untracked: [
+        {
+          id: "u1",
+          name: "Gold Thread",
+          category: "Notions",
+          reason: "stock-unknown",
+        },
+        {
+          id: "u2",
+          name: "Velvet",
+          category: "Fabric",
+          fabricTypes: ["Velvet"],
+          reason: "no-reorder-point",
+          stockOnHand: 3,
+        },
+      ],
+    });
+    render(<StudioMaterials />);
+
+    expect(screen.getByTestId("material-category-fabric")).toBeInTheDocument();
+    expect(screen.getByTestId("material-category-notions")).toBeInTheDocument();
+    expect(screen.getByTestId("material-fabric-velvet")).toHaveTextContent(
+      "Velvet",
+    );
+  });
+
+  it("files a material with no category under a catch-all heading", () => {
+    h.materials.data = overview({
+      lowStock: [
+        { ...LOW, id: "mystery", name: "Mystery trim", category: undefined },
+      ],
+    });
+    render(<StudioMaterials />);
+
+    expect(
+      screen.getByTestId("material-category-uncategorized"),
+    ).toHaveTextContent("Mystery trim");
   });
 });

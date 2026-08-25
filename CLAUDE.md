@@ -2398,7 +2398,24 @@ and `web-app/src/components/studio-materials.tsx`. Load-bearing decisions:
    what the atelier needs to pick a threshold. A **muted** material is in neither
    list and only **counted**, so the numbers still add up.
 
-5. **The digest reports STATE, which is what makes it idempotent.** It rides the
+5. **The panel is grouped the way the atelier shops, and the grouping is
+   data-driven.** By `Category`, and — wherever rows carry them — by the
+   `Fabric Type` multi-select, which the app read for the first time here (the
+   atelier's own Notion database already has a saved view grouped that way). A
+   flat list ranked purely by shortfall interleaves a satin, a box of garment
+   bags and a power mesh; fabric is one supplier and one errand. Three rules
+   hold it together, in `web-app/src/lib/material-groups.ts`: **no hardcoded
+   category list** — a group ranks as its worst shortfall, so the category to
+   buy from first leads and a category the atelier adds slots in on its own
+   merit; **a material appears exactly once** — `Fabric Type` is a MULTI-select
+   and Notion's own grouped view would repeat such a row, which on a shopping
+   list is how you buy the same fabric twice, so it is filed under the FIRST
+   type and the rest ride along as labels; and **sub-grouping is driven by the
+   rows, not by the word "Fabric"** — any group whose rows carry types gets
+   sub-grouped. The catch-all headings (`Uncategorized`, `Unspecified`) sort
+   last however they rank. Ordering _within_ a group is left exactly as the
+   server sent it, since it already sorted.
+6. **The digest reports STATE, which is what makes it idempotent.** It rides the
    nightly reconciliation (`sendDueMaterialsDigest`, a sixth pass) and fires only
    on `MATERIALS_DIGEST_WEEKDAY`, read in the studio timezone so "Monday" means
    the atelier's Monday. Because it lists what is _currently_ low rather than
@@ -2410,7 +2427,7 @@ and `web-app/src/components/studio-materials.tsx`. Load-bearing decisions:
    cron on digest day would send two copies — an internal email, and cheaper than
    a marker store for a message that is safe to repeat.
 
-6. **Read-only, degrade-safe, and cached like every other live Notion read.**
+7. **Read-only, degrade-safe, and cached like every other live Notion read.**
    The app never writes materials stock. `listMaterials` is a bounded
    `scanDatabase` (nothing to filter on — the panel wants the whole book) with the
    usual 60s TTL + fall-back-to-stale-on-error, so a Notion blip degrades to
@@ -2429,9 +2446,11 @@ and `web-app/src/components/studio-materials.tsx`. Load-bearing decisions:
 
 The atelier's one-time setup: share the Notion integration with **materials
 inventory** and set **`NOTION_MATERIALS_DATABASE_ID`**. Nothing to add in Notion —
-`Item Name`, `Category`, `Minimum Stock`, `Stock on Hand`, `Restock Alerts On/Off`,
-`Material Link` and `Price per Unit` all already exist. To make the panel useful,
-set a `Minimum Stock` on the materials worth watching.
+`Item Name`, `Category`, `Fabric Type`, `Minimum Stock`, `Stock on Hand`,
+`Restock Alerts On/Off`, `Material Link` and `Price per Unit` all already exist.
+To make the panel useful, set a `Minimum Stock` on the materials worth watching;
+tagging a fabric's `Fabric Type` is what sub-groups it, and an untagged one is
+still listed (under `Unspecified`), never dropped.
 
 ## Back-in-stock alerts (nightly sweep + a studio tool)
 
@@ -4636,7 +4655,7 @@ Three things about it are load-bearing:
 | Change the landing page                                  | `artifacts/web-app/src/pages/home.tsx`                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                |
 | Change the shop (live Notion inventory)                  | `artifacts/web-app/src/pages/shop.tsx` + `services/products.service.ts` + `lib/notion/products.*`                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                     |
 | Change the back-in-stock notify dialog                   | `artifacts/web-app/src/components/notify-dialog.tsx` + `services/notify.service.ts` + `lib/notion/notify.*` (writes to the **contact** database — see below)                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                          |
-| Change the materials restock alerts                      | `api-server/src/services/materials.service.ts` (the pure `classifyMaterials` + `getMaterialsOverview`) + `lib/notion/materials.{schema,repository}.ts` + `getMaterialsNotionClient` + the `/studio/materials` route in `routes/studio.ts`; the weekly email is `services/materials-digest.service.ts` + `materialsDigestEmail` in `lib/resend/emails.ts`, run by `sendDueMaterialsDigest` in `services/schedule.service.ts`; panel in `web-app/src/components/studio-materials.tsx`                                                                                                                                                                                                                                                                                                                   |
+| Change the materials restock alerts                      | `api-server/src/services/materials.service.ts` (the pure `classifyMaterials` + `getMaterialsOverview`) + `lib/notion/materials.{schema,repository}.ts` + `getMaterialsNotionClient` + the `/studio/materials` route in `routes/studio.ts`; the weekly email is `services/materials-digest.service.ts` + `materialsDigestEmail` in `lib/resend/emails.ts`, run by `sendDueMaterialsDigest` in `services/schedule.service.ts`; panel in `web-app/src/components/studio-materials.tsx`, grouped by `web-app/src/lib/material-groups.ts` (category, then fabric type). `TODO(material-usage)` in `materials.schema.ts` is the next thing wanted here — what each material is typically used for                                                                                                           |
 | Change the shop's inventory decrement                    | `api-server/src/services/order-lines.service.ts` (`purchasedLinesFromSession` + the best-effort `recordShopOrderLines`) + `lib/notion/order-lines.{blocks,repository}.ts` + `getOrderLinesNotionClient`; called at the tail of `processPaidShopOrder` in `services/checkout.service.ts`. The `Voided` release is `setShopOrderCancelled` in `lib/notion/shop-orders.repository.ts`                                                                                                                                                                                                                                                                                                                                                                                                                    |
 | Change shop checkout / payments                          | `artifacts/web-app/src/lib/cart.tsx` + `components/cart-drawer.tsx` + `components/add-to-cart.tsx` (frontend); `api-server/src/services/checkout.service.ts` + `routes/checkout.ts` + `routes/stripe-webhook.ts` + `lib/stripe/*` + `lib/notion/shop-orders.*` (backend)                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                              |
 | Change shop-order tracking                               | `artifacts/web-app/src/components/shop-order-result.tsx` (rendered by `pages/track.tsx`; + order number on `pages/shop-success.tsx`); `api-server/src/services/shop-orders.service.ts` + `routes/shop-orders.ts` + `lib/notion/shop-orders.{blocks,repository}.ts` + `services/checkout.service.ts` (mints the number)                                                                                                                                                                                                                                                                                                                                                                                                                                                                                |

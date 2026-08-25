@@ -38,6 +38,10 @@ export interface MaterialAlert {
   id: string;
   name: string;
   category?: string;
+  /** The fabric(s) it is, when tagged — what the dashboard sub-groups fabric by
+   * so a reorder list reads as "two power meshes and a satin" rather than as
+   * one undifferentiated run of fabric. */
+  fabricTypes?: string[];
   /** Units remaining. Always a number here: unknown stock is never an alert. */
   stockOnHand: number;
   /** The reorder point it fell to or below. */
@@ -54,6 +58,7 @@ export interface UntrackedMaterial {
   id: string;
   name: string;
   category?: string;
+  fabricTypes?: string[];
   /** `"no-reorder-point"` when `Minimum Stock` is unset, `"stock-unknown"` when
    * the stock formula produced no number. */
   reason: "no-reorder-point" | "stock-unknown";
@@ -106,6 +111,7 @@ export function classifyMaterials(
         name: material.name,
         reason: "no-reorder-point",
         ...(material.category ? { category: material.category } : {}),
+        ...(material.fabricTypes ? { fabricTypes: material.fabricTypes } : {}),
         ...(stockOnHand !== null ? { stockOnHand } : {}),
       });
       continue;
@@ -117,6 +123,7 @@ export function classifyMaterials(
         name: material.name,
         reason: "stock-unknown",
         ...(material.category ? { category: material.category } : {}),
+        ...(material.fabricTypes ? { fabricTypes: material.fabricTypes } : {}),
       });
       continue;
     }
@@ -131,6 +138,7 @@ export function classifyMaterials(
         minimumStock,
         shortfall: round2(minimumStock - stockOnHand),
         ...(material.category ? { category: material.category } : {}),
+        ...(material.fabricTypes ? { fabricTypes: material.fabricTypes } : {}),
         ...(material.link ? { link: material.link } : {}),
         ...(material.pricePerUnit !== undefined
           ? { pricePerUnit: material.pricePerUnit }

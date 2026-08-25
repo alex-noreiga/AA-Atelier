@@ -1057,6 +1057,7 @@ export const GetStudioMaterialsResponse = zod.object({
   "id": zod.string().describe('The material\'s Notion page id.'),
   "name": zod.string().describe('The material as the atelier names it.'),
   "category": zod.string().optional().describe('Fabric \/ Applique \/ Crystal \/ Packaging \/ Notions. Omitted when unset.'),
+  "fabricTypes": zod.array(zod.string()).optional().describe('Which fabric(s) this is — Satin, Power Mesh, Lining, … — in the order the atelier holds them in Notion. A MULTI-select, so a material can carry several (a power mesh that is also a lining); the dashboard groups it under the FIRST and shows the rest as labels, because a shopping list you might count twice is worse than one where a secondary type is only a label. Omitted when none are tagged, which is every non-fabric material.'),
   "stockOnHand": zod.number().describe('Units remaining, from the Notion stock formula. Always a number here — a material whose stock is unknown is never reported as an alert.'),
   "minimumStock": zod.number().describe('The reorder point the atelier set.'),
   "shortfall": zod.number().describe('How far below the reorder point it is, rounded to two places. `0` when it has landed exactly on it — a reorder point is the level you buy AT, so that still counts. The list is ranked by this.'),
@@ -1067,6 +1068,7 @@ export const GetStudioMaterialsResponse = zod.object({
   "id": zod.string().describe('The material\'s Notion page id.'),
   "name": zod.string(),
   "category": zod.string().optional(),
+  "fabricTypes": zod.array(zod.string()).optional().describe('Which fabric(s) this is — Satin, Power Mesh, Lining, … — in the order the atelier holds them in Notion. A MULTI-select, so a material can carry several (a power mesh that is also a lining); the dashboard groups it under the FIRST and shows the rest as labels, because a shopping list you might count twice is worse than one where a secondary type is only a label. Omitted when none are tagged, which is every non-fabric material.'),
   "reason": zod.enum(['no-reorder-point', 'stock-unknown']).describe('`no-reorder-point` — `Minimum Stock` is unset, so nothing can trip. `stock-unknown` — the stock formula produced no number (typically a material with no intake lines recorded yet).'),
   "stockOnHand": zod.number().optional().describe('Present only for `no-reorder-point`, where the stock IS known and only the threshold is missing.')
 }).describe('A material no alert can ever fire for, and why — so an unwatched material is visible rather than the alert list just looking quiet.')).describe('Not watched, and why — alphabetical.'),

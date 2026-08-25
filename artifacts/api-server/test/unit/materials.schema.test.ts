@@ -37,6 +37,45 @@ describe("extractMaterial", () => {
     });
   });
 
+  // `Fabric Type` is a MULTI-select — a power mesh that is also a lining carries
+  // two — so it maps to an array in the atelier's own order. The dashboard files
+  // the row under the first; the schema just refuses to lose the rest.
+  it("maps the fabric types, in the order Notion holds them", () => {
+    const material = extractMaterial(
+      page({
+        "Fabric Type": {
+          type: "multi_select",
+          multi_select: [{ name: "Power Mesh" }, { name: "Lining" }],
+        },
+      }),
+    );
+
+    expect(material.fabricTypes).toEqual(["Power Mesh", "Lining"]);
+  });
+
+  it("omits fabric types entirely when none are tagged", () => {
+    // Which is every non-fabric material — an empty array on a box of garment
+    // bags would make the panel sub-group packaging under "Unspecified".
+    const withNone = extractMaterial(
+      page({ "Fabric Type": { type: "multi_select", multi_select: [] } }),
+    );
+    expect(withNone.fabricTypes).toBeUndefined();
+    expect(extractMaterial(page({})).fabricTypes).toBeUndefined();
+  });
+
+  it("drops a blank option name rather than producing an empty group", () => {
+    const material = extractMaterial(
+      page({
+        "Fabric Type": {
+          type: "multi_select",
+          multi_select: [{ name: "  Satin " }, { name: "   " }],
+        },
+      }),
+    );
+
+    expect(material.fabricTypes).toEqual(["Satin"]);
+  });
+
   // The property is NAMED like an enable switch; its Notion description says it
   // suppresses. Ticked must read as muted, or the panel inverts.
   it("reads a ticked alerts checkbox as suppressed", () => {

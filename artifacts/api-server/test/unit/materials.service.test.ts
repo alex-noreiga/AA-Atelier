@@ -125,4 +125,32 @@ describe("classifyMaterials", () => {
       totalCount: 0,
     });
   });
+  // The dashboard groups fabric by type, so both projections have to carry it —
+  // an alert AND an unwatched row, since the unwatched list is grouped too.
+  it("carries the fabric types onto both the alert and the unwatched row", () => {
+    const { lowStock, untracked } = classifyMaterials([
+      material({
+        id: "low",
+        stockOnHand: 0,
+        minimumStock: 2,
+        fabricTypes: ["Power Mesh", "Lining"],
+      }),
+      material({
+        id: "unwatched",
+        minimumStock: null,
+        stockOnHand: 3,
+        fabricTypes: ["Satin"],
+      }),
+    ]);
+
+    expect(lowStock[0].fabricTypes).toEqual(["Power Mesh", "Lining"]);
+    expect(untracked[0].fabricTypes).toEqual(["Satin"]);
+  });
+
+  it("omits fabric types on a material that carries none", () => {
+    const { lowStock } = classifyMaterials([
+      material({ stockOnHand: 0, minimumStock: 2 }),
+    ]);
+    expect(lowStock[0].fabricTypes).toBeUndefined();
+  });
 });
