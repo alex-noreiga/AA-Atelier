@@ -19,7 +19,11 @@ import {
 } from "./orders.blocks.js";
 import { MeasurementPropertiesMissingError } from "../errors.js";
 import { scanDatabase } from "./scan.js";
-import { createPageDroppingUnknownProperties } from "./create-page.js";
+import {
+  createPageDroppingUnknownProperties,
+  findUnknownProperty,
+} from "./create-page.js";
+import { logger } from "../logger.js";
 import { normalizeEmail } from "../email.js";
 import { resolveOrderPipeline } from "../order-pipeline.js";
 import {
