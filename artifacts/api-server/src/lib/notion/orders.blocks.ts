@@ -203,8 +203,9 @@ export function buildOrderPageBlocks(data: CreateOrderInput): unknown[] {
   // atelier can tell the two apart at a glance. These body blocks are the
   // atelier's readable page view; the same values are also written as typed
   // properties in `buildOrderProperties` (the read source for the account portal),
-  // both from this one intake payload so they can't drift. In-place editing still
-  // goes through the measurement-change request flow (Approach A) for now.
+  // both from this one intake payload so they can't drift. A later in-place edit
+  // rewrites the properties and APPENDS a revision section below this one rather
+  // than rewriting it — see `buildMeasurementRevisionBlocks`.
   //
   // A service that isn't asking for body measurements (alterations,
   // rhinestoning, a repair — all measured on the piece itself, in person) omits
@@ -280,5 +281,117 @@ export function buildOrderPageBlocks(data: CreateOrderInput): unknown[] {
     ...measurementSection,
     ...costumeSection,
     ...referenceSection,
+  ];
+}
+
+// ---------------------------------------------------------------------------
+// In-place measurement editing
+//
+// The second writer of the measurement properties, after intake. Everything
+// about a measurement lives in two places on the order page — the typed
+// properties (what the app reads back) and the page-body section (what the
+// atelier reads at a glance) — so an edit that touched only one of them would
+// leave the two disagreeing about what the garment is cut to. These two
+// builders are the edit's half of that pair, kept here beside the intake
+// builders they mirror so the property names can't drift.
+// ---------------------------------------------------------------------------
+
+/** The five body measurements plus the unit they're expressed in — the complete
+ * set an in-place edit replaces. Deliberately not `Partial`: a half-written set
+ * is the failure mode this feature must not have. */
+export interface MeasurementValues {
+  waist: number;
+  bust: number;
+  hips: number;
+  height: number;
+  bodyGirth: number;
+  measurementUnit: "inches" | "cm";
+}
+
+/** Human labels for the five values, in the order the intake form and the page
+ * body already present them. `bust` renders as "Chest" — the same neutralized
+ * label the property carries. */
+export const MEASUREMENT_LABELS: ReadonlyArray<
+  readonly [keyof Omit<MeasurementValues, "measurementUnit">, string]
+> = [
+  ["waist", "Waist"],
+  ["bust", "Chest"],
+  ["hips", "Hips"],
+  ["height", "Height"],
+  ["bodyGirth", "Body Girth"],
+] as const;
+
+/**
+ * The Notion property patch for an in-place measurement edit — the five numbers
+ * and the unit, exactly the set {@link buildOrderProperties} writes at intake.
+ *
+ * It writes all six together rather than only what changed, because the unit is
+ * what gives the numbers meaning: rewriting a waist without its unit is how 26
+ * inches silently becomes 26 centimetres.
+ */
+export function buildMeasurementProperties(
+  values: MeasurementValues,
+): Record<string, unknown> {
+  return {
+    [ORDER_WAIST_PROPERTY]: { number: values.waist },
+    [ORDER_BUST_PROPERTY]: { number: values.bust },
+    [ORDER_HIPS_PROPERTY]: { number: values.hips },
+    [ORDER_HEIGHT_PROPERTY]: { number: values.height },
+    [ORDER_BODY_GIRTH_PROPERTY]: { number: values.bodyGirth },
+    [ORDER_MEASUREMENT_UNIT_PROPERTY]: {
+      select: { name: values.measurementUnit },
+    },
+  };
+}
+
+/**
+ * The page-body blocks recording one measurement revision — appended to the
+ * order page, never overwriting the intake section above it.
+ *
+ * Appending rather than rewriting is the load-bearing choice. The atelier reads
+ * the page body, and a garment already part-made was cut to the numbers that
+ * were there before; silently replacing them would destroy the only record of
+ * what the piece was actually built to. So the page reads chronologically —
+ * what was taken at intake, then each revision with its previous values beside
+ * the new ones — and the typed properties (which the app reads) always hold the
+ * current set. The `previous` values are optional because an order placed
+ * before the measurement properties existed has none stored to compare against.
+ */
+export function buildMeasurementRevisionBlocks(input: {
+  values: MeasurementValues;
+  previous?: Partial<Record<keyof MeasurementValues, number | string>>;
+  note?: string;
+  /** The revision's date, as the customer-facing string to stamp on the
+   * heading. Passed in rather than read from the clock here, so the builder
+   * stays pure and testable. */
+  changedOn: string;
+}): unknown[] {
+  const { values, previous, note, changedOn } = input;
+  const unitChanged =
+    previous?.measurementUnit !== undefined &&
+    previous.measurementUnit !== values.measurementUnit;
+
+  return [
+    dividerBlock(),
+    headingBlock(
+      `Measurements updated ${changedOn} (${values.measurementUnit})`,
+    ),
+    textBlock(
+      "Source",
+      unitChanged
+        ? `Edited by the customer. Previously recorded in ${String(previous?.measurementUnit)}.`
+        : "Edited by the customer from their order page.",
+    ),
+    ...MEASUREMENT_LABELS.map(([key, label]) => {
+      const was = previous?.[key];
+      // "was" is shown only when there is something to compare against, and
+      // only when it actually differs — a revision listing five unchanged
+      // values as changes reads as noise the atelier learns to skim past.
+      const suffix =
+        was !== undefined && Number(was) !== values[key] ? ` (was ${was})` : "";
+      return textBlock(label, `${values[key]}${suffix}`);
+    }),
+    ...(note ? [textBlock("Customer note", note)] : []),
+    dividerBlock(),
   ];
 }

@@ -311,6 +311,7 @@ describe("bookAppointment", () => {
       mockVerify.mockResolvedValue({
         email: "someone-else@example.com",
         pageId: "page-order-test",
+        orderName: "Ada – Custom Dress",
         currentStage: "Sketching",
         stages: ["Sketching", "Cutting/Pinning", "Delivered"],
       });
@@ -324,6 +325,7 @@ describe("bookAppointment", () => {
       mockVerify.mockResolvedValue({
         email: "ADA@example.com", // case-insensitive match
         pageId: "page-order-test",
+        orderName: "Ada – Custom Dress",
         currentStage: "Sketching",
         stages: ["Sketching", "Cutting/Pinning", "Delivered"],
       });
@@ -338,6 +340,7 @@ describe("bookAppointment", () => {
       mockVerify.mockResolvedValue({
         email: "",
         pageId: "page-order-test",
+        orderName: "Ada – Custom Dress",
         currentStage: "Sketching",
         stages: ["Sketching", "Cutting/Pinning", "Delivered"],
       });

@@ -10,7 +10,14 @@ import {
   assertDatabaseConfigured,
   type NotionClient,
 } from "./client.js";
-import { buildOrderProperties, buildOrderPageBlocks } from "./orders.blocks.js";
+import {
+  buildOrderProperties,
+  buildOrderPageBlocks,
+  buildMeasurementProperties,
+  buildMeasurementRevisionBlocks,
+  type MeasurementValues,
+} from "./orders.blocks.js";
+import { MeasurementPropertiesMissingError } from "../errors.js";
 import { scanDatabase } from "./scan.js";
 import { normalizeEmail } from "../email.js";
 import { resolveOrderPipeline } from "../order-pipeline.js";
@@ -43,6 +50,7 @@ import {
   type NotionQueryResponse,
   type OrderRecord,
   type OrderSummary,
+  type OrderMeasurements,
   type OrderAnalyticsRecord,
 } from "./orders.schema.js";
 
@@ -718,6 +726,15 @@ export interface OrderVerification {
   email: string;
   currentStage: string;
   stages: string[];
+  /** The order's title, for a confirmation email that names the piece rather
+   * than only its number. */
+  orderName: string;
+  /** The measurements currently on file, when stored as readable properties.
+   * The in-place edit reads them to show the customer (and the order page)
+   * what each value was before. Absent for a measure-at-fitting order or one
+   * predating the measurement properties — in both cases there is simply
+   * nothing to compare against, which is not an error. */
+  measurements?: OrderMeasurements;
 }
 
 /** Look up an order for a gated, email-verified action (a measurement change or
@@ -758,11 +775,105 @@ export async function findOrderVerification(
     return null;
   }
 
+  const measurements = extractMeasurements(page);
   return {
     pageId: page.id,
     email: extractOrderEmail(page),
+    orderName: extractOrderName(page),
     currentStage: extractCurrentStage(page),
     stages: pipelineFor(page, stages),
+    ...(measurements ? { measurements } : {}),
+  };
+}
+
+/**
+ * Write a customer's edited measurements onto their order: replace the five
+ * typed properties (plus the unit) and append a revision section to the page
+ * body recording what the values were before.
+ *
+ * The two writes are deliberately ordered properties-then-body and are NOT
+ * atomic — Notion offers no transaction across a property PATCH and a block
+ * append. Properties first, because they are what the app reads back and what
+ * the customer is told was saved; the body section is the atelier's readable
+ * trail. If the append fails the caller logs it and still reports success,
+ * since re-running the whole edit to recover a paragraph would rewrite the
+ * properties a second time and file a duplicate revision.
+ *
+ * Like {@link createPageDroppingUnknownProperties}, a database that hasn't had
+ * the measurement properties added yet must not surface as an opaque 400 — but
+ * the answer here is the opposite one. At intake, dropping the property keeps
+ * the order; here, dropping it would report "saved" for a write that stored
+ * nothing, so a missing property throws {@link MeasurementPropertiesMissingError}
+ * and the caller turns it into an answer a human can act on.
+ */
+export async function updateOrderMeasurements(
+  pageId: string,
+  values: MeasurementValues,
+  revision: {
+    previous?: OrderMeasurements;
+    note?: string;
+    changedOn: string;
+  },
+  client: NotionClient = getNotionClient(),
+): Promise<void> {
+  assertConfigured(client);
+
+  const properties = buildMeasurementProperties(values);
+  const response = await client.fetch(`/v1/pages/${pageId}`, {
+    method: "PATCH",
+    body: JSON.stringify({ properties }),
+  });
+
+  if (!response.ok) {
+    const errorText = await response.text();
+    const missing = findUnknownProperty(errorText, properties);
+    if (missing) {
+      throw new MeasurementPropertiesMissingError(missing);
+    }
+    throw new Error(
+      `Notion measurement update failed with status ${response.status}: ${errorText}`,
+    );
+  }
+
+  const blocks = buildMeasurementRevisionBlocks({
+    values,
+    ...(revision.previous
+      ? { previous: measurementRevisionPrevious(revision.previous) }
+      : {}),
+    ...(revision.note ? { note: revision.note } : {}),
+    changedOn: revision.changedOn,
+  });
+
+  const appended = await client.fetch(`/v1/blocks/${pageId}/children`, {
+    method: "PATCH",
+    body: JSON.stringify({ children: blocks }),
+  });
+
+  if (!appended.ok) {
+    // Best-effort by design (see the note above): the measurements are already
+    // stored, so warn loudly rather than failing an edit that took effect.
+    logger.warn(
+      { pageId, status: appended.status },
+      "Measurements were updated but the revision note could not be appended to the order page",
+    );
+  }
+}
+
+/** The stored measurements flattened into the shape the revision builder
+ * compares against — the unit rides along so a revision can say the values were
+ * previously recorded in another unit. */
+function measurementRevisionPrevious(
+  previous: OrderMeasurements,
+): Partial<Record<keyof MeasurementValues, number | string>> {
+  return {
+    measurementUnit: previous.unit,
+    ...(previous.waist !== undefined ? { waist: previous.waist } : {}),
+    ...(previous.bust !== undefined ? { bust: previous.bust } : {}),
+    ...(previous.hips !== undefined ? { hips: previous.hips } : {}),
+    ...(previous.height !== undefined ? { height: previous.height } : {}),
+    ...(previous.bodyGirth !== undefined
+      ? { bodyGirth: previous.bodyGirth }
+      : {}),
   };
 }
 

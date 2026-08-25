@@ -40,6 +40,7 @@ const STAGES = ["Consultation", "Sketching", "Cutting/Pinning", "Delivery"];
 const preProduction = (email = "ada@example.com") => ({
   email,
   pageId: "page-order-test",
+  orderName: "Ada – Custom Dress",
   currentStage: "Consultation",
   stages: STAGES,
 });
@@ -63,6 +64,7 @@ describe("submitMeasurementChangeRequest — identity gate", () => {
     mockFind.mockResolvedValue({
       email: "someone-else@example.com",
       pageId: "page-order-test",
+      orderName: "Ada – Custom Dress",
       currentStage: "Consultation",
       stages: STAGES,
     });
@@ -79,6 +81,7 @@ describe("submitMeasurementChangeRequest — identity gate", () => {
     mockFind.mockResolvedValue({
       email: "Ada@Example.com",
       pageId: "page-order-test",
+      orderName: "Ada – Custom Dress",
       currentStage: "Consultation",
       stages: STAGES,
     });
@@ -118,6 +121,7 @@ describe("submitMeasurementChangeRequest — identity gate", () => {
     mockFind.mockResolvedValue({
       email: "",
       pageId: "page-order-test",
+      orderName: "Ada – Custom Dress",
       currentStage: "Consultation",
       stages: STAGES,
     });
@@ -134,6 +138,7 @@ describe("submitMeasurementChangeRequest — production lock", () => {
     mockFind.mockResolvedValue({
       email: "ada@example.com",
       pageId: "page-order-test",
+      orderName: "Ada – Custom Dress",
       currentStage: "Sketching",
       stages: STAGES,
     });
@@ -145,6 +150,7 @@ describe("submitMeasurementChangeRequest — production lock", () => {
     mockFind.mockResolvedValue({
       email: "ada@example.com",
       pageId: "page-order-test",
+      orderName: "Ada – Custom Dress",
       currentStage: "Cutting/Pinning",
       stages: STAGES,
     });
@@ -158,6 +164,7 @@ describe("submitMeasurementChangeRequest — production lock", () => {
     mockFind.mockResolvedValue({
       email: "ada@example.com",
       pageId: "page-order-test",
+      orderName: "Ada – Custom Dress",
       currentStage: "Delivery",
       stages: STAGES,
     });
@@ -170,6 +177,7 @@ describe("submitMeasurementChangeRequest — production lock", () => {
     mockFind.mockResolvedValue({
       email: "ada@example.com",
       pageId: "page-order-test",
+      orderName: "Ada – Custom Dress",
       currentStage: "Some Renamed Stage",
       stages: STAGES,
     });
@@ -182,6 +190,7 @@ describe("submitMeasurementChangeRequest — production lock", () => {
     mockFind.mockResolvedValue({
       email: "ada@example.com",
       pageId: "page-order-test",
+      orderName: "Ada – Custom Dress",
       currentStage: "Sketching",
       stages: STAGES,
     });

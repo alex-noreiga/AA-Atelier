@@ -212,6 +212,75 @@ export interface NewMeasurementChangeRequest {
   note?: string;
 }
 
+export type UpdateMeasurementsRequestMeasurementUnit = typeof UpdateMeasurementsRequestMeasurementUnit[keyof typeof UpdateMeasurementsRequestMeasurementUnit];
+
+
+export const UpdateMeasurementsRequestMeasurementUnit = {
+  inches: 'inches',
+  cm: 'cm',
+} as const;
+
+/**
+ * New measurements to write onto an order in place. Every value is required, unlike NewMeasurementChangeRequest: a change request is read by a person who can reconcile it against what is on file, whereas this replaces the stored set outright, and a partial write would leave the atelier cutting to a mix of old and new numbers. There is deliberately no "measure me at a fitting" branch here — that asks for a service rather than changing a value, so it stays a change request.
+ */
+export interface UpdateMeasurementsRequest {
+  /** The email to verify against the one on the order. A request whose email doesn't match, or an order with no email stored to check against, is refused. */
+  email: string;
+  /** @exclusiveMinimum 0 */
+  waist: number;
+  /** @exclusiveMinimum 0 */
+  bust: number;
+  /** @exclusiveMinimum 0 */
+  hips: number;
+  /** @exclusiveMinimum 0 */
+  height: number;
+  /** @exclusiveMinimum 0 */
+  bodyGirth: number;
+  measurementUnit: UpdateMeasurementsRequestMeasurementUnit;
+  /** Optional free-text note for the atelier, recorded on the order's revision trail and carried in the notification email. */
+  note?: string;
+}
+
+export type UpdateMeasurementsResponseOutcome = typeof UpdateMeasurementsResponseOutcome[keyof typeof UpdateMeasurementsResponseOutcome];
+
+
+export const UpdateMeasurementsResponseOutcome = {
+  applied: 'applied',
+  filed: 'filed',
+} as const;
+
+/**
+ * The unit the measurement values are expressed in.
+ */
+export type AccountMeasurementsUnit = typeof AccountMeasurementsUnit[keyof typeof AccountMeasurementsUnit];
+
+
+export const AccountMeasurementsUnit = {
+  inches: 'inches',
+  cm: 'cm',
+} as const;
+
+/**
+ * The measurements on file for a custom order, read from the order's Notion properties. Absent when the customer chose to have measurements taken at a fitting, or for orders placed before measurements were stored as readable properties (those values remain only in the order's page body). Individual values may be absent for a partially-filled order.
+ */
+export interface AccountMeasurements {
+  /** The unit the measurement values are expressed in. */
+  unit: AccountMeasurementsUnit;
+  waist?: number;
+  bust?: number;
+  hips?: number;
+  height?: number;
+  bodyGirth?: number;
+}
+
+/**
+ * What became of the edit. "applied" means the values are on the order now and `measurements` carries the set as stored, so the caller renders what was written rather than its own optimistic copy. "filed" means the edit could not be written and was filed as a measurement-change request for the atelier to apply by hand — the two states the customer's work is never lost to: an order carrying no email to verify the edit against, and an orders database that hasn't had the measurement properties added yet. A filed edit carries no `measurements`, because nothing changed.
+ */
+export interface UpdateMeasurementsResponse {
+  outcome: UpdateMeasurementsResponseOutcome;
+  measurements?: AccountMeasurements;
+}
+
 export interface NewMeasurementChangeResponse {
   received: boolean;
 }
@@ -1247,30 +1316,6 @@ export const AccountOrderState = {
 } as const;
 
 /**
- * The unit the measurement values are expressed in.
- */
-export type AccountMeasurementsUnit = typeof AccountMeasurementsUnit[keyof typeof AccountMeasurementsUnit];
-
-
-export const AccountMeasurementsUnit = {
-  inches: 'inches',
-  cm: 'cm',
-} as const;
-
-/**
- * The measurements on file for a custom order, read from the order's Notion properties. Absent when the customer chose to have measurements taken at a fitting, or for orders placed before measurements were stored as readable properties (those values remain only in the order's page body). Individual values may be absent for a partially-filled order.
- */
-export interface AccountMeasurements {
-  /** The unit the measurement values are expressed in. */
-  unit: AccountMeasurementsUnit;
-  waist?: number;
-  bust?: number;
-  hips?: number;
-  height?: number;
-  bodyGirth?: number;
-}
-
-/**
  * A custom order as shown on the account dashboard (links out to the full tracking + invoice views).
  */
 export interface AccountOrderSummary {
@@ -1283,6 +1328,8 @@ export interface AccountOrderSummary {
   /** The order's target completion date (its Due Date) as an ISO date (yyyy-mm-dd). A pass-through string (no format: date). Absent until the atelier sets one. */
   estimatedCompletion?: string;
   measurements?: AccountMeasurements;
+  /** True once the order has reached the stage at which measurements are frozen (MEASUREMENT_LOCK_FROM_STAGE), mirroring the same field on OrderStatus. The dashboard offers its in-place edit only when this is false, so the affordance and the server's own gate can't disagree. Absent on a response built before the field existed, which reads as not locked. */
+  measurementsLocked?: boolean;
 }
 
 /**

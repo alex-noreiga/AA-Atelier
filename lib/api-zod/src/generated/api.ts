@@ -122,6 +122,50 @@ export const CreateOrderPaymentResponse = zod.object({
 
 
 /**
+ * Writes the customer's measurements straight onto the order, replacing the five typed Notion properties and the unit. The customer is verified against the email stored on the order and the write is refused once the garment has entered production (MEASUREMENT_LOCK_FROM_STAGE) — the same two gates the change-request endpoint applies. Unlike that endpoint this one edits the order, so it fails closed where the request flow degrades: an order with no stored email to verify against is never written to. Rather than losing what the customer typed, such an edit — and one the orders database has nowhere to store — is filed as an ordinary measurement-change request for a human to apply, reported as outcome="filed". The complete set of five values is required: a partial write would leave the atelier cutting to a mix of old and new numbers.
+ * @summary Update an order's measurements in place
+ */
+export const UpdateOrderMeasurementsParams = zod.object({
+  "orderNumber": zod.coerce.string()
+})
+
+export const updateOrderMeasurementsBodyWaistExclusiveMin = 0;
+
+export const updateOrderMeasurementsBodyBustExclusiveMin = 0;
+
+export const updateOrderMeasurementsBodyHipsExclusiveMin = 0;
+
+export const updateOrderMeasurementsBodyHeightExclusiveMin = 0;
+
+export const updateOrderMeasurementsBodyBodyGirthExclusiveMin = 0;
+
+
+
+export const UpdateOrderMeasurementsBody = zod.object({
+  "email": zod.string().email().describe('The email to verify against the one on the order. A request whose email doesn\'t match, or an order with no email stored to check against, is refused.'),
+  "waist": zod.number().gt(updateOrderMeasurementsBodyWaistExclusiveMin),
+  "bust": zod.number().gt(updateOrderMeasurementsBodyBustExclusiveMin),
+  "hips": zod.number().gt(updateOrderMeasurementsBodyHipsExclusiveMin),
+  "height": zod.number().gt(updateOrderMeasurementsBodyHeightExclusiveMin),
+  "bodyGirth": zod.number().gt(updateOrderMeasurementsBodyBodyGirthExclusiveMin),
+  "measurementUnit": zod.enum(['inches', 'cm']),
+  "note": zod.string().optional().describe('Optional free-text note for the atelier, recorded on the order\'s revision trail and carried in the notification email.')
+}).describe('New measurements to write onto an order in place. Every value is required, unlike NewMeasurementChangeRequest: a change request is read by a person who can reconcile it against what is on file, whereas this replaces the stored set outright, and a partial write would leave the atelier cutting to a mix of old and new numbers. There is deliberately no \"measure me at a fitting\" branch here — that asks for a service rather than changing a value, so it stays a change request.')
+
+export const UpdateOrderMeasurementsResponse = zod.object({
+  "outcome": zod.enum(['applied', 'filed']),
+  "measurements": zod.object({
+  "unit": zod.enum(['inches', 'cm']).describe('The unit the measurement values are expressed in.'),
+  "waist": zod.number().optional(),
+  "bust": zod.number().optional(),
+  "hips": zod.number().optional(),
+  "height": zod.number().optional(),
+  "bodyGirth": zod.number().optional()
+}).optional().describe('The measurements on file for a custom order, read from the order\'s Notion properties. Absent when the customer chose to have measurements taken at a fitting, or for orders placed before measurements were stored as readable properties (those values remain only in the order\'s page body). Individual values may be absent for a partially-filled order.')
+}).describe('What became of the edit. \"applied\" means the values are on the order now and `measurements` carries the set as stored, so the caller renders what was written rather than its own optimistic copy. \"filed\" means the edit could not be written and was filed as a measurement-change request for the atelier to apply by hand — the two states the customer\'s work is never lost to: an order carrying no email to verify the edit against, and an orders database that hasn\'t had the measurement properties added yet. A filed edit carries no `measurements`, because nothing changed.')
+
+
+/**
  * Files a customer's request to change the measurements on an existing order. The customer is verified against the email on the order, and the request is rejected once the garment has entered production. Accepted requests land as a tagged row in the Notion contact-messages inbox for the atelier to apply — this endpoint does not itself edit the order.
  * @summary Request a change to an order's measurements
  */
@@ -679,7 +723,8 @@ export const GetAccountOverviewResponse = zod.object({
   "hips": zod.number().optional(),
   "height": zod.number().optional(),
   "bodyGirth": zod.number().optional()
-}).optional().describe('The measurements on file for a custom order, read from the order\'s Notion properties. Absent when the customer chose to have measurements taken at a fitting, or for orders placed before measurements were stored as readable properties (those values remain only in the order\'s page body). Individual values may be absent for a partially-filled order.')
+}).optional().describe('The measurements on file for a custom order, read from the order\'s Notion properties. Absent when the customer chose to have measurements taken at a fitting, or for orders placed before measurements were stored as readable properties (those values remain only in the order\'s page body). Individual values may be absent for a partially-filled order.'),
+  "measurementsLocked": zod.boolean().optional().describe('True once the order has reached the stage at which measurements are frozen (MEASUREMENT_LOCK_FROM_STAGE), mirroring the same field on OrderStatus. The dashboard offers its in-place edit only when this is false, so the affordance and the server\'s own gate can\'t disagree. Absent on a response built before the field existed, which reads as not locked.')
 }).describe('A custom order as shown on the account dashboard (links out to the full tracking + invoice views).')).describe('The customer\'s custom (bespoke) orders, newest-relevant first. Empty when none match the signed-in email.'),
   "shopOrders": zod.array(zod.object({
   "orderNumber": zod.string(),
@@ -738,7 +783,8 @@ export const ExportAccountDataResponse = zod.object({
   "hips": zod.number().optional(),
   "height": zod.number().optional(),
   "bodyGirth": zod.number().optional()
-}).optional().describe('The measurements on file for a custom order, read from the order\'s Notion properties. Absent when the customer chose to have measurements taken at a fitting, or for orders placed before measurements were stored as readable properties (those values remain only in the order\'s page body). Individual values may be absent for a partially-filled order.')
+}).optional().describe('The measurements on file for a custom order, read from the order\'s Notion properties. Absent when the customer chose to have measurements taken at a fitting, or for orders placed before measurements were stored as readable properties (those values remain only in the order\'s page body). Individual values may be absent for a partially-filled order.'),
+  "measurementsLocked": zod.boolean().optional().describe('True once the order has reached the stage at which measurements are frozen (MEASUREMENT_LOCK_FROM_STAGE), mirroring the same field on OrderStatus. The dashboard offers its in-place edit only when this is false, so the affordance and the server\'s own gate can\'t disagree. Absent on a response built before the field existed, which reads as not locked.')
 }).describe('A custom order as shown on the account dashboard (links out to the full tracking + invoice views).')).describe('The customer\'s custom (bespoke) orders, including the measurements on file.'),
   "shopOrders": zod.array(zod.object({
   "orderNumber": zod.string(),

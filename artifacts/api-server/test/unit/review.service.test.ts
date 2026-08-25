@@ -38,6 +38,7 @@ const STAGES = ["Consultation", "Sketching", "Cutting/Pinning", "Delivery"];
 const delivered = (email = "ada@example.com") => ({
   email,
   pageId: "page-order-test",
+  orderName: "Ada – Custom Dress",
   currentStage: "Delivery",
   stages: STAGES,
 });
@@ -60,6 +61,7 @@ describe("submitOrderReview — delivery gate", () => {
     mockFind.mockResolvedValue({
       email: "ada@example.com",
       pageId: "page-order-test",
+      orderName: "Ada – Custom Dress",
       currentStage: "Sketching",
       stages: STAGES,
     });
@@ -100,6 +102,7 @@ describe("submitOrderReview — identity gate", () => {
     mockFind.mockResolvedValue({
       email: "",
       pageId: "page-order-test",
+      orderName: "Ada – Custom Dress",
       currentStage: "Delivery",
       stages: STAGES,
     });

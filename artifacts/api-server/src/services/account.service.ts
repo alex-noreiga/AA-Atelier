@@ -30,6 +30,7 @@ import {
 } from "../lib/auth/tokens.js";
 import { ensureReferralCode, type ReferralInfo } from "./rewards.service.js";
 import { orderLifecycleState, type OrderLifecycleState } from "./delivery.js";
+import { measurementsLocked } from "./measurement-lock.js";
 import { logger } from "../lib/logger.js";
 
 /** An upcoming appointment for the dashboard: its details plus a signed token so
@@ -42,7 +43,13 @@ export interface AccountAppointment extends AppointmentManageDetails {
  * can denote a finished or cancelled order rather than leaving the customer to
  * read it out of a stage name. Derived server-side (see `delivery.ts`) so both
  * order kinds are classified by the one rule. */
-export type AccountCustomOrder = OrderSummary & { state: OrderLifecycleState };
+export type AccountCustomOrder = OrderSummary & {
+  state: OrderLifecycleState;
+  /** Whether the garment has passed the stage at which measurements freeze —
+   * the dashboard offers its in-place edit only when this is false. Derived
+   * server-side; see `listCustomOrders`. */
+  measurementsLocked: boolean;
+};
 export type AccountShopOrder = ShopOrderRecord & { state: OrderLifecycleState };
 
 export interface AccountOverviewResult {
@@ -130,7 +137,11 @@ export async function listCustomOrders(
   });
 
   // Each summary already carries the live stage list it was mapped against, so
-  // classifying is pure — no extra Notion read.
+  // both derivations are pure — no extra Notion read. `measurementsLocked` is
+  // the same rule the tracking page reads, computed here rather than in the
+  // browser because the lock stage is a studio setting the client never sees;
+  // deriving it client-side would let the dashboard offer an edit the server
+  // then refuses.
   return orders.map((order) => ({
     ...order,
     state: orderLifecycleState(
@@ -138,6 +149,7 @@ export async function listCustomOrders(
       order.currentStage,
       order.stages,
     ),
+    measurementsLocked: measurementsLocked(order.currentStage, order.stages),
   }));
 }
 

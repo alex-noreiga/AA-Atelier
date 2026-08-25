@@ -7,7 +7,10 @@
 // Voice: the site's minimal, warm, editorial-serif tone. Plain inline HTML (no
 // template engine, no new dependency) plus a plaintext twin for every message.
 
-import type { CreateOrderInput } from "../notion/orders.schema.js";
+import type {
+  CreateOrderInput,
+  OrderMeasurements,
+} from "../notion/orders.schema.js";
 import { resolveOrderService } from "../service-catalog.js";
 import type { CreateContactInput } from "../notion/contact.blocks.js";
 import type { CreateNotifyInput } from "../notion/notify.blocks.js";
@@ -1235,6 +1238,190 @@ export function measurementChangeConfirmationEmail(
     subject: `We've received your measurement change (${orderNumber})`,
     html,
     text,
+  };
+}
+
+// ---------------------------------------------------------------------------
+// In-place measurement editing
+//
+// These two carry more weight than a confirmation usually does. Everywhere else
+// a customer email tells someone about something they just did; here it is the
+// tripwire on a write that no human reviewed (`measurement-update.service.ts`).
+// So both list every value with what it was before — an edit nobody made reads
+// as obviously wrong to the one person certain to spot it, and the atelier's
+// copy is what stops a change to an order already on the table going unread.
+// ---------------------------------------------------------------------------
+
+/** What each measurement was and now is, for the change tables below. `was` is
+ * absent for a value that wasn't on file — a measure-at-fitting order, or one
+ * predating the typed properties. */
+function measurementComparison(
+  measurements: OrderMeasurements,
+  previous?: OrderMeasurements,
+): Array<{ label: string; now: number | undefined; was?: number }> {
+  const rows: Array<
+    [label: string, key: Exclude<keyof OrderMeasurements, "unit">]
+  > = [
+    ["Waist", "waist"],
+    ["Chest", "bust"],
+    ["Hips", "hips"],
+    ["Height", "height"],
+    ["Body Girth", "bodyGirth"],
+  ];
+  return rows.map(([label, key]) => {
+    const was = previous?.[key];
+    return {
+      label,
+      now: measurements[key],
+      // Only a value that actually MOVED is shown as a change. Printing "was 26"
+      // beside "26" on the four untouched measurements buries the one that
+      // changed, which is the only thing either reader is looking for.
+      ...(was !== undefined && was !== measurements[key] ? { was } : {}),
+    };
+  });
+}
+
+/** The comparison as one line per measurement, e.g. "Waist: 26 (was 25)". */
+function measurementComparisonText(
+  measurements: OrderMeasurements,
+  previous?: OrderMeasurements,
+): string[] {
+  return measurementComparison(measurements, previous).map(
+    ({ label, now, was }) =>
+      `${label}: ${now ?? "—"}${was !== undefined ? ` (was ${was})` : ""}`,
+  );
+}
+
+function measurementComparisonHtml(
+  measurements: OrderMeasurements,
+  previous?: OrderMeasurements,
+): string {
+  const rows = measurementComparison(measurements, previous)
+    .map(
+      ({ label, now, was }) =>
+        `<tr>
+           <td style="padding:6px 16px 6px 0;color:#8a7f74;">${escapeHtml(label)}</td>
+           <td style="padding:6px 0;"><strong>${escapeHtml(String(now ?? "—"))}</strong>${
+             was !== undefined
+               ? ` <span style="color:#8a7f74;">(was ${escapeHtml(String(was))})</span>`
+               : ""
+           }</td>
+         </tr>`,
+    )
+    .join("\n        ");
+  return `<table role="presentation" cellpadding="0" cellspacing="0" style="margin:0 0 20px;font-size:15px;">
+        ${rows}
+      </table>`;
+}
+
+/** Details shared by the customer confirmation and the atelier notification. */
+export interface MeasurementUpdateDetails {
+  email: string;
+  orderNumber: string;
+  orderName: string;
+  measurements: OrderMeasurements;
+  previous?: OrderMeasurements;
+  note?: string;
+}
+
+/**
+ * Sent to the customer the moment their measurements are written. It is a
+ * receipt, not an acknowledgement — the change has already taken effect — and
+ * it closes by inviting a reply if the edit wasn't theirs, which is the only
+ * recovery path a customer has for a write nobody reviewed.
+ */
+export function measurementsUpdatedEmail(
+  details: MeasurementUpdateDetails,
+): EmailMessage {
+  const { orderNumber, measurements, previous, note } = details;
+
+  const html = layout(
+    "Your measurements are updated",
+    `<p>Hi there,</p>
+     <p>Your measurements for order <strong>${escapeHtml(orderNumber)}</strong>
+        have been updated. Here's what we now have on file, in
+        <strong>${escapeHtml(measurements.unit)}</strong>:</p>
+     ${measurementComparisonHtml(measurements, previous)}
+     ${
+       note
+         ? `<p style="color:#8a7f74;">Your note: ${escapeHtml(note)}</p>`
+         : ""
+     }
+     <p>We'll work to these from here. If anything looks wrong &mdash; or you
+        didn't make this change &mdash; just reply to this email and we'll put
+        it right.</p>`,
+  );
+
+  const text = [
+    `Hi there,`,
+    ``,
+    `Your measurements for order ${orderNumber} have been updated. Here's what we now have on file, in ${measurements.unit}:`,
+    ``,
+    ...measurementComparisonText(measurements, previous),
+    ...(note ? [``, `Your note: ${note}`] : []),
+    ``,
+    `We'll work to these from here. If anything looks wrong — or you didn't make this change — just reply to this email and we'll put it right.`,
+    ``,
+    `Thank you,`,
+    `The ${ATELIER_NAME} team`,
+  ].join("\n");
+
+  return {
+    to: details.email,
+    subject: `Your measurements are updated (${orderNumber})`,
+    html,
+    text,
+  };
+}
+
+/**
+ * Internal notification that a customer edited their own measurements. Unlike
+ * the change-request notification this is not a task — the values are already
+ * stored — so it leads with the order's current stage: what the atelier needs
+ * to know is whether any work has been done to the old numbers.
+ */
+export function measurementsUpdatedNotificationEmail(
+  details: MeasurementUpdateDetails & { currentStage: string; inbox: string },
+): EmailMessage {
+  const { orderNumber, orderName, measurements, previous, note } = details;
+
+  const changed = measurementComparison(measurements, previous).filter(
+    (row) => row.was !== undefined,
+  );
+
+  const fields: Field[] = [
+    ["Order number", orderNumber],
+    ["Order", orderName],
+    ["Email", details.email],
+    ["Current stage", details.currentStage || "—"],
+    [
+      "Changed",
+      changed.length > 0
+        ? changed
+            .map((row) => `${row.label} ${row.was} → ${row.now}`)
+            .join(", ")
+        : previous
+          ? "No values changed"
+          : "First measurements recorded",
+    ],
+    [
+      "Now on file",
+      measurementComparisonText(measurements).join(", ") +
+        ` (${measurements.unit})`,
+    ],
+    ...(note ? [["Customer note", note] as Field] : []),
+  ];
+
+  return {
+    to: details.inbox,
+    replyTo: details.email,
+    subject: `Measurements updated — order ${orderNumber}`,
+    html: internalLayout(
+      "Measurements updated by the customer",
+      renderRowsHtml(fields),
+      "order updated",
+    ),
+    text: renderRowsText(fields),
   };
 }
 

@@ -90,7 +90,9 @@ import type {
   StudioSettingsOverview,
   StudioTool,
   StudioToolRequest,
-  StudioToolRun
+  StudioToolRun,
+  UpdateMeasurementsRequest,
+  UpdateMeasurementsResponse
 } from './api.schemas';
 
 import { customFetch } from '../custom-fetch';
@@ -420,6 +422,79 @@ export const useCreateOrderPayment = <TError = ErrorType<ErrorEnvelope | OrderNo
         TContext
       > => {
       return useMutation(getCreateOrderPaymentMutationOptions(options));
+    }
+
+export const getUpdateOrderMeasurementsUrl = (orderNumber: string,) => {
+
+
+
+
+  return `/api/orders/${orderNumber}/measurements`
+}
+
+/**
+ * Writes the customer's measurements straight onto the order, replacing the five typed Notion properties and the unit. The customer is verified against the email stored on the order and the write is refused once the garment has entered production (MEASUREMENT_LOCK_FROM_STAGE) — the same two gates the change-request endpoint applies. Unlike that endpoint this one edits the order, so it fails closed where the request flow degrades: an order with no stored email to verify against is never written to. Rather than losing what the customer typed, such an edit — and one the orders database has nowhere to store — is filed as an ordinary measurement-change request for a human to apply, reported as outcome="filed". The complete set of five values is required: a partial write would leave the atelier cutting to a mix of old and new numbers.
+ * @summary Update an order's measurements in place
+ */
+export const updateOrderMeasurements = async (orderNumber: string,
+    updateMeasurementsRequest: UpdateMeasurementsRequest, options?: Parameters<typeof customFetch>[1]): Promise<UpdateMeasurementsResponse> => {
+
+  return customFetch<UpdateMeasurementsResponse>(getUpdateOrderMeasurementsUrl(orderNumber),
+  {
+    ...options,
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    body: JSON.stringify(updateMeasurementsRequest)
+  }
+);}
+
+
+
+
+
+export const getUpdateOrderMeasurementsMutationOptions = <TError = ErrorType<ErrorEnvelope | OrderNotFound>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof updateOrderMeasurements>>, TError,{orderNumber: string;data: BodyType<UpdateMeasurementsRequest>}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof updateOrderMeasurements>>, TError,{orderNumber: string;data: BodyType<UpdateMeasurementsRequest>}, TContext> => {
+
+const mutationKey = ['updateOrderMeasurements'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof updateOrderMeasurements>>, {orderNumber: string;data: BodyType<UpdateMeasurementsRequest>}> = (props) => {
+          const {orderNumber,data} = props ?? {};
+
+          return  updateOrderMeasurements(orderNumber,data,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type UpdateOrderMeasurementsMutationResult = NonNullable<Awaited<ReturnType<typeof updateOrderMeasurements>>>
+    export type UpdateOrderMeasurementsMutationBody = BodyType<UpdateMeasurementsRequest>
+    export type UpdateOrderMeasurementsMutationError = ErrorType<ErrorEnvelope | OrderNotFound>
+
+    /**
+ * @summary Update an order's measurements in place
+ */
+export const useUpdateOrderMeasurements = <TError = ErrorType<ErrorEnvelope | OrderNotFound>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof updateOrderMeasurements>>, TError,{orderNumber: string;data: BodyType<UpdateMeasurementsRequest>}, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof updateOrderMeasurements>>,
+        TError,
+        {orderNumber: string;data: BodyType<UpdateMeasurementsRequest>},
+        TContext
+      > => {
+      return useMutation(getUpdateOrderMeasurementsMutationOptions(options));
     }
 
 export const getCreateMeasurementChangeRequestUrl = (orderNumber: string,) => {

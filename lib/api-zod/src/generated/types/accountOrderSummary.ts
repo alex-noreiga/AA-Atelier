@@ -21,4 +21,6 @@ export interface AccountOrderSummary {
   /** The order's target completion date (its Due Date) as an ISO date (yyyy-mm-dd). A pass-through string (no format: date). Absent until the atelier sets one. */
   estimatedCompletion?: string;
   measurements?: AccountMeasurements;
+  /** True once the order has reached the stage at which measurements are frozen (MEASUREMENT_LOCK_FROM_STAGE), mirroring the same field on OrderStatus. The dashboard offers its in-place edit only when this is false, so the affordance and the server's own gate can't disagree. Absent on a response built before the field existed, which reads as not locked. */
+  measurementsLocked?: boolean;
 }

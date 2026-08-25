@@ -7,8 +7,9 @@ import { stubHook } from "./support/mock-hook.js";
 // Control the data-fetching hook so we can drive each render state directly.
 // The payment mutation hook is mocked too — each of the status page's deposit
 // cards calls it on render.
-// The success view also renders the measurement-change dialog, which calls the
-// create mutation hook — stub it so the page renders without the network.
+// The success view also renders the measurements dialog, which calls both the
+// in-place update and the change-request mutation hooks (Rules of Hooks) —
+// stub both so the page renders without the network.
 vi.mock("@workspace/api-client-react", () => ({
   useGetOrderStatus: vi.fn(),
   // Track calls the shop hook too (Rules of Hooks); a numeric/ORD-* order number
@@ -22,6 +23,10 @@ vi.mock("@workspace/api-client-react", () => ({
   getGetOrderStatusQueryKey: (n: string) => [n],
   getGetShopOrderStatusQueryKey: (n: string) => [n],
   useCreateMeasurementChangeRequest: () => ({
+    mutate: vi.fn(),
+    isPending: false,
+  }),
+  useUpdateOrderMeasurements: () => ({
     mutate: vi.fn(),
     isPending: false,
   }),
@@ -284,17 +289,17 @@ describe("Status cancellation", () => {
       screen.queryByTestId("button-request-cancellation"),
     ).not.toBeInTheDocument();
     expect(
-      screen.queryByTestId("button-request-measurement-change"),
+      screen.queryByTestId("button-update-measurements"),
     ).not.toBeInTheDocument();
   });
 });
 
-describe("Status measurement-change lock", () => {
-  it("offers the measurement-change request while measurements are unlocked", async () => {
+describe("Status measurement lock", () => {
+  it("offers the measurement editor while measurements are unlocked", async () => {
     setHook({ data: orderRecord({ measurementsLocked: false }) });
     await submitLookup();
     expect(
-      screen.getByTestId("button-request-measurement-change"),
+      screen.getByTestId("button-update-measurements"),
     ).toBeInTheDocument();
     expect(screen.queryByTestId("measurements-locked")).not.toBeInTheDocument();
   });
@@ -306,7 +311,7 @@ describe("Status measurement-change lock", () => {
       /locked now that your garment is in production/i,
     );
     expect(
-      screen.queryByTestId("button-request-measurement-change"),
+      screen.queryByTestId("button-update-measurements"),
     ).not.toBeInTheDocument();
   });
 });

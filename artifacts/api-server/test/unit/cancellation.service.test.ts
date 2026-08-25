@@ -45,6 +45,7 @@ const STAGES = ["Consultation", "Sketching", "Delivery"];
 const preDelivery = (email = "ada@example.com") => ({
   email,
   pageId: "page-order-test",
+  orderName: "Ada – Custom Dress",
   currentStage: "Sketching",
   stages: STAGES,
 });
@@ -89,6 +90,7 @@ describe("submitOrderCancellationRequest (custom)", () => {
     mockFindOrder.mockResolvedValue({
       email: "ada@example.com",
       pageId: "page-order-test",
+      orderName: "Ada – Custom Dress",
       currentStage: "Delivery",
       stages: STAGES,
     });
