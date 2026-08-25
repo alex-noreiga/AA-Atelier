@@ -1,6 +1,7 @@
 import { Router } from "express";
 import { GetPortfolioResponse } from "@workspace/api-zod";
 import { getPortfolio } from "../services/portfolio.service.js";
+import { setEdgeCache } from "../lib/edge-cache.js";
 
 const router = Router();
 
@@ -11,7 +12,7 @@ router.get("/portfolio", async (_req, res) => {
   // about an hour, so the total cached lifetime (s-maxage + SWR ≈ 12 min) has
   // to stay well under that or the gallery starts serving dead images. Set only
   // after the read resolves, so a thrown error's response is never cached.
-  res.set("Cache-Control", "public, s-maxage=120, stale-while-revalidate=600");
+  setEdgeCache(res, "public, s-maxage=120, stale-while-revalidate=600");
   res.json(GetPortfolioResponse.parse(portfolio));
 });
 

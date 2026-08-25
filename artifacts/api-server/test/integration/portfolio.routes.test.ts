@@ -97,6 +97,12 @@ describe("GET /api/portfolio", () => {
     expect(header).toContain("s-maxage=120");
     expect(header).toContain("stale-while-revalidate=600");
 
+    // The ceiling below only actually binds if the header Vercel READS carries
+    // the same numbers — `CDN-Cache-Control` is the one it honours, and it is
+    // consumed at the edge, so nothing downstream of a deploy could report a
+    // drift between the two.
+    expect(res.headers["cdn-cache-control"]).toBe(header);
+
     // The images in this payload are Notion-signed and die after ~1 hour, so
     // the total cached lifetime has to stay well inside that.
     const total = [
@@ -114,5 +120,6 @@ describe("GET /api/portfolio", () => {
 
     expect(res.status).toBe(500);
     expect(res.headers["cache-control"]).toBeUndefined();
+    expect(res.headers["cdn-cache-control"]).toBeUndefined();
   });
 });

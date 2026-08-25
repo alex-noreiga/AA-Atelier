@@ -78,6 +78,7 @@ describe("GET /api/reviews", () => {
     const res = await request(app).get("/api/reviews");
 
     expect(res.headers["cache-control"]).toContain("s-maxage");
+    expect(res.headers["cdn-cache-control"]).toContain("s-maxage");
   });
 
   it("does not cache an error response", async () => {
@@ -87,5 +88,6 @@ describe("GET /api/reviews", () => {
 
     expect(res.status).toBe(500);
     expect(res.headers["cache-control"]).toBeUndefined();
+    expect(res.headers["cdn-cache-control"]).toBeUndefined();
   });
 });

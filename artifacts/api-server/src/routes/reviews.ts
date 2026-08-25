@@ -6,6 +6,7 @@ import {
 } from "@workspace/api-zod";
 import { validate } from "../middlewares/validate.js";
 import { getPublishedReviews } from "../services/review.service.js";
+import { setEdgeCache } from "../lib/edge-cache.js";
 
 const router = Router();
 
@@ -22,10 +23,7 @@ router.get(
     // shared CDN absorb the traffic instead of every cold serverless instance
     // re-reading Notion. Set only after the read resolves, so a thrown error's
     // response is never cached.
-    res.set(
-      "Cache-Control",
-      "public, s-maxage=300, stale-while-revalidate=900",
-    );
+    setEdgeCache(res, "public, s-maxage=300, stale-while-revalidate=900");
     res.json(GetPublishedReviewsResponse.parse({ reviews }));
   },
 );

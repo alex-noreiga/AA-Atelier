@@ -1,6 +1,6 @@
 import { test, expect, type APIRequestContext } from "@playwright/test";
 
-// The four public reads that are supposed to be served by Vercel's CDN rather
+// The six public reads that are supposed to be served by Vercel's CDN rather
 // than by a serverless function.
 //
 // This exists because the failure it watches for is invisible from the outside:
@@ -13,36 +13,63 @@ import { test, expect, type APIRequestContext } from "@playwright/test";
 // It was written after exactly that regression: the generated API client
 // attached `Authorization: Bearer <jwt>` to every request once a visitor was
 // signed in, and Vercel does not serve cached content to a request carrying
-// that header — so all four of these re-entered the function for every
-// signed-in visitor despite correctly setting `s-maxage`. Seven days of
-// production logs showed `cache=BYPASS` on every single request.
+// that header — so all of these re-entered the function for every signed-in
+// visitor despite correctly setting `s-maxage`. Seven days of production logs
+// showed `cache=BYPASS` on every single request.
+//
+// WHAT IT ASSERTS, AND WHY IT CHANGED (2026-08-25). It used to read the age
+// straight back off the response: `Cache-Control` had to still contain
+// `s-maxage`. That stopped being observable — Vercel now consumes the CDN
+// directives and strips them, so a correctly-cached read answers a bare
+// `Cache-Control: public` and the old assertion failed against a healthy site.
+// Re-asserting the same idea on the request side was not an option either:
+// `CDN-Cache-Control`, which the routes now send, is addressed to the CDN and
+// never comes back.
+//
+// So it asserts the OUTCOME instead of the instruction — that the CDN actually
+// served the response. That is a stronger check than the one it replaces, and
+// deliberately so: a "still sets s-maxage" assertion could only ever prove the
+// route asked, never that the platform agreed, and the second is the thing
+// worth waking up for. It also subsumes the cases the string check used to
+// cover, since a read that lost its cache header cannot come back HIT.
 //
 // Scope, stated plainly: this run is ANONYMOUS, so it verifies the server-side
-// half — that the responses are still cacheable and that the CDN is still
-// willing to cache them. It cannot catch the client-side half (a signed-in
-// visitor's requests carrying a token again), because signing in is neither
-// available to nor appropriate for a read-only production monitor. That half is
-// guarded on every PR by `web-app/test/api-auth.test.ts`, which pins the
-// client's allowlist to the OpenAPI spec's own `security` blocks.
+// half. It cannot catch the client-side half (a signed-in visitor's requests
+// carrying a token again), because signing in is neither available to nor
+// appropriate for a read-only production monitor. That half is guarded on
+// every PR by `web-app/test/api-auth.test.ts`, which pins the client's
+// allowlist to the OpenAPI spec's own `security` blocks.
 //
-// Read-only: four GETs of public marketing data, the same ones any visitor
-// makes on a first page load.
+// Read-only: GETs of public marketing data, the same ones any visitor makes on
+// a first page load.
 
-/** The public reads whose routes set an `s-maxage` edge cache. */
+/** The public reads whose routes declare an edge cache via `setEdgeCache`. */
 const CACHED_READS = [
   { path: "/api/reviews", route: "routes/reviews.ts" },
   { path: "/api/services", route: "routes/services.ts" },
   { path: "/api/colors", route: "routes/colors.ts" },
   { path: "/api/products", route: "routes/products.ts" },
+  { path: "/api/capacity", route: "routes/capacity.ts" },
+  { path: "/api/portfolio", route: "routes/portfolio.ts" },
 ];
 
 /**
- * `x-vercel-cache` values that mean the CDN is participating. HIT and STALE are
- * the win; MISS/REVALIDATED/PRERENDER are normal states of a working cache
- * (a cold key, a background refresh). BYPASS is the one that means "this
- * response was treated as uncacheable" — the regression.
+ * `x-vercel-cache` values that prove the CDN served the response itself, which
+ * is the whole point of the exercise. MISS and REVALIDATED are normal on a cold
+ * or just-expired key, so they are not failures on their own — they are only a
+ * failure when every attempt reports one, which is what "nothing is being
+ * cached" looks like. BYPASS is the outright refusal the original regression
+ * produced.
  */
-const PARTICIPATING = ["HIT", "STALE", "MISS", "REVALIDATED", "PRERENDER"];
+const SERVED_BY_CDN = ["HIT", "STALE"];
+
+/**
+ * How many times to ask before concluding the CDN is not caching. The first
+ * request may legitimately populate a cold key; the rest should then be served
+ * from it. Every route's `s-maxage` is at least 60s, so a key populated on the
+ * first attempt is still fresh for all of them.
+ */
+const ATTEMPTS = 5;
 
 async function cacheStateOf(
   request: APIRequestContext,
@@ -59,7 +86,7 @@ async function cacheStateOf(
 
 test.describe("Production smoke: edge caching of the public reads", () => {
   for (const { path, route } of CACHED_READS) {
-    test(`${path} is served as cacheable`, async ({ request }) => {
+    test(`${path} is served from the CDN`, async ({ request }) => {
       const first = await cacheStateOf(request, path);
 
       expect(
@@ -67,29 +94,36 @@ test.describe("Production smoke: edge caching of the public reads", () => {
         `GET ${path} did not answer 200 — checked here because an error response is deliberately never cached`,
       ).toBe(200);
 
-      // The route's own contract. If this disappears the CDN can never cache
-      // the response no matter what else is right, and the only symptom is a
-      // slower site. Asserts presence, not a specific age: retuning the age in
-      // `${route}` is a deliberate change and must not fail the monitor.
-      expect(
-        first.cacheControl,
-        `GET ${path} no longer sets s-maxage (${route}) — every request will now hit a cold serverless function`,
-      ).toContain("s-maxage");
-      expect(first.cacheControl).toContain("public");
+      // Ask repeatedly, stopping as soon as the CDN answers one itself. The
+      // requests share a context, so they share a connection and land on the
+      // same PoP; a key populated by the first is the one the rest read.
+      const seen: string[] = [first.vercelCache || "(absent)"];
+      let servedByCdn = SERVED_BY_CDN.includes(first.vercelCache);
 
-      // Ask again so a cold cache key has been populated. The value itself is
-      // not asserted — a second PoP, or an age that has just elapsed, can
-      // legitimately MISS twice — only that the CDN did not refuse to cache.
-      const second = await cacheStateOf(request, path);
-
-      // Only assert when Vercel actually sent the header; a platform that stops
-      // reporting cache state must not read as a site regression.
-      if (second.vercelCache) {
-        expect(
-          PARTICIPATING,
-          `GET ${path} reported x-vercel-cache: ${second.vercelCache}. BYPASS means the CDN treated the response as uncacheable — check for an Authorization header, a Set-Cookie, or a lost s-maxage. See CLAUDE.md, "Session transport is a Bearer JWT".`,
-        ).toContain(second.vercelCache);
+      for (let attempt = 1; attempt < ATTEMPTS && !servedByCdn; attempt += 1) {
+        const next = await cacheStateOf(request, path);
+        seen.push(next.vercelCache || "(absent)");
+        servedByCdn = SERVED_BY_CDN.includes(next.vercelCache);
       }
+
+      // A platform that stops reporting cache state must not read as a site
+      // regression — the same judgement this spec has always made about the
+      // header. With nothing to read, the check has no opinion and says so
+      // rather than inventing one.
+      if (seen.every((state) => state === "(absent)")) {
+        test.skip(
+          true,
+          `GET ${path} returned no x-vercel-cache header on ${ATTEMPTS} attempts, so cache state could not be read.`,
+        );
+      }
+
+      expect(
+        servedByCdn,
+        `GET ${path} was never served from the CDN in ${ATTEMPTS} attempts (x-vercel-cache: ${seen.join(", ")}). ` +
+          `Every request is reaching a cold serverless function. Check that ${route} still calls setEdgeCache, ` +
+          `and that nothing has made the response uncacheable — an Authorization header, a Set-Cookie, or a Vary. ` +
+          `BYPASS specifically means the CDN refused: see CLAUDE.md, "Session transport is a Bearer JWT".`,
+      ).toBe(true);
     });
   }
 
@@ -99,7 +133,9 @@ test.describe("Production smoke: edge caching of the public reads", () => {
     // A `Set-Cookie` on one of these would make it permanently uncacheable —
     // the same class of silent slowdown as the Authorization header, and just
     // as invisible. Nothing in the app sets one (Supabase holds the session in
-    // localStorage), so this should stay true.
+    // localStorage), so this should stay true. Kept as its own test because it
+    // names the cause directly, where the check above would only report that
+    // nothing was cached.
     for (const { path } of CACHED_READS) {
       const res = await request.get(path);
       expect(
