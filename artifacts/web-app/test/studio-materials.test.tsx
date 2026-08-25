@@ -8,7 +8,7 @@
 // here is that the panel actually renders them.
 
 import { describe, it, expect, vi, beforeEach } from "vitest";
-import { render, screen } from "@testing-library/react";
+import { render, screen, fireEvent } from "@testing-library/react";
 
 const h = vi.hoisted(() => ({
   materials: {
@@ -205,15 +205,35 @@ describe("StudioMaterials — grouping", () => {
     );
   });
 
-  it("shows a multi-typed fabric once, with the other type as a label", () => {
+  it("shows a multi-typed fabric once, under its first type only", () => {
     h.materials.data = overview({ lowStock: [FABRIC_MESH] });
     render(<StudioMaterials />);
 
-    // Under its first type only — not repeated under "Lining".
+    // Under its first type only — not repeated under "Lining", which on a
+    // shopping list is how you buy the same fabric twice.
     expect(screen.getAllByTestId("material-row")).toHaveLength(1);
     expect(screen.queryByTestId("material-fabric-lining")).toBeNull();
-    // But the secondary type isn't lost.
-    expect(screen.getByTestId("material-row")).toHaveTextContent("also Lining");
+    // And the row doesn't carry the other type as a trailing label: it already
+    // sits under a heading that names what it is.
+    expect(screen.getByTestId("material-row")).not.toHaveTextContent(/lining/i);
+  });
+
+  // Fabric is the long group; once it's been shopped it's in the way of
+  // everything under it. But a shopping list that greets you collapsed is one
+  // whose whole point has to be clicked for, so it opens.
+  it("opens each category by default, and folds it away on a click", () => {
+    h.materials.data = overview({ lowStock: [FABRIC_MESH, BOX] });
+    render(<StudioMaterials />);
+
+    const fabric = screen.getByTestId("material-category-fabric");
+    expect(fabric).toHaveAttribute("open");
+
+    fireEvent.click(fabric.querySelector("summary")!);
+    expect(fabric).not.toHaveAttribute("open");
+    // Folding one category leaves the rest as they were.
+    expect(screen.getByTestId("material-category-packaging")).toHaveAttribute(
+      "open",
+    );
   });
 
   it("doesn't sub-head a category with no fabric types", () => {

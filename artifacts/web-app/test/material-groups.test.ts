@@ -5,7 +5,6 @@
 import { describe, it, expect } from "vitest";
 import {
   groupMaterials,
-  secondaryFabricTypes,
   UNCATEGORIZED_LABEL,
   UNTYPED_LABEL,
 } from "@/lib/material-groups";
@@ -176,18 +175,5 @@ describe("groupMaterials — fabric by type", () => {
     const seen = fabric.subGroups!.flatMap((sub) => ids(sub.items));
     expect(seen.sort()).toEqual(["a", "b", "c"]);
     expect(new Set(seen).size).toBe(seen.length);
-  });
-});
-
-describe("secondaryFabricTypes", () => {
-  it("returns the types the heading can't show", () => {
-    expect(
-      secondaryFabricTypes({ fabricTypes: ["Power Mesh", "Lining"] }),
-    ).toEqual(["Lining"]);
-  });
-
-  it("is empty for a single type or none, so the row says nothing extra", () => {
-    expect(secondaryFabricTypes({ fabricTypes: ["Satin"] })).toEqual([]);
-    expect(secondaryFabricTypes({})).toEqual([]);
   });
 });

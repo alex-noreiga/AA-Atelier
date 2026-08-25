@@ -2427,11 +2427,15 @@ and `web-app/src/components/studio-materials.tsx`. Load-bearing decisions:
    merit; **a material appears exactly once** — `Fabric Type` is a MULTI-select
    and Notion's own grouped view would repeat such a row, which on a shopping
    list is how you buy the same fabric twice, so it is filed under the FIRST
-   type and the rest ride along as labels; and **sub-grouping is driven by the
-   rows, not by the word "Fabric"** — any group whose rows carry types gets
-   sub-grouped. The catch-all headings (`Uncategorized`, `Unspecified`) sort
-   last however they rank. Ordering _within_ a group is left exactly as the
-   server sent it, since it already sorted.
+   type and the others simply aren't shown (the row already sits under a heading
+   naming what it is, and the full tagging is in Notion where it's set); and
+   **sub-grouping is driven by the rows, not by the word "Fabric"** — any group
+   whose rows carry types gets sub-grouped. The catch-all headings
+   (`Uncategorized`, `Unspecified`) sort last however they rank. Ordering
+   _within_ a group is left exactly as the server sent it, since it already
+   sorted. Each category **folds, open by default** — fabric is the long group
+   and is in the way once it has been shopped, but a list of things to buy that
+   greets the atelier collapsed is one whose whole point has to be clicked for.
 7. **The digest reports STATE, which is what makes it idempotent.** It rides the
    nightly reconciliation (`sendDueMaterialsDigest`, a sixth pass) and fires only
    on `MATERIALS_DIGEST_WEEKDAY`, read in the studio timezone so "Monday" means

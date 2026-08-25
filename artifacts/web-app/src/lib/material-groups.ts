@@ -18,8 +18,10 @@
 //  2. **A material appears ONCE.** `Fabric Type` is a multi-select, so a power
 //     mesh that is also a lining carries two — and Notion's own grouped view
 //     would show that row twice. On a shopping list that is a way to buy the
-//     same fabric twice, so it is filed under the FIRST type and the rest ride
-//     along as labels on the row.
+//     same fabric twice, so it is filed under the FIRST type and the others are
+//     simply not shown: the row is already under a heading that names what it
+//     is, and a trailing "also Lining" is noise on a list you are shopping
+//     from. The full tagging is in Notion, where it is set.
 //  3. **Sub-grouping is driven by the data, not by the word "Fabric".** Any
 //     group whose rows carry types gets sub-grouped. Nothing here knows that
 //     fabric is the category that does — which is what keeps this working if
@@ -139,11 +141,4 @@ function subGroup<T extends Groupable>(
     }))
     .sort((a, b) => compareGroups(a, b, UNTYPED_LABEL))
     .map(({ label, items: typeItems }) => ({ label, items: typeItems }));
-}
-
-/** The fabric types to show on a row, given it is already filed under the
- * first. Returns the secondary ones — the labels that would otherwise be lost.
- * Empty when there is nothing extra to say. */
-export function secondaryFabricTypes(item: Groupable): string[] {
-  return item.fabricTypes?.slice(1) ?? [];
 }

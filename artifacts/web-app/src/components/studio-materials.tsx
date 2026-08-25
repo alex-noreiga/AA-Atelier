@@ -13,6 +13,8 @@
 //    another, and a flat list ranked purely by shortfall interleaves them. The
 //    rules live in `lib/material-groups.ts`; the one worth knowing here is that
 //    a material appears exactly ONCE even when it carries several fabric types.
+//    Each category folds, open by default — fabric is the long group, and once
+//    it has been shopped it is in the way of everything under it.
 //  - **Ranking by what to buy first, within each group.** The server sorts by
 //    shortfall, and the group holding the worst shortfall leads — so the top of
 //    the panel is still the thing to buy first.
@@ -37,11 +39,7 @@ import {
   type UntrackedMaterial,
 } from "@workspace/api-client-react";
 import { serverErrorMessage } from "@/lib/api-error";
-import {
-  groupMaterials,
-  secondaryFabricTypes,
-  type MaterialGroup,
-} from "@/lib/material-groups";
+import { groupMaterials, type MaterialGroup } from "@/lib/material-groups";
 import { ExternalLink, Loader2, PackageSearch } from "lucide-react";
 
 export function StudioMaterials() {
@@ -185,6 +183,14 @@ export function StudioMaterials() {
  * one. `render` rather than a shared row component because the two lists show
  * genuinely different things: a card with a reorder link, and a one-line note
  * about why nothing can alert.
+ *
+ * It folds, because fabric is the longest group here by a distance and someone
+ * who has already been to the fabric supplier wants it out of the way to read
+ * the rest. **Open by default**: this is a list of things to buy, and one that
+ * greets the atelier collapsed is one whose whole point has to be clicked for.
+ * Every category folds rather than only the fabric one, for the same reason
+ * nothing here knows that fabric is the category with types — the atelier's
+ * categories are theirs to add to.
  */
 function MaterialCategory<T extends { id: string }>({
   group,
@@ -194,16 +200,19 @@ function MaterialCategory<T extends { id: string }>({
   render: (item: T) => React.ReactNode;
 }) {
   return (
-    <section
+    <details
+      open
       className="space-y-2"
       data-testid={`material-category-${group.label.toLowerCase().replace(/\s+/g, "-")}`}
     >
-      <h3 className="flex items-baseline gap-2 text-xs tracking-[0.15em] uppercase text-muted-foreground/80">
-        {group.label}
-        <span className="text-[10px] tracking-normal text-muted-foreground/60">
-          {group.items.length}
-        </span>
-      </h3>
+      <summary className="cursor-pointer">
+        <h3 className="inline-flex items-baseline gap-2 text-xs tracking-[0.15em] uppercase text-muted-foreground/80">
+          {group.label}
+          <span className="text-[10px] tracking-normal text-muted-foreground/60">
+            {group.items.length}
+          </span>
+        </h3>
+      </summary>
 
       {group.subGroups
         ? group.subGroups.map((sub) => (
@@ -219,7 +228,7 @@ function MaterialCategory<T extends { id: string }>({
             </div>
           ))
         : group.items.map(render)}
-    </section>
+    </details>
   );
 }
 
@@ -238,8 +247,6 @@ function noteworthyStatus(status?: string): boolean {
 /** One material to reorder. The category is the heading above it now, so the
  * meta line spends its room on what the heading can't show. */
 function MaterialRow({ material }: { material: MaterialAlert }) {
-  const alsoTagged = secondaryFabricTypes(material);
-
   return (
     <div
       className="rounded-sm border border-border bg-card/40 p-3 sm:p-4 flex items-baseline justify-between gap-3 sm:gap-4"
@@ -249,7 +256,6 @@ function MaterialRow({ material }: { material: MaterialAlert }) {
         <p className="text-sm font-light truncate">{material.name}</p>
         <p className="text-xs text-muted-foreground font-light mt-1">
           {material.stockOnHand} left · reorder at {material.minimumStock}
-          {alsoTagged.length > 0 ? ` · also ${alsoTagged.join(", ")}` : ""}
           {noteworthyStatus(material.reorderStatus)
             ? ` · ${material.reorderStatus}`
             : ""}
