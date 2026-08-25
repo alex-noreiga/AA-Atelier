@@ -215,6 +215,28 @@ export async function mockMeasurementChange(
   return { requests, requestedPaths };
 }
 
+/**
+ * Mock `PUT /api/orders/:orderNumber/measurements` — the status page's in-place
+ * measurement editor. Records each request body so a test can assert the values
+ * the editor sent, and each path so it can assert which order they went to.
+ * A distinct pattern from the change-request mock above: the two live on the
+ * same dialog, and pinning which one a mode drives is the point.
+ */
+export async function mockUpdateMeasurements(
+  page: Page,
+  opts: { status?: number; body: unknown },
+): Promise<{ requests: unknown[]; requestedPaths: string[] }> {
+  const requests: unknown[] = [];
+  const requestedPaths: string[] = [];
+  await page.route("**/api/orders/*/measurements", async (route) => {
+    if (route.request().method() !== "PUT") return route.fallback();
+    requests.push(route.request().postDataJSON());
+    requestedPaths.push(new URL(route.request().url()).pathname);
+    await json(route, opts.status ?? 200, opts.body);
+  });
+  return { requests, requestedPaths };
+}
+
 /** Mock `GET /api/checkout/session/:id` — the success page's status lookup. */
 export async function mockGetCheckoutSession(
   page: Page,

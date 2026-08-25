@@ -57,6 +57,9 @@ vi.mock("@workspace/api-client-react", () => ({
   getGetAppointmentAvailabilityQueryKey: () => ["availability"],
   useRescheduleAppointment: () => ({ mutate: vi.fn(), isPending: false }),
   useCancelAppointment: () => ({ mutate: vi.fn(), isPending: false }),
+  // Every custom-order card mounts the in-place measurement editor, which
+  // calls this on render.
+  useUpdateOrderMeasurements: () => ({ mutate: vi.fn(), isPending: false }),
   // The "Your data" panel mounts below the orders (its own behavior is covered
   // in account-data.test.tsx); it fetches nothing until pressed.
   useExportAccountData: () => ({ refetch: vi.fn(), isFetching: false }),
@@ -220,7 +223,7 @@ describe("Account dashboard", () => {
     expect(shop).toHaveTextContent("$42");
   });
 
-  it("renders the customer's measurements on the custom order, read-only", () => {
+  it("renders the customer's measurements on the custom order", () => {
     stubHook(mockOverview, { data: overview });
     renderPage();
 
@@ -230,6 +233,33 @@ describe("Account dashboard", () => {
     expect(custom).toHaveTextContent("28");
     // "bust" is surfaced under the "Chest" label.
     expect(custom).toHaveTextContent("Chest");
+    // Unlocked and active, so the values are editable in place; the form
+    // itself stays closed until asked for.
+    expect(screen.getByTestId("measurements-edit-000002")).toBeInTheDocument();
+    expect(
+      screen.queryByTestId("measurements-form-000002"),
+    ).not.toBeInTheDocument();
+  });
+
+  it("offers no measurement edit once the garment is in production", () => {
+    stubHook(mockOverview, {
+      data: {
+        ...overview,
+        customOrders: [
+          { ...overview.customOrders[0], measurementsLocked: true },
+        ],
+      },
+    });
+    renderPage();
+
+    // The server derives the lock, so the dashboard never has to know which
+    // stage freezes measurements — it just doesn't offer the edit.
+    expect(
+      screen.queryByTestId("measurements-edit-000002"),
+    ).not.toBeInTheDocument();
+    expect(
+      screen.getByTestId("measurements-locked-000002"),
+    ).toBeInTheDocument();
   });
 
   it("renders upcoming appointments with inline manage actions", () => {

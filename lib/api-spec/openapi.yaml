@@ -171,6 +171,73 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/ErrorEnvelope"
+  /orders/{orderNumber}/measurements:
+    put:
+      operationId: updateOrderMeasurements
+      tags: [orders]
+      summary: Update an order's measurements in place
+      description: >-
+        Writes the customer's measurements straight onto the order, replacing
+        the five typed Notion properties and the unit. The customer is verified
+        against the email stored on the order and the write is refused once the
+        garment has entered production (MEASUREMENT_LOCK_FROM_STAGE) — the same
+        two gates the change-request endpoint applies. Unlike that endpoint this
+        one edits the order, so it fails closed where the request flow degrades:
+        an order with no stored email to verify against is never written to.
+        Rather than losing what the customer typed, such an edit — and one the
+        orders database has nowhere to store — is filed as an ordinary
+        measurement-change request for a human to apply, reported as
+        outcome="filed". The complete set of five values is required: a partial
+        write would leave the atelier cutting to a mix of old and new numbers.
+      parameters:
+        - name: orderNumber
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/UpdateMeasurementsRequest"
+      responses:
+        "200":
+          description: Measurements updated
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/UpdateMeasurementsResponse"
+        "400":
+          description: Validation error
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorEnvelope"
+        "403":
+          description: The email does not match the one on the order
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorEnvelope"
+        "404":
+          description: Order not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/OrderNotFound"
+        "409":
+          description: Measurements are locked because the order is in production
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorEnvelope"
+        "500":
+          description: Server error
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorEnvelope"
   /orders/{orderNumber}/measurement-change-requests:
     post:
       operationId: createMeasurementChangeRequest
@@ -3025,6 +3092,74 @@ components:
         note:
           type: string
           description: Optional free-text note explaining the requested change.
+    UpdateMeasurementsRequest:
+      type: object
+      required:
+        - email
+        - waist
+        - bust
+        - hips
+        - height
+        - bodyGirth
+        - measurementUnit
+      description: >-
+        New measurements to write onto an order in place. Every value is
+        required, unlike NewMeasurementChangeRequest: a change request is read
+        by a person who can reconcile it against what is on file, whereas this
+        replaces the stored set outright, and a partial write would leave the
+        atelier cutting to a mix of old and new numbers. There is deliberately
+        no "measure me at a fitting" branch here — that asks for a service
+        rather than changing a value, so it stays a change request.
+      properties:
+        email:
+          type: string
+          format: email
+          description: >-
+            The email to verify against the one on the order. A request whose
+            email doesn't match, or an order with no email stored to check
+            against, is refused.
+        waist:
+          type: number
+          exclusiveMinimum: 0
+        bust:
+          type: number
+          exclusiveMinimum: 0
+        hips:
+          type: number
+          exclusiveMinimum: 0
+        height:
+          type: number
+          exclusiveMinimum: 0
+        bodyGirth:
+          type: number
+          exclusiveMinimum: 0
+        measurementUnit:
+          type: string
+          enum: [inches, cm]
+        note:
+          type: string
+          description: >-
+            Optional free-text note for the atelier, recorded on the order's
+            revision trail and carried in the notification email.
+    UpdateMeasurementsResponse:
+      type: object
+      required:
+        - outcome
+      description: >-
+        What became of the edit. "applied" means the values are on the order
+        now and `measurements` carries the set as stored, so the caller renders
+        what was written rather than its own optimistic copy. "filed" means the
+        edit could not be written and was filed as a measurement-change request
+        for the atelier to apply by hand — the two states the customer's work is
+        never lost to: an order carrying no email to verify the edit against,
+        and an orders database that hasn't had the measurement properties added
+        yet. A filed edit carries no `measurements`, because nothing changed.
+      properties:
+        outcome:
+          type: string
+          enum: [applied, filed]
+        measurements:
+          $ref: "#/components/schemas/AccountMeasurements"
     NewMeasurementChangeResponse:
       type: object
       required:
@@ -5089,6 +5224,15 @@ components:
             the atelier sets one.
         measurements:
           $ref: "#/components/schemas/AccountMeasurements"
+        measurementsLocked:
+          type: boolean
+          description: >-
+            True once the order has reached the stage at which measurements are
+            frozen (MEASUREMENT_LOCK_FROM_STAGE), mirroring the same field on
+            OrderStatus. The dashboard offers its in-place edit only when this is
+            false, so the affordance and the server's own gate can't disagree.
+            Absent on a response built before the field existed, which reads as
+            not locked.
     AccountShopOrderSummary:
       type: object
       description: A ready-to-wear shop order as shown on the account dashboard.

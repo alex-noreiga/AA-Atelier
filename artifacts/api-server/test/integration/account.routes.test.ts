@@ -113,6 +113,10 @@ describe("GET /api/account/overview", () => {
           currentStage: "Sewing",
           stages: ["Consultation", "Sewing", "Delivery"],
           state: "active",
+          // Derived server-side from the same rule the tracking page reads, so
+          // the dashboard can offer its in-place measurement edit without
+          // knowing what the lock stage is.
+          measurementsLocked: false,
         },
       ],
       shopOrders: [

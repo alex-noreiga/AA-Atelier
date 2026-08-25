@@ -133,6 +133,18 @@ Express app (artifacts/api-server)  ──►  Notion REST API (orders database)
   │                                  of custom order :n (first deposit, second
   │                                  deposit, balance), priced server-side from the
   │                                  order's Notion invoice; the webhook marks paid
+  ├─ PUT  /api/orders/:n/measurements
+  │                                → writes the customer's edited measurements
+  │                                  straight onto the order (the five typed
+  │                                  properties + unit), replacing the stored set
+  │                                  and appending a dated revision note to the
+  │                                  page body. Same gates as the change request
+  │                                  below, but failing closed: a contradicting
+  │                                  email is refused and an edit the app can't
+  │                                  safely write — an order with no email to
+  │                                  verify against, or a database missing the
+  │                                  properties — is FILED as a change request
+  │                                  (`outcome: "filed"`) rather than lost
   ├─ POST /api/orders/:n/measurement-change-requests
   │                                → files a measurement-change request in the
   │                                  "Website Contact Messages" database, tagged
@@ -375,7 +387,8 @@ Express app (artifacts/api-server)  ──►  Notion REST API (orders database)
 The customer-notification POST endpoints (`/api/orders`, `/api/contact`,
 `/api/notify`, `/api/newsletter`, `/api/waitlist`, `/api/appointments`,
 `/api/appointments/reschedule`, `/api/appointments/cancel`,
-`/api/orders/:n/measurement-change-requests`, `/api/orders/:n/reviews`,
+`/api/orders/:n/measurement-change-requests`, `/api/orders/:n/measurements`,
+`/api/orders/:n/reviews`,
 `/api/orders/:n/cancellation-requests`, `/api/shop-orders/:n/cancellation-requests`,
 `/api/shop-orders/:n/return-requests`) each send a customer email via **Resend**
 as a **best-effort** side effect after the Notion write: a failed send is
@@ -1544,6 +1557,101 @@ Known limits: an appointment the atelier types straight into Google is never
 reminded about (the sweep only recognizes bookings this app made), and there is one
 reminder per booking per start time — an additional "and again an hour before" would
 need a second marker, which the per-channel key scheme extends to cleanly.
+
+## In-place measurement editing
+
+A customer changes the measurements on their own order and the app **writes
+them**, instead of filing a request the atelier applies by hand.
+`PUT /api/orders/:n/measurements` (contract-first), offered on the tracking page
+(`components/measurements-dialog.tsx`) and in the account portal
+(`components/account-measurements.tsx`). The measurement-**change request** flow
+stays exactly as it was, for the two things an edit can't be. Code:
+`services/measurement-update.service.ts`, `updateOrderMeasurements` in
+`lib/notion/orders.repository.ts`, `buildMeasurementProperties` /
+`buildMeasurementRevisionBlocks` in `orders.blocks.ts`, the two
+`measurementsUpdated*Email` builders, and the shared
+`components/measurement-fields.tsx` + `lib/measurements.ts` on the frontend.
+
+1. **Removing the human reviewer is the whole risk, so the gates fail closed.**
+   The email on an order is not a secret, so after this an order number plus a
+   guessed address changes what a garment is cut to. A **contradicting** email is
+   refused outright (403) — that is someone else's order — and the production
+   lock is enforced exactly as the change request enforces it (409). Deliberately
+   **not** reusing `resolveEmailVerification`: its entire contract is to return
+   `false` (accept, **unverified**) for an order with no stored email, and
+   "accept" is the one thing a direct write must not do with it. The service
+   splits the two halves itself.
+
+2. **An edit that can't be trusted or can't be stored is FILED, not refused.**
+   Two cases reach it: an order carrying no email to verify against, and an
+   orders database that hasn't had the measurement properties added. Both would
+   otherwise be a dead end, so the same values are handed to
+   `submitMeasurementChangeRequest` and the response says **`outcome: "filed"`**
+   rather than `"applied"`. Nothing the customer typed is lost, nothing unvetted
+   is written, and the UI says which happened — reporting a save for an edit that
+   only reached an inbox would have someone believe numbers are in force that
+   aren't. It re-reads the order to do this (one extra Notion request on a rare
+   path), which buys the guarantee worth more: a filed request is one the request
+   endpoint itself produced, not a near-copy that drifts.
+
+   The **lock is checked before** that fallback, so a legacy order that is also
+   in production gets the lock answer rather than filing a request the change
+   flow would itself refuse.
+
+3. **Both emails are the tripwire, not a courtesy.** The customer's receipt lists
+   every value with what it was (`Waist: 26 (was 25)`) and invites a reply if the
+   edit wasn't theirs — an edit nobody reviewed is visible to the one person
+   certain to notice. The atelier's notification leads with the order's **current
+   stage**, because unlike a change request it is not a task: the values are
+   already stored, and what the studio needs to know is whether any work has been
+   done to the old numbers. Best-effort as everywhere else.
+
+4. **The page body is APPENDED to, never rewritten.** Measurements live in two
+   places on the order page — the typed properties (what the app reads) and the
+   intake section (what the atelier reads at a glance). An edit rewrites the
+   properties and appends a dated **"Measurements updated"** section listing each
+   new value beside its previous one. Overwriting the intake section would
+   destroy the only record of what a part-made garment was actually cut to, so
+   the page reads chronologically; a value that didn't move carries no "(was …)",
+   since a revision listing five values as changes buries the one that did.
+
+5. **The two writes are not atomic, and the order is deliberate.** Notion has no
+   transaction across a property PATCH and a block append. Properties go first —
+   they are what the app reads back and what the customer is told was saved — and
+   a failed append is a `warn` with the edit still reported as successful,
+   because re-running it to recover a paragraph would rewrite the properties
+   again and file a duplicate revision.
+
+6. **A missing property throws here, where intake drops it.**
+   `createPageDroppingUnknownProperties` drops an un-added property at order
+   intake and keeps the order, because the value survives in the page body. Here
+   the value **is** the write, so `MeasurementPropertiesMissingError` is thrown,
+   the `warn` names the property to add, and the edit is filed (point 2). Same
+   state, opposite correct answer.
+
+7. **All five values are required, and the unit rides with them.** A person
+   reading a change request can reconcile a partial one against what's on file; a
+   write can't, and a partial one would leave the atelier cutting to a mix of old
+   and new numbers. The unit is written every time for the same reason —
+   rewriting a waist without it is how 26 inches silently becomes 26
+   centimetres. On the frontend `parseMeasurement` (`lib/measurements.ts`) exists
+   because **`Number("") === 0`**: a blank field would otherwise validate as a
+   real zero and be saved as a measurement.
+
+8. **There is no "measure me at a fitting" branch.** That asks for a service only
+   a person can perform, not a change of value, so it stays a change request —
+   which is why the tracking page's dialog drives **two** endpoints and the
+   portal's editor only one.
+
+**Atelier setup: none beyond what the account portal already needed** — the five
+`number` properties (`Waist`, `Chest`, `Hips`, `Height`, `Body Girth`) plus the
+`Measurement Unit` `select` on the Order Tracking Pipeline. No env var, no new
+database, no Notion automation; the lock stage is the existing
+`MEASUREMENT_LOCK_FROM_STAGE`. Until those properties exist every edit is filed
+as a change request and the logs name the one that's missing. Known limits: no
+edit history in the app (the revision trail is prose for the atelier), last write
+wins with no conflict detection, and the production lock is the only throttle.
+Full detail in `.agents/memory/in-place-measurement-editing.md`.
 
 ## Post-delivery reviews (capture, then publish)
 
@@ -2984,15 +3092,21 @@ and Google Calendar stay the system of record, still matched by **email**. Front
      `pages/appointment-manage.tsx`); success invalidates the overview query.
      Best-effort: a calendar failure degrades to `appointments: []` and never fails the
      orders view. Caveat: bookings predating the `aptEmail` stamp won't list.
-   - **Measurement history (display-only).** Measurements are written as typed Notion
+   - **Measurements, editable in place.** Measurements are written as typed Notion
      **properties** (five `number`s + a `Measurement Unit` select) in
      `buildOrderProperties`, alongside the page-body blocks the atelier reads (both from
      the one intake payload, so no drift). `extractMeasurements` reads them into
-     `OrderSummary.measurements`, shown read-only under each custom order
-     (`MeasurementsBlock`). Editing still goes through the measurement-change request.
+     `OrderSummary.measurements`, rendered under each custom order by
+     `components/account-measurements.tsx` — which also **edits** them, through
+     `PUT /orders/:n/measurements` (see "In-place measurement editing"). The edit is
+     offered only while `AccountOrderSummary.measurementsLocked` is false, derived
+     server-side because the lock stage is a Studio Setting the browser never sees.
+     The form is **seeded from the stored values**, unlike the tracking page's (which
+     asks for all five fresh — `GET /orders/:n` is keyed on an order number alone and
+     deliberately returns no measurements, so prefilling there would publish them to
+     anyone who knows the number).
      Caveat: only orders placed after the properties were added have readable
      measurements; `db:backfill-legacy` recovers earlier ones from the page body.
-     **Still deferred:** in-place measurement _editing_.
 
 9. **Finished orders are denoted, not inferred — and filed away.** Every order in
    the overview carries a derived **`state`** (`AccountOrderState`: `active` /
@@ -4356,13 +4470,17 @@ in the maintainer's env without edits.
   **Appointment staffing** panel rather than set here; read in
   `lib/appointments/routing.ts`. See "Appointment staffing, edited on the
   dashboard".
-- **Optional measurement-change env var:** `MEASUREMENT_LOCK_FROM_STAGE` (default
+- **Optional measurement-lock env var:** `MEASUREMENT_LOCK_FROM_STAGE` (default
   `Cutting/Pinning`) — the live **Stage** option at/after which an order's
-  measurements are frozen and `POST /orders/:n/measurement-change-requests` is
-  rejected. Like `STATUS_IN_STOCK`, this names a specific option value (a targeted
-  business rule), so if the atelier renames that stage in Notion, set this override.
-  Read in `services/measurement-lock.ts` (`measurementsLocked()`), enforced by
-  `services/measurement-change.service.ts`.
+  measurements are frozen: both `PUT /orders/:n/measurements` and
+  `POST /orders/:n/measurement-change-requests` are rejected past it, and both the
+  tracking page and the account portal hide their edit affordance. Like
+  `STATUS_IN_STOCK`, this names a specific option value (a targeted business rule),
+  so if the atelier renames that stage in Notion, set this override. Read in
+  `services/measurement-lock.ts` (`measurementsLocked()`), enforced by
+  `services/measurement-update.service.ts` and
+  `services/measurement-change.service.ts`, and surfaced to the portal as
+  `AccountOrderSummary.measurementsLocked`.
 - **Optional rush-surcharge env vars:** _frontend, build-time_ —
   `VITE_RUSH_WINDOW_DAYS` (default `21`, a needed-by date within this many days of
   today marks a custom order as a rush) and `VITE_RUSH_SURCHARGE_NOTE` (default
@@ -4668,7 +4786,8 @@ Three things about it are load-bearing:
 | Change the rush order surcharge                          | `artifacts/web-app/src/lib/rush.ts` (window + disclosure) + `pages/order-form.tsx` (detect/acknowledge/send); `api-server/src/lib/notion/orders.blocks.ts` + `orders.schema.ts` (`Rush Order` record); `api-server/src/services/rush.ts` + `services/invoice-generator.service.ts` (server-priced "Surcharge" line); `web-app/src/lib/invoice-format.ts` ("Surcharge" line display)                                                                                                                                                                                                                                                                                                                                                                                                                                                 |
 | Change referral & returning-skater rewards               | `api-server/src/services/rewards.service.ts` (engine + amount getters) + `lib/stripe/promotions.ts` (`createDiscountCode`) + `lib/notion/clients.repository.ts` (reward reads + `patchClientProperties`); wired from `submitOrder` (capture) + `recordPaidOrder` / `recordPayment` (issue); reward emails in `lib/resend/emails.ts`; `services/account.service.ts` + `web-app/src/pages/account.tsx` (referral card) + `pages/order-form.tsx` (`referralCode` field)                                                                                                                                                                                                                                                                                                                                                                |
 | Add/read an atelier-editable live setting                | `api-server/src/lib/settings/catalog.ts` (`SETTING_DEFINITIONS` — the typed entry the dashboard renders) + `lib/settings/store.ts` (`settingValue`) + `lib/notion/settings.{schema,repository}.ts` (Notion read/write); consume with `settingValue(KEY) ?? process.env[KEY] ?? default` (see `services/rush.ts`); primed by the middleware in `app.ts`. Notion "Studio Settings" DB, `NOTION_SETTINGS_DATABASE_ID`                                                                                                                                                                                                                                                                                                                                                                                                                  |
-| Change the measurement-change request                    | `artifacts/web-app/src/components/measurement-change-dialog.tsx` (opened from `components/custom-order-result.tsx`); `api-server/src/services/measurement-change.service.ts` + `routes/orders.ts` + `lib/notion/measurement-change.{blocks,repository}.ts` (writes to the **contact** database)                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                     |
+| Change in-place measurement editing                      | `api-server/src/services/measurement-update.service.ts` (the gates + the file-instead-of-write fallback) + `updateOrderMeasurements` in `lib/notion/orders.repository.ts` (properties then an appended revision note) + `buildMeasurementProperties` / `buildMeasurementRevisionBlocks` in `lib/notion/orders.blocks.ts` + the two `measurementsUpdated*Email` builders in `lib/resend/emails.ts`; frontend `web-app/src/components/measurements-dialog.tsx` (tracking page) + `components/account-measurements.tsx` (portal), sharing `components/measurement-fields.tsx` + `lib/measurements.ts`. The lock rule is `services/measurement-lock.ts`, surfaced on the portal as `AccountOrderSummary.measurementsLocked` from `listCustomOrders`                                                                                     |
+| Change the measurement-change request                    | `artifacts/web-app/src/components/measurements-dialog.tsx` (its "re-measure at a fitting" branch, opened from `components/custom-order-result.tsx`); `api-server/src/services/measurement-change.service.ts` + `routes/orders.ts` + `lib/notion/measurement-change.{blocks,repository}.ts` (writes to the **contact** database)                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                     |
 | Change the studio settings editor                        | `web-app/src/components/studio-settings.tsx` (rendered by `pages/studio.tsx`); `services/studio-settings.service.ts` + the `/studio/settings` handlers in `routes/studio.ts` + `lib/settings/catalog.ts` (the per-key definition + its two validators) + `fetchSettingRows` / `saveSetting` in `lib/notion/settings.repository.ts`                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                  |
 | Change review moderation on the dashboard                | `web-app/src/components/studio-reviews.tsx` (rendered by `pages/studio.tsx`); `services/studio-reviews.service.ts` + the `/studio/reviews` handlers in `routes/studio.ts` + the moderation half of `lib/notion/reviews.{schema,repository}.ts`                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                      |
 | Change the customer-request queue on the dashboard       | `web-app/src/components/studio-requests.tsx` + `lib/studio-handoff.ts` (the hand-off into `components/studio-tools.tsx`), rendered by `pages/studio.tsx`; `services/studio-requests.service.ts` + the `/studio/requests` handlers in `routes/studio.ts` + `lib/notion/requests.{schema,repository}.ts` — which tool actions which kind lives in `requestAction`                                                                                                                                                                                                                                                                                                                                                                                                                                                                     |

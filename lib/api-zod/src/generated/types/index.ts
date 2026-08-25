@@ -152,3 +152,7 @@ export * from './studioTopItem';
 export * from './unknownSettingRow';
 export * from './untrackedMaterial';
 export * from './untrackedMaterialReason';
+export * from './updateMeasurementsRequest';
+export * from './updateMeasurementsRequestMeasurementUnit';
+export * from './updateMeasurementsResponse';
+export * from './updateMeasurementsResponseOutcome';

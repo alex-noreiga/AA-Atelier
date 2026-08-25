@@ -2,7 +2,7 @@ import { Link } from "wouter";
 import { useCreateOrderPayment } from "@workspace/api-client-react";
 import type { OrderStatus, InvoiceDeposit } from "@workspace/api-client-react";
 import { Button } from "@/components/ui/button";
-import { MeasurementChangeDialog } from "@/components/measurement-change-dialog";
+import { MeasurementsDialog } from "@/components/measurements-dialog";
 import { CancellationRequestDialog } from "@/components/cancellation-request-dialog";
 import { ReviewDialog } from "@/components/review-dialog";
 import { CtaLink } from "@/components/cta";
@@ -288,9 +288,10 @@ export function CustomOrderResult({
 
       <div className="mt-16 flex flex-col items-center gap-6">
         {/* A delivered order shows the review invite above; here it needs no
-            measurement affordance. Otherwise: the change dialog until the
-            garment is in production, then a locked notice. A cancelled order
-            shows neither. */}
+            measurement affordance. Otherwise: the editor until the garment is
+            in production, then a locked notice — the same `measurementsLocked`
+            the server gates the write on, so the affordance and the answer
+            can't disagree. A cancelled order shows neither. */}
         {!isCancelled &&
           !isDelivered &&
           (orderStatus.measurementsLocked ? (
@@ -302,7 +303,7 @@ export function CustomOrderResult({
               Need a change? Please contact us.
             </p>
           ) : (
-            <MeasurementChangeDialog orderNumber={orderStatus.orderNumber} />
+            <MeasurementsDialog orderNumber={orderStatus.orderNumber} />
           ))}
         {/* Cancellation can be requested up until delivery (the server rejects a
             delivered order as a return); a cancelled order shows nothing. */}

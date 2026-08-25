@@ -29,6 +29,7 @@ describe("POST /api/orders/:orderNumber/reviews", () => {
     mockFind.mockResolvedValue({
       email: "ada@example.com",
       pageId: "page-order-test",
+      orderName: "Ada – Custom Dress",
       currentStage: "Delivery",
       stages: STAGES,
     });
@@ -55,6 +56,7 @@ describe("POST /api/orders/:orderNumber/reviews", () => {
     mockFind.mockResolvedValue({
       email: "ada@example.com",
       pageId: "page-order-test",
+      orderName: "Ada – Custom Dress",
       currentStage: "Sketching",
       stages: STAGES,
     });
@@ -70,6 +72,7 @@ describe("POST /api/orders/:orderNumber/reviews", () => {
     mockFind.mockResolvedValue({
       email: "someone-else@example.com",
       pageId: "page-order-test",
+      orderName: "Ada – Custom Dress",
       currentStage: "Delivery",
       stages: STAGES,
     });
