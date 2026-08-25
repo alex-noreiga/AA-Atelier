@@ -160,9 +160,7 @@ export function StudioAppointmentStaff() {
       ) : (
         <div className="rounded-sm border border-border bg-card/40 p-4 sm:p-5">
           <p className="text-sm text-muted-foreground font-light">
-            Who takes each kind of appointment. A customer is only offered a
-            time where this and the working hours above agree, so a type nobody
-            is ticked for never appears with a slot.
+            Who takes each kind of appointment.
           </p>
 
           {!data.configured && (
