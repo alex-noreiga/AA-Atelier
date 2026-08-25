@@ -588,7 +588,6 @@ describe("studio dashboard — figures", () => {
     renderPage();
     const panel = screen.getByTestId("panel-channels");
     expect(panel).toHaveTextContent("No channel set");
-    expect(panel).toHaveTextContent(/filed by hand and never tagged/);
   });
 
   it("shows what is out at the skate shop and what it paid", () => {

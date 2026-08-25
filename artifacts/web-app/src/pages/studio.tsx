@@ -968,9 +968,8 @@ function RevenuePanel({ months }: { months: StudioRevenueMonth[] }) {
  * vanished from a panel is one nobody notices has gone quiet.
  *
  * The untagged row is the one that is NOT a channel. It is a gap in the records
- * — orders somebody filed and didn't tag — so it is labelled as one and says
- * what to do about it, rather than being credited to a channel it might not
- * belong to.
+ * — orders somebody filed and didn't tag — so it is labelled as one rather than
+ * credited to a channel it might not belong to.
  */
 function ChannelsPanel({ channels }: { channels: StudioChannelSales[] }) {
   const max = channels.reduce((top, c) => Math.max(top, c.revenue), 0);
@@ -1007,13 +1006,6 @@ function ChannelsPanel({ channels }: { channels: StudioChannelSales[] }) {
               />
             ))}
           </div>
-          {channels.some((c) => c.channel === "" && c.orders > 0) && (
-            <p className="mt-4 text-xs text-muted-foreground font-light">
-              Orders with no channel are ones filed by hand and never tagged.
-              Set their Sales Channel in Notion and they&apos;ll move to the
-              right row here — orders the website takes tag themselves.
-            </p>
-          )}
         </>
       )}
     </Section>
