@@ -7,9 +7,9 @@
  */
 
 /**
- * The carrier tracking details, surfaced once the atelier fills them in on the Notion order (a `Tracking Number`, an optional `Carrier` label, and an optional `Tracking URL`). Absent until a tracking number is set. When present the tracking page shows the number, linked to the URL when one is given.
+ * The carrier tracking details, surfaced once the atelier fills them in on the Notion order (a `Tracking Number`, an optional `Carrier` label, and an optional `Tracking URL`). Absent until a tracking number is set, and never present on a pickup order. When present the tracking page shows the number, linked to the URL when one is given.
  */
-export type ShopOrderStatusTracking = {
+export type OrderFulfilmentTracking = {
   /** The carrier tracking number, shown to the customer. */
   number: string;
   /** An optional human carrier label, e.g. "USPS" or "UPS". */

@@ -19,7 +19,13 @@ import { test, expect } from "@playwright/test";
 // static build output.
 
 /** A route whose prerendered page must carry its OWN artwork, not the default. */
-const PRERENDERED_ROUTES = ["/about", "/services", "/shop", "/order"];
+const PRERENDERED_ROUTES = [
+  "/about",
+  "/services",
+  "/shop",
+  "/portfolio",
+  "/order",
+];
 
 function ogImages(html: string): string[] {
   return [...html.matchAll(/<meta property="og:image" content="([^"]+)"/g)].map(

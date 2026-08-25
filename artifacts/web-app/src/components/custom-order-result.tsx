@@ -7,6 +7,7 @@ import { CancellationRequestDialog } from "@/components/cancellation-request-dia
 import { ReviewDialog } from "@/components/review-dialog";
 import { CtaLink } from "@/components/cta";
 import { StatusTimeline } from "@/components/status-timeline";
+import { FulfilmentPanel } from "@/components/fulfilment-panel";
 import { getStageDescription } from "@/lib/stage-descriptions";
 import { formatPrice, formatDate } from "@/lib/format";
 import { useToast } from "@/hooks/use-toast";
@@ -285,6 +286,12 @@ export function CustomOrderResult({
           );
         }}
       />
+
+      {/* How the finished piece gets to the customer: carrier tracking once it's
+          posted, or — for the skaters who collect in person — when and where.
+          Below the timeline, exactly where a shop order carries it. The server
+          omits it on a cancelled order; the guard keeps that true regardless. */}
+      {!isCancelled && <FulfilmentPanel fulfilment={orderStatus.fulfilment} />}
 
       <div className="mt-16 flex flex-col items-center gap-6">
         {/* A delivered order shows the review invite above; here it needs no

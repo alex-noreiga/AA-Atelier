@@ -117,7 +117,12 @@ Express app (artifacts/api-server)  ──►  Notion REST API (orders database)
   │                                  but not staff (indistinguishable from a URL
   │                                  that doesn't exist, by design), 403 staff
   │                                  but not signed in with Google
-  ├─ GET  /api/orders/:orderNumber → order status + stage list
+  ├─ GET  /api/orders/:orderNumber → order status + stage list, plus how the
+  │                                  piece reaches the customer: carrier tracking
+  │                                  and a ship-by date, or — for a local skater
+  │                                  collecting in person — their scheduled
+  │                                  pickup. One `OrderFulfilment` shape, shared
+  │                                  with the shop-order lookup below
   ├─ POST /api/orders              → creates a Notion page, returns order number,
   │                                  sends an order-confirmation email, best-effort
   │                                  upserts a Client CRM record by email. Optional
@@ -208,7 +213,10 @@ Express app (artifacts/api-server)  ──►  Notion REST API (orders database)
   │                                  database ⇒ an empty list, not an error
   ├─ GET  /api/shop-orders/:orderNumber
   │                                → a shop order's current fulfillment Status +
-  │                                  the live status list (tracking timeline)
+  │                                  the live status list (tracking timeline) +
+  │                                  the same `OrderFulfilment` the custom order
+  │                                  above carries (this replaced the old
+  │                                  shop-only `tracking` field)
   ├─ POST /api/shop-orders/:n/cancellation-requests
   │                                → shop-order cancellation request into the same
   │                                  contact database. Gated on email match only
@@ -809,7 +817,9 @@ Load-bearing points:
    **formula** and can't be written, so the line row is the only thing there is
    to write. See "Automatic shop inventory decrement" below.
 
-5. **Shipping rates live in Stripe, not code.** `checkout.service` reads
+5. **Shipping rates live in Stripe, not code** — including the **local-pickup**
+   one, whose display name is what marks the order a collection (see "Order
+   tracking: shipping and local pickup"). `checkout.service` reads
    `STRIPE_SHIPPING_RATE_IDS` (comma-separated `shr_…` ids the atelier creates and
    prices in the Dashboard) and attaches them as the session's `shipping_options`;
    unset ⇒ no shipping is charged. The order's `Total` (Stripe `amount_total`)
@@ -850,12 +860,9 @@ Load-bearing points:
 
    Once the order ships the atelier can add **carrier tracking** — three optional,
    additive properties the app only reads: `Tracking Number` (rich_text), `Carrier`
-   (rich_text, a display label), and `Tracking URL` (url).
-   `findShopOrderByNumber` reads them via `readTracking`, gated on the number (a
-   carrier/url with no number is dropped), into `ShopOrderRecord.tracking` → the
-   contract's `ShopOrderStatus.tracking`. `shop-order-result.tsx` renders a
-   "Tracking" panel below the timeline, suppressed on a cancelled order. No new env
-   var and nothing to write.
+   (rich_text, a display label), and `Tracking URL` (url). They now reach the
+   customer through the shared `OrderFulfilment` view, alongside the local-pickup
+   half — see "Order tracking: shipping and local pickup" below.
 
 9. **Matching add-ons are a self-relation on the inventory, resolved client-side.** A
    product can offer companion items (a skate soaker → its matching blade towel) via
@@ -1305,6 +1312,111 @@ than the `&amount=180` a formula link had to have hand-edited onto its URL. Code
 `services/return-refund.service.ts`, `services/studio-tools.service.ts`,
 `lib/stripe/refunds.ts` (the shared Stripe refund primitives), and
 `recordShopOrderRefund` in `lib/notion/shop-orders.repository.ts`.
+
+## Order tracking: shipping and local pickup
+
+"Where is my order?" is answered by one shape, `OrderFulfilment`, carried by
+**both** `OrderStatus` and `ShopOrderStatus` — so a custom order and a shop order
+answer it identically. It replaced the shop-only `ShopOrderStatus.tracking`
+rather than sitting beside it: one shape, one component, no way for the two order
+kinds to drift. Code: `lib/fulfilment.ts` (the pure resolver both services call),
+`extractFulfilmentFields` in `notion/orders.schema.ts` + `readFulfilmentFields` in
+`notion/shop-orders.repository.ts` (the reads), and on the frontend
+`components/fulfilment-panel.tsx` + `lib/fulfilment-format.ts`, rendered below the
+timeline by `custom-order-result.tsx` and `shop-order-result.tsx`.
+
+1. **Local pickup is the point, not a footnote.** Plenty of the studio's skaters
+   collect at the studio or the rink, so their order has **no tracking number and
+   never will** — and a tracking panel that stays empty forever reads as the site
+   being broken rather than as "there is nothing to track". A pickup order answers
+   with its scheduled collection time and place instead, and says plainly that it
+   is being collected in person. It shows **even before a time is arranged** ("We'll
+   arrange a pickup time with you"), because that the order _is_ a pickup is itself
+   the answer. A shipped order, by contrast, shows nothing until the atelier gives
+   it something — a tracking number, a ship-by date, or a handoff state — since an
+   empty shipping panel on a garment still being sewn is noise.
+
+2. **A label with nothing behind it loses to a fact.** The declared
+   `Delivery Method` decides ship vs pickup — _unless_ the order carries the facts
+   of the other kind and none of its own: a "Ship" order with a pickup time and no
+   tracking is a pickup, a "Local pickup" order with a tracking number and no
+   pickup details is a shipment. That symmetric rule is what makes a wrong default
+   on the database template (every new order pre-set to one method) cost nothing.
+   Unset ⇒ inferred the same way, defaulting to `ship`, so an untouched order
+   behaves exactly as it always did. `Ship By` is deliberately **not** counted as a
+   shipping fact — on a pickup order the atelier reads it as "ready by", so
+   counting it would flip every scheduled collection back to a shipment.
+
+3. **A promise is dropped the moment it stops being true.** Once a tracking number
+   exists — or the order reaches its final stage (the positional `orderDelivered`
+   test, never a stage name) — the ship-by date is dropped: the tracking is the
+   answer, and a past "expected to ship by" reads as a broken promise rather than
+   as history. The handoff state goes at the final stage for the same reason. The
+   **tracking number itself is never dropped** (a delivered order still wants its
+   link), and the whole object is omitted on a **cancelled** order.
+
+4. **`Fulfilment` is read now — but never as completion.** The custom order's
+   4-step `Fulfilment` select (To pack → Packed → Shipped → Delivered/Picked up)
+   rides along as `state`, said in customer words by `fulfilmentStateNote` and
+   falling back to the atelier's own word for an option this map doesn't know
+   (cosmetic, same graceful fallback as `stage-descriptions.ts`). `Stage` remains
+   the single source of truth for "is it done?" — see
+   `.agents/memory/order-stage-vs-fulfilment.md`, whose "the app never reads
+   Fulfilment" line this supersedes. Shop orders send no `state`: their `Status`
+   workflow **is** the fulfilment state, already rendered as the timeline.
+
+5. **The customer's own address is never returned.** `Ship-to Address` /
+   `Shipping Address` are read by neither repository, and both carry a comment
+   saying why: the tracking lookup is gated by **order number alone**, so echoing
+   the address back would hand a customer's home address to anyone holding their
+   number. The pickup **location** is the studio's own address, which is why that
+   one is safe to serve.
+
+6. **A pickup time is an instant; a ship-by is a calendar day.** A pickup datetime
+   is rendered in the studio's `APPOINTMENT_TIMEZONE`, carried on the response as
+   `pickup.timezone` (same contract as `AppointmentDetails.timezone`), so a
+   customer in another state is told the studio's local time. A **bare** pickup
+   date carries no zone and goes through `formatDate` (pinned to UTC) — parsed as
+   UTC midnight and formatted in a western zone it would otherwise slip to the day
+   before. `shipBy` is reduced to its date half server-side for the same reason.
+
+7. **A shop customer chooses pickup at checkout, and the order marks itself.**
+   The atelier offers a **local-pickup Stripe shipping rate** alongside the
+   posted ones (an ordinary `shr_…` in `STRIPE_SHIPPING_RATE_IDS`, priced at
+   $0), and the webhook writes `Delivery Method = "Local pickup"` when the rate
+   the customer chose is a collection. It's decided from the rate's **display
+   name** via the shared `looksLikePickup` — the same words that decide what the
+   Notion select means, so the rate the customer picks and the column the
+   atelier reads can't disagree. The name and not the id, deliberately: ids are
+   mode-scoped, so pinning to one would mean a second env var to keep in step
+   with `STRIPE_SHIPPING_RATE_IDS` across two Stripe modes, silently breaking
+   the day a rate is replaced. This is the **only write** in the whole feature.
+   A posted rate writes nothing (an order with no method reads as a shipment
+   anyway), and `chosePickupRate` needs `shipping_cost.shipping_rate` expanded
+   on the retrieved session — the webhook asks for it alongside the line-item
+   products.
+
+   Because that write lands on the **Stripe webhook**, `createShopOrder` now
+   goes through the same `createPageDroppingUnknownProperties` the order intake
+   uses (extracted to `lib/notion/create-page.ts`): a 400 over an un-added
+   `Delivery Method` would otherwise lose a **paid** order until the atelier
+   added the column, and the redelivery would fail identically.
+
+**Atelier setup (optional, additive, nothing blocking the deploy).** On **Custom
+Orders** and **shop orders** alike, add `Delivery Method` (select — `Ship` /
+`Local pickup`), `Pickup Time` (date, **include a time**) and `Pickup Location`
+(rich_text). Custom Orders may also gain `Carrier` (rich_text) and `Tracking URL`
+(url) to match shop orders; until they exist a custom order's tracking number
+simply shows unlinked and unlabelled. `Fulfilment`, `Ship By` and `Tracking
+Number` already exist on Custom Orders — those are the "fields the app never
+reads" the roadmap card named. Apart from the checkout write above the app
+**writes none of it**, so a missing property costs only the thing it would have
+said. Leaving `Delivery Method` unset works too — scheduling a `Pickup Time` is
+enough to make an order read as a pickup. In Stripe, name the pickup rate
+something that says collection ("Local pickup", "Collect at the studio") and add
+its id to `STRIPE_SHIPPING_RATE_IDS` **in both modes**; a rate named without
+those words still sells, it just doesn't mark the order. Known limit: a **custom**
+order isn't bought through the cart, so its method is still set by hand.
 
 ## Production schedule (auto-generated stage milestones)
 
@@ -1759,6 +1871,188 @@ minutes behind the edge cache.
    the two gates per row. Both surfaces write the same `Status` select, so neither is
    authoritative over the other. See "Curating which reviews show" below and
    `.agents/memory/reviews-curation-views.md`.
+
+## Portfolio & finished-work gallery
+
+`/portfolio` is the public showcase of the atelier's work — finished costumes and
+the sketches they began as — read from the **"🎨 Design Portfolio & Sketch
+Library"** Notion database the atelier has kept since long before the site
+existed, and served by `GET /api/portfolio` (contract-first, `useGetPortfolio`).
+Read-only: the app never writes that database. Code:
+`lib/notion/portfolio.{schema,repository}.ts`, `getPortfolioNotionClient`,
+`services/portfolio.service.ts`, `routes/portfolio.ts`, and on the frontend
+`web-app/src/pages/portfolio.tsx`. Load-bearing decisions:
+
+1. **One gate, and it fails closed: `Show on website`.** The database is the
+   atelier's private sketchbook first — it holds work in progress and pieces made
+   for named customers — so publication is opt-in per row, and an absent
+   property, an unticked box, **or a row with no image** all read as "not
+   published". The last is not a formality: a card with no photograph is a hole
+   in the grid, and a row whose picture hasn't been attached yet is exactly the
+   one somebody ticks the box on in advance. The property name deliberately
+   matches the shop inventory's own `Show on website`, so the atelier learns one
+   convention across both public catalogues.
+
+   It is **not** the reviews' two-gate curation, on purpose: a testimonial is the
+   customer's words and needs their consent, while these are photographs of the
+   atelier's own work and the decision to show one is theirs alone. (The atelier
+   still owns that judgement for a commission made for a named skater — the
+   checkbox is where it is recorded.)
+
+2. **The facet DIMENSIONS are code; the facet OPTIONS are read live.** Which
+   questions the gallery can be filtered by — type/stage, discipline, season,
+   colorway, technique, competition — is `FACET_DEFINITIONS` in
+   `portfolio.schema.ts`, the same targeted-business-rule exception as the
+   appointment catalog, because the UI has to mirror it. What the answers _are_
+   is derived from the published rows on every read, so the atelier adds a
+   discipline by typing it on a piece, never by asking for a deploy. **Never
+   hardcode an option list here.**
+
+   A dimension is offered **only when the published work actually varies along
+   it** (two or more distinct values). Fewer than that means every piece answers
+   it the same way, or none answers it at all, and a chip that filters nothing is
+   worse than no chip — it invites a click that changes the grid not at all. That
+   one rule is what lets every dimension be declared up front while the gallery
+   shows only the ones that mean something today.
+
+   **A dimension may name SEVERAL properties, in preference order** — the first
+   one a row carries wins (`FacetDefinition.properties`). That exists so a Notion
+   **rename isn't a flag day**: renaming `Type` while the code read only `Type`
+   would drop that entire chip row silently — no error, no log, just a filter
+   that stopped existing. Listing the new name beside the old lets the rename and
+   the deploy happen days apart, in either order. Only the `label` then needs a
+   follow-up line, which is cosmetic and visible rather than silent. `type` reads
+   `Stage` then `Type` for exactly this reason (see the atelier-setup table).
+
+3. **A facet property may be a `select`, a `multi_select`, or `rich_text`.**
+   Three of the four don't exist yet — the atelier creates them — and a reader
+   insisting on `multi_select` would answer a `select` named `Discipline` with
+   silence: no error, no log, just a chip group that never appears. A facet value
+   is the same string whichever way the property was made, so accepting all three
+   removes a whole silent-failure class for three lines. This is a **documented
+   tolerance**, not an exception to "property types must match the live schema" —
+   the values are still trimmed, de-duplicated, and dropped when blank.
+
+4. **A row is a DESIGN, not a picture — so images are gathered across several
+   properties.** `PORTFOLIO_IMAGE_PROPERTIES` reads `Finished`, `Image / Sketch`,
+   `Mockup` and `Sketch` in that order and concatenates them, de-duplicated; the
+   first image found anywhere is the card's cover, which is why a finished
+   photograph leads. One row per image would put a dress and its own sketch on
+   the grid as two unrelated cards — precisely what the page's "finished costumes
+   and the sketches they began as" promises it isn't. The atelier can either drop
+   every picture into the single `Image / Sketch` property (nothing to add) or
+   split them per stage; a property the database lacks contributes nothing.
+
+5. **The gallery is ordered by when the piece was FINISHED, not when its row was
+   typed.** `portfolioSortKey` reads the optional `Completed` date and falls back
+   to the Notion `created_time`. The fallback alone is close to arbitrary — a
+   piece made last spring but recorded last week would lead one made last week
+   and recorded last spring. Both are ISO-8601, so one string comparison orders a
+   mixture of dated and undated pieces. `completedAt` is **internal**: it isn't on
+   the contract, so the response's zod parse strips it (same shape as
+   `OrderSummary.cancelled`) — the client is served the ordering, not the field
+   that produced it. Deliberately **not** `Season`: "2026-27" is a label, not a
+   point in time, and sorting that text against dates would be a silent mess.
+
+6. **A bounded scan, not a filtered query — because the gate doesn't exist yet.**
+   A Notion `filter` naming a property the database lacks answers **400**, so
+   pushing `Show on website` into the query would make the gallery fail loudly for
+   exactly as long as it took the atelier to add the column. The publish gate is
+   applied in the pure extractor instead (`isPublishable`), where a missing
+   property simply reads as `false`. Nothing is lost: deriving the chips needs
+   every published row anyway, and the database is a costume studio's sketchbook,
+   nowhere near `scanDatabase`'s cap.
+
+7. **Degrade to an empty gallery for the states only a human can clear; throw for
+   the rest.** An unset `NOTION_PORTFOLIO_DATABASE_ID` and a Notion **404** (wrong
+   id, or the integration was never shared) are configuration, not outages — they
+   cannot fix themselves, so erroring a marketing page and alerting the inbox on
+   every visit would be noise. Any **other** status still throws, because an
+   outage clears itself and is worth the one alert. The 404 is deliberately **not
+   cached**: the fix is a human sharing the database, and caching the empty result
+   would hold the gallery blank for another minute after they did. Otherwise the
+   read is the usual 60s TTL + fall-back-to-stale-on-error.
+
+8. **The edge cache is capped by Notion's signed image URLs.** A `files` property
+   yields URLs that expire in about an hour, so `s-maxage=120` +
+   `stale-while-revalidate=600` (≈12 min total) stays well inside that — the same
+   reasoning, and the same numbers, as `/products`. An integration test asserts
+   the total stays under an hour so nobody raises it casually.
+
+9. **The projection is narrow.** A row relates to the **Order Form Submission** it
+   was made for; neither that order nor the customer behind it is in the contract
+   or the mapping. `PortfolioPiece` carries an id, a title, the image URLs, its
+   facet values, and the Notion created time it is ordered by — nothing else.
+
+10. **The page renders what it is given.** It never hardcodes a filter option and
+    never assumes a dimension exists; chips are read back through the server's
+    current options, so a visitor is never stranded on an option the atelier just
+    unpublished. Dimensions AND, values within a dimension OR. Four terminal states
+    — loading, error, nothing published, nothing matching the filters — because a
+    gallery that is merely empty reads as broken.
+
+**Atelier setup.** One required property; everything else is additive, and a
+property the database lacks simply contributes nothing.
+
+| Property          | Type                       | Effect                                                                       |
+| ----------------- | -------------------------- | ---------------------------------------------------------------------------- |
+| `Show on website` | checkbox — **required**    | Ticking it publishes that piece. Until it exists, nothing is published       |
+| `Completed`       | date _(optional)_          | Orders the gallery by when the piece was made rather than when it was typed  |
+| `Stage`           | select _(optional)_        | `Concept` / `In progress` / `Delivered`; the rename of `Type`, both are read |
+| `Discipline`      | multi_select _(optional)_  | Adds a Discipline chip row once two published pieces differ                  |
+| `Season`          | select / text _(optional)_ | Adds a Season chip row; match the Competitions database's `2026-27` form     |
+| `Colorway`        | multi_select _(optional)_  | Adds a Colorway chip row. Reuse the intake picker's colour names             |
+| `Techniques`      | multi_select _(optional)_  | Adds a Technique chip row (Rhinestoning, Appliqué, Hand-beading, …)          |
+| `Competition`     | select _(optional)_        | Adds a Competition chip row                                                  |
+| `Finished`        | files _(optional)_         | A design's finished photographs; leads the card, ahead of every other image  |
+| `Mockup`          | files _(optional)_         | A design's digital mockups                                                   |
+| `Sketch`          | files _(optional)_         | The sketch it began as                                                       |
+
+`Name`, `Image / Sketch` and `Type` already exist and are read as they are.
+Then share the Notion integration with the database and set
+**`NOTION_PORTFOLIO_DATABASE_ID`** — unset ⇒ `/portfolio` serves an empty gallery
+and says so, rather than erroring.
+
+**`Type` was renamed to `Stage`** (August 2026) — from "what medium is this
+image" (Preliminary Sketch / Completed Dress / Digital Mockup) to "where is this
+design" (`Concept` / `In progress` / `Delivered`), which is the question that
+survives a row being a design carrying several images rather than one picture.
+The facet's `label` is `"Stage"` to match. `Type` is still read behind it: the
+alias costs nothing, and a workspace restored from an older backup would
+otherwise silently lose that whole chip row.
+
+Note the rename **did not carry the row values across** — Notion replaced the
+option list, so every row's `Stage` came back empty and had to be re-stamped by
+hand. Worth remembering before renaming a select's options on a database that
+already has rows in it.
+
+**The colour vocabulary is shared with the intake form.** `Colorway`'s options
+should be the same names as the order form's colour picker (the `COLOR_PALETTE`
+Studio Setting, or the built-in primary palette when it's unset: Red, Orange,
+Yellow, Green, Blue, Purple, Pink, Black, White, Ivory, Gold, Silver). A visitor
+who filters the portfolio by one word and meets a different word on the order
+form has hit a seam. Broad buckets also filter better than exact fabric shades,
+which mostly match one piece each. Nothing in code enforces the correspondence —
+change both together.
+
+**Two properties the app deliberately never reads**, worth having anyway: an
+`Order Form Submissions` relation back to the commission (the atelier's
+click-through from a photograph to the measurements and the invoice — it is
+absent from the contract and the mapping on purpose, so no customer data can
+leak), and a relation to the materials database, which is what turns the archive
+from a gallery into a reference library.
+
+`Competition` is deliberately a plain property rather than a relation to the
+**🏆 Competitions** database: that one is the _marketing calendar_ (when to start
+a push ahead of an event, with `Active` / `Push starts` / `Lead time`), not
+portfolio metadata, so relating to it would couple a filter chip to a scheduling
+tool and cost a second database share for a string.
+
+**Known limits.** The gallery is one flat list — there is no pagination and no
+per-piece page, so a portfolio grown past a few hundred rows wants both, and a
+piece cannot be deep-linked or shared on its own the way `/shop/:productId` can.
+`SMOKE_EXPECT_PORTFOLIO=1` is worth setting once pieces are live, for the same
+reason as `SMOKE_EXPECT_REVIEWS`.
 
 ### Curating which reviews show (Notion views)
 
@@ -4340,6 +4634,7 @@ and a boolean aren't sensitive), so they are repo **variables**, not secrets:
 | -------------------------- | ------------------------------------------------------------- | ------------------------------------------------------------------ |
 | `SMOKE_KNOWN_ORDER_NUMBER` | Falls back to the **`ORD-TEST-00000`** default in `smoke.yml` | Overrides the default with that order                              |
 | `SMOKE_EXPECT_REVIEWS`     | `reviews.smoke.ts` accepts an empty list                      | `1` requires `GET /api/reviews` to return at least one testimonial |
+| `SMOKE_EXPECT_PORTFOLIO`   | `portfolio.smoke.ts` accepts an empty gallery                 | `1` requires `GET /api/portfolio` to return at least one piece     |
 
 `edge-cache.smoke.ts` watches the four public reads (`/reviews`, `/services`,
 `/colors`, `/products`) still being **served by the CDN**: it asserts each sets
@@ -4697,6 +4992,13 @@ in the maintainer's env without edits.
   replacing the file, never a deploy. Unset ⇒ the guides panel says it isn't
   connected. Read at first use in `getStudioGuidesNotionClient`; gated by
   `guidesConfigured()`. See "How-to guides on the studio dashboard" above.
+- **Optional portfolio database:** `NOTION_PORTFOLIO_DATABASE_ID` (the "🎨 Design
+  Portfolio & Sketch Library" database). When set (and the integration is shared
+  with it), `/portfolio` shows every row whose **`Show on website`** checkbox is
+  ticked, with filter chips derived from the published rows. Read-only — the app
+  never writes that database. Unset (or a Notion 404) ⇒ the gallery is empty and
+  says so, rather than erroring a marketing page. Read at first use in
+  `getPortfolioNotionClient`. See "Portfolio & finished-work gallery" above.
 - **Optional commission-capacity env vars:** `COMMISSION_CAPACITY` (default `0` =
   no cap, so the books never close on the count), `COMMISSION_INTAKE` (default
   `auto`; `open` / `closed` override the count in either direction) and
@@ -4749,6 +5051,7 @@ scope went with the working-hours sheet.
 | `NOTION_ORDER_LINES_DATABASE_ID`                                                                                  | No order lines written ⇒ shop stock never decrements                |
 | `NOTION_MATERIALS_DATABASE_ID`                                                                                    | No materials panel (`configured: false`) and no weekly digest       |
 | `NOTION_STUDIO_GUIDES_DATABASE_ID`                                                                                | No how-to guides; the dashboard panel says it isn't connected       |
+| `NOTION_PORTFOLIO_DATABASE_ID`                                                                                    | No portfolio pieces; `/portfolio` shows its empty state             |
 | `NOTION_CONSIGNMENT_DATABASE_ID`                                                                                  | No consignment panel; the shelf at the skate shop isn't counted     |
 | `COMMISSION_CAPACITY`                                                                                             | `0` — no cap, so the books never close on the count                 |
 | `COMMISSION_INTAKE`                                                                                               | `auto` — the cap decides (`open` / `closed` override it)            |
@@ -4909,6 +5212,7 @@ Three things about it are load-bearing:
 | Change the newsletter panel on the dashboard             | `web-app/src/components/studio-newsletter.tsx` (rendered by `pages/studio.tsx`); `services/studio-newsletter.service.ts` + the `/studio/newsletter` handlers in `routes/studio.ts` + the newsletter half of `lib/notion/requests.{schema,repository}.ts` + the read side of `lib/resend/audience.ts` (`listAudienceContacts` / `membershipIn` — membership is never stored)                                                                                                                                                                                                                                                                                                                                                                                                                                                         |
 | Change post-delivery review capture                      | `artifacts/web-app/src/components/review-dialog.tsx` (opened from `components/custom-order-result.tsx` for delivered orders); `api-server/src/services/review.service.ts` + `services/delivery.ts` + `routes/orders.ts` + `lib/notion/reviews.{blocks,repository}.ts` (writes to the **Reviews** database)                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                          |
 | Change the published testimonials                        | `artifacts/web-app/src/components/testimonials.tsx` (rendered by `pages/home.tsx` + `pages/about.tsx`); `getPublishedReviews` in `api-server/src/services/review.service.ts` + `routes/reviews.ts` + `lib/notion/reviews.schema.ts`                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                 |
+| Change the portfolio gallery                             | `artifacts/web-app/src/pages/portfolio.tsx` (the grid, chips and lightbox); `api-server/src/lib/notion/portfolio.schema.ts` (`FACET_DEFINITIONS` — the filter DIMENSIONS; the options are derived, never hardcoded) + `portfolio.repository.ts` (the bounded scan + degrade rules) + `services/portfolio.service.ts` + `routes/portfolio.ts`. Reads the "Design Portfolio & Sketch Library" database via `NOTION_PORTFOLIO_DATABASE_ID`; the app never writes it                                                                                                                                                                                                                                                                                                                                                                    |
 | Change the studio's daily Notion ops page                | The **🧭 Studio Operations** page under **{ A.A. Atelier }** — four linked views over Custom Orders / Production Schedule / Reviews / Website Contact Messages; no code; see `.agents/memory/studio-operations-page.md`                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                             |
 | Curate which reviews show on the site                    | The **Reviews** Notion database's saved views (Curate / Live on the site / Awaiting curation / Published but not showing) — no code; see `.agents/memory/reviews-curation-views.md`                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                 |
 | Change order cancellation & refunds                      | `artifacts/web-app/src/components/cancellation-request-dialog.tsx` (rendered by `components/custom-order-result.tsx` + `shop-order-result.tsx`); customer request in `api-server/src/services/cancellation.service.ts` + `routes/orders.ts` + `routes/shop-orders.ts` + `lib/notion/cancellation.{blocks,repository}.ts` (writes to the **contact** database); atelier refund in `services/order-cancellation.service.ts` + the `cancellation-refund` studio tool (`services/studio-tools.service.ts`) + the `Cancelled`/`setOrderCancelled`/`setShopOrderCancelled` writers                                                                                                                                                                                                                                                        |
@@ -4918,6 +5222,7 @@ Three things about it are load-bearing:
 | Change the materials restock alerts                      | `api-server/src/services/materials.service.ts` (the pure `classifyMaterials` + `getMaterialsOverview`) + `lib/notion/materials.{schema,repository}.ts` + `getMaterialsNotionClient` + the `/studio/materials` route in `routes/studio.ts`; the weekly email is `services/materials-digest.service.ts` + `materialsDigestEmail` in `lib/resend/emails.ts`, run by `sendDueMaterialsDigest` in `services/schedule.service.ts`; panel in `web-app/src/components/studio-materials.tsx`, grouped by `web-app/src/lib/material-groups.ts` (category, then fabric type). What counts as buyable-again is `canBeRepurchased` / `NON_REPURCHASABLE_STATUSES` in `materials.service.ts` — a denylist, deliberately. `TODO(material-usage)` in `materials.schema.ts` is the next thing wanted here — what each material is typically used for |
 | Change the shop's inventory decrement                    | `api-server/src/services/order-lines.service.ts` (`purchasedLinesFromSession` + the best-effort `recordShopOrderLines`) + `lib/notion/order-lines.{blocks,repository}.ts` + `getOrderLinesNotionClient`; called at the tail of `processPaidShopOrder` in `services/checkout.service.ts`. The `Voided` release is `setShopOrderCancelled` in `lib/notion/shop-orders.repository.ts`                                                                                                                                                                                                                                                                                                                                                                                                                                                  |
 | Change shop checkout / payments                          | `artifacts/web-app/src/lib/cart.tsx` + `components/cart-drawer.tsx` + `components/add-to-cart.tsx` (frontend); `api-server/src/services/checkout.service.ts` + `routes/checkout.ts` + `routes/stripe-webhook.ts` + `lib/stripe/*` + `lib/notion/shop-orders.*` (backend)                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                            |
+| Change what the tracking page says about shipping/pickup | `api-server/src/lib/fulfilment.ts` (the pure ship-vs-pickup rules + what's worth showing; `looksLikePickup` is shared with checkout) + `extractFulfilmentFields` in `lib/notion/orders.schema.ts` / `readFulfilmentFields` in `lib/notion/shop-orders.repository.ts` (the reads) + `chosePickupRate` in `lib/notion/shop-orders.blocks.ts` (the one write — a checkout paid with the local-pickup Stripe rate marks itself) + the resolve calls in `services/orders.service.ts` and `services/shop-orders.service.ts`; frontend `web-app/src/components/fulfilment-panel.tsx` + `lib/fulfilment-format.ts` (the pickup-time formatting + the handoff-state wording). Contract: `OrderFulfilment` in `openapi.yaml`, on both `OrderStatus` and `ShopOrderStatus`                                                                     |
 | Change shop-order tracking                               | `artifacts/web-app/src/components/shop-order-result.tsx` (rendered by `pages/track.tsx`; + order number on `pages/shop-success.tsx`); `api-server/src/services/shop-orders.service.ts` + `routes/shop-orders.ts` + `lib/notion/shop-orders.{blocks,repository}.ts` + `services/checkout.service.ts` (mints the number)                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                              |
 | Change the return / exchange request                     | `artifacts/web-app/src/components/return-exchange-dialog.tsx` (opened from `components/shop-order-result.tsx`); `api-server/src/services/return-request.service.ts` + `routes/shop-orders.ts` (`POST /shop-orders/:n/return-requests`) + `lib/notion/return-request.{blocks,repository}.ts` (writes to the **contact** database) + `findShopOrderVerification` in `lib/notion/shop-orders.repository.ts`; policy copy in `pages/shipping-returns.tsx`                                                                                                                                                                                                                                                                                                                                                                               |
 | Change return / exchange refunds (atelier action)        | `api-server/src/services/return-refund.service.ts` (the target-total refund engine + `parseRefundTarget`) + the `return-refund` studio tool (`services/studio-tools.service.ts`) + `lib/stripe/refunds.ts` (shared Stripe refund primitives) + `recordShopOrderRefund` / `SHOP_ORDER_REFUNDED_PROPERTY` / `SHOP_ORDER_RETURN_PROCESSED_PROPERTY` in `lib/notion/shop-orders.{repository,blocks}.ts` + `returnRefundEmail` in `lib/resend/emails.ts`                                                                                                                                                                                                                                                                                                                                                                                 |

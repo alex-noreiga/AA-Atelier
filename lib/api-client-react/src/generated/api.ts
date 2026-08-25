@@ -67,6 +67,7 @@ import type {
   OrderNotFound,
   OrderStatus,
   PaymentSessionResponse,
+  PortfolioList,
   ProductList,
   RequestStateRequest,
   RescheduleAppointmentRequest,
@@ -1152,6 +1153,84 @@ export function useGetProducts<TData = Awaited<ReturnType<typeof getProducts>>, 
  ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
 
   const queryOptions = getGetProductsQueryOptions(options)
+
+  const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
+
+  return withQueryKey(query, queryOptions.queryKey);
+}
+
+
+
+
+
+
+
+export const getGetPortfolioUrl = () => {
+
+
+
+
+  return `/api/portfolio`
+}
+
+/**
+ * Returns the finished costumes, sketches and mockups the atelier has published from its "Design Portfolio & Sketch Library" Notion database, newest first, alongside the filter facets derived from those same rows. Read-only and anonymous: a piece is served only when its "Show on website" checkbox is ticked, and the customer it was made for is never named. When the portfolio database is not configured — or the Notion integration has not been shared with it — the list is empty rather than an error, so a site without a portfolio simply shows none.
+ * @summary List the atelier's published portfolio pieces
+ */
+export const getPortfolio = async ( options?: Parameters<typeof customFetch>[1]): Promise<PortfolioList> => {
+
+  return customFetch<PortfolioList>(getGetPortfolioUrl(),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
+
+
+
+
+export const getGetPortfolioQueryKey = () => {
+    return [
+    `/api/portfolio`
+    ] as const;
+    }
+
+
+export const getGetPortfolioQueryOptions = <TData = Awaited<ReturnType<typeof getPortfolio>>, TError = ErrorType<ErrorEnvelope>>( options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getPortfolio>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getGetPortfolioQueryKey();
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof getPortfolio>>> = ({ signal }) => getPortfolio({ signal, ...requestOptions });
+
+
+
+
+
+   return  { queryKey, queryFn, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof getPortfolio>>, TError, TData> & { queryKey: QueryKey }
+}
+
+export type GetPortfolioQueryResult = NonNullable<Awaited<ReturnType<typeof getPortfolio>>>
+export type GetPortfolioQueryError = ErrorType<ErrorEnvelope>
+
+
+/**
+ * @summary List the atelier's published portfolio pieces
+ */
+
+export function useGetPortfolio<TData = Awaited<ReturnType<typeof getPortfolio>>, TError = ErrorType<ErrorEnvelope>>(
+  options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getPortfolio>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+
+ ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+
+  const queryOptions = getGetPortfolioQueryOptions(options)
 
   const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
 

@@ -8,6 +8,7 @@ import {
   extractDueDate,
   extractMilestonesGenerated,
   extractCancelled,
+  extractFulfilmentFields,
   extractMeasurements,
   type NotionDatabaseSchema,
   type NotionOrderPage,
@@ -184,6 +185,78 @@ describe("extractCancelled", () => {
     expect(
       extractCancelled({ id: "p", properties: {} } as NotionOrderPage),
     ).toBe(false);
+  });
+});
+
+describe("extractFulfilmentFields", () => {
+  it("reads the shipping and collection columns verbatim", () => {
+    // Verbatim on purpose — deciding what any of it means is `lib/fulfilment.ts`'s
+    // job, so both order kinds go through one set of rules.
+    expect(
+      extractFulfilmentFields({
+        id: "p",
+        properties: {
+          "Delivery Method": {
+            type: "select",
+            select: { name: "Local pickup" },
+          },
+          Fulfilment: { type: "select", select: { name: "Packed" } },
+          "Tracking Number": {
+            type: "rich_text",
+            rich_text: [{ plain_text: "9400111899" }],
+          },
+          Carrier: { type: "rich_text", rich_text: [{ plain_text: "USPS" }] },
+          "Tracking URL": { type: "url", url: "https://tools.usps.com/track" },
+          "Ship By": {
+            type: "date",
+            date: { start: "2026-09-01", end: null },
+          },
+          "Pickup Time": {
+            type: "date",
+            date: { start: "2026-09-03T14:00:00.000-05:00", end: null },
+          },
+          "Pickup Location": {
+            type: "rich_text",
+            rich_text: [{ plain_text: "The studio" }],
+          },
+        },
+      }),
+    ).toEqual({
+      method: "Local pickup",
+      state: "Packed",
+      trackingNumber: "9400111899",
+      carrier: "USPS",
+      trackingUrl: "https://tools.usps.com/track",
+      shipBy: "2026-09-01",
+      pickupAt: "2026-09-03T14:00:00.000-05:00",
+      pickupLocation: "The studio",
+    });
+  });
+
+  it("returns an empty object when the workspace hasn't added the properties", () => {
+    // Reading a property Notion doesn't have is simply absent from the payload,
+    // so an order tracks exactly as it did before pickup existed.
+    expect(
+      extractFulfilmentFields({ id: "p", properties: {} } as NotionOrderPage),
+    ).toEqual({});
+  });
+
+  it("treats blank values as unset", () => {
+    expect(
+      extractFulfilmentFields({
+        id: "p",
+        properties: {
+          "Delivery Method": { type: "select", select: null },
+          "Tracking Number": { type: "rich_text", rich_text: [] },
+          "Pickup Location": {
+            type: "rich_text",
+            rich_text: [{ plain_text: "   " }],
+          },
+          "Tracking URL": { type: "url", url: null },
+          "Ship By": { type: "date", date: null },
+        },
+      }),
+    ).toEqual({});
   });
 });
 

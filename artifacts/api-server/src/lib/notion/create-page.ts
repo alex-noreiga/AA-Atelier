@@ -79,8 +79,12 @@ export async function createPageDroppingUnknownProperties(
 
 /** The name of the property Notion rejected, when it is one we sent. Matching
  * against what we sent keeps an unrelated 400 from being read as a missing
- * property (and looping). */
-function findUnknownProperty(
+ * property (and looping).
+ *
+ * Exported because `updateOrderMeasurements` needs the same question answered
+ * about a property PATCH, where the answer is a thrown
+ * `MeasurementPropertiesMissingError` rather than a dropped field. */
+export function findUnknownProperty(
   errorText: string,
   properties: Record<string, unknown>,
 ): string | undefined {

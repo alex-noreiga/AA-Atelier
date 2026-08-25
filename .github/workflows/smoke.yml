@@ -99,6 +99,11 @@ jobs:
           # list is ambiguous — "nothing published" and "the Notion read broke"
           # look identical. This turns it into a real assertion.
           SMOKE_EXPECT_REVIEWS: ${{ vars.SMOKE_EXPECT_REVIEWS }}
+          # Same gate, same reason, for the portfolio gallery: GET /api/portfolio
+          # answers 200 with an empty list both when nothing is published and
+          # when the Notion database was never shared with the integration. Set
+          # to "1" once the atelier has ticked "Show on website" on a piece.
+          SMOKE_EXPECT_PORTFOLIO: ${{ vars.SMOKE_EXPECT_PORTFOLIO }}
         run: pnpm test:smoke
 
       - name: Upload smoke report

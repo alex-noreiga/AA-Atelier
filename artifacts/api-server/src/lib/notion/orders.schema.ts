@@ -14,6 +14,7 @@ import type { z } from "zod";
 import type { CreateOrderBody } from "@workspace/api-zod";
 import type { StageMilestone } from "./production-schedule.blocks.js";
 import type { InvoiceView, InvoiceDepositView } from "./invoice.schema.js";
+import type { FulfilmentFields, FulfilmentView } from "../fulfilment.js";
 
 export const ORDER_NAME_PROPERTY = "Order Name";
 export const ORDER_NUMBER_PROPERTY = "Order Number";
@@ -106,6 +107,24 @@ export const ORDER_REFERRAL_CODE_PROPERTY = "Referral Code"; // rich_text
 // catalog, not the order, remains the authority on what a service needs; the
 // order only says which catalog entry to ask.
 export const ORDER_SERVICE_PROPERTY = "Service"; // select
+// How the finished piece reaches the customer, and what can be said about that
+// while it's on its way. All read-only — the app never writes any of them; they
+// are the atelier's own shipping columns, surfaced to the customer on the
+// tracking page (see `lib/fulfilment.ts`).
+//
+// `Delivery Method`, `Pickup Time` and `Pickup Location` are the additive ones a
+// workspace may not have yet; the other four have been on the database since
+// before the app read them. Reading a property Notion doesn't have is safe (it's
+// simply absent from the response) — only *writing* one 400s the whole page — so
+// none of this needs the atelier to act first.
+export const ORDER_DELIVERY_METHOD_PROPERTY = "Delivery Method"; // select (Ship | Local pickup)
+export const ORDER_FULFILMENT_PROPERTY = "Fulfilment"; // select (To pack | Packed | Shipped | Delivered/Picked up)
+export const ORDER_TRACKING_NUMBER_PROPERTY = "Tracking Number"; // rich_text
+export const ORDER_TRACKING_CARRIER_PROPERTY = "Carrier"; // rich_text
+export const ORDER_TRACKING_URL_PROPERTY = "Tracking URL"; // url
+export const ORDER_SHIP_BY_PROPERTY = "Ship By"; // date
+export const ORDER_PICKUP_TIME_PROPERTY = "Pickup Time"; // date (include a time)
+export const ORDER_PICKUP_LOCATION_PROPERTY = "Pickup Location"; // rich_text
 
 /** Validated new-order payload, derived from the OpenAPI contract. */
 export type CreateOrderInput = z.infer<typeof CreateOrderBody>;
@@ -136,6 +155,12 @@ export interface OrderRecord {
    * Surfaced in the status response so the tracking page shows a cancelled
    * banner and suppresses the payment/request affordances. */
   cancelled?: boolean;
+  /** The raw shipping/collection columns, as read off the page. Named apart from
+   * the contract's `fulfilment` on purpose: this is the unresolved input, and
+   * `getOrderStatus` replaces it with the resolved view (which needs the live
+   * stage list to know whether the order has been delivered). Stripped from the
+   * HTTP response by the `GetOrderStatusResponse` zod parse either way. */
+  fulfilmentFields?: FulfilmentFields;
   /** The raw `Service` property value — the service's display NAME, since that
    * is what the atelier filters on (`resolveStoredOrderService` accepts either
    * that or an id). Undefined for an order placed before the property existed,
@@ -183,8 +208,16 @@ export interface OrderSummary {
 /** The status-lookup response: the raw record plus the derived production-lock
  * flag, the per-stage milestone dates the timeline renders, the staged deposits,
  * and (when ready) the customer-facing invoice — all sourced from the invoice. */
-export interface OrderStatusResult extends OrderRecord {
+export interface OrderStatusResult extends Omit<
+  OrderRecord,
+  "fulfilmentFields"
+> {
   measurementsLocked: boolean;
+  /** How the piece reaches the customer — a carrier tracking number and ship-by
+   * date, or a scheduled local pickup. Absent when there's nothing yet to say
+   * (and on a cancelled order). Resolved from `fulfilmentFields` by
+   * `getOrderStatus`. */
+  fulfilment?: FulfilmentView;
   /** Per-stage target dates, once the atelier's milestones have been generated. */
   milestones?: StageMilestone[];
   /** The staged deposits (first, then second) the customer can pay online,
@@ -243,6 +276,31 @@ export interface NotionOrderPage {
     "Rush Order"?: { type: "checkbox"; checkbox: boolean };
     Cancelled?: { type: "checkbox"; checkbox: boolean };
     "Last Notified Stage"?: {
+      type: "rich_text";
+      rich_text: Array<{ plain_text: string }>;
+    };
+    // The shipping/collection columns (read-only — see the constants above).
+    // `Ship-to Address` is deliberately absent: the tracking lookup is gated by
+    // order number alone, so echoing the customer's home address back would hand
+    // it to anyone holding the number. The pickup *location* is the studio's own
+    // address, which is why that one is safe to return.
+    "Delivery Method"?: { type: "select"; select: { name: string } | null };
+    Fulfilment?: { type: "select"; select: { name: string } | null };
+    "Tracking Number"?: {
+      type: "rich_text";
+      rich_text: Array<{ plain_text: string }>;
+    };
+    Carrier?: { type: "rich_text"; rich_text: Array<{ plain_text: string }> };
+    "Tracking URL"?: { type: "url"; url: string | null };
+    "Ship By"?: {
+      type: "date";
+      date: { start: string; end: string | null } | null;
+    };
+    "Pickup Time"?: {
+      type: "date";
+      date: { start: string; end: string | null } | null;
+    };
+    "Pickup Location"?: {
       type: "rich_text";
       rich_text: Array<{ plain_text: string }>;
     };
@@ -369,6 +427,56 @@ export function extractDueDate(page: NotionOrderPage): string | undefined {
     return undefined;
   }
   return property.date.start;
+}
+
+/**
+ * Read the order's shipping/collection columns into the shared
+ * {@link FulfilmentFields}, verbatim — deciding what any of it means is
+ * `lib/fulfilment.ts`'s job, so the two order kinds can't drift on the rules.
+ *
+ * Every field degrades to absent: a property the workspace hasn't added yet
+ * simply isn't in the page payload, so this returns an empty object and the
+ * order tracks exactly as it did before pickup existed.
+ */
+export function extractFulfilmentFields(
+  page: NotionOrderPage,
+): FulfilmentFields {
+  const properties = page.properties;
+  const method = properties[ORDER_DELIVERY_METHOD_PROPERTY]?.select?.name;
+  const state = properties[ORDER_FULFILMENT_PROPERTY]?.select?.name;
+  const trackingNumber = readRichTextProp(
+    properties[ORDER_TRACKING_NUMBER_PROPERTY],
+  );
+  const carrier = readRichTextProp(properties[ORDER_TRACKING_CARRIER_PROPERTY]);
+  const trackingUrl = properties[ORDER_TRACKING_URL_PROPERTY]?.url ?? undefined;
+  const shipBy = properties[ORDER_SHIP_BY_PROPERTY]?.date?.start;
+  const pickupAt = properties[ORDER_PICKUP_TIME_PROPERTY]?.date?.start;
+  const pickupLocation = readRichTextProp(
+    properties[ORDER_PICKUP_LOCATION_PROPERTY],
+  );
+
+  return {
+    ...(method ? { method } : {}),
+    ...(state ? { state } : {}),
+    ...(trackingNumber ? { trackingNumber } : {}),
+    ...(carrier ? { carrier } : {}),
+    ...(trackingUrl ? { trackingUrl } : {}),
+    ...(shipBy ? { shipBy } : {}),
+    ...(pickupAt ? { pickupAt } : {}),
+    ...(pickupLocation ? { pickupLocation } : {}),
+  };
+}
+
+/** A Notion `rich_text` property's plain text, or undefined when blank. */
+function readRichTextProp(
+  property:
+    { type: "rich_text"; rich_text: Array<{ plain_text: string }> } | undefined,
+): string | undefined {
+  const value = property?.rich_text
+    ?.map((t) => t.plain_text)
+    .join("")
+    .trim();
+  return value ? value : undefined;
 }
 
 /** Whether an order's milestones have already been generated. */
