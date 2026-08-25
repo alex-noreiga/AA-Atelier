@@ -136,8 +136,8 @@ export function StudioMaterials() {
                 Can&apos;t be reordered ({notRestockable.length})
               </summary>
               <p className="mt-2 text-xs text-muted-foreground font-light">
-                Low, but marked deadstock or discontinued — there&apos;s nowhere
-                to buy these again. Pick a substitute in Notion.
+                Low, but marked deadstock or discontinued. Pick a substitute in
+                Notion.
               </p>
               <div className="mt-3 space-y-4">
                 {groupMaterials(

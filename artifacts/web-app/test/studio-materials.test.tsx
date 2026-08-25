@@ -283,7 +283,7 @@ describe("StudioMaterials — what can't be reordered", () => {
 
     const section = screen.getByTestId("materials-not-restockable");
     expect(section).toHaveTextContent("Black Rhinestone Velvet");
-    expect(section).toHaveTextContent(/nowhere to buy these again/i);
+    expect(section).toHaveTextContent(/deadstock or discontinued/i);
     // The count chip counts what can actually be bought.
     expect(screen.queryByTestId("materials-low-count")).toBeNull();
   });
