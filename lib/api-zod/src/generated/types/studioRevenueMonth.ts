@@ -12,7 +12,7 @@
 export interface StudioRevenueMonth {
   /** The month as YYYY-MM. */
   month: string;
-  /** Dollars taken on shop orders placed that month (order totals, including shipping and tax; cancelled orders excluded). */
+  /** Dollars taken on shop orders placed that month, across every sales channel (order totals, including shipping and tax; cancelled orders excluded). The month comes from the order's own Order Date, falling back to when its row was created — so an Etsy receipt typed up weeks later still lands in the month it sold. */
   shopRevenue: number;
   /** Shop orders placed that month (cancelled excluded). */
   shopOrders: number;

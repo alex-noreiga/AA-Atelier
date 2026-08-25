@@ -9,9 +9,17 @@ vi.mock("../../src/lib/notion/orders.repository.js", () => ({
   }),
 }));
 vi.mock("../../src/lib/notion/shop-orders.repository.js", () => ({
-  listShopOrdersForAnalytics: vi
-    .fn()
-    .mockResolvedValue({ orders: [], statuses: ["Shipped"] }),
+  listShopOrdersForAnalytics: vi.fn().mockResolvedValue({
+    orders: [],
+    statuses: ["Shipped"],
+    channels: ["Etsy", "Online Store"],
+  }),
+}));
+// The consignment shelf is an optional database of its own; unconfigured is the
+// state this stack runs in, and the route must serve the figures regardless.
+vi.mock("../../src/lib/notion/consignment.repository.js", () => ({
+  consignmentConfigured: vi.fn().mockReturnValue(false),
+  listConsignmentPlacements: vi.fn().mockResolvedValue([]),
 }));
 vi.mock("../../src/lib/notion/invoice.repository.js", () => ({
   listInvoicesForAnalytics: vi.fn().mockResolvedValue([]),
@@ -73,7 +81,11 @@ beforeEach(() => {
     orders: [],
     stages: ["Consultation", "Delivered"],
   });
-  mockShop.mockResolvedValue({ orders: [], statuses: ["Shipped"] });
+  mockShop.mockResolvedValue({
+    orders: [],
+    statuses: ["Shipped"],
+    channels: ["Etsy", "Online Store"],
+  });
   mockInvoices.mockResolvedValue([]);
 });
 

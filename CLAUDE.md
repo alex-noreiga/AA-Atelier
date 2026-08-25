@@ -3244,6 +3244,111 @@ same Resend audience as before; the `Data deletion` `Request type` option
 auto-creates on first write. `RESEND_AUDIENCE_ID` unset ⇒ the marketing opt-out
 reports `unavailable` and the request says to do it by hand.
 
+## Sales channels & consignment in the studio figures
+
+The atelier sells four ways — the website, **Etsy**, a local **skate shop**, and
+**word of mouth** — and three of the four are typed by hand into the same Notion
+"shop orders" database the Stripe webhook writes to. Nothing read the
+`Sales Channel` those rows carry, so the dashboard reported all of it as website
+takings; nothing read `Order Date` either, so an Etsy receipt that sold in June
+and was typed up in August counted as August trade. And the **consignment** stock
+left at the skate shop lives in a database of its own the app had never opened.
+Code: `SHOP_ORDER_CHANNEL_PROPERTY` / `SHOP_ORDER_DATE_PROPERTY` in
+`lib/notion/shop-orders.blocks.ts`, the channel/date reads +
+`fetchLiveShopOrderChannels` in `shop-orders.repository.ts`,
+`lib/notion/consignment.{schema,repository}.ts`, `services/consignment.service.ts`,
+`buildChannels` / `orderedOn` / `buildTopItemCoverage` in
+`services/studio-analytics.service.ts`, and the two new panels in
+`web-app/src/pages/studio.tsx`.
+
+1. **The app stamps its own channel, and that is what makes a blank one mean
+   something.** `buildShopOrderProperties` writes `Sales Channel = "Online Store"`
+   unconditionally. Without it, the orders the app writes are the ones with _no_
+   channel, and "untagged" would be indistinguishable from "the website"; with it,
+   blank means exactly one thing — a row somebody filed and didn't tag, reported
+   as unattributed rather than credited to the one channel it can't be.
+   `SHOP_ORDER_ONLINE_STORE_CHANNEL` is a **targeted business rule** naming one
+   live option value, like `STATUS_IN_STOCK`. An order carrying a **Stripe session
+   id** but no channel (every order predating the stamp) resolves to the online
+   store, because the app demonstrably wrote it.
+
+2. **`createShopOrder` now goes through `createPageDroppingUnknownProperties`.**
+   That helper was private to `orders.repository.ts`; it moved to
+   `lib/notion/create-page.ts` because the shop-order writer runs on the **Stripe
+   webhook**, where Notion's reject-the-whole-page-over-one-unknown-property
+   behaviour costs a **paid order** its record — the write 400s, the webhook 500s,
+   Stripe redelivers, and the redelivery early-returns at the dedupe guard. No
+   amount of un-done atelier setup may be able to lose an order.
+
+3. **A month comes from `Order Date`, and a DATE-ONLY value is taken as
+   written.** This is the subtle part: parsed as an instant and read in
+   `America/Chicago`, `2026-09-01` lands on August 31 and silently moves a sale
+   into the previous month. Only a value carrying a real time is converted through
+   the studio's zone. The app writes a **full instant** for its own orders, so the
+   timezone decides which day a late-evening order belongs to — that decision
+   belongs where the figures are read, not at the write. Unset ⇒ fall back to the
+   page's creation time, exactly as before.
+
+4. **Channels are laid out over the LIVE option list** (`fetchLiveShopOrderChannels`,
+   read from the same cached schema request as the fulfilment statuses), so a
+   channel with no trade this year reads as a **nought** rather than vanishing —
+   the same reason the pipeline panels keep their empty stages. A channel present
+   on an order but no longer an option is appended after the live ones (money that
+   was taken was taken); untagged orders trail last as `channel: ""`, deliberately
+   **not** a sentinel string, since any word invented here could collide with a
+   channel the atelier adds.
+
+5. **Best sellers now say what they cannot see.** The list is built from each
+   order's `Inventory Items` relation, which a hand-filed Etsy receipt usually
+   lacks, so an empty list was ambiguous between "nothing sells" and "nothing is
+   linked" — and the second is far more often true. `topItemCoverage`
+   (`counted` / `unlinked`) is reported and the panel names the gap. The list
+   itself always counted every channel; nothing filtered Etsy out, the links were
+   simply absent.
+
+6. **Consignment is reported apart from the order figures and never summed into
+   them.** A consignment sale is not an order: nobody knows a piece sold until the
+   shelf is counted at the next visit, there is no customer, email or session, and
+   what arrives is the studio's **share** of a shelf price. It is also why
+   consignment money stays **out of the month-by-month chart** — one settlement is
+   a lump covering weeks of trade, and plotted against months of website orders it
+   would read as a spike in a month nothing was sold. A payout belongs to the
+   month it was **settled**; a settled placement with no `Settled On` contributes
+   to no month rather than being dropped into the current one.
+
+7. **Units are derived; the money is read.** Whether a piece is still on the shelf
+   is arithmetic (`delivered − returned − sold`, and zero once settled), so
+   `unitsAtShop` computes it — the same call the materials panel makes about its
+   restock trip, for the same two reasons (a formula's rendered value is the
+   atelier's to restyle, and a `formula: {…}` filter on one derived from rollups
+   400s anyway). **That rule is duplicated in Notion's `Still At Shop` — change one
+   and change the other.** But `Your Payout` is a **commercial term** (half of
+   retail today) the atelier can renegotiate without telling this code, so it is
+   read off the formula, never re-derived from a split rate held here. A settled
+   placement that sold something and carries no payout figure is **named**
+   (`payoutUnknownPlacements`), not silently missing from the total.
+
+8. **A blank `Qty Sold` means UNKNOWN on an open placement and ZERO on a settled
+   one.** Its own Notion description says it is "derived at settlement", so
+   reading blank as zero on an open placement would report the whole shelf as
+   still sitting there.
+
+9. **The consignment read degrades exactly like the materials panel.** Unset
+   `NOTION_CONSIGNMENT_DATABASE_ID` ⇒ `configured: false` and the panel says the
+   shelf isn't tracked — never an empty shelf, which reads as "nothing is out on
+   consignment". A Notion **404** (id set, integration never shared) ⇒
+   `unreachable: true` with the sharing fix in the panel. Anything else throws.
+   The figures never depend on it: an unwired shelf costs the panel its numbers,
+   not the dashboard its figures.
+
+**Atelier setup: one optional env var.** Share the Notion integration with the
+**consignment** database and set **`NOTION_CONSIGNMENT_DATABASE_ID`**. Nothing
+else — `Sales Channel` and `Order Date` already exist on shop orders (and if
+either didn't, the write would drop it and log which property to add). Known
+limits, including why `Skate Shop (opening)` isn't counted and why consignment
+units stay out of `topItems`, are in
+`.agents/memory/sales-channels-and-consignment.md`.
+
 ## Studio analytics dashboard (internal, staff-gated)
 
 The atelier's own numbers in one place — `pages/studio.tsx` at **`/studio`**, fed
@@ -4576,6 +4681,15 @@ in the maintainer's env without edits.
   before (the order itself is recorded either way). Read at first use in
   `getOrderLinesNotionClient`; gated by `orderLinesConfigured()`. See "Automatic
   shop inventory decrement" above.
+- **Optional consignment database:** `NOTION_CONSIGNMENT_DATABASE_ID` (the
+  "consignment" database). When set (and the integration is shared with it), the
+  studio dashboard reports the finished pieces held at the skate shop and the
+  payouts they have earned. Read-only — a placement is recorded and settled by
+  hand. Unset ⇒ the panel says the shelf isn't tracked, rather than showing an
+  empty one that would read as "nothing is out on consignment"; a 404 degrades
+  the same way, flagged unreachable. Read at first use in
+  `getConsignmentNotionClient`; gated by `consignmentConfigured()`. See "Sales
+  channels & consignment in the studio figures" above.
 - **Optional guides database:** `NOTION_STUDIO_GUIDES_DATABASE_ID` (the "Studio
   Guides" database). When set (and the integration is shared with it), the studio
   dashboard renders the atelier's own how-to write-ups — one uploaded HTML file per
@@ -4635,6 +4749,7 @@ scope went with the working-hours sheet.
 | `NOTION_ORDER_LINES_DATABASE_ID`                                                                                  | No order lines written ⇒ shop stock never decrements                |
 | `NOTION_MATERIALS_DATABASE_ID`                                                                                    | No materials panel (`configured: false`) and no weekly digest       |
 | `NOTION_STUDIO_GUIDES_DATABASE_ID`                                                                                | No how-to guides; the dashboard panel says it isn't connected       |
+| `NOTION_CONSIGNMENT_DATABASE_ID`                                                                                  | No consignment panel; the shelf at the skate shop isn't counted     |
 | `COMMISSION_CAPACITY`                                                                                             | `0` — no cap, so the books never close on the count                 |
 | `COMMISSION_INTAKE`                                                                                               | `auto` — the cap decides (`open` / `closed` override it)            |
 | `COMMISSION_CLOSED_MESSAGE`                                                                                       | A built-in "our books are full, join the waitlist" sentence         |
@@ -4828,6 +4943,7 @@ Three things about it are load-bearing:
 | Change the customer account portal (Supabase Auth)       | `artifacts/web-app/src/pages/account.tsx` (+ `components/appointment-manage-panel.tsx`, shared with `pages/appointment-manage.tsx`) + `pages/account-login.tsx` / `account-callback.tsx` / `account-reset.tsx` + `lib/supabase.ts` + `lib/auth-context.tsx` (frontend); `api-server/src/services/account.service.ts` + `routes/account.ts` + `middlewares/auth.ts` + `lib/supabase/client.ts`; queries `findOrdersByEmail` / `findShopOrdersByEmail` + `listUpcomingAppointmentsByEmail` (`lib/google/calendar.repository.ts`, mapped via `lib/appointments/event-details.ts`) + `extractMeasurements` (`lib/notion/orders.schema.ts`). Auth emails: `.agents/memory/supabase-auth-emails.md`                                                                                                                                       |
 | Change the customer data export / deletion request       | `web-app/src/components/account-data.tsx` (rendered by `pages/account.tsx`) + the "Your choices" section of `pages/privacy.tsx`; `api-server/src/services/account-data.service.ts` + the two `/account` handlers in `routes/account.ts` + `lib/notion/data-deletion.{blocks,repository}.ts` + the by-email reads (`listRequestsByEmail`, `listReviewsByEmail`, `findClientProfileByEmail`) + `unsubscribeAudienceContact` in `lib/resend/audience.ts` + the two `dataDeletionRequest*Email` builders. The dashboard side is the `data-deletion` kind in `lib/notion/requests.schema.ts` + `components/studio-requests.tsx`                                                                                                                                                                                                          |
 | Change how the dashboard is laid out / add a section     | `web-app/src/lib/studio-sections.ts` (the registry — id, label, summary) + the `SECTION_VIEWS` map and `SectionNav` in `pages/studio.tsx` + the two `/studio` routes in `App.tsx`. Only the open section mounts, so a view fetches what it shows; the gate is `useStudioAccess` (`lib/studio-access.ts`), not the figures. Read "The dashboard's sections" before splitting the request queue from the tools                                                                                                                                                                                                                                                                                                                                                                                                                        |
+| Change sales-channel / consignment figures               | `SHOP_ORDER_CHANNEL_PROPERTY` / `SHOP_ORDER_ONLINE_STORE_CHANNEL` / `SHOP_ORDER_DATE_PROPERTY` in `api-server/src/lib/notion/shop-orders.blocks.ts` (what the app stamps) + the channel/date reads and `fetchLiveShopOrderChannels` in `shop-orders.repository.ts`; the aggregation is `buildChannels` / `orderedOn` / `buildTopItemCoverage` in `services/studio-analytics.service.ts`. The skate-shop shelf is `lib/notion/consignment.{schema,repository}.ts` + `services/consignment.service.ts` (`unitsAtShop` / `summarizeConsignment`) + `getConsignmentNotionClient`; panels in `web-app/src/pages/studio.tsx` (`ChannelsPanel` / `ConsignmentPanel`). Read the date-only gotcha in `.agents/memory/sales-channels-and-consignment.md` before touching `orderedOn`                                                          |
 | Change the internal studio dashboard                     | `artifacts/web-app/src/pages/studio.tsx` (+ the `/studio` route in `App.tsx`, `noindex` entry in `lib/seo-routes.ts`); `api-server/src/services/studio-analytics.service.ts` (the pure `aggregateStudioAnalytics` + the cached use-case) + `routes/studio.ts` + `requireStaff` in `middlewares/auth.ts` + `lib/staff.ts` (the `STUDIO_STAFF_EMAILS` allowlist + the `amr` Google check); the 403 panel's re-sign-in lands back via `web-app/src/lib/post-signin.ts` (read by `pages/account-callback.tsx`); reads via `lib/notion/scan.ts` + `listOrdersForAnalytics` / `listShopOrdersForAnalytics` / `listInvoicesForAnalytics`                                                                                                                                                                                                   |
 | Change the studio's how-to guides                        | `api-server/src/lib/guide-sections.ts` (the sections a guide can be filed against — a tool's id is its `StudioToolName`) + `lib/notion/guides.{schema,repository}.ts` (the Notion row + the file download) + `services/studio-guides.service.ts` (assembly, the HTML check, the 60s cache) + the `/studio/guides` route in `routes/studio.ts`; frontend `web-app/src/components/studio-guides.tsx` (`StudioGuides` panel + the `GuidesFor` slots), mounted by `pages/studio.tsx` and per tool by `components/studio-tools.tsx`. The sandboxed frame in that component is a security boundary — see the section above                                                                                                                                                                                                                |
 | Change the studio's internal tools (generators, refunds) | `api-server/src/services/studio-tools.service.ts` (the dispatcher + the composed result wording) + `routes/studio.ts` (`POST /studio/tools/:tool`, `requireStaff`) + `web-app/src/components/studio-tools.tsx` (rendered by `pages/studio.tsx`); the underlying work stays in `services/{schedule,invoice-generator,order-notification,order-cancellation,return-refund}.service.ts`. Contract in `openapi.yaml` (`StudioTool` / `StudioToolRequest` / `StudioToolRun`)                                                                                                                                                                                                                                                                                                                                                             |

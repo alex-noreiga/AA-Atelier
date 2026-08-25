@@ -266,6 +266,22 @@ const analytics = {
     { name: "Bow Soaker", orders: 6 },
     { name: "Blade Towel", orders: 2 },
   ],
+  topItemCoverage: { counted: 7, unlinked: 0 },
+  channels: [
+    { channel: "Etsy", orders: 3, revenue: 210 },
+    { channel: "Online Store", orders: 4, revenue: 150 },
+    { channel: "Skate Shop", orders: 0, revenue: 0 },
+  ],
+  consignment: {
+    configured: true,
+    openPlacements: 2,
+    atShopUnits: 7,
+    atShopRetail: 245,
+    settledUnits: 3,
+    settledPayout: 52.5,
+    payoutUnknownPlacements: 0,
+    items: [{ name: "Bow Soaker", atShop: 7, sold: 3 }],
+  },
   capacity: {
     open: true,
     reason: "under-capacity" as const,
@@ -526,6 +542,104 @@ describe("studio dashboard — figures", () => {
     renderPage();
     expect(screen.getByTestId("panel-top-items")).toHaveTextContent(
       /No item-level figures yet/,
+    );
+  });
+
+  it("says how many orders the best-seller list can't see", () => {
+    // An empty-ish list is ambiguous between "nothing sells" and "nothing is
+    // linked", and for a shop that files Etsy receipts by hand it's the second.
+    stubAnalytics({
+      data: { ...analytics, topItemCoverage: { counted: 4, unlinked: 3 } },
+    });
+    renderPage();
+    expect(screen.getByTestId("panel-top-items")).toHaveTextContent(
+      /3 of the last 12 months' 7 orders aren't counted above/,
+    );
+  });
+
+  it("keeps the coverage note off when every order is linked", () => {
+    renderPage();
+    expect(screen.getByTestId("panel-top-items")).not.toHaveTextContent(
+      /aren't counted above/,
+    );
+  });
+
+  it("breaks the orders down by sales channel, noughts included", () => {
+    renderPage();
+    const panel = screen.getByTestId("panel-channels");
+    expect(panel).toHaveTextContent("Etsy");
+    expect(panel).toHaveTextContent("$210");
+    // A channel that went quiet stays on the panel as a nought, rather than
+    // disappearing where nobody notices it has stopped.
+    expect(panel).toHaveTextContent("Skate Shop");
+    expect(panel).toHaveTextContent("$360 across 7 orders");
+  });
+
+  it("labels untagged orders as a gap, not as a channel", () => {
+    stubAnalytics({
+      data: {
+        ...analytics,
+        channels: [
+          ...analytics.channels,
+          { channel: "", orders: 2, revenue: 40 },
+        ],
+      },
+    });
+    renderPage();
+    const panel = screen.getByTestId("panel-channels");
+    expect(panel).toHaveTextContent("No channel set");
+  });
+
+  it("shows what is out at the skate shop and what it paid", () => {
+    renderPage();
+    const panel = screen.getByTestId("panel-consignment");
+    expect(panel).toHaveTextContent("7 units on the shelf");
+    expect(panel).toHaveTextContent("$245 at shelf price");
+    expect(panel).toHaveTextContent("$52.50 paid out");
+    expect(panel).toHaveTextContent("Bow Soaker");
+  });
+
+  it("says the consignment shelf isn't connected rather than showing it empty", () => {
+    // An empty shelf and an unwired one look identical, and only one of them
+    // means "nothing is out on consignment".
+    stubAnalytics({
+      data: {
+        ...analytics,
+        consignment: { ...analytics.consignment, configured: false },
+      },
+    });
+    renderPage();
+    expect(screen.getByTestId("panel-consignment")).toHaveTextContent(
+      /isn't connected/,
+    );
+  });
+
+  it("says so when the consignment database can't be seen", () => {
+    stubAnalytics({
+      data: {
+        ...analytics,
+        consignment: { ...analytics.consignment, unreachable: true },
+      },
+    });
+    renderPage();
+    expect(screen.getByTestId("panel-consignment")).toHaveTextContent(
+      /Notion can't see it/,
+    );
+  });
+
+  it("names settled placements whose payout figure is missing", () => {
+    stubAnalytics({
+      data: {
+        ...analytics,
+        consignment: {
+          ...analytics.consignment,
+          payoutUnknownPlacements: 2,
+        },
+      },
+    });
+    renderPage();
+    expect(screen.getByTestId("panel-consignment")).toHaveTextContent(
+      /2 settled placements sold something but carry no payout figure/,
     );
   });
 

@@ -10,6 +10,9 @@ import {
   type StudioRevenueMonth,
   type StudioPaymentTotals,
   type StudioTopItem,
+  type StudioTopItemCoverage,
+  type StudioChannelSales,
+  type StudioConsignment,
   type StudioCapacity,
 } from "@workspace/api-client-react";
 import { Button } from "@/components/ui/button";
@@ -54,6 +57,8 @@ import {
   AlertTriangle,
   Zap,
   CalendarClock,
+  Store,
+  Split,
 } from "lucide-react";
 
 /**
@@ -419,9 +424,13 @@ function Figures({ data }: { data: StudioAnalytics }) {
 
       <RevenuePanel months={data.revenue} />
 
+      <ChannelsPanel channels={data.channels} />
+
+      <ConsignmentPanel consignment={data.consignment} />
+
       <PaymentsPanel payments={data.payments} />
 
-      <TopItemsPanel items={data.topItems} />
+      <TopItemsPanel items={data.topItems} coverage={data.topItemCoverage} />
 
       <GuidesFor section="figures" />
     </>
@@ -948,6 +957,148 @@ function RevenuePanel({ months }: { months: StudioRevenueMonth[] }) {
   );
 }
 
+/**
+ * Where the money came from — the studio's sales channels side by side.
+ *
+ * The atelier has always filed Etsy receipts, skate-shop sales and word-of-mouth
+ * orders into the same database the website writes to, so until the orders
+ * carried a channel every one of those looked like a website sale. Channels with
+ * no trade this year are still listed, as noughts: "nothing from Etsy since
+ * spring" is a figure worth being able to read, and a channel that quietly
+ * vanished from a panel is one nobody notices has gone quiet.
+ *
+ * The untagged row is the one that is NOT a channel. It is a gap in the records
+ * — orders somebody filed and didn't tag — so it is labelled as one rather than
+ * credited to a channel it might not belong to.
+ */
+function ChannelsPanel({ channels }: { channels: StudioChannelSales[] }) {
+  const max = channels.reduce((top, c) => Math.max(top, c.revenue), 0);
+  const total = channels.reduce((sum, c) => sum + c.revenue, 0);
+  const orders = channels.reduce((sum, c) => sum + c.orders, 0);
+
+  return (
+    <Section
+      icon={<Split className="w-4 h-4" strokeWidth={1.5} />}
+      title="Where the orders came from"
+      testId="panel-channels"
+    >
+      {channels.length === 0 ? (
+        <p className="text-sm text-muted-foreground font-light">
+          No sales channels are set up on the shop orders database yet, so
+          there&apos;s nothing to break these figures down by.
+        </p>
+      ) : (
+        <>
+          <PanelSummary>
+            {formatPrice(total)} across {orders} order
+            {orders === 1 ? "" : "s"} in the last 12 months
+          </PanelSummary>
+          <div className="space-y-2">
+            {channels.map((channel) => (
+              <BarRow
+                key={channel.channel || "unattributed"}
+                label={
+                  channel.channel === "" ? "No channel set" : channel.channel
+                }
+                value={channel.revenue}
+                max={max}
+                display={`${formatPrice(channel.revenue)} · ${channel.orders}`}
+              />
+            ))}
+          </div>
+        </>
+      )}
+    </Section>
+  );
+}
+
+/**
+ * The pieces out at the skate shop, and what they have brought in.
+ *
+ * Reported apart from the order figures on purpose. A consignment sale is not an
+ * order: nobody knows a piece sold until the shelf is counted at the next visit,
+ * and what arrives is the studio's share of a shelf price rather than the price.
+ * The two halves of the panel are two different kinds of fact — stock the studio
+ * still owns, and money it has been paid — so they are never added together.
+ */
+function ConsignmentPanel({ consignment }: { consignment: StudioConsignment }) {
+  const {
+    configured,
+    unreachable,
+    openPlacements,
+    atShopUnits,
+    atShopRetail,
+    settledUnits,
+    settledPayout,
+    payoutUnknownPlacements,
+    items,
+  } = consignment;
+  const max = items.reduce(
+    (top, item) => Math.max(top, item.atShop, item.sold),
+    0,
+  );
+
+  return (
+    <Section
+      icon={<Store className="w-4 h-4" strokeWidth={1.5} />}
+      title="Out on consignment"
+      testId="panel-consignment"
+    >
+      {!configured ? (
+        <p className="text-sm text-muted-foreground font-light">
+          The consignment database isn&apos;t connected, so stock held at the
+          skate shop isn&apos;t counted here. Set{" "}
+          <code className="text-xs">NOTION_CONSIGNMENT_DATABASE_ID</code> to
+          track it.
+        </p>
+      ) : unreachable ? (
+        <p className="text-sm text-muted-foreground font-light">
+          The consignment database is configured but Notion can&apos;t see it.
+          Check the id, and that the integration is shared with that database.
+        </p>
+      ) : (
+        <>
+          <PanelSummary>
+            {atShopUnits} unit{atShopUnits === 1 ? "" : "s"} on the shelf across{" "}
+            {openPlacements} open placement
+            {openPlacements === 1 ? "" : "s"} ({formatPrice(atShopRetail)} at
+            shelf price) · {formatPrice(settledPayout)} paid out on{" "}
+            {settledUnits} unit{settledUnits === 1 ? "" : "s"} settled in the
+            last 12 months
+          </PanelSummary>
+          {items.length === 0 ? (
+            <p className="text-sm text-muted-foreground font-light">
+              Nothing is out at the shop and nothing has been settled in the
+              last 12 months.
+            </p>
+          ) : (
+            <div className="space-y-2">
+              {items.map((item) => (
+                <BarRow
+                  key={item.name}
+                  label={item.name}
+                  value={item.atShop}
+                  max={max}
+                  display={`${item.atShop} out · ${item.sold} sold`}
+                />
+              ))}
+            </div>
+          )}
+          {payoutUnknownPlacements > 0 && (
+            <p className="mt-4 text-xs text-muted-foreground font-light">
+              {payoutUnknownPlacements === 1
+                ? "1 settled placement sold something but carries"
+                : `${payoutUnknownPlacements} settled placements sold something but carry`}{" "}
+              no payout figure, so that money isn&apos;t in the total above.
+              Check the Your Payout formula on those rows.
+            </p>
+          )}
+        </>
+      )}
+    </Section>
+  );
+}
+
 function PaymentsPanel({ payments }: { payments: StudioPaymentTotals }) {
   const max = Math.max(
     payments.depositsCollected,
@@ -997,7 +1148,22 @@ function PaymentsPanel({ payments }: { payments: StudioPaymentTotals }) {
   );
 }
 
-function TopItemsPanel({ items }: { items: StudioTopItem[] }) {
+/**
+ * The shop's best sellers, with what the list cannot see stated underneath.
+ *
+ * Item-level figures come from each order's inventory relation, and a hand-filed
+ * Etsy receipt usually carries none — so a short list is ambiguous between
+ * "nothing sells" and "nothing is linked", and the second is the more common
+ * answer. Saying how many orders were left out is what makes the list readable
+ * either way.
+ */
+function TopItemsPanel({
+  items,
+  coverage,
+}: {
+  items: StudioTopItem[];
+  coverage: StudioTopItemCoverage;
+}) {
   const max = items.reduce((top, item) => Math.max(top, item.orders), 0);
   return (
     <Section
@@ -1007,9 +1173,9 @@ function TopItemsPanel({ items }: { items: StudioTopItem[] }) {
     >
       {items.length === 0 ? (
         <p className="text-sm text-muted-foreground font-light">
-          No item-level figures yet. Shop orders record which inventory pieces
-          were bought once the inventory relation is switched on; orders placed
-          before that aren&apos;t counted here.
+          No item-level figures yet. An order counts here once its row links the
+          inventory pieces that were bought — the website does that itself, and
+          an order filed by hand needs its Inventory Items relation set.
         </p>
       ) : (
         <div className="space-y-2">
@@ -1022,6 +1188,14 @@ function TopItemsPanel({ items }: { items: StudioTopItem[] }) {
             />
           ))}
         </div>
+      )}
+      {coverage.unlinked > 0 && (
+        <p className="mt-4 text-xs text-muted-foreground font-light">
+          {coverage.unlinked} of the last 12 months&apos;{" "}
+          {coverage.counted + coverage.unlinked} orders aren&apos;t counted
+          above: their rows link no inventory piece. Set Inventory Items on them
+          in Notion to bring them in.
+        </p>
       )}
     </Section>
   );

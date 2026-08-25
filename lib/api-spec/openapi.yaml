@@ -5582,6 +5582,9 @@ components:
           revenue,
           payments,
           topItems,
+          topItemCoverage,
+          channels,
+          consignment,
           capacity,
         ]
       properties:
@@ -5609,12 +5612,27 @@ components:
         topItems:
           type: array
           description: >-
-            The shop's best sellers, most-ordered first. Empty when no shop
-            order carries its inventory relation (legacy orders, or the
-            relation-links flag being off) — item-level figures are only as good
-            as that link.
+            The shop's best sellers, most-ordered first, across every sales
+            channel. Empty when no shop order carries its inventory relation
+            (legacy orders, hand-filed ones, or the relation-links flag being
+            off) — item-level figures are only as good as that link, and
+            `topItemCoverage` says how many orders it misses.
           items:
             $ref: "#/components/schemas/StudioTopItem"
+        topItemCoverage:
+          $ref: "#/components/schemas/StudioTopItemCoverage"
+        channels:
+          type: array
+          description: >-
+            Trade by sales channel over the same trailing window the revenue
+            series covers, in the atelier's own option order. A channel with no
+            orders is included as a nought, so "nothing from Etsy this year" is
+            readable; a channel no longer on the list but present on an order
+            follows them, and untagged orders come last as an empty `channel`.
+          items:
+            $ref: "#/components/schemas/StudioChannelSales"
+        consignment:
+          $ref: "#/components/schemas/StudioConsignment"
         capacity:
           $ref: "#/components/schemas/StudioCapacity"
     StudioCapacity:
@@ -5766,8 +5784,11 @@ components:
         shopRevenue:
           type: number
           description: >-
-            Dollars taken on shop orders placed that month (order totals,
-            including shipping and tax; cancelled orders excluded).
+            Dollars taken on shop orders placed that month, across every sales
+            channel (order totals, including shipping and tax; cancelled orders
+            excluded). The month comes from the order's own Order Date, falling
+            back to when its row was created — so an Etsy receipt typed up weeks
+            later still lands in the month it sold.
         shopOrders:
           type: integer
           description: Shop orders placed that month (cancelled excluded).
@@ -5828,6 +5849,119 @@ components:
         unpaidInvoiceCount:
           type: integer
           description: Invoices with money still outstanding.
+    StudioChannelSales:
+      type: object
+      description: >-
+        One sales channel's trade. The atelier files Etsy receipts, skate-shop
+        sales and word-of-mouth orders into the same database the website writes
+        to, so this is what separates them.
+      required: [channel, orders, revenue]
+      properties:
+        channel:
+          type: string
+          description: >-
+            The `Sales Channel` option. EMPTY means the orders carry no channel
+            at all — rows filed by hand and never tagged. It is not a channel and
+            must be labelled as a gap, not credited to one.
+        orders:
+          type: integer
+          description: Orders in the window (cancelled excluded).
+        revenue:
+          type: number
+          description: Dollars taken on those orders, including shipping and tax.
+    StudioTopItemCoverage:
+      type: object
+      description: >-
+        How much of the window's trade the best-seller list can see. Item-level
+        figures come from each order's inventory relation, which a hand-filed
+        order usually lacks — without this, an empty list reads as "nothing
+        sells" when it means "nothing is linked".
+      required: [counted, unlinked]
+      properties:
+        counted:
+          type: integer
+          description: Orders whose pieces are counted in `topItems`.
+        unlinked:
+          type: integer
+          description: Orders left out, because the row links no inventory row.
+    StudioConsignment:
+      type: object
+      description: >-
+        The finished pieces the studio has out at the skate shop, and what it has
+        been paid for them. A consignment sale is not an order — nobody knows a
+        piece sold until the placement is settled, and the money that arrives is
+        the studio's share of a shelf price — so it is reported apart from the
+        order figures and never summed into them.
+      required:
+        [
+          configured,
+          openPlacements,
+          atShopUnits,
+          atShopRetail,
+          settledUnits,
+          settledPayout,
+          payoutUnknownPlacements,
+          items,
+        ]
+      properties:
+        configured:
+          type: boolean
+          description: >-
+            False when no consignment database is wired up. The panel says so
+            rather than showing an empty shelf, which would read as "nothing is
+            out on consignment".
+        unreachable:
+          type: boolean
+          description: >-
+            The database id is set but Notion cannot see it — never shared with
+            the integration, or the wrong id. Same kind of state as unset: a
+            human has to clear it.
+        openPlacements:
+          type: integer
+          description: Placements delivered and not yet settled.
+        atShopUnits:
+          type: integer
+          description: Units still on the shop's shelf across those placements.
+        atShopRetail:
+          type: number
+          description: >-
+            What those units would fetch at their shelf price. RETAIL, not the
+            studio's share: nothing has sold, so there is no payout to quote —
+            this is the value of stock standing somewhere else.
+        settledUnits:
+          type: integer
+          description: Units sold across placements settled in the window.
+        settledPayout:
+          type: number
+          description: >-
+            The studio's share of those sales, read off the atelier's own payout
+            formula rather than derived from a split rate held in the app.
+        payoutUnknownPlacements:
+          type: integer
+          description: >-
+            Settled placements that sold something but whose payout formula
+            produced no number, so their money is missing from `settledPayout`.
+            Named rather than silently absent.
+        items:
+          type: array
+          description: >-
+            Pieces out on consignment, most on the shelf first. A piece whose
+            inventory row can't be resolved is left out of this list but stays in
+            the totals above.
+          items:
+            $ref: "#/components/schemas/StudioConsignmentItem"
+    StudioConsignmentItem:
+      type: object
+      required: [name, atShop, sold]
+      properties:
+        name:
+          type: string
+        atShop:
+          type: integer
+          description: Units still on the shop's shelf.
+        sold:
+          type: integer
+          description: Units sold and settled for in the window.
     StudioTopItem:
       type: object
       description: >-

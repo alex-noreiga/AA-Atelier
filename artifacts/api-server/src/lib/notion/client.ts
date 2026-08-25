@@ -62,6 +62,7 @@ let inventoryClient: NotionClient | null = null;
 let productCategoriesClient: NotionClient | null = null;
 let shopOrdersClient: NotionClient | null = null;
 let materialsClient: NotionClient | null = null;
+let consignmentClient: NotionClient | null = null;
 let orderLinesClient: NotionClient | null = null;
 let productionScheduleClient: NotionClient | null = null;
 let clientCrmClient: NotionClient | null = null;
@@ -166,6 +167,24 @@ export function getMaterialsNotionClient(): NotionClient {
     });
   }
   return materialsClient;
+}
+
+/**
+ * Client for the "consignment" database — the finished pieces left at the skate
+ * shop to sell, one row per delivery visit. READ-ONLY: the atelier records a
+ * placement and settles it by hand, and the app only reports it. Optional: when
+ * `NOTION_CONSIGNMENT_DATABASE_ID` is unset the client's `databaseId` is empty
+ * and the repository treats that as "not configured", so the studio dashboard
+ * says the shelf isn't being tracked instead of showing an empty one.
+ */
+export function getConsignmentNotionClient(): NotionClient {
+  if (!consignmentClient) {
+    consignmentClient = createNotionClient({
+      apiKey: process.env.NOTION_API_KEY ?? "",
+      databaseId: process.env.NOTION_CONSIGNMENT_DATABASE_ID ?? "",
+    });
+  }
+  return consignmentClient;
 }
 
 /**

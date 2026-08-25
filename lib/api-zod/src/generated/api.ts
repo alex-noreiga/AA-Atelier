@@ -1023,7 +1023,7 @@ export const GetStudioAnalyticsResponse = zod.object({
 }).describe('The making-side workload: active custom orders measured against the due dates the atelier has set.'),
   "revenue": zod.array(zod.object({
   "month": zod.string().describe('The month as YYYY-MM.'),
-  "shopRevenue": zod.number().describe('Dollars taken on shop orders placed that month (order totals, including shipping and tax; cancelled orders excluded).'),
+  "shopRevenue": zod.number().describe('Dollars taken on shop orders placed that month, across every sales channel (order totals, including shipping and tax; cancelled orders excluded). The month comes from the order\'s own Order Date, falling back to when its row was created — so an Etsy receipt typed up weeks later still lands in the month it sold.'),
   "shopOrders": zod.number().int().describe('Shop orders placed that month (cancelled excluded).'),
   "customBooked": zod.number().describe('Dollars invoiced on custom orders placed that month (each order\'s invoice Final Balance). Zero for orders not yet itemized.'),
   "customOrders": zod.number().int().describe('Custom orders placed that month (cancelled excluded).')
@@ -1042,7 +1042,31 @@ export const GetStudioAnalyticsResponse = zod.object({
   "topItems": zod.array(zod.object({
   "name": zod.string(),
   "orders": zod.number().int()
-}).describe('One best-selling shop piece. The count is orders containing the piece, not units — the order\'s inventory relation records which pieces were bought, not how many of each.')).describe('The shop\'s best sellers, most-ordered first. Empty when no shop order carries its inventory relation (legacy orders, or the relation-links flag being off) — item-level figures are only as good as that link.'),
+}).describe('One best-selling shop piece. The count is orders containing the piece, not units — the order\'s inventory relation records which pieces were bought, not how many of each.')).describe('The shop\'s best sellers, most-ordered first, across every sales channel. Empty when no shop order carries its inventory relation (legacy orders, hand-filed ones, or the relation-links flag being off) — item-level figures are only as good as that link, and `topItemCoverage` says how many orders it misses.'),
+  "topItemCoverage": zod.object({
+  "counted": zod.number().int().describe('Orders whose pieces are counted in `topItems`.'),
+  "unlinked": zod.number().int().describe('Orders left out, because the row links no inventory row.')
+}).describe('How much of the window\'s trade the best-seller list can see. Item-level figures come from each order\'s inventory relation, which a hand-filed order usually lacks — without this, an empty list reads as \"nothing sells\" when it means \"nothing is linked\".'),
+  "channels": zod.array(zod.object({
+  "channel": zod.string().describe('The `Sales Channel` option. EMPTY means the orders carry no channel at all — rows filed by hand and never tagged. It is not a channel and must be labelled as a gap, not credited to one.'),
+  "orders": zod.number().int().describe('Orders in the window (cancelled excluded).'),
+  "revenue": zod.number().describe('Dollars taken on those orders, including shipping and tax.')
+}).describe('One sales channel\'s trade. The atelier files Etsy receipts, skate-shop sales and word-of-mouth orders into the same database the website writes to, so this is what separates them.')).describe('Trade by sales channel over the same trailing window the revenue series covers, in the atelier\'s own option order. A channel with no orders is included as a nought, so \"nothing from Etsy this year\" is readable; a channel no longer on the list but present on an order follows them, and untagged orders come last as an empty `channel`.'),
+  "consignment": zod.object({
+  "configured": zod.boolean().describe('False when no consignment database is wired up. The panel says so rather than showing an empty shelf, which would read as \"nothing is out on consignment\".'),
+  "unreachable": zod.boolean().optional().describe('The database id is set but Notion cannot see it — never shared with the integration, or the wrong id. Same kind of state as unset: a human has to clear it.'),
+  "openPlacements": zod.number().int().describe('Placements delivered and not yet settled.'),
+  "atShopUnits": zod.number().int().describe('Units still on the shop\'s shelf across those placements.'),
+  "atShopRetail": zod.number().describe('What those units would fetch at their shelf price. RETAIL, not the studio\'s share: nothing has sold, so there is no payout to quote — this is the value of stock standing somewhere else.'),
+  "settledUnits": zod.number().int().describe('Units sold across placements settled in the window.'),
+  "settledPayout": zod.number().describe('The studio\'s share of those sales, read off the atelier\'s own payout formula rather than derived from a split rate held in the app.'),
+  "payoutUnknownPlacements": zod.number().int().describe('Settled placements that sold something but whose payout formula produced no number, so their money is missing from `settledPayout`. Named rather than silently absent.'),
+  "items": zod.array(zod.object({
+  "name": zod.string(),
+  "atShop": zod.number().int().describe('Units still on the shop\'s shelf.'),
+  "sold": zod.number().int().describe('Units sold and settled for in the window.')
+})).describe('Pieces out on consignment, most on the shelf first. A piece whose inventory row can\'t be resolved is left out of this list but stays in the totals above.')
+}).describe('The finished pieces the studio has out at the skate shop, and what it has been paid for them. A consignment sale is not an order — nobody knows a piece sold until the placement is settled, and the money that arrives is the studio\'s share of a shelf price — so it is reported apart from the order figures and never summed into them.'),
   "capacity": zod.object({
   "open": zod.boolean().describe('Whether a bespoke commission can currently be ordered.'),
   "reason": zod.enum(['unlimited', 'under-capacity', 'at-capacity', 'forced-open', 'forced-closed', 'unknown']).describe('What decided it. `unlimited` means no capacity is configured; `forced-\*` means the atelier\'s manual switch overrode the count; `unknown` means the count couldn\'t be read and the books stayed open rather than closing on a bad read.'),
