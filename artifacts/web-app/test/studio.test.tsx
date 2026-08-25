@@ -7,6 +7,7 @@ import type { Mock } from "vitest";
 // Render <Redirect> as a marker so the unauthenticated bounce is assertable,
 // and capture the imperative navigation the sign-out does.
 const navigate = vi.hoisted(() => vi.fn());
+const loc = vi.hoisted(() => ({ path: "/studio" }));
 vi.mock("wouter", async (importOriginal) => {
   const actual = await importOriginal<typeof import("wouter")>();
   return {
@@ -14,7 +15,7 @@ vi.mock("wouter", async (importOriginal) => {
     Redirect: ({ to }: { to: string }) => (
       <div data-testid="redirect">{to}</div>
     ),
-    useLocation: () => ["/studio", navigate],
+    useLocation: () => [loc.path, navigate],
   };
 });
 
@@ -25,6 +26,19 @@ const h = vi.hoisted(() => ({
   loading: false,
   signOut: vi.fn(),
 }));
+// The page gates on the staff probe, not on the figures — the probe reads
+// nothing and the navbar has already cached it, so the gate costs no request
+// and a section that isn't the figures doesn't have to fetch them to render.
+const gate = vi.hoisted(() => ({
+  staff: true,
+  refused: false,
+  failed: false,
+  loading: false,
+  status: undefined as number | undefined,
+  reason: undefined as string | undefined,
+}));
+vi.mock("@/lib/studio-access", () => ({ useStudioAccess: () => gate }));
+
 vi.mock("@/lib/auth-context", () => ({
   useAuth: () => ({
     session: h.session,
@@ -38,10 +52,13 @@ vi.mock("@/lib/auth-context", () => ({
 vi.mock("@workspace/api-client-react", () => ({
   useGetStudioAnalytics: vi.fn(),
   getGetStudioAnalyticsQueryKey: () => ["studio-analytics"],
+  // Refresh reads this to leave the staff probe alone; the page never calls
+  // the probe hook itself (`@/lib/studio-access` is mocked above).
+  getGetStudioAccessQueryKey: () => ["/api/studio/access"],
   // The materials panel, the moderation queue, the request queue, the newsletter
   // panel, the settings editor, the internal tools panel, and the working-hours
-  // editor ride along at the bottom of the dashboard; each has its own test
-  // file, so here they just need inert hooks to render.
+  // and appointment-staffing editors ride along at the bottom of the dashboard;
+  // each has its own test file, so here they just need inert hooks to render.
   useRunStudioTool: () => ({ mutate: vi.fn(), isPending: false }),
   useListStaffAvailability: () => ({
     data: { entries: [], staff: [] },
@@ -53,6 +70,19 @@ vi.mock("@workspace/api-client-react", () => ({
   useUpdateStaffAvailability: () => ({ mutate: vi.fn(), isPending: false }),
   useDeleteStaffAvailability: () => ({ mutate: vi.fn(), isPending: false }),
   getListStaffAvailabilityQueryKey: () => ["studio-availability"],
+  useGetAppointmentStaffing: () => ({
+    data: {
+      configured: true,
+      staff: [],
+      types: [],
+      usingDefaults: true,
+    },
+    isLoading: false,
+    isError: false,
+    error: null,
+  }),
+  useSetAppointmentStaffing: () => ({ mutate: vi.fn(), isPending: false }),
+  getGetAppointmentStaffingQueryKey: () => ["studio-appointment-staff"],
   useListStudioReviews: () => ({
     data: { pending: [], decided: [] },
     isLoading: false,
@@ -119,6 +149,7 @@ vi.mock("@/lib/supabase", () => ({
 
 import { useGetStudioAnalytics } from "@workspace/api-client-react";
 import Studio from "@/pages/studio";
+import { STUDIO_SECTIONS } from "@/lib/studio-sections";
 
 const mockAnalytics = vi.mocked(useGetStudioAnalytics) as unknown as Mock;
 
@@ -142,8 +173,12 @@ function stubAnalytics(state: {
   } as never);
 }
 
+/** The query client the page ran against, so a test can watch what Refresh
+ * does to it. */
+let client: QueryClient;
+
 function renderPage() {
-  const client = new QueryClient();
+  client = new QueryClient();
   return render(
     <QueryClientProvider client={client}>
       <Studio />
@@ -240,6 +275,13 @@ const analytics = {
 };
 
 beforeEach(() => {
+  loc.path = "/studio";
+  gate.staff = true;
+  gate.refused = false;
+  gate.failed = false;
+  gate.loading = false;
+  gate.status = undefined;
+  gate.reason = undefined;
   h.session = { access_token: "jwt" };
   h.user = { email: "alexandra@a3iceanddance.com" };
   h.loading = false;
@@ -257,7 +299,8 @@ describe("studio dashboard — access", () => {
   });
 
   it("redirects to sign-in on a 401", () => {
-    stubAnalytics({ isError: true, error: { status: 401 } });
+    gate.staff = false;
+    gate.status = 401;
     renderPage();
     expect(screen.getByTestId("redirect")).toHaveTextContent("/account/login");
   });
@@ -266,7 +309,8 @@ describe("studio dashboard — access", () => {
     // The server answers 404 for a non-staff account on purpose; anything that
     // reads as "access denied" would confirm the dashboard exists to someone
     // who only typed the URL.
-    stubAnalytics({ isError: true, error: { status: 404 } });
+    gate.staff = false;
+    gate.status = 404;
     renderPage();
 
     expect(screen.getByTestId("link-home")).toBeInTheDocument();
@@ -278,30 +322,28 @@ describe("studio dashboard — access", () => {
   });
 
   it("leaks nothing about the studio on that page", () => {
-    stubAnalytics({ isError: true, error: { status: 404 } });
+    gate.staff = false;
+    gate.status = 404;
     const { container } = renderPage();
 
     expect(container.textContent ?? "").not.toMatch(/studio|dashboard|staff/i);
   });
 
   it("tells a staff member who used the wrong sign-in method, without redirecting", () => {
-    stubAnalytics({ isError: true, error: { status: 403 } });
+    gate.staff = false;
+    gate.refused = true;
+    gate.status = 403;
     renderPage();
     expect(screen.getByTestId("studio-forbidden")).toBeInTheDocument();
     expect(screen.queryByTestId("redirect")).not.toBeInTheDocument();
   });
 
   it("shows the server's own reason for a 403, so a wrong sign-in method says so", () => {
-    stubAnalytics({
-      isError: true,
-      error: {
-        status: 403,
-        data: {
-          error:
-            "Studio access requires signing in with Google. Please sign out and use Continue with Google.",
-        },
-      },
-    });
+    gate.staff = false;
+    gate.refused = true;
+    gate.status = 403;
+    gate.reason =
+      "Studio access requires signing in with Google. Please sign out and use Continue with Google.";
     renderPage();
     expect(screen.getByTestId("studio-forbidden")).toHaveTextContent(
       /requires signing in with Google/,
@@ -309,7 +351,9 @@ describe("studio dashboard — access", () => {
   });
 
   it("re-signs-in with Google from the 403 panel, dropping the stale session first", async () => {
-    stubAnalytics({ isError: true, error: { status: 403 } });
+    gate.staff = false;
+    gate.refused = true;
+    gate.status = 403;
     renderPage();
 
     await userEvent.click(screen.getByTestId("button-studio-google"));
@@ -322,16 +366,64 @@ describe("studio dashboard — access", () => {
     expect(window.sessionStorage.getItem("aa-post-signin")).toBe("/studio");
   });
 
-  it("shows a spinner while loading", () => {
-    stubAnalytics({ isLoading: true });
+  it("shows a spinner while the staff check is in flight", () => {
+    gate.loading = true;
+    gate.staff = false;
+    stubAnalytics({});
     renderPage();
     expect(screen.getByTestId("studio-loading")).toBeInTheDocument();
   });
 
-  it("shows an error state on any other failure", () => {
-    stubAnalytics({ isError: true, error: { status: 500 } });
+  it("says the check itself failed rather than calling a staff member a stranger", () => {
+    // An outage is not a refusal. Rendering Not Found here would tell someone
+    // who IS staff that they aren't — untrue, and nothing they can act on.
+    gate.staff = false;
+    gate.failed = true;
+    gate.status = 500;
+    stubAnalytics({});
     renderPage();
-    expect(screen.getByTestId("studio-error")).toBeInTheDocument();
+
+    expect(screen.getByTestId("studio-unavailable")).toBeInTheDocument();
+    expect(screen.queryByTestId("link-home")).not.toBeInTheDocument();
+  });
+
+  it("keeps a confirmed staff member in when a later probe hiccups", () => {
+    // The answer is cached for the session, so a failed refetch must not evict
+    // somebody the server has already vouched for.
+    gate.staff = true;
+    gate.failed = true;
+    gate.status = 500;
+    stubAnalytics({ data: analytics });
+    renderPage();
+
+    expect(screen.getByTestId("studio-view-figures")).toBeInTheDocument();
+    expect(screen.queryByTestId("studio-unavailable")).not.toBeInTheDocument();
+  });
+
+  it("refreshes the data, not the door", async () => {
+    // Re-asking the gate on Refresh would put the whole dashboard behind a
+    // network blip the atelier didn't press the button for.
+    stubAnalytics({ data: analytics });
+    renderPage();
+    const invalidate = vi.spyOn(client, "invalidateQueries");
+
+    await userEvent.click(screen.getByTestId("button-refresh"));
+
+    const { predicate } = invalidate.mock.calls[0][0] as {
+      predicate: (q: { queryKey: readonly unknown[] }) => boolean;
+    };
+    expect(predicate({ queryKey: ["studio-analytics"] })).toBe(true);
+    expect(predicate({ queryKey: ["/api/studio/access"] })).toBe(false);
+  });
+
+  it("still offers sign-out when the staff check fails", async () => {
+    gate.staff = false;
+    gate.failed = true;
+    stubAnalytics({});
+    renderPage();
+
+    await userEvent.click(screen.getByTestId("button-sign-out"));
+    expect(h.signOut).toHaveBeenCalled();
   });
 });
 
@@ -437,10 +529,16 @@ describe("studio dashboard — figures", () => {
     );
   });
 
-  it("refetches on demand", async () => {
+  it("refreshes whatever section is on screen", async () => {
+    // Refresh invalidates the ACTIVE queries rather than naming one, which with
+    // a single section mounted is exactly what is being looked at — and is why
+    // adding a panel costs the button nothing.
     renderPage();
+    const invalidate = vi.spyOn(client, "invalidateQueries");
+
     await userEvent.click(screen.getByTestId("button-refresh"));
-    expect(refetch).toHaveBeenCalled();
+
+    expect(invalidate).toHaveBeenCalled();
   });
 
   it("is titled Dashboard, and names who is signed in", () => {
@@ -473,5 +571,95 @@ describe("studio dashboard — figures", () => {
     await userEvent.click(screen.getByTestId("button-sign-out"));
 
     expect(h.signOut).toHaveBeenCalled();
+  });
+});
+
+/**
+ * The dashboard is a set of sections with their own addresses, and only the
+ * open one is mounted. That is the layout AND the load: mounting is what starts
+ * a query, so a section nobody opened costs nothing. These assert the two halves
+ * that make it true — the right panels for the address, and nothing else.
+ */
+describe("studio dashboard — sections", () => {
+  beforeEach(() => stubAnalytics({ data: analytics }));
+
+  it("offers every section in the registry, marking the open one", () => {
+    renderPage();
+
+    for (const section of STUDIO_SECTIONS) {
+      expect(
+        screen.getByTestId(`studio-section-${section.id}`),
+      ).toBeInTheDocument();
+    }
+    expect(screen.getByTestId("studio-section-figures")).toHaveAttribute(
+      "aria-current",
+      "page",
+    );
+    expect(screen.getByTestId("studio-section-bookings")).not.toHaveAttribute(
+      "aria-current",
+    );
+  });
+
+  it("links each section to its own address, so a reload lands back here", () => {
+    renderPage();
+
+    // The default section is `/studio` itself — one canonical URL per section.
+    expect(screen.getByTestId("studio-section-figures")).toHaveAttribute(
+      "href",
+      "/studio",
+    );
+    expect(screen.getByTestId("studio-section-settings")).toHaveAttribute(
+      "href",
+      "/studio/settings",
+    );
+  });
+
+  it("shows the figures at /studio, and no other section's panels", () => {
+    renderPage();
+
+    expect(screen.getByTestId("studio-view-figures")).toBeInTheDocument();
+    expect(screen.getByTestId("stat-active")).toBeInTheDocument();
+    // The panels that used to sit below the figures on one long page.
+    expect(screen.queryByTestId("panel-availability")).not.toBeInTheDocument();
+    expect(screen.queryByTestId("panel-settings")).not.toBeInTheDocument();
+    expect(screen.queryByTestId("panel-requests")).not.toBeInTheDocument();
+  });
+
+  it("shows a section's own panels at its address, and not the figures", () => {
+    loc.path = "/studio/bookings";
+    renderPage();
+
+    expect(screen.getByTestId("studio-view-bookings")).toBeInTheDocument();
+    expect(screen.getByTestId("panel-availability")).toBeInTheDocument();
+    expect(screen.getByTestId("panel-appointment-staff")).toBeInTheDocument();
+    // The figures are the heaviest read on the dashboard; a section that isn't
+    // them must not pay for them.
+    expect(screen.queryByTestId("stat-active")).not.toBeInTheDocument();
+  });
+
+  it("keeps the request queue and the tools together — the hand-off needs both mounted", () => {
+    loc.path = "/studio/requests";
+    renderPage();
+
+    expect(screen.getByTestId("panel-requests")).toBeInTheDocument();
+    expect(screen.getByTestId("panel-tools")).toBeInTheDocument();
+  });
+
+  it("falls back to the figures for a section that doesn't exist", () => {
+    // Not a 404: this page's 404 means "you are not staff", and a mistyped
+    // section is a different thing to say.
+    loc.path = "/studio/nonsense";
+    renderPage();
+
+    expect(screen.getByTestId("studio-view-figures")).toBeInTheDocument();
+    expect(screen.queryByTestId("link-home")).not.toBeInTheDocument();
+  });
+
+  it("carries the section nav in every section, so there's always a way across", () => {
+    loc.path = "/studio/guides";
+    renderPage();
+
+    expect(screen.getByTestId("studio-sections")).toBeInTheDocument();
+    expect(screen.getByTestId("button-sign-out")).toBeInTheDocument();
   });
 });

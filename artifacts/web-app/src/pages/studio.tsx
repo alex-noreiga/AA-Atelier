@@ -1,7 +1,9 @@
-import { Redirect, useLocation } from "wouter";
+import { Link, Redirect, useLocation } from "wouter";
+import { useIsFetching, useQueryClient } from "@tanstack/react-query";
 import {
   useGetStudioAnalytics,
   getGetStudioAnalyticsQueryKey,
+  getGetStudioAccessQueryKey,
   type StudioAnalytics,
   type StudioPipeline,
   type StudioProductionLoad,
@@ -17,17 +19,25 @@ import { StudioTools } from "@/components/studio-tools";
 import { StudioRequests } from "@/components/studio-requests";
 import { StudioNewsletter } from "@/components/studio-newsletter";
 import { StudioAvailability } from "@/components/studio-availability";
+import { StudioAppointmentStaff } from "@/components/studio-appointment-staff";
 import { StudioReviews } from "@/components/studio-reviews";
 import { StudioMaterials } from "@/components/studio-materials";
 import { StudioGuides, GuidesFor } from "@/components/studio-guides";
 import { StudioSettings } from "@/components/studio-settings";
 import { Seo } from "@/components/seo";
 import { useAuth } from "@/lib/auth-context";
+import { useStudioAccess } from "@/lib/studio-access";
 import { supabase } from "@/lib/supabase";
 import { setPostSignInPath } from "@/lib/post-signin";
 import { ROUTE_SEO } from "@/lib/seo-routes";
 import { serverErrorMessage } from "@/lib/api-error";
 import { toolHandoff, type ToolHandoff } from "@/lib/studio-handoff";
+import {
+  STUDIO_SECTIONS,
+  resolveStudioSection,
+  studioSectionPath,
+  type StudioSectionId,
+} from "@/lib/studio-sections";
 import { formatPrice, formatDate } from "@/lib/format";
 import { useEffect, useRef, useState } from "react";
 import {
@@ -47,8 +57,8 @@ import {
 } from "lucide-react";
 
 /**
- * The internal studio dashboard — the atelier's own numbers in one place, so a
- * question like "what's overdue?" or "what's still to collect?" doesn't mean
+ * The internal studio dashboard — the atelier's own working surface, so a
+ * question like "what's overdue?" or "who asked for a refund?" doesn't mean
  * opening five Notion databases.
  *
  * Access is the same Supabase Auth session customers use, plus a server-side
@@ -57,6 +67,20 @@ import {
  * server's own reason with a Google re-sign-in to hand, which is the fix when a
  * staff member arrived with a password session. The gate that matters is the
  * server's — this page just renders what it's given.
+ *
+ * The gate is `GET /studio/access` (via `useStudioAccess`) rather than the
+ * figures, and that choice is what lets the page be split into sections at all.
+ * The access probe reads nothing — reaching the handler IS the answer — and the
+ * navbar has already asked it and cached it for the session, so gating on it
+ * costs no request. Gating on the analytics instead, as this page used to,
+ * would have meant every section paying for three bounded full-database scans
+ * just to find out whether it was allowed to render.
+ *
+ * The panels are grouped into sections with their own addresses
+ * (`lib/studio-sections.ts`), and only the open section is mounted. That is a
+ * layout decision and a load decision at once: mounting is what starts a query,
+ * so a view fetches what it shows and nothing else, where the single-scroll
+ * version fired nine staff-gated Notion reads before anything was on screen.
  *
  * It is titled "Dashboard" and *is* the signed-in destination for staff:
  * `/account` hands them here rather than showing a customer portal they'd
@@ -68,19 +92,10 @@ import {
  * its dependencies pruned on purpose.
  */
 export default function Studio() {
-  const [, navigate] = useLocation();
+  const [location, navigate] = useLocation();
   const { session, user, loading, signOut } = useAuth();
-
-  const analytics = useGetStudioAnalytics({
-    query: {
-      queryKey: getGetStudioAnalyticsQueryKey(),
-      // Only fetch once we know there's a session; a 401/403 must not retry.
-      enabled: !loading && Boolean(session),
-      retry: false,
-    },
-  });
-
-  const status = (analytics.error as { status?: number } | null)?.status;
+  const access = useStudioAccess();
+  const section = resolveStudioSection(location);
 
   const handleSignOut = async () => {
     await signOut();
@@ -88,25 +103,15 @@ export default function Studio() {
   };
 
   // Signed out (or the session expired) → sign in, same as the account portal.
-  if ((!loading && !session) || (analytics.isError && status === 401)) {
+  if ((!loading && !session) || access.status === 401) {
     return <Redirect to="/account/login" replace />;
-  }
-
-  // Not a studio account → render exactly what a mistyped URL renders. The
-  // server answers 404 rather than 403 for this precisely so the page can (see
-  // `requireStaff`): the dashboard is unlinked and noindexed, and telling a
-  // customer who typed `/studio` that access was *refused* would confirm there
-  // is something here to find. Returning the real page, not a copy of it, is
-  // what keeps the two indistinguishable.
-  if (analytics.isError && status === 404) {
-    return <NotFound />;
   }
 
   return (
     <PageShell align="top" className="pt-24 sm:pt-28 pb-16 sm:pb-20">
       <Seo {...ROUTE_SEO["/studio"]} />
       <div className="w-full max-w-4xl z-10 mx-auto px-4 sm:px-6 animate-in fade-in duration-700">
-        {loading || analytics.isLoading ? (
+        {access.loading ? (
           <div
             className="flex items-center justify-center py-24"
             data-testid="studio-loading"
@@ -116,67 +121,381 @@ export default function Studio() {
               strokeWidth={1}
             />
           </div>
-        ) : status === 403 ? (
-          <AccessDenied reason={serverErrorMessage(analytics.error)} />
-        ) : analytics.isError || !analytics.data ? (
-          <div className="text-center py-16" data-testid="studio-error">
+        ) : access.staff ? (
+          // Confirmed staff comes FIRST, so a later probe that hiccups can't
+          // evict someone the server has already vouched for: the answer is
+          // cached for the session, and a failed refetch leaves it in place.
+          <StudioDashboard
+            section={section}
+            email={user?.email}
+            onSignOut={handleSignOut}
+          />
+        ) : access.refused ? (
+          <AccessDenied reason={access.reason} />
+        ) : access.failed ? (
+          // The probe didn't answer — an outage, not a refusal. Saying so is
+          // the point: rendering Not Found here would tell a staff member they
+          // aren't staff, which is both untrue and unactionable.
+          <div className="text-center py-16" data-testid="studio-unavailable">
             <h1 className="text-2xl sm:text-3xl font-serif mb-4">
               Something went wrong
             </h1>
             <p className="text-muted-foreground">
-              We couldn&apos;t load the studio figures just now. Please try
+              We couldn&apos;t check your studio access just now. Please try
               again in a moment.
             </p>
             {/* Sign-out lives on the dashboard, and `/account` sends staff back
-                here — so without it in this branch too, a failed read is a dead
-                end with no way off the page. */}
+                here — so without it in this branch too, a failed check is a
+                dead end with no way off the page. */}
             <div className="mt-8 flex justify-center">
               <SignOutButton onSignOut={handleSignOut} />
             </div>
           </div>
         ) : (
-          <>
-            <header className="flex flex-col gap-3 mb-10 sm:mb-12 sm:flex-row sm:items-start sm:justify-between sm:gap-4">
-              <div className="min-w-0">
-                <h1 className="text-3xl sm:text-4xl md:text-5xl font-serif text-foreground mb-2">
-                  Dashboard
-                </h1>
-                <p className="text-muted-foreground font-light text-sm">
-                  Figures as of {formatDateTime(analytics.data.generatedAt)}
-                </p>
-                {user?.email && (
-                  <p
-                    className="mt-1 text-xs text-muted-foreground/80 font-light break-all"
-                    data-testid="studio-email"
-                  >
-                    Signed in as {user.email}
-                  </p>
-                )}
-              </div>
-              <div className="flex items-center gap-1 shrink-0 -ml-3 sm:ml-0">
-                <Button
-                  variant="ghost"
-                  onClick={() => void analytics.refetch()}
-                  disabled={analytics.isFetching}
-                  className="text-muted-foreground hover:text-primary gap-2 text-xs tracking-widest uppercase"
-                  data-testid="button-refresh"
-                >
-                  <RefreshCw
-                    className={`w-4 h-4 ${analytics.isFetching ? "animate-spin" : ""}`}
-                    strokeWidth={1.5}
-                  />
-                  Refresh
-                </Button>
-                <SignOutButton onSignOut={handleSignOut} />
-              </div>
-            </header>
-
-            <Dashboard data={analytics.data} />
-          </>
+          // Not a studio account → render exactly what a mistyped URL renders.
+          // The server answers 404 rather than 403 for this precisely so the
+          // page can (see `requireStaff`): the dashboard is unlinked and
+          // noindexed, and telling a customer who typed `/studio` that access
+          // was *refused* would confirm there is something here to find.
+          // Returning the real page, not a copy of it, is what keeps the two
+          // indistinguishable.
+          <NotFound />
         )}
       </div>
     </PageShell>
   );
+}
+
+/** The dashboard proper: the header that every section shares, the section
+ * switcher, and the one section that is open. */
+function StudioDashboard({
+  section,
+  email,
+  onSignOut,
+}: {
+  section: StudioSectionId;
+  email?: string;
+  onSignOut: () => Promise<void>;
+}) {
+  return (
+    <>
+      <header className="flex flex-col gap-3 mb-6 sm:mb-8 sm:flex-row sm:items-start sm:justify-between sm:gap-4">
+        <div className="min-w-0">
+          <h1 className="text-3xl sm:text-4xl md:text-5xl font-serif text-foreground mb-2">
+            Dashboard
+          </h1>
+          {email && (
+            <p
+              className="text-xs text-muted-foreground/80 font-light break-all"
+              data-testid="studio-email"
+            >
+              Signed in as {email}
+            </p>
+          )}
+        </div>
+        <div className="flex items-center gap-1 shrink-0 -ml-3 sm:ml-0">
+          <RefreshButton />
+          <SignOutButton onSignOut={onSignOut} />
+        </div>
+      </header>
+
+      <SectionNav active={section} />
+      <SectionView section={section} />
+    </>
+  );
+}
+
+/**
+ * The section switcher.
+ *
+ * Real links, not tab state: a section is an address, so a reload, a bookmark
+ * and the back button all land where the atelier left off. They're rendered
+ * from `STUDIO_SECTIONS` rather than written out, so adding a section adds a
+ * chip here for free — the whole point of the registry.
+ */
+function SectionNav({ active }: { active: StudioSectionId }) {
+  return (
+    <nav
+      aria-label="Dashboard sections"
+      className="mb-8 sm:mb-10 flex flex-wrap gap-2 border-b border-border pb-4"
+      data-testid="studio-sections"
+    >
+      {STUDIO_SECTIONS.map((section) => {
+        const on = section.id === active;
+        return (
+          <Link
+            key={section.id}
+            href={studioSectionPath(section.id)}
+            title={section.summary}
+            aria-current={on ? "page" : undefined}
+            className={`rounded-full border px-3 py-1 text-xs tracking-wide transition-colors ${
+              on
+                ? "border-primary bg-primary/10 text-foreground"
+                : "border-border text-muted-foreground hover:text-foreground"
+            }`}
+            data-testid={`studio-section-${section.id}`}
+          >
+            {section.label}
+          </Link>
+        );
+      })}
+    </nav>
+  );
+}
+
+/**
+ * Refresh what's on screen.
+ *
+ * `invalidateQueries` with no filter refetches the ACTIVE queries, which with
+ * one section mounted is exactly the section being looked at. That's why it
+ * replaced a direct `analytics.refetch()`: the button used to know the one
+ * query the page had, and would otherwise have needed to learn every panel's.
+ * Adding a panel now costs this component nothing.
+ */
+function RefreshButton() {
+  const queryClient = useQueryClient();
+  const fetching = useIsFetching() > 0;
+
+  // Everything active EXCEPT the staff probe. Refresh means the data, not the
+  // door: re-asking the gate would put the whole dashboard behind a network
+  // blip that has nothing to do with what the atelier pressed the button for.
+  const [accessKey] = getGetStudioAccessQueryKey();
+  const refresh = () =>
+    queryClient.invalidateQueries({
+      predicate: (query) => query.queryKey[0] !== accessKey,
+    });
+
+  return (
+    <Button
+      variant="ghost"
+      onClick={() => void refresh()}
+      disabled={fetching}
+      className="text-muted-foreground hover:text-primary gap-2 text-xs tracking-widest uppercase"
+      data-testid="button-refresh"
+    >
+      <RefreshCw
+        className={`w-4 h-4 ${fetching ? "animate-spin" : ""}`}
+        strokeWidth={1.5}
+      />
+      Refresh
+    </Button>
+  );
+}
+
+/**
+ * One section's panels.
+ *
+ * Typed `Record<StudioSectionId, …>`, so a section added to the registry
+ * without a view here fails to compile rather than rendering a blank page.
+ *
+ * Each entry carries the panels AND the guides filed against them, so a
+ * procedure sits with the thing it describes rather than in a manual elsewhere
+ * on the page. `GuidesFor` renders nothing when there are none.
+ */
+const SECTION_VIEWS: Record<StudioSectionId, () => React.ReactElement> = {
+  figures: FiguresSection,
+  requests: RequestsSection,
+  reviews: ReviewsSection,
+  bookings: BookingsSection,
+  materials: MaterialsSection,
+  settings: SettingsSection,
+  guides: GuidesSection,
+};
+
+function SectionView({ section }: { section: StudioSectionId }) {
+  const View = SECTION_VIEWS[section];
+  return (
+    <div
+      className="space-y-10 sm:space-y-12"
+      data-testid={`studio-view-${section}`}
+    >
+      <View />
+    </div>
+  );
+}
+
+/** The numbers. The only section with a heavy read behind it — three bounded
+ * full-database scans — which is why it no longer runs on every view. */
+function FiguresSection() {
+  const analytics = useGetStudioAnalytics({
+    query: { queryKey: getGetStudioAnalyticsQueryKey(), retry: false },
+  });
+
+  if (analytics.isLoading) {
+    return (
+      <div
+        className="flex items-center justify-center py-16"
+        data-testid="figures-loading"
+      >
+        <Loader2
+          className="w-6 h-6 animate-spin text-primary"
+          strokeWidth={1}
+        />
+      </div>
+    );
+  }
+
+  // A failed read costs this section, not the dashboard. The request queue and
+  // the tools are still reachable during a Notion wobble, which is when the
+  // atelier is most likely to need them.
+  if (analytics.isError || !analytics.data) {
+    return (
+      <div className="text-center py-16" data-testid="studio-error">
+        <h2 className="text-xl sm:text-2xl font-serif mb-3">
+          Something went wrong
+        </h2>
+        <p className="text-muted-foreground">
+          {serverErrorMessage(analytics.error) ??
+            "We couldn't load the studio figures just now. Please try again in a moment."}
+        </p>
+      </div>
+    );
+  }
+
+  return <Figures data={analytics.data} />;
+}
+
+function Figures({ data }: { data: StudioAnalytics }) {
+  const thisMonth = data.revenue[data.revenue.length - 1];
+
+  return (
+    <>
+      <p
+        className="-mt-2 text-xs text-muted-foreground font-light"
+        data-testid="figures-generated"
+      >
+        Figures as of {formatDateTime(data.generatedAt)}
+      </p>
+
+      <div className="grid grid-cols-2 md:grid-cols-4 gap-2 sm:gap-3">
+        <StatTile
+          label="Active orders"
+          value={String(data.production.activeOrders)}
+          hint={`${data.production.unscheduled} without a due date`}
+          testId="stat-active"
+        />
+        <StatTile
+          label="Overdue"
+          value={String(data.production.overdue)}
+          hint={`${data.production.dueThisWeek} due in 7 days`}
+          emphasis={data.production.overdue > 0}
+          testId="stat-overdue"
+        />
+        <StatTile
+          label="Still to collect"
+          value={formatPrice(data.payments.outstandingTotal)}
+          hint={`across ${data.payments.unpaidInvoiceCount} invoice${
+            data.payments.unpaidInvoiceCount === 1 ? "" : "s"
+          }`}
+          testId="stat-outstanding"
+        />
+        <StatTile
+          label="Shop this month"
+          value={formatPrice(thisMonth?.shopRevenue ?? 0)}
+          hint={`${thisMonth?.shopOrders ?? 0} order${
+            thisMonth?.shopOrders === 1 ? "" : "s"
+          }`}
+          testId="stat-shop-month"
+        />
+      </div>
+
+      <CapacityPanel capacity={data.capacity} />
+
+      <ProductionPanel production={data.production} />
+
+      <PipelinePanel
+        icon={<Package className="w-4 h-4" strokeWidth={1.5} />}
+        title="Custom orders by stage"
+        pipeline={data.customOrders}
+        testId="pipeline-custom"
+      />
+
+      <PipelinePanel
+        icon={<ShoppingBag className="w-4 h-4" strokeWidth={1.5} />}
+        title="Shop orders by status"
+        pipeline={data.shopOrders}
+        testId="pipeline-shop"
+      />
+
+      <RevenuePanel months={data.revenue} />
+
+      <PaymentsPanel payments={data.payments} />
+
+      <TopItemsPanel items={data.topItems} />
+
+      <GuidesFor section="figures" />
+    </>
+  );
+}
+
+/**
+ * The day's work: the request queue, the newsletter sign-ups, and the tools.
+ *
+ * These three are one section because the queue hands a request's own order
+ * number to the tool that actions it — see `lib/studio-handoff.ts`. The state
+ * lives here because the two are sibling panels, and the tools panel is where
+ * the confirmation stays: the queue prepares a run, it never starts one. Split
+ * across sections, the hand-off would be filling a form that isn't mounted.
+ */
+function RequestsSection() {
+  const [handoff, setHandoff] = useState<ToolHandoff | undefined>();
+
+  return (
+    <>
+      <StudioRequests onHandoff={(next) => setHandoff(toolHandoff(next))} />
+      <GuidesFor section="requests" />
+
+      <StudioNewsletter />
+      <GuidesFor section="newsletter" />
+
+      <StudioTools handoff={handoff} />
+    </>
+  );
+}
+
+function ReviewsSection() {
+  return (
+    <>
+      <StudioReviews />
+      <GuidesFor section="reviews" />
+    </>
+  );
+}
+
+/** When each person works, and what they work on. Two halves of one answer:
+ * a customer is offered a time only where both agree. */
+function BookingsSection() {
+  return (
+    <>
+      <StudioAvailability />
+      <GuidesFor section="availability" />
+
+      <StudioAppointmentStaff />
+      <GuidesFor section="appointment-staff" />
+    </>
+  );
+}
+
+function MaterialsSection() {
+  return (
+    <>
+      <StudioMaterials />
+      <GuidesFor section="materials" />
+    </>
+  );
+}
+
+function SettingsSection() {
+  return (
+    <>
+      <StudioSettings />
+      <GuidesFor section="settings" />
+    </>
+  );
+}
+
+function GuidesSection() {
+  return <StudioGuides />;
 }
 
 /** The way off the dashboard. Staff have no account portal to sign out from —
@@ -263,103 +582,6 @@ function AccessDenied({ reason }: { reason?: string }) {
           {error}
         </p>
       )}
-    </div>
-  );
-}
-
-function Dashboard({ data }: { data: StudioAnalytics }) {
-  const thisMonth = data.revenue[data.revenue.length - 1];
-
-  // A request in the queue handing its own order number to the tool that
-  // actions it. The state lives here because the two are sibling panels, and
-  // the tools panel is where the confirmation stays — the queue prepares a run,
-  // it never starts one. See `lib/studio-handoff.ts`.
-  const [handoff, setHandoff] = useState<ToolHandoff | undefined>();
-
-  return (
-    <div className="space-y-10 sm:space-y-12">
-      <div className="grid grid-cols-2 md:grid-cols-4 gap-2 sm:gap-3">
-        <StatTile
-          label="Active orders"
-          value={String(data.production.activeOrders)}
-          hint={`${data.production.unscheduled} without a due date`}
-          testId="stat-active"
-        />
-        <StatTile
-          label="Overdue"
-          value={String(data.production.overdue)}
-          hint={`${data.production.dueThisWeek} due in 7 days`}
-          emphasis={data.production.overdue > 0}
-          testId="stat-overdue"
-        />
-        <StatTile
-          label="Still to collect"
-          value={formatPrice(data.payments.outstandingTotal)}
-          hint={`across ${data.payments.unpaidInvoiceCount} invoice${
-            data.payments.unpaidInvoiceCount === 1 ? "" : "s"
-          }`}
-          testId="stat-outstanding"
-        />
-        <StatTile
-          label="Shop this month"
-          value={formatPrice(thisMonth?.shopRevenue ?? 0)}
-          hint={`${thisMonth?.shopOrders ?? 0} order${
-            thisMonth?.shopOrders === 1 ? "" : "s"
-          }`}
-          testId="stat-shop-month"
-        />
-      </div>
-
-      <CapacityPanel capacity={data.capacity} />
-
-      <ProductionPanel production={data.production} />
-
-      <PipelinePanel
-        icon={<Package className="w-4 h-4" strokeWidth={1.5} />}
-        title="Custom orders by stage"
-        pipeline={data.customOrders}
-        testId="pipeline-custom"
-      />
-
-      <PipelinePanel
-        icon={<ShoppingBag className="w-4 h-4" strokeWidth={1.5} />}
-        title="Shop orders by status"
-        pipeline={data.shopOrders}
-        testId="pipeline-shop"
-      />
-
-      <RevenuePanel months={data.revenue} />
-
-      <PaymentsPanel payments={data.payments} />
-
-      <TopItemsPanel items={data.topItems} />
-
-      {/* Each panel carries the guides filed against it, so a procedure sits
-          with the thing it describes rather than in a manual elsewhere on the
-          page. `GuidesFor` renders nothing when there are none. */}
-      <GuidesFor section="figures" />
-
-      <StudioMaterials />
-      <GuidesFor section="materials" />
-
-      <StudioReviews />
-      <GuidesFor section="reviews" />
-
-      <StudioAvailability />
-      <GuidesFor section="availability" />
-
-      <StudioSettings />
-      <GuidesFor section="settings" />
-
-      <StudioRequests onHandoff={(next) => setHandoff(toolHandoff(next))} />
-      <GuidesFor section="requests" />
-
-      <StudioNewsletter />
-      <GuidesFor section="newsletter" />
-
-      <StudioTools handoff={handoff} />
-
-      <StudioGuides />
     </div>
   );
 }

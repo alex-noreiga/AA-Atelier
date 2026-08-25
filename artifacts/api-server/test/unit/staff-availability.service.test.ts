@@ -42,8 +42,13 @@ beforeEach(() => {
 });
 
 describe("bookableStaff", () => {
-  it("lists the staff the appointment catalog routes to", () => {
-    expect(bookableStaff()).toEqual(["Alayna", "Alexandra"]);
+  // The roster, not whoever is currently routed to a type. Hours belong to a
+  // person; which appointments they take is a separate, atelier-edited answer
+  // (see `appointment-staffing.service`), and deriving this from it would drop
+  // somebody out of the editor the moment they were unassigned from their last
+  // type — stranding the hours already saved against them.
+  it("lists the studio's whole roster, in roster order", () => {
+    expect(bookableStaff()).toEqual(["Alexandra", "Alayna"]);
   });
 });
 
@@ -74,7 +79,7 @@ describe("getStaffAvailability", () => {
           locations: ["in-person"],
         },
       ],
-      staff: ["Alayna", "Alexandra"],
+      staff: ["Alexandra", "Alayna"],
     });
   });
 

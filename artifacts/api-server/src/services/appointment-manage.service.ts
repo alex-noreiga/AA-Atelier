@@ -17,6 +17,7 @@ import {
   APPOINTMENT_MANAGE_TTL_SECONDS,
 } from "../lib/auth/tokens.js";
 import type { AppointmentTypeDef } from "../lib/appointments/catalog.js";
+import { withBookedStaff } from "../lib/appointments/routing.js";
 import {
   mapEventToDetails,
   resolveEventType,
@@ -196,7 +197,11 @@ export async function rescheduleAppointment(
     );
   }
 
-  const type = typeFromEvent(event);
+  // The booked person stays eligible for their own appointment even if the
+  // atelier has since taken them off this type: moving a booking already made
+  // is not the same act as taking a new one, and without this the customer's
+  // manage link would offer no times at all and blame the slot.
+  const type = withBookedStaff(typeFromEvent(event), handle.staff);
   const location = locationFromEvent(event);
   const timeZone = appointmentTimezone();
   const now = new Date();

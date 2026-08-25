@@ -312,12 +312,16 @@ export interface MaterialAlert {
   name: string;
   /** Fabric / Applique / Crystal / Packaging / Notions. Omitted when unset. */
   category?: string;
+  /** Which fabric(s) this is — Satin, Power Mesh, Lining, … — in the order the atelier holds them in Notion. A MULTI-select, so a material can carry several (a power mesh that is also a lining); the dashboard groups it under the FIRST and shows the rest as labels, because a shopping list you might count twice is worse than one where a secondary type is only a label. Omitted when none are tagged, which is every non-fabric material. */
+  fabricTypes?: string[];
   /** Units remaining, from the Notion stock formula. Always a number here — a material whose stock is unknown is never reported as an alert. */
   stockOnHand: number;
   /** The reorder point the atelier set. */
   minimumStock: number;
   /** How far below the reorder point it is, rounded to two places. `0` when it has landed exactly on it — a reorder point is the level you buy AT, so that still counts. The list is ranked by this. */
   shortfall: number;
+  /** The atelier's `Reorder Status` — Restockable / Deadstock / Made to order / Discontinued / Unchecked. Omitted on the many rows that carry none. On `lowStock` it is a lead-time note (`Made to order` is a custom print or dye run); on `notRestockable` it is the reason the material is there. */
+  reorderStatus?: string;
   /** Where to buy it again, when the atelier recorded a link. */
   link?: string;
   /** Dollars per unit, when recorded. */
@@ -343,6 +347,8 @@ export interface UntrackedMaterial {
   id: string;
   name: string;
   category?: string;
+  /** Which fabric(s) this is — Satin, Power Mesh, Lining, … — in the order the atelier holds them in Notion. A MULTI-select, so a material can carry several (a power mesh that is also a lining); the dashboard groups it under the FIRST and shows the rest as labels, because a shopping list you might count twice is worse than one where a secondary type is only a label. Omitted when none are tagged, which is every non-fabric material. */
+  fabricTypes?: string[];
   /** `no-reorder-point` — `Minimum Stock` is unset, so nothing can trip. `stock-unknown` — the stock formula produced no number (typically a material with no intake lines recorded yet). */
   reason: UntrackedMaterialReason;
   /** Present only for `no-reorder-point`, where the stock IS known and only the threshold is missing. */
@@ -438,11 +444,13 @@ export interface StudioGuideList {
 }
 
 /**
- * The materials panel — what to reorder, and what isn't being watched.
+ * The materials panel — what to reorder, what can't be reordered, and what isn't being watched.
  */
 export interface MaterialsOverview {
-  /** At or below the reorder point, worst shortfall first. */
+  /** At or below the reorder point AND buyable again, worst shortfall first. This is the reorder list, and the weekly digest reads it. */
   lowStock: MaterialAlert[];
+  /** At or below the reorder point but NOT buyable again — the atelier marked it Deadstock or Discontinued. Deliberately kept OUT of `lowStock` (and so out of the digest): there is no vendor to send anyone to. Kept visible because running a one-of-a-kind fabric down is exactly when a substitute has to be chosen. Same shape and same worst-first ranking. */
+  notRestockable: MaterialAlert[];
   /** Not watched, and why — alphabetical. */
   untracked: UntrackedMaterial[];
   /** How many materials the atelier has muted. Reported so the panel can say so rather than the numbers silently not adding up. */
@@ -1505,6 +1513,75 @@ export const StaffWeekday = {
   Saturday: 'Saturday',
   Sunday: 'Sunday',
 } as const;
+
+export type AppointmentStaffingTypeLocationsItem = typeof AppointmentStaffingTypeLocationsItem[keyof typeof AppointmentStaffingTypeLocationsItem];
+
+
+export const AppointmentStaffingTypeLocationsItem = {
+  'in-person': 'in-person',
+  virtual: 'virtual',
+} as const;
+
+/**
+ * One bookable appointment type, with the staff who currently perform it. Everything but `staff` is fixed in code and shown for context — a type's length, where it can be held, and whether it needs an order behind it are not things the dashboard changes.
+ */
+export interface AppointmentStaffingType {
+  /** The type's stable id, as used when saving staffing. */
+  id: string;
+  /** How the type reads to a customer, e.g. "Fitting & Measurements". */
+  name: string;
+  description: string;
+  durationMinutes: number;
+  /** Where this type can be held. */
+  locations: AppointmentStaffingTypeLocationsItem[];
+  /** Who offers it right now — the staffing actually in force, which is the set the slot calculator draws from. Never empty. */
+  staff: string[];
+  /** Who the built-in catalog assigns to it, so the editor can show what resetting would mean and mark a type that has been moved away from it. */
+  defaultStaff: string[];
+  /** Present and true when this type can only be booked against an existing order — worth knowing when reassigning it, since it is not a type new customers can reach. */
+  requiresOrder?: boolean;
+}
+
+/**
+ * The studio's appointment staffing: every bookable type, who performs it, and the roster it may be assigned from.
+ */
+export interface AppointmentStaffing {
+  /** Whether there is a Studio Settings database to write to. False means the staffing shown is real but can only be changed in the environment, and a save answers 409. */
+  configured: boolean;
+  /** Everyone the studio books appointments with. Deliberately the whole roster, not only the people currently assigned to something — a person with no types is how the atelier says they aren't taking appointments at the moment. */
+  staff: string[];
+  types: AppointmentStaffingType[];
+  /** True when the staffing in force is the catalog's own, i.e. nothing is stored and a future change to the defaults would be picked up. */
+  usingDefaults: boolean;
+}
+
+export type AppointmentStaffingRequestTypesItem = {
+  /**
+     * An appointment type's id, as returned by the read.
+     * @minLength 1
+     * @maxLength 80
+     */
+  id: string;
+  /**
+     * Who should offer it. Must name people the studio books, and must not be empty — a type with nobody on it never offers a time and never says why.
+     * @minItems 1
+     * @maxItems 50
+     * @items.minLength 1
+     * @items.maxLength 120
+     */
+  staff: string[];
+};
+
+/**
+ * The staffing to save. Only the types named are changed; any left out keep what they have.
+ */
+export interface AppointmentStaffingRequest {
+  /**
+     * @minItems 1
+     * @maxItems 50
+     */
+  types: AppointmentStaffingRequestTypesItem[];
+}
 
 export type StaffAvailabilityEntryLocationsItem = typeof StaffAvailabilityEntryLocationsItem[keyof typeof StaffAvailabilityEntryLocationsItem];
 
