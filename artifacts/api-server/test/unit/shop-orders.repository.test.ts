@@ -23,6 +23,8 @@ import {
   SHOP_ORDER_TRACKING_NUMBER_PROPERTY,
   SHOP_ORDER_TRACKING_CARRIER_PROPERTY,
   SHOP_ORDER_TRACKING_URL_PROPERTY,
+  SHOP_ORDER_CHANNEL_PROPERTY,
+  SHOP_ORDER_DATE_PROPERTY,
 } from "../../src/lib/notion/shop-orders.blocks.js";
 import {
   makeFakeClient,
@@ -191,6 +193,37 @@ describe("createShopOrder", () => {
     await expect(createShopOrder(session(), client)).rejects.toThrow(
       /status 400: validation_error: bad property/,
     );
+  });
+
+  it("drops a property the database doesn't have and still records the order", async () => {
+    // This runs on the Stripe webhook. Notion rejects the WHOLE page over one
+    // unknown property, so without the retry a `Sales Channel` the atelier
+    // hasn't added yet would 500 the webhook — and the redelivery would
+    // early-return at the dedupe guard, losing a PAID order.
+    let attempt = 0;
+    const client = makeFakeClient((path) => {
+      if (path !== "/v1/pages") throw new Error(`unexpected path ${path}`);
+      attempt += 1;
+      if (attempt === 1) {
+        return errorResponse(
+          400,
+          JSON.stringify({
+            code: "validation_error",
+            message: "Sales Channel is not a property that exists",
+          }),
+        );
+      }
+      return jsonResponse({ id: "new-page" }, 200);
+    });
+
+    expect(await createShopOrder(session(), client)).toBe("new-page");
+
+    const retried = JSON.parse(client.calls[1].init!.body as string);
+    expect(retried.properties[SHOP_ORDER_CHANNEL_PROPERTY]).toBeUndefined();
+    // Everything else survives — the order is recorded, just without that field.
+    expect(
+      retried.properties[SHOP_ORDER_SESSION_PROPERTY].rich_text[0].text.content,
+    ).toBe("cs_test_123");
   });
 });
 
@@ -573,6 +606,8 @@ describe("listShopOrdersForAnalytics", () => {
     cancelled?: boolean;
     createdTime?: string;
     itemIds?: string[];
+    channel?: string;
+    orderDate?: string;
   }) {
     const page = shopOrderResultPage(opts) as Record<string, unknown> & {
       properties: Record<string, unknown>;
@@ -582,6 +617,18 @@ describe("listShopOrdersForAnalytics", () => {
       type: "relation",
       relation: (opts.itemIds ?? []).map((id) => ({ id })),
     };
+    if (opts.channel !== undefined) {
+      page.properties[SHOP_ORDER_CHANNEL_PROPERTY] = {
+        type: "select",
+        select: opts.channel ? { name: opts.channel } : null,
+      };
+    }
+    if (opts.orderDate !== undefined) {
+      page.properties[SHOP_ORDER_DATE_PROPERTY] = {
+        type: "date",
+        date: opts.orderDate ? { start: opts.orderDate } : null,
+      };
+    }
     return page;
   }
 
@@ -590,6 +637,10 @@ describe("listShopOrdersForAnalytics", () => {
       [SHOP_ORDER_STATUS_PROPERTY]: {
         type: "status",
         status: { options: [{ name: "Shipped" }, { name: "Delivered" }] },
+      },
+      [SHOP_ORDER_CHANNEL_PROPERTY]: {
+        type: "select",
+        select: { options: [{ name: "Etsy" }, { name: "Online Store" }] },
       },
     },
   });
@@ -627,6 +678,9 @@ describe("listShopOrdersForAnalytics", () => {
         status: "Shipped",
         cancelled: false,
         createdTime: "2026-08-02T10:00:00.000Z",
+        orderDate: "",
+        channel: "",
+        sessionId: "",
         itemIds: ["inv-1", "inv-2"],
         total: 44,
       },
@@ -635,10 +689,77 @@ describe("listShopOrdersForAnalytics", () => {
         status: "Delivered",
         cancelled: false,
         createdTime: "2026-08-01T10:00:00.000Z",
+        orderDate: "",
+        channel: "",
+        sessionId: "",
         itemIds: [],
         total: 20,
       },
     ]);
+  });
+
+  it("reads the sales channel and the atelier's own order date", async () => {
+    const client = makeFakeClient((path) => {
+      if (isSchema(path)) return statusSchema.clone();
+      if (isQ(path)) {
+        return jsonResponse({
+          results: [
+            analyticsPage({
+              orderNumber: "SHP-1",
+              channel: "Etsy",
+              orderDate: "2026-06-11",
+              createdTime: "2026-08-18T09:00:00.000Z",
+            }),
+          ],
+        });
+      }
+      throw new Error(`unexpected path ${path}`);
+    });
+
+    const { orders } = await repo.listShopOrdersForAnalytics(client);
+
+    expect(orders[0].channel).toBe("Etsy");
+    // Verbatim: a calendar date is a day the atelier chose, not an instant, and
+    // only the caller knows whether a timezone may be applied to it.
+    expect(orders[0].orderDate).toBe("2026-06-11");
+    expect(orders[0].createdTime).toBe("2026-08-18T09:00:00.000Z");
+  });
+
+  it("reads both live option lists from one schema request", async () => {
+    const client = makeFakeClient((path) => {
+      if (isSchema(path)) return statusSchema.clone();
+      if (isQ(path)) return jsonResponse({ results: [] });
+      throw new Error(`unexpected path ${path}`);
+    });
+
+    const { statuses, channels } =
+      await repo.listShopOrdersForAnalytics(client);
+
+    expect(statuses).toEqual(["Shipped", "Delivered"]);
+    expect(channels).toEqual(["Etsy", "Online Store"]);
+    expect(client.calls.filter((c) => isSchema(c.path))).toHaveLength(1);
+  });
+
+  it("reads no channels when the property hasn't been added yet", async () => {
+    const client = makeFakeClient((path) => {
+      if (isSchema(path)) {
+        return jsonResponse({
+          properties: {
+            [SHOP_ORDER_STATUS_PROPERTY]: {
+              type: "status",
+              status: { options: [{ name: "Shipped" }] },
+            },
+          },
+        });
+      }
+      if (isQ(path)) return jsonResponse({ results: [] });
+      throw new Error(`unexpected path ${path}`);
+    });
+
+    // An empty list, which the aggregation reads as "no channels to lay out" —
+    // not an error, and not a reason to lose the rest of the figures.
+    const { channels } = await repo.listShopOrdersForAnalytics(client);
+    expect(channels).toEqual([]);
   });
 
   it("omits the total when the order has none", async () => {

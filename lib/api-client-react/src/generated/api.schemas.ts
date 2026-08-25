@@ -1723,7 +1723,7 @@ export interface StudioProductionLoad {
 export interface StudioRevenueMonth {
   /** The month as YYYY-MM. */
   month: string;
-  /** Dollars taken on shop orders placed that month (order totals, including shipping and tax; cancelled orders excluded). */
+  /** Dollars taken on shop orders placed that month, across every sales channel (order totals, including shipping and tax; cancelled orders excluded). The month comes from the order's own Order Date, falling back to when its row was created — so an Etsy receipt typed up weeks later still lands in the month it sold. */
   shopRevenue: number;
   /** Shop orders placed that month (cancelled excluded). */
   shopOrders: number;
@@ -1761,6 +1761,60 @@ export interface StudioPaymentTotals {
 export interface StudioTopItem {
   name: string;
   orders: number;
+}
+
+/**
+ * How much of the window's trade the best-seller list can see. Item-level figures come from each order's inventory relation, which a hand-filed order usually lacks — without this, an empty list reads as "nothing sells" when it means "nothing is linked".
+ */
+export interface StudioTopItemCoverage {
+  /** Orders whose pieces are counted in `topItems`. */
+  counted: number;
+  /** Orders left out, because the row links no inventory row. */
+  unlinked: number;
+}
+
+/**
+ * One sales channel's trade. The atelier files Etsy receipts, skate-shop sales and word-of-mouth orders into the same database the website writes to, so this is what separates them.
+ */
+export interface StudioChannelSales {
+  /** The `Sales Channel` option. EMPTY means the orders carry no channel at all — rows filed by hand and never tagged. It is not a channel and must be labelled as a gap, not credited to one. */
+  channel: string;
+  /** Orders in the window (cancelled excluded). */
+  orders: number;
+  /** Dollars taken on those orders, including shipping and tax. */
+  revenue: number;
+}
+
+export interface StudioConsignmentItem {
+  name: string;
+  /** Units still on the shop's shelf. */
+  atShop: number;
+  /** Units sold and settled for in the window. */
+  sold: number;
+}
+
+/**
+ * The finished pieces the studio has out at the skate shop, and what it has been paid for them. A consignment sale is not an order — nobody knows a piece sold until the placement is settled, and the money that arrives is the studio's share of a shelf price — so it is reported apart from the order figures and never summed into them.
+ */
+export interface StudioConsignment {
+  /** False when no consignment database is wired up. The panel says so rather than showing an empty shelf, which would read as "nothing is out on consignment". */
+  configured: boolean;
+  /** The database id is set but Notion cannot see it — never shared with the integration, or the wrong id. Same kind of state as unset: a human has to clear it. */
+  unreachable?: boolean;
+  /** Placements delivered and not yet settled. */
+  openPlacements: number;
+  /** Units still on the shop's shelf across those placements. */
+  atShopUnits: number;
+  /** What those units would fetch at their shelf price. RETAIL, not the studio's share: nothing has sold, so there is no payout to quote — this is the value of stock standing somewhere else. */
+  atShopRetail: number;
+  /** Units sold across placements settled in the window. */
+  settledUnits: number;
+  /** The studio's share of those sales, read off the atelier's own payout formula rather than derived from a split rate held in the app. */
+  settledPayout: number;
+  /** Settled placements that sold something but whose payout formula produced no number, so their money is missing from `settledPayout`. Named rather than silently absent. */
+  payoutUnknownPlacements: number;
+  /** Pieces out on consignment, most on the shelf first. A piece whose inventory row can't be resolved is left out of this list but stays in the totals above. */
+  items: StudioConsignmentItem[];
 }
 
 /**
@@ -1804,8 +1858,12 @@ export interface StudioAnalytics {
   /** One entry per month over the trailing window, oldest first. Months with no activity are included as zeroes so a chart has no gaps. */
   revenue: StudioRevenueMonth[];
   payments: StudioPaymentTotals;
-  /** The shop's best sellers, most-ordered first. Empty when no shop order carries its inventory relation (legacy orders, or the relation-links flag being off) — item-level figures are only as good as that link. */
+  /** The shop's best sellers, most-ordered first, across every sales channel. Empty when no shop order carries its inventory relation (legacy orders, hand-filed ones, or the relation-links flag being off) — item-level figures are only as good as that link, and `topItemCoverage` says how many orders it misses. */
   topItems: StudioTopItem[];
+  topItemCoverage: StudioTopItemCoverage;
+  /** Trade by sales channel over the same trailing window the revenue series covers, in the atelier's own option order. A channel with no orders is included as a nought, so "nothing from Etsy this year" is readable; a channel no longer on the list but present on an order follows them, and untagged orders come last as an empty `channel`. */
+  channels: StudioChannelSales[];
+  consignment: StudioConsignment;
   capacity: StudioCapacity;
 }
 
