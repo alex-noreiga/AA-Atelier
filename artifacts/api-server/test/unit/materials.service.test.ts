@@ -1,5 +1,8 @@
 import { describe, it, expect } from "vitest";
-import { classifyMaterials } from "../../src/services/materials.service.js";
+import {
+  classifyMaterials,
+  canBeRepurchased,
+} from "../../src/services/materials.service.js";
 import type { MaterialRecord } from "../../src/lib/notion/materials.schema.js";
 
 function material(overrides: Partial<MaterialRecord> = {}): MaterialRecord {
@@ -120,11 +123,13 @@ describe("classifyMaterials", () => {
   it("handles an empty database", () => {
     expect(classifyMaterials([])).toEqual({
       lowStock: [],
+      notRestockable: [],
       untracked: [],
       suppressedCount: 0,
       totalCount: 0,
     });
   });
+
   // The dashboard groups fabric by type, so both projections have to carry it —
   // an alert AND an unwatched row, since the unwatched list is grouped too.
   it("carries the fabric types onto both the alert and the unwatched row", () => {
@@ -152,5 +157,131 @@ describe("classifyMaterials", () => {
       material({ stockOnHand: 0, minimumStock: 2 }),
     ]);
     expect(lowStock[0].fabricTypes).toBeUndefined();
+  });
+  // A deadstock lot or a discontinued line has no vendor to send anyone to, so
+  // it is not something to reorder — but it is not nothing either: running one
+  // down is when a substitute has to be picked.
+  it("keeps a material that can't be bought again out of the reorder list", () => {
+    const { lowStock, notRestockable } = classifyMaterials([
+      material({
+        id: "dead",
+        name: "Black Rhinestone Velvet",
+        stockOnHand: 0,
+        minimumStock: 2,
+        reorderStatus: "Deadstock",
+      }),
+      material({
+        id: "live",
+        name: "Power Mesh",
+        stockOnHand: 1,
+        minimumStock: 4,
+        reorderStatus: "Restockable",
+      }),
+    ]);
+
+    expect(lowStock.map((m) => m.id)).toEqual(["live"]);
+    expect(notRestockable.map((m) => m.id)).toEqual(["dead"]);
+    expect(notRestockable[0].reorderStatus).toBe("Deadstock");
+  });
+
+  it("keeps an UNCLASSIFIED material on the reorder list", () => {
+    // The load-bearing direction. 38 of the atelier's 50 rows carry no Reorder
+    // Status, including 9 they've set a reorder point on — an allowlist of
+    // "Restockable" would drop those 9 without saying anything.
+    const { lowStock, notRestockable } = classifyMaterials([
+      material({ id: "unset", stockOnHand: 0, minimumStock: 2 }),
+      material({
+        id: "unchecked",
+        stockOnHand: 0,
+        minimumStock: 2,
+        reorderStatus: "Unchecked",
+      }),
+    ]);
+
+    expect(lowStock.map((m) => m.id).sort()).toEqual(["unchecked", "unset"]);
+    expect(notRestockable).toEqual([]);
+  });
+
+  it("keeps a made-to-order material on the reorder list, with its status", () => {
+    // A custom print or dye run is still orderable — it just takes longer.
+    const { lowStock, notRestockable } = classifyMaterials([
+      material({
+        id: "custom",
+        stockOnHand: 0,
+        minimumStock: 2,
+        reorderStatus: "Made to order",
+      }),
+    ]);
+
+    expect(lowStock.map((m) => m.id)).toEqual(["custom"]);
+    expect(lowStock[0].reorderStatus).toBe("Made to order");
+    expect(notRestockable).toEqual([]);
+  });
+
+  it("only withholds a material that is actually LOW", () => {
+    // Deadstock with stock above its reorder point is simply fine, and a
+    // deadstock row with no reorder point stays in the unwatched list rather
+    // than being reported as something that can't be reordered.
+    const { lowStock, notRestockable, untracked } = classifyMaterials([
+      material({
+        id: "ok",
+        stockOnHand: 9,
+        minimumStock: 2,
+        reorderStatus: "Deadstock",
+      }),
+      material({
+        id: "nopoint",
+        minimumStock: null,
+        stockOnHand: 0,
+        reorderStatus: "Deadstock",
+      }),
+    ]);
+
+    expect(lowStock).toEqual([]);
+    expect(notRestockable).toEqual([]);
+    expect(untracked.map((m) => m.id)).toEqual(["nopoint"]);
+  });
+
+  it("ranks the not-restockable list worst-first too", () => {
+    const { notRestockable } = classifyMaterials([
+      material({
+        id: "a",
+        name: "A",
+        stockOnHand: 1,
+        minimumStock: 2,
+        reorderStatus: "Discontinued",
+      }),
+      material({
+        id: "b",
+        name: "B",
+        stockOnHand: 0,
+        minimumStock: 9,
+        reorderStatus: "Deadstock",
+      }),
+    ]);
+
+    expect(notRestockable.map((m) => m.id)).toEqual(["b", "a"]);
+  });
+});
+
+describe("canBeRepurchased", () => {
+  it("says no only to what positively can't be bought again", () => {
+    expect(canBeRepurchased("Deadstock")).toBe(false);
+    expect(canBeRepurchased("Discontinued")).toBe(false);
+  });
+
+  it("says yes to everything else, including unset and unrecognized", () => {
+    // A denylist, not an allowlist: unset is the majority case, and an option
+    // the atelier invents must not silently remove a material from the list.
+    expect(canBeRepurchased(undefined)).toBe(true);
+    expect(canBeRepurchased("")).toBe(true);
+    expect(canBeRepurchased("Restockable")).toBe(true);
+    expect(canBeRepurchased("Unchecked")).toBe(true);
+    expect(canBeRepurchased("Made to order")).toBe(true);
+    expect(canBeRepurchased("Seasonal")).toBe(true);
+  });
+
+  it("ignores casing and stray spacing, as a hand-typed option can carry", () => {
+    expect(canBeRepurchased("  deadstock ")).toBe(false);
   });
 });

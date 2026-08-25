@@ -3203,6 +3203,14 @@ components:
             How far below the reorder point it is, rounded to two places. `0`
             when it has landed exactly on it — a reorder point is the level you
             buy AT, so that still counts. The list is ranked by this.
+        reorderStatus:
+          type: string
+          description: >-
+            The atelier's `Reorder Status` — Restockable / Deadstock / Made to
+            order / Discontinued / Unchecked. Omitted on the many rows that
+            carry none. On `lowStock` it is a lead-time note (`Made to order`
+            is a custom print or dye run); on `notRestockable` it is the reason
+            the material is there.
         link:
           type: string
           description: Where to buy it again, when the atelier recorded a link.
@@ -3382,12 +3390,35 @@ components:
             complete.
     MaterialsOverview:
       type: object
-      description: The materials panel — what to reorder, and what isn't being watched.
-      required: [lowStock, untracked, suppressedCount, totalCount, configured]
+      description: >-
+        The materials panel — what to reorder, what can't be reordered, and what
+        isn't being watched.
+      required:
+        [
+          lowStock,
+          notRestockable,
+          untracked,
+          suppressedCount,
+          totalCount,
+          configured,
+        ]
       properties:
         lowStock:
           type: array
-          description: At or below the reorder point, worst shortfall first.
+          description: >-
+            At or below the reorder point AND buyable again, worst shortfall
+            first. This is the reorder list, and the weekly digest reads it.
+          items:
+            $ref: "#/components/schemas/MaterialAlert"
+        notRestockable:
+          type: array
+          description: >-
+            At or below the reorder point but NOT buyable again — the atelier
+            marked it Deadstock or Discontinued. Deliberately kept OUT of
+            `lowStock` (and so out of the digest): there is no vendor to send
+            anyone to. Kept visible because running a one-of-a-kind fabric down
+            is exactly when a substitute has to be chosen. Same shape and same
+            worst-first ranking.
           items:
             $ref: "#/components/schemas/MaterialAlert"
         untracked:

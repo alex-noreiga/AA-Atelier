@@ -76,6 +76,23 @@ describe("extractMaterial", () => {
     expect(material.fabricTypes).toEqual(["Satin"]);
   });
 
+  // Mostly unset in the live data — 38 of 50 rows — so absent must stay absent
+  // rather than becoming a value the service could mistake for "no".
+  it("maps the reorder status, and omits it when unset", () => {
+    const marked = extractMaterial(
+      page({
+        "Reorder Status": { type: "select", select: { name: "Deadstock" } },
+      }),
+    );
+    expect(marked.reorderStatus).toBe("Deadstock");
+
+    const unset = extractMaterial(
+      page({ "Reorder Status": { type: "select", select: null } }),
+    );
+    expect(unset.reorderStatus).toBeUndefined();
+    expect(extractMaterial(page({})).reorderStatus).toBeUndefined();
+  });
+
   // The property is NAMED like an enable switch; its Notion description says it
   // suppresses. Ticked must read as muted, or the panel inverts.
   it("reads a ticked alerts checkbox as suppressed", () => {

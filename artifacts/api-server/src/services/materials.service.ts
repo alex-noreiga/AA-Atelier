@@ -24,6 +24,14 @@
 //     trap 1), so those rows are in neither list. The count is still reported, so
 //     the panel can say how many are muted rather than the number silently not
 //     adding up.
+//  4. **A material that can't be bought again is not something to reorder.** A
+//     deadstock lot or a discontinued line is gone; listing it under "to
+//     reorder" sends the atelier to a vendor who has none. So it comes out of
+//     `lowStock` — and out of the weekly digest, which reads the same list —
+//     and into `notRestockable`, because a one-of-a-kind fabric hitting its
+//     reorder point is the moment you need to pick a substitute, not a row to
+//     delete. See {@link canBeRepurchased} for what "can't" means and why it is
+//     a denylist rather than an allowlist.
 
 import {
   listMaterials,
@@ -32,6 +40,35 @@ import {
 import { isNotionNotFound } from "../lib/notion/errors.js";
 import type { MaterialRecord } from "../lib/notion/materials.schema.js";
 import { logger } from "../lib/logger.js";
+
+/**
+ * The `Reorder Status` values that mean the material cannot be bought again.
+ *
+ * A DENYLIST, and that direction is the whole design. 38 of the atelier's 50
+ * materials carry no `Reorder Status` at all — including 9 of the 22 they have
+ * set a reorder point on — so an allowlist of `Restockable` would quietly drop
+ * those 9 off the reorder list. Naming only what positively says "you can't buy
+ * this" keeps an unclassified material exactly where it was.
+ *
+ * `Made to order` is deliberately NOT here: a custom print or dye run is still
+ * a thing you can order, it just takes longer. It stays in the list and carries
+ * its status as a label so the lead time is visible.
+ *
+ * A targeted business rule naming live Notion option values, like
+ * `STATUS_IN_STOCK` — rename either option in Notion and this must change too,
+ * or a deadstock fabric silently rejoins the shopping list.
+ */
+export const NON_REPURCHASABLE_STATUSES = ["Deadstock", "Discontinued"];
+
+/** Whether this material can be bought again. Unset, unrecognized, and
+ * `Unchecked` all read as yes — see {@link NON_REPURCHASABLE_STATUSES}. */
+export function canBeRepurchased(reorderStatus?: string): boolean {
+  const status = reorderStatus?.trim().toLowerCase();
+  if (!status) return true;
+  return !NON_REPURCHASABLE_STATUSES.some(
+    (blocked) => blocked.toLowerCase() === status,
+  );
+}
 
 /** A material at or below its reorder point — something to buy. */
 export interface MaterialAlert {
@@ -48,6 +85,10 @@ export interface MaterialAlert {
   minimumStock: number;
   /** How far under the reorder point it is; `0` when it has landed exactly on it. */
   shortfall: number;
+  /** The atelier's `Reorder Status`, when they set one. On the reorder list it
+   * is a lead-time note (`Made to order`); on `notRestockable` it is the reason
+   * the row is there. */
+  reorderStatus?: string;
   link?: string;
   pricePerUnit?: number;
 }
@@ -67,8 +108,13 @@ export interface UntrackedMaterial {
 }
 
 export interface MaterialsOverview {
-  /** At or below the reorder point, worst shortfall first. */
+  /** At or below the reorder point AND buyable again, worst shortfall first. */
   lowStock: MaterialAlert[];
+  /** At or below the reorder point but NOT buyable again — deadstock or
+   * discontinued. Kept out of the reorder list (and the digest) because there
+   * is no vendor to send anyone to, and kept visible because running one of
+   * these down is exactly when a substitute has to be chosen. */
+  notRestockable: MaterialAlert[];
   /** Not watched, and why — alphabetical. */
   untracked: UntrackedMaterial[];
   /** How many materials the atelier has deliberately muted. */
@@ -94,6 +140,7 @@ export function classifyMaterials(
   materials: MaterialRecord[],
 ): Omit<MaterialsOverview, "configured"> {
   const lowStock: MaterialAlert[] = [];
+  const notRestockable: MaterialAlert[] = [];
   const untracked: UntrackedMaterial[] = [];
   let suppressedCount = 0;
 
@@ -131,7 +178,7 @@ export function classifyMaterials(
     // The rule: at or below the reorder point. "At" counts — a reorder point is
     // the level you buy AT, not one you wait to fall under.
     if (stockOnHand <= minimumStock) {
-      lowStock.push({
+      const alert: MaterialAlert = {
         id: material.id,
         name: material.name,
         stockOnHand,
@@ -139,21 +186,32 @@ export function classifyMaterials(
         shortfall: round2(minimumStock - stockOnHand),
         ...(material.category ? { category: material.category } : {}),
         ...(material.fabricTypes ? { fabricTypes: material.fabricTypes } : {}),
+        ...(material.reorderStatus
+          ? { reorderStatus: material.reorderStatus }
+          : {}),
         ...(material.link ? { link: material.link } : {}),
         ...(material.pricePerUnit !== undefined
           ? { pricePerUnit: material.pricePerUnit }
           : {}),
-      });
+      };
+
+      // Decision 4: only what can actually be bought again is something to buy.
+      if (canBeRepurchased(material.reorderStatus)) lowStock.push(alert);
+      else notRestockable.push(alert);
     }
   }
 
   // Worst shortfall first — what to buy first. Ties break by name so the order
   // is stable between loads rather than following Notion's cursor.
-  lowStock.sort((a, b) => b.shortfall - a.shortfall || cmp(a.name, b.name));
+  const byUrgency = (a: MaterialAlert, b: MaterialAlert) =>
+    b.shortfall - a.shortfall || cmp(a.name, b.name);
+  lowStock.sort(byUrgency);
+  notRestockable.sort(byUrgency);
   untracked.sort((a, b) => cmp(a.name, b.name));
 
   return {
     lowStock,
+    notRestockable,
     untracked,
     suppressedCount,
     totalCount: materials.length,
@@ -189,6 +247,7 @@ function cmp(a: string, b: string): number {
 export async function getMaterialsOverview(): Promise<MaterialsOverview> {
   const empty = {
     lowStock: [],
+    notRestockable: [],
     untracked: [],
     suppressedCount: 0,
     totalCount: 0,

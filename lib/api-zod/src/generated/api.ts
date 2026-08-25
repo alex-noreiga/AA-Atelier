@@ -1061,9 +1061,22 @@ export const GetStudioMaterialsResponse = zod.object({
   "stockOnHand": zod.number().describe('Units remaining, from the Notion stock formula. Always a number here — a material whose stock is unknown is never reported as an alert.'),
   "minimumStock": zod.number().describe('The reorder point the atelier set.'),
   "shortfall": zod.number().describe('How far below the reorder point it is, rounded to two places. `0` when it has landed exactly on it — a reorder point is the level you buy AT, so that still counts. The list is ranked by this.'),
+  "reorderStatus": zod.string().optional().describe('The atelier\'s `Reorder Status` — Restockable \/ Deadstock \/ Made to order \/ Discontinued \/ Unchecked. Omitted on the many rows that carry none. On `lowStock` it is a lead-time note (`Made to order` is a custom print or dye run); on `notRestockable` it is the reason the material is there.'),
   "link": zod.string().optional().describe('Where to buy it again, when the atelier recorded a link.'),
   "pricePerUnit": zod.number().optional().describe('Dollars per unit, when recorded.')
-}).describe('A material at or below its reorder point — something to buy.')).describe('At or below the reorder point, worst shortfall first.'),
+}).describe('A material at or below its reorder point — something to buy.')).describe('At or below the reorder point AND buyable again, worst shortfall first. This is the reorder list, and the weekly digest reads it.'),
+  "notRestockable": zod.array(zod.object({
+  "id": zod.string().describe('The material\'s Notion page id.'),
+  "name": zod.string().describe('The material as the atelier names it.'),
+  "category": zod.string().optional().describe('Fabric \/ Applique \/ Crystal \/ Packaging \/ Notions. Omitted when unset.'),
+  "fabricTypes": zod.array(zod.string()).optional().describe('Which fabric(s) this is — Satin, Power Mesh, Lining, … — in the order the atelier holds them in Notion. A MULTI-select, so a material can carry several (a power mesh that is also a lining); the dashboard groups it under the FIRST and shows the rest as labels, because a shopping list you might count twice is worse than one where a secondary type is only a label. Omitted when none are tagged, which is every non-fabric material.'),
+  "stockOnHand": zod.number().describe('Units remaining, from the Notion stock formula. Always a number here — a material whose stock is unknown is never reported as an alert.'),
+  "minimumStock": zod.number().describe('The reorder point the atelier set.'),
+  "shortfall": zod.number().describe('How far below the reorder point it is, rounded to two places. `0` when it has landed exactly on it — a reorder point is the level you buy AT, so that still counts. The list is ranked by this.'),
+  "reorderStatus": zod.string().optional().describe('The atelier\'s `Reorder Status` — Restockable \/ Deadstock \/ Made to order \/ Discontinued \/ Unchecked. Omitted on the many rows that carry none. On `lowStock` it is a lead-time note (`Made to order` is a custom print or dye run); on `notRestockable` it is the reason the material is there.'),
+  "link": zod.string().optional().describe('Where to buy it again, when the atelier recorded a link.'),
+  "pricePerUnit": zod.number().optional().describe('Dollars per unit, when recorded.')
+}).describe('A material at or below its reorder point — something to buy.')).describe('At or below the reorder point but NOT buyable again — the atelier marked it Deadstock or Discontinued. Deliberately kept OUT of `lowStock` (and so out of the digest): there is no vendor to send anyone to. Kept visible because running a one-of-a-kind fabric down is exactly when a substitute has to be chosen. Same shape and same worst-first ranking.'),
   "untracked": zod.array(zod.object({
   "id": zod.string().describe('The material\'s Notion page id.'),
   "name": zod.string(),
@@ -1076,7 +1089,7 @@ export const GetStudioMaterialsResponse = zod.object({
   "totalCount": zod.number().int().describe('Every material row read, muted ones included.'),
   "configured": zod.boolean().describe('False when the materials database isn\'t wired up, in which case the lists are empty and the panel says why instead of rendering an empty list that reads as \"all good\".'),
   "unreachable": zod.boolean().optional().describe('True when the database id IS set but Notion answered 404 — the integration has not been shared with the database, or the id is wrong. The lists are empty and the panel says what to fix; reported rather than thrown because it is a configuration state only a human can clear, not an outage worth erroring the panel over. Absent when the read worked.')
-}).describe('The materials panel — what to reorder, and what isn\'t being watched.')
+}).describe('The materials panel — what to reorder, what can\'t be reordered, and what isn\'t being watched.')
 
 
 /**

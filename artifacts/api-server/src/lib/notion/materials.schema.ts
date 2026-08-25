@@ -6,7 +6,7 @@
 // intake and usage lines (both rollups feeding a `Stock on Hand` formula), and
 // nothing here writes any of it back.
 //
-// THREE TRAPS LIVE IN THIS SCHEMA — all of them why this file exists rather
+// FOUR TRAPS LIVE IN THIS SCHEMA — all of them why this file exists rather
 // than the property names being inlined at the call site:
 //
 //  1. **`Restock Alerts On/Off` is a SUPPRESSION checkbox, not an enable one.**
@@ -29,6 +29,14 @@
 //     each: a shopping list you might count twice is worse than one where a
 //     secondary type is only a label. Nothing here decides that — it just
 //     preserves the atelier's own order, which is what they drag in Notion.
+//  4. **`Reorder Status` is mostly UNSET, and unset is not "no".** 38 of the 50
+//     rows carry no value at all — including 9 of the 22 the atelier has set a
+//     reorder point on. So it maps to an optional string and the service treats
+//     only the two values that positively say "you cannot buy this again"
+//     (`Deadstock`, `Discontinued`) as disqualifying. Reading it the other way
+//     round — an allowlist of `Restockable` — would drop those 9 watched
+//     materials off the reorder list without saying anything, which is the
+//     failure this whole panel exists to prevent.
 
 // TODO(material-usage): the atelier wants each material to say what it is
 // typically USED FOR — "bodice lining", "skirt overlay", "soaker binding" — so
@@ -50,6 +58,8 @@ export const MATERIAL_STOCK_ON_HAND_PROPERTY = "Stock on Hand"; // formula (numb
 export const MATERIAL_MINIMUM_STOCK_PROPERTY = "Minimum Stock"; // number
 /** Ticked ⇒ alerts SUPPRESSED for this material. See trap 1 above. */
 export const MATERIAL_ALERTS_SUPPRESSED_PROPERTY = "Restock Alerts On/Off"; // checkbox
+/** Whether the material can actually be bought again. See trap 4. */
+export const MATERIAL_REORDER_STATUS_PROPERTY = "Reorder Status"; // select
 export const MATERIAL_LINK_PROPERTY = "Material Link"; // url
 export const MATERIAL_PRICE_PROPERTY = "Price per Unit"; // number
 
@@ -69,6 +79,9 @@ export interface MaterialRecord {
   minimumStock: number | null;
   /** True when the atelier has muted alerts for this material (see trap 1). */
   alertsSuppressed: boolean;
+  /** Restockable / Deadstock / Made to order / Discontinued / Unchecked.
+   * Absent on most rows — see trap 4, and don't read absent as "no". */
+  reorderStatus?: string;
   /** Where to buy it again, when the atelier recorded a link. */
   link?: string;
   pricePerUnit?: number;
@@ -144,6 +157,7 @@ function readFormulaNumber(
 export function extractMaterial(page: NotionMaterialPage): MaterialRecord {
   const category = readSelect(page, MATERIAL_CATEGORY_PROPERTY);
   const fabricTypes = readMultiSelect(page, MATERIAL_FABRIC_TYPE_PROPERTY);
+  const reorderStatus = readSelect(page, MATERIAL_REORDER_STATUS_PROPERTY);
   const link = readUrl(page, MATERIAL_LINK_PROPERTY);
   const pricePerUnit = readNumber(page, MATERIAL_PRICE_PROPERTY);
 
@@ -155,6 +169,7 @@ export function extractMaterial(page: NotionMaterialPage): MaterialRecord {
     alertsSuppressed: readCheckbox(page, MATERIAL_ALERTS_SUPPRESSED_PROPERTY),
     ...(category ? { category } : {}),
     ...(fabricTypes.length ? { fabricTypes } : {}),
+    ...(reorderStatus ? { reorderStatus } : {}),
     ...(link ? { link } : {}),
     ...(pricePerUnit !== null ? { pricePerUnit } : {}),
   };

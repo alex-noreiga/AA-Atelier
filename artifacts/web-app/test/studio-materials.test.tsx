@@ -29,6 +29,7 @@ import { StudioMaterials } from "@/components/studio-materials";
 function overview(overrides: Record<string, unknown> = {}) {
   return {
     lowStock: [],
+    notRestockable: [],
     untracked: [],
     suppressedCount: 0,
     totalCount: 0,
@@ -262,5 +263,69 @@ describe("StudioMaterials — grouping", () => {
     expect(
       screen.getByTestId("material-category-uncategorized"),
     ).toHaveTextContent("Mystery trim");
+  });
+});
+
+describe("StudioMaterials — what can't be reordered", () => {
+  const DEAD = {
+    ...LOW,
+    id: "dead",
+    name: "Black Rhinestone Velvet",
+    category: "Fabric",
+    fabricTypes: ["Velvet"],
+    reorderStatus: "Deadstock",
+    shortfall: 2,
+  };
+
+  it("keeps it out of the reorder list and gives it its own section", () => {
+    h.materials.data = overview({ lowStock: [], notRestockable: [DEAD] });
+    render(<StudioMaterials />);
+
+    const section = screen.getByTestId("materials-not-restockable");
+    expect(section).toHaveTextContent("Black Rhinestone Velvet");
+    expect(section).toHaveTextContent(/nowhere to buy these again/i);
+    // The count chip counts what can actually be bought.
+    expect(screen.queryByTestId("materials-low-count")).toBeNull();
+  });
+
+  it("says which status put it there", () => {
+    h.materials.data = overview({ notRestockable: [DEAD] });
+    render(<StudioMaterials />);
+    expect(screen.getByTestId("material-row")).toHaveTextContent("Deadstock");
+  });
+
+  it("renders nothing when everything low can be bought again", () => {
+    h.materials.data = overview({ lowStock: [LOW], notRestockable: [] });
+    render(<StudioMaterials />);
+    expect(screen.queryByTestId("materials-not-restockable")).toBeNull();
+  });
+
+  it("labels a made-to-order material on the reorder list, but not a plain one", () => {
+    h.materials.data = overview({
+      lowStock: [
+        {
+          ...LOW,
+          id: "custom",
+          name: "Dyed Satin",
+          reorderStatus: "Made to order",
+        },
+        {
+          ...LOW,
+          id: "plain",
+          name: "Power Mesh",
+          reorderStatus: "Restockable",
+        },
+      ],
+    });
+    render(<StudioMaterials />);
+
+    const rows = screen.getAllByTestId("material-row");
+    expect(
+      rows.find((r) => r.textContent?.includes("Dyed Satin")),
+    ).toHaveTextContent("Made to order");
+    // "Restockable" is the ordinary case and adds nothing to a shopping list.
+    expect(
+      rows.find((r) => r.textContent?.includes("Power Mesh")),
+    ).not.toHaveTextContent("Restockable");
   });
 });

@@ -320,6 +320,8 @@ export interface MaterialAlert {
   minimumStock: number;
   /** How far below the reorder point it is, rounded to two places. `0` when it has landed exactly on it — a reorder point is the level you buy AT, so that still counts. The list is ranked by this. */
   shortfall: number;
+  /** The atelier's `Reorder Status` — Restockable / Deadstock / Made to order / Discontinued / Unchecked. Omitted on the many rows that carry none. On `lowStock` it is a lead-time note (`Made to order` is a custom print or dye run); on `notRestockable` it is the reason the material is there. */
+  reorderStatus?: string;
   /** Where to buy it again, when the atelier recorded a link. */
   link?: string;
   /** Dollars per unit, when recorded. */
@@ -442,11 +444,13 @@ export interface StudioGuideList {
 }
 
 /**
- * The materials panel — what to reorder, and what isn't being watched.
+ * The materials panel — what to reorder, what can't be reordered, and what isn't being watched.
  */
 export interface MaterialsOverview {
-  /** At or below the reorder point, worst shortfall first. */
+  /** At or below the reorder point AND buyable again, worst shortfall first. This is the reorder list, and the weekly digest reads it. */
   lowStock: MaterialAlert[];
+  /** At or below the reorder point but NOT buyable again — the atelier marked it Deadstock or Discontinued. Deliberately kept OUT of `lowStock` (and so out of the digest): there is no vendor to send anyone to. Kept visible because running a one-of-a-kind fabric down is exactly when a substitute has to be chosen. Same shape and same worst-first ranking. */
+  notRestockable: MaterialAlert[];
   /** Not watched, and why — alphabetical. */
   untracked: UntrackedMaterial[];
   /** How many materials the atelier has muted. Reported so the panel can say so rather than the numbers silently not adding up. */

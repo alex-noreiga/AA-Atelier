@@ -16,6 +16,11 @@
 //  - **Ranking by what to buy first, within each group.** The server sorts by
 //    shortfall, and the group holding the worst shortfall leads — so the top of
 //    the panel is still the thing to buy first.
+//  - **Only listing what can actually be bought.** A deadstock lot or a
+//    discontinued line has no vendor to send anyone to, so the server keeps it
+//    out of the reorder list. It is NOT dropped: running a one-of-a-kind fabric
+//    down is exactly when a substitute has to be chosen, so it gets its own
+//    section saying which it is.
 //  - **Making the unwatched visible.** Most materials have no reorder point set,
 //    so a strict alert list would look reassuringly empty while saying nothing
 //    about the other forty. Those are listed separately, collapsed.
@@ -46,6 +51,7 @@ export function StudioMaterials() {
 
   const data = materials.data;
   const lowStock = data?.lowStock ?? [];
+  const notRestockable = data?.notRestockable ?? [];
   const untracked = data?.untracked ?? [];
 
   return (
@@ -124,6 +130,32 @@ export function StudioMaterials() {
             ),
           )}
 
+          {notRestockable.length > 0 && (
+            <details className="pt-2" data-testid="materials-not-restockable">
+              <summary className="cursor-pointer text-xs tracking-[0.15em] uppercase text-muted-foreground/80">
+                Can&apos;t be reordered ({notRestockable.length})
+              </summary>
+              <p className="mt-2 text-xs text-muted-foreground font-light">
+                Low, but marked deadstock or discontinued — there&apos;s nowhere
+                to buy these again. Pick a substitute in Notion.
+              </p>
+              <div className="mt-3 space-y-4">
+                {groupMaterials(
+                  notRestockable,
+                  (material) => material.shortfall,
+                ).map((group) => (
+                  <MaterialCategory
+                    key={group.label}
+                    group={group}
+                    render={(material) => (
+                      <MaterialRow key={material.id} material={material} />
+                    )}
+                  />
+                ))}
+              </div>
+            </details>
+          )}
+
           {untracked.length > 0 && (
             <details className="pt-2" data-testid="materials-untracked">
               <summary className="cursor-pointer text-xs tracking-[0.15em] uppercase text-muted-foreground/80">
@@ -191,8 +223,20 @@ function MaterialCategory<T extends { id: string }>({
   );
 }
 
+/**
+ * Is this `Reorder Status` worth saying on the row?
+ *
+ * `Restockable` is the ordinary case and adds nothing to a list of things to
+ * buy; an unset one says nothing at all. Everything else does: `Made to order`
+ * is a lead time, `Deadstock` and `Discontinued` are the reason the row is in
+ * the section it's in.
+ */
+function noteworthyStatus(status?: string): boolean {
+  return Boolean(status) && status!.trim().toLowerCase() !== "restockable";
+}
+
 /** One material to reorder. The category is the heading above it now, so the
- * meta line spends its room on the fabric types the heading can't show. */
+ * meta line spends its room on what the heading can't show. */
 function MaterialRow({ material }: { material: MaterialAlert }) {
   const alsoTagged = secondaryFabricTypes(material);
 
@@ -206,6 +250,9 @@ function MaterialRow({ material }: { material: MaterialAlert }) {
         <p className="text-xs text-muted-foreground font-light mt-1">
           {material.stockOnHand} left · reorder at {material.minimumStock}
           {alsoTagged.length > 0 ? ` · also ${alsoTagged.join(", ")}` : ""}
+          {noteworthyStatus(material.reorderStatus)
+            ? ` · ${material.reorderStatus}`
+            : ""}
         </p>
       </div>
       {material.link && (

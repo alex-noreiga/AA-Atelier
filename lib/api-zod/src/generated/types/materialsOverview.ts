@@ -9,11 +9,13 @@ import type { MaterialAlert } from './materialAlert';
 import type { UntrackedMaterial } from './untrackedMaterial';
 
 /**
- * The materials panel — what to reorder, and what isn't being watched.
+ * The materials panel — what to reorder, what can't be reordered, and what isn't being watched.
  */
 export interface MaterialsOverview {
-  /** At or below the reorder point, worst shortfall first. */
+  /** At or below the reorder point AND buyable again, worst shortfall first. This is the reorder list, and the weekly digest reads it. */
   lowStock: MaterialAlert[];
+  /** At or below the reorder point but NOT buyable again — the atelier marked it Deadstock or Discontinued. Deliberately kept OUT of `lowStock` (and so out of the digest): there is no vendor to send anyone to. Kept visible because running a one-of-a-kind fabric down is exactly when a substitute has to be chosen. Same shape and same worst-first ranking. */
+  notRestockable: MaterialAlert[];
   /** Not watched, and why — alphabetical. */
   untracked: UntrackedMaterial[];
   /** How many materials the atelier has muted. Reported so the panel can say so rather than the numbers silently not adding up. */
