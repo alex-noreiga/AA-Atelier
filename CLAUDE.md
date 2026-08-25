@@ -4648,9 +4648,12 @@ again, which is uncacheable at the edge) is pinned on every PR by
 `web-app/test/api-auth.test.ts` instead.
 
 It asserted **`Cache-Control` still contains `s-maxage`** until 2026-08-25, when
-that stopped being observable: Vercel began consuming the CDN directives and
-stripping them, so a healthy read answers a bare `Cache-Control: public` and the
-monitor went red against a correct site. The routes now send
+that stopped being observable: the directives began being stripped at the edge,
+so the reads answer a bare `Cache-Control: public`. The monitor was **right to go
+red** — probing production, `/api/services` (`s-maxage=3600`) answered
+`x-vercel-cache: MISS` with `age: 0` twice five seconds apart at the same PoP, so
+the CDN had genuinely stopped caching, which follows from the symptom: a bare
+`public` carries no freshness lifetime to cache on. The routes now send
 **`CDN-Cache-Control`** as well (`setEdgeCache`, below), which the platform reads
 in preference — but that header is addressed to the CDN and never comes back, so
 no assertion on the response can testify that it was sent. Hence the check moved

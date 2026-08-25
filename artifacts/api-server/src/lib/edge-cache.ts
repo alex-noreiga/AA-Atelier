@@ -4,16 +4,30 @@
 // These endpoints have always set `Cache-Control: public, s-maxage=…,
 // stale-while-revalidate=…` and relied on Vercel reading `s-maxage` out of it.
 // On 2026-08-25 the responses started reaching the client as a bare
-// `Cache-Control: public` — Vercel now consumes the CDN directives and strips
-// them before the response leaves the edge. Nothing in this repo changed: the
-// four routes, `app.ts`, `vercel.json` and `api/index.ts` are byte-identical
-// across the deploys either side of it.
+// `Cache-Control: public`, the directives stripped somewhere at the edge.
+// Nothing in this repo changed: the routes, `app.ts`, `vercel.json` and
+// `api/index.ts` are byte-identical across the deploys either side of it.
+//
+// The stripping was not merely cosmetic — the CDN stopped caching. Probed on
+// production, `/api/services` (`s-maxage=3600`) answered `x-vercel-cache: MISS`
+// with `age: 0` on two requests five seconds apart at the same PoP; a cached
+// response could only have been a HIT. That follows from the symptom rather
+// than being a second fault: a bare `public` carries no freshness lifetime, so
+// whatever reaches the caching layer has no TTL to cache on. The preview
+// deployment of this very commit ECHOES both headers back untouched, so the
+// rewrite is production-only and no preview can be used to test it.
 //
 // That is exactly the ambiguity `CDN-Cache-Control` exists to remove. It is a
 // standard (RFC 9213) header addressed to the shared cache rather than the
-// browser, Vercel consumes it in preference to `Cache-Control`, and it never
-// reaches the client — so what the CDN is told no longer depends on how the
-// platform chooses to rewrite a header meant for somebody else.
+// browser, and Vercel reads it in preference to `Cache-Control` — so what the
+// CDN is told no longer travels in a header addressed to somebody else, where
+// something is free to rewrite it on the way past.
+//
+// Whether that is enough is the one thing this could not be tested for before
+// merging, since the rewrite only happens on production. `edge-cache.smoke.ts`
+// is what answers it: it now requires a real `x-vercel-cache: HIT`, so if the
+// directives are still being lost the monitor says so on the next run rather
+// than going quietly green.
 //
 // `Cache-Control` is still set, with the same directives: it is what any
 // downstream cache and the browser read, and dropping it would be a behaviour
