@@ -79,6 +79,11 @@ describe("GET /api/products", () => {
     // one that's actually stocked.
     expect(res.body.categories).toEqual(["Dress"]);
     expect(res.headers["cache-control"]).toBe(CACHE_HEADER);
+    // Both headers, in step. CDN-Cache-Control is the one Vercel actually
+    // reads (and never forwards), so nothing downstream of a deploy can
+    // testify that it was sent — which makes this the only place a dropped
+    // edge cache would still be caught.
+    expect(res.headers["cdn-cache-control"]).toBe(CACHE_HEADER);
   });
 
   it("returns 500 (no cache) when the Product Categories database is unconfigured", async () => {
@@ -91,6 +96,7 @@ describe("GET /api/products", () => {
     expect(res.status).toBe(500);
     expect(res.body).toEqual({ error: GENERIC_ERROR });
     expect(res.headers["cache-control"] ?? "").not.toContain("s-maxage");
+    expect(res.headers["cdn-cache-control"]).toBeUndefined();
   });
 
   it("does not set the edge cache header on an error response", async () => {
@@ -103,5 +109,6 @@ describe("GET /api/products", () => {
     expect(res.body).toEqual({ error: GENERIC_ERROR });
     // An error must never be cached by the edge.
     expect(res.headers["cache-control"] ?? "").not.toContain("s-maxage");
+    expect(res.headers["cdn-cache-control"]).toBeUndefined();
   });
 });

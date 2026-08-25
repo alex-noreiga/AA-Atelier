@@ -16,6 +16,11 @@ describe("GET /api/services", () => {
       "repairs",
     ]);
     expect(res.headers["cache-control"]).toBe(CACHE_HEADER);
+    // Both headers, in step. CDN-Cache-Control is the one Vercel actually
+    // reads (and never forwards), so nothing downstream of a deploy can
+    // testify that it was sent — which makes this the only place a dropped
+    // edge cache would still be caught.
+    expect(res.headers["cdn-cache-control"]).toBe(CACHE_HEADER);
   });
 
   it("serves each service as the trimmed contract shape", async () => {

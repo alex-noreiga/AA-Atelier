@@ -1742,8 +1742,8 @@ minutes behind the edge cache.
    `NOTION_REVIEWS_DATABASE_ID` is unset; `listPublishedReviews` returns `[]` instead —
    a marketing page must not 500 over a missing database id. The read is cached 60s with
    the usual **fall back to the cached list on error** (same as inventory/categories),
-   and the route sets an edge `Cache-Control` (`s-maxage=300`) like `/products`, set only
-   after the read resolves so an error is never cached. On the frontend the strip renders
+   and the route declares an edge cache (`s-maxage=300`) like `/products` via
+   `setEdgeCache`, set only after the read resolves so an error is never cached. On the frontend the strip renders
    **nothing at all** while loading, on error, or with nothing published — no empty state
    and no skeleton, so the section is simply absent rather than advertising a hole.
 
@@ -4341,15 +4341,29 @@ and a boolean aren't sensitive), so they are repo **variables**, not secrets:
 | `SMOKE_KNOWN_ORDER_NUMBER` | Falls back to the **`ORD-TEST-00000`** default in `smoke.yml` | Overrides the default with that order                              |
 | `SMOKE_EXPECT_REVIEWS`     | `reviews.smoke.ts` accepts an empty list                      | `1` requires `GET /api/reviews` to return at least one testimonial |
 
-`edge-cache.smoke.ts` watches the four public reads (`/reviews`, `/services`,
-`/colors`, `/products`) still being **served by the CDN**: it asserts each sets
-`s-maxage`, that `x-vercel-cache` is not `BYPASS`, and that none answers with a
-`Set-Cookie`. This is the one production failure that is completely invisible
-from the outside — the site stays correct and merely gets slow, because every
-visitor then pays a cold start on a function that at this traffic level is never
-warm. Being anonymous it covers only the server half; the client half (a
-signed-in visitor's requests carrying a token again, which is uncacheable at the
-edge) is pinned on every PR by `web-app/test/api-auth.test.ts` instead.
+`edge-cache.smoke.ts` watches the five public reads (`/reviews`, `/services`,
+`/colors`, `/products`, `/capacity`) still being **served by the CDN**: it asks
+each up to five times and requires that one comes back `x-vercel-cache: HIT` or
+`STALE`, and that none answers with a `Set-Cookie`. This is the one production
+failure that is completely invisible from the outside — the site stays correct
+and merely gets slow, because every visitor then pays a cold start on a function
+that at this traffic level is never warm. Being anonymous it covers only the
+server half; the client half (a signed-in visitor's requests carrying a token
+again, which is uncacheable at the edge) is pinned on every PR by
+`web-app/test/api-auth.test.ts` instead.
+
+It asserted **`Cache-Control` still contains `s-maxage`** until 2026-08-25, when
+that stopped being observable: Vercel began consuming the CDN directives and
+stripping them, so a healthy read answers a bare `Cache-Control: public` and the
+monitor went red against a correct site. The routes now send
+**`CDN-Cache-Control`** as well (`setEdgeCache`, below), which the platform reads
+in preference — but that header is addressed to the CDN and never comes back, so
+no assertion on the response can testify that it was sent. Hence the check moved
+from the instruction to the **outcome**. That is the stronger of the two and
+should have been the assertion all along: "the route still asked" could only ever
+prove our side of the bargain, never that the platform kept its half. The
+`s-maxage` string is still pinned per-route, where it _is_ observable — in the
+integration tests, which assert both headers carry the same directives.
 
 `SMOKE_KNOWN_ORDER_NUMBER` gates the **only** spec that asserts a _successful_ data
 render. Every other data spec proves "the endpoint didn't error" — a regression that broke
@@ -4957,6 +4971,7 @@ Three things about it are load-bearing:
 | Add/change a shared test fixture                         | `lib/test-fixtures/src/index.ts` (read its guardrail first)                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                         |
 | Understand a past decision / gotcha                      | `.agents/memory/`                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                   |
 | Adjust the Vercel serverless entrypoint                  | `api/index.ts` + `vercel.json`                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                      |
+| Change how long a public read is cached at the edge      | `api-server/src/lib/edge-cache.ts` (`setEdgeCache`, which writes `Cache-Control` **and** `CDN-Cache-Control` from one argument so they cannot drift), called by `routes/{reviews,services,colors,products,capacity}.ts` after the awaited read resolves. Vercel reads `CDN-Cache-Control` and never forwards it, so the age is NOT observable on the response — pin it in the route's integration test, and let `tests/smoke/edge-cache.smoke.ts` assert the outcome (`x-vercel-cache`) in production                                                                                                                                                                                                                                                                                                                               |
 | Change social share metadata / OG tags                   | `web-app/src/lib/seo-routes.ts` + `components/seo.tsx` + `lib/seo-html.ts` + the `seo-prerender` plugin in `vite.config.ts`; regenerate artwork with `pnpm --filter @workspace/web-app social-images`                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                               |
 | Change product page SEO / share cards                    | `web-app/src/lib/product-seo.ts` + `api-server/src/scripts/export-product-seo.ts`                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                   |
 
