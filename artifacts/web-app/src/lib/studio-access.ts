@@ -27,6 +27,7 @@ import {
   getGetStudioAccessQueryKey,
 } from "@workspace/api-client-react";
 import { useAuth } from "./auth-context";
+import { serverErrorMessage } from "./api-error";
 
 export interface StudioAccess {
   /** True once the server has confirmed the current session is studio staff. */
@@ -40,6 +41,28 @@ export interface StudioAccess {
    * stay indistinguishable from a URL that doesn't exist.
    */
   refused: boolean;
+  /**
+   * True when the probe itself failed rather than answering — a 500, an
+   * outage, an offline browser. Every *refusal* is an answer (`staff: false`),
+   * so callers that merely offer something can ignore this; the dashboard
+   * can't, because "we couldn't check" and "you may not come in" are different
+   * things to tell a staff member, and only one of them is their problem.
+   */
+  failed: boolean;
+  /**
+   * The HTTP status a failed probe came back with, when there was one. The
+   * dashboard reads it to tell an expired session (401 → sign in again) from a
+   * stranger (404 → the page a mistyped URL renders) from a wrong sign-in
+   * method (403 → `refused`). Undefined when the probe succeeded, or failed
+   * without a response at all.
+   */
+  status?: number;
+  /**
+   * The server's own wording for a refusal, when it sent one. The 403 panel
+   * renders it verbatim rather than guessing, so a future refusal reason needs
+   * no change on the page — the same contract every studio refusal keeps.
+   */
+  reason?: string;
   /**
    * True while the answer is still unknown — the session hasn't resolved, or
    * the probe is in flight. Callers that *route* on staffhood (the account
@@ -79,10 +102,15 @@ export function useStudioAccess(): StudioAccess {
   // The generated client rejects with the response status on `status`, the
   // same shape the account portal and `/studio` already read.
   const status = (access.error as { status?: number } | null)?.status;
+  const reason = access.isError ? serverErrorMessage(access.error) : undefined;
 
   return {
     staff: access.data?.staff === true,
     refused: access.isError && status === 403,
+    // A refusal is an answer; anything else is the probe not working.
+    failed: access.isError && ![401, 403, 404].includes(status ?? 0),
+    ...(access.isError && status !== undefined ? { status } : {}),
+    ...(reason ? { reason } : {}),
     // `isLoading` is the first fetch in flight, and is false while the query is
     // disabled — so a signed-out visitor is answered immediately (not staff)
     // rather than left waiting on a request that will never be made.

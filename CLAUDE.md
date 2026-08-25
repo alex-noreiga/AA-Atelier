@@ -3201,7 +3201,9 @@ Load-bearing decisions:
    would be the largest dependency in the app for six panels of numbers, against
    the repo's pruned-dependencies rule. The page is `noindex` (so it's out of
    the sitemap and the prerender pass) — the gate that matters is server-side,
-   but there's no reason to advertise it.
+   but there's no reason to advertise it. The figures are one **section** of the
+   dashboard rather than the whole page, and the page's access gate is no longer
+   this endpoint — see "The dashboard's sections" below.
 
 9. **The way in is a staff-only nav link, gated by the server's own answer —
    and it takes Account's place.** `/studio` was originally reachable _only_ by
@@ -3262,6 +3264,83 @@ address, and a private one removes the enumeration angle entirely. Also confirm
 address without ever touching its inbox. Everything else is already configured —
 it reads the orders, shop-orders, invoices, and inventory databases the app
 already uses.
+
+## The dashboard's sections (how the page is laid out)
+
+`/studio` began as a page of figures and became the atelier's whole working
+surface — materials, the review queue, working hours, appointment staffing,
+settings, the request queue, the newsletter list, the tools, the guides. As one
+long scroll that had two costs, and both grew with every panel added: opening
+the dashboard to answer one question fired **nine** staff-gated Notion reads
+(several of them bounded full-database scans) before anything was on screen,
+and the thing you wanted was further from the top than it had been last month.
+
+The panels are now grouped into **sections with their own addresses**, and only
+the open one is mounted. Code: `web-app/src/lib/studio-sections.ts` (the
+registry), the `SECTION_VIEWS` map + `SectionNav` in `pages/studio.tsx`, and the
+two `/studio` routes in `App.tsx`.
+
+1. **Mounting is what starts a query, so a view fetches what it shows and
+   nothing else.** This is the load half of the change and the reason it is a
+   layout change worth making: `/studio/bookings` reads the working hours and
+   the staffing, and does not read the analytics, the materials, the review
+   queue or the contact inbox. The figures — the heaviest read on the dashboard
+   — now run when somebody is looking at them.
+
+2. **The gate moved from the figures to `GET /studio/access`.** That probe reads
+   nothing (reaching the handler IS the answer) and the navbar has already asked
+   it and cached it for the session, so gating on it costs no request — where
+   gating on the analytics, as the page used to, would have made every section
+   pay for three full-database scans just to learn whether it was allowed to
+   render. `useStudioAccess` grew `failed` / `status` / `reason` for this; the
+   navbar's and the account portal's use of it is unchanged.
+
+3. **A confirmed staff answer wins over a later failure.** The branches are
+   ordered `staff` → `refused` → `failed` → Not Found, so a probe that hiccups
+   after the server has already vouched for someone leaves them where they are
+   rather than evicting them mid-session. And `failed` renders "we couldn't
+   check", never Not Found: an outage is not a refusal, and telling a staff
+   member they aren't staff is both untrue and unactionable.
+
+4. **An unknown section falls back to the figures — it is NOT a 404.** This
+   page's 404 is load-bearing: it is what a customer who guessed the URL must
+   see, and it has to stay indistinguishable from a mistyped address. A stale
+   bookmark to a renamed section is a different thing to say, so
+   `resolveStudioSection` fails open to the default.
+
+5. **`/studio` itself IS the figures**, rather than redirecting to
+   `/studio/figures`. The navbar's staff link, `lib/post-signin.ts`, the SEO
+   entry and the smoke test all hold that address; giving the dashboard two
+   URLs would gain nothing and cost the agreement between them.
+
+6. **The request queue and the tools are one section, and that grouping is a
+   rule, not a preference.** The queue hands a request's own order number to the
+   tool that actions it (`lib/studio-handoff.ts`) by filling that tool's card
+   and scrolling to it. Split across sections, the hand-off would be filling a
+   form that isn't mounted. Anything that separates them has to move the
+   hand-off first.
+
+7. **The view map is typed `Record<StudioSectionId, …>`**, so a section added to
+   the registry without a view fails to compile rather than rendering a blank
+   page. Adding a panel is: the panel, one line in its section's view, and (if
+   it wants a how-to beside it) a `GUIDE_SECTIONS` entry. Adding a _section_ is a
+   registry entry plus a view — the nav chip comes for free.
+
+8. **Refresh invalidates the active queries, not a named one.** With a single
+   section mounted that is exactly what is on screen, so the button doesn't have
+   to learn each new panel's query. It deliberately **excludes the staff probe**
+   — refresh means the data, not the door — or a network blip on a press would
+   put the whole dashboard behind a failed gate.
+
+9. **A failed figures read costs the figures, not the dashboard.** The analytics
+   error state lives inside its own section now, so the request queue and the
+   tools stay reachable during a Notion wobble — which is when the atelier is
+   most likely to need them.
+
+The sections are **Figures / Requests / Reviews / Bookings / Materials /
+Settings / Guides**, in that order — what needs doing first. Nothing about a
+panel changed: each is the same component, with the same `data-testid`, doing
+the same reads. **No API change, no new env var, no atelier setup.**
 
 ## Internal tools on the studio dashboard
 
@@ -4584,6 +4663,7 @@ Three things about it are load-bearing:
 | Change which API calls carry the auth token              | `artifacts/web-app/src/lib/api-auth.ts` (`requiresAuthToken`) + the getter in `lib/auth-context.tsx` + the `AuthTokenGetter` seam in `lib/api-client-react/src/custom-fetch.ts`; pinned to the spec by `web-app/test/api-auth.test.ts`                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                |
 | Change the customer account portal (Supabase Auth)       | `artifacts/web-app/src/pages/account.tsx` (+ `components/appointment-manage-panel.tsx`, shared with `pages/appointment-manage.tsx`) + `pages/account-login.tsx` / `account-callback.tsx` / `account-reset.tsx` + `lib/supabase.ts` + `lib/auth-context.tsx` (frontend); `api-server/src/services/account.service.ts` + `routes/account.ts` + `middlewares/auth.ts` + `lib/supabase/client.ts`; queries `findOrdersByEmail` / `findShopOrdersByEmail` + `listUpcomingAppointmentsByEmail` (`lib/google/calendar.repository.ts`, mapped via `lib/appointments/event-details.ts`) + `extractMeasurements` (`lib/notion/orders.schema.ts`). Auth emails: `.agents/memory/supabase-auth-emails.md`                                                                                                         |
 | Change the customer data export / deletion request       | `web-app/src/components/account-data.tsx` (rendered by `pages/account.tsx`) + the "Your choices" section of `pages/privacy.tsx`; `api-server/src/services/account-data.service.ts` + the two `/account` handlers in `routes/account.ts` + `lib/notion/data-deletion.{blocks,repository}.ts` + the by-email reads (`listRequestsByEmail`, `listReviewsByEmail`, `findClientProfileByEmail`) + `unsubscribeAudienceContact` in `lib/resend/audience.ts` + the two `dataDeletionRequest*Email` builders. The dashboard side is the `data-deletion` kind in `lib/notion/requests.schema.ts` + `components/studio-requests.tsx`                                                                                                                                                                            |
+| Change how the dashboard is laid out / add a section     | `web-app/src/lib/studio-sections.ts` (the registry — id, label, summary) + the `SECTION_VIEWS` map and `SectionNav` in `pages/studio.tsx` + the two `/studio` routes in `App.tsx`. Only the open section mounts, so a view fetches what it shows; the gate is `useStudioAccess` (`lib/studio-access.ts`), not the figures. Read "The dashboard's sections" before splitting the request queue from the tools                                                                                                                                                                                                                                                                                                                                                                                          |
 | Change the internal studio dashboard                     | `artifacts/web-app/src/pages/studio.tsx` (+ the `/studio` route in `App.tsx`, `noindex` entry in `lib/seo-routes.ts`); `api-server/src/services/studio-analytics.service.ts` (the pure `aggregateStudioAnalytics` + the cached use-case) + `routes/studio.ts` + `requireStaff` in `middlewares/auth.ts` + `lib/staff.ts` (the `STUDIO_STAFF_EMAILS` allowlist + the `amr` Google check); the 403 panel's re-sign-in lands back via `web-app/src/lib/post-signin.ts` (read by `pages/account-callback.tsx`); reads via `lib/notion/scan.ts` + `listOrdersForAnalytics` / `listShopOrdersForAnalytics` / `listInvoicesForAnalytics`                                                                                                                                                                     |
 | Change the studio's how-to guides                        | `api-server/src/lib/guide-sections.ts` (the sections a guide can be filed against — a tool's id is its `StudioToolName`) + `lib/notion/guides.{schema,repository}.ts` (the Notion row + the file download) + `services/studio-guides.service.ts` (assembly, the HTML check, the 60s cache) + the `/studio/guides` route in `routes/studio.ts`; frontend `web-app/src/components/studio-guides.tsx` (`StudioGuides` panel + the `GuidesFor` slots), mounted by `pages/studio.tsx` and per tool by `components/studio-tools.tsx`. The sandboxed frame in that component is a security boundary — see the section above                                                                                                                                                                                  |
 | Change the studio's internal tools (generators, refunds) | `api-server/src/services/studio-tools.service.ts` (the dispatcher + the composed result wording) + `routes/studio.ts` (`POST /studio/tools/:tool`, `requireStaff`) + `web-app/src/components/studio-tools.tsx` (rendered by `pages/studio.tsx`); the underlying work stays in `services/{schedule,invoice-generator,order-notification,order-cancellation,return-refund}.service.ts`. Contract in `openapi.yaml` (`StudioTool` / `StudioToolRequest` / `StudioToolRun`)                                                                                                                                                                                                                                                                                                                               |
