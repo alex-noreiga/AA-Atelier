@@ -6,7 +6,21 @@ export type ErrorType<T = unknown> = ApiError<T>;
 
 export type BodyType<T> = T;
 
-export type AuthTokenGetter = () => Promise<string | null> | string | null;
+/**
+ * The request a token is being requested for, so a caller can decide *per
+ * endpoint* whether to authenticate it. `url` has already had any base URL
+ * applied, so it may be absolute (Expo) or root-relative (the web app).
+ */
+export interface AuthTokenRequest {
+  /** Upper-case HTTP method, e.g. `"GET"`. */
+  method: string;
+  /** The request URL, after `setBaseUrl` has been applied. */
+  url: string;
+}
+
+export type AuthTokenGetter = (
+  request: AuthTokenRequest,
+) => Promise<string | null> | string | null;
 
 const NO_BODY_STATUS = new Set([204, 205, 304]);
 const DEFAULT_JSON_ACCEPT = "application/json, application/problem+json";
@@ -33,6 +47,13 @@ export function setBaseUrl(url: string | null): void {
  * Register a getter that supplies a bearer auth token.  Before every fetch
  * the getter is invoked; when it returns a non-null string, an
  * `Authorization: Bearer <token>` header is attached to the request.
+ *
+ * The getter receives the request it is being asked about, so it can return
+ * `null` for endpoints that take no credential. That is not just tidiness: a
+ * request carrying an `Authorization` header is uncacheable at the CDN, so
+ * attaching a token to a public, `s-maxage`-cached GET (`/reviews`,
+ * `/services`, `/colors`, `/products`) silently forces every signed-in
+ * visitor past the edge cache and onto a cold serverless function.
  *
  * The web app wires this to the Supabase access token (see the web-app's
  * `lib/auth-context.tsx`): supabase-js holds the session in the browser and
@@ -362,16 +383,17 @@ export async function customFetch<T = unknown>(
     headers.set("accept", DEFAULT_JSON_ACCEPT);
   }
 
+  const requestInfo = { method, url: resolveUrl(input) };
+
   // Attach bearer token when an auth getter is configured and no
-  // Authorization header has been explicitly provided.
+  // Authorization header has been explicitly provided. The getter is handed the
+  // request so it can decline to authenticate one (see `setAuthTokenGetter`).
   if (_authTokenGetter && !headers.has("authorization")) {
-    const token = await _authTokenGetter();
+    const token = await _authTokenGetter(requestInfo);
     if (token) {
       headers.set("authorization", `Bearer ${token}`);
     }
   }
-
-  const requestInfo = { method, url: resolveUrl(input) };
 
   // `credentials: "include"` is kept for any same-origin cookie a caller relies
   // on, but the account portal now authenticates with a Supabase access token

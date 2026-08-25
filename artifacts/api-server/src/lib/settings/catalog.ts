@@ -29,6 +29,13 @@
 // drift — that test is the guard, not a convention.
 
 import { parseColorPalette } from "../../services/colors.js";
+import { DEFAULT_CLOSED_MESSAGE } from "../../services/capacity.js";
+import { APPOINTMENT_TYPES } from "../appointments/catalog.js";
+import {
+  formatStaffRouting,
+  parseStaffRouting,
+  staffRoutingProblem,
+} from "../appointments/routing.js";
 
 /** How the dashboard should render (and the server should read) a value. */
 export type SettingKind =
@@ -134,6 +141,14 @@ const emailAccepts = nonEmpty;
  * the env var name 1:1 — that identity is what keeps the Notion row, the
  * environment variable and this catalog from ever meaning different things.
  */
+/** The catalog's built-in appointment staffing, in the form the setting is
+ * written in — restated here as this entry's default, like every other. */
+function defaultStaffRouting(): string {
+  return formatStaffRouting(
+    new Map(APPOINTMENT_TYPES.map((type) => [type.id, [...type.staff]])),
+  );
+}
+
 export const SETTING_DEFINITIONS: readonly SettingDefinition[] = [
   {
     key: "RUSH_SURCHARGE_RATE",
@@ -163,6 +178,56 @@ export const SETTING_DEFINITIONS: readonly SettingDefinition[] = [
     placeholder: "Cutting/Pinning",
     accepts: nonEmpty,
     validate: textRule(100, "The stage name"),
+  },
+  {
+    key: "COMMISSION_INTAKE",
+    label: "Commission intake",
+    group: "Orders & pricing",
+    kind: "text",
+    description:
+      'Whether new bespoke commissions can be ordered. "auto" lets the capacity number below decide; "closed" shuts the books whatever the count says; "open" keeps them open over it. Alterations, rhinestoning and repairs are never affected.',
+    defaultValue: "auto",
+    placeholder: "auto",
+    // Parity with `intakeSwitch()`, which reads anything else as "auto" — so a
+    // typed value that isn't one of the three IS honoured, as "auto", and the
+    // dashboard must not claim it was thrown away.
+    accepts: () => true,
+    // Stricter than the runtime, deliberately: "paused" would silently behave
+    // as "auto" and look like a closed sign that isn't closing anything, which
+    // is precisely the silent-failure this editor exists to end.
+    validate: (raw) =>
+      ["auto", "open", "closed"].includes(raw.trim().toLowerCase())
+        ? null
+        : 'That has to be "auto", "open" or "closed".',
+  },
+  {
+    key: "COMMISSION_CAPACITY",
+    label: "Commissions in production at once",
+    group: "Orders & pricing",
+    kind: "integer",
+    description:
+      "How many bespoke commissions the studio can have in production before the books close and the order form offers the waitlist instead. An order counts from the day it is placed until it is delivered or cancelled. 0 means no limit.",
+    defaultValue: "0",
+    defaultLabel: "No limit — the books never close on the count",
+    min: 0,
+    max: 500,
+    step: 1,
+    placeholder: "8",
+    accepts: (raw) => numberIn(raw, 0),
+    validate: numberRule(0, 500, { integer: true }),
+  },
+  {
+    key: "COMMISSION_CLOSED_MESSAGE",
+    label: "Closed-books message",
+    group: "Orders & pricing",
+    kind: "text",
+    description:
+      "What the order form tells a customer when the books are closed. Shown above the waitlist form, and returned as the reason if an order is submitted anyway.",
+    defaultValue: "",
+    defaultLabel: DEFAULT_CLOSED_MESSAGE,
+    placeholder: DEFAULT_CLOSED_MESSAGE,
+    accepts: nonEmpty,
+    validate: textRule(400, "The message"),
   },
   {
     key: "COLOR_PALETTE",
@@ -263,6 +328,22 @@ export const SETTING_DEFINITIONS: readonly SettingDefinition[] = [
     step: 1,
     accepts: (raw) => numberIn(raw, 1),
     validate: numberRule(1, 30, { integer: true, unit: "days" }),
+  },
+  {
+    key: "APPOINTMENT_STAFF_ROUTING",
+    label: "Who offers which appointment",
+    group: "Appointments",
+    kind: "text",
+    description:
+      'Which staff member takes which kind of appointment, as "consultation: Alayna; fitting: Alexandra, Alayna". A type left out keeps the built-in staffing. Easier to edit on the dashboard\u2019s Appointment staffing panel, which writes this same row.',
+    defaultValue: defaultStaffRouting(),
+    placeholder: "consultation: Alayna; fitting: Alexandra, Alayna",
+    // Parity with the getter, which keeps every entry it can read and ignores
+    // the value entirely when it can read none.
+    accepts: (raw) => parseStaffRouting(raw).size > 0,
+    // Stricter on purpose: a misspelt name is dropped by the reader, so half a
+    // line would save happily and stay half in force.
+    validate: staffRoutingProblem,
   },
   {
     key: "REFERRAL_CREDIT_AMOUNT",

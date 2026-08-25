@@ -82,8 +82,16 @@ function Router() {
       <Route path="/account" component={Account} />
       {/* Internal studio dashboard. Not in the navbar and noindexed — the gate
           that matters is server-side (a staff allowlist on top of the same
-          Supabase session), this route just renders what it's given. */}
+          Supabase session), this route just renders what it's given.
+
+          Two routes, one page: the dashboard's panels are grouped into
+          sections with their own addresses (`lib/studio-sections.ts`), and
+          `/studio` itself is the figures. An unrecognized section resolves
+          back to the figures rather than falling through to Not Found — this
+          page's 404 means "you are not staff", which is a different thing to
+          say and must stay reserved for it. */}
       <Route path="/studio" component={Studio} />
+      <Route path="/studio/:section" component={Studio} />
       <Route path="/contact" component={Contact} />
       <Route path="/privacy" component={Privacy} />
       <Route path="/terms" component={Terms} />

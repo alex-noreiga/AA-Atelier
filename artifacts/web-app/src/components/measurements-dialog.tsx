@@ -1,7 +1,10 @@
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
-import { useCreateMeasurementChangeRequest } from "@workspace/api-client-react";
+import {
+  useCreateMeasurementChangeRequest,
+  useUpdateOrderMeasurements,
+} from "@workspace/api-client-react";
 import { CalendarCheck, CheckCircle, Loader2, PenLine } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { CtaLink } from "@/components/cta";
@@ -15,28 +18,22 @@ import {
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
+import { MeasurementFields } from "@/components/measurement-fields";
+import {
+  MEASUREMENT_FIELDS,
+  parseMeasurement,
+  type MeasurementUnit,
+} from "@/lib/measurements";
 import {
   useRequestDialog,
   REQUEST_FORM_INPUT_CLASS,
   REQUEST_FORM_TEXTAREA_CLASS,
 } from "@/hooks/use-request-dialog";
 
-const MEASUREMENT_FIELDS = [
-  { key: "waist", label: "Waist" },
-  // The contract field stays `bust`; only the visible label is neutral.
-  { key: "bust", label: "Chest" },
-  { key: "hips", label: "Hips" },
-  { key: "height", label: "Height" },
-  { key: "bodyGirth", label: "Body Girth" },
-] as const;
-
-// Form-friendly schema. Measurements are optional inputs: the customer either
-// enters all five ("self") or asks to be re-measured at a fitting
-// ("appointment"). The inputs are only *required* in "self" mode, which a flat
-// field schema can't express — hence the superRefine (mirrors order-form). The
-// mapped output is handed to the `useCreateMeasurementChangeRequest` mutation
-// below, whose `data` is typed as the generated `NewMeasurementChangeRequest`,
-// so the form can't silently drift from the API contract.
+// Form-friendly schema. The inputs are only *required* in "self" mode, which a
+// flat field schema can't express — hence the superRefine (mirrors order-form).
+// The mapped output is handed to the generated mutations below, whose `data` is
+// typed against the contract, so the form can't silently drift from it.
 const formSchema = z
   .object({
     email: z.string().email("Please enter a valid email address"),
@@ -53,15 +50,11 @@ const formSchema = z
     if (values.measurementMode !== "self") return;
     for (const { key } of MEASUREMENT_FIELDS) {
       const raw = values[key];
-      const num = Number(raw);
-      if (!raw || Number.isNaN(num) || num <= 0) {
+      if (parseMeasurement(raw) === null) {
         ctx.addIssue({
           path: [key],
           code: z.ZodIssueCode.custom,
-          message:
-            raw && !Number.isNaN(num)
-              ? "Must be a positive number"
-              : "Required",
+          message: raw?.trim() ? "Must be a positive number" : "Required",
         });
       }
     }
@@ -70,21 +63,32 @@ const formSchema = z
 type FormInput = z.input<typeof formSchema>;
 type FormValues = z.output<typeof formSchema>;
 
-interface MeasurementChangeDialogProps {
+/** Which of the three things happened, so the success panel can say the true
+ * one. `applied` and `filed` are the server's own two outcomes; `appointment`
+ * is the other branch of the dialog entirely. */
+type Outcome = "applied" | "filed" | "appointment";
+
+interface MeasurementsDialogProps {
   orderNumber: string;
 }
 
 /**
- * "Request a measurement change" — the customer either submits updated
- * measurements or asks to be re-measured at a fitting; the request lands in the
- * atelier's Notion inbox for a human to apply (Approach A; this never edits the
- * order directly). The server verifies the supplied email against the order
- * (403 on mismatch) and refuses once the garment is in production (409), which
- * we surface inline.
+ * "Update your measurements" — the tracking page's measurement affordance.
+ *
+ * The two branches do genuinely different things, which is why they are one
+ * dialog rather than two buttons: entering values EDITS the order in place,
+ * while asking to be re-measured at a fitting is a request for a service that
+ * only a person can perform, so it still files into the atelier's inbox. From
+ * the customer's side both are "my measurements need to change" and the choice
+ * between them is about how, so making them modes of one question is what
+ * stops the page offering two near-identical links.
+ *
+ * The server may answer an edit with `filed` — it couldn't write to the order
+ * and passed the values to the atelier instead. That is reported honestly
+ * rather than dressed up as a save: what the customer must know is whether the
+ * numbers are already in force or waiting on a human.
  */
-export function MeasurementChangeDialog({
-  orderNumber,
-}: MeasurementChangeDialogProps) {
+export function MeasurementsDialog({ orderNumber }: MeasurementsDialogProps) {
   const {
     register,
     handleSubmit,
@@ -98,10 +102,10 @@ export function MeasurementChangeDialog({
   });
 
   const measurementMode = watch("measurementMode");
-  const measurementUnit = watch("measurementUnit");
+  const measurementUnit = watch("measurementUnit") ?? "inches";
 
-  // 403 (email mismatch) and 409 (locked in production) are expected, actionable
-  // outcomes shown inline; anything else raises a toast.
+  // 403 (email mismatch) and 409 (locked in production) are expected,
+  // actionable outcomes shown inline; anything else raises a toast.
   const {
     open,
     setOpen,
@@ -111,45 +115,58 @@ export function MeasurementChangeDialog({
     setFormError,
     handleError,
     onOpenChange,
-  } = useRequestDialog<{ appointment: boolean }>({
+  } = useRequestDialog<{ outcome: Outcome }>({
     reset,
     inlineStatuses: [403, 409],
-    toastTitle: "Couldn't submit your request",
+    toastTitle: "Couldn't update your measurements",
   });
 
-  const createRequest = useCreateMeasurementChangeRequest({
+  const updateMeasurements = useUpdateOrderMeasurements({
     mutation: {
-      onSuccess: (_data, variables) =>
-        setSubmitted({
-          appointment: variables.data.measurementAppointment === true,
-        }),
+      onSuccess: (data) => setSubmitted({ outcome: data.outcome }),
       onError: handleError,
     },
   });
 
+  const createRequest = useCreateMeasurementChangeRequest({
+    mutation: {
+      onSuccess: () => setSubmitted({ outcome: "appointment" }),
+      onError: handleError,
+    },
+  });
+
+  const pending = updateMeasurements.isPending || createRequest.isPending;
+
   const onSubmit = (values: FormValues) => {
     setFormError(null);
-    const { email, note } = values;
-    // Either supply the measurements, or flag the re-measure appointment —
-    // never both. (The superRefine guarantees "self" has all five present.)
-    const measurements =
-      values.measurementMode === "appointment"
-        ? { measurementAppointment: true }
-        : {
-            measurementUnit: values.measurementUnit,
-            waist: Number(values.waist),
-            bust: Number(values.bust),
-            hips: Number(values.hips),
-            height: Number(values.height),
-            bodyGirth: Number(values.bodyGirth),
-          };
-    createRequest.mutate({
+    const note = values.note?.trim();
+
+    if (values.measurementMode === "appointment") {
+      createRequest.mutate({
+        orderNumber,
+        data: {
+          email: values.email,
+          measurementAppointment: true,
+          ...(note ? { note } : {}),
+        },
+      });
+      return;
+    }
+
+    // The superRefine guarantees all five parse in this mode, so the `?? 0`
+    // below is unreachable — it exists only to satisfy the number type without
+    // a non-null assertion.
+    updateMeasurements.mutate({
       orderNumber,
-      // Omit an empty note so the server never receives an empty string.
       data: {
-        email,
-        ...measurements,
-        ...(note?.trim() ? { note: note.trim() } : {}),
+        email: values.email,
+        measurementUnit: values.measurementUnit,
+        waist: parseMeasurement(values.waist) ?? 0,
+        bust: parseMeasurement(values.bust) ?? 0,
+        hips: parseMeasurement(values.hips) ?? 0,
+        height: parseMeasurement(values.height) ?? 0,
+        bodyGirth: parseMeasurement(values.bodyGirth) ?? 0,
+        ...(note ? { note } : {}),
       },
     });
   };
@@ -160,41 +177,49 @@ export function MeasurementChangeDialog({
         type="button"
         onClick={() => setOpen(true)}
         className="text-muted-foreground hover:text-primary transition-colors flex items-center gap-2 text-sm tracking-widest uppercase group"
-        data-testid="button-request-measurement-change"
+        data-testid="button-update-measurements"
       >
         <PenLine className="w-4 h-4" />
-        <span>Request a measurement change</span>
+        <span>Update your measurements</span>
       </button>
 
       <Dialog open={open} onOpenChange={onOpenChange}>
         <DialogContent
           className="max-w-lg max-h-[90vh] overflow-y-auto"
-          data-testid="measurement-change-dialog"
+          data-testid="measurements-dialog"
         >
           {submitted ? (
             <div
               className="py-6 text-center"
-              data-testid="measurement-change-success"
+              data-testid="measurements-success"
             >
               <CheckCircle
                 className="w-12 h-12 text-primary mx-auto mb-5"
                 strokeWidth={1}
               />
               <DialogTitle className="font-serif text-2xl mb-2">
-                Request received
+                {submitted.outcome === "applied"
+                  ? "Measurements updated"
+                  : "Request received"}
               </DialogTitle>
               <DialogDescription className="text-muted-foreground font-light">
-                {submitted.appointment ? (
+                {submitted.outcome === "applied" ? (
+                  <>
+                    Your new measurements are now on order{" "}
+                    <span className="text-foreground">{orderNumber}</span>, and
+                    we've emailed you a copy. We'll work to these from here.
+                  </>
+                ) : submitted.outcome === "filed" ? (
+                  <>
+                    We've passed your measurements to the atelier for order{" "}
+                    <span className="text-foreground">{orderNumber}</span>.
+                    We'll confirm once they're applied.
+                  </>
+                ) : (
                   <>
                     We'll be in touch to schedule a fitting to take your new
                     measurements for order{" "}
                     <span className="text-foreground">{orderNumber}</span>.
-                  </>
-                ) : (
-                  <>
-                    We've passed your updated measurements to the atelier for
-                    order <span className="text-foreground">{orderNumber}</span>
-                    . We'll be in touch to confirm.
                   </>
                 )}
               </DialogDescription>
@@ -204,13 +229,14 @@ export function MeasurementChangeDialog({
               <DialogHeader className="text-left">
                 <DialogTitle className="font-serif text-2xl flex items-center gap-2">
                   <PenLine className="w-4 h-4 text-primary" />
-                  Request a measurement change
+                  Update your measurements
                 </DialogTitle>
                 <DialogDescription className="text-muted-foreground font-light">
                   Enter the email on order{" "}
                   <span className="text-foreground">{orderNumber}</span>, then
-                  either update your measurements or ask to be re-measured. The
-                  atelier will review and apply the change.
+                  either update your measurements or ask to be re-measured.
+                  Changes take effect straight away, up until your garment is
+                  cut.
                 </DialogDescription>
               </DialogHeader>
 
@@ -224,7 +250,7 @@ export function MeasurementChangeDialog({
                 {formError && (
                   <p
                     className="text-destructive text-sm border-l-2 border-destructive/50 pl-3"
-                    data-testid="measurement-change-error"
+                    data-testid="measurements-error"
                   >
                     {formError}
                   </p>
@@ -243,7 +269,7 @@ export function MeasurementChangeDialog({
                     autoFocus
                     {...register("email")}
                     placeholder="you@example.com"
-                    data-testid="measurement-change-email"
+                    data-testid="measurements-email"
                     className={REQUEST_FORM_INPUT_CLASS}
                   />
                   {errors.email && (
@@ -254,31 +280,6 @@ export function MeasurementChangeDialog({
                 </div>
 
                 <div>
-                  <div className="flex items-center justify-between mb-4 pb-2 border-b border-border">
-                    <span className="text-xs tracking-[0.2em] uppercase text-muted-foreground">
-                      Measurements
-                    </span>
-                    {measurementMode === "self" && (
-                      <div className="flex gap-2">
-                        {(["inches", "cm"] as const).map((unit) => (
-                          <button
-                            key={unit}
-                            type="button"
-                            onClick={() => setValue("measurementUnit", unit)}
-                            className={`px-3 py-1 rounded-full text-xs tracking-wider border transition-all ${
-                              measurementUnit === unit
-                                ? "border-primary bg-primary/10 text-primary"
-                                : "border-border text-muted-foreground hover:border-primary/50"
-                            }`}
-                            data-testid={`measurement-change-unit-${unit}`}
-                          >
-                            {unit}
-                          </button>
-                        ))}
-                      </div>
-                    )}
-                  </div>
-
                   <div className="flex flex-col sm:flex-row gap-3 mb-6">
                     {(
                       [
@@ -297,12 +298,13 @@ export function MeasurementChangeDialog({
                             shouldValidate: true,
                           })
                         }
+                        aria-pressed={measurementMode === mode}
                         className={`flex-1 px-4 py-3 rounded-lg text-sm tracking-wide border transition-all ${
                           measurementMode === mode
                             ? "border-primary bg-primary/10 text-primary"
                             : "border-border text-muted-foreground hover:border-primary/50"
                         }`}
-                        data-testid={`measurement-change-mode-${mode}`}
+                        data-testid={`measurements-mode-${mode}`}
                       >
                         {label}
                       </button>
@@ -310,48 +312,25 @@ export function MeasurementChangeDialog({
                   </div>
 
                   {measurementMode === "self" ? (
-                    <div className="grid grid-cols-2 md:grid-cols-3 gap-4">
-                      {MEASUREMENT_FIELDS.map(({ key, label }) => (
-                        <div key={key}>
-                          <Label
-                            htmlFor={`mc-${key}`}
-                            className="text-sm font-light tracking-wide"
-                          >
-                            {label}
-                            <span className="text-muted-foreground/60 ml-1 text-xs">
-                              ({measurementUnit})
-                            </span>
-                          </Label>
-                          <Input
-                            id={`mc-${key}`}
-                            type="number"
-                            step="0.1"
-                            min="0"
-                            {...register(key)}
-                            placeholder="0.0"
-                            data-testid={`measurement-change-${key}`}
-                            className={REQUEST_FORM_INPUT_CLASS}
-                          />
-                          {errors[key] && (
-                            <p className="text-destructive text-xs mt-1">
-                              {errors[key]?.message}
-                            </p>
-                          )}
-                        </div>
-                      ))}
-                    </div>
+                    <MeasurementFields
+                      register={register}
+                      errors={errors}
+                      unit={measurementUnit as MeasurementUnit}
+                      onUnitChange={(unit) => setValue("measurementUnit", unit)}
+                      idPrefix="measurements"
+                    />
                   ) : (
                     <div className="border border-border rounded-lg p-6 bg-muted/20">
                       <p className="text-sm font-light text-foreground/90 leading-relaxed">
-                        No problem — we'll take your measurements for you. Book
-                        a fitting now, or we'll reach out to schedule one when
-                        you submit this request.
+                        No problem, we'll take your measurements for you. Book a
+                        fitting now, or we'll reach out to schedule one when you
+                        submit this request.
                       </p>
                       <CtaLink
                         to="/appointments?type=fitting"
                         variant="outline"
                         className="mt-5"
-                        data-testid="measurement-change-book-fitting"
+                        data-testid="measurements-book-fitting"
                       >
                         <CalendarCheck className="w-4 h-4" />
                         Book your fitting
@@ -375,22 +354,24 @@ export function MeasurementChangeDialog({
                     {...register("note")}
                     placeholder="Anything the atelier should know about this change..."
                     rows={3}
-                    data-testid="measurement-change-note"
+                    data-testid="measurements-note"
                     className={REQUEST_FORM_TEXTAREA_CLASS}
                   />
                 </div>
 
                 <Button
                   type="submit"
-                  disabled={createRequest.isPending}
-                  data-testid="measurement-change-submit"
+                  disabled={pending}
+                  data-testid="measurements-submit"
                   className="w-full bg-primary text-primary-foreground hover:bg-primary/90 py-6 rounded-full tracking-widest uppercase text-xs transition-all duration-300 disabled:opacity-50"
                 >
-                  {createRequest.isPending ? (
+                  {pending ? (
                     <>
                       <Loader2 className="w-4 h-4 mr-2 animate-spin" />
-                      Submitting...
+                      Saving...
                     </>
+                  ) : measurementMode === "self" ? (
+                    "Save measurements"
                   ) : (
                     "Submit request"
                   )}

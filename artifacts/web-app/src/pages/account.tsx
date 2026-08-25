@@ -9,13 +9,14 @@ import {
   type AccountOrderSummary,
   type AccountShopOrderSummary,
   type AccountAppointmentSummary,
-  type AccountMeasurements,
   type AccountReferral,
 } from "@workspace/api-client-react";
 import { Button } from "@/components/ui/button";
 import { PageShell } from "@/components/page-shell";
 import { Seo } from "@/components/seo";
 import { AppointmentManagePanel } from "@/components/appointment-manage-panel";
+import { AccountData } from "@/components/account-data";
+import { AccountMeasurementsBlock } from "@/components/account-measurements";
 import { useAuth } from "@/lib/auth-context";
 import { useStudioAccess } from "@/lib/studio-access";
 import { ROUTE_SEO } from "@/lib/seo-routes";
@@ -29,7 +30,6 @@ import {
   ShoppingBag,
   CalendarClock,
   Video,
-  Ruler,
   Gift,
   Copy,
   Check,
@@ -160,6 +160,14 @@ export default function Account() {
             )}
 
             <Dashboard data={overview.data} />
+
+            {/* Below the orders, and outside `Dashboard`, because it is the one
+                section that is worth showing to an account with nothing in it:
+                a customer with no orders may still have sent us an inquiry and
+                be on the mailing list. */}
+            <div className="mt-12">
+              <AccountData />
+            </div>
           </>
         )}
       </div>
@@ -220,7 +228,11 @@ function Dashboard({ data }: { data: AccountOverview }) {
           title="Custom orders"
         >
           {activeCustom.map((order) => (
-            <CustomOrderCard key={order.orderNumber} order={order} />
+            <CustomOrderCard
+              key={order.orderNumber}
+              order={order}
+              email={data.email}
+            />
           ))}
         </Section>
       )}
@@ -262,7 +274,11 @@ function Dashboard({ data }: { data: AccountOverview }) {
           {showPast && (
             <div className="space-y-3">
               {pastCustom.map((order) => (
-                <CustomOrderCard key={order.orderNumber} order={order} />
+                <CustomOrderCard
+                  key={order.orderNumber}
+                  order={order}
+                  email={data.email}
+                />
               ))}
               {pastShop.map((order) => (
                 <ShopOrderCard key={order.orderNumber} order={order} />
@@ -310,7 +326,7 @@ function cardClass(state: AccountOrderState): string {
     : "rounded-sm border border-border/60 bg-card/20 p-5";
 }
 
-/** The customer's referral code + a standing returning-skater discount, when
+/** The customer's referral code + a standing returning-customer discount, when
  * earned. The code redeems as a Stripe promotion code at any checkout. */
 function ReferralCard({ referral }: { referral: AccountReferral }) {
   const [copied, setCopied] = useState<string | null>(null);
@@ -338,8 +354,8 @@ function ReferralCard({ referral }: { referral: AccountReferral }) {
       </h2>
       <p className="text-sm text-muted-foreground font-light mb-4">
         {creditLabel
-          ? `Share your code with a fellow skater. When they place their first order, you'll earn ${creditLabel} in credit — and they'll get a welcome discount too.`
-          : "Share your code with a fellow skater. When they place their first order, you'll earn a credit — and they'll get a welcome discount too."}
+          ? `Share your code with a friend. When they place their first order, you'll earn ${creditLabel} in credit, and they'll get a welcome discount too.`
+          : "Share your code with a friend. When they place their first order, you'll earn a credit, and they'll get a welcome discount too."}
       </p>
       <CodeRow
         code={referral.code}
@@ -351,7 +367,7 @@ function ReferralCard({ referral }: { referral: AccountReferral }) {
       {referral.returningCode && (
         <div className="mt-5 pt-4 border-t border-border/60">
           <p className="text-[11px] tracking-widest uppercase text-muted-foreground/70 mb-2">
-            Your returning-skater discount
+            Your returning customer discount
           </p>
           <CodeRow
             code={referral.returningCode}
@@ -421,43 +437,6 @@ function Section({
   );
 }
 
-/** The measurements on file for an order, shown read-only. Editing still goes
- * through the measurement-change request on the tracking page. */
-function MeasurementsBlock({
-  measurements,
-}: {
-  measurements: AccountMeasurements;
-}) {
-  const rows: Array<[string, number | undefined]> = [
-    ["Waist", measurements.waist],
-    ["Chest", measurements.bust],
-    ["Hips", measurements.hips],
-    ["Height", measurements.height],
-    ["Body Girth", measurements.bodyGirth],
-  ];
-  const present = rows.filter(
-    (row): row is [string, number] => typeof row[1] === "number",
-  );
-  if (present.length === 0) return null;
-
-  return (
-    <div className="mt-4 pt-4 border-t border-border/60">
-      <p className="flex items-center gap-2 text-[11px] tracking-widest uppercase text-muted-foreground/70 mb-2">
-        <Ruler className="w-3 h-3" strokeWidth={1.5} />
-        Measurements ({measurements.unit})
-      </p>
-      <dl className="grid grid-cols-2 sm:grid-cols-3 gap-x-6 gap-y-1 text-sm">
-        {present.map(([label, value]) => (
-          <div key={label} className="flex justify-between gap-2">
-            <dt className="text-muted-foreground">{label}</dt>
-            <dd className="text-foreground tabular-nums">{value}</dd>
-          </div>
-        ))}
-      </dl>
-    </div>
-  );
-}
-
 function AppointmentCard({ appt }: { appt: AccountAppointmentSummary }) {
   const queryClient = useQueryClient();
   // A reschedule or cancel changes the booking (and mints a stale manage token),
@@ -506,7 +485,13 @@ function AppointmentCard({ appt }: { appt: AccountAppointmentSummary }) {
   );
 }
 
-function CustomOrderCard({ order }: { order: AccountOrderSummary }) {
+function CustomOrderCard({
+  order,
+  email,
+}: {
+  order: AccountOrderSummary;
+  email: string;
+}) {
   const active = order.state === "active";
   const index = order.stages.indexOf(order.currentStage);
   // "Stage 3 of 6" is progress through work still under way; a finished or
@@ -546,9 +531,19 @@ function CustomOrderCard({ order }: { order: AccountOrderSummary }) {
           Target completion {completion}
         </p>
       )}
-      {order.measurements && (
-        <MeasurementsBlock measurements={order.measurements} />
-      )}
+      {/* Rendered for every active order, measurements on file or not: a
+          measure-at-fitting order has none, and "add them yourself" is the
+          same write. A past order shows what it was made to and offers no
+          edit — the block hides itself when there is neither. */}
+      <AccountMeasurementsBlock
+        orderNumber={order.orderNumber}
+        email={email}
+        measurements={order.measurements ?? { unit: "inches" }}
+        locked={order.state !== "active" || order.measurementsLocked === true}
+        lockedInProduction={
+          order.state === "active" && order.measurementsLocked === true
+        }
+      />
       <div className="flex flex-wrap gap-x-6 gap-y-2 mt-4">
         <Link
           to={`/track?orderNumber=${encodeURIComponent(order.orderNumber)}`}

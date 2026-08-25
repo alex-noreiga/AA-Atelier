@@ -11,6 +11,7 @@ import {
 } from "./client.js";
 import { normalizeEmail } from "../email.js";
 import { scanDatabase } from "./scan.js";
+import { createPageDroppingUnknownProperties } from "./create-page.js";
 import {
   buildShopOrderProperties,
   buildShopOrderPageBlocks,
@@ -31,9 +32,10 @@ import {
   SHOP_ORDER_PICKUP_TIME_PROPERTY,
   SHOP_ORDER_PICKUP_LOCATION_PROPERTY,
   SHOP_ORDER_ITEMS_PROPERTY,
+  SHOP_ORDER_CHANNEL_PROPERTY,
+  SHOP_ORDER_DATE_PROPERTY,
 } from "./shop-orders.blocks.js";
 import type { FulfilmentFields } from "../fulfilment.js";
-import { createPageDroppingUnknownProperties } from "./create-page.js";
 import { logger } from "../logger.js";
 
 interface NotionQueryResponse {
@@ -63,7 +65,7 @@ type NotionReadProperty =
   | { type: "email"; email: string | null }
   | { type: "checkbox"; checkbox: boolean }
   | { type: "url"; url: string | null }
-  | { type: "date"; date: { start: string; end: string | null } | null }
+  | { type: "date"; date: { start: string | null } | null }
   | { type: "relation"; relation: Array<{ id: string }> };
 
 interface NotionLookupResponse {
@@ -81,12 +83,23 @@ interface NotionShopOrderPage {
 interface NotionShopOrdersSchema {
   properties: Record<
     string,
-    { type: string; status?: { options: Array<{ name: string }> } }
+    {
+      type: string;
+      status?: { options: Array<{ name: string }> };
+      select?: { options: Array<{ name: string }> };
+    }
   >;
 }
 
 const STATUS_CACHE_TTL_MS = 60_000;
-let cachedStatuses: { statuses: string[]; fetchedAt: number } | null = null;
+/** One cached read of the database schema, feeding both live option lists. The
+ * fulfilment `Status` workflow and the `Sales Channel` options come out of the
+ * same request, so asking for one never costs a second round trip. */
+let cachedSchema: {
+  statuses: string[];
+  channels: string[];
+  fetchedAt: number;
+} | null = null;
 
 function assertConfigured(client: NotionClient): void {
   assertDatabaseConfigured(
@@ -108,11 +121,6 @@ function readStatus(prop: NotionReadProperty | undefined): string {
   return prop.status?.name ?? "";
 }
 
-function readSelect(prop: NotionReadProperty | undefined): string {
-  if (prop?.type !== "select") return "";
-  return prop.select?.name ?? "";
-}
-
 function readNumber(prop: NotionReadProperty | undefined): number | null {
   if (prop?.type !== "number") return null;
   return prop.number;
@@ -131,6 +139,20 @@ function readCheckbox(prop: NotionReadProperty | undefined): boolean {
 function readUrl(prop: NotionReadProperty | undefined): string {
   if (prop?.type !== "url") return "";
   return (prop.url ?? "").trim();
+}
+
+function readSelect(prop: NotionReadProperty | undefined): string {
+  if (prop?.type !== "select") return "";
+  return (prop.select?.name ?? "").trim();
+}
+
+/** A date property's `start`, verbatim — which is either a calendar date
+ * (`2026-08-06`) or a full instant, and the difference matters downstream: only
+ * an instant may be converted through a timezone. See `orderedOn` in the studio
+ * analytics. */
+function readDateStart(prop: NotionReadProperty | undefined): string {
+  if (prop?.type !== "date") return "";
+  return (prop.date?.start ?? "").trim();
 }
 
 function readRelationIds(prop: NotionReadProperty | undefined): string[] {
@@ -268,8 +290,19 @@ export async function findOrderBySessionId(
   return data.results.length > 0;
 }
 
-/** Create the Notion page for a completed checkout session. When `clientPageId`
- * is given, the order is linked to that Client CRM record (`Client` relation). */
+/**
+ * Create the Notion page for a completed checkout session. When `clientPageId`
+ * is given, the order is linked to that Client CRM record (`Client` relation).
+ *
+ * Goes through {@link createPageDroppingUnknownProperties} because this runs on
+ * the Stripe webhook, where the ordinary Notion behaviour — reject the whole
+ * page because it names one property the database lacks — costs a PAID ORDER its
+ * record: the write 400s, the webhook 500s, Stripe redelivers, and the
+ * redelivery early-returns at the dedupe guard. `Sales Channel`, `Order Date`
+ * and `Delivery Method` are additive atelier setup like the intake form's
+ * optional properties, and no amount of un-done setup may be able to lose an
+ * order.
+ */
 export async function createShopOrder(
   session: Stripe.Checkout.Session,
   client: NotionClient = getShopOrdersNotionClient(),
@@ -278,10 +311,6 @@ export async function createShopOrder(
 ): Promise<string> {
   assertConfigured(client);
 
-  // Dropping-and-retrying an un-added property matters more here than on the
-  // intake form: this runs on the Stripe webhook, so a 400 over `Delivery
-  // Method` would lose a PAID order until the atelier added the column (the
-  // redelivery would fail the same way). Same helper the order intake uses.
   const created = await createPageDroppingUnknownProperties(
     client,
     buildShopOrderProperties(session, clientPageId, itemPageIds),
@@ -617,13 +646,42 @@ export async function findShopOrdersByNumbers(
 export async function fetchLiveShopOrderStatuses(
   client: NotionClient = getShopOrdersNotionClient(),
 ): Promise<string[]> {
+  return (await fetchShopOrderSchema(client)).statuses;
+}
+
+/**
+ * The live `Sales Channel` options, in the order the atelier holds them.
+ *
+ * Same never-hardcode rule as the statuses, and the same reason: the atelier
+ * can add a channel (a second stockist, a market stall) without a deploy, and
+ * the studio's channel figures should pick it up. Reading the OPTIONS rather
+ * than deriving the list from the orders is what lets a channel with no trade
+ * this year still appear, as a nought — the pipeline panels do the same thing
+ * with their empty stages, and "no orders from Etsy this month" is a figure
+ * worth being able to see.
+ */
+export async function fetchLiveShopOrderChannels(
+  client: NotionClient = getShopOrdersNotionClient(),
+): Promise<string[]> {
+  return (await fetchShopOrderSchema(client)).channels;
+}
+
+/** Test seam: drop the cached schema so a test's fake client is read afresh. */
+export function __resetShopOrderSchemaCache(): void {
+  cachedSchema = null;
+}
+
+/** One cached read of the database schema behind both option lists above. */
+async function fetchShopOrderSchema(
+  client: NotionClient,
+): Promise<{ statuses: string[]; channels: string[] }> {
   assertConfigured(client);
 
   if (
-    cachedStatuses &&
-    Date.now() - cachedStatuses.fetchedAt < STATUS_CACHE_TTL_MS
+    cachedSchema &&
+    Date.now() - cachedSchema.fetchedAt < STATUS_CACHE_TTL_MS
   ) {
-    return cachedStatuses.statuses;
+    return cachedSchema;
   }
 
   try {
@@ -639,11 +697,17 @@ export async function fetchLiveShopOrderStatuses(
       schema.properties[SHOP_ORDER_STATUS_PROPERTY]?.status?.options.map(
         (option) => option.name,
       ) ?? [];
-    cachedStatuses = { statuses, fetchedAt: Date.now() };
-    return statuses;
+    // Absent when the atelier hasn't added the property — an empty list, which
+    // the aggregation reads as "no channels to lay out", not as an error.
+    const channels =
+      schema.properties[SHOP_ORDER_CHANNEL_PROPERTY]?.select?.options.map(
+        (option) => option.name,
+      ) ?? [];
+    cachedSchema = { statuses, channels, fetchedAt: Date.now() };
+    return cachedSchema;
   } catch (error) {
-    if (cachedStatuses) {
-      return cachedStatuses.statuses;
+    if (cachedSchema) {
+      return cachedSchema;
     }
     throw error;
   }
@@ -659,8 +723,24 @@ export interface ShopOrderAnalyticsRecord {
   status: string;
   total?: number;
   cancelled: boolean;
-  /** Notion's page-creation time (ISO) — when the order was paid. */
+  /** Notion's page-creation time (ISO) — when the ROW was made, which for an
+   * order the app wrote is when it was paid and for a hand-filed one is when the
+   * atelier caught up on paperwork. Only the fallback; prefer `orderDate`. */
   createdTime: string;
+  /** The atelier's own `Order Date`, verbatim — a calendar date (`2026-08-06`)
+   * or a full instant, and which of the two it is decides whether a timezone may
+   * be applied to it. Empty when unset (a legacy row, or the property not added
+   * yet), which is what `createdTime` is the fallback for. */
+  orderDate: string;
+  /** The `Sales Channel` option, or "" when the row carries none — an order
+   * filed by hand and never tagged, or one the app wrote before it started
+   * stamping its own. Resolving what "" means is the aggregation's job, not
+   * this reader's. */
+  channel: string;
+  /** The Stripe session id, i.e. whether the APP took this order. Read only to
+   * resolve an untagged channel: an order carrying a session is one the website
+   * wrote, whatever its `Sales Channel` says (it predates the stamp). */
+  sessionId: string;
   /** Inventory page ids from the `Inventory Items` relation. Empty for orders
    * placed before that relation was written (or with it switched off), which is
    * why the best-seller list can legitimately come back empty. */
@@ -674,12 +754,16 @@ export interface ShopOrderAnalyticsRecord {
  */
 export async function listShopOrdersForAnalytics(
   client: NotionClient = getShopOrdersNotionClient(),
-): Promise<{ orders: ShopOrderAnalyticsRecord[]; statuses: string[] }> {
+): Promise<{
+  orders: ShopOrderAnalyticsRecord[];
+  statuses: string[];
+  channels: string[];
+}> {
   assertConfigured(client);
 
-  const [pages, statuses] = await Promise.all([
+  const [pages, schema] = await Promise.all([
     scanDatabase<NotionShopOrderPage>(client, "shop orders"),
-    fetchLiveShopOrderStatuses(client),
+    fetchShopOrderSchema(client),
   ]);
 
   const orders = pages.map((page) => {
@@ -689,10 +773,13 @@ export async function listShopOrdersForAnalytics(
       status: readStatus(page.properties[SHOP_ORDER_STATUS_PROPERTY]),
       cancelled: readCheckbox(page.properties[SHOP_ORDER_CANCELLED_PROPERTY]),
       createdTime: page.created_time ?? "",
+      orderDate: readDateStart(page.properties[SHOP_ORDER_DATE_PROPERTY]),
+      channel: readSelect(page.properties[SHOP_ORDER_CHANNEL_PROPERTY]),
+      sessionId: readRichText(page.properties[SHOP_ORDER_SESSION_PROPERTY]),
       itemIds: readRelationIds(page.properties[SHOP_ORDER_ITEMS_PROPERTY]),
       ...(total !== null ? { total } : {}),
     } satisfies ShopOrderAnalyticsRecord;
   });
 
-  return { orders, statuses };
+  return { orders, statuses: schema.statuses, channels: schema.channels };
 }

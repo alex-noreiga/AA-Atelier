@@ -30,6 +30,7 @@ import {
 } from "../lib/auth/tokens.js";
 import { ensureReferralCode, type ReferralInfo } from "./rewards.service.js";
 import { orderLifecycleState, type OrderLifecycleState } from "./delivery.js";
+import { measurementsLocked } from "./measurement-lock.js";
 import { logger } from "../lib/logger.js";
 
 /** An upcoming appointment for the dashboard: its details plus a signed token so
@@ -42,7 +43,13 @@ export interface AccountAppointment extends AppointmentManageDetails {
  * can denote a finished or cancelled order rather than leaving the customer to
  * read it out of a stage name. Derived server-side (see `delivery.ts`) so both
  * order kinds are classified by the one rule. */
-export type AccountCustomOrder = OrderSummary & { state: OrderLifecycleState };
+export type AccountCustomOrder = OrderSummary & {
+  state: OrderLifecycleState;
+  /** Whether the garment has passed the stage at which measurements freeze —
+   * the dashboard offers its in-place edit only when this is false. Derived
+   * server-side; see `listCustomOrders`. */
+  measurementsLocked: boolean;
+};
 export type AccountShopOrder = ShopOrderRecord & { state: OrderLifecycleState };
 
 export interface AccountOverviewResult {
@@ -54,6 +61,12 @@ export interface AccountOverviewResult {
   referral?: ReferralInfo;
 }
 
+// The three lookups below are exported because the data export
+// (`account-data.service.ts`) is the same question asked for a different reason:
+// "everything tied to this email". Reusing them is what stops the export and the
+// dashboard disagreeing about what the studio holds — an export assembled from a
+// second set of reads would drift from the portal the first time either changed.
+
 /**
  * The customer's upcoming appointments for the dashboard, found by the email
  * stamped on each Google Calendar booking. Best-effort: any failure — the
@@ -63,7 +76,7 @@ export interface AccountOverviewResult {
  * surfaced; each is tagged with a signed manage token so the portal can drive the
  * existing reschedule/cancel endpoints in place.
  */
-async function upcomingAppointments(
+export async function upcomingAppointments(
   email: string,
 ): Promise<AccountAppointment[]> {
   // The manage token can't be signed without the portal secret (and the overview
@@ -103,7 +116,9 @@ async function upcomingAppointments(
  * step is best-effort: a DB failure degrades to the Notion-only result, and it
  * fetches live Stage/measurements from Notion (never a stale cached copy).
  */
-async function listCustomOrders(email: string): Promise<AccountCustomOrder[]> {
+export async function listCustomOrders(
+  email: string,
+): Promise<AccountCustomOrder[]> {
   const orders = await findOrdersByEmail(email).then(async (base) => {
     if (!postgresConfigured()) return base;
     try {
@@ -122,7 +137,11 @@ async function listCustomOrders(email: string): Promise<AccountCustomOrder[]> {
   });
 
   // Each summary already carries the live stage list it was mapped against, so
-  // classifying is pure — no extra Notion read.
+  // both derivations are pure — no extra Notion read. `measurementsLocked` is
+  // the same rule the tracking page reads, computed here rather than in the
+  // browser because the lock stage is a studio setting the client never sees;
+  // deriving it client-side would let the dashboard offer an edit the server
+  // then refuses.
   return orders.map((order) => ({
     ...order,
     state: orderLifecycleState(
@@ -130,12 +149,15 @@ async function listCustomOrders(email: string): Promise<AccountCustomOrder[]> {
       order.currentStage,
       order.stages,
     ),
+    measurementsLocked: measurementsLocked(order.currentStage, order.stages),
   }));
 }
 
 /** Shop-order counterpart of {@link listCustomOrders} — same baseline-plus-index
  * union, same best-effort degrade, live fulfilment status from Notion. */
-async function listShopOrders(email: string): Promise<AccountShopOrder[]> {
+export async function listShopOrders(
+  email: string,
+): Promise<AccountShopOrder[]> {
   const orders = await findShopOrdersByEmail(email).then(async (base) => {
     if (!postgresConfigured()) return base;
     try {

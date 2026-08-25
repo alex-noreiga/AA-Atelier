@@ -92,6 +92,7 @@ describe("getAccountOverview", () => {
           currentStage: "Sewing",
           stages: ["Consultation", "Sewing", "Delivery"],
           state: "active",
+          measurementsLocked: false,
         },
       ],
       shopOrders: [

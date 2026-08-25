@@ -8,11 +8,12 @@
 //
 // Four rules, all of them things a spreadsheet couldn't enforce:
 //
-//  1. **The staff name must be one the studio books.** The appointment catalog
-//     decides who offers what (`lib/appointments/catalog.ts`); hours saved
-//     against a name outside it would never appear in a slot, because no type
-//     routes to that person. So the editor is given the catalog's list and the
-//     server checks against the same source.
+//  1. **The staff name must be one the studio books.** Hours saved against a
+//     name off the roster (`STAFF_ROSTER` in `lib/appointments/catalog.js`)
+//     could never appear in a slot — nobody outside it has a booking calendar.
+//     So the editor is given that list and the server checks the same source.
+//     Which appointment TYPES each person covers is a separate, atelier-edited
+//     question; see `services/appointment-staffing.service.ts`.
 //  2. **The times must make a real range.** `end` after `start`, both `HH:MM`
 //     (the shape is the contract's; the ordering is checked here, since a flat
 //     schema can't express a cross-field rule).
@@ -38,7 +39,7 @@ import {
   type ScheduleEntry,
 } from "../lib/appointments/staff.js";
 import {
-  APPOINTMENT_TYPES,
+  STAFF_ROSTER,
   type AppointmentLocation,
 } from "../lib/appointments/catalog.js";
 import { parseTimeToMinutes } from "../lib/appointments/time.js";
@@ -68,18 +69,18 @@ export interface StaffAvailabilityInput {
 }
 
 /**
- * Every staff member the studio books, in catalog order. Derived from the
- * appointment types rather than listed again, so retiring a type that was one
- * person's only offering takes them out of the editor too.
+ * Every staff member the studio books, in roster order.
+ *
+ * This is the roster itself, not the people currently routed to a type. It used
+ * to be derived from the appointment types, which was safe while routing was a
+ * code constant — but the atelier edits routing on the dashboard now, and a
+ * derived list would take somebody out of this editor the moment they were
+ * unassigned from their last type, stranding the hours already saved against
+ * them behind a validation error. Whose hours these are and which types they
+ * cover are two different questions, and only the second one is seasonal.
  */
 export function bookableStaff(): string[] {
-  const names: string[] = [];
-  for (const type of APPOINTMENT_TYPES) {
-    for (const name of type.staff) {
-      if (!names.includes(name)) names.push(name);
-    }
-  }
-  return names;
+  return [...STAFF_ROSTER];
 }
 
 /** Canonicalize + validate one submitted entry, or throw a 400 saying why. */

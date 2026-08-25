@@ -70,8 +70,19 @@ interface ToolSpec {
   field?: ToolField;
   /** Offer the "resend anyway" override (status-email only). */
   offersForce?: boolean;
-  /** Offer a partial-refund amount (return refund only). */
+  /** Offer an amount field. Two tools use it for opposite things, so the
+   * wording and requiredness come from `amountSpec` rather than being assumed:
+   * the return refund's amount is an OPTIONAL target total (blank ⇒ in full),
+   * the quote's is the REQUIRED price of the work. */
   offersAmount?: boolean;
+  amountSpec?: {
+    label: string;
+    placeholder: string;
+    /** Block the run until a positive number is entered. */
+    required?: boolean;
+  };
+  /** Offer a free-text line describing the work (the quote only). */
+  offersDescription?: { label: string; placeholder: string };
   /** Ask again before running — the tools that move money. */
   destructive?: boolean;
   /** The button's verb. */
@@ -93,6 +104,20 @@ const TOOLS: ToolSpec[] = [
       "Writes the invoice's material, labor, and design & finishing lines from the order's costing.",
     field: orderField("ORD-000002"),
     action: "Itemize",
+  },
+  {
+    tool: "quote",
+    name: "Quote a flat price",
+    description:
+      "For work with no costing behind it — a repair, a stoning job, an alteration. Prices the invoice as a single line and marks it ready, so the customer can pay from their tracking page.",
+    field: orderField("ORD-000002"),
+    offersAmount: true,
+    amountSpec: { label: "Price", placeholder: "85.00", required: true },
+    offersDescription: {
+      label: "What the work is (optional)",
+      placeholder: "Re-stone bodice",
+    },
+    action: "Send quote",
   },
   {
     tool: "status-email",
@@ -119,6 +144,7 @@ const TOOLS: ToolSpec[] = [
       "Refunds a shop order for a return or exchange. Leave the amount blank to refund in full; an amount is the total that should end up refunded.",
     field: orderField("SHP-…"),
     offersAmount: true,
+    amountSpec: { label: "Amount", placeholder: "Full" },
     destructive: true,
     action: "Refund",
   },
@@ -169,6 +195,7 @@ function ToolCard({
 }) {
   const [subject, setSubject] = useState("");
   const [amount, setAmount] = useState("");
+  const [description, setDescription] = useState("");
   const [force, setForce] = useState(false);
   const [confirming, setConfirming] = useState(false);
   const [run, setRun] = useState<StudioToolRun | null>(null);
@@ -180,6 +207,17 @@ function ToolCard({
   const field = spec.field;
   const missingSubject =
     Boolean(field) && !field?.optional && subject.trim() === "";
+  // A required amount must be a positive number before the button lights up.
+  // The server validates it too (a quote of $0 is an invoice nobody can pay);
+  // this just stops the atelier making the round trip to find that out.
+  const quotedAmount = Number(amount);
+  const missingAmount =
+    Boolean(spec.amountSpec?.required) &&
+    !(
+      amount.trim() !== "" &&
+      Number.isFinite(quotedAmount) &&
+      quotedAmount > 0
+    );
 
   // A request handing this tool its argument: fill the field, bring the card
   // into view, and put the cursor in it so the value can be read and corrected
@@ -191,6 +229,9 @@ function ToolCard({
     if (!handoff) return;
     const value = handoff.orderNumber ?? handoff.item ?? "";
     setSubject(value);
+    // The amount and description belonged to whatever was in the field before.
+    setAmount("");
+    setDescription("");
     // Any previous result belongs to a different order; leaving it under a
     // freshly filled field would read as this request having been actioned.
     setRun(null);
@@ -217,6 +258,11 @@ function ToolCard({
           ...(spec.offersAmount && amount.trim() !== ""
             ? { amount: Number(amount) }
             : {}),
+          // Blank ⇒ omitted, and the server names the line after the order's
+          // service rather than writing an empty title.
+          ...(spec.offersDescription && description.trim()
+            ? { description: description.trim() }
+            : {}),
         },
       },
       {
@@ -227,7 +273,7 @@ function ToolCard({
   };
 
   const start = () => {
-    if (missingSubject) return;
+    if (missingSubject || missingAmount) return;
     if (spec.destructive) {
       setConfirming(true);
       return;
@@ -279,13 +325,33 @@ function ToolCard({
           </div>
         )}
 
+        {spec.offersDescription && (
+          <div className="w-full sm:flex-1 sm:min-w-[12rem]">
+            <Label
+              htmlFor={`${fieldId}-description`}
+              className="text-[10px] tracking-[0.15em] uppercase text-muted-foreground"
+            >
+              {spec.offersDescription.label}
+            </Label>
+            <Input
+              id={`${fieldId}-description`}
+              value={description}
+              onChange={(event) => setDescription(event.target.value)}
+              placeholder={spec.offersDescription.placeholder}
+              autoComplete="off"
+              className="mt-1"
+              data-testid={`tool-${spec.tool}-description`}
+            />
+          </div>
+        )}
+
         {spec.offersAmount && (
           <div className="w-full sm:w-32">
             <Label
               htmlFor={`${fieldId}-amount`}
               className="text-[10px] tracking-[0.15em] uppercase text-muted-foreground"
             >
-              Amount
+              {spec.amountSpec?.label ?? "Amount"}
             </Label>
             <Input
               id={`${fieldId}-amount`}
@@ -295,7 +361,7 @@ function ToolCard({
                 setConfirming(false);
               }}
               inputMode="decimal"
-              placeholder="Full"
+              placeholder={spec.amountSpec?.placeholder ?? "Full"}
               autoComplete="off"
               className="mt-1"
               data-testid={`tool-${spec.tool}-amount`}
@@ -306,7 +372,7 @@ function ToolCard({
         <Button
           variant={spec.destructive ? "outline" : "default"}
           onClick={start}
-          disabled={missingSubject || mutation.isPending}
+          disabled={missingSubject || missingAmount || mutation.isPending}
           className="w-full gap-2 sm:w-auto"
           data-testid={`tool-${spec.tool}-run`}
         >

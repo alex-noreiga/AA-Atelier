@@ -27,7 +27,14 @@ export const SERVICE_FALLBACK: ServiceRules = {
   detailsRequired: false,
   detailsLabel: "Description",
   detailsHelp:
-    "Tell us about your vision — style, silhouette, special requirements...",
+    "Tell us about your vision: style, silhouette, special requirements...",
+  // `true`, unlike the other flags, is NOT the widest option here — it is the
+  // one that matches the server. An order with no `service` resolves to the
+  // bespoke commission on the way in, so the capacity gate applies to it; a
+  // fallback of `false` would show the intake form to someone whose order the
+  // server would then refuse with a 409. The catalog failing to load is not a
+  // reason to promise an order the studio can't take.
+  capacityGated: true,
 };
 
 /** What the form needs to know about the chosen service to render + validate. */
@@ -39,6 +46,8 @@ export interface ServiceRules {
   detailsRequired: boolean;
   detailsLabel: string;
   detailsHelp: string;
+  /** Whether this service is paused when the studio's books are closed. */
+  capacityGated: boolean;
 }
 
 /**
@@ -52,7 +61,12 @@ export function serviceRules(
 ): ServiceRules {
   if (services.length === 0) return SERVICE_FALLBACK;
   const match = services.find((service) => service.id === picked);
-  if (!match) return { ...SERVICE_FALLBACK, required: true };
+  // Nothing picked yet: `required: true` makes the picker a gate, and
+  // `capacityGated: false` keeps the closed-books panel from appearing before
+  // the customer has chosen anything — it is an answer about a service, and
+  // there isn't one yet.
+  if (!match)
+    return { ...SERVICE_FALLBACK, required: true, capacityGated: false };
   return {
     required: true,
     measurements: match.measurements,
@@ -60,6 +74,7 @@ export function serviceRules(
     detailsRequired: match.detailsRequired,
     detailsLabel: match.detailsLabel,
     detailsHelp: match.detailsHelp,
+    capacityGated: match.capacityGated,
   };
 }
 

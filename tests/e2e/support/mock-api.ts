@@ -103,6 +103,38 @@ export async function mockServices(
   });
 }
 
+/**
+ * Mock `GET /api/capacity` (whether the studio is taking bespoke commissions).
+ * Defaults to open, which is the state every existing spec assumes — the intake
+ * form rather than the waitlist. Pass
+ * `body: { open: false, waitlistOpen: true, message: "..." }` to drive the
+ * closed-books path.
+ */
+export async function mockCapacity(
+  page: Page,
+  opts: { status?: number; body?: unknown } = {},
+): Promise<void> {
+  await page.route("**/api/capacity", async (route) => {
+    if (route.request().method() !== "GET") return route.fallback();
+    await json(
+      route,
+      opts.status ?? 200,
+      opts.body ?? { open: true, waitlistOpen: false, message: "" },
+    );
+  });
+}
+
+/** Mock `POST /api/waitlist`. */
+export async function mockJoinWaitlist(
+  page: Page,
+  opts: { status?: number; body?: unknown } = {},
+): Promise<void> {
+  await page.route("**/api/waitlist", async (route) => {
+    if (route.request().method() !== "POST") return route.fallback();
+    await json(route, opts.status ?? 201, opts.body ?? { success: true });
+  });
+}
+
 /** Mock `POST /api/contact`. */
 export async function mockCreateContact(
   page: Page,
@@ -180,6 +212,28 @@ export async function mockMeasurementChange(
       await json(route, opts.status ?? 201, opts.body);
     },
   );
+  return { requests, requestedPaths };
+}
+
+/**
+ * Mock `PUT /api/orders/:orderNumber/measurements` — the status page's in-place
+ * measurement editor. Records each request body so a test can assert the values
+ * the editor sent, and each path so it can assert which order they went to.
+ * A distinct pattern from the change-request mock above: the two live on the
+ * same dialog, and pinning which one a mode drives is the point.
+ */
+export async function mockUpdateMeasurements(
+  page: Page,
+  opts: { status?: number; body: unknown },
+): Promise<{ requests: unknown[]; requestedPaths: string[] }> {
+  const requests: unknown[] = [];
+  const requestedPaths: string[] = [];
+  await page.route("**/api/orders/*/measurements", async (route) => {
+    if (route.request().method() !== "PUT") return route.fallback();
+    requests.push(route.request().postDataJSON());
+    requestedPaths.push(new URL(route.request().url()).pathname);
+    await json(route, opts.status ?? 200, opts.body);
+  });
   return { requests, requestedPaths };
 }
 

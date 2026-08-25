@@ -16,6 +16,9 @@ import {
   SHOP_ORDER_CLIENT_PROPERTY,
   SHOP_ORDER_ITEMS_PROPERTY,
   SHOP_ORDER_DELIVERY_METHOD_PROPERTY,
+  SHOP_ORDER_CHANNEL_PROPERTY,
+  SHOP_ORDER_ONLINE_STORE_CHANNEL,
+  SHOP_ORDER_DATE_PROPERTY,
 } from "../../src/lib/notion/shop-orders.blocks.js";
 
 function session(
@@ -255,5 +258,38 @@ describe("formatShippingAddress", () => {
         session({ collected_information: null, customer_details: null }),
       ),
     ).toBeNull();
+  });
+});
+
+describe("buildShopOrderProperties — sales channel and order date", () => {
+  it("stamps the online store, so the website's own takings are attributable", () => {
+    const props = buildShopOrderProperties(session()) as Record<string, any>;
+
+    expect(props[SHOP_ORDER_CHANNEL_PROPERTY]).toEqual({
+      select: { name: SHOP_ORDER_ONLINE_STORE_CHANNEL },
+    });
+  });
+
+  it("dates the order from the Stripe session, not from Notion", () => {
+    // 2026-06-11T09:00:00Z. Notion's page-creation time would be right here and
+    // wrong for every hand-filed row, so all of them carry a real date instead.
+    const props = buildShopOrderProperties(
+      session({ created: 1781168400 }),
+    ) as Record<string, any>;
+
+    expect(props[SHOP_ORDER_DATE_PROPERTY]).toEqual({
+      date: { start: "2026-06-11T09:00:00.000Z" },
+    });
+  });
+
+  it("falls back to now when the session carries no created time", () => {
+    const before = Date.now();
+    const props = buildShopOrderProperties(session()) as Record<string, any>;
+    const start = Date.parse(props[SHOP_ORDER_DATE_PROPERTY].date.start);
+
+    // Never absent: a blank date would send the order back to being dated by
+    // whenever Notion happened to create the page.
+    expect(start).toBeGreaterThanOrEqual(before);
+    expect(start).toBeLessThanOrEqual(Date.now());
   });
 });

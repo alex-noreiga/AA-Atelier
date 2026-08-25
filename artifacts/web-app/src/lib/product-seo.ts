@@ -37,7 +37,7 @@ export function productMetaDescription(product: Product): string {
   const base =
     raw && raw.length > 0
       ? raw
-      : `${product.title} — ${product.category} from A.A Atelier.`;
+      : `${product.title}, ${product.category} from A.A Atelier.`;
   return base.length > 160 ? `${base.slice(0, 157)}…` : base;
 }
 
@@ -51,7 +51,7 @@ export function productMetaDescription(product: Product): string {
 export function productImages(product: Product): OgImage[] {
   const photo = product.variants[0]?.photos[0];
   return photo
-    ? [{ url: photo, alt: `${product.title} — A.A Atelier` }]
+    ? [{ url: photo, alt: `${product.title} from A.A Atelier` }]
     : socialImages("/shop", productTitle(product));
 }
 

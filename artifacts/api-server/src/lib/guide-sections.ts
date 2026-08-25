@@ -10,10 +10,19 @@
 // the guides rather than duplicated in the frontend. A tool renamed here is a
 // tool renamed in the one place that says so.
 //
-// The six tool ids are deliberately the SAME strings as `StudioToolName`. A
+// The seven tool ids are deliberately the SAME strings as `StudioToolName`. A
 // guide filed against `invoice-lines` renders inside the "Itemize an invoice"
 // card, which is what the roadmap card asked for — a guide next to the tool it
 // describes, not in a manual somewhere else on the page.
+//
+// That sameness is load-bearing and was briefly broken: `studio-tools.tsx`
+// renders `<GuidesFor section={spec.tool} />` for EVERY tool, so a tool with no
+// entry here has a render point no guide can ever resolve to — the guide is
+// still served, but it falls back to `general` and lands in the panel at the
+// bottom instead of beside the button it describes. Nothing failed, nothing
+// logged; the card was simply always empty. `test/unit/guide-sections.test.ts`
+// now drives the contract's own `StudioTool` enum and asserts every tool has a
+// section, so adding a tool without one fails CI.
 
 /** One place on the dashboard a guide can attach to. */
 export interface GuideSection {
@@ -41,11 +50,13 @@ export const GUIDE_SECTIONS: readonly GuideSection[] = [
   { id: "materials", label: "Materials" },
   { id: "reviews", label: "Reviews" },
   { id: "availability", label: "Working hours" },
+  { id: "appointment-staff", label: "Appointment staffing" },
   { id: "settings", label: "Studio settings" },
   { id: "requests", label: "Customer requests" },
   { id: "newsletter", label: "Newsletter sign-ups" },
   { id: "milestones", label: "Reconcile production milestones" },
   { id: "invoice-lines", label: "Itemize an invoice" },
+  { id: "quote", label: "Quote a flat price" },
   { id: "status-email", label: "Send a status update" },
   { id: "cancellation-refund", label: "Cancel & refund an order" },
   { id: "return-refund", label: "Refund a return" },

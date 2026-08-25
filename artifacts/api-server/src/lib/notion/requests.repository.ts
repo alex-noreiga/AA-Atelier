@@ -25,9 +25,11 @@ import {
   type NotionClient,
 } from "./client.js";
 import {
+  CONTACT_EMAIL_PROPERTY,
   CONTACT_STAGE_PROPERTY,
   CONTACT_TYPE_PROPERTY,
 } from "./contact.blocks.js";
+import { normalizeEmail } from "../email.js";
 import { NEWSLETTER_REQUEST_TYPE } from "./newsletter.blocks.js";
 import {
   extractNewsletterSignups,
@@ -197,6 +199,43 @@ export async function setRequestStage(
   }
 
   return extractStudioRequest((await response.json()) as NotionRequestPage);
+}
+
+/**
+ * Every row this customer has filed, newest first — the requests half of their
+ * data export.
+ *
+ * Two things differ from the queue reads above. It filters on the row's `Email`
+ * rather than its stage, because an export is about who filed a row and not
+ * about whether anyone has answered it; and it maps with the SINGULAR extractor,
+ * so a newsletter opt-in is included rather than dropped. The queue excludes
+ * opt-ins because nobody answers one; an export includes them because a record
+ * of consent to be marketed to is exactly the kind of thing a customer is
+ * entitled to see.
+ *
+ * One page, like the queue: 100 requests from one customer is far beyond what a
+ * studio at this scale sees, and paginating an export nobody has ever filled
+ * would buy latency and nothing else.
+ */
+export async function listRequestsByEmail(
+  email: string,
+  client: NotionClient = getContactNotionClient(),
+): Promise<StudioRequestRecord[]> {
+  assertConfigured(client);
+
+  const normalized = normalizeEmail(email);
+  if (!normalized) return [];
+
+  const data = await queryRequests(client, {
+    page_size: OPEN_PAGE_SIZE,
+    filter: {
+      property: CONTACT_EMAIL_PROPERTY,
+      email: { equals: normalized },
+    },
+    sorts: [{ timestamp: "created_time", direction: "descending" }],
+  });
+
+  return data.results.map(extractStudioRequest);
 }
 
 // --- The newsletter opt-ins ------------------------------------------------

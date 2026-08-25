@@ -87,3 +87,35 @@ export class ServiceUnavailableError extends Error {
     this.name = "ServiceUnavailableError";
   }
 }
+
+/**
+ * The orders database has no property to write a measurement into, so an
+ * in-place edit had nowhere to store what the customer typed.
+ *
+ * This is the exact state {@link createPageDroppingUnknownProperties} degrades
+ * past at intake — but the two must answer differently. There, dropping the
+ * field keeps the order and the values survive in the page body, so the right
+ * move is a warn. Here the value IS the write: reporting success for a save
+ * that stored nothing would tell a customer their new measurements are on file
+ * when the atelier will still cut to the old ones. So it throws, and the
+ * measurement-update service turns it into an answer the customer can act on
+ * (file a change request instead) and a `warn` naming the property to add.
+ *
+ * The service translates it into a `ConflictError` (409) rather than the error
+ * middleware doing so: the request is well-formed and will succeed unchanged
+ * once the atelier adds the property — a conflict with the workspace's current
+ * state, not a fault of the caller's — and the translation is where the
+ * operator-facing `warn` naming the property belongs.
+ */
+export class MeasurementPropertiesMissingError extends Error {
+  /** The Notion property the database is missing, for the operator-facing log. */
+  readonly property: string;
+
+  constructor(property: string) {
+    super(
+      `The orders database has no "${property}" property to record measurements in.`,
+    );
+    this.name = "MeasurementPropertiesMissingError";
+    this.property = property;
+  }
+}

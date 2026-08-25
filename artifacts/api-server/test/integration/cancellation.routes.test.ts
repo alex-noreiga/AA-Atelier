@@ -34,6 +34,7 @@ describe("POST /api/orders/:orderNumber/cancellation-requests (custom)", () => {
     mockFindOrder.mockResolvedValue({
       email: "ada@example.com",
       pageId: "page-order-test",
+      orderName: "Ada – Custom Dress",
       currentStage: "Sketching",
       stages: STAGES,
     });
@@ -58,6 +59,7 @@ describe("POST /api/orders/:orderNumber/cancellation-requests (custom)", () => {
     mockFindOrder.mockResolvedValue({
       email: "someone-else@example.com",
       pageId: "page-order-test",
+      orderName: "Ada – Custom Dress",
       currentStage: "Sketching",
       stages: STAGES,
     });
@@ -71,6 +73,7 @@ describe("POST /api/orders/:orderNumber/cancellation-requests (custom)", () => {
     mockFindOrder.mockResolvedValue({
       email: "ada@example.com",
       pageId: "page-order-test",
+      orderName: "Ada – Custom Dress",
       currentStage: "Delivery",
       stages: STAGES,
     });

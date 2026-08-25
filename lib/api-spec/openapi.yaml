@@ -36,6 +36,10 @@ tags:
     description: The atelier's published portfolio of finished work and sketches
   - name: services
     description: The intake service catalog a custom order is placed against
+  - name: capacity
+    description: Whether the studio's books are open for new bespoke commissions
+  - name: waitlist
+    description: The waitlist collected while the studio's books are closed
 paths:
   /health:
     get:
@@ -80,7 +84,11 @@ paths:
       operationId: createOrder
       tags: [orders]
       summary: Submit a new custom dress order
-      description: Creates a new custom dress order and saves it to Notion
+      description: >-
+        Creates a new custom dress order and saves it to Notion. Refused with
+        409 when the order is for a capacity-gated service and the studio's
+        books are closed (see `GET /capacity`) — the customer is offered
+        `POST /waitlist` instead.
       requestBody:
         required: true
         content:
@@ -96,6 +104,14 @@ paths:
                 $ref: "#/components/schemas/NewOrderResponse"
         "400":
           description: Validation error
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorEnvelope"
+        "409":
+          description: >-
+            The studio's books are closed for this service; join the waitlist
+            instead.
           content:
             application/json:
               schema:
@@ -151,6 +167,73 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/OrderNotFound"
+        "500":
+          description: Server error
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorEnvelope"
+  /orders/{orderNumber}/measurements:
+    put:
+      operationId: updateOrderMeasurements
+      tags: [orders]
+      summary: Update an order's measurements in place
+      description: >-
+        Writes the customer's measurements straight onto the order, replacing
+        the five typed Notion properties and the unit. The customer is verified
+        against the email stored on the order and the write is refused once the
+        garment has entered production (MEASUREMENT_LOCK_FROM_STAGE) — the same
+        two gates the change-request endpoint applies. Unlike that endpoint this
+        one edits the order, so it fails closed where the request flow degrades:
+        an order with no stored email to verify against is never written to.
+        Rather than losing what the customer typed, such an edit — and one the
+        orders database has nowhere to store — is filed as an ordinary
+        measurement-change request for a human to apply, reported as
+        outcome="filed". The complete set of five values is required: a partial
+        write would leave the atelier cutting to a mix of old and new numbers.
+      parameters:
+        - name: orderNumber
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/UpdateMeasurementsRequest"
+      responses:
+        "200":
+          description: Measurements updated
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/UpdateMeasurementsResponse"
+        "400":
+          description: Validation error
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorEnvelope"
+        "403":
+          description: The email does not match the one on the order
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorEnvelope"
+        "404":
+          description: Order not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/OrderNotFound"
+        "409":
+          description: Measurements are locked because the order is in production
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorEnvelope"
         "500":
           description: Server error
           content:
@@ -428,6 +511,81 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/NewNewsletterResponse"
+        "400":
+          description: Validation error
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorEnvelope"
+        "500":
+          description: Server error
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorEnvelope"
+  /capacity:
+    get:
+      operationId: getCapacity
+      tags: [capacity]
+      summary: Whether the studio is taking new bespoke commissions
+      description: >-
+        Reports whether the atelier's books are open for the capacity-gated
+        services (today, the bespoke commission — see `Service.capacityGated`),
+        so the intake form can offer the waitlist instead of a form that would
+        be refused. The same decision gates `POST /orders`, so the form and the
+        server can't disagree.
+
+        Closed means one of two things: the atelier paused intake by hand, or
+        the number of commissions in production has reached the studio's
+        capacity. Both are atelier-editable Studio Settings
+        (`COMMISSION_INTAKE`, `COMMISSION_CAPACITY`).
+
+        Deliberately degrade-safe and fail-OPEN: with no capacity configured, or
+        when the order count can't be read, this reports open. Turning a
+        customer away because of an outage is the worst way to be wrong.
+
+        Carries no order counts — how much work the studio is holding is the
+        studio's business, not the visitor's.
+      responses:
+        "200":
+          description: The current intake status
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CapacityStatus"
+        "500":
+          description: Server error
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorEnvelope"
+  /waitlist:
+    post:
+      operationId: joinWaitlist
+      tags: [waitlist]
+      summary: Join the waitlist for a bespoke commission
+      description: >-
+        Records a customer's request to be told when the studio's books reopen,
+        as a tagged row in the Notion contact-messages inbox (and a best-effort
+        Client CRM lead), and sends a best-effort acknowledgement. Accepted
+        whether or not intake is currently closed — a customer planning ahead is
+        not a mistake to reject.
+
+        This never creates an order and never holds a slot. The atelier answers
+        a waitlist entry by hand when capacity frees.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/NewWaitlistRequest"
+      responses:
+        "201":
+          description: Waitlist entry received
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/NewWaitlistResponse"
         "400":
           description: Validation error
           content:
@@ -1106,6 +1264,105 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/ErrorEnvelope"
+  /account/export:
+    get:
+      operationId: exportAccountData
+      tags: [account]
+      summary: Everything the studio holds about the signed-in customer
+      description: >-
+        Gathers every record keyed on the signed-in customer's email — their
+        custom and shop orders, upcoming appointments, Client CRM record, the
+        requests they have filed with the studio, the reviews they have written,
+        and whether they are on the marketing list — for a data-access (GDPR /
+        CCPA) request the customer can serve themselves. Read-only.
+
+
+        Every source degrades independently: one that can't be read is named in
+        `unavailable` rather than silently omitted, so a partial export is
+        visibly partial. Photographs the customer uploaded (reference images,
+        review photos) are NOT included — they live as image blocks on a Notion
+        page behind short-lived signed URLs, so they are requested from the
+        studio by email instead.
+      security:
+        - bearerAuth: []
+      responses:
+        "200":
+          description: The customer's data export
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AccountDataExport"
+        "401":
+          description: Not signed in (missing or expired session)
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorEnvelope"
+        "500":
+          description: Server error
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorEnvelope"
+  /account/deletion-requests:
+    post:
+      operationId: requestAccountDeletion
+      tags: [account]
+      summary: Ask the studio to delete the signed-in customer's data
+      description: >-
+        Files an erasure request for the signed-in customer. The request lands
+        as a tagged row in the studio's contact inbox for a person to action —
+        this endpoint deliberately deletes nothing itself, because orders,
+        invoices and payment records are business records the studio is required
+        to keep for a period, and what may be erased is a judgement rather than
+        a switch.
+
+
+        The one erasure it DOES perform immediately is the marketing list: the
+        customer is unsubscribed from the studio's Resend audience, which is
+        their own action to take and needs nobody's review.
+
+
+        Filing is idempotent while a request is open — a second press reports
+        the request already on file rather than adding a duplicate row to the
+        inbox.
+      security:
+        - bearerAuth: []
+      requestBody:
+        # Required even though every field in it is optional: the customer is
+        # identified by their session, so there is nothing the body MUST carry —
+        # but a request that may legally omit its body is one the server has to
+        # be ready to parse as absent, and `{}` costs the client nothing.
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/NewAccountDeletionRequest"
+      responses:
+        "201":
+          description: Deletion request received
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AccountDeletionRequestResult"
+        "400":
+          description: Validation error
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorEnvelope"
+        "401":
+          description: Not signed in (missing or expired session)
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorEnvelope"
+        "500":
+          description: Server error
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorEnvelope"
   /studio/availability:
     get:
       operationId: listStaffAvailability
@@ -1444,9 +1701,9 @@ paths:
       summary: Run an internal atelier tool
       description: >-
         Runs one of the atelier's internal actions — milestone reconciliation,
-        invoice line-item generation, an order status-change email, a
-        cancellation refund, a return refund, or a back-in-stock alert — from
-        the signed-in studio dashboard. Most were previously triggered by
+        invoice line-item generation, a flat service quote, an order
+        status-change email, a cancellation refund, a return refund, or a
+        back-in-stock alert — from the signed-in studio dashboard. Most were previously triggered by
         opening a link that carried a shared secret in its query string; the
         work is unchanged, the authorization is not: this requires the same
         Supabase access token as the rest of the studio surface, with the
@@ -2016,6 +2273,147 @@ paths:
           description: >-
             There is no Studio Settings database connected, so there is nowhere
             to write. The settings are environment-only until one is.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorEnvelope"
+        "500":
+          description: Server error
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorEnvelope"
+  /studio/appointment-staff:
+    get:
+      operationId: getAppointmentStaffing
+      tags: [studio]
+      summary: Which staff member offers which appointment type
+      description: >-
+        The studio's appointment staffing: for every bookable type, who
+        currently performs it, and who the built-in catalog would put on it if
+        nothing were set.
+
+
+        This is the routing the slot calculator uses — it only ever offers a
+        type's assigned staff — so it decides both which times a customer is
+        shown and which bookings the server will accept. Everything else about a
+        type (its length, where it can be held, whether it needs an order behind
+        it) is fixed in code and returned here as context, not as something to
+        edit.
+
+
+        Same staff gate as the rest of the studio surface: 401 when not signed
+        in, 404 when signed in but not staff, 403 when staff but not signed in
+        with Google.
+      security:
+        - bearerAuth: []
+      responses:
+        "200":
+          description: The staffing in force, with the catalog's defaults alongside
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AppointmentStaffing"
+        "401":
+          description: Not signed in (missing or expired session)
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorEnvelope"
+        "403":
+          description: >-
+            A studio account whose session wasn't established with Google (the
+            default policy).
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorEnvelope"
+        "404":
+          description: >-
+            Signed in, but not a studio account — the same answer a URL that
+            doesn't exist gets (see the other studio operations).
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/OrderNotFound"
+        "500":
+          description: Server error
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorEnvelope"
+    put:
+      operationId: setAppointmentStaffing
+      tags: [studio]
+      summary: Change who offers which appointment type
+      description: >-
+        Reassigns the staff on one or more appointment types. Only the types
+        named are changed; any left out keep the staffing they already have.
+
+
+        Every type must be left with at least one person on it: a type nobody is
+        assigned to still appears on the booking page and simply never offers a
+        time, which is the silent failure this editor exists to prevent.
+        Retiring a type is a code change, not an empty selection. A PERSON with
+        no types, on the other hand, is an ordinary way to say they aren't
+        taking appointments — their working hours stay on record and their
+        existing bookings can still be rescheduled.
+
+
+        Staffing that matches the built-in catalog exactly is stored as a blank
+        value, which reads as unset — so an atelier that has never differed from
+        the defaults still picks up a change to them, rather than being pinned
+        to whatever they were the day Save was first pressed.
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/AppointmentStaffingRequest"
+      responses:
+        "200":
+          description: The staffing as it now stands
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AppointmentStaffing"
+        "400":
+          description: >-
+            An appointment type we don't offer, a name the studio doesn't book,
+            or a type left with nobody on it. The message says which.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorEnvelope"
+        "401":
+          description: Not signed in (missing or expired session)
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorEnvelope"
+        "403":
+          description: >-
+            A studio account whose session wasn't established with Google (the
+            default policy).
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorEnvelope"
+        "404":
+          description: >-
+            The caller isn't a studio account, which answers identically to a
+            URL that doesn't exist by design (see the other studio operations).
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/OrderNotFound"
+        "409":
+          description: >-
+            There is no Studio Settings database connected, so there is nowhere
+            to write the staffing. It stays the catalog's (or the environment's)
+            until one is.
           content:
             application/json:
               schema:
@@ -2805,6 +3203,74 @@ components:
         note:
           type: string
           description: Optional free-text note explaining the requested change.
+    UpdateMeasurementsRequest:
+      type: object
+      required:
+        - email
+        - waist
+        - bust
+        - hips
+        - height
+        - bodyGirth
+        - measurementUnit
+      description: >-
+        New measurements to write onto an order in place. Every value is
+        required, unlike NewMeasurementChangeRequest: a change request is read
+        by a person who can reconcile it against what is on file, whereas this
+        replaces the stored set outright, and a partial write would leave the
+        atelier cutting to a mix of old and new numbers. There is deliberately
+        no "measure me at a fitting" branch here — that asks for a service
+        rather than changing a value, so it stays a change request.
+      properties:
+        email:
+          type: string
+          format: email
+          description: >-
+            The email to verify against the one on the order. A request whose
+            email doesn't match, or an order with no email stored to check
+            against, is refused.
+        waist:
+          type: number
+          exclusiveMinimum: 0
+        bust:
+          type: number
+          exclusiveMinimum: 0
+        hips:
+          type: number
+          exclusiveMinimum: 0
+        height:
+          type: number
+          exclusiveMinimum: 0
+        bodyGirth:
+          type: number
+          exclusiveMinimum: 0
+        measurementUnit:
+          type: string
+          enum: [inches, cm]
+        note:
+          type: string
+          description: >-
+            Optional free-text note for the atelier, recorded on the order's
+            revision trail and carried in the notification email.
+    UpdateMeasurementsResponse:
+      type: object
+      required:
+        - outcome
+      description: >-
+        What became of the edit. "applied" means the values are on the order
+        now and `measurements` carries the set as stored, so the caller renders
+        what was written rather than its own optimistic copy. "filed" means the
+        edit could not be written and was filed as a measurement-change request
+        for the atelier to apply by hand — the two states the customer's work is
+        never lost to: an order carrying no email to verify the edit against,
+        and an orders database that hasn't had the measurement properties added
+        yet. A filed edit carries no `measurements`, because nothing changed.
+      properties:
+        outcome:
+          type: string
+          enum: [applied, filed]
+        measurements:
+          $ref: "#/components/schemas/AccountMeasurements"
     NewMeasurementChangeResponse:
       type: object
       required:
@@ -3070,6 +3536,18 @@ components:
         category:
           type: string
           description: Fabric / Applique / Crystal / Packaging / Notions. Omitted when unset.
+        fabricTypes:
+          type: array
+          description: >-
+            Which fabric(s) this is — Satin, Power Mesh, Lining, … — in the
+            order the atelier holds them in Notion. A MULTI-select, so a
+            material can carry several (a power mesh that is also a lining);
+            the dashboard groups it under the FIRST and shows the rest as
+            labels, because a shopping list you might count twice is worse
+            than one where a secondary type is only a label. Omitted when
+            none are tagged, which is every non-fabric material.
+          items:
+            type: string
         stockOnHand:
           type: number
           description: >-
@@ -3084,6 +3562,14 @@ components:
             How far below the reorder point it is, rounded to two places. `0`
             when it has landed exactly on it — a reorder point is the level you
             buy AT, so that still counts. The list is ranked by this.
+        reorderStatus:
+          type: string
+          description: >-
+            The atelier's `Reorder Status` — Restockable / Deadstock / Made to
+            order / Discontinued / Unchecked. Omitted on the many rows that
+            carry none. On `lowStock` it is a lead-time note (`Made to order`
+            is a custom print or dye run); on `notRestockable` it is the reason
+            the material is there.
         link:
           type: string
           description: Where to buy it again, when the atelier recorded a link.
@@ -3104,6 +3590,18 @@ components:
           type: string
         category:
           type: string
+        fabricTypes:
+          type: array
+          description: >-
+            Which fabric(s) this is — Satin, Power Mesh, Lining, … — in the
+            order the atelier holds them in Notion. A MULTI-select, so a
+            material can carry several (a power mesh that is also a lining);
+            the dashboard groups it under the FIRST and shows the rest as
+            labels, because a shopping list you might count twice is worse
+            than one where a secondary type is only a label. Omitted when
+            none are tagged, which is every non-fabric material.
+          items:
+            type: string
         reason:
           type: string
           enum: [no-reorder-point, stock-unknown]
@@ -3251,12 +3749,35 @@ components:
             complete.
     MaterialsOverview:
       type: object
-      description: The materials panel — what to reorder, and what isn't being watched.
-      required: [lowStock, untracked, suppressedCount, totalCount, configured]
+      description: >-
+        The materials panel — what to reorder, what can't be reordered, and what
+        isn't being watched.
+      required:
+        [
+          lowStock,
+          notRestockable,
+          untracked,
+          suppressedCount,
+          totalCount,
+          configured,
+        ]
       properties:
         lowStock:
           type: array
-          description: At or below the reorder point, worst shortfall first.
+          description: >-
+            At or below the reorder point AND buyable again, worst shortfall
+            first. This is the reorder list, and the weekly digest reads it.
+          items:
+            $ref: "#/components/schemas/MaterialAlert"
+        notRestockable:
+          type: array
+          description: >-
+            At or below the reorder point but NOT buyable again — the atelier
+            marked it Deadstock or Discontinued. Deliberately kept OUT of
+            `lowStock` (and so out of the digest): there is no vendor to send
+            anyone to. Kept visible because running a one-of-a-kind fabric down
+            is exactly when a substitute has to be chosen. Same shape and same
+            worst-first ranking.
           items:
             $ref: "#/components/schemas/MaterialAlert"
         untracked:
@@ -3550,11 +4071,13 @@ components:
         - measurement
         - cancellation
         - return
+        - waitlist
         - newsletter
+        - data-deletion
         - other
       description: >-
         What a customer is asking for, DERIVED from the row's `Request type`
-        select rather than enumerated from it. Six kinds name the values the
+        select rather than enumerated from it. Eight kinds name the values the
         app writes; `other` is anything else — a blank select, or a type the
         atelier invented — so an unrecognized row appears in the queue asking
         to be looked at rather than vanishing from it.
@@ -3829,6 +4352,88 @@ components:
             before submitting. Implausibly fast submissions are dropped. Omit
             when the client can't measure it (treated as human).
     NewContactResponse:
+      type: object
+      required:
+        - success
+      properties:
+        success:
+          type: boolean
+    CapacityStatus:
+      type: object
+      required:
+        - open
+        - waitlistOpen
+        - message
+      description: >-
+        Whether the capacity-gated services are accepting orders, and the
+        wording to show when they aren't.
+      properties:
+        open:
+          type: boolean
+          description: >-
+            True when a capacity-gated service can be ordered. False means the
+            intake form should offer the waitlist instead.
+        waitlistOpen:
+          type: boolean
+          description: >-
+            Whether `POST /waitlist` should be offered. Today this is the
+            inverse of `open`, but it is stated rather than derived so the
+            atelier can later close the books without collecting names.
+        message:
+          type: string
+          description: >-
+            The customer-facing explanation to show when closed, from the
+            atelier-editable `COMMISSION_CLOSED_MESSAGE` setting. Empty when
+            open — there is nothing to explain.
+    NewWaitlistRequest:
+      type: object
+      required:
+        - name
+        - email
+      description: >-
+        A request to be told when the studio's books reopen. Deliberately
+        lighter than an order: enough to get back in touch and to know what the
+        piece is for.
+      properties:
+        name:
+          type: string
+          minLength: 1
+        email:
+          type: string
+          format: email
+        phone:
+          type: string
+        neededBy:
+          type: string
+          format: date
+          description: >-
+            When the customer needs the piece, if they know. Used by the atelier
+            to work the list in date order.
+        eventName:
+          type: string
+          description: >-
+            What the piece is for, in the customer's own words — a competition,
+            a recital, a showcase. Free text on purpose: the studio makes for
+            skating and dance alike and can't keep a list of every event its
+            customers work towards, but the customer knows theirs. Used only to
+            label the entry for the atelier — nothing resolves or validates it.
+        notes:
+          type: string
+          description: A line about the piece they have in mind. Optional.
+        website:
+          type: string
+          description: >-
+            Anti-spam honeypot. A hidden field that real visitors never fill; a
+            non-empty value marks the submission as spam and it is silently
+            dropped. Always send empty (or omit).
+        elapsedMs:
+          type: integer
+          minimum: 0
+          description: >-
+            Anti-spam timing signal: milliseconds the visitor spent on the form
+            before submitting. Implausibly fast submissions are dropped. Omit
+            when unmeasurable (treated as human).
+    NewWaitlistResponse:
       type: object
       required:
         - success
@@ -4112,6 +4717,7 @@ components:
         - detailsRequired
         - detailsLabel
         - detailsHelp
+        - capacityGated
       description: >-
         One service a custom order can be placed for, with the rules that decide
         what the intake form asks for. The flags are the contract's half of a
@@ -4152,6 +4758,14 @@ components:
         detailsHelp:
           type: string
           description: Placeholder / prompt for `description` on this service's form.
+        capacityGated:
+          type: boolean
+          description: >-
+            Whether this service is paused when the studio's books are closed
+            (see `GET /capacity`). True only for work that consumes the
+            atelier's making capacity — a bespoke commission. A piece the
+            customer already owns is quick work the studio keeps taking, so
+            alterations, rhinestoning and repairs are never gated.
     ServiceList:
       type: object
       required:
@@ -4586,6 +5200,215 @@ components:
             A standing personal discount code for this returning customer,
             present once they've earned it (a qualifying repeat order). Absent
             otherwise.
+    AccountDataExport:
+      type: object
+      description: >-
+        Everything the studio holds about the signed-in customer, gathered for a
+        data-access request. Identity is the email on the session, exactly as it
+        is for the dashboard, so this is the same lookups widened to every store
+        the app writes personal data into.
+
+
+        The Postgres layer is deliberately not a source of its own: it holds an
+        email-keyed discovery index (order numbers and page ids) derived from
+        the Notion orders already listed here, so exporting it separately would
+        repeat the same facts in a less readable form.
+      required:
+        - generatedAt
+        - email
+        - customOrders
+        - shopOrders
+        - appointments
+        - requests
+        - reviews
+        - marketing
+        - unavailable
+      properties:
+        generatedAt:
+          type: string
+          format: date-time
+          description: When this export was assembled.
+        email:
+          type: string
+          description: The signed-in email every record below was looked up by.
+        userId:
+          type: string
+          description: >-
+            The customer's sign-in account id (the Supabase user id). The only
+            thing the studio holds that is not keyed on the email.
+        customOrders:
+          type: array
+          description: The customer's custom (bespoke) orders, including the measurements on file.
+          items:
+            $ref: "#/components/schemas/AccountOrderSummary"
+        shopOrders:
+          type: array
+          description: The customer's ready-to-wear shop orders.
+          items:
+            $ref: "#/components/schemas/AccountShopOrderSummary"
+        appointments:
+          type: array
+          description: >-
+            The customer's upcoming appointments. Past bookings are not listed —
+            the calendar is only searched forward, the same read the dashboard
+            makes. Deliberately without the signed manage token the dashboard
+            carries: that token is a credential, and an export is a file people
+            forward.
+          items:
+            $ref: "#/components/schemas/AppointmentDetails"
+        client:
+          $ref: "#/components/schemas/ExportedClientRecord"
+        requests:
+          type: array
+          description: >-
+            Everything the customer has filed with the studio — inquiries,
+            back-in-stock asks, measurement changes, cancellations, returns,
+            waitlist entries and marketing opt-ins. Newest first.
+          items:
+            $ref: "#/components/schemas/ExportedRequest"
+        reviews:
+          type: array
+          description: The reviews the customer has written, whether or not they were published.
+          items:
+            $ref: "#/components/schemas/ExportedReview"
+        marketing:
+          $ref: "#/components/schemas/ExportedMarketing"
+        unavailable:
+          type: array
+          description: >-
+            The sources that could not be read for this export, by their
+            customer-facing name ("Custom orders", "Reviews"). Empty on a
+            complete export. Named rather than silently omitted: an export
+            missing a source without saying so is a wrong answer to a legal
+            request, not a slightly smaller one.
+          items:
+            type: string
+    ExportedClientRecord:
+      type: object
+      description: >-
+        The customer's Client CRM record — the studio's own contact card for
+        them. Absent when the CRM isn't configured, when the customer has no
+        record, or when the CRM couldn't be read (in which case it is named in
+        `unavailable`).
+      properties:
+        name:
+          type: string
+        email:
+          type: string
+        phone:
+          type: string
+        status:
+          type: string
+          description: How the studio files them (Lead, Active, …).
+        lastContact:
+          type: string
+          description: The date of the studio's last recorded contact (YYYY-MM-DD).
+        referralCode:
+          type: string
+          description: The customer's own shareable referral code.
+        referredByEmail:
+          type: string
+          description: The email of the customer who referred them, when they used a code.
+        firstPaidOrder:
+          type: string
+          description: The order number of their first paid order, once they have one.
+    ExportedRequest:
+      type: object
+      description: >-
+        One row the customer filed in the studio's shared inbox. A narrower
+        projection than the studio queue's — the internal Notion link and the
+        tool that actions it are staff-facing and stay on the server.
+      required: [kind, subject, state]
+      properties:
+        kind:
+          $ref: "#/components/schemas/StudioRequestKind"
+        rawType:
+          type: string
+          description: The request type exactly as the studio's inbox holds it, when set.
+        subject:
+          type: string
+        message:
+          type: string
+        item:
+          type: string
+        size:
+          type: string
+        orderNumber:
+          type: string
+        state:
+          $ref: "#/components/schemas/StudioRequestState"
+        submittedAt:
+          type: string
+          format: date-time
+    ExportedReview:
+      type: object
+      description: >-
+        One review the customer wrote. The photographs attached to it are not
+        included — see the endpoint description.
+      required: [rating, comment, consentToPublish, status]
+      properties:
+        rating:
+          type: integer
+          minimum: 1
+          maximum: 5
+        comment:
+          type: string
+        customerName:
+          type: string
+          description: How they asked to be credited, when they gave a name.
+        orderNumber:
+          type: string
+        consentToPublish:
+          type: boolean
+        status:
+          $ref: "#/components/schemas/ReviewModerationStatus"
+        submittedAt:
+          type: string
+          format: date-time
+    ExportedMarketing:
+      type: object
+      description: Where the customer stands on the studio's marketing mailing list.
+      required: [status]
+      properties:
+        status:
+          type: string
+          enum: [subscribed, absent, unknown]
+          description: >-
+            `subscribed` — on the list; `absent` — not on it; `unknown` — the
+            list isn't configured or couldn't be reached, which is reported
+            rather than rendered as "not on it".
+    NewAccountDeletionRequest:
+      type: object
+      description: >-
+        An erasure request. The customer is identified by their session, so the
+        body carries only optional context for the person who will action it.
+      properties:
+        note:
+          type: string
+          maxLength: 2000
+          description: >-
+            Anything the customer wants the studio to know — which records they
+            mean, or that an order should be finished first.
+    AccountDeletionRequestResult:
+      type: object
+      description: What the studio did with the erasure request, said plainly.
+      required: [received, alreadyRequested, marketing]
+      properties:
+        received:
+          type: boolean
+        alreadyRequested:
+          type: boolean
+          description: >-
+            True when a request from this customer was already open, so no
+            second row was filed. The marketing opt-out is still applied.
+        marketing:
+          type: string
+          enum: [unsubscribed, absent, unavailable]
+          description: >-
+            The one erasure performed on the spot. `unsubscribed` — removed from
+            the marketing list; `absent` — they were not on it; `unavailable` —
+            the list isn't configured or couldn't be reached, so the studio does
+            it by hand.
     AccountOrderState:
       type: string
       enum:
@@ -4625,6 +5448,15 @@ components:
             the atelier sets one.
         measurements:
           $ref: "#/components/schemas/AccountMeasurements"
+        measurementsLocked:
+          type: boolean
+          description: >-
+            True once the order has reached the stage at which measurements are
+            frozen (MEASUREMENT_LOCK_FROM_STAGE), mirroring the same field on
+            OrderStatus. The dashboard offers its in-place edit only when this is
+            false, so the affordance and the server's own gate can't disagree.
+            Absent on a response built before the field existed, which reads as
+            not locked.
     AccountShopOrderSummary:
       type: object
       description: A ready-to-wear shop order as shown on the account dashboard.
@@ -4735,6 +5567,116 @@ components:
         - Friday
         - Saturday
         - Sunday
+    AppointmentStaffingType:
+      type: object
+      description: >-
+        One bookable appointment type, with the staff who currently perform it.
+        Everything but `staff` is fixed in code and shown for context — a type's
+        length, where it can be held, and whether it needs an order behind it
+        are not things the dashboard changes.
+      required:
+        [id, name, description, durationMinutes, locations, staff, defaultStaff]
+      properties:
+        id:
+          type: string
+          description: The type's stable id, as used when saving staffing.
+        name:
+          type: string
+          description: How the type reads to a customer, e.g. "Fitting & Measurements".
+        description:
+          type: string
+        durationMinutes:
+          type: integer
+        locations:
+          type: array
+          description: Where this type can be held.
+          items:
+            type: string
+            enum: [in-person, virtual]
+        staff:
+          type: array
+          description: >-
+            Who offers it right now — the staffing actually in force, which is
+            the set the slot calculator draws from. Never empty.
+          items:
+            type: string
+        defaultStaff:
+          type: array
+          description: >-
+            Who the built-in catalog assigns to it, so the editor can show what
+            resetting would mean and mark a type that has been moved away from
+            it.
+          items:
+            type: string
+        requiresOrder:
+          type: boolean
+          description: >-
+            Present and true when this type can only be booked against an
+            existing order — worth knowing when reassigning it, since it is not
+            a type new customers can reach.
+    AppointmentStaffing:
+      type: object
+      description: >-
+        The studio's appointment staffing: every bookable type, who performs it,
+        and the roster it may be assigned from.
+      required: [configured, staff, types, usingDefaults]
+      properties:
+        configured:
+          type: boolean
+          description: >-
+            Whether there is a Studio Settings database to write to. False means
+            the staffing shown is real but can only be changed in the
+            environment, and a save answers 409.
+        staff:
+          type: array
+          description: >-
+            Everyone the studio books appointments with. Deliberately the whole
+            roster, not only the people currently assigned to something — a
+            person with no types is how the atelier says they aren't taking
+            appointments at the moment.
+          items:
+            type: string
+        types:
+          type: array
+          items:
+            $ref: "#/components/schemas/AppointmentStaffingType"
+        usingDefaults:
+          type: boolean
+          description: >-
+            True when the staffing in force is the catalog's own, i.e. nothing
+            is stored and a future change to the defaults would be picked up.
+    AppointmentStaffingRequest:
+      type: object
+      description: >-
+        The staffing to save. Only the types named are changed; any left out
+        keep what they have.
+      required: [types]
+      properties:
+        types:
+          type: array
+          minItems: 1
+          maxItems: 50
+          items:
+            type: object
+            required: [id, staff]
+            properties:
+              id:
+                type: string
+                minLength: 1
+                maxLength: 80
+                description: An appointment type's id, as returned by the read.
+              staff:
+                type: array
+                minItems: 1
+                maxItems: 50
+                description: >-
+                  Who should offer it. Must name people the studio books, and
+                  must not be empty — a type with nobody on it never offers a
+                  time and never says why.
+                items:
+                  type: string
+                  minLength: 1
+                  maxLength: 120
     StaffAvailabilityEntry:
       type: object
       description: >-
@@ -4864,6 +5806,10 @@ components:
           revenue,
           payments,
           topItems,
+          topItemCoverage,
+          channels,
+          consignment,
+          capacity,
         ]
       properties:
         generatedAt:
@@ -4890,12 +5836,66 @@ components:
         topItems:
           type: array
           description: >-
-            The shop's best sellers, most-ordered first. Empty when no shop
-            order carries its inventory relation (legacy orders, or the
-            relation-links flag being off) — item-level figures are only as good
-            as that link.
+            The shop's best sellers, most-ordered first, across every sales
+            channel. Empty when no shop order carries its inventory relation
+            (legacy orders, hand-filed ones, or the relation-links flag being
+            off) — item-level figures are only as good as that link, and
+            `topItemCoverage` says how many orders it misses.
           items:
             $ref: "#/components/schemas/StudioTopItem"
+        topItemCoverage:
+          $ref: "#/components/schemas/StudioTopItemCoverage"
+        channels:
+          type: array
+          description: >-
+            Trade by sales channel over the same trailing window the revenue
+            series covers, in the atelier's own option order. A channel with no
+            orders is included as a nought, so "nothing from Etsy this year" is
+            readable; a channel no longer on the list but present on an order
+            follows them, and untagged orders come last as an empty `channel`.
+          items:
+            $ref: "#/components/schemas/StudioChannelSales"
+        consignment:
+          $ref: "#/components/schemas/StudioConsignment"
+        capacity:
+          $ref: "#/components/schemas/StudioCapacity"
+    StudioCapacity:
+      type: object
+      description: >-
+        The seasonal-capacity gate as the studio sees it — whether the books are
+        open, why, and the count behind it. The public `GET /capacity` carries
+        the decision but deliberately none of these numbers; how much work the
+        studio is holding is the studio's own business.
+      required: [open, reason, limit]
+      properties:
+        open:
+          type: boolean
+          description: Whether a bespoke commission can currently be ordered.
+        reason:
+          type: string
+          enum:
+            - unlimited
+            - under-capacity
+            - at-capacity
+            - forced-open
+            - forced-closed
+            - unknown
+          description: >-
+            What decided it. `unlimited` means no capacity is configured;
+            `forced-*` means the atelier's manual switch overrode the count;
+            `unknown` means the count couldn't be read and the books stayed open
+            rather than closing on a bad read.
+        limit:
+          type: integer
+          description: >-
+            The configured `COMMISSION_CAPACITY`. `0` means no limit is being
+            enforced.
+        inProduction:
+          type: integer
+          description: >-
+            How many capacity-gated orders are neither delivered nor cancelled.
+            Absent when the count wasn't read — which is not the same as zero,
+            and the panel says so rather than showing a nought.
     StudioPipeline:
       type: object
       description: >-
@@ -5008,8 +6008,11 @@ components:
         shopRevenue:
           type: number
           description: >-
-            Dollars taken on shop orders placed that month (order totals,
-            including shipping and tax; cancelled orders excluded).
+            Dollars taken on shop orders placed that month, across every sales
+            channel (order totals, including shipping and tax; cancelled orders
+            excluded). The month comes from the order's own Order Date, falling
+            back to when its row was created — so an Etsy receipt typed up weeks
+            later still lands in the month it sold.
         shopOrders:
           type: integer
           description: Shop orders placed that month (cancelled excluded).
@@ -5070,6 +6073,119 @@ components:
         unpaidInvoiceCount:
           type: integer
           description: Invoices with money still outstanding.
+    StudioChannelSales:
+      type: object
+      description: >-
+        One sales channel's trade. The atelier files Etsy receipts, skate-shop
+        sales and word-of-mouth orders into the same database the website writes
+        to, so this is what separates them.
+      required: [channel, orders, revenue]
+      properties:
+        channel:
+          type: string
+          description: >-
+            The `Sales Channel` option. EMPTY means the orders carry no channel
+            at all — rows filed by hand and never tagged. It is not a channel and
+            must be labelled as a gap, not credited to one.
+        orders:
+          type: integer
+          description: Orders in the window (cancelled excluded).
+        revenue:
+          type: number
+          description: Dollars taken on those orders, including shipping and tax.
+    StudioTopItemCoverage:
+      type: object
+      description: >-
+        How much of the window's trade the best-seller list can see. Item-level
+        figures come from each order's inventory relation, which a hand-filed
+        order usually lacks — without this, an empty list reads as "nothing
+        sells" when it means "nothing is linked".
+      required: [counted, unlinked]
+      properties:
+        counted:
+          type: integer
+          description: Orders whose pieces are counted in `topItems`.
+        unlinked:
+          type: integer
+          description: Orders left out, because the row links no inventory row.
+    StudioConsignment:
+      type: object
+      description: >-
+        The finished pieces the studio has out at the skate shop, and what it has
+        been paid for them. A consignment sale is not an order — nobody knows a
+        piece sold until the placement is settled, and the money that arrives is
+        the studio's share of a shelf price — so it is reported apart from the
+        order figures and never summed into them.
+      required:
+        [
+          configured,
+          openPlacements,
+          atShopUnits,
+          atShopRetail,
+          settledUnits,
+          settledPayout,
+          payoutUnknownPlacements,
+          items,
+        ]
+      properties:
+        configured:
+          type: boolean
+          description: >-
+            False when no consignment database is wired up. The panel says so
+            rather than showing an empty shelf, which would read as "nothing is
+            out on consignment".
+        unreachable:
+          type: boolean
+          description: >-
+            The database id is set but Notion cannot see it — never shared with
+            the integration, or the wrong id. Same kind of state as unset: a
+            human has to clear it.
+        openPlacements:
+          type: integer
+          description: Placements delivered and not yet settled.
+        atShopUnits:
+          type: integer
+          description: Units still on the shop's shelf across those placements.
+        atShopRetail:
+          type: number
+          description: >-
+            What those units would fetch at their shelf price. RETAIL, not the
+            studio's share: nothing has sold, so there is no payout to quote —
+            this is the value of stock standing somewhere else.
+        settledUnits:
+          type: integer
+          description: Units sold across placements settled in the window.
+        settledPayout:
+          type: number
+          description: >-
+            The studio's share of those sales, read off the atelier's own payout
+            formula rather than derived from a split rate held in the app.
+        payoutUnknownPlacements:
+          type: integer
+          description: >-
+            Settled placements that sold something but whose payout formula
+            produced no number, so their money is missing from `settledPayout`.
+            Named rather than silently absent.
+        items:
+          type: array
+          description: >-
+            Pieces out on consignment, most on the shelf first. A piece whose
+            inventory row can't be resolved is left out of this list but stays in
+            the totals above.
+          items:
+            $ref: "#/components/schemas/StudioConsignmentItem"
+    StudioConsignmentItem:
+      type: object
+      required: [name, atShop, sold]
+      properties:
+        name:
+          type: string
+        atShop:
+          type: integer
+          description: Units still on the shop's shelf.
+        sold:
+          type: integer
+          description: Units sold and settled for in the window.
     StudioTopItem:
       type: object
       description: >-
@@ -5095,8 +6211,8 @@ components:
           maxLength: 64
           description: >-
             The order the tool acts on — `ORD-…` for a custom order, `SHP-…` for
-            a shop order. Required by `invoice-lines`, `status-email` and the
-            two refunds; `milestones` sweeps the whole pipeline and
+            a shop order. Required by `invoice-lines`, `quote`, `status-email`
+            and the two refunds; `milestones` sweeps the whole pipeline and
             `restock-alert` takes an optional `item` instead.
         force:
           type: boolean
@@ -5108,9 +6224,19 @@ components:
           type: number
           minimum: 0
           description: >-
-            `return-refund` only. The TARGET total to have refunded on the
-            order, in dollars — not an increment, so a repeated run can't
-            double-refund. Omit to refund in full.
+            Dollars, read by two tools. For `return-refund` it is the TARGET
+            total to have refunded on the order — not an increment, so a
+            repeated run can't double-refund; omit to refund in full. For
+            `quote` it is the price of the work and is REQUIRED, since a quote
+            with no amount is nothing to pay.
+        description:
+          type: string
+          maxLength: 200
+          description: >-
+            `quote` only, and optional even there. What the work is, as the
+            customer should read it on their invoice — "Re-stone bodice",
+            "Replace shoulder elastic". Omitted ⇒ the line is named after the
+            order's service ("Repair", "Rhinestoning", "Alterations").
         item:
           type: string
           maxLength: 200
@@ -5163,6 +6289,7 @@ components:
       enum:
         - milestones
         - invoice-lines
+        - quote
         - status-email
         - cancellation-refund
         - return-refund

@@ -15,6 +15,8 @@ export interface UntrackedMaterial {
   id: string;
   name: string;
   category?: string;
+  /** Which fabric(s) this is — Satin, Power Mesh, Lining, … — in the order the atelier holds them in Notion. A MULTI-select, so a material can carry several (a power mesh that is also a lining); the dashboard groups it under the FIRST and shows the rest as labels, because a shopping list you might count twice is worse than one where a secondary type is only a label. Omitted when none are tagged, which is every non-fabric material. */
+  fabricTypes?: string[];
   /** `no-reorder-point` — `Minimum Stock` is unset, so nothing can trip. `stock-unknown` — the stock formula produced no number (typically a material with no intake lines recorded yet). */
   reason: UntrackedMaterialReason;
   /** Present only for `no-reorder-point`, where the stock IS known and only the threshold is missing. */

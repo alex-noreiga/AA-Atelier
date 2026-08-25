@@ -26,4 +26,6 @@ export interface Service {
   detailsLabel: string;
   /** Placeholder / prompt for `description` on this service's form. */
   detailsHelp: string;
+  /** Whether this service is paused when the studio's books are closed (see `GET /capacity`). True only for work that consumes the atelier's making capacity — a bespoke commission. A piece the customer already owns is quick work the studio keeps taking, so alterations, rhinestoning and repairs are never gated. */
+  capacityGated: boolean;
 }

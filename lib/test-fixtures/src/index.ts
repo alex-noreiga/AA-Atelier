@@ -218,9 +218,10 @@ export function colorList(overrides: Partial<ColorList> = {}): ColorList {
 /**
  * The `GET /api/services` catalog — the studio's intake services and, per
  * service, what the order form asks for. Trimmed to two entries that differ in
- * every flag (a commission that needs measurements and colours but no brief; a
- * repair that needs the brief and neither of the others), which is what the
- * order form's branching actually turns on.
+ * every flag (a commission that needs measurements and colours but no brief and
+ * is paused when the books close; a repair that needs the brief, neither of the
+ * others, and keeps taking orders), which is what the order form's branching
+ * actually turns on.
  */
 export function serviceList(overrides: Partial<ServiceList> = {}): ServiceList {
   return {
@@ -234,6 +235,7 @@ export function serviceList(overrides: Partial<ServiceList> = {}): ServiceList {
         detailsRequired: false,
         detailsLabel: "Description",
         detailsHelp: "Tell us about your vision...",
+        capacityGated: true,
       },
       {
         id: "repairs",
@@ -244,6 +246,7 @@ export function serviceList(overrides: Partial<ServiceList> = {}): ServiceList {
         detailsRequired: true,
         detailsLabel: "The piece and what needs repairing",
         detailsHelp: "Tell us what's happened to it...",
+        capacityGated: false,
       },
     ],
     ...overrides,

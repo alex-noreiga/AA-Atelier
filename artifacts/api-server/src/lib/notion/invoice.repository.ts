@@ -15,6 +15,7 @@ import { scanDatabase } from "./scan.js";
 import {
   LINE_ITEM_INVOICE_RELATION_PROPERTY,
   INVOICE_ID_PROPERTY,
+  INVOICE_READY_PROPERTY,
   PAYMENT_STAGES,
   PAYMENT_STAGE_REMINDER_FIELDS,
   stagePaymentFields,
@@ -326,6 +327,42 @@ export async function setInvoiceTitle(
     const errorText = await response.text();
     throw new Error(
       `Notion invoice title update failed with status ${response.status}: ${errorText}`,
+    );
+  }
+}
+
+/**
+ * Tick (or untick) an invoice's `Invoice Ready` checkbox — the gate that decides
+ * whether the customer is shown the itemized invoice and allowed to pay the
+ * balance.
+ *
+ * Written by the flat-quote tool only (`services/quote.service.ts`), which is
+ * the one path that produces a complete invoice in a single press: it writes the
+ * priced line AND knows the invoice is now finished, so leaving the atelier to
+ * tick a box in Notion afterwards would just be a step to forget. The costing
+ * generator deliberately does NOT call this — an itemized commission is reviewed
+ * before it goes out, and `Invoice Ready` is where that review is recorded.
+ */
+export async function setInvoiceReady(
+  invoicePageId: string,
+  ready: boolean,
+  client: NotionClient = getInvoicesNotionClient(),
+): Promise<void> {
+  assertConfigured(client, "NOTION_INVOICES_DATABASE_ID");
+
+  const response = await client.fetch(`/v1/pages/${invoicePageId}`, {
+    method: "PATCH",
+    body: JSON.stringify({
+      properties: {
+        [INVOICE_READY_PROPERTY]: { checkbox: ready },
+      },
+    }),
+  });
+
+  if (!response.ok) {
+    const errorText = await response.text();
+    throw new Error(
+      `Notion invoice ready update failed with status ${response.status}: ${errorText}`,
     );
   }
 }

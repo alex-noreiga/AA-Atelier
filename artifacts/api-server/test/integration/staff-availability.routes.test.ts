@@ -140,7 +140,7 @@ describe("GET /api/studio/availability", () => {
         locations: ["in-person"],
       },
     ]);
-    expect(res.body.staff).toEqual(["Alayna", "Alexandra"]);
+    expect(res.body.staff).toEqual(["Alexandra", "Alayna"]);
   });
 });
 

@@ -54,7 +54,7 @@ export function NotifyDialog({ item, size, trigger }: NotifyDialogProps) {
   const [submitted, setSubmitted] = useState(false);
   const { toast } = useToast();
 
-  const label = size ? `${item} — ${size}` : item;
+  const label = size ? `${item} · ${size}` : item;
 
   const createRequest = useCreateBackInStockRequest({
     mutation: {

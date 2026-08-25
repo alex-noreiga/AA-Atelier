@@ -53,6 +53,38 @@ export const SHOP_ORDER_VOIDED_PROPERTY = "Voided"; // checkbox
 // (writing a property that doesn't exist 400s the PATCH). Absent ⇒ 0 / false.
 export const SHOP_ORDER_REFUNDED_PROPERTY = "Refunded Amount"; // number (dollars)
 export const SHOP_ORDER_RETURN_PROCESSED_PROPERTY = "Return Processed"; // checkbox
+// Which sales channel the order came from. The atelier has always filed Etsy
+// receipts, skate-shop sales and word-of-mouth orders into this same database by
+// hand, so a channel-blind read of it reports every one of them as if the
+// website had taken the money. The app stamps its OWN channel here for the
+// converse reason: without it, the orders the app writes are the ones with no
+// channel, and the studio's figures could attribute the website's takings to
+// nothing at all.
+//
+// Additive, and read back by the studio analytics — see
+// `services/studio-analytics.service.ts`. The option list itself is the
+// atelier's (they can add a channel without a deploy); only the one value the
+// app writes is named here.
+export const SHOP_ORDER_CHANNEL_PROPERTY = "Sales Channel"; // select
+/**
+ * The `Sales Channel` option an order the app took belongs to.
+ *
+ * A TARGETED BUSINESS RULE naming one live Notion option value, like
+ * `STATUS_IN_STOCK` and `REVIEW_STATUS_PUBLISHED` — rename this option in Notion
+ * and it must change here too, or every website order starts writing a channel
+ * Notion silently drops and the figures lose the online store. Everything reads
+ * degrade-safely if that happens (an order with no channel is reported as
+ * unattributed, never quietly folded into another channel).
+ */
+export const SHOP_ORDER_ONLINE_STORE_CHANNEL = "Online Store";
+// When the order was placed. Notion's own page-creation time is the right answer
+// for an order the app wrote — the two happen within a second of each other —
+// but it is badly wrong for the ones typed in by hand, where it records the
+// evening the atelier caught up on paperwork rather than the day of the sale.
+// So every order carries a real date: the app stamps the moment it was paid, the
+// atelier fills theirs in, and the figures read one property for all of them
+// (falling back to the page's creation time when it's blank).
+export const SHOP_ORDER_DATE_PROPERTY = "Order Date"; // date
 // Carrier tracking, filled in by the atelier once the order ships. All three are
 // additive and optional (absent until set): the number is what's shown to the
 // customer, the URL makes it a clickable link, and the carrier is a display
@@ -93,6 +125,25 @@ export function generateShopOrderNumber(): string {
  * Stripe payment lands the order; the atelier advances it from there.
  */
 export const SHOP_ORDER_PAID_STATUS = "Payment Confirmed";
+
+/**
+ * When the checkout was paid, as an ISO instant for the `Order Date` property.
+ *
+ * Stripe stamps `created` (unix seconds) on the session, which is the moment the
+ * customer started checkout — within a minute or two of paying, and the only
+ * time the session itself carries. A session with no usable `created` falls back
+ * to now, which is when the webhook is being handled: near enough, and never
+ * absent, since a blank date would send the order back to being dated by
+ * whenever Notion happened to create the page.
+ */
+function paidAt(session: Stripe.Checkout.Session): string {
+  const seconds = session.created;
+  if (typeof seconds === "number" && Number.isFinite(seconds)) {
+    const at = new Date(seconds * 1000);
+    if (!Number.isNaN(at.getTime())) return at.toISOString();
+  }
+  return new Date().toISOString();
+}
 
 /** Stripe amounts are integer minor units (cents); Notion "Total" is dollars. */
 function toDollars(amountInCents: number | null | undefined): number {
@@ -207,6 +258,16 @@ export function buildShopOrderProperties(
     [SHOP_ORDER_STATUS_PROPERTY]: {
       status: { name: SHOP_ORDER_PAID_STATUS },
     },
+    // This order came through the website. Written unconditionally, so the
+    // atelier never has to remember to tag one — and so a blank channel means
+    // one thing only: a row somebody typed and didn't file.
+    [SHOP_ORDER_CHANNEL_PROPERTY]: {
+      select: { name: SHOP_ORDER_ONLINE_STORE_CHANNEL },
+    },
+    // A full instant rather than a calendar date: the studio's own timezone
+    // decides which day a late-evening order belongs to, and that decision
+    // belongs where the figures are read, not here.
+    [SHOP_ORDER_DATE_PROPERTY]: { date: { start: paidAt(session) } },
   };
 
   if (orderNumber) {

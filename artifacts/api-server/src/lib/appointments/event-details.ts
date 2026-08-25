@@ -6,12 +6,12 @@
 // `extendedProperties` stamped at booking (see `calendar.repository.ts`).
 
 import {
-  getAppointmentType,
   isAppointmentLocation,
   LOCATION_LABELS,
   type AppointmentLocation,
   type AppointmentTypeDef,
 } from "./catalog.js";
+import { resolveAppointmentType } from "./routing.js";
 import { appointmentTimezone } from "./settings.js";
 import {
   EVENT_PROP_TYPE,
@@ -43,7 +43,7 @@ export function resolveEventType(
   event: CalendarEventDetails,
 ): AppointmentTypeDef | undefined {
   const typeId = event.extended[EVENT_PROP_TYPE];
-  return typeId ? getAppointmentType(typeId) : undefined;
+  return typeId ? resolveAppointmentType(typeId) : undefined;
 }
 
 export function locationFromEvent(

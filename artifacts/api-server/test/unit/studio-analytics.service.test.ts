@@ -9,9 +9,20 @@ import {
 import type { OrderAnalyticsRecord } from "../../src/lib/notion/orders.schema.js";
 import type { ShopOrderAnalyticsRecord } from "../../src/lib/notion/shop-orders.repository.js";
 import type { InvoiceAnalyticsRecord } from "../../src/lib/notion/invoice.schema.js";
+import {
+  summarizeConsignment,
+  type ConsignmentOverview,
+} from "../../src/services/consignment.service.js";
+
+/** A shelf with nothing on it, wired up. Built through the real summarizer so
+ * the fixture can't drift from the shape the service actually returns. */
+function emptyConsignment(): ConsignmentOverview {
+  return { ...summarizeConsignment([]), configured: true };
+}
 
 const STAGES = ["Consultation", "Design", "Cutting/Pinning", "Delivered"];
 const SHOP_STATUSES = ["Payment Confirmed", "Shipped", "Delivered"];
+const SHOP_CHANNELS = ["Etsy", "Online Store", "Skate Shop"];
 /** A fixed "now" so every window in these tests is deterministic. Read in UTC,
  * so today is 2026-08-18, the week cutoff 08-24 and the month cutoff 09-16. */
 const NOW = new Date("2026-08-18T12:00:00.000Z");
@@ -30,6 +41,9 @@ function order(
     createdTime: "2026-08-01T10:00:00.000Z",
     cancelled: false,
     rush: false,
+    // The bespoke commission's display name — the value a real order carries,
+    // and the one the capacity count reads as gated.
+    service: "Bespoke Commission",
     ...overrides,
   };
 }
@@ -43,6 +57,11 @@ function shopOrder(
     status: "Shipped",
     cancelled: false,
     createdTime: "2026-08-02T10:00:00.000Z",
+    // Blank by default, so the fixture is a plainly hand-filed row and a test
+    // that cares about attribution has to say which channel it means.
+    orderDate: "",
+    channel: "",
+    sessionId: "",
     itemIds: [],
     ...overrides,
   };
@@ -67,6 +86,8 @@ function aggregate(input: Partial<StudioAnalyticsInput> = {}) {
     stages: STAGES,
     shopOrders: [],
     shopStatuses: SHOP_STATUSES,
+    shopChannels: SHOP_CHANNELS,
+    consignment: emptyConsignment(),
     invoices: [],
     itemNames: new Map(),
     now: NOW,
@@ -419,6 +440,217 @@ describe("aggregateStudioAnalytics — best sellers", () => {
       shopOrders: ids.map((id) => shopOrder({ itemIds: [id] })),
     });
     expect(topItems).toHaveLength(TOP_ITEMS_LIMIT);
+  });
+});
+
+describe("aggregateStudioAnalytics — sales channels", () => {
+  it("lays out every live channel, including ones with no trade", () => {
+    const { channels } = aggregate({
+      shopOrders: [
+        shopOrder({ channel: "Etsy", total: 60, orderDate: "2026-08-02" }),
+        shopOrder({ channel: "Etsy", total: 40, orderDate: "2026-08-03" }),
+        shopOrder({
+          channel: "Online Store",
+          total: 25,
+          orderDate: "2026-08-04",
+        }),
+      ],
+    });
+
+    // Skate Shop sold nothing and is still listed — a channel that went quiet
+    // must be readable as a nought, not by its absence.
+    expect(channels).toEqual([
+      { channel: "Etsy", orders: 2, revenue: 100 },
+      { channel: "Online Store", orders: 1, revenue: 25 },
+      { channel: "Skate Shop", orders: 0, revenue: 0 },
+    ]);
+  });
+
+  it("credits an untagged order the app took to the online store", () => {
+    // Every order placed before the channel stamp shipped is in this state:
+    // no `Sales Channel`, but a Stripe session that proves the app wrote it.
+    const { channels } = aggregate({
+      shopOrders: [
+        shopOrder({
+          channel: "",
+          sessionId: "cs_test_1",
+          total: 30,
+          orderDate: "2026-08-05",
+        }),
+      ],
+    });
+
+    expect(channels.find((c) => c.channel === "Online Store")).toEqual({
+      channel: "Online Store",
+      orders: 1,
+      revenue: 30,
+    });
+    expect(channels.some((c) => c.channel === "")).toBe(false);
+  });
+
+  it("reports a hand-filed untagged order as unattributed, last", () => {
+    const { channels } = aggregate({
+      shopOrders: [
+        shopOrder({
+          channel: "",
+          sessionId: "",
+          total: 15,
+          orderDate: "2026-08-06",
+        }),
+      ],
+    });
+
+    expect(channels[channels.length - 1]).toEqual({
+      channel: "",
+      orders: 1,
+      revenue: 15,
+    });
+  });
+
+  it("keeps a channel the atelier has since removed from the option list", () => {
+    const { channels } = aggregate({
+      shopOrders: [
+        shopOrder({
+          channel: "Craft Fair",
+          total: 80,
+          orderDate: "2026-08-07",
+        }),
+      ],
+    });
+
+    // Money that was taken was taken, whatever the list says today — it follows
+    // the live options rather than being dropped.
+    expect(channels.map((c) => c.channel)).toEqual([
+      "Etsy",
+      "Online Store",
+      "Skate Shop",
+      "Craft Fair",
+    ]);
+    expect(channels.find((c) => c.channel === "Craft Fair")?.revenue).toBe(80);
+  });
+
+  it("excludes cancelled orders and anything outside the window", () => {
+    const { channels } = aggregate({
+      shopOrders: [
+        shopOrder({
+          channel: "Etsy",
+          total: 50,
+          orderDate: "2026-08-02",
+          cancelled: true,
+        }),
+        // Thirteen months back — outside the trailing window.
+        shopOrder({ channel: "Etsy", total: 90, orderDate: "2025-07-02" }),
+      ],
+    });
+
+    expect(channels.find((c) => c.channel === "Etsy")).toEqual({
+      channel: "Etsy",
+      orders: 0,
+      revenue: 0,
+    });
+  });
+});
+
+describe("aggregateStudioAnalytics — when an order happened", () => {
+  it("attributes a hand-filed order to its Order Date, not its row's age", () => {
+    // The Etsy receipt sold in June and was typed up in August. Dating it by
+    // the Notion page would report another shop's June trade as August's.
+    const { revenue } = aggregate({
+      shopOrders: [
+        shopOrder({
+          total: 75,
+          orderDate: "2026-06-11",
+          createdTime: "2026-08-18T09:00:00.000Z",
+        }),
+      ],
+    });
+
+    const june = revenue.find((m) => m.month === "2026-06");
+    const august = revenue.find((m) => m.month === "2026-08");
+    expect(june?.shopRevenue).toBe(75);
+    expect(august?.shopRevenue).toBe(0);
+  });
+
+  it("takes a date-only value as written, without pushing it through a zone", () => {
+    // Parsed as an instant and read in Chicago, 2026-09-01 lands on August 31 —
+    // a sale silently moved into the previous month's figures.
+    const { revenue } = aggregate({
+      timeZone: "America/Chicago",
+      now: new Date("2026-09-15T12:00:00.000Z"),
+      shopOrders: [shopOrder({ total: 50, orderDate: "2026-09-01" })],
+    });
+
+    expect(revenue.find((m) => m.month === "2026-09")?.shopRevenue).toBe(50);
+    expect(revenue.find((m) => m.month === "2026-08")?.shopRevenue).toBe(0);
+  });
+
+  it("falls back to the row's creation time when no Order Date is set", () => {
+    const { revenue } = aggregate({
+      shopOrders: [
+        shopOrder({
+          total: 20,
+          orderDate: "",
+          createdTime: "2026-07-04T10:00:00.000Z",
+        }),
+      ],
+    });
+
+    expect(revenue.find((m) => m.month === "2026-07")?.shopRevenue).toBe(20);
+  });
+
+  it("converts a full instant through the studio's timezone", () => {
+    // 9pm on August 31 in Chicago is September 1 in UTC. The atelier worked it
+    // in August, so it belongs to August.
+    const { revenue } = aggregate({
+      timeZone: "America/Chicago",
+      shopOrders: [
+        shopOrder({ total: 35, orderDate: "2026-09-01T02:00:00.000Z" }),
+      ],
+    });
+
+    expect(revenue.find((m) => m.month === "2026-08")?.shopRevenue).toBe(35);
+  });
+});
+
+describe("aggregateStudioAnalytics — best-seller coverage", () => {
+  it("counts the orders the item list cannot see", () => {
+    const { topItemCoverage } = aggregate({
+      itemNames: new Map([["inv-1", "Bow Soaker"]]),
+      shopOrders: [
+        shopOrder({ itemIds: ["inv-1"], orderDate: "2026-08-02" }),
+        shopOrder({ itemIds: [], orderDate: "2026-08-03" }),
+        shopOrder({ itemIds: [], orderDate: "2026-08-04" }),
+        // Cancelled and out-of-window orders are neither counted nor missed.
+        shopOrder({ itemIds: [], orderDate: "2026-08-05", cancelled: true }),
+        shopOrder({ itemIds: [], orderDate: "2024-08-05" }),
+      ],
+    });
+
+    expect(topItemCoverage).toEqual({ counted: 1, unlinked: 2 });
+  });
+});
+
+describe("aggregateStudioAnalytics — consignment", () => {
+  it("names the pieces on the shelf and passes the totals through", () => {
+    const { consignment } = aggregate({
+      itemNames: new Map([["inv-1", "Bow Soaker"]]),
+      consignment: {
+        ...summarizeConsignment([]),
+        configured: true,
+        atShopUnits: 4,
+        items: [
+          { itemId: "inv-1", atShop: 4, sold: 2 },
+          // An id with no live inventory row: dropped from the list, but its
+          // units stay in the totals above, which are the authority.
+          { itemId: "inv-gone", atShop: 1, sold: 0 },
+        ],
+      },
+    });
+
+    expect(consignment.atShopUnits).toBe(4);
+    expect(consignment.items).toEqual([
+      { name: "Bow Soaker", atShop: 4, sold: 2 },
+    ]);
   });
 });
 

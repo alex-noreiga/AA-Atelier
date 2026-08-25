@@ -20,11 +20,16 @@ import type {
 } from '@tanstack/react-query';
 
 import type {
+  AccountDataExport,
+  AccountDeletionRequestResult,
   AccountOverview,
   AppointmentAvailability,
   AppointmentDetails,
   AppointmentOptions,
+  AppointmentStaffing,
+  AppointmentStaffingRequest,
   CancelAppointmentRequest,
+  CapacityStatus,
   CheckoutSessionResponse,
   CheckoutSessionStatus,
   ColorList,
@@ -36,6 +41,7 @@ import type {
   HealthStatus,
   MaterialsOverview,
   MessageResponse,
+  NewAccountDeletionRequest,
   NewAppointmentRequest,
   NewAppointmentResponse,
   NewCancellationRequest,
@@ -54,6 +60,8 @@ import type {
   NewReturnResponse,
   NewReviewRequest,
   NewReviewResponse,
+  NewWaitlistRequest,
+  NewWaitlistResponse,
   NewsletterSignup,
   NewsletterSignupList,
   OrderNotFound,
@@ -83,7 +91,9 @@ import type {
   StudioSettingsOverview,
   StudioTool,
   StudioToolRequest,
-  StudioToolRun
+  StudioToolRun,
+  UpdateMeasurementsRequest,
+  UpdateMeasurementsResponse
 } from './api.schemas';
 
 import { customFetch } from '../custom-fetch';
@@ -278,7 +288,7 @@ export const getCreateOrderUrl = () => {
 }
 
 /**
- * Creates a new custom dress order and saves it to Notion
+ * Creates a new custom dress order and saves it to Notion. Refused with 409 when the order is for a capacity-gated service and the studio's books are closed (see `GET /capacity`) — the customer is offered `POST /waitlist` instead.
  * @summary Submit a new custom dress order
  */
 export const createOrder = async (newOrderRequest: NewOrderRequest, options?: Parameters<typeof customFetch>[1]): Promise<NewOrderResponse> => {
@@ -413,6 +423,79 @@ export const useCreateOrderPayment = <TError = ErrorType<ErrorEnvelope | OrderNo
         TContext
       > => {
       return useMutation(getCreateOrderPaymentMutationOptions(options));
+    }
+
+export const getUpdateOrderMeasurementsUrl = (orderNumber: string,) => {
+
+
+
+
+  return `/api/orders/${orderNumber}/measurements`
+}
+
+/**
+ * Writes the customer's measurements straight onto the order, replacing the five typed Notion properties and the unit. The customer is verified against the email stored on the order and the write is refused once the garment has entered production (MEASUREMENT_LOCK_FROM_STAGE) — the same two gates the change-request endpoint applies. Unlike that endpoint this one edits the order, so it fails closed where the request flow degrades: an order with no stored email to verify against is never written to. Rather than losing what the customer typed, such an edit — and one the orders database has nowhere to store — is filed as an ordinary measurement-change request for a human to apply, reported as outcome="filed". The complete set of five values is required: a partial write would leave the atelier cutting to a mix of old and new numbers.
+ * @summary Update an order's measurements in place
+ */
+export const updateOrderMeasurements = async (orderNumber: string,
+    updateMeasurementsRequest: UpdateMeasurementsRequest, options?: Parameters<typeof customFetch>[1]): Promise<UpdateMeasurementsResponse> => {
+
+  return customFetch<UpdateMeasurementsResponse>(getUpdateOrderMeasurementsUrl(orderNumber),
+  {
+    ...options,
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    body: JSON.stringify(updateMeasurementsRequest)
+  }
+);}
+
+
+
+
+
+export const getUpdateOrderMeasurementsMutationOptions = <TError = ErrorType<ErrorEnvelope | OrderNotFound>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof updateOrderMeasurements>>, TError,{orderNumber: string;data: BodyType<UpdateMeasurementsRequest>}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof updateOrderMeasurements>>, TError,{orderNumber: string;data: BodyType<UpdateMeasurementsRequest>}, TContext> => {
+
+const mutationKey = ['updateOrderMeasurements'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof updateOrderMeasurements>>, {orderNumber: string;data: BodyType<UpdateMeasurementsRequest>}> = (props) => {
+          const {orderNumber,data} = props ?? {};
+
+          return  updateOrderMeasurements(orderNumber,data,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type UpdateOrderMeasurementsMutationResult = NonNullable<Awaited<ReturnType<typeof updateOrderMeasurements>>>
+    export type UpdateOrderMeasurementsMutationBody = BodyType<UpdateMeasurementsRequest>
+    export type UpdateOrderMeasurementsMutationError = ErrorType<ErrorEnvelope | OrderNotFound>
+
+    /**
+ * @summary Update an order's measurements in place
+ */
+export const useUpdateOrderMeasurements = <TError = ErrorType<ErrorEnvelope | OrderNotFound>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof updateOrderMeasurements>>, TError,{orderNumber: string;data: BodyType<UpdateMeasurementsRequest>}, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof updateOrderMeasurements>>,
+        TError,
+        {orderNumber: string;data: BodyType<UpdateMeasurementsRequest>},
+        TContext
+      > => {
+      return useMutation(getUpdateOrderMeasurementsMutationOptions(options));
     }
 
 export const getCreateMeasurementChangeRequestUrl = (orderNumber: string,) => {
@@ -848,6 +931,160 @@ export const useSubscribeNewsletter = <TError = ErrorType<ErrorEnvelope>,
         TContext
       > => {
       return useMutation(getSubscribeNewsletterMutationOptions(options));
+    }
+
+export const getGetCapacityUrl = () => {
+
+
+
+
+  return `/api/capacity`
+}
+
+/**
+ * Reports whether the atelier's books are open for the capacity-gated services (today, the bespoke commission — see `Service.capacityGated`), so the intake form can offer the waitlist instead of a form that would be refused. The same decision gates `POST /orders`, so the form and the server can't disagree.
+ * Closed means one of two things: the atelier paused intake by hand, or the number of commissions in production has reached the studio's capacity. Both are atelier-editable Studio Settings (`COMMISSION_INTAKE`, `COMMISSION_CAPACITY`).
+ * Deliberately degrade-safe and fail-OPEN: with no capacity configured, or when the order count can't be read, this reports open. Turning a customer away because of an outage is the worst way to be wrong.
+ * Carries no order counts — how much work the studio is holding is the studio's business, not the visitor's.
+ * @summary Whether the studio is taking new bespoke commissions
+ */
+export const getCapacity = async ( options?: Parameters<typeof customFetch>[1]): Promise<CapacityStatus> => {
+
+  return customFetch<CapacityStatus>(getGetCapacityUrl(),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
+
+
+
+
+export const getGetCapacityQueryKey = () => {
+    return [
+    `/api/capacity`
+    ] as const;
+    }
+
+
+export const getGetCapacityQueryOptions = <TData = Awaited<ReturnType<typeof getCapacity>>, TError = ErrorType<ErrorEnvelope>>( options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getCapacity>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getGetCapacityQueryKey();
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof getCapacity>>> = ({ signal }) => getCapacity({ signal, ...requestOptions });
+
+
+
+
+
+   return  { queryKey, queryFn, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof getCapacity>>, TError, TData> & { queryKey: QueryKey }
+}
+
+export type GetCapacityQueryResult = NonNullable<Awaited<ReturnType<typeof getCapacity>>>
+export type GetCapacityQueryError = ErrorType<ErrorEnvelope>
+
+
+/**
+ * @summary Whether the studio is taking new bespoke commissions
+ */
+
+export function useGetCapacity<TData = Awaited<ReturnType<typeof getCapacity>>, TError = ErrorType<ErrorEnvelope>>(
+  options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getCapacity>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+
+ ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+
+  const queryOptions = getGetCapacityQueryOptions(options)
+
+  const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
+
+  return withQueryKey(query, queryOptions.queryKey);
+}
+
+
+
+
+
+
+
+export const getJoinWaitlistUrl = () => {
+
+
+
+
+  return `/api/waitlist`
+}
+
+/**
+ * Records a customer's request to be told when the studio's books reopen, as a tagged row in the Notion contact-messages inbox (and a best-effort Client CRM lead), and sends a best-effort acknowledgement. Accepted whether or not intake is currently closed — a customer planning ahead is not a mistake to reject.
+ * This never creates an order and never holds a slot. The atelier answers a waitlist entry by hand when capacity frees.
+ * @summary Join the waitlist for a bespoke commission
+ */
+export const joinWaitlist = async (newWaitlistRequest: NewWaitlistRequest, options?: Parameters<typeof customFetch>[1]): Promise<NewWaitlistResponse> => {
+
+  return customFetch<NewWaitlistResponse>(getJoinWaitlistUrl(),
+  {
+    ...options,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    body: JSON.stringify(newWaitlistRequest)
+  }
+);}
+
+
+
+
+
+export const getJoinWaitlistMutationOptions = <TError = ErrorType<ErrorEnvelope>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof joinWaitlist>>, TError,{data: BodyType<NewWaitlistRequest>}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof joinWaitlist>>, TError,{data: BodyType<NewWaitlistRequest>}, TContext> => {
+
+const mutationKey = ['joinWaitlist'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof joinWaitlist>>, {data: BodyType<NewWaitlistRequest>}> = (props) => {
+          const {data} = props ?? {};
+
+          return  joinWaitlist(data,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type JoinWaitlistMutationResult = NonNullable<Awaited<ReturnType<typeof joinWaitlist>>>
+    export type JoinWaitlistMutationBody = BodyType<NewWaitlistRequest>
+    export type JoinWaitlistMutationError = ErrorType<ErrorEnvelope>
+
+    /**
+ * @summary Join the waitlist for a bespoke commission
+ */
+export const useJoinWaitlist = <TError = ErrorType<ErrorEnvelope>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof joinWaitlist>>, TError,{data: BodyType<NewWaitlistRequest>}, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof joinWaitlist>>,
+        TError,
+        {data: BodyType<NewWaitlistRequest>},
+        TContext
+      > => {
+      return useMutation(getJoinWaitlistMutationOptions(options));
     }
 
 export const getGetProductsUrl = () => {
@@ -2163,6 +2400,162 @@ export function useGetAccountOverview<TData = Awaited<ReturnType<typeof getAccou
 
 
 
+export const getExportAccountDataUrl = () => {
+
+
+
+
+  return `/api/account/export`
+}
+
+/**
+ * Gathers every record keyed on the signed-in customer's email — their custom and shop orders, upcoming appointments, Client CRM record, the requests they have filed with the studio, the reviews they have written, and whether they are on the marketing list — for a data-access (GDPR / CCPA) request the customer can serve themselves. Read-only.
+ *
+ * Every source degrades independently: one that can't be read is named in `unavailable` rather than silently omitted, so a partial export is visibly partial. Photographs the customer uploaded (reference images, review photos) are NOT included — they live as image blocks on a Notion page behind short-lived signed URLs, so they are requested from the studio by email instead.
+ * @summary Everything the studio holds about the signed-in customer
+ */
+export const exportAccountData = async ( options?: Parameters<typeof customFetch>[1]): Promise<AccountDataExport> => {
+
+  return customFetch<AccountDataExport>(getExportAccountDataUrl(),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
+
+
+
+
+export const getExportAccountDataQueryKey = () => {
+    return [
+    `/api/account/export`
+    ] as const;
+    }
+
+
+export const getExportAccountDataQueryOptions = <TData = Awaited<ReturnType<typeof exportAccountData>>, TError = ErrorType<ErrorEnvelope>>( options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof exportAccountData>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getExportAccountDataQueryKey();
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof exportAccountData>>> = ({ signal }) => exportAccountData({ signal, ...requestOptions });
+
+
+
+
+
+   return  { queryKey, queryFn, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof exportAccountData>>, TError, TData> & { queryKey: QueryKey }
+}
+
+export type ExportAccountDataQueryResult = NonNullable<Awaited<ReturnType<typeof exportAccountData>>>
+export type ExportAccountDataQueryError = ErrorType<ErrorEnvelope>
+
+
+/**
+ * @summary Everything the studio holds about the signed-in customer
+ */
+
+export function useExportAccountData<TData = Awaited<ReturnType<typeof exportAccountData>>, TError = ErrorType<ErrorEnvelope>>(
+  options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof exportAccountData>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+
+ ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+
+  const queryOptions = getExportAccountDataQueryOptions(options)
+
+  const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
+
+  return withQueryKey(query, queryOptions.queryKey);
+}
+
+
+
+
+
+
+
+export const getRequestAccountDeletionUrl = () => {
+
+
+
+
+  return `/api/account/deletion-requests`
+}
+
+/**
+ * Files an erasure request for the signed-in customer. The request lands as a tagged row in the studio's contact inbox for a person to action — this endpoint deliberately deletes nothing itself, because orders, invoices and payment records are business records the studio is required to keep for a period, and what may be erased is a judgement rather than a switch.
+ *
+ * The one erasure it DOES perform immediately is the marketing list: the customer is unsubscribed from the studio's Resend audience, which is their own action to take and needs nobody's review.
+ *
+ * Filing is idempotent while a request is open — a second press reports the request already on file rather than adding a duplicate row to the inbox.
+ * @summary Ask the studio to delete the signed-in customer's data
+ */
+export const requestAccountDeletion = async (newAccountDeletionRequest: NewAccountDeletionRequest, options?: Parameters<typeof customFetch>[1]): Promise<AccountDeletionRequestResult> => {
+
+  return customFetch<AccountDeletionRequestResult>(getRequestAccountDeletionUrl(),
+  {
+    ...options,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    body: JSON.stringify(newAccountDeletionRequest)
+  }
+);}
+
+
+
+
+
+export const getRequestAccountDeletionMutationOptions = <TError = ErrorType<ErrorEnvelope>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof requestAccountDeletion>>, TError,{data: BodyType<NewAccountDeletionRequest>}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof requestAccountDeletion>>, TError,{data: BodyType<NewAccountDeletionRequest>}, TContext> => {
+
+const mutationKey = ['requestAccountDeletion'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof requestAccountDeletion>>, {data: BodyType<NewAccountDeletionRequest>}> = (props) => {
+          const {data} = props ?? {};
+
+          return  requestAccountDeletion(data,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type RequestAccountDeletionMutationResult = NonNullable<Awaited<ReturnType<typeof requestAccountDeletion>>>
+    export type RequestAccountDeletionMutationBody = BodyType<NewAccountDeletionRequest>
+    export type RequestAccountDeletionMutationError = ErrorType<ErrorEnvelope>
+
+    /**
+ * @summary Ask the studio to delete the signed-in customer's data
+ */
+export const useRequestAccountDeletion = <TError = ErrorType<ErrorEnvelope>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof requestAccountDeletion>>, TError,{data: BodyType<NewAccountDeletionRequest>}, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof requestAccountDeletion>>,
+        TError,
+        {data: BodyType<NewAccountDeletionRequest>},
+        TContext
+      > => {
+      return useMutation(getRequestAccountDeletionMutationOptions(options));
+    }
+
 export const getListStaffAvailabilityUrl = () => {
 
 
@@ -2623,7 +3016,7 @@ export const getRunStudioToolUrl = (tool: StudioTool,) => {
 }
 
 /**
- * Runs one of the atelier's internal actions — milestone reconciliation, invoice line-item generation, an order status-change email, a cancellation refund, a return refund, or a back-in-stock alert — from the signed-in studio dashboard. Most were previously triggered by opening a link that carried a shared secret in its query string; the work is unchanged, the authorization is not: this requires the same Supabase access token as the rest of the studio surface, with the caller's email on the staff allowlist. 401 when not signed in, 404 when signed in but not staff, 403 when staff but not signed in with Google.
+ * Runs one of the atelier's internal actions — milestone reconciliation, invoice line-item generation, a flat service quote, an order status-change email, a cancellation refund, a return refund, or a back-in-stock alert — from the signed-in studio dashboard. Most were previously triggered by opening a link that carried a shared secret in its query string; the work is unchanged, the authorization is not: this requires the same Supabase access token as the rest of the studio surface, with the caller's email on the staff allowlist. 401 when not signed in, 404 when signed in but not staff, 403 when staff but not signed in with Google.
  * Every tool is idempotent — a repeat run reports `noop` rather than doing the work twice — but two of them move money, so the dashboard confirms before calling those.
  * @summary Run an internal atelier tool
  */
@@ -3260,6 +3653,164 @@ export const useSetStudioSetting = <TError = ErrorType<ErrorEnvelope | OrderNotF
         TContext
       > => {
       return useMutation(getSetStudioSettingMutationOptions(options));
+    }
+
+export const getGetAppointmentStaffingUrl = () => {
+
+
+
+
+  return `/api/studio/appointment-staff`
+}
+
+/**
+ * The studio's appointment staffing: for every bookable type, who currently performs it, and who the built-in catalog would put on it if nothing were set.
+ *
+ * This is the routing the slot calculator uses — it only ever offers a type's assigned staff — so it decides both which times a customer is shown and which bookings the server will accept. Everything else about a type (its length, where it can be held, whether it needs an order behind it) is fixed in code and returned here as context, not as something to edit.
+ *
+ * Same staff gate as the rest of the studio surface: 401 when not signed in, 404 when signed in but not staff, 403 when staff but not signed in with Google.
+ * @summary Which staff member offers which appointment type
+ */
+export const getAppointmentStaffing = async ( options?: Parameters<typeof customFetch>[1]): Promise<AppointmentStaffing> => {
+
+  return customFetch<AppointmentStaffing>(getGetAppointmentStaffingUrl(),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
+
+
+
+
+export const getGetAppointmentStaffingQueryKey = () => {
+    return [
+    `/api/studio/appointment-staff`
+    ] as const;
+    }
+
+
+export const getGetAppointmentStaffingQueryOptions = <TData = Awaited<ReturnType<typeof getAppointmentStaffing>>, TError = ErrorType<ErrorEnvelope | OrderNotFound>>( options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getAppointmentStaffing>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getGetAppointmentStaffingQueryKey();
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof getAppointmentStaffing>>> = ({ signal }) => getAppointmentStaffing({ signal, ...requestOptions });
+
+
+
+
+
+   return  { queryKey, queryFn, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof getAppointmentStaffing>>, TError, TData> & { queryKey: QueryKey }
+}
+
+export type GetAppointmentStaffingQueryResult = NonNullable<Awaited<ReturnType<typeof getAppointmentStaffing>>>
+export type GetAppointmentStaffingQueryError = ErrorType<ErrorEnvelope | OrderNotFound>
+
+
+/**
+ * @summary Which staff member offers which appointment type
+ */
+
+export function useGetAppointmentStaffing<TData = Awaited<ReturnType<typeof getAppointmentStaffing>>, TError = ErrorType<ErrorEnvelope | OrderNotFound>>(
+  options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getAppointmentStaffing>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+
+ ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+
+  const queryOptions = getGetAppointmentStaffingQueryOptions(options)
+
+  const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
+
+  return withQueryKey(query, queryOptions.queryKey);
+}
+
+
+
+
+
+
+
+export const getSetAppointmentStaffingUrl = () => {
+
+
+
+
+  return `/api/studio/appointment-staff`
+}
+
+/**
+ * Reassigns the staff on one or more appointment types. Only the types named are changed; any left out keep the staffing they already have.
+ *
+ * Every type must be left with at least one person on it: a type nobody is assigned to still appears on the booking page and simply never offers a time, which is the silent failure this editor exists to prevent. Retiring a type is a code change, not an empty selection. A PERSON with no types, on the other hand, is an ordinary way to say they aren't taking appointments — their working hours stay on record and their existing bookings can still be rescheduled.
+ *
+ * Staffing that matches the built-in catalog exactly is stored as a blank value, which reads as unset — so an atelier that has never differed from the defaults still picks up a change to them, rather than being pinned to whatever they were the day Save was first pressed.
+ * @summary Change who offers which appointment type
+ */
+export const setAppointmentStaffing = async (appointmentStaffingRequest: AppointmentStaffingRequest, options?: Parameters<typeof customFetch>[1]): Promise<AppointmentStaffing> => {
+
+  return customFetch<AppointmentStaffing>(getSetAppointmentStaffingUrl(),
+  {
+    ...options,
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    body: JSON.stringify(appointmentStaffingRequest)
+  }
+);}
+
+
+
+
+
+export const getSetAppointmentStaffingMutationOptions = <TError = ErrorType<ErrorEnvelope | OrderNotFound>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof setAppointmentStaffing>>, TError,{data: BodyType<AppointmentStaffingRequest>}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof setAppointmentStaffing>>, TError,{data: BodyType<AppointmentStaffingRequest>}, TContext> => {
+
+const mutationKey = ['setAppointmentStaffing'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof setAppointmentStaffing>>, {data: BodyType<AppointmentStaffingRequest>}> = (props) => {
+          const {data} = props ?? {};
+
+          return  setAppointmentStaffing(data,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type SetAppointmentStaffingMutationResult = NonNullable<Awaited<ReturnType<typeof setAppointmentStaffing>>>
+    export type SetAppointmentStaffingMutationBody = BodyType<AppointmentStaffingRequest>
+    export type SetAppointmentStaffingMutationError = ErrorType<ErrorEnvelope | OrderNotFound>
+
+    /**
+ * @summary Change who offers which appointment type
+ */
+export const useSetAppointmentStaffing = <TError = ErrorType<ErrorEnvelope | OrderNotFound>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof setAppointmentStaffing>>, TError,{data: BodyType<AppointmentStaffingRequest>}, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof setAppointmentStaffing>>,
+        TError,
+        {data: BodyType<AppointmentStaffingRequest>},
+        TContext
+      > => {
+      return useMutation(getSetAppointmentStaffingMutationOptions(options));
     }
 
 export const getListStudioRequestsUrl = () => {

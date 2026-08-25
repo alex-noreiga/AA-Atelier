@@ -9,6 +9,9 @@ import {
   CreateMeasurementChangeRequestParams,
   CreateMeasurementChangeRequestBody,
   CreateMeasurementChangeRequestResponse,
+  UpdateOrderMeasurementsParams,
+  UpdateOrderMeasurementsBody,
+  UpdateOrderMeasurementsResponse,
   CreateOrderReviewParams,
   CreateOrderReviewBody,
   CreateOrderReviewResponse,
@@ -20,11 +23,13 @@ import { validate } from "../middlewares/validate.js";
 import { getOrderStatus, submitOrder } from "../services/orders.service.js";
 import { createPaymentCheckout } from "../services/invoice.service.js";
 import { submitMeasurementChangeRequest } from "../services/measurement-change.service.js";
+import { updateMeasurements } from "../services/measurement-update.service.js";
 import { submitOrderReview } from "../services/review.service.js";
 import { submitOrderCancellationRequest } from "../services/cancellation.service.js";
 import type { CreateOrderInput } from "../lib/notion/orders.schema.js";
 import type { PaymentStage } from "../lib/notion/invoice.schema.js";
 import type { CreateMeasurementChangeInput } from "../lib/notion/measurement-change.blocks.js";
+import type { UpdateMeasurementsInput } from "../services/measurement-update.service.js";
 import type { CreateReviewInput } from "../lib/notion/reviews.blocks.js";
 import type { CreateCancellationInput } from "../services/cancellation.service.js";
 
@@ -74,6 +79,24 @@ router.post(
     const body = res.locals.body as CreateMeasurementChangeInput;
     const result = await submitMeasurementChangeRequest(orderNumber, body);
     res.status(201).json(CreateMeasurementChangeRequestResponse.parse(result));
+  },
+);
+
+// In-place measurement editing — the same order-scoped gates as the change
+// request above, but this one writes the values onto the order rather than
+// filing them for a human to apply. A PUT because it replaces the whole stored
+// set: sending it twice leaves the order in the same state.
+router.put(
+  "/orders/:orderNumber/measurements",
+  validate({
+    params: UpdateOrderMeasurementsParams,
+    body: UpdateOrderMeasurementsBody,
+  }),
+  async (_req, res) => {
+    const { orderNumber } = res.locals.params as { orderNumber: string };
+    const body = res.locals.body as UpdateMeasurementsInput;
+    const result = await updateMeasurements(orderNumber, body);
+    res.json(UpdateOrderMeasurementsResponse.parse(result));
   },
 );
 

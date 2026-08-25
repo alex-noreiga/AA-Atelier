@@ -12,12 +12,22 @@ import { rushSurchargeRate } from "../../src/services/rush.js";
 import { lockFromStage } from "../../src/services/measurement-lock.js";
 import { intakeColorPalette } from "../../src/services/colors.js";
 import {
+  closedMessage,
+  commissionCapacity,
+  intakeSwitch,
+  DEFAULT_CLOSED_MESSAGE,
+} from "../../src/services/capacity.js";
+import {
   appointmentTimezone,
   minLeadMinutes,
   maxAdvanceDays,
   slotStepMinutes,
   reminderLeadDays,
 } from "../../src/lib/appointments/settings.js";
+import {
+  formatStaffRouting,
+  resolveAppointmentTypes,
+} from "../../src/lib/appointments/routing.js";
 import {
   referralCreditAmount,
   welcomeDiscountPercent,
@@ -54,6 +64,14 @@ interface Case {
   unusable?: string;
 }
 
+/** The staffing in force, written back out in the shape the setting takes — so
+ * this reads through the resolver every booking path uses, not the raw value. */
+function staffRoutingText(): string {
+  return formatStaffRouting(
+    new Map(resolveAppointmentTypes().map((type) => [type.id, type.staff])),
+  );
+}
+
 /** The palette as `Name #hex, …`, i.e. the shape the setting is written in. */
 function paletteText(): string {
   return intakeColorPalette()
@@ -72,6 +90,29 @@ const CASES: Case[] = [
     key: "MEASUREMENT_LOCK_FROM_STAGE",
     read: lockFromStage,
     sample: "Cutting",
+  },
+  {
+    key: "COMMISSION_INTAKE",
+    read: intakeSwitch,
+    sample: "closed",
+    // No `unusable` entry: the getter reads anything it doesn't recognise as
+    // "auto" rather than discarding it, so `accepts` returns true for every
+    // value — there is nothing the dashboard could honestly report as ignored.
+    // The write guard is what refuses a typo, and that's asserted below.
+  },
+  {
+    key: "COMMISSION_CAPACITY",
+    read: () => String(commissionCapacity()),
+    sample: "8",
+    unusable: "eight",
+  },
+  {
+    key: "COMMISSION_CLOSED_MESSAGE",
+    read: closedMessage,
+    // Like the palette, the fallback is a built-in rather than a value the
+    // catalog can restate as text — hence the `defaultLabel`.
+    expectedDefault: DEFAULT_CLOSED_MESSAGE,
+    sample: "We reopen for the 2027-28 season in March.",
   },
   {
     key: "COLOR_PALETTE",
@@ -113,6 +154,19 @@ const CASES: Case[] = [
     read: () => String(reminderLeadDays()),
     sample: "2",
     unusable: "0",
+  },
+  {
+    key: "APPOINTMENT_STAFF_ROUTING",
+    read: staffRoutingText,
+    // A sparse value: only the type it names moves, the rest keep the catalog's
+    // staffing. That is the read-side rule a hand-edited row depends on.
+    sample: "fitting: Alayna",
+    sampleReads:
+      "consultation: Alayna; fitting: Alayna; " +
+      "design-review: Alexandra, Alayna; general: Alexandra, Alayna",
+    // A name nobody on the roster answers to leaves the whole value with
+    // nothing readable in it, so the catalog's staffing stands.
+    unusable: "consultation: Nobody",
   },
   {
     key: "REFERRAL_CREDIT_AMOUNT",

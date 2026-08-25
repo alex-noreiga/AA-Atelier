@@ -7,17 +7,25 @@
 // Voice: the site's minimal, warm, editorial-serif tone. Plain inline HTML (no
 // template engine, no new dependency) plus a plaintext twin for every message.
 
-import type { CreateOrderInput } from "../notion/orders.schema.js";
+import type {
+  CreateOrderInput,
+  OrderMeasurements,
+} from "../notion/orders.schema.js";
 import { resolveOrderService } from "../service-catalog.js";
 import type { CreateContactInput } from "../notion/contact.blocks.js";
 import type { CreateNotifyInput } from "../notion/notify.blocks.js";
 import type { CreateNewsletterInput } from "../notion/newsletter.blocks.js";
+import type {
+  CreateWaitlistInput,
+  WaitlistTarget,
+} from "../notion/waitlist.blocks.js";
 import type { CreateMeasurementChangeInput } from "../notion/measurement-change.blocks.js";
 import {
   RETURN_REASON_LABELS,
   type CreateReturnInput,
 } from "../notion/return-request.blocks.js";
 import type { CreateReviewInput } from "../notion/reviews.blocks.js";
+import type { MarketingOptOutResult } from "../notion/data-deletion.blocks.js";
 import type { EmailMessage } from "./client.js";
 
 const ATELIER_NAME = "A.A Atelier";
@@ -123,7 +131,7 @@ export function orderConfirmationEmail(
     "Your order is in our hands",
     `<p>Hi ${firstName},</p>
      <p>${emailIntro}</p>
-     <p>Your order number is <strong>${orderNumber}</strong>. Keep it handy — you can
+     <p>Your order number is <strong>${orderNumber}</strong>. Keep it handy so you can
         follow each stage of your garment's progress on our website using this number.</p>
      <p style="margin-bottom:10px;">Here's what we have on file:</p>
      <div style="border-left:2px solid #e7e0d8;padding:2px 0 2px 16px;margin:0 0 20px;font-size:15px;">
@@ -139,7 +147,7 @@ export function orderConfirmationEmail(
     ``,
     emailIntro,
     ``,
-    `Your order number is ${orderNumber}. Keep it handy — you can follow each stage`,
+    `Your order number is ${orderNumber}. Keep it handy so you can follow each stage`,
     `of your garment's progress on our website using this number.`,
     ``,
     `Here's what we have on file:`,
@@ -216,9 +224,9 @@ const STAGE_FLAVORS: Record<string, string> = {
   "Rhinestoning/Detailing":
     "adding the hand-beading, crystals, and final artistic touches.",
   "Ready for delivery/pickup":
-    "wrapping up — your garment is complete and ready for delivery or pickup.",
+    "wrapping up. Your garment is complete and ready for delivery or pickup.",
   Delivered:
-    "all finished — your costume has been delivered. We hope you love it!",
+    "all finished. Your costume has been delivered. We hope you love it!",
 };
 
 function stageFlavor(stage: string): string {
@@ -379,7 +387,7 @@ export function fittingReminderEmail(
     `<p>Hi there,</p>
      ${timingHtml}
      <p>A fitting lets us perfect the shape and fit of your garment before the final
-        finishing touches. Please book — or confirm — your fitting appointment at your
+        finishing touches. Please book or confirm your fitting appointment at your
         earliest convenience so we can keep your custom item on schedule.</p>
      ${ctaHtml}
      <p style="color:#8a7f74;margin:0;">Order number: <strong>${escapeHtml(orderNumber)}</strong></p>`,
@@ -393,7 +401,7 @@ export function fittingReminderEmail(
       : `Your custom item is approaching its fitting stage.`,
     ``,
     `A fitting lets us perfect the shape and fit of your garment before the final`,
-    `finishing touches. Please book — or confirm — your fitting appointment at your`,
+    `finishing touches. Please book or confirm your fitting appointment at your`,
     `earliest convenience so we can keep your custom item on schedule.`,
     ...(bookingUrl ? [``, `Book your fitting: ${bookingUrl}`] : []),
     ``,
@@ -465,7 +473,7 @@ export function paymentReminderEmail(
     `<p>Hi there,</p>
      <p>${escapeHtml(timingSentence)}${escapeHtml(amountSentence)}</p>
      <p>You can pay securely online from your order page. If you've already sent
-        this payment, please disregard this note — it may have crossed with your
+        this payment, please disregard this note. It may have crossed with your
         payment, and it will clear on our end shortly.</p>
      ${ctaHtml}
      <p style="color:#8a7f74;margin:0;">Order number: <strong>${escapeHtml(orderNumber)}</strong></p>`,
@@ -477,7 +485,7 @@ export function paymentReminderEmail(
     `${timingSentence}${amountSentence}`,
     ``,
     `You can pay securely online from your order page. If you've already sent this`,
-    `payment, please disregard this note — it may have crossed with your payment,`,
+    `payment, please disregard this note. It may have crossed with your payment,`,
     `and it will clear on our end shortly.`,
     ...(payUrl ? [``, `Pay now: ${payUrl}`] : []),
     ``,
@@ -530,9 +538,9 @@ export function referralWelcomeEmail(
   const { code, percent } = details;
 
   const html = layout(
-    "Welcome — a gift for your first piece",
+    "Welcome, a gift for your first piece",
     `<p>Hi there,</p>
-     <p>A fellow skater sent you our way, and we're so glad they did. As a welcome,
+     <p>A friend sent you our way, and we're so glad they did. As a welcome,
         here's <strong>${percent}% off</strong> your first order:</p>
      ${codeBlockHtml(code)}
      ${redeemNoteHtml()}
@@ -542,7 +550,7 @@ export function referralWelcomeEmail(
   const text = [
     `Hi there,`,
     ``,
-    `A fellow skater sent you our way, and we're so glad they did. As a welcome,`,
+    `A friend sent you our way, and we're so glad they did. As a welcome,`,
     `here's ${percent}% off your first order:`,
     ``,
     `    ${code}`,
@@ -581,7 +589,7 @@ export function referralCreditEmail(
   const html = layout(
     "Thank you for the referral",
     `<p>Hi there,</p>
-     <p>Someone you referred just began their own custom piece with us — thank you for
+     <p>Someone you referred just began their own custom piece with us. Thank you for
         sharing our atelier. Here's <strong>${escapeHtml(amountLabel)} in credit</strong>
         toward your next order:</p>
      ${codeBlockHtml(code)}
@@ -592,7 +600,7 @@ export function referralCreditEmail(
   const text = [
     `Hi there,`,
     ``,
-    `Someone you referred just began their own custom piece with us — thank you for`,
+    `Someone you referred just began their own custom piece with us. Thank you for`,
     `sharing our atelier. Here's ${amountLabel} in credit toward your next order:`,
     ``,
     `    ${code}`,
@@ -631,7 +639,7 @@ export function returningSkaterRewardEmail(
     "A thank-you for coming back",
     `<p>Hi there,</p>
      <p>It means a great deal that you've returned to us. As our thanks, here's a
-        standing <strong>${percent}% off</strong> — yours to use on your future orders:</p>
+        standing <strong>${percent}% off</strong>, yours to use on your future orders:</p>
      ${codeBlockHtml(code)}
      ${redeemNoteHtml()}
      <p>We look forward to creating with you again.</p>`,
@@ -641,7 +649,7 @@ export function returningSkaterRewardEmail(
     `Hi there,`,
     ``,
     `It means a great deal that you've returned to us. As our thanks, here's a`,
-    `standing ${percent}% off — yours to use on your future orders:`,
+    `standing ${percent}% off, yours to use on your future orders:`,
     ``,
     `    ${code}`,
     ``,
@@ -695,7 +703,7 @@ export function backInStockConfirmationEmail(
   input: CreateNotifyInput,
 ): EmailMessage {
   // Mirror the subject phrasing used for the Notion inbox row in notify.blocks.ts.
-  const piece = input.size ? `${input.item} — ${input.size}` : input.item;
+  const piece = input.size ? `${input.item} · ${input.size}` : input.item;
 
   const html = layout(
     "We'll let you know",
@@ -735,7 +743,7 @@ export function backInStockConfirmationEmail(
 /** The details needed to render a back-in-stock alert. */
 export interface BackInStockAlertDetails {
   email: string;
-  /** The inventory row's name, e.g. "Bow Fleece Soaker — Black". */
+  /** The inventory row's name, e.g. "Bow Fleece Soaker, Black". */
   item: string;
   /** The size band the customer asked about, when they asked about one. */
   size?: string;
@@ -749,7 +757,7 @@ export function backInStockAlertEmail(
 ): EmailMessage {
   // Mirror the phrasing of the request confirmation, so the two read as a pair.
   const piece = details.size
-    ? `${details.item} — ${details.size}`
+    ? `${details.item} · ${details.size}`
     : details.item;
   const { productUrl } = details;
 
@@ -765,7 +773,7 @@ export function backInStockAlertEmail(
   const html = layout(
     "It’s back in stock",
     `<p>Hi there,</p>
-     <p>Good news — <strong>${escapeHtml(piece)}</strong> is back in stock. You asked
+     <p>Good news, <strong>${escapeHtml(piece)}</strong> is back in stock. You asked
         us to let you know when it returned, so here we are.</p>
      ${ctaHtml}
      <p>Our ready-to-wear pieces are made in small numbers, so it may not stay on the
@@ -775,7 +783,7 @@ export function backInStockAlertEmail(
   const text = [
     `Hi there,`,
     ``,
-    `Good news — ${piece} is back in stock. You asked us to let you know when it`,
+    `Good news, ${piece} is back in stock. You asked us to let you know when it`,
     `returned, so here we are.`,
     ...(productUrl ? [``, `View it in the shop: ${productUrl}`] : []),
     ``,
@@ -808,7 +816,7 @@ export function newsletterWelcomeEmail(
     `<p>Hi there,</p>
      <p>Thank you for joining our mailing list. From time to time we'll share new
         collections, behind-the-scenes glimpses of pieces in progress, and the
-        occasional studio note — nothing more.</p>
+        occasional studio note.</p>
      <p>We're glad to have you with us.</p>`,
   );
 
@@ -817,7 +825,7 @@ export function newsletterWelcomeEmail(
     ``,
     `Thank you for joining our mailing list. From time to time we'll share new`,
     `collections, behind-the-scenes glimpses of pieces in progress, and the`,
-    `occasional studio note — nothing more.`,
+    `occasional studio note.`,
     ``,
     `We're glad to have you with us.`,
     ``,
@@ -828,6 +836,131 @@ export function newsletterWelcomeEmail(
   return {
     to: input.email,
     subject: `Welcome to ${ATELIER_NAME}`,
+    html,
+    text,
+  };
+}
+
+/**
+ * What the acknowledgement says about the mailing list, which is the only part
+ * of an erasure request the app completes on the spot. `unavailable` promises
+ * nothing — the studio does it by hand — because a customer told they were
+ * removed from a list the app couldn't reach has been told something untrue
+ * about the one thing that was supposed to have happened already.
+ */
+const DELETION_MARKETING_LINES: Record<MarketingOptOutResult, string> = {
+  unsubscribed:
+    "We've already taken you off our mailing list, so you won't receive any more studio news.",
+  absent:
+    "You weren't on our mailing list, so there was nothing to remove there.",
+  unavailable:
+    "We'll also make sure you're taken off our mailing list as part of this.",
+};
+
+/** Acknowledges a customer's request to have their data deleted. Deliberately
+ * says what has NOT happened yet: the studio reviews it by hand, and records it
+ * is required to keep may remain. */
+export function dataDeletionRequestConfirmationEmail(
+  email: string,
+  marketing: MarketingOptOutResult,
+): EmailMessage {
+  const marketingLine = DELETION_MARKETING_LINES[marketing];
+
+  const html = layout(
+    "We've received your request",
+    `<p>Hi there,</p>
+     <p>Thank you, we've received your request to delete the personal
+        information we hold about you. Someone from the studio will review it
+        and write to you to confirm what has been removed.</p>
+     <p>${marketingLine}</p>
+     <p>Some records we may need to keep for a period — an invoice or a payment
+        record, for instance, is a business record we're required to hold on to.
+        We'll tell you if that applies to anything of yours.</p>
+     <p>If you have an order with us in progress, do let us know whether you'd
+        like us to finish it first.</p>`,
+  );
+
+  const text = [
+    `Hi there,`,
+    ``,
+    `Thank you, we've received your request to delete the personal information we hold about you. Someone from the studio will review it and write to you to confirm what has been removed.`,
+    ``,
+    marketingLine,
+    ``,
+    `Some records we may need to keep for a period — an invoice or a payment record, for instance, is a business record we're required to hold on to. We'll tell you if that applies to anything of yours.`,
+    ``,
+    `If you have an order with us in progress, do let us know whether you'd like us to finish it first.`,
+    ``,
+    `Thank you,`,
+    `The ${ATELIER_NAME} team`,
+  ].join("\n");
+
+  return {
+    to: email,
+    subject: `We've received your data deletion request`,
+    html,
+    text,
+  };
+}
+
+/**
+ * A line naming what the customer is waiting for, for both mail bodies — or
+ * empty when they told us neither an event nor a date, in which case the copy
+ * simply doesn't mention it rather than saying "for: nothing".
+ */
+function waitlistTargetLine(target: WaitlistTarget): string {
+  const when = target.date ? formatCalendarDate(target.date) : "";
+  if (target.eventName && when) return `${target.eventName} · ${when}`;
+  return target.eventName || when;
+}
+
+/** Acknowledgement that a customer has been added to the commission waitlist. */
+export function waitlistConfirmationEmail(
+  input: CreateWaitlistInput,
+  target: WaitlistTarget,
+): EmailMessage {
+  const forLine = waitlistTargetLine(target);
+
+  const html = layout(
+    "You're on the waitlist",
+    `<p>Hi ${escapeHtml(input.name)},</p>
+     <p>Thank you for your patience. Our books are full for the current
+        season, and you're on the list. We'll write to you as soon as a space
+        opens up, before we reopen commissions publicly.</p>
+     ${
+       forLine
+         ? `<p>We've noted that you're planning for <strong>${escapeHtml(forLine)}</strong>.</p>`
+         : ""
+     }
+     <p>Nothing is booked yet and there's nothing to pay. If your plans change,
+        just reply to this email and let us know.</p>
+     <p>In the meantime, alterations, rhinestoning and repairs are still
+        open. If you have a piece already, we'd be glad to look at it.</p>`,
+  );
+
+  const text = [
+    `Hi ${input.name},`,
+    ``,
+    `Thank you for your patience. Our books are full for the current season,`,
+    `and you're on the list. We'll write to you as soon as a space opens up,`,
+    `before we reopen commissions publicly.`,
+    ...(forLine
+      ? [``, `We've noted that you're planning for ${forLine}.`]
+      : []),
+    ``,
+    `Nothing is booked yet and there's nothing to pay. If your plans change, just`,
+    `reply to this email and let us know.`,
+    ``,
+    `In the meantime, alterations, rhinestoning and repairs are still open. If`,
+    `you have a piece already, we'd be glad to look at it.`,
+    ``,
+    `Thank you,`,
+    `The ${ATELIER_NAME} team`,
+  ].join("\n");
+
+  return {
+    to: input.email,
+    subject: `You're on the ${ATELIER_NAME} waitlist`,
     html,
     text,
   };
@@ -1041,6 +1174,33 @@ export function backInStockNotificationEmail(
   };
 }
 
+/** Tells the atelier somebody has joined the commission waitlist — the signal
+ * they reopen the books on, so unlike a newsletter opt-in it is worth an email. */
+export function waitlistNotificationEmail(
+  input: CreateWaitlistInput,
+  target: WaitlistTarget,
+  to: string,
+): EmailMessage {
+  const forLine = waitlistTargetLine(target);
+  const fields: Field[] = [
+    ["Name", input.name],
+    ["Email", input.email],
+    ...(input.phone ? [["Phone", input.phone] as Field] : []),
+    ...(forLine ? [["Waiting for", forLine] as Field] : []),
+    ...(input.notes?.trim() ? [["Notes", input.notes.trim()] as Field] : []),
+  ];
+
+  return {
+    to,
+    replyTo: input.email,
+    subject: forLine
+      ? `Waitlist — ${input.name} (${forLine})`
+      : `Waitlist — ${input.name}`,
+    html: internalLayout("New waitlist entry", renderRowsHtml(fields)),
+    text: renderRowsText(fields),
+  };
+}
+
 /** Confirmation that a measurement-change request has been filed for the customer. */
 export function measurementChangeConfirmationEmail(
   input: CreateMeasurementChangeInput,
@@ -1057,7 +1217,7 @@ export function measurementChangeConfirmationEmail(
   const html = layout(
     "We've received your measurement change",
     `<p>Hi there,</p>
-     <p>Thank you — we've received your request to update the measurements on order
+     <p>Thank you, we've received your request to update the measurements on order
         <strong>${orderNumber}</strong>.</p>
      ${detailHtml}`,
   );
@@ -1065,7 +1225,7 @@ export function measurementChangeConfirmationEmail(
   const text = [
     `Hi there,`,
     ``,
-    `Thank you — we've received your request to update the measurements on order ${orderNumber}.`,
+    `Thank you, we've received your request to update the measurements on order ${orderNumber}.`,
     ``,
     detailText,
     ``,
@@ -1081,6 +1241,190 @@ export function measurementChangeConfirmationEmail(
   };
 }
 
+// ---------------------------------------------------------------------------
+// In-place measurement editing
+//
+// These two carry more weight than a confirmation usually does. Everywhere else
+// a customer email tells someone about something they just did; here it is the
+// tripwire on a write that no human reviewed (`measurement-update.service.ts`).
+// So both list every value with what it was before — an edit nobody made reads
+// as obviously wrong to the one person certain to spot it, and the atelier's
+// copy is what stops a change to an order already on the table going unread.
+// ---------------------------------------------------------------------------
+
+/** What each measurement was and now is, for the change tables below. `was` is
+ * absent for a value that wasn't on file — a measure-at-fitting order, or one
+ * predating the typed properties. */
+function measurementComparison(
+  measurements: OrderMeasurements,
+  previous?: OrderMeasurements,
+): Array<{ label: string; now: number | undefined; was?: number }> {
+  const rows: Array<
+    [label: string, key: Exclude<keyof OrderMeasurements, "unit">]
+  > = [
+    ["Waist", "waist"],
+    ["Chest", "bust"],
+    ["Hips", "hips"],
+    ["Height", "height"],
+    ["Body Girth", "bodyGirth"],
+  ];
+  return rows.map(([label, key]) => {
+    const was = previous?.[key];
+    return {
+      label,
+      now: measurements[key],
+      // Only a value that actually MOVED is shown as a change. Printing "was 26"
+      // beside "26" on the four untouched measurements buries the one that
+      // changed, which is the only thing either reader is looking for.
+      ...(was !== undefined && was !== measurements[key] ? { was } : {}),
+    };
+  });
+}
+
+/** The comparison as one line per measurement, e.g. "Waist: 26 (was 25)". */
+function measurementComparisonText(
+  measurements: OrderMeasurements,
+  previous?: OrderMeasurements,
+): string[] {
+  return measurementComparison(measurements, previous).map(
+    ({ label, now, was }) =>
+      `${label}: ${now ?? "—"}${was !== undefined ? ` (was ${was})` : ""}`,
+  );
+}
+
+function measurementComparisonHtml(
+  measurements: OrderMeasurements,
+  previous?: OrderMeasurements,
+): string {
+  const rows = measurementComparison(measurements, previous)
+    .map(
+      ({ label, now, was }) =>
+        `<tr>
+           <td style="padding:6px 16px 6px 0;color:#8a7f74;">${escapeHtml(label)}</td>
+           <td style="padding:6px 0;"><strong>${escapeHtml(String(now ?? "—"))}</strong>${
+             was !== undefined
+               ? ` <span style="color:#8a7f74;">(was ${escapeHtml(String(was))})</span>`
+               : ""
+           }</td>
+         </tr>`,
+    )
+    .join("\n        ");
+  return `<table role="presentation" cellpadding="0" cellspacing="0" style="margin:0 0 20px;font-size:15px;">
+        ${rows}
+      </table>`;
+}
+
+/** Details shared by the customer confirmation and the atelier notification. */
+export interface MeasurementUpdateDetails {
+  email: string;
+  orderNumber: string;
+  orderName: string;
+  measurements: OrderMeasurements;
+  previous?: OrderMeasurements;
+  note?: string;
+}
+
+/**
+ * Sent to the customer the moment their measurements are written. It is a
+ * receipt, not an acknowledgement — the change has already taken effect — and
+ * it closes by inviting a reply if the edit wasn't theirs, which is the only
+ * recovery path a customer has for a write nobody reviewed.
+ */
+export function measurementsUpdatedEmail(
+  details: MeasurementUpdateDetails,
+): EmailMessage {
+  const { orderNumber, measurements, previous, note } = details;
+
+  const html = layout(
+    "Your measurements are updated",
+    `<p>Hi there,</p>
+     <p>Your measurements for order <strong>${escapeHtml(orderNumber)}</strong>
+        have been updated. Here's what we now have on file, in
+        <strong>${escapeHtml(measurements.unit)}</strong>:</p>
+     ${measurementComparisonHtml(measurements, previous)}
+     ${
+       note
+         ? `<p style="color:#8a7f74;">Your note: ${escapeHtml(note)}</p>`
+         : ""
+     }
+     <p>We'll work to these from here. If anything looks wrong &mdash; or you
+        didn't make this change &mdash; just reply to this email and we'll put
+        it right.</p>`,
+  );
+
+  const text = [
+    `Hi there,`,
+    ``,
+    `Your measurements for order ${orderNumber} have been updated. Here's what we now have on file, in ${measurements.unit}:`,
+    ``,
+    ...measurementComparisonText(measurements, previous),
+    ...(note ? [``, `Your note: ${note}`] : []),
+    ``,
+    `We'll work to these from here. If anything looks wrong — or you didn't make this change — just reply to this email and we'll put it right.`,
+    ``,
+    `Thank you,`,
+    `The ${ATELIER_NAME} team`,
+  ].join("\n");
+
+  return {
+    to: details.email,
+    subject: `Your measurements are updated (${orderNumber})`,
+    html,
+    text,
+  };
+}
+
+/**
+ * Internal notification that a customer edited their own measurements. Unlike
+ * the change-request notification this is not a task — the values are already
+ * stored — so it leads with the order's current stage: what the atelier needs
+ * to know is whether any work has been done to the old numbers.
+ */
+export function measurementsUpdatedNotificationEmail(
+  details: MeasurementUpdateDetails & { currentStage: string; inbox: string },
+): EmailMessage {
+  const { orderNumber, orderName, measurements, previous, note } = details;
+
+  const changed = measurementComparison(measurements, previous).filter(
+    (row) => row.was !== undefined,
+  );
+
+  const fields: Field[] = [
+    ["Order number", orderNumber],
+    ["Order", orderName],
+    ["Email", details.email],
+    ["Current stage", details.currentStage || "—"],
+    [
+      "Changed",
+      changed.length > 0
+        ? changed
+            .map((row) => `${row.label} ${row.was} → ${row.now}`)
+            .join(", ")
+        : previous
+          ? "No values changed"
+          : "First measurements recorded",
+    ],
+    [
+      "Now on file",
+      measurementComparisonText(measurements).join(", ") +
+        ` (${measurements.unit})`,
+    ],
+    ...(note ? [["Customer note", note] as Field] : []),
+  ];
+
+  return {
+    to: details.inbox,
+    replyTo: details.email,
+    subject: `Measurements updated — order ${orderNumber}`,
+    html: internalLayout(
+      "Measurements updated by the customer",
+      renderRowsHtml(fields),
+      "order updated",
+    ),
+    text: renderRowsText(fields),
+  };
+}
+
 /** Confirmation sent to the customer when they request an order cancellation.
  * The atelier reviews and processes the refund; this just acknowledges the ask. */
 export function cancellationRequestConfirmationEmail(
@@ -1090,7 +1434,7 @@ export function cancellationRequestConfirmationEmail(
   const html = layout(
     "We've received your cancellation request",
     `<p>Hi there,</p>
-     <p>Thank you — we've received your request to cancel order
+     <p>Thank you, we've received your request to cancel order
         <strong>${orderNumber}</strong>. Our team will review it and be in touch
         shortly to confirm the next steps.</p>
      <p>If a refund applies, we'll process it to your original payment method.</p>`,
@@ -1099,7 +1443,7 @@ export function cancellationRequestConfirmationEmail(
   const text = [
     `Hi there,`,
     ``,
-    `Thank you — we've received your request to cancel order ${orderNumber}. Our team will review it and be in touch shortly to confirm the next steps.`,
+    `Thank you, we've received your request to cancel order ${orderNumber}. Our team will review it and be in touch shortly to confirm the next steps.`,
     ``,
     `If a refund applies, we'll process it to your original payment method.`,
     ``,
@@ -1225,7 +1569,7 @@ export function reviewConfirmationEmail(
     "Thank you for your review",
     `<p>Hi there,</p>
      <p>Thank you for taking a moment to share your thoughts on order
-        <strong>${orderNumber}</strong> — it means the world to a small atelier.</p>
+        <strong>${orderNumber}</strong>. It means the world to a small atelier.</p>
      <p>We've passed your words to the team, and we hope your piece brings you
         confidence every time you wear it.</p>`,
   );
@@ -1233,8 +1577,8 @@ export function reviewConfirmationEmail(
   const text = [
     `Hi there,`,
     ``,
-    `Thank you for taking a moment to share your thoughts on order ${orderNumber} —`,
-    `it means the world to a small atelier.`,
+    `Thank you for taking a moment to share your thoughts on order ${orderNumber}.`,
+    `It means the world to a small atelier.`,
     ``,
     `We've passed your words to the team, and we hope your piece brings you`,
     `confidence every time you wear it.`,
@@ -1522,7 +1866,7 @@ export function appointmentCancelledEmail(
      <p>Your <strong>${details.typeName}</strong> with <strong>${details.staff}</strong>
         on ${details.when} has been cancelled, and the time released.</p>
      <p>We're sorry to miss you this time. Whenever you're ready, you can book a
-        new time on our appointments page — we'd love to see you.</p>`,
+        new time on our appointments page, and we'd love to see you.</p>`,
   );
 
   const text = [
@@ -1532,7 +1876,7 @@ export function appointmentCancelledEmail(
     `cancelled, and the time released.`,
     ``,
     `We're sorry to miss you this time. Whenever you're ready, you can book a new`,
-    `time on our appointments page — we'd love to see you.`,
+    `time on our appointments page, and we'd love to see you.`,
     ``,
     `Thank you,`,
     `The ${ATELIER_NAME} team`,
@@ -1671,6 +2015,53 @@ export function cancellationRequestNotificationEmail(
   };
 }
 
+/**
+ * Tells the atelier a customer has asked to be erased.
+ *
+ * The one internal notification with a clock on it: a data-subject request
+ * carries a statutory deadline, and unlike a refund or a restock there is no
+ * dashboard tool that will eventually catch it — a person has to decide what
+ * may go and remove it by hand. So the mail names the deadline-bearing facts
+ * (who, their sign-in account id) and says plainly what the app did and did not
+ * already do.
+ */
+export function dataDeletionRequestNotificationEmail(
+  details: {
+    email: string;
+    userId?: string;
+    note?: string;
+    marketing: MarketingOptOutResult;
+  },
+  to: string,
+): EmailMessage {
+  const marketing: Record<MarketingOptOutResult, string> = {
+    unsubscribed: "Unsubscribed by the app",
+    absent: "Was not on the audience",
+    unavailable: "NOT done — unsubscribe them by hand",
+  };
+
+  const fields: Field[] = [
+    ["Email", details.email],
+    ...(details.userId
+      ? [["Sign-in account id", details.userId] as Field]
+      : []),
+    ["Mailing list", marketing[details.marketing]],
+    ...(details.note ? [["Their note", details.note] as Field] : []),
+    [
+      "Still to do",
+      "Decide what may be erased, then remove the Notion rows, the Client CRM record and the sign-in account by hand. Nothing else has been deleted.",
+    ],
+  ];
+
+  return {
+    to,
+    replyTo: details.email,
+    subject: `Data deletion requested — ${details.email}`,
+    html: internalLayout("Data deletion request", renderRowsHtml(fields)),
+    text: renderRowsText(fields),
+  };
+}
+
 /** Confirmation that a return/exchange request has been filed for the customer. */
 export function returnRequestConfirmationEmail(
   input: CreateReturnInput,
@@ -1681,7 +2072,7 @@ export function returnRequestConfirmationEmail(
   const html = layout(
     `We've received your ${kindWord} request`,
     `<p>Hi there,</p>
-     <p>Thank you — we've received your request to ${kindWord} order
+     <p>Thank you, we've received your request to ${kindWord} order
         <strong>${escapeHtml(orderNumber)}</strong>. Our team will review it and
         be in touch with the next steps, including any return-shipping details.</p>`,
   );
@@ -1689,7 +2080,7 @@ export function returnRequestConfirmationEmail(
   const text = [
     `Hi there,`,
     ``,
-    `Thank you — we've received your request to ${kindWord} order ${orderNumber}.`,
+    `Thank you, we've received your request to ${kindWord} order ${orderNumber}.`,
     `Our team will review it and be in touch with the next steps, including any`,
     `return-shipping details.`,
     ``,
@@ -1839,7 +2230,7 @@ export function shopOrderConfirmationEmail(
 
   const itemsText = details.lineItems.map(
     (item) =>
-      `${item.quantity} × ${item.description} — ${formatUsd(item.amount)}`,
+      `${item.quantity} × ${item.description}: ${formatUsd(item.amount)}`,
   );
   const totalsText = [
     ...totals.map(([label, amount]) => `${label}: ${formatUsd(amount)}`),

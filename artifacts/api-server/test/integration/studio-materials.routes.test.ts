@@ -168,6 +168,7 @@ describe("GET /api/studio/materials", () => {
     expect(response.status).toBe(200);
     expect(response.body).toEqual({
       lowStock: [],
+      notRestockable: [],
       untracked: [],
       suppressedCount: 0,
       totalCount: 0,
@@ -202,6 +203,7 @@ describe("GET /api/studio/materials", () => {
     expect(response.status).toBe(200);
     expect(response.body).toEqual({
       lowStock: [],
+      notRestockable: [],
       untracked: [],
       suppressedCount: 0,
       totalCount: 0,

@@ -40,7 +40,7 @@ export interface OgImage {
 }
 
 const DEFAULT_OG_ALT =
-  "A.A Atelier — handcrafted custom figure skating and dance costumes";
+  "Handcrafted custom skating and dance costumes by A.A Atelier";
 
 /**
  * The two share formats every indexable route ships.
@@ -80,7 +80,7 @@ export function socialSlug(routePath: string): string {
  */
 function socialAlt(title: string): string {
   const headline = title.split("|")[0]!.trim();
-  return `${headline} — A.A Atelier`;
+  return `${headline} from A.A Atelier`;
 }
 
 /** The generated landscape + vertical pair for a route, in preference order. */
@@ -108,7 +108,7 @@ export const DEFAULT_OG_IMAGE: OgImage = {
  * art is ever missing from a deploy.
  */
 export const DEFAULT_OG_IMAGES: OgImage[] = [
-  ...socialImages("/", "Custom Figure Skating & Dance Costumes"),
+  ...socialImages("/", "Custom Skating & Dance Costumes"),
   DEFAULT_OG_IMAGE,
 ];
 
@@ -137,7 +137,7 @@ export function imagesFor(route: {
 export interface RouteSeo {
   /** Route path, e.g. "/" or "/about". Also the sitemap `loc` and canonical. */
   path: string;
-  /** Full document title, e.g. "About A.A Atelier — Custom Skating Costume Studio". */
+  /** Full document title, e.g. "About A.A Atelier: Custom Skating & Dance Costume Studio". */
   title: string;
   /** Meta description — one to two sentences, keyword-aware. */
   description: string;
@@ -157,33 +157,33 @@ export interface RouteSeo {
 export const ROUTE_SEO: Record<string, RouteSeo> = {
   "/": {
     path: "/",
-    title: "Custom Figure Skating & Dance Costumes | A.A Atelier",
+    title: "Custom Skating & Dance Costumes | A.A Atelier",
     description:
-      "A.A Atelier crafts custom, made-to-measure figure skating and dance costumes by hand — from first sketch to final stitch. Begin a commission or track your order.",
+      "A.A Atelier crafts custom, made-to-measure costumes for figure skating and dance by hand, from first sketch to final stitch. Begin a commission or track your order.",
     changefreq: "monthly",
     priority: 1.0,
   },
   "/services": {
     path: "/services",
-    title: "Services — Bespoke Costumes, Fittings & Rhinestoning | A.A Atelier",
+    title: "Services: Bespoke Costumes, Fittings & Rhinestoning | A.A Atelier",
     description:
-      "Bespoke commissions, in-person fittings and alterations, hand-applied rhinestoning, and repairs for figure skating and dance costumes by A.A Atelier.",
+      "Bespoke commissions, in-person fittings and alterations, hand-applied rhinestoning, and repairs for skating and dance costumes by A.A Atelier.",
     changefreq: "monthly",
     priority: 0.8,
   },
   "/about": {
     path: "/about",
-    title: "About A.A Atelier — Custom Skating Costume Studio",
+    title: "About A.A Atelier: Custom Skating & Dance Costume Studio",
     description:
-      "Meet A.A Atelier, the custom figure skating and dance costume studio behind A3 Ice and Dance. Answers on timelines, measuring, pricing, rush orders, and shipping.",
+      "Meet A.A Atelier, the custom skating and dance costume studio behind A3 Ice and Dance. Answers on timelines, measuring, pricing, rush orders, and shipping.",
     changefreq: "monthly",
     priority: 0.8,
   },
   "/shop": {
     path: "/shop",
-    title: "Shop — Ready-to-Wear Skating & Dance | A.A Atelier",
+    title: "Shop Ready-to-Wear Skating & Dance | A.A Atelier",
     description:
-      "Browse ready-to-wear figure skating and dance pieces from A.A Atelier. In-stock costumes and accessories, with restock notifications on sold-out sizes.",
+      "Browse ready-to-wear skating and dance pieces from A.A Atelier. In-stock costumes and accessories, with restock notifications on sold-out sizes.",
     changefreq: "weekly",
     priority: 0.9,
   },
@@ -199,7 +199,7 @@ export const ROUTE_SEO: Record<string, RouteSeo> = {
     path: "/order",
     title: "Place a Custom Costume Order | A.A Atelier",
     description:
-      "Start your custom figure skating or dance costume. Share your contact details, measurements, and design notes and A.A Atelier will craft a one-of-a-kind piece for you.",
+      "Start your custom skating or dance costume. Share your contact details, measurements, and design notes and A.A Atelier will craft a one-of-a-kind piece for you.",
     changefreq: "monthly",
     priority: 0.7,
   },
@@ -215,7 +215,7 @@ export const ROUTE_SEO: Record<string, RouteSeo> = {
     path: "/contact",
     title: "Contact A.A Atelier | A3 Ice and Dance",
     description:
-      "Get in touch with A.A Atelier about a custom figure skating or dance costume, a fitting, or a question. Reach us by email or on Instagram at @a3iceanddance.",
+      "Get in touch with A.A Atelier about a custom skating or dance costume, a fitting, or a question. Reach us by email or on Instagram at @a3iceanddance.",
     changefreq: "monthly",
     priority: 0.6,
   },
@@ -250,7 +250,7 @@ export const ROUTE_SEO: Record<string, RouteSeo> = {
     path: "/track",
     title: "Track Your Order | A.A Atelier",
     description:
-      "Look up any A.A Atelier order — a custom commission or a shop purchase — by its order number and follow its progress.",
+      "Look up any A.A Atelier order, a custom commission or a shop purchase, by its order number and follow its progress.",
     noindex: true,
   },
   "/shop/success": {
@@ -283,7 +283,7 @@ export const ROUTE_SEO: Record<string, RouteSeo> = {
     path: "/account",
     title: "Your Account | A.A Atelier",
     description:
-      "Your A.A Atelier account — custom orders, shop orders, and invoices gathered in one place.",
+      "Your A.A Atelier account: custom orders, shop orders, and invoices gathered in one place.",
     noindex: true,
   },
   // Internal, staff-only. Noindex keeps it out of the sitemap and the prerender

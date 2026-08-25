@@ -15,6 +15,7 @@ export type StudioTool = typeof StudioTool[keyof typeof StudioTool];
 export const StudioTool = {
   milestones: 'milestones',
   'invoice-lines': 'invoice-lines',
+  quote: 'quote',
   'status-email': 'status-email',
   'cancellation-refund': 'cancellation-refund',
   'return-refund': 'return-refund',

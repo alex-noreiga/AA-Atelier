@@ -6,8 +6,8 @@
 // intake and usage lines (both rollups feeding a `Stock on Hand` formula), and
 // nothing here writes any of it back.
 //
-// TWO TRAPS LIVE IN THIS SCHEMA — both are why this file exists rather than the
-// property names being inlined at the call site:
+// FOUR TRAPS LIVE IN THIS SCHEMA — all of them why this file exists rather
+// than the property names being inlined at the call site:
 //
 //  1. **`Restock Alerts On/Off` is a SUPPRESSION checkbox, not an enable one.**
 //     Its name reads like a switch you tick to turn alerts on; its Notion
@@ -21,14 +21,45 @@
 //     have none" and "we have never recorded any" are different claims, and only
 //     one of them is a reason to reorder. It maps to `null` and the service
 //     declines to raise an alert on it.
+//  3. **`Fabric Type` is a MULTI-select, not a select.** Its Notion description
+//     says "use when Category is Fabric", so in practice it is empty on a
+//     crystal or a box — but a fabric may legitimately carry several (a power
+//     mesh that is also a lining). It maps to an ARRAY, and the dashboard groups
+//     a material under the FIRST of them rather than repeating the row under
+//     each: a shopping list you might count twice is worse than one where a
+//     secondary type is only a label. Nothing here decides that — it just
+//     preserves the atelier's own order, which is what they drag in Notion.
+//  4. **`Reorder Status` is mostly UNSET, and unset is not "no".** 38 of the 50
+//     rows carry no value at all — including 9 of the 22 the atelier has set a
+//     reorder point on. So it maps to an optional string and the service treats
+//     only the two values that positively say "you cannot buy this again"
+//     (`Deadstock`, `Discontinued`) as disqualifying. Reading it the other way
+//     round — an allowlist of `Restockable` — would drop those 9 watched
+//     materials off the reorder list without saying anything, which is the
+//     failure this whole panel exists to prevent.
+
+// TODO(material-usage): the atelier wants each material to say what it is
+// typically USED FOR — "bodice lining", "skirt overlay", "soaker binding" — so
+// the reorder list reads as what the studio would be unable to make, not just
+// what has run low. That needs a new property on the materials inventory (a
+// multi_select would group like `Fabric Type` does; a rich_text would read
+// better but can only be a label), then a `usedFor` on the record, the two
+// contract schemas, and a line on the dashboard row. Deliberately not guessed
+// at here: the property doesn't exist in Notion yet, and reading one that isn't
+// there is how a Notion query starts returning nothing useful.
 
 // Live-schema property names (a Notion rename is a one-line change here).
 export const MATERIAL_NAME_PROPERTY = "Item Name"; // title
 export const MATERIAL_CATEGORY_PROPERTY = "Category"; // select
+/** Which fabric it is, when the category is Fabric. MULTI-select: a material can
+ * carry more than one (a power-mesh lining is both). See trap 3. */
+export const MATERIAL_FABRIC_TYPE_PROPERTY = "Fabric Type"; // multi_select
 export const MATERIAL_STOCK_ON_HAND_PROPERTY = "Stock on Hand"; // formula (number)
 export const MATERIAL_MINIMUM_STOCK_PROPERTY = "Minimum Stock"; // number
 /** Ticked ⇒ alerts SUPPRESSED for this material. See trap 1 above. */
 export const MATERIAL_ALERTS_SUPPRESSED_PROPERTY = "Restock Alerts On/Off"; // checkbox
+/** Whether the material can actually be bought again. See trap 4. */
+export const MATERIAL_REORDER_STATUS_PROPERTY = "Reorder Status"; // select
 export const MATERIAL_LINK_PROPERTY = "Material Link"; // url
 export const MATERIAL_PRICE_PROPERTY = "Price per Unit"; // number
 
@@ -39,12 +70,18 @@ export interface MaterialRecord {
   name: string;
   /** Fabric / Applique / Crystal / Packaging / Notions. Absent when unset. */
   category?: string;
+  /** The fabric(s) this is, in the atelier's own order. Absent when none are
+   * tagged — which is every non-fabric material. See trap 3. */
+  fabricTypes?: string[];
   /** Units remaining. `null` when the formula produced no number — unknown, not zero. */
   stockOnHand: number | null;
   /** The reorder point. `null` when the atelier hasn't set one. */
   minimumStock: number | null;
   /** True when the atelier has muted alerts for this material (see trap 1). */
   alertsSuppressed: boolean;
+  /** Restockable / Deadstock / Made to order / Discontinued / Unchecked.
+   * Absent on most rows — see trap 4, and don't read absent as "no". */
+  reorderStatus?: string;
   /** Where to buy it again, when the atelier recorded a link. */
   link?: string;
   pricePerUnit?: number;
@@ -54,6 +91,7 @@ export interface MaterialRecord {
 type NotionReadProperty =
   | { type: "title"; title: Array<{ plain_text: string }> }
   | { type: "select"; select: { name: string } | null }
+  | { type: "multi_select"; multi_select: Array<{ name: string }> }
   | { type: "number"; number: number | null }
   | { type: "checkbox"; checkbox: boolean }
   | { type: "url"; url: string | null }
@@ -77,6 +115,14 @@ function readSelect(page: NotionMaterialPage, name: string): string {
   const p = page.properties[name];
   if (p?.type !== "select") return "";
   return p.select?.name ?? "";
+}
+
+/** The tagged option names, in the order Notion holds them. Blank names are
+ * dropped so a half-deleted option can't produce an empty group. */
+function readMultiSelect(page: NotionMaterialPage, name: string): string[] {
+  const p = page.properties[name];
+  if (p?.type !== "multi_select") return [];
+  return p.multi_select.map((option) => option.name.trim()).filter(Boolean);
 }
 
 function readNumber(page: NotionMaterialPage, name: string): number | null {
@@ -110,6 +156,8 @@ function readFormulaNumber(
  * absent/null rather than throwing, so one odd row can't fail the whole scan. */
 export function extractMaterial(page: NotionMaterialPage): MaterialRecord {
   const category = readSelect(page, MATERIAL_CATEGORY_PROPERTY);
+  const fabricTypes = readMultiSelect(page, MATERIAL_FABRIC_TYPE_PROPERTY);
+  const reorderStatus = readSelect(page, MATERIAL_REORDER_STATUS_PROPERTY);
   const link = readUrl(page, MATERIAL_LINK_PROPERTY);
   const pricePerUnit = readNumber(page, MATERIAL_PRICE_PROPERTY);
 
@@ -120,6 +168,8 @@ export function extractMaterial(page: NotionMaterialPage): MaterialRecord {
     minimumStock: readNumber(page, MATERIAL_MINIMUM_STOCK_PROPERTY),
     alertsSuppressed: readCheckbox(page, MATERIAL_ALERTS_SUPPRESSED_PROPERTY),
     ...(category ? { category } : {}),
+    ...(fabricTypes.length ? { fabricTypes } : {}),
+    ...(reorderStatus ? { reorderStatus } : {}),
     ...(link ? { link } : {}),
     ...(pricePerUnit !== null ? { pricePerUnit } : {}),
   };

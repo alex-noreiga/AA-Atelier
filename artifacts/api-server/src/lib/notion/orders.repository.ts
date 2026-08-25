@@ -10,12 +10,22 @@ import {
   assertDatabaseConfigured,
   type NotionClient,
 } from "./client.js";
-import { buildOrderProperties, buildOrderPageBlocks } from "./orders.blocks.js";
-import { createPageDroppingUnknownProperties } from "./create-page.js";
+import {
+  buildOrderProperties,
+  buildOrderPageBlocks,
+  buildMeasurementProperties,
+  buildMeasurementRevisionBlocks,
+  type MeasurementValues,
+} from "./orders.blocks.js";
+import { MeasurementPropertiesMissingError } from "../errors.js";
 import { scanDatabase } from "./scan.js";
+import {
+  createPageDroppingUnknownProperties,
+  findUnknownProperty,
+} from "./create-page.js";
+import { logger } from "../logger.js";
 import { normalizeEmail } from "../email.js";
 import { resolveOrderPipeline } from "../order-pipeline.js";
-import { logger } from "../logger.js";
 import {
   ORDER_NUMBER_PROPERTY,
   ORDER_EMAIL_PROPERTY,
@@ -23,6 +33,7 @@ import {
   ORDER_MILESTONES_GENERATED_PROPERTY,
   ORDER_LAST_NOTIFIED_STAGE_PROPERTY,
   ORDER_CANCELLED_PROPERTY,
+  ORDER_STAGE_PROPERTY,
   extractStageOptions,
   extractOrderNumber,
   extractOrderName,
@@ -44,6 +55,7 @@ import {
   type NotionQueryResponse,
   type OrderRecord,
   type OrderSummary,
+  type OrderMeasurements,
   type OrderAnalyticsRecord,
 } from "./orders.schema.js";
 
@@ -120,6 +132,7 @@ export async function createOrder(
     client,
     properties,
     children,
+    "orders",
   );
   return { orderNumber, pageId: created.id };
 }
@@ -163,6 +176,7 @@ export async function findOrderByNumber(
   const invoicePageId = extractInvoiceRelationId(page);
   const costingItemIds = extractCostingItemIds(page);
   const fulfilmentFields = extractFulfilmentFields(page);
+  const service = extractOrderService(page);
   return {
     orderNumber: trimmedOrderNumber,
     orderName: extractOrderName(page),
@@ -177,6 +191,7 @@ export async function findOrderByNumber(
     // Raw: the order's own stage list decides whether it has been delivered, so
     // resolving these into the customer view is `getOrderStatus`'s job.
     ...(Object.keys(fulfilmentFields).length > 0 ? { fulfilmentFields } : {}),
+    ...(service !== undefined ? { service } : {}),
   };
 }
 
@@ -394,6 +409,66 @@ export function findOrdersNeedingMilestones(
 }
 
 /**
+ * Count the capacity-gated orders currently in production — the number the
+ * commission-capacity gate weighs against `COMMISSION_CAPACITY`.
+ *
+ * Deliberately a *filtered* query rather than the analytics' full scan, because
+ * this one is reached from a PUBLIC endpoint on every intake-form load. The
+ * filter asks Notion for the orders that are neither cancelled nor at the final
+ * stage, so what comes back is bounded by the studio's real open workload (a
+ * handful of rows) rather than by every order ever placed. There is no `count`
+ * API, so the rows still have to be read — this just keeps the set small.
+ *
+ * The two terminal conditions mirror `orderLifecycleState` exactly: `Cancelled`
+ * ticked, or the current stage being the last of the live list. Note this
+ * excludes on the *superset's* final stage, which is `Delivered` for every
+ * pipeline (a service's stages are a subsequence ending there), so a repair is
+ * counted as open until it is delivered just like a commission — the same
+ * answer `orderLifecycleState` would give, without a per-row pipeline resolve.
+ *
+ * Which of those open orders are capacity-gated is the *catalog's* call, not
+ * this module's, so each row's stored `Service` rides back untouched and
+ * `capacity.service.ts` decides. That keeps the "what a service means" rule in
+ * the one place that owns it.
+ *
+ * A stage list that comes back empty (a Notion hiccup on the schema read) drops
+ * the stage half of the filter rather than guessing a name: the count then
+ * over-reports (delivered orders are included), which closes the books early —
+ * so the caller treats a *failed* read as unknown and this near-miss as the
+ * conservative-but-harmless case it is, since the atelier's manual switch
+ * overrides either way.
+ */
+export async function listOpenOrderServices(
+  client: NotionClient = getNotionClient(),
+): Promise<string[]> {
+  assertConfigured(client);
+
+  const stages = await fetchLiveOrderStages(client);
+  const finalStage = stages[stages.length - 1];
+
+  const conditions: Record<string, unknown>[] = [
+    // An absent checkbox reads as false, so `equals: false` matches the orders
+    // of a workspace that hasn't added the property as well as the un-cancelled
+    // ones of a workspace that has.
+    { property: ORDER_CANCELLED_PROPERTY, checkbox: { equals: false } },
+  ];
+  if (finalStage) {
+    // "Stage" is a Notion `status` property, not a select — see
+    // `.agents/memory/notion-status-filters.md`.
+    conditions.push({
+      property: ORDER_STAGE_PROPERTY,
+      status: { does_not_equal: finalStage },
+    });
+  }
+
+  const rows = await scanDatabase<NotionOrderPage>(client, "open orders", {
+    filter: { and: conditions },
+  });
+
+  return rows.map((page) => extractOrderService(page) ?? "");
+}
+
+/**
  * Mark an order's milestones as generated so the reconciliation cron won't
  * regenerate them. Setting the same value again is harmless, so this is
  * idempotent. To force a reschedule the atelier unchecks this in Notion.
@@ -437,6 +512,10 @@ export interface OrderStageNotification {
   /** The furthest stage already emailed about; empty when never notified. */
   lastNotifiedStage: string;
   estimatedCompletion?: string;
+  /** The raw `Service` property value, for the payment-reminder email's stage
+   * wording (`services/payment-labels.ts`) — this record is how that pass
+   * resolves an invoice back to its order. Undefined for a legacy order. */
+  service?: string;
 }
 
 /** Map a Notion order page (+ the live stage list) to the notification view. */
@@ -446,6 +525,7 @@ function buildStageNotification(
   fallbackNumber = "",
 ): OrderStageNotification {
   const estimatedCompletion = extractDueDate(page);
+  const service = extractOrderService(page);
   return {
     pageId: page.id,
     orderNumber: extractOrderNumber(page) || fallbackNumber,
@@ -455,6 +535,7 @@ function buildStageNotification(
     stages: pipelineFor(page, stages),
     lastNotifiedStage: extractLastNotifiedStage(page),
     ...(estimatedCompletion !== undefined ? { estimatedCompletion } : {}),
+    ...(service !== undefined ? { service } : {}),
   };
 }
 
@@ -577,6 +658,15 @@ export interface OrderVerification {
   email: string;
   currentStage: string;
   stages: string[];
+  /** The order's title, for a confirmation email that names the piece rather
+   * than only its number. */
+  orderName: string;
+  /** The measurements currently on file, when stored as readable properties.
+   * The in-place edit reads them to show the customer (and the order page)
+   * what each value was before. Absent for a measure-at-fitting order or one
+   * predating the measurement properties — in both cases there is simply
+   * nothing to compare against, which is not an error. */
+  measurements?: OrderMeasurements;
 }
 
 /** Look up an order for a gated, email-verified action (a measurement change or
@@ -617,11 +707,105 @@ export async function findOrderVerification(
     return null;
   }
 
+  const measurements = extractMeasurements(page);
   return {
     pageId: page.id,
     email: extractOrderEmail(page),
+    orderName: extractOrderName(page),
     currentStage: extractCurrentStage(page),
     stages: pipelineFor(page, stages),
+    ...(measurements ? { measurements } : {}),
+  };
+}
+
+/**
+ * Write a customer's edited measurements onto their order: replace the five
+ * typed properties (plus the unit) and append a revision section to the page
+ * body recording what the values were before.
+ *
+ * The two writes are deliberately ordered properties-then-body and are NOT
+ * atomic — Notion offers no transaction across a property PATCH and a block
+ * append. Properties first, because they are what the app reads back and what
+ * the customer is told was saved; the body section is the atelier's readable
+ * trail. If the append fails the caller logs it and still reports success,
+ * since re-running the whole edit to recover a paragraph would rewrite the
+ * properties a second time and file a duplicate revision.
+ *
+ * Like {@link createPageDroppingUnknownProperties}, a database that hasn't had
+ * the measurement properties added yet must not surface as an opaque 400 — but
+ * the answer here is the opposite one. At intake, dropping the property keeps
+ * the order; here, dropping it would report "saved" for a write that stored
+ * nothing, so a missing property throws {@link MeasurementPropertiesMissingError}
+ * and the caller turns it into an answer a human can act on.
+ */
+export async function updateOrderMeasurements(
+  pageId: string,
+  values: MeasurementValues,
+  revision: {
+    previous?: OrderMeasurements;
+    note?: string;
+    changedOn: string;
+  },
+  client: NotionClient = getNotionClient(),
+): Promise<void> {
+  assertConfigured(client);
+
+  const properties = buildMeasurementProperties(values);
+  const response = await client.fetch(`/v1/pages/${pageId}`, {
+    method: "PATCH",
+    body: JSON.stringify({ properties }),
+  });
+
+  if (!response.ok) {
+    const errorText = await response.text();
+    const missing = findUnknownProperty(errorText, properties);
+    if (missing) {
+      throw new MeasurementPropertiesMissingError(missing);
+    }
+    throw new Error(
+      `Notion measurement update failed with status ${response.status}: ${errorText}`,
+    );
+  }
+
+  const blocks = buildMeasurementRevisionBlocks({
+    values,
+    ...(revision.previous
+      ? { previous: measurementRevisionPrevious(revision.previous) }
+      : {}),
+    ...(revision.note ? { note: revision.note } : {}),
+    changedOn: revision.changedOn,
+  });
+
+  const appended = await client.fetch(`/v1/blocks/${pageId}/children`, {
+    method: "PATCH",
+    body: JSON.stringify({ children: blocks }),
+  });
+
+  if (!appended.ok) {
+    // Best-effort by design (see the note above): the measurements are already
+    // stored, so warn loudly rather than failing an edit that took effect.
+    logger.warn(
+      { pageId, status: appended.status },
+      "Measurements were updated but the revision note could not be appended to the order page",
+    );
+  }
+}
+
+/** The stored measurements flattened into the shape the revision builder
+ * compares against — the unit rides along so a revision can say the values were
+ * previously recorded in another unit. */
+function measurementRevisionPrevious(
+  previous: OrderMeasurements,
+): Partial<Record<keyof MeasurementValues, number | string>> {
+  return {
+    measurementUnit: previous.unit,
+    ...(previous.waist !== undefined ? { waist: previous.waist } : {}),
+    ...(previous.bust !== undefined ? { bust: previous.bust } : {}),
+    ...(previous.hips !== undefined ? { hips: previous.hips } : {}),
+    ...(previous.height !== undefined ? { height: previous.height } : {}),
+    ...(previous.bodyGirth !== undefined
+      ? { bodyGirth: previous.bodyGirth }
+      : {}),
   };
 }
 

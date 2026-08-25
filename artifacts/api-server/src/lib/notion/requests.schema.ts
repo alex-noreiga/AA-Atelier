@@ -1,8 +1,8 @@
 // Notion schema mapping for the READ side of the "Website Contact Messages"
 // database — the customer requests the studio dashboard's queue works down.
 //
-// Six writers file into that database (see CLAUDE.md, "The contact database has
-// six writers") and until now nothing read any of them back. The property-name
+// Eight writers file into that database (see CLAUDE.md, "The contact database
+// has eight writers") and nothing read any of them back until this. The property-name
 // constants and the `Request type` values therefore already exist, in the
 // writers; this module imports them rather than restating them, exactly as
 // `reviews.schema.ts` imports from `reviews.blocks.ts`, so a Notion rename stays
@@ -46,6 +46,8 @@ import { MEASUREMENT_CHANGE_REQUEST_TYPE } from "./measurement-change.blocks.js"
 import { CANCELLATION_REQUEST_TYPE } from "./cancellation.blocks.js";
 import { RETURN_REQUEST_TYPE } from "./return-request.blocks.js";
 import { NEWSLETTER_REQUEST_TYPE } from "./newsletter.blocks.js";
+import { WAITLIST_REQUEST_TYPE } from "./waitlist.blocks.js";
+import { DATA_DELETION_REQUEST_TYPE } from "./data-deletion.blocks.js";
 
 /**
  * The `Stage` values the inbox has always carried, beyond the `New` every
@@ -75,7 +77,9 @@ export type RequestKind =
   | "measurement"
   | "cancellation"
   | "return"
+  | "waitlist"
   | "newsletter"
+  | "data-deletion"
   | "other";
 
 /** `Request type` → kind. Everything absent from this table is `other`, which
@@ -89,7 +93,9 @@ const KIND_BY_REQUEST_TYPE: Record<string, RequestKind> = {
   [MEASUREMENT_CHANGE_REQUEST_TYPE]: "measurement",
   [CANCELLATION_REQUEST_TYPE]: "cancellation",
   [RETURN_REQUEST_TYPE]: "return",
+  [WAITLIST_REQUEST_TYPE]: "waitlist",
   [NEWSLETTER_REQUEST_TYPE]: "newsletter",
+  [DATA_DELETION_REQUEST_TYPE]: "data-deletion",
 };
 
 /** The kinds that concern an order, and so carry an order number to recover. */
@@ -100,9 +106,10 @@ const ORDER_SCOPED_KINDS: ReadonlySet<RequestKind> = new Set<RequestKind>([
 ]);
 
 /** The dashboard tool that actions this request, and which argument it takes.
- * `measurement` and `inquiry` are absent on purpose: a measurement change is
- * applied to the order by hand and an inquiry is answered by email, so there is
- * no button to offer. */
+ * `measurement`, `inquiry` and `data-deletion` are absent on purpose: a
+ * measurement change is applied to the order by hand, an inquiry is answered by
+ * email, and an erasure request is a judgement about which records may go — so
+ * there is no button to offer. */
 const TOOL_BY_KIND: Partial<Record<RequestKind, RequestActionTool>> = {
   cancellation: { tool: "cancellation-refund", argument: "orderNumber" },
   return: { tool: "return-refund", argument: "orderNumber" },

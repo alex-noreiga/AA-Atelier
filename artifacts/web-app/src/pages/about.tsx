@@ -16,27 +16,27 @@ const FAQS: { question: string; answer: string }[] = [
   {
     question: "How long does a custom costume take?",
     answer:
-      "Most commissions take between four to eight weeks from consultation to final fitting, depending on the complexity of the piece. Competition season fills quickly, so we recommend booking a few months ahead of the date you need the costume in hand to account for any supply chain issues along the way.",
+      "Most commissions take between four to eight weeks from consultation to final fitting, depending on the complexity of the piece. Competition and recital season fills quickly, so we recommend booking a few months ahead of the date you need the costume in hand to account for any supply chain issues along the way.",
   },
   {
     question: "How do I get measured?",
     answer:
-      "The order form walks you through every measurement we need. If you need help measuring yourself, or your skater, feel free to schedule an appointment with Alexandra.",
+      "The order form walks you through every measurement we need. If you need help measuring yourself, or the skater or dancer you're ordering for, feel free to schedule an appointment with Alexandra.",
   },
   {
     question: "What does a commission cost?",
     answer:
-      "Every piece is priced individually — the final cost depends on the fabric, the amount of embellishment, and the complexity of the design. We quote each commission after your consultation, once we know what it calls for. As a starting point, commissions begin with a $100 deposit, and standalone services like fittings, alterations, rhinestoning, and repairs start at $50.",
+      "Every piece is priced individually. The final cost depends on the fabric, the amount of embellishment, and the complexity of the design. We quote each commission after your consultation, once we know what it calls for. As a starting point, commissions begin with a $100 deposit, and standalone services like fittings, alterations, rhinestoning, and repairs start at $50.",
   },
   {
     question: "How do deposits and payment work?",
     answer:
-      "Commissions are paid in stages, not all at once. You begin with a $100 deposit to reserve your place and start your design, followed by a second deposit of $50 to $100 at your first fitting depending on the detailing your piece calls for. The final balance — your materials and labor, itemized on an invoice — is due when the finished costume is ready. Each stage can be paid securely online from your order's tracking page.",
+      "Commissions are paid in stages, not all at once. You begin with a $100 deposit to reserve your place and start your design, followed by a second deposit of $50 to $100 at your first fitting depending on the detailing your piece calls for. The final balance, your materials and labor itemized on an invoice, is due when the finished costume is ready. Each stage can be paid securely online from your order's tracking page.",
   },
   {
     question: "Can you rush an order?",
     answer:
-      "Sometimes, depending on where the calendar stands. Rush work carries an additional surcharge. Just set your date on the order form — if it's sooner than our standard timeline we'll flag it as a rush, and we'll confirm we can meet your date before any work begins.",
+      "Sometimes, depending on where the calendar stands. Rush work carries an additional surcharge. Just set your date on the order form. If it's sooner than our standard timeline we'll flag it as a rush, and we'll confirm we can meet your date before any work begins.",
   },
   {
     question: "Do you ship?",
@@ -51,7 +51,7 @@ const FAQS: { question: string; answer: string }[] = [
   {
     question: "How do I care for my costume?",
     answer:
-      "Hand wash in cold water with a gentle detergent and lay flat to dry. Never dry-clean or machine dry a crystalled piece — the solvents and heat loosen the adhesive.",
+      "Hand wash in cold water with a gentle detergent and lay flat to dry. Never dry-clean or machine dry a crystalled piece, as the solvents and heat loosen the adhesive.",
   },
 ];
 
@@ -91,8 +91,8 @@ export default function About() {
             About
           </h1>
           <p className="text-muted-foreground font-light text-lg md:text-xl max-w-xl mx-auto leading-relaxed">
-            A small atelier devoted to figure skating and dance costumes made
-            just for you.
+            A small atelier devoted to skating and dance costumes made just for
+            you.
           </p>
         </div>
 
@@ -125,7 +125,7 @@ export default function About() {
 
         {/* Testimonials — curated reviews, following the studio story and
             preceding the practical questions. Absent until one is published. */}
-        <Testimonials eyebrow="In Their Words" title="What skaters say" />
+        <Testimonials eyebrow="In Their Words" title="What our clients say" />
 
         {/* FAQ */}
         <div className="mt-24" data-testid="faq-section">

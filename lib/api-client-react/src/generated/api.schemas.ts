@@ -253,6 +253,75 @@ export interface NewMeasurementChangeRequest {
   note?: string;
 }
 
+export type UpdateMeasurementsRequestMeasurementUnit = typeof UpdateMeasurementsRequestMeasurementUnit[keyof typeof UpdateMeasurementsRequestMeasurementUnit];
+
+
+export const UpdateMeasurementsRequestMeasurementUnit = {
+  inches: 'inches',
+  cm: 'cm',
+} as const;
+
+/**
+ * New measurements to write onto an order in place. Every value is required, unlike NewMeasurementChangeRequest: a change request is read by a person who can reconcile it against what is on file, whereas this replaces the stored set outright, and a partial write would leave the atelier cutting to a mix of old and new numbers. There is deliberately no "measure me at a fitting" branch here — that asks for a service rather than changing a value, so it stays a change request.
+ */
+export interface UpdateMeasurementsRequest {
+  /** The email to verify against the one on the order. A request whose email doesn't match, or an order with no email stored to check against, is refused. */
+  email: string;
+  /** @exclusiveMinimum 0 */
+  waist: number;
+  /** @exclusiveMinimum 0 */
+  bust: number;
+  /** @exclusiveMinimum 0 */
+  hips: number;
+  /** @exclusiveMinimum 0 */
+  height: number;
+  /** @exclusiveMinimum 0 */
+  bodyGirth: number;
+  measurementUnit: UpdateMeasurementsRequestMeasurementUnit;
+  /** Optional free-text note for the atelier, recorded on the order's revision trail and carried in the notification email. */
+  note?: string;
+}
+
+export type UpdateMeasurementsResponseOutcome = typeof UpdateMeasurementsResponseOutcome[keyof typeof UpdateMeasurementsResponseOutcome];
+
+
+export const UpdateMeasurementsResponseOutcome = {
+  applied: 'applied',
+  filed: 'filed',
+} as const;
+
+/**
+ * The unit the measurement values are expressed in.
+ */
+export type AccountMeasurementsUnit = typeof AccountMeasurementsUnit[keyof typeof AccountMeasurementsUnit];
+
+
+export const AccountMeasurementsUnit = {
+  inches: 'inches',
+  cm: 'cm',
+} as const;
+
+/**
+ * The measurements on file for a custom order, read from the order's Notion properties. Absent when the customer chose to have measurements taken at a fitting, or for orders placed before measurements were stored as readable properties (those values remain only in the order's page body). Individual values may be absent for a partially-filled order.
+ */
+export interface AccountMeasurements {
+  /** The unit the measurement values are expressed in. */
+  unit: AccountMeasurementsUnit;
+  waist?: number;
+  bust?: number;
+  hips?: number;
+  height?: number;
+  bodyGirth?: number;
+}
+
+/**
+ * What became of the edit. "applied" means the values are on the order now and `measurements` carries the set as stored, so the caller renders what was written rather than its own optimistic copy. "filed" means the edit could not be written and was filed as a measurement-change request for the atelier to apply by hand — the two states the customer's work is never lost to: an order carrying no email to verify the edit against, and an orders database that hasn't had the measurement properties added yet. A filed edit carries no `measurements`, because nothing changed.
+ */
+export interface UpdateMeasurementsResponse {
+  outcome: UpdateMeasurementsResponseOutcome;
+  measurements?: AccountMeasurements;
+}
+
 export interface NewMeasurementChangeResponse {
   received: boolean;
 }
@@ -396,12 +465,16 @@ export interface MaterialAlert {
   name: string;
   /** Fabric / Applique / Crystal / Packaging / Notions. Omitted when unset. */
   category?: string;
+  /** Which fabric(s) this is — Satin, Power Mesh, Lining, … — in the order the atelier holds them in Notion. A MULTI-select, so a material can carry several (a power mesh that is also a lining); the dashboard groups it under the FIRST and shows the rest as labels, because a shopping list you might count twice is worse than one where a secondary type is only a label. Omitted when none are tagged, which is every non-fabric material. */
+  fabricTypes?: string[];
   /** Units remaining, from the Notion stock formula. Always a number here — a material whose stock is unknown is never reported as an alert. */
   stockOnHand: number;
   /** The reorder point the atelier set. */
   minimumStock: number;
   /** How far below the reorder point it is, rounded to two places. `0` when it has landed exactly on it — a reorder point is the level you buy AT, so that still counts. The list is ranked by this. */
   shortfall: number;
+  /** The atelier's `Reorder Status` — Restockable / Deadstock / Made to order / Discontinued / Unchecked. Omitted on the many rows that carry none. On `lowStock` it is a lead-time note (`Made to order` is a custom print or dye run); on `notRestockable` it is the reason the material is there. */
+  reorderStatus?: string;
   /** Where to buy it again, when the atelier recorded a link. */
   link?: string;
   /** Dollars per unit, when recorded. */
@@ -427,6 +500,8 @@ export interface UntrackedMaterial {
   id: string;
   name: string;
   category?: string;
+  /** Which fabric(s) this is — Satin, Power Mesh, Lining, … — in the order the atelier holds them in Notion. A MULTI-select, so a material can carry several (a power mesh that is also a lining); the dashboard groups it under the FIRST and shows the rest as labels, because a shopping list you might count twice is worse than one where a secondary type is only a label. Omitted when none are tagged, which is every non-fabric material. */
+  fabricTypes?: string[];
   /** `no-reorder-point` — `Minimum Stock` is unset, so nothing can trip. `stock-unknown` — the stock formula produced no number (typically a material with no intake lines recorded yet). */
   reason: UntrackedMaterialReason;
   /** Present only for `no-reorder-point`, where the stock IS known and only the threshold is missing. */
@@ -522,11 +597,13 @@ export interface StudioGuideList {
 }
 
 /**
- * The materials panel — what to reorder, and what isn't being watched.
+ * The materials panel — what to reorder, what can't be reordered, and what isn't being watched.
  */
 export interface MaterialsOverview {
-  /** At or below the reorder point, worst shortfall first. */
+  /** At or below the reorder point AND buyable again, worst shortfall first. This is the reorder list, and the weekly digest reads it. */
   lowStock: MaterialAlert[];
+  /** At or below the reorder point but NOT buyable again — the atelier marked it Deadstock or Discontinued. Deliberately kept OUT of `lowStock` (and so out of the digest): there is no vendor to send anyone to. Kept visible because running a one-of-a-kind fabric down is exactly when a substitute has to be chosen. Same shape and same worst-first ranking. */
+  notRestockable: MaterialAlert[];
   /** Not watched, and why — alphabetical. */
   untracked: UntrackedMaterial[];
   /** How many materials the atelier has muted. Reported so the panel can say so rather than the numbers silently not adding up. */
@@ -692,7 +769,7 @@ export interface ReviewStatusRequest {
 }
 
 /**
- * What a customer is asking for, DERIVED from the row's `Request type` select rather than enumerated from it. Six kinds name the values the app writes; `other` is anything else — a blank select, or a type the atelier invented — so an unrecognized row appears in the queue asking to be looked at rather than vanishing from it.
+ * What a customer is asking for, DERIVED from the row's `Request type` select rather than enumerated from it. Eight kinds name the values the app writes; `other` is anything else — a blank select, or a type the atelier invented — so an unrecognized row appears in the queue asking to be looked at rather than vanishing from it.
  *
  * `newsletter` never appears in the request QUEUE — an opt-in is a consent record nobody answers, so it has its own panel (see `/studio/newsletter`) and is filtered out of the queue. The kind still exists because the queue's state operation is shared across the whole contact inbox, and it answers with the row it wrote.
  */
@@ -705,7 +782,9 @@ export const StudioRequestKind = {
   measurement: 'measurement',
   cancellation: 'cancellation',
   return: 'return',
+  waitlist: 'waitlist',
   newsletter: 'newsletter',
+  'data-deletion': 'data-deletion',
   other: 'other',
 } as const;
 
@@ -730,6 +809,7 @@ export type StudioTool = typeof StudioTool[keyof typeof StudioTool];
 export const StudioTool = {
   milestones: 'milestones',
   'invoice-lines': 'invoice-lines',
+  quote: 'quote',
   'status-email': 'status-email',
   'cancellation-refund': 'cancellation-refund',
   'return-refund': 'return-refund',
@@ -877,6 +957,45 @@ export interface NewContactRequest {
 }
 
 export interface NewContactResponse {
+  success: boolean;
+}
+
+/**
+ * Whether the capacity-gated services are accepting orders, and the wording to show when they aren't.
+ */
+export interface CapacityStatus {
+  /** True when a capacity-gated service can be ordered. False means the intake form should offer the waitlist instead. */
+  open: boolean;
+  /** Whether `POST /waitlist` should be offered. Today this is the inverse of `open`, but it is stated rather than derived so the atelier can later close the books without collecting names. */
+  waitlistOpen: boolean;
+  /** The customer-facing explanation to show when closed, from the atelier-editable `COMMISSION_CLOSED_MESSAGE` setting. Empty when open — there is nothing to explain. */
+  message: string;
+}
+
+/**
+ * A request to be told when the studio's books reopen. Deliberately lighter than an order: enough to get back in touch and to know what the piece is for.
+ */
+export interface NewWaitlistRequest {
+  /** @minLength 1 */
+  name: string;
+  email: string;
+  phone?: string;
+  /** When the customer needs the piece, if they know. Used by the atelier to work the list in date order. */
+  neededBy?: string;
+  /** What the piece is for, in the customer's own words — a competition, a recital, a showcase. Free text on purpose: the studio makes for skating and dance alike and can't keep a list of every event its customers work towards, but the customer knows theirs. Used only to label the entry for the atelier — nothing resolves or validates it. */
+  eventName?: string;
+  /** A line about the piece they have in mind. Optional. */
+  notes?: string;
+  /** Anti-spam honeypot. A hidden field that real visitors never fill; a non-empty value marks the submission as spam and it is silently dropped. Always send empty (or omit). */
+  website?: string;
+  /**
+     * Anti-spam timing signal: milliseconds the visitor spent on the form before submitting. Implausibly fast submissions are dropped. Omit when unmeasurable (treated as human).
+     * @minimum 0
+     */
+  elapsedMs?: number;
+}
+
+export interface NewWaitlistResponse {
   success: boolean;
 }
 
@@ -1048,6 +1167,8 @@ export interface Service {
   detailsLabel: string;
   /** Placeholder / prompt for `description` on this service's form. */
   detailsHelp: string;
+  /** Whether this service is paused when the studio's books are closed (see `GET /capacity`). True only for work that consumes the atelier's making capacity — a bespoke commission. A piece the customer already owns is quick work the studio keeps taking, so alterations, rhinestoning and repairs are never gated. */
+  capacityGated: boolean;
 }
 
 export interface ServiceList {
@@ -1279,30 +1400,6 @@ export const AccountOrderState = {
 } as const;
 
 /**
- * The unit the measurement values are expressed in.
- */
-export type AccountMeasurementsUnit = typeof AccountMeasurementsUnit[keyof typeof AccountMeasurementsUnit];
-
-
-export const AccountMeasurementsUnit = {
-  inches: 'inches',
-  cm: 'cm',
-} as const;
-
-/**
- * The measurements on file for a custom order, read from the order's Notion properties. Absent when the customer chose to have measurements taken at a fitting, or for orders placed before measurements were stored as readable properties (those values remain only in the order's page body). Individual values may be absent for a partially-filled order.
- */
-export interface AccountMeasurements {
-  /** The unit the measurement values are expressed in. */
-  unit: AccountMeasurementsUnit;
-  waist?: number;
-  bust?: number;
-  hips?: number;
-  height?: number;
-  bodyGirth?: number;
-}
-
-/**
  * A custom order as shown on the account dashboard (links out to the full tracking + invoice views).
  */
 export interface AccountOrderSummary {
@@ -1315,6 +1412,8 @@ export interface AccountOrderSummary {
   /** The order's target completion date (its Due Date) as an ISO date (yyyy-mm-dd). A pass-through string (no format: date). Absent until the atelier sets one. */
   estimatedCompletion?: string;
   measurements?: AccountMeasurements;
+  /** True once the order has reached the stage at which measurements are frozen (MEASUREMENT_LOCK_FROM_STAGE), mirroring the same field on OrderStatus. The dashboard offers its in-place edit only when this is false, so the affordance and the server's own gate can't disagree. Absent on a response built before the field existed, which reads as not locked. */
+  measurementsLocked?: boolean;
 }
 
 /**
@@ -1396,6 +1495,141 @@ export interface AccountOverview {
 }
 
 /**
+ * The customer's Client CRM record — the studio's own contact card for them. Absent when the CRM isn't configured, when the customer has no record, or when the CRM couldn't be read (in which case it is named in `unavailable`).
+ */
+export interface ExportedClientRecord {
+  name?: string;
+  email?: string;
+  phone?: string;
+  /** How the studio files them (Lead, Active, …). */
+  status?: string;
+  /** The date of the studio's last recorded contact (YYYY-MM-DD). */
+  lastContact?: string;
+  /** The customer's own shareable referral code. */
+  referralCode?: string;
+  /** The email of the customer who referred them, when they used a code. */
+  referredByEmail?: string;
+  /** The order number of their first paid order, once they have one. */
+  firstPaidOrder?: string;
+}
+
+/**
+ * One row the customer filed in the studio's shared inbox. A narrower projection than the studio queue's — the internal Notion link and the tool that actions it are staff-facing and stay on the server.
+ */
+export interface ExportedRequest {
+  kind: StudioRequestKind;
+  /** The request type exactly as the studio's inbox holds it, when set. */
+  rawType?: string;
+  subject: string;
+  message?: string;
+  item?: string;
+  size?: string;
+  orderNumber?: string;
+  state: StudioRequestState;
+  submittedAt?: string;
+}
+
+/**
+ * One review the customer wrote. The photographs attached to it are not included — see the endpoint description.
+ */
+export interface ExportedReview {
+  /**
+     * @minimum 1
+     * @maximum 5
+     */
+  rating: number;
+  comment: string;
+  /** How they asked to be credited, when they gave a name. */
+  customerName?: string;
+  orderNumber?: string;
+  consentToPublish: boolean;
+  status: ReviewModerationStatus;
+  submittedAt?: string;
+}
+
+/**
+ * `subscribed` — on the list; `absent` — not on it; `unknown` — the list isn't configured or couldn't be reached, which is reported rather than rendered as "not on it".
+ */
+export type ExportedMarketingStatus = typeof ExportedMarketingStatus[keyof typeof ExportedMarketingStatus];
+
+
+export const ExportedMarketingStatus = {
+  subscribed: 'subscribed',
+  absent: 'absent',
+  unknown: 'unknown',
+} as const;
+
+/**
+ * Where the customer stands on the studio's marketing mailing list.
+ */
+export interface ExportedMarketing {
+  /** `subscribed` — on the list; `absent` — not on it; `unknown` — the list isn't configured or couldn't be reached, which is reported rather than rendered as "not on it". */
+  status: ExportedMarketingStatus;
+}
+
+/**
+ * Everything the studio holds about the signed-in customer, gathered for a data-access request. Identity is the email on the session, exactly as it is for the dashboard, so this is the same lookups widened to every store the app writes personal data into.
+ *
+ * The Postgres layer is deliberately not a source of its own: it holds an email-keyed discovery index (order numbers and page ids) derived from the Notion orders already listed here, so exporting it separately would repeat the same facts in a less readable form.
+ */
+export interface AccountDataExport {
+  /** When this export was assembled. */
+  generatedAt: string;
+  /** The signed-in email every record below was looked up by. */
+  email: string;
+  /** The customer's sign-in account id (the Supabase user id). The only thing the studio holds that is not keyed on the email. */
+  userId?: string;
+  /** The customer's custom (bespoke) orders, including the measurements on file. */
+  customOrders: AccountOrderSummary[];
+  /** The customer's ready-to-wear shop orders. */
+  shopOrders: AccountShopOrderSummary[];
+  /** The customer's upcoming appointments. Past bookings are not listed — the calendar is only searched forward, the same read the dashboard makes. Deliberately without the signed manage token the dashboard carries: that token is a credential, and an export is a file people forward. */
+  appointments: AppointmentDetails[];
+  client?: ExportedClientRecord;
+  /** Everything the customer has filed with the studio — inquiries, back-in-stock asks, measurement changes, cancellations, returns, waitlist entries and marketing opt-ins. Newest first. */
+  requests: ExportedRequest[];
+  /** The reviews the customer has written, whether or not they were published. */
+  reviews: ExportedReview[];
+  marketing: ExportedMarketing;
+  /** The sources that could not be read for this export, by their customer-facing name ("Custom orders", "Reviews"). Empty on a complete export. Named rather than silently omitted: an export missing a source without saying so is a wrong answer to a legal request, not a slightly smaller one. */
+  unavailable: string[];
+}
+
+/**
+ * An erasure request. The customer is identified by their session, so the body carries only optional context for the person who will action it.
+ */
+export interface NewAccountDeletionRequest {
+  /**
+     * Anything the customer wants the studio to know — which records they mean, or that an order should be finished first.
+     * @maxLength 2000
+     */
+  note?: string;
+}
+
+/**
+ * The one erasure performed on the spot. `unsubscribed` — removed from the marketing list; `absent` — they were not on it; `unavailable` — the list isn't configured or couldn't be reached, so the studio does it by hand.
+ */
+export type AccountDeletionRequestResultMarketing = typeof AccountDeletionRequestResultMarketing[keyof typeof AccountDeletionRequestResultMarketing];
+
+
+export const AccountDeletionRequestResultMarketing = {
+  unsubscribed: 'unsubscribed',
+  absent: 'absent',
+  unavailable: 'unavailable',
+} as const;
+
+/**
+ * What the studio did with the erasure request, said plainly.
+ */
+export interface AccountDeletionRequestResult {
+  received: boolean;
+  /** True when a request from this customer was already open, so no second row was filed. The marketing opt-out is still applied. */
+  alreadyRequested: boolean;
+  /** The one erasure performed on the spot. `unsubscribed` — removed from the marketing list; `absent` — they were not on it; `unavailable` — the list isn't configured or couldn't be reached, so the studio does it by hand. */
+  marketing: AccountDeletionRequestResultMarketing;
+}
+
+/**
  * A day of the week a block of working hours repeats on.
  */
 export type StaffWeekday = typeof StaffWeekday[keyof typeof StaffWeekday];
@@ -1410,6 +1644,75 @@ export const StaffWeekday = {
   Saturday: 'Saturday',
   Sunday: 'Sunday',
 } as const;
+
+export type AppointmentStaffingTypeLocationsItem = typeof AppointmentStaffingTypeLocationsItem[keyof typeof AppointmentStaffingTypeLocationsItem];
+
+
+export const AppointmentStaffingTypeLocationsItem = {
+  'in-person': 'in-person',
+  virtual: 'virtual',
+} as const;
+
+/**
+ * One bookable appointment type, with the staff who currently perform it. Everything but `staff` is fixed in code and shown for context — a type's length, where it can be held, and whether it needs an order behind it are not things the dashboard changes.
+ */
+export interface AppointmentStaffingType {
+  /** The type's stable id, as used when saving staffing. */
+  id: string;
+  /** How the type reads to a customer, e.g. "Fitting & Measurements". */
+  name: string;
+  description: string;
+  durationMinutes: number;
+  /** Where this type can be held. */
+  locations: AppointmentStaffingTypeLocationsItem[];
+  /** Who offers it right now — the staffing actually in force, which is the set the slot calculator draws from. Never empty. */
+  staff: string[];
+  /** Who the built-in catalog assigns to it, so the editor can show what resetting would mean and mark a type that has been moved away from it. */
+  defaultStaff: string[];
+  /** Present and true when this type can only be booked against an existing order — worth knowing when reassigning it, since it is not a type new customers can reach. */
+  requiresOrder?: boolean;
+}
+
+/**
+ * The studio's appointment staffing: every bookable type, who performs it, and the roster it may be assigned from.
+ */
+export interface AppointmentStaffing {
+  /** Whether there is a Studio Settings database to write to. False means the staffing shown is real but can only be changed in the environment, and a save answers 409. */
+  configured: boolean;
+  /** Everyone the studio books appointments with. Deliberately the whole roster, not only the people currently assigned to something — a person with no types is how the atelier says they aren't taking appointments at the moment. */
+  staff: string[];
+  types: AppointmentStaffingType[];
+  /** True when the staffing in force is the catalog's own, i.e. nothing is stored and a future change to the defaults would be picked up. */
+  usingDefaults: boolean;
+}
+
+export type AppointmentStaffingRequestTypesItem = {
+  /**
+     * An appointment type's id, as returned by the read.
+     * @minLength 1
+     * @maxLength 80
+     */
+  id: string;
+  /**
+     * Who should offer it. Must name people the studio books, and must not be empty — a type with nobody on it never offers a time and never says why.
+     * @minItems 1
+     * @maxItems 50
+     * @items.minLength 1
+     * @items.maxLength 120
+     */
+  staff: string[];
+};
+
+/**
+ * The staffing to save. Only the types named are changed; any left out keep what they have.
+ */
+export interface AppointmentStaffingRequest {
+  /**
+     * @minItems 1
+     * @maxItems 50
+     */
+  types: AppointmentStaffingRequestTypesItem[];
+}
 
 export type StaffAvailabilityEntryLocationsItem = typeof StaffAvailabilityEntryLocationsItem[keyof typeof StaffAvailabilityEntryLocationsItem];
 
@@ -1551,7 +1854,7 @@ export interface StudioProductionLoad {
 export interface StudioRevenueMonth {
   /** The month as YYYY-MM. */
   month: string;
-  /** Dollars taken on shop orders placed that month (order totals, including shipping and tax; cancelled orders excluded). */
+  /** Dollars taken on shop orders placed that month, across every sales channel (order totals, including shipping and tax; cancelled orders excluded). The month comes from the order's own Order Date, falling back to when its row was created — so an Etsy receipt typed up weeks later still lands in the month it sold. */
   shopRevenue: number;
   /** Shop orders placed that month (cancelled excluded). */
   shopOrders: number;
@@ -1592,6 +1895,89 @@ export interface StudioTopItem {
 }
 
 /**
+ * How much of the window's trade the best-seller list can see. Item-level figures come from each order's inventory relation, which a hand-filed order usually lacks — without this, an empty list reads as "nothing sells" when it means "nothing is linked".
+ */
+export interface StudioTopItemCoverage {
+  /** Orders whose pieces are counted in `topItems`. */
+  counted: number;
+  /** Orders left out, because the row links no inventory row. */
+  unlinked: number;
+}
+
+/**
+ * One sales channel's trade. The atelier files Etsy receipts, skate-shop sales and word-of-mouth orders into the same database the website writes to, so this is what separates them.
+ */
+export interface StudioChannelSales {
+  /** The `Sales Channel` option. EMPTY means the orders carry no channel at all — rows filed by hand and never tagged. It is not a channel and must be labelled as a gap, not credited to one. */
+  channel: string;
+  /** Orders in the window (cancelled excluded). */
+  orders: number;
+  /** Dollars taken on those orders, including shipping and tax. */
+  revenue: number;
+}
+
+export interface StudioConsignmentItem {
+  name: string;
+  /** Units still on the shop's shelf. */
+  atShop: number;
+  /** Units sold and settled for in the window. */
+  sold: number;
+}
+
+/**
+ * The finished pieces the studio has out at the skate shop, and what it has been paid for them. A consignment sale is not an order — nobody knows a piece sold until the placement is settled, and the money that arrives is the studio's share of a shelf price — so it is reported apart from the order figures and never summed into them.
+ */
+export interface StudioConsignment {
+  /** False when no consignment database is wired up. The panel says so rather than showing an empty shelf, which would read as "nothing is out on consignment". */
+  configured: boolean;
+  /** The database id is set but Notion cannot see it — never shared with the integration, or the wrong id. Same kind of state as unset: a human has to clear it. */
+  unreachable?: boolean;
+  /** Placements delivered and not yet settled. */
+  openPlacements: number;
+  /** Units still on the shop's shelf across those placements. */
+  atShopUnits: number;
+  /** What those units would fetch at their shelf price. RETAIL, not the studio's share: nothing has sold, so there is no payout to quote — this is the value of stock standing somewhere else. */
+  atShopRetail: number;
+  /** Units sold across placements settled in the window. */
+  settledUnits: number;
+  /** The studio's share of those sales, read off the atelier's own payout formula rather than derived from a split rate held in the app. */
+  settledPayout: number;
+  /** Settled placements that sold something but whose payout formula produced no number, so their money is missing from `settledPayout`. Named rather than silently absent. */
+  payoutUnknownPlacements: number;
+  /** Pieces out on consignment, most on the shelf first. A piece whose inventory row can't be resolved is left out of this list but stays in the totals above. */
+  items: StudioConsignmentItem[];
+}
+
+/**
+ * What decided it. `unlimited` means no capacity is configured; `forced-*` means the atelier's manual switch overrode the count; `unknown` means the count couldn't be read and the books stayed open rather than closing on a bad read.
+ */
+export type StudioCapacityReason = typeof StudioCapacityReason[keyof typeof StudioCapacityReason];
+
+
+export const StudioCapacityReason = {
+  unlimited: 'unlimited',
+  'under-capacity': 'under-capacity',
+  'at-capacity': 'at-capacity',
+  'forced-open': 'forced-open',
+  'forced-closed': 'forced-closed',
+  unknown: 'unknown',
+} as const;
+
+/**
+ * The seasonal-capacity gate as the studio sees it — whether the books are open, why, and the count behind it. The public `GET /capacity` carries the decision but deliberately none of these numbers; how much work the studio is holding is the studio's own business.
+ */
+export interface StudioCapacity {
+  /** Whether a bespoke commission can currently be ordered. */
+  open: boolean;
+  /** What decided it. `unlimited` means no capacity is configured; `forced-*` means the atelier's manual switch overrode the count; `unknown` means the count couldn't be read and the books stayed open rather than closing on a bad read. */
+  reason: StudioCapacityReason;
+  /** The configured `COMMISSION_CAPACITY`. `0` means no limit is being enforced. */
+  limit: number;
+  /** How many capacity-gated orders are neither delivered nor cancelled. Absent when the count wasn't read — which is not the same as zero, and the panel says so rather than showing a nought. */
+  inProduction?: number;
+}
+
+/**
  * The atelier's own figures, aggregated from the live Notion databases for the internal studio dashboard. Every money value is US dollars.
  */
 export interface StudioAnalytics {
@@ -1603,8 +1989,13 @@ export interface StudioAnalytics {
   /** One entry per month over the trailing window, oldest first. Months with no activity are included as zeroes so a chart has no gaps. */
   revenue: StudioRevenueMonth[];
   payments: StudioPaymentTotals;
-  /** The shop's best sellers, most-ordered first. Empty when no shop order carries its inventory relation (legacy orders, or the relation-links flag being off) — item-level figures are only as good as that link. */
+  /** The shop's best sellers, most-ordered first, across every sales channel. Empty when no shop order carries its inventory relation (legacy orders, hand-filed ones, or the relation-links flag being off) — item-level figures are only as good as that link, and `topItemCoverage` says how many orders it misses. */
   topItems: StudioTopItem[];
+  topItemCoverage: StudioTopItemCoverage;
+  /** Trade by sales channel over the same trailing window the revenue series covers, in the atelier's own option order. A channel with no orders is included as a nought, so "nothing from Etsy this year" is readable; a channel no longer on the list but present on an order follows them, and untagged orders come last as an empty `channel`. */
+  channels: StudioChannelSales[];
+  consignment: StudioConsignment;
+  capacity: StudioCapacity;
 }
 
 /**
@@ -1612,17 +2003,22 @@ export interface StudioAnalytics {
  */
 export interface StudioToolRequest {
   /**
-     * The order the tool acts on — `ORD-…` for a custom order, `SHP-…` for a shop order. Required by `invoice-lines`, `status-email` and the two refunds; `milestones` sweeps the whole pipeline and `restock-alert` takes an optional `item` instead.
+     * The order the tool acts on — `ORD-…` for a custom order, `SHP-…` for a shop order. Required by `invoice-lines`, `quote`, `status-email` and the two refunds; `milestones` sweeps the whole pipeline and `restock-alert` takes an optional `item` instead.
      * @maxLength 64
      */
   orderNumber?: string;
   /** `status-email` only. Resend the status update even when the order hasn't moved forward since the customer was last emailed. A forced resend never rewinds the high-water marker. */
   force?: boolean;
   /**
-     * `return-refund` only. The TARGET total to have refunded on the order, in dollars — not an increment, so a repeated run can't double-refund. Omit to refund in full.
+     * Dollars, read by two tools. For `return-refund` it is the TARGET total to have refunded on the order — not an increment, so a repeated run can't double-refund; omit to refund in full. For `quote` it is the price of the work and is REQUIRED, since a quote with no amount is nothing to pay.
      * @minimum 0
      */
   amount?: number;
+  /**
+     * `quote` only, and optional even there. What the work is, as the customer should read it on their invoice — "Re-stone bodice", "Replace shoulder elastic". Omitted ⇒ the line is named after the order's service ("Repair", "Rhinestoning", "Alterations").
+     * @maxLength 200
+     */
+  description?: string;
   /**
      * `restock-alert` only, and optional even there. The exact `Item Name` of one inventory row to alert on, as it appears in Notion — the same text a back-in-stock request stores. Omit it to sweep every piece that is currently in stock, which is what the nightly run does.
      * @maxLength 200

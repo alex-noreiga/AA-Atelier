@@ -78,7 +78,7 @@ export const GetOrderStatusResponse = zod.object({
 
 
 /**
- * Creates a new custom dress order and saves it to Notion
+ * Creates a new custom dress order and saves it to Notion. Refused with 409 when the order is for a capacity-gated service and the studio's books are closed (see `GET /capacity`) — the customer is offered `POST /waitlist` instead.
  * @summary Submit a new custom dress order
  */
 
@@ -134,6 +134,50 @@ export const CreateOrderPaymentParams = zod.object({
 export const CreateOrderPaymentResponse = zod.object({
   "url": zod.string().describe('The Stripe-hosted checkout URL for the payment.')
 })
+
+
+/**
+ * Writes the customer's measurements straight onto the order, replacing the five typed Notion properties and the unit. The customer is verified against the email stored on the order and the write is refused once the garment has entered production (MEASUREMENT_LOCK_FROM_STAGE) — the same two gates the change-request endpoint applies. Unlike that endpoint this one edits the order, so it fails closed where the request flow degrades: an order with no stored email to verify against is never written to. Rather than losing what the customer typed, such an edit — and one the orders database has nowhere to store — is filed as an ordinary measurement-change request for a human to apply, reported as outcome="filed". The complete set of five values is required: a partial write would leave the atelier cutting to a mix of old and new numbers.
+ * @summary Update an order's measurements in place
+ */
+export const UpdateOrderMeasurementsParams = zod.object({
+  "orderNumber": zod.coerce.string()
+})
+
+export const updateOrderMeasurementsBodyWaistExclusiveMin = 0;
+
+export const updateOrderMeasurementsBodyBustExclusiveMin = 0;
+
+export const updateOrderMeasurementsBodyHipsExclusiveMin = 0;
+
+export const updateOrderMeasurementsBodyHeightExclusiveMin = 0;
+
+export const updateOrderMeasurementsBodyBodyGirthExclusiveMin = 0;
+
+
+
+export const UpdateOrderMeasurementsBody = zod.object({
+  "email": zod.string().email().describe('The email to verify against the one on the order. A request whose email doesn\'t match, or an order with no email stored to check against, is refused.'),
+  "waist": zod.number().gt(updateOrderMeasurementsBodyWaistExclusiveMin),
+  "bust": zod.number().gt(updateOrderMeasurementsBodyBustExclusiveMin),
+  "hips": zod.number().gt(updateOrderMeasurementsBodyHipsExclusiveMin),
+  "height": zod.number().gt(updateOrderMeasurementsBodyHeightExclusiveMin),
+  "bodyGirth": zod.number().gt(updateOrderMeasurementsBodyBodyGirthExclusiveMin),
+  "measurementUnit": zod.enum(['inches', 'cm']),
+  "note": zod.string().optional().describe('Optional free-text note for the atelier, recorded on the order\'s revision trail and carried in the notification email.')
+}).describe('New measurements to write onto an order in place. Every value is required, unlike NewMeasurementChangeRequest: a change request is read by a person who can reconcile it against what is on file, whereas this replaces the stored set outright, and a partial write would leave the atelier cutting to a mix of old and new numbers. There is deliberately no \"measure me at a fitting\" branch here — that asks for a service rather than changing a value, so it stays a change request.')
+
+export const UpdateOrderMeasurementsResponse = zod.object({
+  "outcome": zod.enum(['applied', 'filed']),
+  "measurements": zod.object({
+  "unit": zod.enum(['inches', 'cm']).describe('The unit the measurement values are expressed in.'),
+  "waist": zod.number().optional(),
+  "bust": zod.number().optional(),
+  "hips": zod.number().optional(),
+  "height": zod.number().optional(),
+  "bodyGirth": zod.number().optional()
+}).optional().describe('The measurements on file for a custom order, read from the order\'s Notion properties. Absent when the customer chose to have measurements taken at a fitting, or for orders placed before measurements were stored as readable properties (those values remain only in the order\'s page body). Individual values may be absent for a partially-filled order.')
+}).describe('What became of the edit. \"applied\" means the values are on the order now and `measurements` carries the set as stored, so the caller renders what was written rather than its own optimistic copy. \"filed\" means the edit could not be written and was filed as a measurement-change request for the atelier to apply by hand — the two states the customer\'s work is never lost to: an order carrying no email to verify the edit against, and an orders database that hasn\'t had the measurement properties added yet. A filed edit carries no `measurements`, because nothing changed.')
 
 
 /**
@@ -292,6 +336,46 @@ export const SubscribeNewsletterResponse = zod.object({
 
 
 /**
+ * Reports whether the atelier's books are open for the capacity-gated services (today, the bespoke commission — see `Service.capacityGated`), so the intake form can offer the waitlist instead of a form that would be refused. The same decision gates `POST /orders`, so the form and the server can't disagree.
+ * Closed means one of two things: the atelier paused intake by hand, or the number of commissions in production has reached the studio's capacity. Both are atelier-editable Studio Settings (`COMMISSION_INTAKE`, `COMMISSION_CAPACITY`).
+ * Deliberately degrade-safe and fail-OPEN: with no capacity configured, or when the order count can't be read, this reports open. Turning a customer away because of an outage is the worst way to be wrong.
+ * Carries no order counts — how much work the studio is holding is the studio's business, not the visitor's.
+ * @summary Whether the studio is taking new bespoke commissions
+ */
+export const GetCapacityResponse = zod.object({
+  "open": zod.boolean().describe('True when a capacity-gated service can be ordered. False means the intake form should offer the waitlist instead.'),
+  "waitlistOpen": zod.boolean().describe('Whether `POST \/waitlist` should be offered. Today this is the inverse of `open`, but it is stated rather than derived so the atelier can later close the books without collecting names.'),
+  "message": zod.string().describe('The customer-facing explanation to show when closed, from the atelier-editable `COMMISSION_CLOSED_MESSAGE` setting. Empty when open — there is nothing to explain.')
+}).describe('Whether the capacity-gated services are accepting orders, and the wording to show when they aren\'t.')
+
+
+/**
+ * Records a customer's request to be told when the studio's books reopen, as a tagged row in the Notion contact-messages inbox (and a best-effort Client CRM lead), and sends a best-effort acknowledgement. Accepted whether or not intake is currently closed — a customer planning ahead is not a mistake to reject.
+ * This never creates an order and never holds a slot. The atelier answers a waitlist entry by hand when capacity frees.
+ * @summary Join the waitlist for a bespoke commission
+ */
+
+export const joinWaitlistBodyElapsedMsMin = 0;
+
+
+
+export const JoinWaitlistBody = zod.object({
+  "name": zod.string().min(1),
+  "email": zod.string().email(),
+  "phone": zod.string().optional(),
+  "neededBy": zod.coerce.date().optional().describe('When the customer needs the piece, if they know. Used by the atelier to work the list in date order.'),
+  "eventName": zod.string().optional().describe('What the piece is for, in the customer\'s own words — a competition, a recital, a showcase. Free text on purpose: the studio makes for skating and dance alike and can\'t keep a list of every event its customers work towards, but the customer knows theirs. Used only to label the entry for the atelier — nothing resolves or validates it.'),
+  "notes": zod.string().optional().describe('A line about the piece they have in mind. Optional.'),
+  "website": zod.string().optional().describe('Anti-spam honeypot. A hidden field that real visitors never fill; a non-empty value marks the submission as spam and it is silently dropped. Always send empty (or omit).'),
+  "elapsedMs": zod.number().int().min(joinWaitlistBodyElapsedMsMin).optional().describe('Anti-spam timing signal: milliseconds the visitor spent on the form before submitting. Implausibly fast submissions are dropped. Omit when unmeasurable (treated as human).')
+}).describe('A request to be told when the studio\'s books reopen. Deliberately lighter than an order: enough to get back in touch and to know what the piece is for.')
+
+export const JoinWaitlistResponse = zod.object({
+  "success": zod.boolean()
+})
+
+
+/**
  * Returns published, in-stock shop items from the Notion inventory database, grouped into cards with selectable variants.
  * @summary List shop products
  */
@@ -370,7 +454,8 @@ export const GetServicesResponse = zod.object({
   "colors": zod.boolean().describe('Whether this service offers the studio colour palette and the \"how would you like these used\" note.'),
   "detailsRequired": zod.boolean().describe('Whether the order\'s free-text `description` is required. True for the services performed on a piece the customer already owns, where that description IS the brief; false for a bespoke commission, whose design notes are optional.'),
   "detailsLabel": zod.string().describe('Field label for `description` on this service\'s form.'),
-  "detailsHelp": zod.string().describe('Placeholder \/ prompt for `description` on this service\'s form.')
+  "detailsHelp": zod.string().describe('Placeholder \/ prompt for `description` on this service\'s form.'),
+  "capacityGated": zod.boolean().describe('Whether this service is paused when the studio\'s books are closed (see `GET \/capacity`). True only for work that consumes the atelier\'s making capacity — a bespoke commission. A piece the customer already owns is quick work the studio keeps taking, so alterations, rhinestoning and repairs are never gated.')
 }).describe('One service a custom order can be placed for, with the rules that decide what the intake form asks for. The flags are the contract\'s half of a targeted business rule held in server code (like the appointment-type catalog): the same definitions gate `POST \/orders`.')).describe('The intake service catalog, in the order the form should offer it. Always non-empty; the first entry is the default when a new order names no service.')
 })
 
@@ -686,7 +771,8 @@ export const GetAccountOverviewResponse = zod.object({
   "hips": zod.number().optional(),
   "height": zod.number().optional(),
   "bodyGirth": zod.number().optional()
-}).optional().describe('The measurements on file for a custom order, read from the order\'s Notion properties. Absent when the customer chose to have measurements taken at a fitting, or for orders placed before measurements were stored as readable properties (those values remain only in the order\'s page body). Individual values may be absent for a partially-filled order.')
+}).optional().describe('The measurements on file for a custom order, read from the order\'s Notion properties. Absent when the customer chose to have measurements taken at a fitting, or for orders placed before measurements were stored as readable properties (those values remain only in the order\'s page body). Individual values may be absent for a partially-filled order.'),
+  "measurementsLocked": zod.boolean().optional().describe('True once the order has reached the stage at which measurements are frozen (MEASUREMENT_LOCK_FROM_STAGE), mirroring the same field on OrderStatus. The dashboard offers its in-place edit only when this is false, so the affordance and the server\'s own gate can\'t disagree. Absent on a response built before the field existed, which reads as not locked.')
 }).describe('A custom order as shown on the account dashboard (links out to the full tracking + invoice views).')).describe('The customer\'s custom (bespoke) orders, newest-relevant first. Empty when none match the signed-in email.'),
   "shopOrders": zod.array(zod.object({
   "orderNumber": zod.string(),
@@ -715,6 +801,117 @@ export const GetAccountOverviewResponse = zod.object({
   "returningCode": zod.string().optional().describe('A standing personal discount code for this returning customer, present once they\'ve earned it (a qualifying repeat order). Absent otherwise.')
 }).optional().describe('The signed-in customer\'s referral-program state. Present only when the Client CRM is configured (omitted entirely otherwise, so the dashboard\'s referral card simply doesn\'t render).')
 }).describe('Everything tied to the signed-in customer\'s email — the data the account dashboard renders.')
+
+
+/**
+ * Gathers every record keyed on the signed-in customer's email — their custom and shop orders, upcoming appointments, Client CRM record, the requests they have filed with the studio, the reviews they have written, and whether they are on the marketing list — for a data-access (GDPR / CCPA) request the customer can serve themselves. Read-only.
+ *
+ * Every source degrades independently: one that can't be read is named in `unavailable` rather than silently omitted, so a partial export is visibly partial. Photographs the customer uploaded (reference images, review photos) are NOT included — they live as image blocks on a Notion page behind short-lived signed URLs, so they are requested from the studio by email instead.
+ * @summary Everything the studio holds about the signed-in customer
+ */
+export const exportAccountDataResponseReviewsItemRatingMax = 5;
+
+
+
+export const ExportAccountDataResponse = zod.object({
+  "generatedAt": zod.coerce.date().describe('When this export was assembled.'),
+  "email": zod.string().describe('The signed-in email every record below was looked up by.'),
+  "userId": zod.string().optional().describe('The customer\'s sign-in account id (the Supabase user id). The only thing the studio holds that is not keyed on the email.'),
+  "customOrders": zod.array(zod.object({
+  "orderNumber": zod.string(),
+  "orderName": zod.string(),
+  "currentStage": zod.string(),
+  "state": zod.enum(['active', 'completed', 'cancelled']).describe('Where an order sits in its lifecycle, derived server-side so the dashboard never has to infer it from a stage\/status name. \"completed\" means the order has reached the final stage\/status in its live list (delivered for a custom order, fulfilled for a shop order); \"cancelled\" means the atelier has cancelled it (and takes precedence over \"completed\"); everything else is \"active\".'),
+  "stages": zod.array(zod.string()).describe('The live ordered stage list, so the dashboard can show progress (e.g. \"3 of 6\").'),
+  "estimatedCompletion": zod.string().optional().describe('The order\'s target completion date (its Due Date) as an ISO date (yyyy-mm-dd). A pass-through string (no format: date). Absent until the atelier sets one.'),
+  "measurements": zod.object({
+  "unit": zod.enum(['inches', 'cm']).describe('The unit the measurement values are expressed in.'),
+  "waist": zod.number().optional(),
+  "bust": zod.number().optional(),
+  "hips": zod.number().optional(),
+  "height": zod.number().optional(),
+  "bodyGirth": zod.number().optional()
+}).optional().describe('The measurements on file for a custom order, read from the order\'s Notion properties. Absent when the customer chose to have measurements taken at a fitting, or for orders placed before measurements were stored as readable properties (those values remain only in the order\'s page body). Individual values may be absent for a partially-filled order.'),
+  "measurementsLocked": zod.boolean().optional().describe('True once the order has reached the stage at which measurements are frozen (MEASUREMENT_LOCK_FROM_STAGE), mirroring the same field on OrderStatus. The dashboard offers its in-place edit only when this is false, so the affordance and the server\'s own gate can\'t disagree. Absent on a response built before the field existed, which reads as not locked.')
+}).describe('A custom order as shown on the account dashboard (links out to the full tracking + invoice views).')).describe('The customer\'s custom (bespoke) orders, including the measurements on file.'),
+  "shopOrders": zod.array(zod.object({
+  "orderNumber": zod.string(),
+  "status": zod.string().describe('The order\'s current fulfilment status.'),
+  "state": zod.enum(['active', 'completed', 'cancelled']).describe('Where an order sits in its lifecycle, derived server-side so the dashboard never has to infer it from a stage\/status name. \"completed\" means the order has reached the final stage\/status in its live list (delivered for a custom order, fulfilled for a shop order); \"cancelled\" means the atelier has cancelled it (and takes precedence over \"completed\"); everything else is \"active\".'),
+  "total": zod.number().optional().describe('The order total in dollars, when recorded.')
+}).describe('A ready-to-wear shop order as shown on the account dashboard.')).describe('The customer\'s ready-to-wear shop orders.'),
+  "appointments": zod.array(zod.object({
+  "status": zod.enum(['confirmed', 'cancelled']).describe('Whether the appointment is still on the calendar or was cancelled.'),
+  "timezone": zod.string().describe('IANA timezone the atelier\'s hours and slot times are expressed in, for the client to render the appointment\'s times.'),
+  "confirmationCode": zod.string(),
+  "typeId": zod.string().describe('The appointment type\'s id, so the reschedule flow can re-query availability for the same type.'),
+  "typeName": zod.string(),
+  "staff": zod.string(),
+  "location": zod.enum(['in-person', 'virtual']),
+  "locationLabel": zod.string(),
+  "start": zod.coerce.date(),
+  "end": zod.coerce.date(),
+  "meetingUrl": zod.string().optional().describe('The Google Meet link for a virtual appointment, when one exists.'),
+  "canModify": zod.boolean().describe('Whether the appointment can still be rescheduled or cancelled — false once it has started or been cancelled.')
+}).describe('A booked appointment\'s current state, read live from Google Calendar for the self-service reschedule \/ cancel page.')).describe('The customer\'s upcoming appointments. Past bookings are not listed — the calendar is only searched forward, the same read the dashboard makes. Deliberately without the signed manage token the dashboard carries: that token is a credential, and an export is a file people forward.'),
+  "client": zod.object({
+  "name": zod.string().optional(),
+  "email": zod.string().optional(),
+  "phone": zod.string().optional(),
+  "status": zod.string().optional().describe('How the studio files them (Lead, Active, …).'),
+  "lastContact": zod.string().optional().describe('The date of the studio\'s last recorded contact (YYYY-MM-DD).'),
+  "referralCode": zod.string().optional().describe('The customer\'s own shareable referral code.'),
+  "referredByEmail": zod.string().optional().describe('The email of the customer who referred them, when they used a code.'),
+  "firstPaidOrder": zod.string().optional().describe('The order number of their first paid order, once they have one.')
+}).optional().describe('The customer\'s Client CRM record — the studio\'s own contact card for them. Absent when the CRM isn\'t configured, when the customer has no record, or when the CRM couldn\'t be read (in which case it is named in `unavailable`).'),
+  "requests": zod.array(zod.object({
+  "kind": zod.enum(['inquiry', 'back-in-stock', 'measurement', 'cancellation', 'return', 'waitlist', 'newsletter', 'data-deletion', 'other']).describe('What a customer is asking for, DERIVED from the row\'s `Request type` select rather than enumerated from it. Eight kinds name the values the app writes; `other` is anything else — a blank select, or a type the atelier invented — so an unrecognized row appears in the queue asking to be looked at rather than vanishing from it.\n\n`newsletter` never appears in the request QUEUE — an opt-in is a consent record nobody answers, so it has its own panel (see `\/studio\/newsletter`) and is filtered out of the queue. The kind still exists because the queue\'s state operation is shared across the whole contact inbox, and it answers with the row it wrote.'),
+  "rawType": zod.string().optional().describe('The request type exactly as the studio\'s inbox holds it, when set.'),
+  "subject": zod.string(),
+  "message": zod.string().optional(),
+  "item": zod.string().optional(),
+  "size": zod.string().optional(),
+  "orderNumber": zod.string().optional(),
+  "state": zod.enum(['new', 'replied', 'closed']).describe('Where a request stands in the inbox, derived from its Notion `Stage`. `closed` is the only value that takes it off the queue, so a row with a blank or unrecognized stage reads as `new` — an untriaged request should appear rather than disappear.'),
+  "submittedAt": zod.coerce.date().optional()
+}).describe('One row the customer filed in the studio\'s shared inbox. A narrower projection than the studio queue\'s — the internal Notion link and the tool that actions it are staff-facing and stay on the server.')).describe('Everything the customer has filed with the studio — inquiries, back-in-stock asks, measurement changes, cancellations, returns, waitlist entries and marketing opt-ins. Newest first.'),
+  "reviews": zod.array(zod.object({
+  "rating": zod.number().int().min(1).max(exportAccountDataResponseReviewsItemRatingMax),
+  "comment": zod.string(),
+  "customerName": zod.string().optional().describe('How they asked to be credited, when they gave a name.'),
+  "orderNumber": zod.string().optional(),
+  "consentToPublish": zod.boolean(),
+  "status": zod.enum(['pending', 'published', 'rejected']).describe('Where a review stands with the atelier. `pending` is anything not yet decided — including the \"New\" it is captured with — so a review can only ever be waiting, shown, or set aside.'),
+  "submittedAt": zod.coerce.date().optional()
+}).describe('One review the customer wrote. The photographs attached to it are not included — see the endpoint description.')).describe('The reviews the customer has written, whether or not they were published.'),
+  "marketing": zod.object({
+  "status": zod.enum(['subscribed', 'absent', 'unknown']).describe('`subscribed` — on the list; `absent` — not on it; `unknown` — the list isn\'t configured or couldn\'t be reached, which is reported rather than rendered as \"not on it\".')
+}).describe('Where the customer stands on the studio\'s marketing mailing list.'),
+  "unavailable": zod.array(zod.string()).describe('The sources that could not be read for this export, by their customer-facing name (\"Custom orders\", \"Reviews\"). Empty on a complete export. Named rather than silently omitted: an export missing a source without saying so is a wrong answer to a legal request, not a slightly smaller one.')
+}).describe('Everything the studio holds about the signed-in customer, gathered for a data-access request. Identity is the email on the session, exactly as it is for the dashboard, so this is the same lookups widened to every store the app writes personal data into.\n\nThe Postgres layer is deliberately not a source of its own: it holds an email-keyed discovery index (order numbers and page ids) derived from the Notion orders already listed here, so exporting it separately would repeat the same facts in a less readable form.')
+
+
+/**
+ * Files an erasure request for the signed-in customer. The request lands as a tagged row in the studio's contact inbox for a person to action — this endpoint deliberately deletes nothing itself, because orders, invoices and payment records are business records the studio is required to keep for a period, and what may be erased is a judgement rather than a switch.
+ *
+ * The one erasure it DOES perform immediately is the marketing list: the customer is unsubscribed from the studio's Resend audience, which is their own action to take and needs nobody's review.
+ *
+ * Filing is idempotent while a request is open — a second press reports the request already on file rather than adding a duplicate row to the inbox.
+ * @summary Ask the studio to delete the signed-in customer's data
+ */
+export const requestAccountDeletionBodyNoteMax = 2000;
+
+
+
+export const RequestAccountDeletionBody = zod.object({
+  "note": zod.string().max(requestAccountDeletionBodyNoteMax).optional().describe('Anything the customer wants the studio to know — which records they mean, or that an order should be finished first.')
+}).describe('An erasure request. The customer is identified by their session, so the body carries only optional context for the person who will action it.')
+
+export const RequestAccountDeletionResponse = zod.object({
+  "received": zod.boolean(),
+  "alreadyRequested": zod.boolean().describe('True when a request from this customer was already open, so no second row was filed. The marketing opt-out is still applied.'),
+  "marketing": zod.enum(['unsubscribed', 'absent', 'unavailable']).describe('The one erasure performed on the spot. `unsubscribed` — removed from the marketing list; `absent` — they were not on it; `unavailable` — the list isn\'t configured or couldn\'t be reached, so the studio does it by hand.')
+}).describe('What the studio did with the erasure request, said plainly.')
 
 
 /**
@@ -874,7 +1071,7 @@ export const GetStudioAnalyticsResponse = zod.object({
 }).describe('The making-side workload: active custom orders measured against the due dates the atelier has set.'),
   "revenue": zod.array(zod.object({
   "month": zod.string().describe('The month as YYYY-MM.'),
-  "shopRevenue": zod.number().describe('Dollars taken on shop orders placed that month (order totals, including shipping and tax; cancelled orders excluded).'),
+  "shopRevenue": zod.number().describe('Dollars taken on shop orders placed that month, across every sales channel (order totals, including shipping and tax; cancelled orders excluded). The month comes from the order\'s own Order Date, falling back to when its row was created — so an Etsy receipt typed up weeks later still lands in the month it sold.'),
   "shopOrders": zod.number().int().describe('Shop orders placed that month (cancelled excluded).'),
   "customBooked": zod.number().describe('Dollars invoiced on custom orders placed that month (each order\'s invoice Final Balance). Zero for orders not yet itemized.'),
   "customOrders": zod.number().int().describe('Custom orders placed that month (cancelled excluded).')
@@ -893,36 +1090,69 @@ export const GetStudioAnalyticsResponse = zod.object({
   "topItems": zod.array(zod.object({
   "name": zod.string(),
   "orders": zod.number().int()
-}).describe('One best-selling shop piece. The count is orders containing the piece, not units — the order\'s inventory relation records which pieces were bought, not how many of each.')).describe('The shop\'s best sellers, most-ordered first. Empty when no shop order carries its inventory relation (legacy orders, or the relation-links flag being off) — item-level figures are only as good as that link.')
+}).describe('One best-selling shop piece. The count is orders containing the piece, not units — the order\'s inventory relation records which pieces were bought, not how many of each.')).describe('The shop\'s best sellers, most-ordered first, across every sales channel. Empty when no shop order carries its inventory relation (legacy orders, hand-filed ones, or the relation-links flag being off) — item-level figures are only as good as that link, and `topItemCoverage` says how many orders it misses.'),
+  "topItemCoverage": zod.object({
+  "counted": zod.number().int().describe('Orders whose pieces are counted in `topItems`.'),
+  "unlinked": zod.number().int().describe('Orders left out, because the row links no inventory row.')
+}).describe('How much of the window\'s trade the best-seller list can see. Item-level figures come from each order\'s inventory relation, which a hand-filed order usually lacks — without this, an empty list reads as \"nothing sells\" when it means \"nothing is linked\".'),
+  "channels": zod.array(zod.object({
+  "channel": zod.string().describe('The `Sales Channel` option. EMPTY means the orders carry no channel at all — rows filed by hand and never tagged. It is not a channel and must be labelled as a gap, not credited to one.'),
+  "orders": zod.number().int().describe('Orders in the window (cancelled excluded).'),
+  "revenue": zod.number().describe('Dollars taken on those orders, including shipping and tax.')
+}).describe('One sales channel\'s trade. The atelier files Etsy receipts, skate-shop sales and word-of-mouth orders into the same database the website writes to, so this is what separates them.')).describe('Trade by sales channel over the same trailing window the revenue series covers, in the atelier\'s own option order. A channel with no orders is included as a nought, so \"nothing from Etsy this year\" is readable; a channel no longer on the list but present on an order follows them, and untagged orders come last as an empty `channel`.'),
+  "consignment": zod.object({
+  "configured": zod.boolean().describe('False when no consignment database is wired up. The panel says so rather than showing an empty shelf, which would read as \"nothing is out on consignment\".'),
+  "unreachable": zod.boolean().optional().describe('The database id is set but Notion cannot see it — never shared with the integration, or the wrong id. Same kind of state as unset: a human has to clear it.'),
+  "openPlacements": zod.number().int().describe('Placements delivered and not yet settled.'),
+  "atShopUnits": zod.number().int().describe('Units still on the shop\'s shelf across those placements.'),
+  "atShopRetail": zod.number().describe('What those units would fetch at their shelf price. RETAIL, not the studio\'s share: nothing has sold, so there is no payout to quote — this is the value of stock standing somewhere else.'),
+  "settledUnits": zod.number().int().describe('Units sold across placements settled in the window.'),
+  "settledPayout": zod.number().describe('The studio\'s share of those sales, read off the atelier\'s own payout formula rather than derived from a split rate held in the app.'),
+  "payoutUnknownPlacements": zod.number().int().describe('Settled placements that sold something but whose payout formula produced no number, so their money is missing from `settledPayout`. Named rather than silently absent.'),
+  "items": zod.array(zod.object({
+  "name": zod.string(),
+  "atShop": zod.number().int().describe('Units still on the shop\'s shelf.'),
+  "sold": zod.number().int().describe('Units sold and settled for in the window.')
+})).describe('Pieces out on consignment, most on the shelf first. A piece whose inventory row can\'t be resolved is left out of this list but stays in the totals above.')
+}).describe('The finished pieces the studio has out at the skate shop, and what it has been paid for them. A consignment sale is not an order — nobody knows a piece sold until the placement is settled, and the money that arrives is the studio\'s share of a shelf price — so it is reported apart from the order figures and never summed into them.'),
+  "capacity": zod.object({
+  "open": zod.boolean().describe('Whether a bespoke commission can currently be ordered.'),
+  "reason": zod.enum(['unlimited', 'under-capacity', 'at-capacity', 'forced-open', 'forced-closed', 'unknown']).describe('What decided it. `unlimited` means no capacity is configured; `forced-\*` means the atelier\'s manual switch overrode the count; `unknown` means the count couldn\'t be read and the books stayed open rather than closing on a bad read.'),
+  "limit": zod.number().int().describe('The configured `COMMISSION_CAPACITY`. `0` means no limit is being enforced.'),
+  "inProduction": zod.number().int().optional().describe('How many capacity-gated orders are neither delivered nor cancelled. Absent when the count wasn\'t read — which is not the same as zero, and the panel says so rather than showing a nought.')
+}).describe('The seasonal-capacity gate as the studio sees it — whether the books are open, why, and the count behind it. The public `GET \/capacity` carries the decision but deliberately none of these numbers; how much work the studio is holding is the studio\'s own business.')
 }).describe('The atelier\'s own figures, aggregated from the live Notion databases for the internal studio dashboard. Every money value is US dollars.')
 
 
 /**
- * Runs one of the atelier's internal actions — milestone reconciliation, invoice line-item generation, an order status-change email, a cancellation refund, a return refund, or a back-in-stock alert — from the signed-in studio dashboard. Most were previously triggered by opening a link that carried a shared secret in its query string; the work is unchanged, the authorization is not: this requires the same Supabase access token as the rest of the studio surface, with the caller's email on the staff allowlist. 401 when not signed in, 404 when signed in but not staff, 403 when staff but not signed in with Google.
+ * Runs one of the atelier's internal actions — milestone reconciliation, invoice line-item generation, a flat service quote, an order status-change email, a cancellation refund, a return refund, or a back-in-stock alert — from the signed-in studio dashboard. Most were previously triggered by opening a link that carried a shared secret in its query string; the work is unchanged, the authorization is not: this requires the same Supabase access token as the rest of the studio surface, with the caller's email on the staff allowlist. 401 when not signed in, 404 when signed in but not staff, 403 when staff but not signed in with Google.
  * Every tool is idempotent — a repeat run reports `noop` rather than doing the work twice — but two of them move money, so the dashboard confirms before calling those.
  * @summary Run an internal atelier tool
  */
 export const RunStudioToolParams = zod.object({
-  "tool": zod.enum(['milestones', 'invoice-lines', 'status-email', 'cancellation-refund', 'return-refund', 'restock-alert'])
+  "tool": zod.enum(['milestones', 'invoice-lines', 'quote', 'status-email', 'cancellation-refund', 'return-refund', 'restock-alert'])
 })
 
 export const runStudioToolBodyOrderNumberMax = 64;
 
 export const runStudioToolBodyAmountMin = 0;
 
+export const runStudioToolBodyDescriptionMax = 200;
+
 export const runStudioToolBodyItemMax = 200;
 
 
 
 export const RunStudioToolBody = zod.object({
-  "orderNumber": zod.string().max(runStudioToolBodyOrderNumberMax).optional().describe('The order the tool acts on — `ORD-…` for a custom order, `SHP-…` for a shop order. Required by `invoice-lines`, `status-email` and the two refunds; `milestones` sweeps the whole pipeline and `restock-alert` takes an optional `item` instead.'),
+  "orderNumber": zod.string().max(runStudioToolBodyOrderNumberMax).optional().describe('The order the tool acts on — `ORD-…` for a custom order, `SHP-…` for a shop order. Required by `invoice-lines`, `quote`, `status-email` and the two refunds; `milestones` sweeps the whole pipeline and `restock-alert` takes an optional `item` instead.'),
   "force": zod.boolean().optional().describe('`status-email` only. Resend the status update even when the order hasn\'t moved forward since the customer was last emailed. A forced resend never rewinds the high-water marker.'),
-  "amount": zod.number().min(runStudioToolBodyAmountMin).optional().describe('`return-refund` only. The TARGET total to have refunded on the order, in dollars — not an increment, so a repeated run can\'t double-refund. Omit to refund in full.'),
+  "amount": zod.number().min(runStudioToolBodyAmountMin).optional().describe('Dollars, read by two tools. For `return-refund` it is the TARGET total to have refunded on the order — not an increment, so a repeated run can\'t double-refund; omit to refund in full. For `quote` it is the price of the work and is REQUIRED, since a quote with no amount is nothing to pay.'),
+  "description": zod.string().max(runStudioToolBodyDescriptionMax).optional().describe('`quote` only, and optional even there. What the work is, as the customer should read it on their invoice — \"Re-stone bodice\", \"Replace shoulder elastic\". Omitted ⇒ the line is named after the order\'s service (\"Repair\", \"Rhinestoning\", \"Alterations\").'),
   "item": zod.string().max(runStudioToolBodyItemMax).optional().describe('`restock-alert` only, and optional even there. The exact `Item Name` of one inventory row to alert on, as it appears in Notion — the same text a back-in-stock request stores. Omit it to sweep every piece that is currently in stock, which is what the nightly run does.')
 }).describe('The arguments for one internal tool run. Every field is optional here because each tool takes a different subset; the server rejects a run that is missing what its own tool needs. This replaces the query string of the retired `?secret=` links, so the argument names mirror them.')
 
 export const RunStudioToolResponse = zod.object({
-  "tool": zod.enum(['milestones', 'invoice-lines', 'status-email', 'cancellation-refund', 'return-refund', 'restock-alert']).describe('Which internal tool to run. Each names an action the atelier used to trigger by opening a shared-secret link from Notion — or, for `restock-alert`, one that would have needed such a link.'),
+  "tool": zod.enum(['milestones', 'invoice-lines', 'quote', 'status-email', 'cancellation-refund', 'return-refund', 'restock-alert']).describe('Which internal tool to run. Each names an action the atelier used to trigger by opening a shared-secret link from Notion — or, for `restock-alert`, one that would have needed such a link.'),
   "status": zod.enum(['ok', 'noop', 'attention']).describe('`ok` — the tool did something. `noop` — there was nothing to do (every tool is idempotent, so this is the normal result of a repeat run). `attention` — the run completed but left something for the atelier to fix, e.g. a refund Stripe rejected, which leaves the order uncancelled so a re-run can retry it. A failure the tool couldn\'t start at all is an HTTP error, not a status here.'),
   "title": zod.string().describe('A short headline for the result, e.g. \"Invoice itemized\".'),
   "message": zod.string().describe('One sentence summarizing what happened.'),
@@ -945,16 +1175,31 @@ export const GetStudioMaterialsResponse = zod.object({
   "id": zod.string().describe('The material\'s Notion page id.'),
   "name": zod.string().describe('The material as the atelier names it.'),
   "category": zod.string().optional().describe('Fabric \/ Applique \/ Crystal \/ Packaging \/ Notions. Omitted when unset.'),
+  "fabricTypes": zod.array(zod.string()).optional().describe('Which fabric(s) this is — Satin, Power Mesh, Lining, … — in the order the atelier holds them in Notion. A MULTI-select, so a material can carry several (a power mesh that is also a lining); the dashboard groups it under the FIRST and shows the rest as labels, because a shopping list you might count twice is worse than one where a secondary type is only a label. Omitted when none are tagged, which is every non-fabric material.'),
   "stockOnHand": zod.number().describe('Units remaining, from the Notion stock formula. Always a number here — a material whose stock is unknown is never reported as an alert.'),
   "minimumStock": zod.number().describe('The reorder point the atelier set.'),
   "shortfall": zod.number().describe('How far below the reorder point it is, rounded to two places. `0` when it has landed exactly on it — a reorder point is the level you buy AT, so that still counts. The list is ranked by this.'),
+  "reorderStatus": zod.string().optional().describe('The atelier\'s `Reorder Status` — Restockable \/ Deadstock \/ Made to order \/ Discontinued \/ Unchecked. Omitted on the many rows that carry none. On `lowStock` it is a lead-time note (`Made to order` is a custom print or dye run); on `notRestockable` it is the reason the material is there.'),
   "link": zod.string().optional().describe('Where to buy it again, when the atelier recorded a link.'),
   "pricePerUnit": zod.number().optional().describe('Dollars per unit, when recorded.')
-}).describe('A material at or below its reorder point — something to buy.')).describe('At or below the reorder point, worst shortfall first.'),
+}).describe('A material at or below its reorder point — something to buy.')).describe('At or below the reorder point AND buyable again, worst shortfall first. This is the reorder list, and the weekly digest reads it.'),
+  "notRestockable": zod.array(zod.object({
+  "id": zod.string().describe('The material\'s Notion page id.'),
+  "name": zod.string().describe('The material as the atelier names it.'),
+  "category": zod.string().optional().describe('Fabric \/ Applique \/ Crystal \/ Packaging \/ Notions. Omitted when unset.'),
+  "fabricTypes": zod.array(zod.string()).optional().describe('Which fabric(s) this is — Satin, Power Mesh, Lining, … — in the order the atelier holds them in Notion. A MULTI-select, so a material can carry several (a power mesh that is also a lining); the dashboard groups it under the FIRST and shows the rest as labels, because a shopping list you might count twice is worse than one where a secondary type is only a label. Omitted when none are tagged, which is every non-fabric material.'),
+  "stockOnHand": zod.number().describe('Units remaining, from the Notion stock formula. Always a number here — a material whose stock is unknown is never reported as an alert.'),
+  "minimumStock": zod.number().describe('The reorder point the atelier set.'),
+  "shortfall": zod.number().describe('How far below the reorder point it is, rounded to two places. `0` when it has landed exactly on it — a reorder point is the level you buy AT, so that still counts. The list is ranked by this.'),
+  "reorderStatus": zod.string().optional().describe('The atelier\'s `Reorder Status` — Restockable \/ Deadstock \/ Made to order \/ Discontinued \/ Unchecked. Omitted on the many rows that carry none. On `lowStock` it is a lead-time note (`Made to order` is a custom print or dye run); on `notRestockable` it is the reason the material is there.'),
+  "link": zod.string().optional().describe('Where to buy it again, when the atelier recorded a link.'),
+  "pricePerUnit": zod.number().optional().describe('Dollars per unit, when recorded.')
+}).describe('A material at or below its reorder point — something to buy.')).describe('At or below the reorder point but NOT buyable again — the atelier marked it Deadstock or Discontinued. Deliberately kept OUT of `lowStock` (and so out of the digest): there is no vendor to send anyone to. Kept visible because running a one-of-a-kind fabric down is exactly when a substitute has to be chosen. Same shape and same worst-first ranking.'),
   "untracked": zod.array(zod.object({
   "id": zod.string().describe('The material\'s Notion page id.'),
   "name": zod.string(),
   "category": zod.string().optional(),
+  "fabricTypes": zod.array(zod.string()).optional().describe('Which fabric(s) this is — Satin, Power Mesh, Lining, … — in the order the atelier holds them in Notion. A MULTI-select, so a material can carry several (a power mesh that is also a lining); the dashboard groups it under the FIRST and shows the rest as labels, because a shopping list you might count twice is worse than one where a secondary type is only a label. Omitted when none are tagged, which is every non-fabric material.'),
   "reason": zod.enum(['no-reorder-point', 'stock-unknown']).describe('`no-reorder-point` — `Minimum Stock` is unset, so nothing can trip. `stock-unknown` — the stock formula produced no number (typically a material with no intake lines recorded yet).'),
   "stockOnHand": zod.number().optional().describe('Present only for `no-reorder-point`, where the stock IS known and only the threshold is missing.')
 }).describe('A material no alert can ever fire for, and why — so an unwatched material is visible rather than the alert list just looking quiet.')).describe('Not watched, and why — alphabetical.'),
@@ -962,7 +1207,7 @@ export const GetStudioMaterialsResponse = zod.object({
   "totalCount": zod.number().int().describe('Every material row read, muted ones included.'),
   "configured": zod.boolean().describe('False when the materials database isn\'t wired up, in which case the lists are empty and the panel says why instead of rendering an empty list that reads as \"all good\".'),
   "unreachable": zod.boolean().optional().describe('True when the database id IS set but Notion answered 404 — the integration has not been shared with the database, or the id is wrong. The lists are empty and the panel says what to fix; reported rather than thrown because it is a configuration state only a human can clear, not an outage worth erroring the panel over. Absent when the read worked.')
-}).describe('The materials panel — what to reorder, and what isn\'t being watched.')
+}).describe('The materials panel — what to reorder, what can\'t be reordered, and what isn\'t being watched.')
 
 
 /**
@@ -1186,6 +1431,73 @@ export const SetStudioSettingResponse = zod.object({
 
 
 /**
+ * The studio's appointment staffing: for every bookable type, who currently performs it, and who the built-in catalog would put on it if nothing were set.
+ *
+ * This is the routing the slot calculator uses — it only ever offers a type's assigned staff — so it decides both which times a customer is shown and which bookings the server will accept. Everything else about a type (its length, where it can be held, whether it needs an order behind it) is fixed in code and returned here as context, not as something to edit.
+ *
+ * Same staff gate as the rest of the studio surface: 401 when not signed in, 404 when signed in but not staff, 403 when staff but not signed in with Google.
+ * @summary Which staff member offers which appointment type
+ */
+export const GetAppointmentStaffingResponse = zod.object({
+  "configured": zod.boolean().describe('Whether there is a Studio Settings database to write to. False means the staffing shown is real but can only be changed in the environment, and a save answers 409.'),
+  "staff": zod.array(zod.string()).describe('Everyone the studio books appointments with. Deliberately the whole roster, not only the people currently assigned to something — a person with no types is how the atelier says they aren\'t taking appointments at the moment.'),
+  "types": zod.array(zod.object({
+  "id": zod.string().describe('The type\'s stable id, as used when saving staffing.'),
+  "name": zod.string().describe('How the type reads to a customer, e.g. \"Fitting & Measurements\".'),
+  "description": zod.string(),
+  "durationMinutes": zod.number().int(),
+  "locations": zod.array(zod.enum(['in-person', 'virtual'])).describe('Where this type can be held.'),
+  "staff": zod.array(zod.string()).describe('Who offers it right now — the staffing actually in force, which is the set the slot calculator draws from. Never empty.'),
+  "defaultStaff": zod.array(zod.string()).describe('Who the built-in catalog assigns to it, so the editor can show what resetting would mean and mark a type that has been moved away from it.'),
+  "requiresOrder": zod.boolean().optional().describe('Present and true when this type can only be booked against an existing order — worth knowing when reassigning it, since it is not a type new customers can reach.')
+}).describe('One bookable appointment type, with the staff who currently perform it. Everything but `staff` is fixed in code and shown for context — a type\'s length, where it can be held, and whether it needs an order behind it are not things the dashboard changes.')),
+  "usingDefaults": zod.boolean().describe('True when the staffing in force is the catalog\'s own, i.e. nothing is stored and a future change to the defaults would be picked up.')
+}).describe('The studio\'s appointment staffing: every bookable type, who performs it, and the roster it may be assigned from.')
+
+
+/**
+ * Reassigns the staff on one or more appointment types. Only the types named are changed; any left out keep the staffing they already have.
+ *
+ * Every type must be left with at least one person on it: a type nobody is assigned to still appears on the booking page and simply never offers a time, which is the silent failure this editor exists to prevent. Retiring a type is a code change, not an empty selection. A PERSON with no types, on the other hand, is an ordinary way to say they aren't taking appointments — their working hours stay on record and their existing bookings can still be rescheduled.
+ *
+ * Staffing that matches the built-in catalog exactly is stored as a blank value, which reads as unset — so an atelier that has never differed from the defaults still picks up a change to them, rather than being pinned to whatever they were the day Save was first pressed.
+ * @summary Change who offers which appointment type
+ */
+export const setAppointmentStaffingBodyTypesItemIdMax = 80;
+
+export const setAppointmentStaffingBodyTypesItemStaffItemMax = 120;
+
+export const setAppointmentStaffingBodyTypesItemStaffMax = 50;
+
+export const setAppointmentStaffingBodyTypesMax = 50;
+
+
+
+export const SetAppointmentStaffingBody = zod.object({
+  "types": zod.array(zod.object({
+  "id": zod.string().min(1).max(setAppointmentStaffingBodyTypesItemIdMax).describe('An appointment type\'s id, as returned by the read.'),
+  "staff": zod.array(zod.string().min(1).max(setAppointmentStaffingBodyTypesItemStaffItemMax)).min(1).max(setAppointmentStaffingBodyTypesItemStaffMax).describe('Who should offer it. Must name people the studio books, and must not be empty — a type with nobody on it never offers a time and never says why.')
+})).min(1).max(setAppointmentStaffingBodyTypesMax)
+}).describe('The staffing to save. Only the types named are changed; any left out keep what they have.')
+
+export const SetAppointmentStaffingResponse = zod.object({
+  "configured": zod.boolean().describe('Whether there is a Studio Settings database to write to. False means the staffing shown is real but can only be changed in the environment, and a save answers 409.'),
+  "staff": zod.array(zod.string()).describe('Everyone the studio books appointments with. Deliberately the whole roster, not only the people currently assigned to something — a person with no types is how the atelier says they aren\'t taking appointments at the moment.'),
+  "types": zod.array(zod.object({
+  "id": zod.string().describe('The type\'s stable id, as used when saving staffing.'),
+  "name": zod.string().describe('How the type reads to a customer, e.g. \"Fitting & Measurements\".'),
+  "description": zod.string(),
+  "durationMinutes": zod.number().int(),
+  "locations": zod.array(zod.enum(['in-person', 'virtual'])).describe('Where this type can be held.'),
+  "staff": zod.array(zod.string()).describe('Who offers it right now — the staffing actually in force, which is the set the slot calculator draws from. Never empty.'),
+  "defaultStaff": zod.array(zod.string()).describe('Who the built-in catalog assigns to it, so the editor can show what resetting would mean and mark a type that has been moved away from it.'),
+  "requiresOrder": zod.boolean().optional().describe('Present and true when this type can only be booked against an existing order — worth knowing when reassigning it, since it is not a type new customers can reach.')
+}).describe('One bookable appointment type, with the staff who currently perform it. Everything but `staff` is fixed in code and shown for context — a type\'s length, where it can be held, and whether it needs an order behind it are not things the dashboard changes.')),
+  "usingDefaults": zod.boolean().describe('True when the staffing in force is the catalog\'s own, i.e. nothing is stored and a future change to the defaults would be picked up.')
+}).describe('The studio\'s appointment staffing: every bookable type, who performs it, and the roster it may be assigned from.')
+
+
+/**
  * The customer requests waiting on the atelier — measurement changes, cancellations, returns and exchanges, back-in-stock asks and website inquiries — read back out of the shared "Website Contact Messages" inbox. Until this, the app only ever WROTE those rows: actioning one meant reading it in Notion and re-typing its order number into a tool on this dashboard.
  *
  * So each row carries its own `action` where one exists: the tool that actions it and the argument it needs, derived server-side from the request type next to the code that writes it. A cancellation hands its order number to `cancellation-refund`, a return to `return-refund`, a back-in-stock ask hands its item to `restock-alert`. A measurement change or an inquiry carries none — those are answered by hand, and saying so is more honest than offering a button that does nothing.
@@ -1198,7 +1510,7 @@ export const SetStudioSettingResponse = zod.object({
 export const ListStudioRequestsResponse = zod.object({
   "open": zod.array(zod.object({
   "id": zod.string().describe('The request\'s Notion page id; also what a state change is addressed to.'),
-  "kind": zod.enum(['inquiry', 'back-in-stock', 'measurement', 'cancellation', 'return', 'newsletter', 'other']).describe('What a customer is asking for, DERIVED from the row\'s `Request type` select rather than enumerated from it. Six kinds name the values the app writes; `other` is anything else — a blank select, or a type the atelier invented — so an unrecognized row appears in the queue asking to be looked at rather than vanishing from it.\n\n`newsletter` never appears in the request QUEUE — an opt-in is a consent record nobody answers, so it has its own panel (see `\/studio\/newsletter`) and is filtered out of the queue. The kind still exists because the queue\'s state operation is shared across the whole contact inbox, and it answers with the row it wrote.'),
+  "kind": zod.enum(['inquiry', 'back-in-stock', 'measurement', 'cancellation', 'return', 'waitlist', 'newsletter', 'data-deletion', 'other']).describe('What a customer is asking for, DERIVED from the row\'s `Request type` select rather than enumerated from it. Eight kinds name the values the app writes; `other` is anything else — a blank select, or a type the atelier invented — so an unrecognized row appears in the queue asking to be looked at rather than vanishing from it.\n\n`newsletter` never appears in the request QUEUE — an opt-in is a consent record nobody answers, so it has its own panel (see `\/studio\/newsletter`) and is filtered out of the queue. The kind still exists because the queue\'s state operation is shared across the whole contact inbox, and it answers with the row it wrote.'),
   "rawType": zod.string().optional().describe('The `Request type` select exactly as Notion holds it, when set. Shown for a row the app reads as `other`, so \"why is this here?\" is answerable without opening Notion.'),
   "subject": zod.string().describe('The row\'s title, as the writer composed it.'),
   "customerName": zod.string().optional().describe('Who wrote it, when the request records a name (inquiries do).'),
@@ -1212,7 +1524,7 @@ export const ListStudioRequestsResponse = zod.object({
   "rawStage": zod.string().optional().describe('The `Stage` select exactly as Notion holds it, when set.'),
   "submittedAt": zod.coerce.date().optional().describe('When the request was filed (its Notion created time).'),
   "action": zod.object({
-  "tool": zod.enum(['milestones', 'invoice-lines', 'status-email', 'cancellation-refund', 'return-refund', 'restock-alert']).describe('Which internal tool to run. Each names an action the atelier used to trigger by opening a shared-secret link from Notion — or, for `restock-alert`, one that would have needed such a link.'),
+  "tool": zod.enum(['milestones', 'invoice-lines', 'quote', 'status-email', 'cancellation-refund', 'return-refund', 'restock-alert']).describe('Which internal tool to run. Each names an action the atelier used to trigger by opening a shared-secret link from Notion — or, for `restock-alert`, one that would have needed such a link.'),
   "orderNumber": zod.string().optional().describe('The order the tool should act on, read off the request. Absent when it couldn\'t be recovered — a row whose title was rewritten by hand, say — in which case the action is not offered at all rather than offered blank.'),
   "item": zod.string().optional().describe('The inventory item name, for a back-in-stock request.')
 }).optional().describe('The dashboard tool that actions this request, and the argument it needs. Present only where the app can action the request at all: the two refunds and the back-in-stock sweep. A measurement change is applied to the order by hand and an inquiry is answered by email, so neither carries one.'),
@@ -1220,7 +1532,7 @@ export const ListStudioRequestsResponse = zod.object({
 }).describe('One customer request as the queue shows it — the row from the shared contact inbox, plus what can be done about it. Staff-only.')).describe('Still waiting, OLDEST first — the queue proper. Anything not closed counts, including a row whose stage was never set.'),
   "closed": zod.array(zod.object({
   "id": zod.string().describe('The request\'s Notion page id; also what a state change is addressed to.'),
-  "kind": zod.enum(['inquiry', 'back-in-stock', 'measurement', 'cancellation', 'return', 'newsletter', 'other']).describe('What a customer is asking for, DERIVED from the row\'s `Request type` select rather than enumerated from it. Six kinds name the values the app writes; `other` is anything else — a blank select, or a type the atelier invented — so an unrecognized row appears in the queue asking to be looked at rather than vanishing from it.\n\n`newsletter` never appears in the request QUEUE — an opt-in is a consent record nobody answers, so it has its own panel (see `\/studio\/newsletter`) and is filtered out of the queue. The kind still exists because the queue\'s state operation is shared across the whole contact inbox, and it answers with the row it wrote.'),
+  "kind": zod.enum(['inquiry', 'back-in-stock', 'measurement', 'cancellation', 'return', 'waitlist', 'newsletter', 'data-deletion', 'other']).describe('What a customer is asking for, DERIVED from the row\'s `Request type` select rather than enumerated from it. Eight kinds name the values the app writes; `other` is anything else — a blank select, or a type the atelier invented — so an unrecognized row appears in the queue asking to be looked at rather than vanishing from it.\n\n`newsletter` never appears in the request QUEUE — an opt-in is a consent record nobody answers, so it has its own panel (see `\/studio\/newsletter`) and is filtered out of the queue. The kind still exists because the queue\'s state operation is shared across the whole contact inbox, and it answers with the row it wrote.'),
   "rawType": zod.string().optional().describe('The `Request type` select exactly as Notion holds it, when set. Shown for a row the app reads as `other`, so \"why is this here?\" is answerable without opening Notion.'),
   "subject": zod.string().describe('The row\'s title, as the writer composed it.'),
   "customerName": zod.string().optional().describe('Who wrote it, when the request records a name (inquiries do).'),
@@ -1234,7 +1546,7 @@ export const ListStudioRequestsResponse = zod.object({
   "rawStage": zod.string().optional().describe('The `Stage` select exactly as Notion holds it, when set.'),
   "submittedAt": zod.coerce.date().optional().describe('When the request was filed (its Notion created time).'),
   "action": zod.object({
-  "tool": zod.enum(['milestones', 'invoice-lines', 'status-email', 'cancellation-refund', 'return-refund', 'restock-alert']).describe('Which internal tool to run. Each names an action the atelier used to trigger by opening a shared-secret link from Notion — or, for `restock-alert`, one that would have needed such a link.'),
+  "tool": zod.enum(['milestones', 'invoice-lines', 'quote', 'status-email', 'cancellation-refund', 'return-refund', 'restock-alert']).describe('Which internal tool to run. Each names an action the atelier used to trigger by opening a shared-secret link from Notion — or, for `restock-alert`, one that would have needed such a link.'),
   "orderNumber": zod.string().optional().describe('The order the tool should act on, read off the request. Absent when it couldn\'t be recovered — a row whose title was rewritten by hand, say — in which case the action is not offered at all rather than offered blank.'),
   "item": zod.string().optional().describe('The inventory item name, for a back-in-stock request.')
 }).optional().describe('The dashboard tool that actions this request, and the argument it needs. Present only where the app can action the request at all: the two refunds and the back-in-stock sweep. A measurement change is applied to the order by hand and an inquiry is answered by email, so neither carries one.'),
@@ -1260,7 +1572,7 @@ export const SetStudioRequestStateBody = zod.object({
 
 export const SetStudioRequestStateResponse = zod.object({
   "id": zod.string().describe('The request\'s Notion page id; also what a state change is addressed to.'),
-  "kind": zod.enum(['inquiry', 'back-in-stock', 'measurement', 'cancellation', 'return', 'newsletter', 'other']).describe('What a customer is asking for, DERIVED from the row\'s `Request type` select rather than enumerated from it. Six kinds name the values the app writes; `other` is anything else — a blank select, or a type the atelier invented — so an unrecognized row appears in the queue asking to be looked at rather than vanishing from it.\n\n`newsletter` never appears in the request QUEUE — an opt-in is a consent record nobody answers, so it has its own panel (see `\/studio\/newsletter`) and is filtered out of the queue. The kind still exists because the queue\'s state operation is shared across the whole contact inbox, and it answers with the row it wrote.'),
+  "kind": zod.enum(['inquiry', 'back-in-stock', 'measurement', 'cancellation', 'return', 'waitlist', 'newsletter', 'data-deletion', 'other']).describe('What a customer is asking for, DERIVED from the row\'s `Request type` select rather than enumerated from it. Eight kinds name the values the app writes; `other` is anything else — a blank select, or a type the atelier invented — so an unrecognized row appears in the queue asking to be looked at rather than vanishing from it.\n\n`newsletter` never appears in the request QUEUE — an opt-in is a consent record nobody answers, so it has its own panel (see `\/studio\/newsletter`) and is filtered out of the queue. The kind still exists because the queue\'s state operation is shared across the whole contact inbox, and it answers with the row it wrote.'),
   "rawType": zod.string().optional().describe('The `Request type` select exactly as Notion holds it, when set. Shown for a row the app reads as `other`, so \"why is this here?\" is answerable without opening Notion.'),
   "subject": zod.string().describe('The row\'s title, as the writer composed it.'),
   "customerName": zod.string().optional().describe('Who wrote it, when the request records a name (inquiries do).'),
@@ -1274,7 +1586,7 @@ export const SetStudioRequestStateResponse = zod.object({
   "rawStage": zod.string().optional().describe('The `Stage` select exactly as Notion holds it, when set.'),
   "submittedAt": zod.coerce.date().optional().describe('When the request was filed (its Notion created time).'),
   "action": zod.object({
-  "tool": zod.enum(['milestones', 'invoice-lines', 'status-email', 'cancellation-refund', 'return-refund', 'restock-alert']).describe('Which internal tool to run. Each names an action the atelier used to trigger by opening a shared-secret link from Notion — or, for `restock-alert`, one that would have needed such a link.'),
+  "tool": zod.enum(['milestones', 'invoice-lines', 'quote', 'status-email', 'cancellation-refund', 'return-refund', 'restock-alert']).describe('Which internal tool to run. Each names an action the atelier used to trigger by opening a shared-secret link from Notion — or, for `restock-alert`, one that would have needed such a link.'),
   "orderNumber": zod.string().optional().describe('The order the tool should act on, read off the request. Absent when it couldn\'t be recovered — a row whose title was rewritten by hand, say — in which case the action is not offered at all rather than offered blank.'),
   "item": zod.string().optional().describe('The inventory item name, for a back-in-stock request.')
 }).optional().describe('The dashboard tool that actions this request, and the argument it needs. Present only where the app can action the request at all: the two refunds and the back-in-stock sweep. A measurement change is applied to the order by hand and an inquiry is answered by email, so neither carries one.'),

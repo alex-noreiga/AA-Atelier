@@ -433,6 +433,45 @@ describe("POST /api/orders", () => {
     expect(mockCapture).not.toHaveBeenCalled();
   });
 
+  it("answers 201 without waiting for referral capture when the platform can defer it", async () => {
+    // Referral capture is a Notion read, a Notion write, a Stripe promo create
+    // and a Resend send — none of which the 201 depends on. With a platform
+    // `waitUntil` it runs after the response; without one it still runs inline,
+    // which is what the three cases around this one exercise.
+    const REQUEST_CONTEXT = Symbol.for("@vercel/request-context");
+    const handed: Promise<unknown>[] = [];
+    (globalThis as unknown as Record<symbol, unknown>)[REQUEST_CONTEXT] = {
+      get: () => ({
+        waitUntil: (p: Promise<unknown>) => void handed.push(p),
+      }),
+    };
+
+    try {
+      mockCreate.mockResolvedValue({
+        orderNumber: "ORD-REF-003",
+        pageId: "page-1",
+      });
+      // Never settles: were the order path still awaiting it, this could only
+      // time out. `...Once` so it cannot leak into the next case.
+      mockCapture.mockImplementationOnce(() => new Promise<void>(() => {}));
+
+      const res = await request(app)
+        .post("/api/orders")
+        .send({ ...validBody, referralCode: "AA-ABC123" });
+
+      expect(res.status).toBe(201);
+      expect(res.body).toEqual({ orderNumber: "ORD-REF-003" });
+      expect(mockCapture).toHaveBeenCalledOnce();
+      // The capture and the two order emails are separate handoffs, so they run
+      // concurrently rather than one behind the other.
+      expect(handed.length).toBeGreaterThanOrEqual(2);
+    } finally {
+      delete (globalThis as unknown as Record<symbol, unknown>)[
+        REQUEST_CONTEXT
+      ];
+    }
+  });
+
   it("still creates the order (201) when referral capture throws", async () => {
     mockCreate.mockResolvedValue({
       orderNumber: "ORD-REF-002",

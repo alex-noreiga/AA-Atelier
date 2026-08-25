@@ -336,6 +336,7 @@ describe("findOrderVerification", () => {
     expect(verification).toEqual({
       pageId: "page-id",
       email: "ada@example.com",
+      orderName: "Ada – Custom Dress",
       currentStage: "Consultation",
       stages: ["Consultation", "Sewing", "Delivery"],
     });
@@ -886,7 +887,10 @@ describe("listOrdersForAnalytics", () => {
         rush: true,
         invoicePageId: "inv-1",
         // No `Service` on the page, so the order resolves to the bespoke
-        // commission and its pipeline is the whole live list.
+        // commission and its pipeline is the whole live list. The raw value is
+        // passed through empty rather than resolved here — the catalog owns
+        // what a service value means, and the capacity count is what asks it.
+        service: "",
         pipeline: ["Design", "Delivered"],
       },
     ]);
@@ -919,5 +923,115 @@ describe("listOrdersForAnalytics", () => {
     await expect(repo.listOrdersForAnalytics(client)).rejects.toThrow(
       /NOTION_ORDERS_DATABASE_ID is not configured/,
     );
+  });
+});
+
+describe("updateOrderMeasurements", () => {
+  const VALUES = {
+    waist: 26,
+    bust: 34,
+    hips: 36,
+    height: 64,
+    bodyGirth: 55,
+    measurementUnit: "inches" as const,
+  };
+  const isPage = (path: string) => /^\/v1\/pages\//.test(path);
+  const isChildren = (path: string) => /\/v1\/blocks\/.+\/children$/.test(path);
+
+  it("patches the six properties, then appends the revision to the page body", async () => {
+    const client = makeFakeClient(() => jsonResponse({}));
+
+    await repo.updateOrderMeasurements(
+      "page-id",
+      VALUES,
+      { previous: { unit: "inches", waist: 25 }, changedOn: "August 25, 2026" },
+      client,
+    );
+
+    const patch = client.calls.find((c) => isPage(c.path));
+    const append = client.calls.find((c) => isChildren(c.path));
+    expect(patch?.init?.method).toBe("PATCH");
+    expect(JSON.parse(String(patch?.init?.body)).properties).toMatchObject({
+      Waist: { number: 26 },
+      "Measurement Unit": { select: { name: "inches" } },
+    });
+    // Appended, never overwriting: the garment may already have been cut to
+    // the numbers above it, and that record must survive the edit.
+    expect(append?.init?.method).toBe("PATCH");
+    expect(String(append?.init?.body)).toContain("was 25");
+  });
+
+  it("writes the properties before the page body", async () => {
+    const client = makeFakeClient(() => jsonResponse({}));
+
+    await repo.updateOrderMeasurements(
+      "page-id",
+      VALUES,
+      { changedOn: "August 25, 2026" },
+      client,
+    );
+
+    // Properties first: they are what the app reads back and what the customer
+    // is told was saved. The body section is the atelier's readable trail.
+    expect(isPage(client.calls[0].path)).toBe(true);
+    expect(isChildren(client.calls[1].path)).toBe(true);
+  });
+
+  it("throws a named error when the database has no such property", async () => {
+    const client = makeFakeClient((path) =>
+      isPage(path)
+        ? jsonResponse(
+            { message: "Body Girth is not a property that exists." },
+            400,
+          )
+        : jsonResponse({}),
+    );
+
+    // Unlike order intake, dropping the field is not an option here: the value
+    // IS the write, so a save that stored nothing must not report success.
+    await expect(
+      repo.updateOrderMeasurements(
+        "page-id",
+        VALUES,
+        { changedOn: "August 25, 2026" },
+        client,
+      ),
+    ).rejects.toMatchObject({
+      name: "MeasurementPropertiesMissingError",
+      property: "Body Girth",
+    });
+    expect(client.calls.some((c) => isChildren(c.path))).toBe(false);
+  });
+
+  it("throws on an unrelated property failure rather than reading it as a missing one", async () => {
+    const client = makeFakeClient((path) =>
+      isPage(path) ? errorResponse(502, "bad gateway") : jsonResponse({}),
+    );
+
+    await expect(
+      repo.updateOrderMeasurements(
+        "page-id",
+        VALUES,
+        { changedOn: "August 25, 2026" },
+        client,
+      ),
+    ).rejects.toThrow("502");
+  });
+
+  it("keeps the edit when only the revision note fails to append", async () => {
+    const client = makeFakeClient((path) =>
+      isChildren(path) ? errorResponse(500) : jsonResponse({}),
+    );
+
+    // The measurements are already stored by then, and re-running the edit to
+    // recover a paragraph would rewrite them and file a duplicate revision.
+    await expect(
+      repo.updateOrderMeasurements(
+        "page-id",
+        VALUES,
+        { changedOn: "August 25, 2026" },
+        client,
+      ),
+    ).resolves.toBeUndefined();
   });
 });
