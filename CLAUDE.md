@@ -2433,9 +2433,13 @@ and `web-app/src/components/studio-materials.tsx`. Load-bearing decisions:
    whose rows carry types gets sub-grouped. The catch-all headings
    (`Uncategorized`, `Unspecified`) sort last however they rank. Ordering
    _within_ a group is left exactly as the server sent it, since it already
-   sorted. Each category **folds, open by default** — fabric is the long group
-   and is in the way once it has been shopped, but a list of things to buy that
-   greets the atelier collapsed is one whose whole point has to be clicked for.
+   sorted. Each fabric **TYPE folds, open by default** — that is where the
+   length is ("Fabric" is one line; the dozen types under it are what is in the
+   way), while the category headings themselves stay put, because they are how
+   you find your way down the panel and one you can fold away is one you can
+   lose. Open by default and never remembered, since a list of things to buy
+   that greets the atelier collapsed is one whose whole point has to be clicked
+   for. A category with no types therefore has nothing to fold.
 7. **The digest reports STATE, which is what makes it idempotent.** It rides the
    nightly reconciliation (`sendDueMaterialsDigest`, a sixth pass) and fires only
    on `MATERIALS_DIGEST_WEEKDAY`, read in the studio timezone so "Monday" means

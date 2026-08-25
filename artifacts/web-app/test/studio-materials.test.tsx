@@ -218,22 +218,56 @@ describe("StudioMaterials — grouping", () => {
     expect(screen.getByTestId("material-row")).not.toHaveTextContent(/lining/i);
   });
 
-  // Fabric is the long group; once it's been shopped it's in the way of
-  // everything under it. But a shopping list that greets you collapsed is one
-  // whose whole point has to be clicked for, so it opens.
-  it("opens each category by default, and folds it away on a click", () => {
+  // The fold is on the TYPE, not the category: "Fabric" is one line and the
+  // types under it are what is in the way. A shopping list that greets you
+  // collapsed is one whose whole point has to be clicked for, so each opens.
+  it("opens each fabric type by default, and folds it away on a click", () => {
+    h.materials.data = overview({ lowStock: [FABRIC_MESH, FABRIC_SATIN] });
+    render(<StudioMaterials />);
+
+    const mesh = screen.getByTestId("material-fabric-power-mesh");
+    expect(mesh).toHaveAttribute("open");
+
+    fireEvent.click(mesh.querySelector("summary")!);
+    expect(mesh).not.toHaveAttribute("open");
+    // Folding one type leaves its neighbours as they were.
+    expect(screen.getByTestId("material-fabric-satin")).toHaveAttribute("open");
+  });
+
+  // A category heading is how you find your way down the panel; one that can be
+  // folded away is one you can lose.
+  it("leaves the category headings themselves un-foldable", () => {
     h.materials.data = overview({ lowStock: [FABRIC_MESH, BOX] });
     render(<StudioMaterials />);
 
-    const fabric = screen.getByTestId("material-category-fabric");
-    expect(fabric).toHaveAttribute("open");
+    for (const label of ["fabric", "packaging"]) {
+      const category = screen.getByTestId(`material-category-${label}`);
+      expect(category.tagName).toBe("SECTION");
+    }
+  });
 
-    fireEvent.click(fabric.querySelector("summary")!);
-    expect(fabric).not.toHaveAttribute("open");
-    // Folding one category leaves the rest as they were.
-    expect(screen.getByTestId("material-category-packaging")).toHaveAttribute(
-      "open",
-    );
+  // Folding is a property of a type, so a category with none has nothing to
+  // fold — the rows just sit under their heading.
+  it("gives a category with no types nothing to fold", () => {
+    h.materials.data = overview({ lowStock: [BOX] });
+    const { container } = render(<StudioMaterials />);
+
+    expect(container.querySelector("details")).toBeNull();
+  });
+
+  // A folded type must still say how much is behind it.
+  it("counts the rows in each type", () => {
+    h.materials.data = overview({
+      lowStock: [
+        FABRIC_MESH,
+        { ...FABRIC_MESH, id: "mesh2", name: "Nude Mesh" },
+      ],
+    });
+    render(<StudioMaterials />);
+
+    expect(
+      screen.getByTestId("material-fabric-power-mesh").querySelector("summary"),
+    ).toHaveTextContent(/Power Mesh\s*2/);
   });
 
   it("doesn't sub-head a category with no fabric types", () => {

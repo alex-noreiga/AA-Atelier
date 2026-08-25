@@ -13,8 +13,10 @@
 //    another, and a flat list ranked purely by shortfall interleaves them. The
 //    rules live in `lib/material-groups.ts`; the one worth knowing here is that
 //    a material appears exactly ONCE even when it carries several fabric types.
-//    Each category folds, open by default — fabric is the long group, and once
-//    it has been shopped it is in the way of everything under it.
+//    Each fabric TYPE folds, open by default — that is where the length is, and
+//    a type already shopped is in the way of everything under it. The category
+//    headings themselves don't fold: they're how you find your way down the
+//    panel, and one you can fold away is one you can lose.
 //  - **Ranking by what to buy first, within each group.** The server sorts by
 //    shortfall, and the group holding the worst shortfall leads — so the top of
 //    the panel is still the thing to buy first.
@@ -184,13 +186,10 @@ export function StudioMaterials() {
  * genuinely different things: a card with a reorder link, and a one-line note
  * about why nothing can alert.
  *
- * It folds, because fabric is the longest group here by a distance and someone
- * who has already been to the fabric supplier wants it out of the way to read
- * the rest. **Open by default**: this is a list of things to buy, and one that
- * greets the atelier collapsed is one whose whole point has to be clicked for.
- * Every category folds rather than only the fabric one, for the same reason
- * nothing here knows that fabric is the category with types — the atelier's
- * categories are theirs to add to.
+ * The CATEGORY headings stay put — they are how you find your way down the
+ * panel, and one that can be folded away is one you can lose. What folds is
+ * each type WITHIN a category (see `MaterialSubGroup` below), which is where
+ * the length actually is: fabric is one heading and a dozen types under it.
  */
 function MaterialCategory<T extends { id: string }>({
   group,
@@ -200,34 +199,60 @@ function MaterialCategory<T extends { id: string }>({
   render: (item: T) => React.ReactNode;
 }) {
   return (
-    <details
-      open
+    <section
       className="space-y-2"
       data-testid={`material-category-${group.label.toLowerCase().replace(/\s+/g, "-")}`}
     >
-      <summary className="cursor-pointer">
-        <h3 className="inline-flex items-baseline gap-2 text-xs tracking-[0.15em] uppercase text-muted-foreground/80">
-          {group.label}
-          <span className="text-[10px] tracking-normal text-muted-foreground/60">
-            {group.items.length}
-          </span>
-        </h3>
-      </summary>
+      <h3 className="flex items-baseline gap-2 text-xs tracking-[0.15em] uppercase text-muted-foreground/80">
+        {group.label}
+        <span className="text-[10px] tracking-normal text-muted-foreground/60">
+          {group.items.length}
+        </span>
+      </h3>
 
       {group.subGroups
         ? group.subGroups.map((sub) => (
-            <div
-              key={sub.label}
-              className="space-y-2 border-l border-border/60 pl-3"
-              data-testid={`material-fabric-${sub.label.toLowerCase().replace(/\s+/g, "-")}`}
-            >
-              <p className="text-[10px] tracking-[0.15em] uppercase text-muted-foreground/60">
-                {sub.label}
-              </p>
-              {sub.items.map(render)}
-            </div>
+            <MaterialSubGroup key={sub.label} group={sub} render={render} />
           ))
         : group.items.map(render)}
+    </section>
+  );
+}
+
+/**
+ * One fabric type within a category, folded away or not.
+ *
+ * This is the fold, and it is here rather than on the category because this is
+ * where the length is: "Fabric" is one line, and the twelve types under it are
+ * the thing in the way of reading what else needs buying. It carries its count
+ * so a folded type still says how much is behind it.
+ *
+ * **Open by default**, always — the panel is a list of things to buy, and one
+ * that greets the atelier collapsed is one whose whole point has to be clicked
+ * for. Nothing here remembers which types were folded last time: a shopping
+ * list that hides a row because of something you did a week ago is worse than
+ * one you have to fold again.
+ */
+function MaterialSubGroup<T extends { id: string }>({
+  group,
+  render,
+}: {
+  group: { label: string; items: T[] };
+  render: (item: T) => React.ReactNode;
+}) {
+  return (
+    <details
+      open
+      className="space-y-2 border-l border-border/60 pl-3"
+      data-testid={`material-fabric-${group.label.toLowerCase().replace(/\s+/g, "-")}`}
+    >
+      <summary className="cursor-pointer text-[10px] tracking-[0.15em] uppercase text-muted-foreground/60">
+        {group.label}
+        <span className="ml-2 tracking-normal text-muted-foreground/50">
+          {group.items.length}
+        </span>
+      </summary>
+      {group.items.map(render)}
     </details>
   );
 }
