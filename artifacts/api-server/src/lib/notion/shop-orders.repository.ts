@@ -432,6 +432,147 @@ export async function findShopOrderForCancellation(
   };
 }
 
+/** What buying a shipping label needs to know about an order before it spends
+ * money: which Stripe session holds the customer's structured address, whether
+ * the order is still live, and whether it already has a label on it. */
+export interface ShopOrderShippingTarget {
+  pageId: string;
+  orderNumber: string;
+  email: string;
+  /** The checkout the order was paid through — the ONLY place the ship-to
+   * address exists in its parts. Empty for an order the app didn't take (a
+   * hand-filed Etsy receipt), which is why a label can't be bought for one. */
+  sessionId: string;
+  cancelled: boolean;
+  /** The `Delivery Method` select, verbatim. A collection needs no label. */
+  deliveryMethod: string;
+  /** Already on the order, if the atelier (or an earlier run) put it there.
+   * Present ⇒ buying again is refused unless explicitly replaced. */
+  trackingNumber: string;
+  carrier: string;
+}
+
+/**
+ * Read the one order a label is about to be bought for.
+ *
+ * A separate reader from {@link findShopOrderForCancellation} despite the
+ * overlap, for the reason that one is separate from the tracking lookup: what a
+ * gate needs and what a customer may see are different sets, and merging them is
+ * how a field ends up somewhere it shouldn't be. This one carries the delivery
+ * method and the existing tracking, which no refund has any use for.
+ */
+export async function findShopOrderForShipping(
+  orderNumber: string,
+  client: NotionClient = getShopOrdersNotionClient(),
+): Promise<ShopOrderShippingTarget | null> {
+  assertConfigured(client);
+
+  const trimmed = orderNumber.trim();
+  if (!trimmed) return null;
+
+  const response = await client.fetch(
+    `/v1/databases/${client.databaseId}/query`,
+    {
+      method: "POST",
+      body: JSON.stringify({
+        filter: {
+          property: SHOP_ORDER_NUMBER_PROPERTY,
+          rich_text: { equals: trimmed },
+        },
+        page_size: 1,
+      }),
+    },
+  );
+
+  if (!response.ok) {
+    throw new Error(`Notion query failed with status ${response.status}`);
+  }
+
+  const data = (await response.json()) as NotionLookupResponse;
+  const page = data.results[0];
+  if (!page) return null;
+
+  return {
+    pageId: page.id,
+    orderNumber:
+      readRichText(page.properties[SHOP_ORDER_NUMBER_PROPERTY]) || trimmed,
+    email: readEmail(page.properties[SHOP_ORDER_EMAIL_PROPERTY]),
+    sessionId: readRichText(page.properties[SHOP_ORDER_SESSION_PROPERTY]),
+    cancelled: readCheckbox(page.properties[SHOP_ORDER_CANCELLED_PROPERTY]),
+    deliveryMethod: readSelect(
+      page.properties[SHOP_ORDER_DELIVERY_METHOD_PROPERTY],
+    ),
+    trackingNumber: readRichText(
+      page.properties[SHOP_ORDER_TRACKING_NUMBER_PROPERTY],
+    ),
+    carrier: readRichText(
+      page.properties[SHOP_ORDER_TRACKING_CARRIER_PROPERTY],
+    ),
+  };
+}
+
+/**
+ * Write a bought label's carrier tracking onto the shop order — the three
+ * columns the atelier used to type in by hand, which is the whole promise of
+ * buying the label here rather than on the vendor's own site.
+ *
+ * NOT best-effort, and the contrast with {@link recordShopOrderRefund} directly
+ * above is the point. There, the money has already moved and **Stripe** is what
+ * the next run reads, so a failed marker costs visibility and nothing else.
+ * Here, this write is the ONLY record of the tracking number the customer will
+ * ever be shown: lose it and the label is bought, the parcel is posted, and the
+ * tracking page says nothing forever. So the failure is reported rather than
+ * swallowed — the caller has a paid-for label in hand and surfaces the number
+ * for the atelier to paste, instead of quietly returning success.
+ *
+ * @returns true when written; false when Notion refused it (the reason is logged
+ * at `error`, since a lost tracking number is not a warning).
+ */
+export async function recordShopOrderTracking(
+  pageId: string,
+  tracking: { number: string; carrier?: string; url?: string },
+  client: NotionClient = getShopOrdersNotionClient(),
+): Promise<boolean> {
+  assertConfigured(client);
+
+  const properties: Record<string, unknown> = {
+    [SHOP_ORDER_TRACKING_NUMBER_PROPERTY]: {
+      rich_text: [{ text: { content: tracking.number } }],
+    },
+  };
+  if (tracking.carrier) {
+    properties[SHOP_ORDER_TRACKING_CARRIER_PROPERTY] = {
+      rich_text: [{ text: { content: tracking.carrier } }],
+    };
+  }
+  if (tracking.url) {
+    properties[SHOP_ORDER_TRACKING_URL_PROPERTY] = { url: tracking.url };
+  }
+
+  try {
+    const response = await client.fetch(`/v1/pages/${pageId}`, {
+      method: "PATCH",
+      body: JSON.stringify({ properties }),
+    });
+
+    if (!response.ok) {
+      const errorText = await response.text();
+      logger.error(
+        { pageId, status: response.status, errorText, ...tracking },
+        "Could not record the tracking number on the shop order (the label was bought)",
+      );
+      return false;
+    }
+    return true;
+  } catch (err) {
+    logger.error(
+      { err, pageId, ...tracking },
+      "Could not record the tracking number on the shop order (the label was bought)",
+    );
+    return false;
+  }
+}
+
 /**
  * Record the outcome of a return/exchange refund on the shop order: the
  * cumulative dollars refunded and a `Return Processed` marker.

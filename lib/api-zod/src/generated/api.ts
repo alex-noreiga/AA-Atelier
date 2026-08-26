@@ -1161,6 +1161,103 @@ export const RunStudioToolResponse = zod.object({
 
 
 /**
+ * The studio's packaging sizes, its ship-from address, and whether a label can be bought at all. Read before anything is asked for, so an unset vendor token or a half-filled ship-from address is said plainly on the panel rather than surfacing as an opaque carrier rejection at the point of sale.
+ *
+ * Reports rather than throws: both failures are states only a human can clear, and a panel that errors on load can't tell anyone which one it is. `problems` is empty when the panel is ready to use.
+ *
+ * `testMode` is load-bearing rather than diagnostic. A test label has a tracking number, a PDF and a price, and no carrier has ever heard of it — an atelier who sticks one on a parcel finds out when the customer doesn't get their dress.
+ * @summary What the label panel can do, and what's stopping it
+ */
+export const GetShippingOptionsResponse = zod.object({
+  "configured": zod.boolean().describe('A shipping vendor token is set.'),
+  "testMode": zod.boolean().describe('The vendor token is a TEST one, so any label bought looks entirely real — tracking number, PDF, price — and no carrier has heard of it.'),
+  "shipFrom": zod.array(zod.string()).optional().describe('The studio\'s ship-from address as envelope lines, present only when it is complete enough to post from.'),
+  "problems": zod.array(zod.string()).describe('Everything standing between the atelier and a label, each phrased with its own fix. Empty ⇒ the panel is ready to use.'),
+  "parcels": zod.array(zod.object({
+  "id": zod.string().describe('What the rate request sends back.'),
+  "name": zod.string().describe('How it reads on the packing bench, e.g. \"Small box\".'),
+  "hint": zod.string().describe('What it is for, so the right one is picked without a tape measure.'),
+  "length": zod.number(),
+  "width": zod.number(),
+  "height": zod.number()
+}).describe('One of the studio\'s packaging sizes, in inches. A code catalog served rather than duplicated in the frontend, like the appointment and service catalogs — a size the form offers that the server can\'t rate would be a dead option nobody could diagnose. Dimensions are the catalog\'s; the WEIGHT is not, because what goes in a box is a dress one day and a pair of soakers the next.'))
+}).describe('Whether a label can be bought, what\'s stopping it, and the packaging the studio keeps.')
+
+
+/**
+ * Quotes a parcel for one shop order across the carriers the studio has connected. Reads and quotes; buys nothing — the purchase is the separate operation below, because a label has a carrier, a service level and a price, and the difference between two of them is three days and eleven dollars. A one-press "buy the cheapest" would put a ground label on a dress needed on Saturday.
+ *
+ * The ship-to address comes from the order's **Stripe checkout**, never from the one-line `Shipping Address` on the Notion order: that line was assembled for a human to read, and parsing it back into components is guesswork that ends in a parcel not arriving. It is returned as envelope lines so a wrong address is caught by eye before it is paid for.
+ *
+ * Rates come back cheapest first, and an empty list is a legitimate answer — no connected carrier will take this parcel to this address — with the carrier's own explanation in `notes`.
+ * @summary What it would cost to post one shop order
+ */
+export const getShippingRatesBodyOrderNumberMax = 64;
+
+export const getShippingRatesBodyParcelIdMax = 64;
+
+export const getShippingRatesBodyWeightOzExclusiveMin = 0;
+export const getShippingRatesBodyWeightOzMax = 800;
+
+
+
+export const GetShippingRatesBody = zod.object({
+  "orderNumber": zod.string().max(getShippingRatesBodyOrderNumberMax).describe('The shop order to post, e.g. `SHP-M2X4K1-AB12`.'),
+  "parcelId": zod.string().max(getShippingRatesBodyParcelIdMax).describe('The id of one of the studio\'s packaging sizes.'),
+  "weightOz": zod.number().gt(getShippingRatesBodyWeightOzExclusiveMin).max(getShippingRatesBodyWeightOzMax).describe('The parcel\'s weight in OUNCES, off the scale. Zero is refused rather than treated as unset — a carrier rating a 0 oz package prices a document envelope — and the 800 oz (50 lb) ceiling is there to catch the typo that matters: pounds typed where ounces were wanted.')
+})
+
+export const GetShippingRatesResponse = zod.object({
+  "orderNumber": zod.string(),
+  "shipTo": zod.array(zod.string()).describe('The customer\'s address as envelope lines, read from the order\'s Stripe checkout — so a wrong one is caught by eye before it is paid for rather than after it is posted.'),
+  "rates": zod.array(zod.object({
+  "id": zod.string(),
+  "carrier": zod.string().describe('As the customer will read it: \"USPS\", \"UPS\".'),
+  "service": zod.string().describe('The service level: \"Priority Mail\", \"Ground Advantage\".'),
+  "amount": zod.number().describe('What the studio pays.'),
+  "currency": zod.string(),
+  "estimatedDays": zod.number().int().optional().describe('The carrier\'s own estimate, when it gives one.'),
+  "durationTerms": zod.string().optional().describe('The carrier\'s wording for the delivery window, when it gives one.')
+}).describe('One buyable rate. `id` is opaque and short-lived — it is the only thing the purchase takes, and it expires.')).describe('Cheapest first, which is the order the atelier chooses in.'),
+  "notes": zod.array(zod.string()).describe('The carriers\' own words when they declined to quote — which is what explains an empty list. Usually empty.')
+})
+
+
+/**
+ * Buys the rate the atelier picked and writes its carrier, tracking number and tracking URL onto the shop order — the three columns that were the last thing on an order still copied by hand from a second website into a third. Everything downstream already reads them, so the customer's tracking page fills itself.
+ *
+ * **This spends money and is not idempotent at the vendor**, which is why the ORDER is the guard: one that already carries a tracking number is refused with 409 unless `replace` is set, which the dashboard confirms.
+ *
+ * `recorded: false` means the label was bought and Notion refused the write. The response still carries the tracking number and the label URL, because throwing would lose a label the studio has already paid for — the purchase outranks its bookkeeping. The dashboard says to paste the number onto the order by hand.
+ * @summary Buy a chosen rate as a label
+ */
+export const buyShippingLabelBodyOrderNumberMax = 64;
+
+export const buyShippingLabelBodyRateIdMax = 128;
+
+
+
+export const BuyShippingLabelBody = zod.object({
+  "orderNumber": zod.string().max(buyShippingLabelBodyOrderNumberMax),
+  "rateId": zod.string().max(buyShippingLabelBodyRateIdMax).describe('The `id` of the rate to buy, from the rates operation.'),
+  "replace": zod.boolean().optional().describe('Buy a second label for an order that already has tracking on it — for when the first was voided. Without it such an order is refused with 409, since the vendor will sell a duplicate as happily as the first and has nothing to read back that says otherwise.')
+})
+
+export const BuyShippingLabelResponse = zod.object({
+  "orderNumber": zod.string(),
+  "carrier": zod.string(),
+  "service": zod.string(),
+  "amount": zod.number().describe('What the studio was charged for the label.'),
+  "currency": zod.string(),
+  "trackingNumber": zod.string(),
+  "trackingUrl": zod.string().optional().describe('The carrier\'s own tracking page, when it gave one.'),
+  "labelUrl": zod.string().optional().describe('The label PDF to print. Served from a signed vendor URL that expires, so it is fetched fresh rather than stored.'),
+  "recorded": zod.boolean().describe('Whether the tracking was written onto the Notion order. False ⇒ the label is bought and paid for but the write failed, so the number above has to be pasted on by hand — reporting that beats throwing, which would lose the label entirely.'),
+  "testMode": zod.boolean().describe('This label is a test one and no carrier will carry it.')
+})
+
+
+/**
  * The atelier's materials inventory, split into what needs buying and what isn't being watched. The reorder points, the stock-on-hand formula and a restock-alert formula have existed in Notion since before the app did; this is the read that puts them somewhere they'll be seen.
  *
  * The trip is re-derived server-side from `Stock on Hand` vs `Minimum Stock` rather than read off the atelier's own restock-alert formula: a formula derived from rollups can't be filtered on through the Notion API, and its rendered value is display wording nobody promised to keep. Deriving it also yields the `shortfall` the list is ranked by.

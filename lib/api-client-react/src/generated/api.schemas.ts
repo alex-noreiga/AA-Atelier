@@ -2053,6 +2053,113 @@ export interface StudioToolRun {
   details: string[];
 }
 
+/**
+ * One of the studio's packaging sizes, in inches. A code catalog served rather than duplicated in the frontend, like the appointment and service catalogs — a size the form offers that the server can't rate would be a dead option nobody could diagnose. Dimensions are the catalog's; the WEIGHT is not, because what goes in a box is a dress one day and a pair of soakers the next.
+ */
+export interface ParcelPreset {
+  /** What the rate request sends back. */
+  id: string;
+  /** How it reads on the packing bench, e.g. "Small box". */
+  name: string;
+  /** What it is for, so the right one is picked without a tape measure. */
+  hint: string;
+  length: number;
+  width: number;
+  height: number;
+}
+
+/**
+ * Whether a label can be bought, what's stopping it, and the packaging the studio keeps.
+ */
+export interface ShippingOptions {
+  /** A shipping vendor token is set. */
+  configured: boolean;
+  /** The vendor token is a TEST one, so any label bought looks entirely real — tracking number, PDF, price — and no carrier has heard of it. */
+  testMode: boolean;
+  /** The studio's ship-from address as envelope lines, present only when it is complete enough to post from. */
+  shipFrom?: string[];
+  /** Everything standing between the atelier and a label, each phrased with its own fix. Empty ⇒ the panel is ready to use. */
+  problems: string[];
+  parcels: ParcelPreset[];
+}
+
+export interface ShippingRatesRequest {
+  /**
+     * The shop order to post, e.g. `SHP-M2X4K1-AB12`.
+     * @maxLength 64
+     */
+  orderNumber: string;
+  /**
+     * The id of one of the studio's packaging sizes.
+     * @maxLength 64
+     */
+  parcelId: string;
+  /**
+     * The parcel's weight in OUNCES, off the scale. Zero is refused rather than treated as unset — a carrier rating a 0 oz package prices a document envelope — and the 800 oz (50 lb) ceiling is there to catch the typo that matters: pounds typed where ounces were wanted.
+     * @maximum 800
+     * @exclusiveMinimum 0
+     */
+  weightOz: number;
+}
+
+/**
+ * One buyable rate. `id` is opaque and short-lived — it is the only thing the purchase takes, and it expires.
+ */
+export interface ShippingRate {
+  id: string;
+  /** As the customer will read it: "USPS", "UPS". */
+  carrier: string;
+  /** The service level: "Priority Mail", "Ground Advantage". */
+  service: string;
+  /** What the studio pays. */
+  amount: number;
+  currency: string;
+  /** The carrier's own estimate, when it gives one. */
+  estimatedDays?: number;
+  /** The carrier's wording for the delivery window, when it gives one. */
+  durationTerms?: string;
+}
+
+export interface ShippingRates {
+  orderNumber: string;
+  /** The customer's address as envelope lines, read from the order's Stripe checkout — so a wrong one is caught by eye before it is paid for rather than after it is posted. */
+  shipTo: string[];
+  /** Cheapest first, which is the order the atelier chooses in. */
+  rates: ShippingRate[];
+  /** The carriers' own words when they declined to quote — which is what explains an empty list. Usually empty. */
+  notes: string[];
+}
+
+export interface BuyShippingLabelRequest {
+  /** @maxLength 64 */
+  orderNumber: string;
+  /**
+     * The `id` of the rate to buy, from the rates operation.
+     * @maxLength 128
+     */
+  rateId: string;
+  /** Buy a second label for an order that already has tracking on it — for when the first was voided. Without it such an order is refused with 409, since the vendor will sell a duplicate as happily as the first and has nothing to read back that says otherwise. */
+  replace?: boolean;
+}
+
+export interface PurchasedLabel {
+  orderNumber: string;
+  carrier: string;
+  service: string;
+  /** What the studio was charged for the label. */
+  amount: number;
+  currency: string;
+  trackingNumber: string;
+  /** The carrier's own tracking page, when it gave one. */
+  trackingUrl?: string;
+  /** The label PDF to print. Served from a signed vendor URL that expires, so it is fetched fresh rather than stored. */
+  labelUrl?: string;
+  /** Whether the tracking was written onto the Notion order. False ⇒ the label is bought and paid for but the write failed, so the number above has to be pasted on by hand — reporting that beats throwing, which would lose the label entirely. */
+  recorded: boolean;
+  /** This label is a test one and no carrier will carry it. */
+  testMode: boolean;
+}
+
 export type GetPublishedReviewsParams = {
 /**
  * Maximum number of testimonials to return, newest first. Defaults to 12 when omitted.

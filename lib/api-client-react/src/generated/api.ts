@@ -28,6 +28,7 @@ import type {
   AppointmentOptions,
   AppointmentStaffing,
   AppointmentStaffingRequest,
+  BuyShippingLabelRequest,
   CancelAppointmentRequest,
   CapacityStatus,
   CheckoutSessionResponse,
@@ -69,11 +70,15 @@ import type {
   PaymentSessionResponse,
   PortfolioList,
   ProductList,
+  PurchasedLabel,
   RequestStateRequest,
   RescheduleAppointmentRequest,
   ReviewList,
   ReviewStatusRequest,
   ServiceList,
+  ShippingOptions,
+  ShippingRates,
+  ShippingRatesRequest,
   ShopOrderStatus,
   StaffAvailabilityEntry,
   StaffAvailabilityList,
@@ -3079,6 +3084,240 @@ export const useRunStudioTool = <TError = ErrorType<ErrorEnvelope | OrderNotFoun
         TContext
       > => {
       return useMutation(getRunStudioToolMutationOptions(options));
+    }
+
+export const getGetShippingOptionsUrl = () => {
+
+
+
+
+  return `/api/studio/shipments/options`
+}
+
+/**
+ * The studio's packaging sizes, its ship-from address, and whether a label can be bought at all. Read before anything is asked for, so an unset vendor token or a half-filled ship-from address is said plainly on the panel rather than surfacing as an opaque carrier rejection at the point of sale.
+ *
+ * Reports rather than throws: both failures are states only a human can clear, and a panel that errors on load can't tell anyone which one it is. `problems` is empty when the panel is ready to use.
+ *
+ * `testMode` is load-bearing rather than diagnostic. A test label has a tracking number, a PDF and a price, and no carrier has ever heard of it — an atelier who sticks one on a parcel finds out when the customer doesn't get their dress.
+ * @summary What the label panel can do, and what's stopping it
+ */
+export const getShippingOptions = async ( options?: Parameters<typeof customFetch>[1]): Promise<ShippingOptions> => {
+
+  return customFetch<ShippingOptions>(getGetShippingOptionsUrl(),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
+
+
+
+
+export const getGetShippingOptionsQueryKey = () => {
+    return [
+    `/api/studio/shipments/options`
+    ] as const;
+    }
+
+
+export const getGetShippingOptionsQueryOptions = <TData = Awaited<ReturnType<typeof getShippingOptions>>, TError = ErrorType<ErrorEnvelope>>( options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getShippingOptions>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getGetShippingOptionsQueryKey();
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof getShippingOptions>>> = ({ signal }) => getShippingOptions({ signal, ...requestOptions });
+
+
+
+
+
+   return  { queryKey, queryFn, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof getShippingOptions>>, TError, TData> & { queryKey: QueryKey }
+}
+
+export type GetShippingOptionsQueryResult = NonNullable<Awaited<ReturnType<typeof getShippingOptions>>>
+export type GetShippingOptionsQueryError = ErrorType<ErrorEnvelope>
+
+
+/**
+ * @summary What the label panel can do, and what's stopping it
+ */
+
+export function useGetShippingOptions<TData = Awaited<ReturnType<typeof getShippingOptions>>, TError = ErrorType<ErrorEnvelope>>(
+  options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getShippingOptions>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+
+ ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+
+  const queryOptions = getGetShippingOptionsQueryOptions(options)
+
+  const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
+
+  return withQueryKey(query, queryOptions.queryKey);
+}
+
+
+
+
+
+
+
+export const getGetShippingRatesUrl = () => {
+
+
+
+
+  return `/api/studio/shipments/rates`
+}
+
+/**
+ * Quotes a parcel for one shop order across the carriers the studio has connected. Reads and quotes; buys nothing — the purchase is the separate operation below, because a label has a carrier, a service level and a price, and the difference between two of them is three days and eleven dollars. A one-press "buy the cheapest" would put a ground label on a dress needed on Saturday.
+ *
+ * The ship-to address comes from the order's **Stripe checkout**, never from the one-line `Shipping Address` on the Notion order: that line was assembled for a human to read, and parsing it back into components is guesswork that ends in a parcel not arriving. It is returned as envelope lines so a wrong address is caught by eye before it is paid for.
+ *
+ * Rates come back cheapest first, and an empty list is a legitimate answer — no connected carrier will take this parcel to this address — with the carrier's own explanation in `notes`.
+ * @summary What it would cost to post one shop order
+ */
+export const getShippingRates = async (shippingRatesRequest: ShippingRatesRequest, options?: Parameters<typeof customFetch>[1]): Promise<ShippingRates> => {
+
+  return customFetch<ShippingRates>(getGetShippingRatesUrl(),
+  {
+    ...options,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    body: JSON.stringify(shippingRatesRequest)
+  }
+);}
+
+
+
+
+
+export const getGetShippingRatesMutationOptions = <TError = ErrorType<ErrorEnvelope | OrderNotFound>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof getShippingRates>>, TError,{data: BodyType<ShippingRatesRequest>}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof getShippingRates>>, TError,{data: BodyType<ShippingRatesRequest>}, TContext> => {
+
+const mutationKey = ['getShippingRates'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof getShippingRates>>, {data: BodyType<ShippingRatesRequest>}> = (props) => {
+          const {data} = props ?? {};
+
+          return  getShippingRates(data,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type GetShippingRatesMutationResult = NonNullable<Awaited<ReturnType<typeof getShippingRates>>>
+    export type GetShippingRatesMutationBody = BodyType<ShippingRatesRequest>
+    export type GetShippingRatesMutationError = ErrorType<ErrorEnvelope | OrderNotFound>
+
+    /**
+ * @summary What it would cost to post one shop order
+ */
+export const useGetShippingRates = <TError = ErrorType<ErrorEnvelope | OrderNotFound>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof getShippingRates>>, TError,{data: BodyType<ShippingRatesRequest>}, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof getShippingRates>>,
+        TError,
+        {data: BodyType<ShippingRatesRequest>},
+        TContext
+      > => {
+      return useMutation(getGetShippingRatesMutationOptions(options));
+    }
+
+export const getBuyShippingLabelUrl = () => {
+
+
+
+
+  return `/api/studio/shipments/label`
+}
+
+/**
+ * Buys the rate the atelier picked and writes its carrier, tracking number and tracking URL onto the shop order — the three columns that were the last thing on an order still copied by hand from a second website into a third. Everything downstream already reads them, so the customer's tracking page fills itself.
+ *
+ * **This spends money and is not idempotent at the vendor**, which is why the ORDER is the guard: one that already carries a tracking number is refused with 409 unless `replace` is set, which the dashboard confirms.
+ *
+ * `recorded: false` means the label was bought and Notion refused the write. The response still carries the tracking number and the label URL, because throwing would lose a label the studio has already paid for — the purchase outranks its bookkeeping. The dashboard says to paste the number onto the order by hand.
+ * @summary Buy a chosen rate as a label
+ */
+export const buyShippingLabel = async (buyShippingLabelRequest: BuyShippingLabelRequest, options?: Parameters<typeof customFetch>[1]): Promise<PurchasedLabel> => {
+
+  return customFetch<PurchasedLabel>(getBuyShippingLabelUrl(),
+  {
+    ...options,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    body: JSON.stringify(buyShippingLabelRequest)
+  }
+);}
+
+
+
+
+
+export const getBuyShippingLabelMutationOptions = <TError = ErrorType<ErrorEnvelope | OrderNotFound>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof buyShippingLabel>>, TError,{data: BodyType<BuyShippingLabelRequest>}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof buyShippingLabel>>, TError,{data: BodyType<BuyShippingLabelRequest>}, TContext> => {
+
+const mutationKey = ['buyShippingLabel'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof buyShippingLabel>>, {data: BodyType<BuyShippingLabelRequest>}> = (props) => {
+          const {data} = props ?? {};
+
+          return  buyShippingLabel(data,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type BuyShippingLabelMutationResult = NonNullable<Awaited<ReturnType<typeof buyShippingLabel>>>
+    export type BuyShippingLabelMutationBody = BodyType<BuyShippingLabelRequest>
+    export type BuyShippingLabelMutationError = ErrorType<ErrorEnvelope | OrderNotFound>
+
+    /**
+ * @summary Buy a chosen rate as a label
+ */
+export const useBuyShippingLabel = <TError = ErrorType<ErrorEnvelope | OrderNotFound>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof buyShippingLabel>>, TError,{data: BodyType<BuyShippingLabelRequest>}, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof buyShippingLabel>>,
+        TError,
+        {data: BodyType<BuyShippingLabelRequest>},
+        TContext
+      > => {
+      return useMutation(getBuyShippingLabelMutationOptions(options));
     }
 
 export const getGetStudioMaterialsUrl = () => {

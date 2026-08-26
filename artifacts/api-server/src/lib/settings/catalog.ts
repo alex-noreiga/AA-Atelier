@@ -50,7 +50,12 @@ export type SettingKind =
 
 /** The section a setting is shown under. Presentation only. */
 export type SettingGroup =
-  "Orders & pricing" | "Intake" | "Appointments" | "Rewards" | "Notifications";
+  | "Orders & pricing"
+  | "Intake"
+  | "Appointments"
+  | "Shipping"
+  | "Rewards"
+  | "Notifications";
 
 export interface SettingDefinition {
   key: string;
@@ -451,6 +456,125 @@ export const SETTING_DEFINITIONS: readonly SettingDefinition[] = [
     placeholder: "alexandra@a3iceanddance.com",
     accepts: emailAccepts,
     validate: emailRule,
+  },
+
+  // --- The studio's ship-from address ---
+  //
+  // Seven keys rather than one line of text, for the reason spelled out in
+  // `lib/shipping/from-address.ts`: this is what every rate is quoted against
+  // and what prints as the return address, and an origin postcode split wrong
+  // out of a single field misprices every rate silently. Each has an EMPTY
+  // default on purpose — there is no sensible built-in for somebody's address,
+  // and a placeholder one would print on a real parcel — so an unfilled address
+  // is reported as the reason no label can be bought rather than quietly used.
+  {
+    key: "SHIP_FROM_NAME",
+    label: "Ship-from name",
+    group: "Shipping",
+    kind: "text",
+    description:
+      "The return address's name, as it prints on every label the studio buys.",
+    defaultValue: "",
+    defaultLabel: "Unset — labels can't be bought until it's filled in",
+    placeholder: "A.A Atelier",
+    accepts: nonEmpty,
+    validate: textRule(60, "The ship-from name"),
+  },
+  {
+    key: "SHIP_FROM_STREET1",
+    label: "Ship-from street",
+    group: "Shipping",
+    kind: "text",
+    description: "The first address line the studio posts from.",
+    defaultValue: "",
+    defaultLabel: "Unset — labels can't be bought until it's filled in",
+    placeholder: "1200 Rink Road",
+    accepts: nonEmpty,
+    validate: textRule(80, "The ship-from street"),
+  },
+  {
+    key: "SHIP_FROM_STREET2",
+    label: "Ship-from street line 2",
+    group: "Shipping",
+    kind: "text",
+    description:
+      "A suite, unit or floor. Optional — leave it blank if there isn't one.",
+    defaultValue: "",
+    defaultLabel: "No second line",
+    placeholder: "Suite 4",
+    accepts: nonEmpty,
+    validate: textRule(80, "The ship-from street line"),
+  },
+  {
+    key: "SHIP_FROM_CITY",
+    label: "Ship-from city",
+    group: "Shipping",
+    kind: "text",
+    description: "The city the studio posts from.",
+    defaultValue: "",
+    defaultLabel: "Unset — labels can't be bought until it's filled in",
+    placeholder: "Austin",
+    accepts: nonEmpty,
+    validate: textRule(60, "The ship-from city"),
+  },
+  {
+    key: "SHIP_FROM_STATE",
+    label: "Ship-from state",
+    group: "Shipping",
+    kind: "text",
+    description:
+      "The two-letter state code. Required for a US address, since no carrier will rate a domestic parcel without one.",
+    defaultValue: "",
+    defaultLabel: "Unset — labels can't be bought until it's filled in",
+    placeholder: "TX",
+    // The runtime uppercases whatever is stored, so it honours "tx" — and this
+    // must not be stricter than that or the dashboard would report a value as
+    // ignored while the app was posting from it.
+    accepts: nonEmpty,
+    validate: (raw) =>
+      /^[A-Za-z]{2}$/.test(raw.trim())
+        ? null
+        : "Use the two-letter state code, e.g. TX.",
+  },
+  {
+    key: "SHIP_FROM_ZIP",
+    label: "Ship-from postal code",
+    group: "Shipping",
+    kind: "text",
+    description:
+      "The postal code the studio posts from. Every rate is quoted from it, so a wrong one misprices the whole list.",
+    defaultValue: "",
+    defaultLabel: "Unset — labels can't be bought until it's filled in",
+    placeholder: "78701",
+    accepts: nonEmpty,
+    validate: textRule(12, "The ship-from postal code"),
+  },
+  {
+    key: "SHIP_FROM_COUNTRY",
+    label: "Ship-from country",
+    group: "Shipping",
+    kind: "text",
+    description: "The two-letter country code the studio posts from.",
+    defaultValue: "US",
+    placeholder: "US",
+    accepts: nonEmpty,
+    validate: (raw) =>
+      /^[A-Za-z]{2}$/.test(raw.trim())
+        ? null
+        : "Use the two-letter country code, e.g. US.",
+  },
+  {
+    key: "SHIP_FROM_PHONE",
+    label: "Ship-from phone",
+    group: "Shipping",
+    kind: "text",
+    description:
+      "A contact number for the carrier. Optional for most services, and required by some expedited ones.",
+    defaultValue: "",
+    defaultLabel: "No phone number on the label",
+    placeholder: "512-555-0100",
+    accepts: nonEmpty,
+    validate: textRule(30, "The ship-from phone number"),
   },
 ];
 
