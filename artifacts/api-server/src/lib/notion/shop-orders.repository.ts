@@ -54,6 +54,10 @@ export interface ShopOrderRecord {
    * needs the live status list to know whether the order is already fulfilled
    * before it can decide what to say. Absent when none are set. */
   fulfilmentFields?: FulfilmentFields;
+  /** Inventory page ids from the `Inventory Items` relation. The service
+   * resolves these to piece names so a delivered order can offer a review of
+   * one of them; empty for an order placed before that relation was written. */
+  itemIds?: string[];
 }
 
 // Raw Notion property shapes we read back (only the types we touch).
@@ -214,15 +218,26 @@ function readFulfilmentFields(
 export interface ShopOrderVerification {
   pageId: string;
   email: string;
+  /** The order's current fulfilment `Status`. Read for the review gate, which
+   * only invites a review once the order has reached its final status. */
+  status: string;
+  /** True once the atelier has cancelled the order. */
+  cancelled: boolean;
+  /** Inventory page ids from the `Inventory Items` relation — the pieces on the
+   * order, and so the only pieces a review against it may name. Empty for an
+   * order placed before that relation was written, which the review gate reads
+   * as "there is nothing here to review". */
+  itemIds: string[];
 }
 
 /**
  * Look up a shop order for a gated, email-verified action (a return/exchange
- * request). Filters on the `Order Number` rich_text property (same `rich_text:
- * { equals }` gotcha as the tracking lookup) and returns the stored
- * `Customer Email`, or null when the number is blank or unknown. A legacy order
- * with no stored email returns an empty string, which the caller treats as
- * "unverifiable" rather than a mismatch.
+ * request, a review of one of its pieces). Filters on the `Order Number`
+ * rich_text property (same `rich_text: { equals }` gotcha as the tracking
+ * lookup) and returns the stored `Customer Email` alongside what the gates need,
+ * or null when the number is blank or unknown. A legacy order with no stored
+ * email returns an empty string, which the caller treats as "unverifiable"
+ * rather than a mismatch.
  */
 export async function findShopOrderVerification(
   orderNumber: string,
@@ -258,6 +273,9 @@ export async function findShopOrderVerification(
   return {
     pageId: page.id,
     email: readEmail(page.properties[SHOP_ORDER_EMAIL_PROPERTY]),
+    status: readStatus(page.properties[SHOP_ORDER_STATUS_PROPERTY]),
+    cancelled: readCheckbox(page.properties[SHOP_ORDER_CANCELLED_PROPERTY]),
+    itemIds: readRelationIds(page.properties[SHOP_ORDER_ITEMS_PROPERTY]),
   };
 }
 
@@ -358,6 +376,7 @@ export async function findShopOrderByNumber(
 
   const total = readNumber(page.properties[SHOP_ORDER_TOTAL_PROPERTY]);
   const fulfilmentFields = readFulfilmentFields(page.properties);
+  const itemIds = readRelationIds(page.properties[SHOP_ORDER_ITEMS_PROPERTY]);
   return {
     orderNumber:
       readRichText(page.properties[SHOP_ORDER_NUMBER_PROPERTY]) || trimmed,
@@ -367,6 +386,7 @@ export async function findShopOrderByNumber(
       ? { cancelled: true }
       : {}),
     ...(Object.keys(fulfilmentFields).length > 0 ? { fulfilmentFields } : {}),
+    ...(itemIds.length > 0 ? { itemIds } : {}),
   };
 }
 

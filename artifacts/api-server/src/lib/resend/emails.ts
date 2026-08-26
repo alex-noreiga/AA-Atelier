@@ -1560,16 +1560,29 @@ function ratingStars(rating: number): string {
   return "★".repeat(filled) + "☆".repeat(5 - filled);
 }
 
-/** Thank-you sent to the customer after they leave a post-delivery review. */
+/**
+ * Thank-you sent to the customer after they leave a review.
+ *
+ * `productName` is the ready-to-wear piece a shop review named; a custom-order
+ * review passes none, and the copy then speaks of "your piece" as it always has.
+ */
 export function reviewConfirmationEmail(
   input: CreateReviewInput,
   orderNumber: string,
+  productName?: string,
 ): EmailMessage {
+  const subject = productName
+    ? `your <strong>${escapeHtml(productName)}</strong> (order <strong>${orderNumber}</strong>)`
+    : `order <strong>${orderNumber}</strong>`;
+  const subjectText = productName
+    ? `your ${productName} (order ${orderNumber})`
+    : `order ${orderNumber}`;
+
   const html = layout(
     "Thank you for your review",
     `<p>Hi there,</p>
-     <p>Thank you for taking a moment to share your thoughts on order
-        <strong>${orderNumber}</strong>. It means the world to a small atelier.</p>
+     <p>Thank you for taking a moment to share your thoughts on
+        ${subject}. It means the world to a small atelier.</p>
      <p>We've passed your words to the team, and we hope your piece brings you
         confidence every time you wear it.</p>`,
   );
@@ -1577,7 +1590,7 @@ export function reviewConfirmationEmail(
   const text = [
     `Hi there,`,
     ``,
-    `Thank you for taking a moment to share your thoughts on order ${orderNumber}.`,
+    `Thank you for taking a moment to share your thoughts on ${subjectText}.`,
     `It means the world to a small atelier.`,
     ``,
     `We've passed your words to the team, and we hope your piece brings you`,
@@ -1595,14 +1608,17 @@ export function reviewConfirmationEmail(
   };
 }
 
-/** Notify the atelier of a new post-delivery review. */
+/** Notify the atelier of a new post-delivery review. `productName` names the
+ * ready-to-wear piece for a shop review; a custom-order review passes none. */
 export function reviewNotificationEmail(
   input: CreateReviewInput,
   orderNumber: string,
   to: string,
+  productName?: string,
 ): EmailMessage {
   const fields: Field[] = [
     ["Order number", orderNumber],
+    ...(productName ? [["Piece", productName] as Field] : []),
     ["Rating", `${ratingStars(input.rating)} (${input.rating}/5)`],
     ...(input.displayName ? [["Credit as", input.displayName] as Field] : []),
     ["Email", input.email],

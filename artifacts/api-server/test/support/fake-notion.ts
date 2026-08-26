@@ -551,6 +551,10 @@ export function reviewPage(opts: {
   consent?: boolean;
   createdTime?: string | null;
   url?: string | null;
+  /** Inventory page ids on the `Product` relation — what makes a row a review of
+   * a shop piece. Omit for a custom-order review (the property is present but
+   * empty); pass `null` to model a database that has no such column at all. */
+  productIds?: string[] | null;
 }) {
   const rt = (value?: string) => ({
     type: "rich_text",
@@ -593,6 +597,14 @@ export function reviewPage(opts: {
         type: "checkbox",
         checkbox: opts.emailVerified ?? true,
       },
+      ...(opts.productIds === null
+        ? {}
+        : {
+            Product: {
+              type: "relation",
+              relation: (opts.productIds ?? []).map((id) => ({ id })),
+            },
+          }),
     },
   };
 }

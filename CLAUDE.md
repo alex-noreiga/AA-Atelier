@@ -177,7 +177,11 @@ Express app (artifacts/api-server)  ──►  Notion REST API (orders database)
   │                                  "Website Contact Messages" database + sends
   │                                  an acknowledgement email
   ├─ GET  /api/products            → shop inventory + the live category list,
-  │                                  from the Notion "inventory" database
+  │                                  from the Notion "inventory" database — plus,
+  │                                  per piece, the customer rating its published
+  │                                  reviews average to (best-effort: no reviews
+  │                                  database ⇒ cards without stars, never a shop
+  │                                  without stock)
   ├─ GET  /api/colors              → the studio's intake color palette for the
   │                                  order form's color picker (id + name + hex per
   │                                  chip). Read from the atelier-editable
@@ -216,7 +220,10 @@ Express app (artifacts/api-server)  ──►  Notion REST API (orders database)
   │                                  the live status list (tracking timeline) +
   │                                  the same `OrderFulfilment` the custom order
   │                                  above carries (this replaced the old
-  │                                  shop-only `tracking` field)
+  │                                  shop-only `tracking` field). Once the order
+  │                                  is finished it also names its `items`, which
+  │                                  is what lets the page ask which piece a
+  │                                  review is about
   ├─ POST /api/shop-orders/:n/cancellation-requests
   │                                → shop-order cancellation request into the same
   │                                  contact database. Gated on email match only
@@ -227,6 +234,16 @@ Express app (artifacts/api-server)  ──►  Notion REST API (orders database)
   │                                  Gated on email match (403); legacy orders with
   │                                  no stored email are accepted but flagged
   │                                  unverified. Never refunds or edits the order
+  ├─ POST /api/shop-orders/:n/reviews
+  │                                → reviews ONE ready-to-wear piece from a shop
+  │                                  order, into the same Notion "Reviews"
+  │                                  database (and so the same moderation queue)
+  │                                  the custom-order review uses. Gated: order
+  │                                  at its final status + not cancelled + email
+  │                                  must match + the named `productId` must be
+  │                                  on the order. The piece is what gives a shop
+  │                                  card a rating to average — see "Reviews on
+  │                                  shop pieces"
   ├─ POST /api/notify              → back-in-stock request (email + item +
   │                                  optional size), tagged "Back in stock"
   ├─ POST /api/newsletter          → marketing newsletter opt-in (email + optional
@@ -1871,6 +1888,96 @@ minutes behind the edge cache.
    the two gates per row. Both surfaces write the same `Status` select, so neither is
    authoritative over the other. See "Curating which reviews show" below and
    `.agents/memory/reviews-curation-views.md`.
+
+### Reviews on shop pieces, and the ratings they average to
+
+Reviews were captured against custom orders only, so a ready-to-wear piece had
+nothing to average and the shop cards carried no social proof at all. A customer
+whose shop order is finished now reviews **one piece from it**, and the piece's
+average shows on its card, in its quick view, and in its `Product` structured
+data. Code: `services/shop-review.service.ts` +
+`POST /shop-orders/:n/reviews` (`routes/shop-orders.ts`), the `Product`/`Item`
+half of `lib/notion/reviews.{blocks,schema,repository}.ts`,
+`services/product-ratings.ts` (the pure aggregation) + `withRatings` in
+`services/products.service.ts`, and on the frontend
+`components/shop-review-dialog.tsx`, `components/star-rating.tsx` and
+`aggregateRating` in `lib/product-seo.ts`.
+
+1. **It is the same review, not a second kind of one.** The shop flow reuses the
+   Reviews database, the `"New"` capture status, the identity gate, the photo
+   upload and — the payoff — the dashboard's **moderation queue**, which needed
+   no change to start showing shop reviews. The only thing that is genuinely new
+   is that the review names a piece.
+
+2. **A review counts toward an average only if it could have been a
+   testimonial.** `extractProductReviews` runs the **same `isPublishable`** as
+   the testimonial read: the atelier published it AND the customer consented. One
+   predicate decides everything public, so a star rating can never appear beside
+   a piece from a row the testimonial strip couldn't show. The consequence is
+   worth stating plainly: **a shop rating does not move until the atelier
+   publishes the review.**
+
+   The one deliberate difference is the empty-comment rule. The testimonial
+   extractor drops a review with no words (a blank quote card); the rating
+   extractor keeps it, because there the rating is the point — such a row counts
+   toward the average and simply isn't quoted.
+
+3. **Which piece is a GATE, not a field.** A shop order can hold several pieces,
+   so `productId` (an inventory page id) is required and checked against the
+   order's own `Inventory Items` — an order number is not permission to rate a
+   piece nobody bought (400). An order carrying no linked pieces at all is told
+   so plainly rather than refused as though the customer named the wrong thing.
+   The tracking response carries the order's `items` so the customer picks from
+   what they actually have.
+
+4. **Delivery is the same positional rule as everywhere else.** `orderDelivered`
+   against the live `Status` list, so no status name is baked in and it fails
+   closed on an unknown one; a cancelled order is refused first, because it can
+   also sit at a final status and "it hasn't arrived yet" would be the wrong
+   thing to say. `getShopOrderStatus` resolves `items` **only** at that same
+   moment, so the affordance and the gate agree and an in-progress lookup pays
+   for no inventory read.
+
+5. **The join is id → card, never name → name.** A review names the inventory
+   row; `shopCardId` maps that to the card it was grouped onto — the same
+   function that decided the card's id, so the two can't disagree. A grouped card
+   pools its colourways' reviews (that is the piece a shopper is looking at), and
+   a review naming several rows of one card counts **once** for it. Matching by
+   name instead would orphan every review the day a piece was renamed, exactly as
+   it does for the back-in-stock requests.
+
+6. **The rating is the last thing `getProducts` does, and it is best-effort.** A
+   rating is something extra beside a piece; the piece is the shop. An
+   unconfigured or unreachable reviews database costs the cards their stars and
+   nothing else. The read is a bounded **scan** rather than the testimonials'
+   single page — a strip cut off at 50 rows shows the newest 50, but an average
+   cut off at 50 rows is simply _wrong_ — cached 60s with the usual
+   fall-back-to-stale, and busted by a moderation decision.
+
+7. **`aggregateRating` is emitted only when there is something to aggregate.**
+   Google's policy requires a rating to come from genuine customers, and a
+   `ratingValue` of 0 over 0 reviews is both invalid and a violation, so a piece
+   with no reviews publishes no tag. The average is rounded **once**, server-side,
+   so the number a shopper reads and the number a crawler reads are the same one.
+   Prerendered product pages get it for free: they are baked from the verbatim
+   `/products` payload.
+
+8. **A card with no reviews shows nothing** — no "0 reviews", no "be the first".
+   Most pieces will have none, and an invitation on every card is a shop that
+   looks unvisited. Where a rating does show, the count always shows with it:
+   "5.0" from one review reads very differently from "4.8" from forty.
+
+**Atelier setup (one time, on the Reviews database):** add a **`Product`**
+relation → **inventory** and an **`Item`** rich_text. The relation is what a
+rating is built from; the text is so a human can read which piece was reviewed.
+Until they exist, `createReview` **drops them and keeps the review** (it goes
+through `createPageDroppingUnknownProperties`, and the piece is still named in
+the row's title and page body) — a customer's words are not something to lose to
+un-done setup, and the atelier can link the row by hand. No env var, no new
+database, and no change to the moderation queue. Known limits: a piece the
+atelier has since unpublished can still be reviewed but has no card to show the
+rating on, and a review left before the relation existed needs linking by hand
+before it counts.
 
 ## Portfolio & finished-work gallery
 
@@ -5229,6 +5336,7 @@ Three things about it are load-bearing:
 | Change the newsletter panel on the dashboard             | `web-app/src/components/studio-newsletter.tsx` (rendered by `pages/studio.tsx`); `services/studio-newsletter.service.ts` + the `/studio/newsletter` handlers in `routes/studio.ts` + the newsletter half of `lib/notion/requests.{schema,repository}.ts` + the read side of `lib/resend/audience.ts` (`listAudienceContacts` / `membershipIn` — membership is never stored)                                                                                                                                                                                                                                                                                                                                                                                                                                                         |
 | Change post-delivery review capture                      | `artifacts/web-app/src/components/review-dialog.tsx` (opened from `components/custom-order-result.tsx` for delivered orders); `api-server/src/services/review.service.ts` + `services/delivery.ts` + `routes/orders.ts` + `lib/notion/reviews.{blocks,repository}.ts` (writes to the **Reviews** database)                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                          |
 | Change the published testimonials                        | `artifacts/web-app/src/components/testimonials.tsx` (rendered by `pages/home.tsx` + `pages/about.tsx`); `getPublishedReviews` in `api-server/src/services/review.service.ts` + `routes/reviews.ts` + `lib/notion/reviews.schema.ts`                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                 |
+| Change reviews & ratings on shop pieces                  | Capture: `web-app/src/components/shop-review-dialog.tsx` (opened from `components/shop-order-result.tsx` once the server names the order's pieces) + `api-server/src/services/shop-review.service.ts` + `POST /shop-orders/:n/reviews` in `routes/shop-orders.ts` + the `Product`/`Item` half of `lib/notion/reviews.blocks.ts`. Ratings: `services/product-ratings.ts` (the pure aggregation — read the id → card join rule there before touching it) + `withRatings` in `services/products.service.ts` + `listPublishedProductReviews` / `extractProductReviews` in `lib/notion/reviews.{repository,schema}.ts`. Display: `web-app/src/components/star-rating.tsx` + `ProductReviews` in `pages/shop.tsx` + `aggregateRating` in `lib/product-seo.ts`                                                                             |
 | Change the portfolio gallery                             | `artifacts/web-app/src/pages/portfolio.tsx` (the grid, chips and lightbox); `api-server/src/lib/notion/portfolio.schema.ts` (`FACET_DEFINITIONS` — the filter DIMENSIONS; the options are derived, never hardcoded) + `portfolio.repository.ts` (the bounded scan + degrade rules) + `services/portfolio.service.ts` + `routes/portfolio.ts`. Reads the "Design Portfolio & Sketch Library" database via `NOTION_PORTFOLIO_DATABASE_ID`; the app never writes it                                                                                                                                                                                                                                                                                                                                                                    |
 | Change the studio's daily Notion ops page                | The **🧭 Studio Operations** page under **{ A.A. Atelier }** — four linked views over Custom Orders / Production Schedule / Reviews / Website Contact Messages; no code; see `.agents/memory/studio-operations-page.md`                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                             |
 | Curate which reviews show on the site                    | The **Reviews** Notion database's saved views (Curate / Live on the site / Awaiting curation / Published but not showing) — no code; see `.agents/memory/reviews-curation-views.md`                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                 |

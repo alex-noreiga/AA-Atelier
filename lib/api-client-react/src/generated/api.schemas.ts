@@ -148,6 +148,13 @@ export interface OrderNotFound {
   message: string;
 }
 
+export interface ShopOrderItem {
+  /** The inventory row's Notion page id — the same id a ProductVariant carries, and what a shop review names as the piece it is about. */
+  id: string;
+  /** The piece's name, as the shop lists it. */
+  name: string;
+}
+
 export interface ShopOrderStatus {
   orderNumber: string;
   /** The order's current fulfilment status. */
@@ -159,6 +166,8 @@ export interface ShopOrderStatus {
   /** True once the atelier has cancelled the shop order (the `Cancelled` marker on the Notion order). When true the tracking page shows a cancelled banner and suppresses the request affordance. Absent/false for an active order. */
   cancelled?: boolean;
   fulfilment?: OrderFulfilment;
+  /** The pieces on this order, so a customer at the delivered status can say which one they are reviewing. Resolved from the order's `Inventory Items` relation against live inventory, and therefore best-effort: an order placed before that relation was written, or one whose inventory read fails, carries an empty list — which the tracking page reads as "no piece to review", never as an error. Only the piece's id and name are served; quantities, prices and the shipping address stay in Notion, because this lookup is gated by order number alone. */
+  items?: ShopOrderItem[];
 }
 
 export type NewOrderRequestPreferredContact = typeof NewOrderRequestPreferredContact[keyof typeof NewOrderRequestPreferredContact];
@@ -369,6 +378,40 @@ export interface NewReviewRequest {
   /** Whether the customer gives permission to feature this review (and any photos) publicly, e.g. on the site's testimonials/portfolio. Defaults to false. */
   consentToPublish?: boolean;
   /** Notion file_upload ids for photos of the finished piece, uploaded ahead of time via POST /orders/reference-images. Attached to the review's Notion page as image blocks. */
+  photoIds?: string[];
+}
+
+/**
+ * A review of one ready-to-wear piece from a shop order. The same shape as NewReviewRequest plus the piece it is about — a shop order can hold several pieces, and an average belongs to a piece rather than to the order, so the review has to say which one.
+ */
+export interface NewShopReviewRequest {
+  /** The email to verify against the one on the order. A review whose email doesn't match the order is rejected. */
+  email: string;
+  /**
+     * The inventory row id of the piece being reviewed — one of the `id`s on the order's `items`. The server checks it against the order's own pieces, so a review can only ever be left for something the customer actually bought.
+     * @minLength 1
+     */
+  productId: string;
+  /**
+     * The star rating, 1 (poor) to 5 (excellent).
+     * @minimum 1
+     * @maximum 5
+     */
+  rating: number;
+  /**
+     * The customer's testimonial about the piece.
+     * @minLength 1
+     * @maxLength 2000
+     */
+  comment: string;
+  /**
+     * How the customer would like to be credited if the review is featured (e.g. "Ada L." or "Ada, Chicago"). Optional.
+     * @maxLength 120
+     */
+  displayName?: string;
+  /** Whether the customer gives permission to show this review publicly. Defaults to false — and, because the same two gates decide everything public, a review without it is never counted into the piece's average either. */
+  consentToPublish?: boolean;
+  /** Notion file_upload ids for photos of the piece, uploaded ahead of time via POST /orders/reference-images. Attached to the review's Notion page as image blocks. */
   photoIds?: string[];
 }
 
@@ -1117,6 +1160,26 @@ export const ProductSizeGuide = {
   soaker: 'soaker',
 } as const;
 
+/**
+ * What customers who bought this piece said about it. Built from reviews left against a shop order and passing the SAME two gates as a public testimonial — the atelier published it and the customer consented — so a rating can never appear beside a piece from a row the testimonials couldn't show.
+ * Absent when the piece has no such review yet, which is not an error state: most pieces will have none, and a card showing "0 reviews" reads worse than a card showing none. A grouped card (several colourways under one `Website Group`) pools the reviews of all its variants, because that is the piece a shopper is looking at.
+ */
+export interface ProductRating {
+  /**
+     * The mean star rating, rounded to one decimal place. Shown beside the piece and published as `aggregateRating` in its Product structured data.
+     * @minimum 1
+     * @maximum 5
+     */
+  average: number;
+  /**
+     * How many reviews the average is built from.
+     * @minimum 1
+     */
+  count: number;
+  /** A few of those reviews in the customer's own words, newest first, for the piece's quick view. Capped server-side — the shop list is a single edge-cached payload, so it carries a taste rather than the whole history. Narrow like `PublishedReview`: no email, no order number. */
+  reviews: PublishedReview[];
+}
+
 export interface Product {
   id: string;
   title: string;
@@ -1126,6 +1189,7 @@ export interface Product {
   /** Which size chart this product's category uses. "garment" (the default, and the value when this field is omitted) is the ready-to- wear body-measurement chart; "soaker" is the skate-soaker blade-length chart. Resolved server-side from the Notion "Product Categories" database ("Size guide type" select per category, following the inventory `Category` relation) — clients pick the chart from this and must not hardcode which category is a soaker. Only meaningful when `sized` is true. */
   sizeGuide?: ProductSizeGuide;
   variants: ProductVariant[];
+  rating?: ProductRating;
 }
 
 export interface ProductList {

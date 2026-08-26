@@ -9,6 +9,8 @@
 // share a `Website Group` value are grouped into a single shop card by the
 // service layer; each row becomes a selectable variant.
 
+import type { PublishedReviewRecord } from "./reviews.schema.js";
+
 const PRODUCT_NAME_PROPERTY = "Item Name"; // title
 const PRODUCT_CATEGORY_RELATION_PROPERTY = "Category"; // relation → Product Categories
 const PRODUCT_PRICE_PROPERTY = "Listed Price"; // number
@@ -77,6 +79,20 @@ export interface ProductVariantRecord {
   addOnIds?: string[];
 }
 
+/**
+ * What customers who bought a piece said about it, as a shop card carries it.
+ *
+ * Not read from the inventory database at all — it is built in the service layer
+ * from the reviews left against shop orders (see `product-ratings.ts`), and
+ * lives here because it is part of the shape a shop card is served as. Absent
+ * on a piece with no published, consented review, which is most of them.
+ */
+export interface ProductRatingSummary {
+  average: number;
+  count: number;
+  reviews: PublishedReviewRecord[];
+}
+
 /** A shop card: one or more variants sharing a group. */
 export interface ProductRecord {
   id: string;
@@ -92,6 +108,9 @@ export interface ProductRecord {
    * `sized`. Resolved from the category's "Size Guide Type", not the name. */
   sizeGuide?: "garment" | "soaker";
   variants: ProductVariantRecord[];
+  /** The piece's customer rating, when it has one. See
+   * {@link ProductRatingSummary}. */
+  rating?: ProductRatingSummary;
 }
 
 // --- Raw Notion payload typing (only the property types we read) ---
