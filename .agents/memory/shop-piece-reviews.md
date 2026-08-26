@@ -119,6 +119,32 @@ Deliberately narrow: ids and names only. No quantities, no prices, and
 emphatically no address — this lookup is gated by order number alone, which is
 why `readFulfilmentFields` has always refused to return the shipping address.
 
+## The Notion setup, as actually applied
+
+Applied 2026-08-26 to the **Reviews** database under **orders**
+(`collection://4e8a7e79-e556-4f78-b511-3fa246712294` — the one
+`NOTION_REVIEWS_DATABASE_ID` points at, confirmed by its `Rating` / `Consent to
+Publish` / `On the Website` schema, not the stale `⭐ Reviews` that used to sit
+under `website`):
+
+- **`Product`** — relation → **inventory**
+  (`collection://5aaf66bb-f00b-4aa3-9030-054ead1c812d`), created **two-way**.
+- **`Item`** — rich_text.
+
+Inventory therefore also gained a **`Reviews`** back-relation. That was a
+deliberate widening of what the card asked for: a one-way relation would mean the
+atelier can see the piece from the review but never the reviews from the piece,
+and inventory already carries two-way links to `Shop Orders` and `Order Lines`
+(each with a rollup on top). Nothing in the app reads the inventory side —
+`extractVariant` maps named properties only, so the extra column is inert to
+`/products` — so it can be reverted to one-way with no code change.
+
+Not added, and worth knowing why: **no rollup on inventory**. An "average rating"
+rollup there would be a second implementation of `summarizeProductRatings`,
+computing over a different set of rows (every review, not just the published and
+consented ones), and the two would disagree the moment a review sat in triage.
+The materials panel's `Restock Alert` documents the same trap.
+
 ## Known limits
 
 - A piece the atelier has **unpublished** since it sold can still be reviewed

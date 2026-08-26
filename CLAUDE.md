@@ -1967,17 +1967,24 @@ half of `lib/notion/reviews.{blocks,schema,repository}.ts`,
    looks unvisited. Where a rating does show, the count always shows with it:
    "5.0" from one review reads very differently from "4.8" from forty.
 
-**Atelier setup (one time, on the Reviews database):** add a **`Product`**
-relation → **inventory** and an **`Item`** rich_text. The relation is what a
-rating is built from; the text is so a human can read which piece was reviewed.
-Until they exist, `createReview` **drops them and keeps the review** (it goes
-through `createPageDroppingUnknownProperties`, and the piece is still named in
-the row's title and page body) — a customer's words are not something to lose to
-un-done setup, and the atelier can link the row by hand. No env var, no new
-database, and no change to the moderation queue. Known limits: a piece the
-atelier has since unpublished can still be reviewed but has no card to show the
-rating on, and a review left before the relation existed needs linking by hand
-before it counts.
+**Atelier setup: DONE (2026-08-26) — nothing outstanding.** The Reviews database
+gained a **`Product`** relation → **inventory** and an **`Item`** rich_text. The
+relation is what a rating is built from; the text is so a human can read which
+piece was reviewed. It was made **two-way**, so inventory carries a matching
+**`Reviews`** back-relation — the same shape as its `Shop Orders` and
+`Order Lines` links, which is what lets the atelier read a piece's reviews from
+the piece rather than only from the review, and what a future "average rating"
+rollup would hang off. Nothing in the app reads that side; it can be made one-way
+again with no code change. Never needed an env var, a new database, or a change
+to the moderation queue.
+
+Had they not existed, `createReview` would have **dropped them and kept the
+review** (it goes through `createPageDroppingUnknownProperties`, and the piece is
+still named in the row's title and page body) — a customer's words are not
+something to lose to un-done setup. That path stays live for a workspace restored
+from an older backup. Known limits: a piece the atelier has since unpublished can
+still be reviewed but has no card to show the rating on, and a review filed
+before the relation existed needs linking by hand before it counts.
 
 ## Portfolio & finished-work gallery
 
