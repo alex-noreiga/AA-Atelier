@@ -69,6 +69,11 @@ export const STUDIO_SECTIONS = [
     summary: "What's at or below its reorder point",
   },
   {
+    id: "pay",
+    label: "Pay",
+    summary: "What the studio owes its own people for the work they've done",
+  },
+  {
     id: "settings",
     label: "Settings",
     summary: "The tunables the atelier can retune without a deploy",
