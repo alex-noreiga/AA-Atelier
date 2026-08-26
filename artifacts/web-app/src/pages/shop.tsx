@@ -23,6 +23,7 @@ import {
 } from "@/lib/product-seo";
 import { formatPrice } from "@/lib/format";
 import { SizeChartDialog } from "@/components/size-chart-dialog";
+import { StarRating } from "@/components/star-rating";
 import { AspectRatio } from "@/components/ui/aspect-ratio";
 import {
   Carousel,
@@ -193,6 +194,44 @@ function VariantChips({
   );
 }
 
+/**
+ * What buyers said about a piece, in the quick view: the rating, then a few
+ * reviews in their own words.
+ *
+ * Renders nothing at all for a piece with no reviews — no empty state, no "be
+ * the first to review". Most pieces will have none, and an invitation on every
+ * card is a shop that looks unvisited.
+ */
+function ProductReviews({ product }: { product: Product }) {
+  const rating = product.rating;
+  if (!rating) return null;
+
+  return (
+    <div
+      className="mt-6 border-t border-border/60 pt-5"
+      data-testid={`product-reviews-${product.id}`}
+    >
+      <StarRating average={rating.average} count={rating.count} size="md" />
+      {rating.reviews.length > 0 && (
+        <ul className="mt-4 space-y-4">
+          {rating.reviews.map((review) => (
+            <li key={review.id} className="text-sm font-light">
+              <p className="text-muted-foreground leading-relaxed">
+                “{review.comment}”
+              </p>
+              {review.customerName && (
+                <p className="mt-1 text-xs uppercase tracking-widest text-primary/70">
+                  {review.customerName}
+                </p>
+              )}
+            </li>
+          ))}
+        </ul>
+      )}
+    </div>
+  );
+}
+
 /** A subtle "Only N left" nudge for a low, countable stock level. */
 function LowStockNote({ variant }: { variant: ProductVariant }) {
   const n = variant.quantityAvailable;
@@ -348,6 +387,14 @@ function ProductCard({
                 {formatPrice(variant.price)}
               </p>
 
+              {product.rating && (
+                <StarRating
+                  className="mt-2"
+                  average={product.rating.average}
+                  count={product.rating.count}
+                />
+              )}
+
               <VariantChips
                 variants={product.variants}
                 selected={selected}
@@ -380,6 +427,8 @@ function ProductCard({
                 <LowStockNote variant={variant} />
                 <VariantCta variant={variant} size={size} addOns={addOns} />
               </div>
+
+              <ProductReviews product={product} />
             </div>
           </div>
         </DialogContent>
@@ -398,6 +447,13 @@ function ProductCard({
         <p className="mt-1.5 font-serif text-lg text-primary">
           {formatPrice(variant.price)}
         </p>
+        {product.rating && (
+          <StarRating
+            className="mt-2"
+            average={product.rating.average}
+            count={product.rating.count}
+          />
+        )}
         <VariantChips
           variants={product.variants}
           selected={selected}

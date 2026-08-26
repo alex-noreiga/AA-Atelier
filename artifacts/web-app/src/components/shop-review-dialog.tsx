@@ -2,7 +2,10 @@ import { useState } from "react";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
-import { useCreateOrderReview } from "@workspace/api-client-react";
+import {
+  useCreateShopOrderReview,
+  type ShopOrderItem,
+} from "@workspace/api-client-react";
 import { CheckCircle, Loader2, Star } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import {
@@ -22,13 +25,16 @@ import {
   REQUEST_FORM_INPUT_CLASS,
   REQUEST_FORM_TEXTAREA_CLASS,
 } from "@/hooks/use-request-dialog";
+import { cn } from "@/lib/utils";
 
-// Form schema. `rating` is set via the star buttons (not a text input), so it
-// starts at 0 and must reach at least 1. The mapped output is handed to the
-// `useCreateOrderReview` mutation, whose `data` is typed as the generated
-// `NewReviewRequest`, so the form can't silently drift from the API contract.
+// Form schema. The mapped output is handed to `useCreateShopOrderReview`, whose
+// `data` is typed as the generated `NewShopReviewRequest`, so the form can't
+// silently drift from the API contract. `productId` starts empty and must be
+// chosen — the server checks it against the order's own pieces, so the client's
+// job here is only to make the choice easy, not to be the gate.
 const formSchema = z.object({
   email: z.string().email("Please enter a valid email address"),
+  productId: z.string().min(1, "Please choose which piece you're reviewing"),
   rating: z.number().min(1, "Please choose a star rating").max(5),
   comment: z
     .string()
@@ -41,20 +47,28 @@ const formSchema = z.object({
 
 type FormValues = z.infer<typeof formSchema>;
 
-interface ReviewDialogProps {
-  orderNumber: string;
-}
-
 /**
- * "Share your experience" — a post-delivery review of a finished custom order.
- * The customer leaves a star rating, a short testimonial, an optional credit
- * name, and photos of the finished piece; the review lands in the atelier's
- * Notion reviews database (default "New") to be curated into testimonials / the
- * portfolio. The server verifies the supplied email against the order (403 on
- * mismatch) and only accepts a review once the order is delivered (409), which
- * we surface inline. Rendered by the tracking page only for delivered orders.
+ * "Review your piece" — a review of one ready-to-wear item from a delivered shop
+ * order.
+ *
+ * The sibling of {@link ReviewDialog}, and different in exactly one way: a shop
+ * order can hold several pieces and a rating belongs to a piece, so the customer
+ * says which one. With a single piece on the order that question answers itself
+ * and the picker is a line of text rather than a choice to make.
+ *
+ * Rendered by the shop-order tracking result only once the order has reached its
+ * final status and has pieces the shop can name — the same two things the server
+ * requires, so the affordance and the gate agree.
  */
-export function ReviewDialog({ orderNumber }: ReviewDialogProps) {
+export function ShopReviewDialog({
+  orderNumber,
+  items,
+}: {
+  orderNumber: string;
+  items: ShopOrderItem[];
+}) {
+  const single = items.length === 1 ? items[0] : undefined;
+
   const {
     register,
     handleSubmit,
@@ -64,14 +78,21 @@ export function ReviewDialog({ orderNumber }: ReviewDialogProps) {
     formState: { errors },
   } = useForm<FormValues>({
     resolver: zodResolver(formSchema),
-    defaultValues: { rating: 0, consentToPublish: false },
+    defaultValues: {
+      rating: 0,
+      consentToPublish: false,
+      // Pre-chosen when there is nothing to choose between.
+      productId: single?.id ?? "",
+    },
   });
 
   const [photoIds, setPhotoIds] = useState<string[]>([]);
   const rating = watch("rating");
+  const productId = watch("productId");
 
-  // 403 (email mismatch) and 409 (not yet delivered) are expected, actionable
-  // outcomes shown inline; anything else raises a toast.
+  // 400 (the piece isn't on this order, or the order has no linked pieces), 403
+  // (email mismatch) and 409 (not delivered, or cancelled) are expected,
+  // actionable outcomes shown inline; anything else raises a toast.
   const {
     open,
     setOpen,
@@ -83,14 +104,18 @@ export function ReviewDialog({ orderNumber }: ReviewDialogProps) {
     onOpenChange,
   } = useRequestDialog({
     reset: () => {
-      reset({ rating: 0, consentToPublish: false });
+      reset({
+        rating: 0,
+        consentToPublish: false,
+        productId: single?.id ?? "",
+      });
       setPhotoIds([]);
     },
-    inlineStatuses: [403, 409],
+    inlineStatuses: [400, 403, 409],
     toastTitle: "Couldn't submit your review",
   });
 
-  const createReview = useCreateOrderReview({
+  const createReview = useCreateShopOrderReview({
     mutation: {
       onSuccess: () => setSubmitted(true),
       onError: handleError,
@@ -103,6 +128,7 @@ export function ReviewDialog({ orderNumber }: ReviewDialogProps) {
       orderNumber,
       data: {
         email: values.email,
+        productId: values.productId,
         rating: values.rating,
         comment: values.comment.trim(),
         ...(values.displayName?.trim()
@@ -120,19 +146,19 @@ export function ReviewDialog({ orderNumber }: ReviewDialogProps) {
         type="button"
         onClick={() => setOpen(true)}
         className="text-muted-foreground hover:text-primary transition-colors flex items-center gap-2 text-sm tracking-widest uppercase group"
-        data-testid="button-leave-review"
+        data-testid="button-review-piece"
       >
         <Star className="w-4 h-4" />
-        <span>Share your experience</span>
+        <span>Review your piece</span>
       </button>
 
       <Dialog open={open} onOpenChange={onOpenChange}>
         <DialogContent
           className="max-w-lg max-h-[90vh] overflow-y-auto"
-          data-testid="review-dialog"
+          data-testid="shop-review-dialog"
         >
           {submitted ? (
-            <div className="py-6 text-center" data-testid="review-success">
+            <div className="py-6 text-center" data-testid="shop-review-success">
               <CheckCircle
                 className="w-12 h-12 text-primary mx-auto mb-5"
                 strokeWidth={1}
@@ -141,10 +167,8 @@ export function ReviewDialog({ orderNumber }: ReviewDialogProps) {
                 Thank you
               </DialogTitle>
               <DialogDescription className="text-muted-foreground font-light">
-                Your review of order{" "}
-                <span className="text-foreground">{orderNumber}</span> means the
-                world to us. We're so glad your piece is finished and in your
-                hands.
+                Your words help the next skater choose. We read every one before
+                it goes on the site.
               </DialogDescription>
             </div>
           ) : (
@@ -152,13 +176,24 @@ export function ReviewDialog({ orderNumber }: ReviewDialogProps) {
               <DialogHeader className="text-left">
                 <DialogTitle className="font-serif text-2xl flex items-center gap-2">
                   <Star className="w-4 h-4 text-primary" />
-                  Share your experience
+                  Review your piece
                 </DialogTitle>
                 <DialogDescription className="text-muted-foreground font-light">
-                  Now that order{" "}
-                  <span className="text-foreground">{orderNumber}</span> is in
-                  your hands, we'd love to hear how it turned out. Enter the
-                  email on your order to leave a review.
+                  {single ? (
+                    <>
+                      How is your{" "}
+                      <span className="text-foreground">{single.name}</span>{" "}
+                      wearing? Enter the email on order{" "}
+                      <span className="text-foreground">{orderNumber}</span> to
+                      leave a review.
+                    </>
+                  ) : (
+                    <>
+                      Tell us how one of the pieces from order{" "}
+                      <span className="text-foreground">{orderNumber}</span> is
+                      wearing. Enter the email on your order to leave a review.
+                    </>
+                  )}
                 </DialogDescription>
               </DialogHeader>
 
@@ -172,7 +207,7 @@ export function ReviewDialog({ orderNumber }: ReviewDialogProps) {
                 {formError && (
                   <p
                     className="text-destructive text-sm border-l-2 border-destructive/50 pl-3"
-                    data-testid="review-error"
+                    data-testid="shop-review-error"
                   >
                     {formError}
                   </p>
@@ -180,18 +215,18 @@ export function ReviewDialog({ orderNumber }: ReviewDialogProps) {
 
                 <div>
                   <Label
-                    htmlFor="review-email"
+                    htmlFor="shop-review-email"
                     className="text-sm font-light tracking-wide"
                   >
                     Email on order <span className="text-primary">*</span>
                   </Label>
                   <Input
-                    id="review-email"
+                    id="shop-review-email"
                     type="email"
                     autoFocus
                     {...register("email")}
                     placeholder="you@example.com"
-                    data-testid="review-email"
+                    data-testid="shop-review-email"
                     className={REQUEST_FORM_INPUT_CLASS}
                   />
                   {errors.email && (
@@ -200,6 +235,44 @@ export function ReviewDialog({ orderNumber }: ReviewDialogProps) {
                     </p>
                   )}
                 </div>
+
+                {/* With one piece on the order there is nothing to choose, so
+                    it's stated rather than asked. */}
+                {items.length > 1 && (
+                  <div>
+                    <Label className="text-sm font-light tracking-wide">
+                      Which piece? <span className="text-primary">*</span>
+                    </Label>
+                    <div className="mt-2 flex flex-wrap gap-2">
+                      {items.map((item) => (
+                        <button
+                          key={item.id}
+                          type="button"
+                          onClick={() =>
+                            setValue("productId", item.id, {
+                              shouldValidate: true,
+                            })
+                          }
+                          aria-pressed={productId === item.id}
+                          data-testid={`shop-review-piece-${item.id}`}
+                          className={cn(
+                            "rounded-full border px-4 py-2 text-xs transition-colors",
+                            productId === item.id
+                              ? "border-primary text-primary"
+                              : "border-border/60 text-muted-foreground hover:border-primary/50",
+                          )}
+                        >
+                          {item.name}
+                        </button>
+                      ))}
+                    </div>
+                    {errors.productId && (
+                      <p className="text-destructive text-xs mt-1">
+                        {errors.productId.message}
+                      </p>
+                    )}
+                  </div>
+                )}
 
                 <div>
                   <Label className="text-sm font-light tracking-wide">
@@ -210,7 +283,7 @@ export function ReviewDialog({ orderNumber }: ReviewDialogProps) {
                     onChange={(value) =>
                       setValue("rating", value, { shouldValidate: true })
                     }
-                    idPrefix="review-rating"
+                    idPrefix="shop-review-rating"
                   />
                   {errors.rating && (
                     <p className="text-destructive text-xs mt-1">
@@ -221,17 +294,17 @@ export function ReviewDialog({ orderNumber }: ReviewDialogProps) {
 
                 <div>
                   <Label
-                    htmlFor="review-comment"
+                    htmlFor="shop-review-comment"
                     className="text-sm font-light tracking-wide"
                   >
                     Your review <span className="text-primary">*</span>
                   </Label>
                   <Textarea
-                    id="review-comment"
+                    id="shop-review-comment"
                     {...register("comment")}
-                    placeholder="How does your finished piece feel? What was working with the atelier like?"
+                    placeholder="How does it fit? How does it hold up on the ice?"
                     rows={4}
-                    data-testid="review-comment"
+                    data-testid="shop-review-comment"
                     className={REQUEST_FORM_TEXTAREA_CLASS}
                   />
                   {errors.comment && (
@@ -243,7 +316,7 @@ export function ReviewDialog({ orderNumber }: ReviewDialogProps) {
 
                 <div>
                   <Label
-                    htmlFor="review-display-name"
+                    htmlFor="shop-review-display-name"
                     className="text-sm font-light tracking-wide"
                   >
                     Credit me as
@@ -252,10 +325,10 @@ export function ReviewDialog({ orderNumber }: ReviewDialogProps) {
                     </span>
                   </Label>
                   <Input
-                    id="review-display-name"
+                    id="shop-review-display-name"
                     {...register("displayName")}
                     placeholder="e.g. Ada L., or Ada from Chicago"
-                    data-testid="review-display-name"
+                    data-testid="shop-review-display-name"
                     className={REQUEST_FORM_INPUT_CLASS}
                   />
                 </div>
@@ -273,32 +346,32 @@ export function ReviewDialog({ orderNumber }: ReviewDialogProps) {
                       disabled={createReview.isPending}
                       label="Add a photo"
                       max={3}
-                      helpText="Up to 3 photos of your finished piece (JPEG, PNG, WEBP, or GIF)."
+                      helpText="Up to 3 photos of your piece (JPEG, PNG, WEBP, or GIF)."
                     />
                   </div>
                 </div>
 
                 <label
                   className="flex items-start gap-3 text-sm font-light text-foreground/80 cursor-pointer"
-                  htmlFor="review-consent"
+                  htmlFor="shop-review-consent"
                 >
                   <input
-                    id="review-consent"
+                    id="shop-review-consent"
                     type="checkbox"
                     {...register("consentToPublish")}
-                    data-testid="review-consent"
+                    data-testid="shop-review-consent"
                     className="mt-1 h-4 w-4 shrink-0 accent-primary"
                   />
                   <span>
-                    You may feature my review and photos on your website and
-                    social media.
+                    You may show my review, rating and photos beside this piece
+                    in the shop and on social media.
                   </span>
                 </label>
 
                 <Button
                   type="submit"
                   disabled={createReview.isPending}
-                  data-testid="review-submit"
+                  data-testid="shop-review-submit"
                   className="w-full bg-primary text-primary-foreground hover:bg-primary/90 py-6 rounded-full tracking-widest uppercase text-xs transition-all duration-300 disabled:opacity-50"
                 >
                   {createReview.isPending ? (

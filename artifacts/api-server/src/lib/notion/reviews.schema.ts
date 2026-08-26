@@ -24,6 +24,7 @@ import {
   REVIEW_STATUS_PROPERTY,
   REVIEW_CONSENT_PROPERTY,
   REVIEW_DEFAULT_STATUS,
+  REVIEW_PRODUCT_RELATION_PROPERTY,
 } from "./reviews.blocks.js";
 
 /**
@@ -103,7 +104,8 @@ type NotionPropertyValue =
   | { type: "rich_text"; rich_text: Array<{ plain_text: string }> }
   | { type: "select"; select: { name: string } | null }
   | { type: "checkbox"; checkbox: boolean }
-  | { type: "email"; email: string | null };
+  | { type: "email"; email: string | null }
+  | { type: "relation"; relation: Array<{ id: string }> };
 
 export interface NotionReviewPage {
   id: string;
@@ -188,6 +190,68 @@ export function extractPublishedReviews(
       id: page.id,
       rating: Math.max(1, Math.min(5, Math.round(rating ?? 5))),
       comment,
+      ...(customerName ? { customerName } : {}),
+      ...(page.created_time ? { publishedAt: page.created_time } : {}),
+    });
+  }
+
+  return records;
+}
+
+// --- Shop-piece projection: the ratings shown beside a product ---
+
+/**
+ * One published review that names a ready-to-wear piece, i.e. a review left
+ * against a shop order. The public projection plus the inventory rows it
+ * concerns — everything the aggregation needs and nothing more.
+ */
+export interface ProductReviewRecord extends PublishedReviewRecord {
+  /** Inventory page ids from the review's `Product` relation. Never empty: a
+   * row with no product isn't a shop review and never reaches this list. */
+  productIds: string[];
+}
+
+function extractRelationIds(page: NotionReviewPage, name: string): string[] {
+  const p = page.properties[name];
+  if (p?.type !== "relation") return [];
+  return p.relation.map((entry) => entry.id);
+}
+
+/**
+ * Map the published rows that name a piece to their rating projection.
+ *
+ * The publication gates are {@link isPublishable}, exactly as for the
+ * testimonials — the same predicate decides both, so a star rating can never
+ * appear beside a piece from a row the testimonial strip couldn't show.
+ *
+ * The one deliberate difference is the empty-comment rule. `extractPublishedReviews`
+ * drops a review with no words because a blank quote card is worse than one
+ * fewer testimonial; here the rating is the point, so a comment-less row still
+ * counts toward the average and is simply not quoted. (The contract requires a
+ * comment, so such a row can only be one the atelier typed into Notion by hand.)
+ */
+export function extractProductReviews(
+  pages: NotionReviewPage[],
+): ProductReviewRecord[] {
+  const records: ProductReviewRecord[] = [];
+
+  for (const page of pages) {
+    if (!isPublishable(page)) continue;
+
+    const productIds = extractRelationIds(
+      page,
+      REVIEW_PRODUCT_RELATION_PROPERTY,
+    );
+    if (productIds.length === 0) continue;
+
+    const customerName = extractRichText(page, REVIEW_CUSTOMER_NAME_PROPERTY);
+    const rating = extractNumber(page, REVIEW_RATING_PROPERTY);
+
+    records.push({
+      id: page.id,
+      rating: Math.max(1, Math.min(5, Math.round(rating ?? 5))),
+      comment: extractRichText(page, REVIEW_COMMENT_PROPERTY),
+      productIds,
       ...(customerName ? { customerName } : {}),
       ...(page.created_time ? { publishedAt: page.created_time } : {}),
     });
