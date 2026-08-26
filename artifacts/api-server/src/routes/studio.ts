@@ -1,7 +1,12 @@
 import { Router } from "express";
 import {
+  BuyShippingLabelBody,
+  BuyShippingLabelResponse,
   CreateStaffAvailabilityBody,
   CreateStaffAvailabilityResponse,
+  GetShippingOptionsResponse,
+  GetShippingRatesBody,
+  GetShippingRatesResponse,
   DeleteStaffAvailabilityParams,
   DeleteStaffAvailabilityResponse,
   GetAppointmentStaffingResponse,
@@ -41,6 +46,13 @@ import { studioRateLimiter } from "../middlewares/rate-limit.js";
 import { validate } from "../middlewares/validate.js";
 import { getStudioAnalytics } from "../services/studio-analytics.service.js";
 import { getMaterialsOverview } from "../services/materials.service.js";
+import {
+  buyShippingLabel,
+  getShippingOptions,
+  getShippingRates,
+  type LabelRequest,
+  type RateRequest,
+} from "../services/shipping-label.service.js";
 import {
   getStudioGuides,
   getStudioGuideContent,
@@ -247,6 +259,55 @@ router.get(
   async (_req, res) => {
     const overview = await getMaterialsOverview();
     res.json(GetStudioMaterialsResponse.parse(overview));
+  },
+);
+
+// Buying a shipping label for a shop order — the three carrier-tracking columns
+// on an order, filled in by the app instead of copied by hand from a second
+// website. Same `requireStaff` gate as everything else here, and it earns it
+// twice over: the second of these spends the studio's money.
+//
+// THREE operations rather than one tool, and the split is the design. A label
+// has a carrier, a service level and a price, and the gap between two of them is
+// three days and eleven dollars — so the atelier asks what it would cost, reads
+// the list, and buys one. The options read comes first so an unset vendor token
+// or a half-filled ship-from address is said on the panel rather than surfacing
+// as an opaque carrier rejection at the point of sale.
+//
+// This is why the flow doesn't live under `/studio/tools/:tool` like the other
+// seven: that shape is one press, one composed result. Nothing about it can
+// carry a list of rates back and take a choice.
+router.get(
+  "/studio/shipments/options",
+  studioRateLimiter,
+  requireStaff,
+  (_req, res) => {
+    res.json(GetShippingOptionsResponse.parse(getShippingOptions()));
+  },
+);
+
+router.post(
+  "/studio/shipments/rates",
+  studioRateLimiter,
+  requireStaff,
+  validate({ body: GetShippingRatesBody }),
+  async (_req, res) => {
+    const rates = await getShippingRates(res.locals.body as RateRequest);
+    res.json(GetShippingRatesResponse.parse(rates));
+  },
+);
+
+// The one that moves money. `replace` is the deliberate second press for an
+// order that already carries a label — the vendor will sell a duplicate as
+// happily as the first, so the ORDER is the idempotency guard.
+router.post(
+  "/studio/shipments/label",
+  studioRateLimiter,
+  requireStaff,
+  validate({ body: BuyShippingLabelBody }),
+  async (_req, res) => {
+    const label = await buyShippingLabel(res.locals.body as LabelRequest);
+    res.json(BuyShippingLabelResponse.parse(label));
   },
 );
 

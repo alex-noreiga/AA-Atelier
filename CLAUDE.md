@@ -329,6 +329,22 @@ Express app (artifacts/api-server)  ──►  Notion REST API (orders database)
   │                                  in one Studio Settings row, so an unmentioned
   │                                  type keeps the catalog's default. Same staff
   │                                  gate as the figures above
+  ├─ GET  /api/studio/shipments/options
+  │                                → whether a shipping label can be bought at
+  │                                  all: the vendor token, the studio's own
+  │                                  ship-from address, and the packaging sizes
+  │                                  it rates against. Reports `problems[]`
+  │                                  rather than erroring — both blockers are
+  │                                  states only a human can clear. POST
+  │                                  /api/studio/shipments/rates quotes one shop
+  │                                  order's parcel (and buys nothing), reading
+  │                                  the ship-to address from the order's STRIPE
+  │                                  checkout rather than parsing Notion's
+  │                                  display line; POST
+  │                                  /api/studio/shipments/label buys the chosen
+  │                                  rate and writes `Carrier` / `Tracking
+  │                                  Number` / `Tracking URL` onto the order.
+  │                                  Same staff gate as the figures above
   ├─ GET  /api/studio/reviews      → the review moderation queue: every review
   │                                  awaiting a decision (with its rating,
   │                                  testimonial, author, and the photos read
@@ -1434,6 +1450,98 @@ something that says collection ("Local pickup", "Collect at the studio") and add
 its id to `STRIPE_SHIPPING_RATE_IDS` **in both modes**; a rate named without
 those words still sells, it just doesn't mark the order. Known limit: a **custom**
 order isn't bought through the cart, so its method is still set by hand.
+
+## Buying shipping labels (Shippo, from the dashboard)
+
+The atelier rates a parcel for a shop order and buys the label from `/studio` →
+**Shipping**, and the order's `Carrier`, `Tracking Number` and `Tracking URL`
+fill themselves — the three columns that were the last thing on an order still
+copied by hand from a second website into a third. Note how little of this is
+customer-facing: `lib/fulfilment.ts` has read those columns since the
+shipping-and-pickup card, so this adds a **writer to a pipeline that was already
+finished**. Code: `lib/shipping/{address,parcels,from-address}.ts` (pure),
+`lib/shippo/{client,labels.repository}.ts` (the vendor adapter),
+`services/shipping-label.service.ts`, `findShopOrderForShipping` /
+`recordShopOrderTracking` in `lib/notion/shop-orders.repository.ts`, the three
+`/studio/shipments/*` handlers in `routes/studio.ts`, and
+`web-app/src/components/studio-shipping.tsx`.
+
+1. **The ship-to address comes from STRIPE, never from Notion.** A shop order
+   carries a `Shipping Address`, but as one display line assembled by
+   `formatShippingAddress` for a human. Parsing it back into components is
+   guesswork — the comma before the country is a different kind of comma from the
+   one after "Apt 4" — and a guessed address is a parcel that doesn't arrive. The
+   order stores its `Stripe Session Id`, and Stripe still holds the address in its
+   parts. Same instinct as "Stripe is the source of truth for money". The
+   corollary is the honest refusal: an order with **no session** (a hand-filed
+   Etsy or skate-shop row) is refused with 409 rather than having its display line
+   parsed as a fallback.
+
+2. **Three operations, not one tool.** `GET /studio/shipments/options` says what
+   the panel can do and what's stopping it; `POST /studio/shipments/rates` quotes
+   and buys nothing; `POST /studio/shipments/label` spends the money. A label has
+   a carrier, a service level and a price, and the gap between the top and bottom
+   of a rate list is routinely three days and eleven dollars — a one-press "buy
+   the cheapest" would put a ground label on a dress needed Saturday. That is
+   also why this isn't an eighth `/studio/tools/:tool`: that shape is one press
+   and one composed result, and nothing about it can carry a list back and take a
+   choice.
+
+3. **The ORDER is the idempotency guard, because the vendor isn't.** Shippo will
+   sell a second label as happily as the first, and unlike a Stripe refund there
+   is nothing to read back that says otherwise. An order that already carries a
+   tracking number is refused (409); a replacement for a voided label is the
+   explicit `replace` flag, confirmed in the panel — the same shape as the status
+   email's `force`. The **rates** call deliberately doesn't apply that guard:
+   asking what a second label would cost is reasonable.
+
+4. **The purchase outranks its bookkeeping — the opposite call from
+   `recordShopOrderRefund`.** There, Stripe holds the truth and a failed marker
+   costs visibility only, so it's best-effort. Here the Notion write is the
+   **only** record of the tracking number the customer will ever see, so losing it
+   means a parcel posted and a tracking page silent forever — but throwing would
+   lose the label the studio has already paid for. So a failed write answers
+   **200 with `recorded: false`**, carrying the number and the label URL, and the
+   panel says to paste it into Notion. Logged at `error`, not `warn`.
+
+5. **Test mode is said out loud, every time.** A test label has a tracking
+   number, a PDF and a price, and no carrier has ever heard of it — the one
+   failure that looks exactly like success. Read from the token's own prefix
+   (`shippo_test_…`) so there is no second var to keep in step.
+
+6. **A 201 is not a successful purchase.** Shippo answers 201 for a transaction
+   whose `status` is `"ERROR"`. Reading only the status code would report a label
+   bought and write a blank tracking number onto the order; the transaction's own
+   status decides, and a `SUCCESS` with no tracking number is a failure too.
+
+7. **Dimensions are the catalog's; weight is not.** `PARCEL_PRESETS` is a
+   targeted business rule in code, **served** like the appointment and service
+   catalogs so a size the form offers is one the server can rate. Weight is typed
+   per shipment, and `weightProblem` refuses **zero** (a carrier rating 0 oz
+   prices a document envelope) and anything over 800 oz — the ceiling exists to
+   catch pounds typed where ounces were wanted.
+
+8. **The ship-from address is seven Studio Settings keys, not one line.** A
+   single field split back apart here is the same parsing point 1 avoids, and it
+   fails at the worst moment: an origin postcode read wrong misprices every rate
+   silently. All but the country default to **empty** — there is no sensible
+   built-in for somebody's address, and a placeholder would print on a parcel.
+
+9. **Both unconfigured states are reported, never thrown.** An unset token and a
+   half-filled ship-from address are states only a human can clear, so the options
+   read answers 200 with `problems[]` and the panel says which — the same shape as
+   the materials panel's unreachable database. A **pickup** order (matched through
+   the shared `looksLikePickup`) and a **cancelled** one are refused with 409.
+
+**Atelier setup:** open a Shippo account, connect the carriers, set
+**`SHIPPO_API_KEY`** (a `shippo_test_…` token in Preview/Development, the live
+one in Production — mode-mapped exactly like the Stripe keys), and fill in the
+ship-from address under `/studio` → **Settings** → **Shipping**. **Nothing to add
+in Notion** — `Tracking Number`, `Carrier` and `Tracking URL` already exist on
+shop orders and the app has read all three since the fulfilment card. Unset ⇒ the
+panel says no vendor is connected and everything behaves exactly as before. Known
+limits (shop orders only, no label void, no batch or manifest, no address
+validation) are in `.agents/memory/shipping-labels.md`.
 
 ## Production schedule (auto-generated stage milestones)
 
@@ -4009,10 +4117,13 @@ two `/studio` routes in `App.tsx`.
    tools stay reachable during a Notion wobble — which is when the atelier is
    most likely to need them.
 
-The sections are **Figures / Requests / Reviews / Bookings / Materials /
-Settings / Guides**, in that order — what needs doing first. Nothing about a
-panel changed: each is the same component, with the same `data-testid`, doing
-the same reads. **No API change, no new env var, no atelier setup.**
+The sections are **Figures / Requests / Shipping / Reviews / Bookings /
+Materials / Settings / Guides**, in that order — what needs doing first.
+Splitting them changed nothing about a panel: each is the same component, with
+the same `data-testid`, doing the same reads, and that move needed **no API
+change, no new env var and no atelier setup**. (**Shipping** was added later, by
+the label-buying card above; it is the one section whose panel did not already
+exist somewhere on the page.)
 
 ## Internal tools on the studio dashboard
 
@@ -5191,6 +5302,8 @@ scope went with the working-hours sheet.
 | `NOTION_RELATION_LINKS` (`1`/`true`/`yes`)                                                                        | Off — no order/inventory relations written (see "Relate requests…") |
 | `STRIPE_SHIPPING_RATE_IDS`                                                                                        | No shipping charged, no shipping options at checkout                |
 | `STRIPE_BNPL_METHODS`                                                                                             | Payment methods stay dynamic (Dashboard-managed)                    |
+| `SHIPPO_API_KEY`                                                                                                  | No labels can be bought; the dashboard's Shipping panel says so     |
+| `SHIP_FROM_*` (seven keys, Studio Settings)                                                                       | Empty ⇒ no label can be bought until the origin is filled in        |
 | `ALERT_INBOX_EMAIL`                                                                                               | Defaults to `alexandra@a3iceanddance.com`                           |
 | `ATELIER_INBOX_EMAIL`                                                                                             | No internal atelier notifications                                   |
 | `RESEND_CONTACT_FROM_EMAIL`, `ATELIER_CONTACT_INBOX_EMAIL`                                                        | Falls back to the base sender/inbox                                 |
@@ -5355,6 +5468,7 @@ Three things about it are load-bearing:
 | Change the shop's inventory decrement                    | `api-server/src/services/order-lines.service.ts` (`purchasedLinesFromSession` + the best-effort `recordShopOrderLines`) + `lib/notion/order-lines.{blocks,repository}.ts` + `getOrderLinesNotionClient`; called at the tail of `processPaidShopOrder` in `services/checkout.service.ts`. The `Voided` release is `setShopOrderCancelled` in `lib/notion/shop-orders.repository.ts`                                                                                                                                                                                                                                                                                                                                                                                                                                                  |
 | Change shop checkout / payments                          | `artifacts/web-app/src/lib/cart.tsx` + `components/cart-drawer.tsx` + `components/add-to-cart.tsx` (frontend); `api-server/src/services/checkout.service.ts` + `routes/checkout.ts` + `routes/stripe-webhook.ts` + `lib/stripe/*` + `lib/notion/shop-orders.*` (backend)                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                            |
 | Change what the tracking page says about shipping/pickup | `api-server/src/lib/fulfilment.ts` (the pure ship-vs-pickup rules + what's worth showing; `looksLikePickup` is shared with checkout) + `extractFulfilmentFields` in `lib/notion/orders.schema.ts` / `readFulfilmentFields` in `lib/notion/shop-orders.repository.ts` (the reads) + `chosePickupRate` in `lib/notion/shop-orders.blocks.ts` (the one write — a checkout paid with the local-pickup Stripe rate marks itself) + the resolve calls in `services/orders.service.ts` and `services/shop-orders.service.ts`; frontend `web-app/src/components/fulfilment-panel.tsx` + `lib/fulfilment-format.ts` (the pickup-time formatting + the handoff-state wording). Contract: `OrderFulfilment` in `openapi.yaml`, on both `OrderStatus` and `ShopOrderStatus`                                                                     |
+| Change how a shipping label is bought                    | `api-server/src/lib/shipping/{address,parcels,from-address}.ts` (the pure halves — an address in its PARTS, the packaging catalog, the studio's origin) + `lib/shippo/{client,labels.repository}.ts` (the vendor: rate a parcel, buy a rate) + `services/shipping-label.service.ts` (the gates, the Stripe address read, the write-back) + `findShopOrderForShipping` / `recordShopOrderTracking` in `lib/notion/shop-orders.repository.ts` + the three `/studio/shipments/*` handlers in `routes/studio.ts`; panel in `web-app/src/components/studio-shipping.tsx`. Read the "the address comes from Stripe, never from Notion" rule in `.agents/memory/shipping-labels.md` before touching `shipToFromSession`                                                                                                                    |
 | Change shop-order tracking                               | `artifacts/web-app/src/components/shop-order-result.tsx` (rendered by `pages/track.tsx`; + order number on `pages/shop-success.tsx`); `api-server/src/services/shop-orders.service.ts` + `routes/shop-orders.ts` + `lib/notion/shop-orders.{blocks,repository}.ts` + `services/checkout.service.ts` (mints the number)                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                              |
 | Change the return / exchange request                     | `artifacts/web-app/src/components/return-exchange-dialog.tsx` (opened from `components/shop-order-result.tsx`); `api-server/src/services/return-request.service.ts` + `routes/shop-orders.ts` (`POST /shop-orders/:n/return-requests`) + `lib/notion/return-request.{blocks,repository}.ts` (writes to the **contact** database) + `findShopOrderVerification` in `lib/notion/shop-orders.repository.ts`; policy copy in `pages/shipping-returns.tsx`                                                                                                                                                                                                                                                                                                                                                                               |
 | Change return / exchange refunds (atelier action)        | `api-server/src/services/return-refund.service.ts` (the target-total refund engine + `parseRefundTarget`) + the `return-refund` studio tool (`services/studio-tools.service.ts`) + `lib/stripe/refunds.ts` (shared Stripe refund primitives) + `recordShopOrderRefund` / `SHOP_ORDER_REFUNDED_PROPERTY` / `SHOP_ORDER_RETURN_PROCESSED_PROPERTY` in `lib/notion/shop-orders.{repository,blocks}.ts` + `returnRefundEmail` in `lib/resend/emails.ts`                                                                                                                                                                                                                                                                                                                                                                                 |

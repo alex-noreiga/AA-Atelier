@@ -54,6 +54,11 @@ export const STUDIO_SECTIONS = [
     summary: "The customer-request queue, newsletter sign-ups, and the tools",
   },
   {
+    id: "shipping",
+    label: "Shipping",
+    summary: "Buy a label for a shop order and fill in its tracking",
+  },
+  {
     id: "reviews",
     label: "Reviews",
     summary: "Reviews waiting to be published or set aside",
