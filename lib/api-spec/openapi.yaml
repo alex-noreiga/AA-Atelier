@@ -1773,6 +1773,81 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/ErrorEnvelope"
+  /studio/production-pay:
+    get:
+      operationId: getStudioProductionPay
+      tags: [studio]
+      summary: What the studio owes its own people
+      description: >-
+        Production pay, joined from the atelier's own two Notion databases: a
+        "work distribution" row per item naming who did each of the five stages
+        of making it, and a "Category Pay Splits" row saying what each stage is
+        worth as a share of the piece.
+
+
+        The splits are READ — they are a commercial term the makers renegotiate
+        between themselves — and the money is derived from them here. Notion
+        also carries a per-person `… owed` formula doing the same
+        multiplication; it is deliberately not read, because those property
+        names hardcode today's two makers, so a third would need two formulas
+        and two columns before the app could see any of their pay. Reading the
+        assignee out of each select instead makes the roster data. The standing
+        cost is that the arithmetic now exists in both places and must be
+        changed in both.
+
+
+        Nothing that cannot be computed is dropped. A row with no sale price,
+        no category, or a stage nobody is assigned to is reported in
+        `needsAttention` with the reason, because a payroll figure that reads
+        as complete while it is short is the worst way for this to be wrong.
+
+
+        Owed means the row's `Paid <name>` checkbox is not ticked, and nothing
+        else. Whether work on a half-made piece has been earned is the
+        atelier's judgement; the order's stage rides along so they can see it,
+        but it never gates pay.
+
+
+        Same staff gate as the rest of the studio surface: 401 when not signed
+        in, 404 when signed in but not staff, 403 when staff but not signed in
+        with Google.
+      security:
+        - bearerAuth: []
+      responses:
+        "200":
+          description: Who is owed what, and the rows behind it
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ProductionPayOverview"
+        "401":
+          description: Not signed in (missing or expired session)
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorEnvelope"
+        "403":
+          description: >-
+            A studio account whose session wasn't established with Google (the
+            default policy).
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorEnvelope"
+        "404":
+          description: >-
+            Signed in, but not a studio account — the same answer a URL that
+            doesn't exist gives, by design.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorEnvelope"
+        "500":
+          description: Server error
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorEnvelope"
   /studio/materials:
     get:
       operationId: getStudioMaterials
@@ -3747,6 +3822,232 @@ components:
             True when more rows exist than the server will read in one page, so
             the dashboard can say the list is partial instead of looking
             complete.
+    ProductionStage:
+      type: string
+      description: >-
+        One of the five stages of making a piece. The ids are the app's own;
+        the Notion property naming who did each and the Category Pay Splits
+        column holding its share are listed beside them in
+        `lib/notion/work-distribution.schema.ts`.
+      enum: [consult, sourcing, cutting, sewing, detailing]
+    ProductionStagePay:
+      type: object
+      description: What one maker earned on one stage of one item.
+      required: [stage, amount, shared]
+      properties:
+        stage:
+          $ref: "#/components/schemas/ProductionStage"
+        amount:
+          type: number
+          description: Money attributed to this maker for this stage of this row.
+        shared:
+          type: boolean
+          description: >-
+            True when the stage was marked `Split`, so this is a share of it
+            rather than the whole. Reported so a half-size sewing share reads
+            as shared work rather than as a wrong number.
+    ProductionItemMakerPay:
+      type: object
+      description: One maker's share of one item.
+      required: [maker, amount, paid, stages]
+      properties:
+        maker:
+          type: string
+          description: The maker's name, exactly as typed into the Notion select.
+        amount:
+          type: number
+          description: What they are due for this item, across every stage they worked on.
+        paid:
+          type: boolean
+          description: >-
+            Whether this row's `Paid <name>` checkbox is ticked. A maker with no
+            such column reads as false — the panel may overstate what is owed,
+            but must never hide it.
+        stages:
+          type: array
+          description: Which stages that money is for.
+          items:
+            $ref: "#/components/schemas/ProductionStagePay"
+    ProductionPayItem:
+      type: object
+      description: One item being made, and what it owes whom.
+      required: [id, item, value, units, makers, unassigned]
+      properties:
+        id:
+          type: string
+          description: The Notion page id of the work-distribution row.
+        item:
+          type: string
+          description: The item's title, e.g. "Knight of Midnight Dress".
+        product:
+          type: string
+          description: Size, colour or variation, when the atelier noted one.
+        category:
+          type: string
+          description: The category the pay splits came from, by name.
+        orderStage:
+          type: string
+          description: >-
+            The related order's current stage, when the row belongs to a
+            commission. Shown so the atelier can see what they are settling up
+            on; it never decides whether pay is owed.
+        value:
+          type: number
+          description: "`Sale price` × `Units` — the pot the five stage shares divide."
+        units:
+          type: integer
+          description: >-
+            How many pieces the row covers. A blank `Units` reads as one: the
+            row is an item, and folding it to nought would value real work at
+            nothing.
+        makers:
+          type: array
+          description: Per maker, most owed first.
+          items:
+            $ref: "#/components/schemas/ProductionItemMakerPay"
+        unassigned:
+          type: number
+          description: >-
+            Value belonging to stages nobody is assigned to. Attributed to no
+            one and in no total, but reported so the row's shares visibly don't
+            add up to its value rather than invisibly not adding up.
+    ProductionPayAttention:
+      type: object
+      description: A row no pay could be computed from, and why.
+      required: [id, item, reason]
+      properties:
+        id:
+          type: string
+        item:
+          type: string
+        reason:
+          type: string
+          description: >-
+            `no-sale-price` — nothing to divide. `no-pay-split` — no category
+            relation, or one pointing at a row the splits database doesn't
+            hold. `unassigned-stages` — priced and categorised, but part of the
+            work has no name against it, so part of its value is owed to
+            nobody.
+          enum: [no-sale-price, no-pay-split, unassigned-stages]
+        unassigned:
+          type: number
+          description: For `unassigned-stages`, the money hanging on those stages.
+    MakerPay:
+      type: object
+      description: One maker's totals across the whole book.
+      required: [maker, owed, paid, total, owedItems, owedByStage]
+      properties:
+        maker:
+          type: string
+        owed:
+          type: number
+          description: Due and not yet ticked paid. The figure the panel leads with.
+        paid:
+          type: number
+          description: Due and ticked paid — what has already been settled.
+        total:
+          type: number
+          description: Everything they have earned, owed and settled together.
+        owedItems:
+          type: integer
+          description: How many item rows still owe them something.
+        owedByStage:
+          type: array
+          description: >-
+            What the outstanding money is for, most owed first. A breakdown of
+            `owed`, not of `total` — this is what the atelier settles against.
+          items:
+            type: object
+            required: [stage, amount]
+            properties:
+              stage:
+                $ref: "#/components/schemas/ProductionStage"
+              amount:
+                type: number
+    UnbalancedPaySplit:
+      type: object
+      description: >-
+        A category whose five shares don't add up to the whole piece. A
+        mistyped split silently underpays whoever did the missing stage, and
+        this is the only place that is visible.
+      required: [category, total]
+      properties:
+        category:
+          type: string
+        total:
+          type: number
+          description: What the five shares actually total, as a fraction of one.
+    ProductionPayOverview:
+      type: object
+      description: >-
+        Production pay — who is owed what, the items behind it, and the rows
+        nothing could be computed from.
+      required:
+        [
+          configured,
+          makers,
+          totalOwed,
+          totalPaid,
+          items,
+          itemCount,
+          needsAttention,
+          attentionCount,
+          unbalancedSplits,
+        ]
+      properties:
+        configured:
+          type: boolean
+          description: >-
+            False when either database isn't wired up, in which case everything
+            is empty and the panel says which one is missing — rather than
+            reporting nought owed, which reads as "everyone has been paid".
+        missing:
+          type: array
+          description: Which of the two databases are unset, when `configured` is false.
+          items:
+            type: string
+            enum: [work-distribution, pay-splits]
+        unreachable:
+          type: boolean
+          description: >-
+            True when an id IS set but Notion answered 404 — the integration
+            has not been shared, or the id is wrong. Same kind of state as
+            unset: configuration a human has to clear, not an outage worth
+            erroring the panel over. Absent when the read worked.
+        makers:
+          type: array
+          description: >-
+            Per maker, most owed first. Includes a maker with nothing
+            outstanding, so this reads as the roster rather than as a list of
+            who happens to be owed money.
+          items:
+            $ref: "#/components/schemas/MakerPay"
+        totalOwed:
+          type: number
+          description: Owed across every maker — what the studio owes its people now.
+        totalPaid:
+          type: number
+          description: Settled across every maker.
+        items:
+          type: array
+          description: Item rows, most owed first, capped by the server.
+          items:
+            $ref: "#/components/schemas/ProductionPayItem"
+        itemCount:
+          type: integer
+          description: How many item rows there are in all, so a capped list can say so.
+        needsAttention:
+          type: array
+          description: Rows no pay could be computed from, and why.
+          items:
+            $ref: "#/components/schemas/ProductionPayAttention"
+        attentionCount:
+          type: integer
+          description: How many such rows there are in all.
+        unbalancedSplits:
+          type: array
+          items:
+            $ref: "#/components/schemas/UnbalancedPaySplit"
     MaterialsOverview:
       type: object
       description: >-

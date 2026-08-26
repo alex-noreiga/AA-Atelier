@@ -48,6 +48,7 @@ export const GENERAL_GUIDE_SECTION = "general";
 export const GUIDE_SECTIONS: readonly GuideSection[] = [
   { id: "figures", label: "Figures" },
   { id: "materials", label: "Materials" },
+  { id: "pay", label: "Production pay" },
   { id: "reviews", label: "Reviews" },
   { id: "availability", label: "Working hours" },
   { id: "appointment-staff", label: "Appointment staffing" },

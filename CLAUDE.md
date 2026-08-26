@@ -117,6 +117,17 @@ Express app (artifacts/api-server)  ──►  Notion REST API (orders database)
   │                                  but not staff (indistinguishable from a URL
   │                                  that doesn't exist, by design), 403 staff
   │                                  but not signed in with Google
+  ├─ GET  /api/studio/production-pay
+  │                                → the other side of the figures: what the
+  │                                  studio owes its own PEOPLE. Joins the
+  │                                  atelier's "work distribution" rows (who did
+  │                                  the consult / sourcing / cutting / sewing /
+  │                                  detailing on each item) to the "Category Pay
+  │                                  Splits" rows (what each stage is worth as a
+  │                                  share of the piece), and reports owed vs.
+  │                                  settled per maker, the items behind it, and
+  │                                  the rows nothing could be worked out from.
+  │                                  Same staff gate as the figures above
   ├─ GET  /api/orders/:orderNumber → order status + stage list, plus how the
   │                                  piece reaches the customer: carrier tracking
   │                                  and a ship-by date, or — for a local skater
@@ -3643,6 +3654,96 @@ limits, including why `Skate Shop (opening)` isn't counted and why consignment
 units stay out of `topItems`, are in
 `.agents/memory/sales-channels-and-consignment.md`.
 
+## Production pay (what the studio owes its own people)
+
+Every figure on the dashboard until this one was money coming **in** — revenue by
+month, deposits against balances, what customers still owe. The atelier has
+recorded what goes **out** by hand since long before the app existed: a **"work
+distribution"** row per item naming who did the consult, the sourcing, the
+cutting, the sewing and the detailing, and a **"Category Pay Splits"** row saying
+what each of those stages is worth as a share of the piece. Nothing had ever read
+either. `GET /api/studio/production-pay` is that read, rendered at `/studio/pay`.
+Code: `lib/notion/work-distribution.{schema,repository}.ts`,
+`lib/notion/pay-splits.{schema,repository}.ts`, the two lazy clients in
+`notion/client.ts`, `services/production-pay.service.ts`, the handler in
+`routes/studio.ts`, and `web-app/src/components/studio-production-pay.tsx`.
+
+1. **The splits are READ; the money is derived from them — and the per-person
+   `… owed` formulas are deliberately NOT read.** Notion carries an
+   `Alexandra owed` and an `Alayna owed` formula doing this same multiplication,
+   and reading those two numbers the way the consignment reader reads
+   `Your Payout` would have been less code. It loses on three counts: those
+   property names **hardcode today's two makers** (a third would need two
+   formulas and two columns before the app could see any of their pay), a single
+   number per person **cannot be broken down** into the sewing-vs-sourcing split
+   that is the whole reason to open the panel, and the formula bodies aren't
+   readable through the API anyway. So the assignee is read out of each select —
+   making the roster **data** — and what is read rather than invented is the
+   thing that genuinely is a commercial term: the category's pay splits, which
+   the two of them renegotiate. The standing cost is a **duplicated rule**: the
+   owed arithmetic now lives in those Notion formulas and in
+   `production-pay.service.ts` — **change one and change the other**, exactly
+   like `classifyMaterials` against the `Restock Alert` formula.
+
+2. **`Split` divides a stage evenly across the whole roster.** With the studio's
+   two makers that is the plain 50/50 everyone means by it. Were a third added it
+   would divide three ways — stated rather than guessed, because the alternative
+   (picking two names out of the roster) would be the app deciding who worked on
+   a piece. A targeted business rule naming one live option value, like
+   `STATUS_IN_STOCK`. The roster itself comes from the five `… by` select
+   **options** on the live schema (so a maker with no work still gets a nought
+   row and the panel reads as the payroll rather than as a list of who is owed);
+   that read is **best-effort**, because `summarizeProductionPay` widens whatever
+   roster it is handed with the names the rows carry — a failed schema read costs
+   a nought row, never anybody's pay.
+
+3. **A blank `Units` is ONE; a blank `Sale price` is UNKNOWN.** The row is an
+   item, so a count nobody typed is one piece — folding it to zero would value
+   real work at nothing, which is the one way a payroll figure must not be wrong.
+   There is no such default for a price, so an unpriced row is **named** instead
+   of guessed at. Likewise a maker with no `Paid <name>` column reads as
+   **unpaid**: the panel may overstate what is owed, which is visible, never hide
+   it, which is not. Settlement checkboxes are read by the `Paid ` **prefix** so
+   they follow the roster rather than two names in code.
+
+4. **Nothing uncomputable is dropped — it is named.** No sale price, no category,
+   or a stage nobody is assigned to all produce a `needsAttention` row carrying
+   the reason, the same shape as the materials panel's `untracked` list. A
+   payroll number that reads as complete while it is short is the worst way for
+   this to be wrong. A category whose five shares don't total 100% is flagged for
+   the same reason: in Notion a mistyped split looks exactly like a correct one
+   and silently underpays whoever did the missing stage, and this panel is the
+   only place it is visible.
+
+5. **Owed means "not ticked paid", and nothing else.** The order's `Order Stage`
+   rollup rides along on each row so the atelier can see what they are settling
+   on, but the app never gates pay on it. Whether work on a half-sewn dress has
+   been earned is their judgement, recorded by ticking the box; inventing an
+   earned-at-delivery rule here would contradict a table they already keep.
+
+6. **Its own section, and its own endpoint.** `/studio/pay` is a `STUDIO_SECTIONS`
+   entry, so only opening it runs the read. Folding two more bounded
+   full-database scans into `GET /studio/analytics` would make everyone opening
+   the **figures** pay for a payroll question they didn't ask — the exact cost
+   "The dashboard's sections" exists to remove. Contract-first and behind the
+   same `requireStaff` gate (401 / 404 / 403) as the rest of the studio surface.
+
+Degrades exactly like the materials and consignment panels: either database
+unset ⇒ `configured: false` **naming which one** (nought owed would read as
+"everyone has been paid"), a Notion 404 ⇒ `unreachable` with the sharing fix in
+the panel, anything else still throws.
+
+The atelier's one-time setup: share the Notion integration with **work
+distribution** and **Category Pay Splits**, and set
+**`NOTION_WORK_DISTRIBUTION_DATABASE_ID`** + **`NOTION_PAY_SPLITS_DATABASE_ID`**.
+**Nothing to add in Notion** — every property read already exists. Two data-entry
+habits make it useful: give each row a `Sale price` and a `Category`, and fill in
+the five `… by` selects as the work is done (the existing **"Needs stage
+entries"** view is the same idea from the other side). Known limits — both makers
+see each other's pay, ticking `Paid` is still done in Notion, and the figures are
+the whole book rather than a period — are in
+`.agents/memory/production-pay-dashboard.md`.
+
 ## Studio analytics dashboard (internal, staff-gated)
 
 The atelier's own numbers in one place — `pages/studio.tsx` at **`/studio`**, fed
@@ -3895,7 +3996,7 @@ two `/studio` routes in `App.tsx`.
    tools stay reachable during a Notion wobble — which is when the atelier is
    most likely to need them.
 
-The sections are **Figures / Requests / Reviews / Bookings / Materials /
+The sections are **Figures / Requests / Reviews / Bookings / Materials / Pay /
 Settings / Guides**, in that order — what needs doing first. Nothing about a
 panel changed: each is the same component, with the same `data-testid`, doing
 the same reads. **No API change, no new env var, no atelier setup.**
@@ -5070,6 +5171,8 @@ scope went with the working-hours sheet.
 | `NOTION_STUDIO_GUIDES_DATABASE_ID`                                                                                | No how-to guides; the dashboard panel says it isn't connected       |
 | `NOTION_PORTFOLIO_DATABASE_ID`                                                                                    | No portfolio pieces; `/portfolio` shows its empty state             |
 | `NOTION_CONSIGNMENT_DATABASE_ID`                                                                                  | No consignment panel; the shelf at the skate shop isn't counted     |
+| `NOTION_WORK_DISTRIBUTION_DATABASE_ID`                                                                            | No production-pay panel; what the studio owes its makers isn't read |
+| `NOTION_PAY_SPLITS_DATABASE_ID`                                                                                   | No production-pay panel; there is nothing to divide a piece by      |
 | `COMMISSION_CAPACITY`                                                                                             | `0` — no cap, so the books never close on the count                 |
 | `COMMISSION_INTAKE`                                                                                               | `auto` — the cap decides (`open` / `closed` override it)            |
 | `COMMISSION_CLOSED_MESSAGE`                                                                                       | A built-in "our books are full, join the waitlist" sentence         |
@@ -5265,6 +5368,7 @@ Three things about it are load-bearing:
 | Change the customer account portal (Supabase Auth)       | `artifacts/web-app/src/pages/account.tsx` (+ `components/appointment-manage-panel.tsx`, shared with `pages/appointment-manage.tsx`) + `pages/account-login.tsx` / `account-callback.tsx` / `account-reset.tsx` + `lib/supabase.ts` + `lib/auth-context.tsx` (frontend); `api-server/src/services/account.service.ts` + `routes/account.ts` + `middlewares/auth.ts` + `lib/supabase/client.ts`; queries `findOrdersByEmail` / `findShopOrdersByEmail` + `listUpcomingAppointmentsByEmail` (`lib/google/calendar.repository.ts`, mapped via `lib/appointments/event-details.ts`) + `extractMeasurements` (`lib/notion/orders.schema.ts`). Auth emails: `.agents/memory/supabase-auth-emails.md`                                                                                                                                       |
 | Change the customer data export / deletion request       | `web-app/src/components/account-data.tsx` (rendered by `pages/account.tsx`) + the "Your choices" section of `pages/privacy.tsx`; `api-server/src/services/account-data.service.ts` + the two `/account` handlers in `routes/account.ts` + `lib/notion/data-deletion.{blocks,repository}.ts` + the by-email reads (`listRequestsByEmail`, `listReviewsByEmail`, `findClientProfileByEmail`) + `unsubscribeAudienceContact` in `lib/resend/audience.ts` + the two `dataDeletionRequest*Email` builders. The dashboard side is the `data-deletion` kind in `lib/notion/requests.schema.ts` + `components/studio-requests.tsx`                                                                                                                                                                                                          |
 | Change how the dashboard is laid out / add a section     | `web-app/src/lib/studio-sections.ts` (the registry — id, label, summary) + the `SECTION_VIEWS` map and `SectionNav` in `pages/studio.tsx` + the two `/studio` routes in `App.tsx`. Only the open section mounts, so a view fetches what it shows; the gate is `useStudioAccess` (`lib/studio-access.ts`), not the figures. Read "The dashboard's sections" before splitting the request queue from the tools                                                                                                                                                                                                                                                                                                                                                                                                                        |
+| Change production pay (what the studio owes its makers)  | `api-server/src/lib/notion/work-distribution.{schema,repository}.ts` (the rows + the live maker roster; `PRODUCTION_STAGES` and `SPLIT_ASSIGNEE` live there) + `lib/notion/pay-splits.{schema,repository}.ts` (the commercial term, read never invented) + `services/production-pay.service.ts` (the pure `attributeItem` / `summarizeProductionPay` + the cached use-case) + the `/studio/production-pay` route in `routes/studio.ts`; panel in `web-app/src/components/studio-production-pay.tsx`, mounted by the `pay` section in `pages/studio.tsx`. The owed arithmetic is DUPLICATED in Notion's `Alexandra owed` / `Alayna owed` formulas — read `.agents/memory/production-pay-dashboard.md` before changing either                                                                                                         |
 | Change sales-channel / consignment figures               | `SHOP_ORDER_CHANNEL_PROPERTY` / `SHOP_ORDER_ONLINE_STORE_CHANNEL` / `SHOP_ORDER_DATE_PROPERTY` in `api-server/src/lib/notion/shop-orders.blocks.ts` (what the app stamps) + the channel/date reads and `fetchLiveShopOrderChannels` in `shop-orders.repository.ts`; the aggregation is `buildChannels` / `orderedOn` / `buildTopItemCoverage` in `services/studio-analytics.service.ts`. The skate-shop shelf is `lib/notion/consignment.{schema,repository}.ts` + `services/consignment.service.ts` (`unitsAtShop` / `summarizeConsignment`) + `getConsignmentNotionClient`; panels in `web-app/src/pages/studio.tsx` (`ChannelsPanel` / `ConsignmentPanel`). Read the date-only gotcha in `.agents/memory/sales-channels-and-consignment.md` before touching `orderedOn`                                                          |
 | Change the internal studio dashboard                     | `artifacts/web-app/src/pages/studio.tsx` (+ the `/studio` route in `App.tsx`, `noindex` entry in `lib/seo-routes.ts`); `api-server/src/services/studio-analytics.service.ts` (the pure `aggregateStudioAnalytics` + the cached use-case) + `routes/studio.ts` + `requireStaff` in `middlewares/auth.ts` + `lib/staff.ts` (the `STUDIO_STAFF_EMAILS` allowlist + the `amr` Google check); the 403 panel's re-sign-in lands back via `web-app/src/lib/post-signin.ts` (read by `pages/account-callback.tsx`); reads via `lib/notion/scan.ts` + `listOrdersForAnalytics` / `listShopOrdersForAnalytics` / `listInvoicesForAnalytics`                                                                                                                                                                                                   |
 | Change the studio's how-to guides                        | `api-server/src/lib/guide-sections.ts` (the sections a guide can be filed against — a tool's id is its `StudioToolName`) + `lib/notion/guides.{schema,repository}.ts` (the Notion row + the file download) + `services/studio-guides.service.ts` (assembly, the HTML check, the 60s cache) + the `/studio/guides` route in `routes/studio.ts`; frontend `web-app/src/components/studio-guides.tsx` (`StudioGuides` panel + the `GuidesFor` slots), mounted by `pages/studio.tsx` and per tool by `components/studio-tools.tsx`. The sandboxed frame in that component is a security boundary — see the section above                                                                                                                                                                                                                |

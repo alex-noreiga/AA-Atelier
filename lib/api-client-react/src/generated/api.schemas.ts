@@ -597,6 +597,159 @@ export interface StudioGuideList {
 }
 
 /**
+ * One of the five stages of making a piece. The ids are the app's own; the Notion property naming who did each and the Category Pay Splits column holding its share are listed beside them in `lib/notion/work-distribution.schema.ts`.
+ */
+export type ProductionStage = typeof ProductionStage[keyof typeof ProductionStage];
+
+
+export const ProductionStage = {
+  consult: 'consult',
+  sourcing: 'sourcing',
+  cutting: 'cutting',
+  sewing: 'sewing',
+  detailing: 'detailing',
+} as const;
+
+/**
+ * What one maker earned on one stage of one item.
+ */
+export interface ProductionStagePay {
+  stage: ProductionStage;
+  /** Money attributed to this maker for this stage of this row. */
+  amount: number;
+  /** True when the stage was marked `Split`, so this is a share of it rather than the whole. Reported so a half-size sewing share reads as shared work rather than as a wrong number. */
+  shared: boolean;
+}
+
+/**
+ * One maker's share of one item.
+ */
+export interface ProductionItemMakerPay {
+  /** The maker's name, exactly as typed into the Notion select. */
+  maker: string;
+  /** What they are due for this item, across every stage they worked on. */
+  amount: number;
+  /** Whether this row's `Paid <name>` checkbox is ticked. A maker with no such column reads as false — the panel may overstate what is owed, but must never hide it. */
+  paid: boolean;
+  /** Which stages that money is for. */
+  stages: ProductionStagePay[];
+}
+
+/**
+ * One item being made, and what it owes whom.
+ */
+export interface ProductionPayItem {
+  /** The Notion page id of the work-distribution row. */
+  id: string;
+  /** The item's title, e.g. "Knight of Midnight Dress". */
+  item: string;
+  /** Size, colour or variation, when the atelier noted one. */
+  product?: string;
+  /** The category the pay splits came from, by name. */
+  category?: string;
+  /** The related order's current stage, when the row belongs to a commission. Shown so the atelier can see what they are settling up on; it never decides whether pay is owed. */
+  orderStage?: string;
+  /** `Sale price` × `Units` — the pot the five stage shares divide. */
+  value: number;
+  /** How many pieces the row covers. A blank `Units` reads as one: the row is an item, and folding it to nought would value real work at nothing. */
+  units: number;
+  /** Per maker, most owed first. */
+  makers: ProductionItemMakerPay[];
+  /** Value belonging to stages nobody is assigned to. Attributed to no one and in no total, but reported so the row's shares visibly don't add up to its value rather than invisibly not adding up. */
+  unassigned: number;
+}
+
+/**
+ * `no-sale-price` — nothing to divide. `no-pay-split` — no category relation, or one pointing at a row the splits database doesn't hold. `unassigned-stages` — priced and categorised, but part of the work has no name against it, so part of its value is owed to nobody.
+ */
+export type ProductionPayAttentionReason = typeof ProductionPayAttentionReason[keyof typeof ProductionPayAttentionReason];
+
+
+export const ProductionPayAttentionReason = {
+  'no-sale-price': 'no-sale-price',
+  'no-pay-split': 'no-pay-split',
+  'unassigned-stages': 'unassigned-stages',
+} as const;
+
+/**
+ * A row no pay could be computed from, and why.
+ */
+export interface ProductionPayAttention {
+  id: string;
+  item: string;
+  /** `no-sale-price` — nothing to divide. `no-pay-split` — no category relation, or one pointing at a row the splits database doesn't hold. `unassigned-stages` — priced and categorised, but part of the work has no name against it, so part of its value is owed to nobody. */
+  reason: ProductionPayAttentionReason;
+  /** For `unassigned-stages`, the money hanging on those stages. */
+  unassigned?: number;
+}
+
+export type MakerPayOwedByStageItem = {
+  stage: ProductionStage;
+  amount: number;
+};
+
+/**
+ * One maker's totals across the whole book.
+ */
+export interface MakerPay {
+  maker: string;
+  /** Due and not yet ticked paid. The figure the panel leads with. */
+  owed: number;
+  /** Due and ticked paid — what has already been settled. */
+  paid: number;
+  /** Everything they have earned, owed and settled together. */
+  total: number;
+  /** How many item rows still owe them something. */
+  owedItems: number;
+  /** What the outstanding money is for, most owed first. A breakdown of `owed`, not of `total` — this is what the atelier settles against. */
+  owedByStage: MakerPayOwedByStageItem[];
+}
+
+/**
+ * A category whose five shares don't add up to the whole piece. A mistyped split silently underpays whoever did the missing stage, and this is the only place that is visible.
+ */
+export interface UnbalancedPaySplit {
+  category: string;
+  /** What the five shares actually total, as a fraction of one. */
+  total: number;
+}
+
+export type ProductionPayOverviewMissingItem = typeof ProductionPayOverviewMissingItem[keyof typeof ProductionPayOverviewMissingItem];
+
+
+export const ProductionPayOverviewMissingItem = {
+  'work-distribution': 'work-distribution',
+  'pay-splits': 'pay-splits',
+} as const;
+
+/**
+ * Production pay — who is owed what, the items behind it, and the rows nothing could be computed from.
+ */
+export interface ProductionPayOverview {
+  /** False when either database isn't wired up, in which case everything is empty and the panel says which one is missing — rather than reporting nought owed, which reads as "everyone has been paid". */
+  configured: boolean;
+  /** Which of the two databases are unset, when `configured` is false. */
+  missing?: ProductionPayOverviewMissingItem[];
+  /** True when an id IS set but Notion answered 404 — the integration has not been shared, or the id is wrong. Same kind of state as unset: configuration a human has to clear, not an outage worth erroring the panel over. Absent when the read worked. */
+  unreachable?: boolean;
+  /** Per maker, most owed first. Includes a maker with nothing outstanding, so this reads as the roster rather than as a list of who happens to be owed money. */
+  makers: MakerPay[];
+  /** Owed across every maker — what the studio owes its people now. */
+  totalOwed: number;
+  /** Settled across every maker. */
+  totalPaid: number;
+  /** Item rows, most owed first, capped by the server. */
+  items: ProductionPayItem[];
+  /** How many item rows there are in all, so a capped list can say so. */
+  itemCount: number;
+  /** Rows no pay could be computed from, and why. */
+  needsAttention: ProductionPayAttention[];
+  /** How many such rows there are in all. */
+  attentionCount: number;
+  unbalancedSplits: UnbalancedPaySplit[];
+}
+
+/**
  * The materials panel — what to reorder, what can't be reordered, and what isn't being watched.
  */
 export interface MaterialsOverview {
