@@ -900,20 +900,17 @@ export default function OrderForm() {
                     </div>
                   ) : (
                     <div className="border border-border rounded-lg p-6 bg-muted/20">
+                      {/* Deliberately no "book your fitting" link here: a
+                          fitting is booked against an order number, which the
+                          customer doesn't have until this form is submitted.
+                          Offering it mid-form sent people away before they had
+                          one. The confirmation screen offers it instead. */}
                       <p className="text-sm font-light text-foreground/90 leading-relaxed">
-                        No problem, we'll take your measurements for you. Book a
-                        fitting now and we'll take them then, or we'll arrange
-                        it when you place your order.
+                        No problem, we'll take your measurements for you. Finish
+                        placing your order and we'll arrange a fitting to take
+                        them — you'll be able to book it as soon as your order
+                        is confirmed.
                       </p>
-                      <CtaLink
-                        to="/appointments?type=fitting"
-                        variant="outline"
-                        className="mt-5"
-                        data-testid="link-book-fitting"
-                      >
-                        <CalendarCheck className="w-4 h-4" />
-                        Book your fitting
-                      </CtaLink>
                     </div>
                   )}
                 </section>
