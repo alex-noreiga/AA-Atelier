@@ -1,6 +1,7 @@
 import { describe, it, expect } from "vitest";
 import {
   extractImageUrls,
+  extractProductReviews,
   extractPublishedReviews,
   extractStudioReview,
   extractStudioReviews,
@@ -151,6 +152,62 @@ describe("reviewModeration", () => {
     expect(reviewModeration(page({ status: "Featured" }))).toBe("pending");
     expect(reviewModeration(page({ status: "published" }))).toBe("pending");
     expect(reviewModeration({ id: "x", properties: {} })).toBe("pending");
+  });
+});
+
+// The shop-piece projection. It shares `isPublishable` with the testimonials
+// above, which is the whole point: one predicate decides everything public, so a
+// star rating can never appear beside a piece from a row the testimonial strip
+// couldn't show.
+describe("extractProductReviews", () => {
+  it("keeps a published row that names a piece, with the ids it names", () => {
+    const [review] = extractProductReviews([
+      page({ id: "rev-1", rating: 4, productIds: ["inv-a", "inv-b"] }),
+    ]);
+
+    expect(review).toMatchObject({
+      id: "rev-1",
+      rating: 4,
+      productIds: ["inv-a", "inv-b"],
+    });
+  });
+
+  it("drops a review of a custom order, which names no piece", () => {
+    expect(extractProductReviews([page({ productIds: [] })])).toEqual([]);
+  });
+
+  it("drops every row when the database has no Product column at all", () => {
+    expect(extractProductReviews([page({ productIds: null })])).toEqual([]);
+  });
+
+  it("drops a row still in triage, however many pieces it names", () => {
+    expect(
+      extractProductReviews([page({ status: "New", productIds: ["inv-a"] })]),
+    ).toEqual([]);
+  });
+
+  it("drops a row the customer never consented to publish", () => {
+    expect(
+      extractProductReviews([page({ consent: false, productIds: ["inv-a"] })]),
+    ).toEqual([]);
+  });
+
+  // Unlike the testimonial extractor: a rating with no words still counts
+  // toward the average, it just has nothing to quote.
+  it("keeps a rating with no testimonial text", () => {
+    const [review] = extractProductReviews([
+      page({ comment: "", productIds: ["inv-a"] }),
+    ]);
+
+    expect(review).toMatchObject({ comment: "", rating: 5 });
+  });
+
+  it("clamps a nonsense rating into 1-5 rather than failing the read", () => {
+    const [review] = extractProductReviews([
+      page({ rating: 47, productIds: ["inv-a"] }),
+    ]);
+
+    expect(review.rating).toBe(5);
   });
 });
 

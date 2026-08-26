@@ -379,6 +379,13 @@ export const JoinWaitlistResponse = zod.object({
  * Returns published, in-stock shop items from the Notion inventory database, grouped into cards with selectable variants.
  * @summary List shop products
  */
+export const getProductsResponseProductsItemRatingAverageMax = 5;
+
+
+export const getProductsResponseProductsItemRatingReviewsItemRatingMax = 5;
+
+
+
 export const GetProductsResponse = zod.object({
   "products": zod.array(zod.object({
   "id": zod.string(),
@@ -399,7 +406,18 @@ export const GetProductsResponse = zod.object({
 })).describe('Every size band this item is offered in (\"Sizes Offered\" in Notion), each flagged with whether it is currently in stock (\"Sizes Available\"). A size that is offered but not available is sold out, and the shop offers a per-size back-in-stock request. Empty for one-size items (soakers, cloths).'),
   "quantityAvailable": zod.number().optional(),
   "addOnIds": zod.array(zod.string()).optional().describe('Ids of other ProductVariants offered as matching add-ons for this variant (the \"Matching Add-ons\" self-relation in the Notion inventory database) — e.g. a skate soaker points at its matching blade towel. Each id is the `id` of a ProductVariant that also appears in this same product list, so clients resolve the add-on\'s name\/price\/availability locally rather than the payload carrying it twice. Empty or absent when the variant has no add-ons.')
-}))
+})),
+  "rating": zod.object({
+  "average": zod.number().min(1).max(getProductsResponseProductsItemRatingAverageMax).describe('The mean star rating, rounded to one decimal place. Shown beside the piece and published as `aggregateRating` in its Product structured data.'),
+  "count": zod.number().int().min(1).describe('How many reviews the average is built from.'),
+  "reviews": zod.array(zod.object({
+  "id": zod.string().describe('The review\'s Notion page id, used only as a render key.'),
+  "rating": zod.number().int().min(1).max(getProductsResponseProductsItemRatingReviewsItemRatingMax).describe('The star rating, 1 (poor) to 5 (excellent).'),
+  "comment": zod.string().describe('The customer\'s testimonial.'),
+  "customerName": zod.string().optional().describe('How the customer asked to be credited. Omitted when they left the credit blank, in which case the testimonial is shown unattributed.'),
+  "publishedAt": zod.coerce.date().optional().describe('When the review was submitted (its Notion created time), used to order the list and to date the testimonial.')
+}).describe('One curated testimonial, as shown on the site. Deliberately narrow: the author\'s email, order number, and verification flag stay in Notion and are never served here.')).describe('A few of those reviews in the customer\'s own words, newest first, for the piece\'s quick view. Capped server-side — the shop list is a single edge-cached payload, so it carries a taste rather than the whole history. Narrow like `PublishedReview`: no email, no order number.')
+}).optional().describe('What customers who bought this piece said about it. Built from reviews left against a shop order and passing the SAME two gates as a public testimonial — the atelier published it and the customer consented — so a rating can never appear beside a piece from a row the testimonials couldn\'t show.\nAbsent when the piece has no such review yet, which is not an error state: most pieces will have none, and a card showing \"0 reviews\" reads worse than a card showing none. A grouped card (several colourways under one `Website Group`) pools the reviews of all its variants, because that is the piece a shopper is looking at.')
 })),
   "categories": zod.array(zod.string()).describe('The shop\'s category filters, read live from the Notion \"Product Categories\" database and returned in the order the atelier arranged them (its `Sort` field). Each inventory item links to its category through a `Category` relation. Editing the categories in Notion changes this list without a redeploy, so clients must not hardcode it.')
 })
@@ -562,7 +580,11 @@ export const GetShopOrderStatusResponse = zod.object({
   "location": zod.string().optional().describe('Where to collect from (the studio\'s own address or a rink), as free text. The customer\'s own shipping address is deliberately never returned — this lookup is gated by order number alone.'),
   "timezone": zod.string().optional().describe('The IANA zone `at` should be read in (the studio\'s APPOINTMENT_TIMEZONE), so a customer in another timezone still sees the studio\'s local time. Same contract as AppointmentDetails.timezone.')
 }).optional().describe('The collection details for a local-pickup order. Always present when `method` is `pickup`, even before a time is arranged — that the order is a pickup at all is itself the answer to \"is there tracking?\".')
-}).optional().describe('How the finished piece reaches the customer, and everything that can be said about that right now. One shape for both order kinds (custom and shop), so the tracking page answers \"where is my order?\" the same way either side.\n`method` decides which half is filled in. A shipped order carries `tracking` once the atelier has entered a tracking number, and `shipBy` until then. A \*\*local-pickup\*\* order carries `pickup` instead: local customers collect in person, so there is no tracking number to show and the order must not read as though something is missing — the scheduled pickup time is the answer.\nAbsent entirely when there is nothing yet to say (a shipped order with no tracking number and no ship-by date), and never present on an order the atelier has cancelled.')
+}).optional().describe('How the finished piece reaches the customer, and everything that can be said about that right now. One shape for both order kinds (custom and shop), so the tracking page answers \"where is my order?\" the same way either side.\n`method` decides which half is filled in. A shipped order carries `tracking` once the atelier has entered a tracking number, and `shipBy` until then. A \*\*local-pickup\*\* order carries `pickup` instead: local customers collect in person, so there is no tracking number to show and the order must not read as though something is missing — the scheduled pickup time is the answer.\nAbsent entirely when there is nothing yet to say (a shipped order with no tracking number and no ship-by date), and never present on an order the atelier has cancelled.'),
+  "items": zod.array(zod.object({
+  "id": zod.string().describe('The inventory row\'s Notion page id — the same id a ProductVariant carries, and what a shop review names as the piece it is about.'),
+  "name": zod.string().describe('The piece\'s name, as the shop lists it.')
+})).optional().describe('The pieces on this order, so a customer at the delivered status can say which one they are reviewing. Resolved from the order\'s `Inventory Items` relation against live inventory, and therefore best-effort: an order placed before that relation was written, or one whose inventory read fails, carries an empty list — which the tracking page reads as \"no piece to review\", never as an error. Only the piece\'s id and name are served; quantities, prices and the shipping address stay in Notion, because this lookup is gated by order number alone.')
 })
 
 
@@ -606,6 +628,38 @@ export const CreateReturnRequestBody = zod.object({
 }).describe('A request to return or exchange a ready-to-wear shop order. The server verifies the email against the one on the order; the atelier reviews and actions accepted requests by hand (this endpoint never refunds or edits the order).')
 
 export const CreateReturnRequestResponse = zod.object({
+  "received": zod.boolean()
+})
+
+
+/**
+ * Captures a customer's review of a ready-to-wear piece they bought — a star rating, a short testimonial, an optional display name and photos — once their shop order has reached its final fulfilment status. The review names ONE piece from the order (`productId`, an inventory row id served on the order's `items`), which is what gives a shop piece an average to show; a piece that isn't on the order is rejected. The customer is verified against the email on the order. Accepted reviews land in the same Notion reviews database the custom-order reviews use, with the same "New" status, so the atelier curates them in one queue. Photos are uploaded ahead of time via POST /orders/reference-images; their file_upload ids are passed as photoIds.
+ * @summary Review one piece from a shop order
+ */
+export const CreateShopOrderReviewParams = zod.object({
+  "orderNumber": zod.coerce.string()
+})
+
+
+export const createShopOrderReviewBodyRatingMax = 5;
+
+export const createShopOrderReviewBodyCommentMax = 2000;
+
+export const createShopOrderReviewBodyDisplayNameMax = 120;
+
+
+
+export const CreateShopOrderReviewBody = zod.object({
+  "email": zod.string().email().describe('The email to verify against the one on the order. A review whose email doesn\'t match the order is rejected.'),
+  "productId": zod.string().min(1).describe('The inventory row id of the piece being reviewed — one of the `id`s on the order\'s `items`. The server checks it against the order\'s own pieces, so a review can only ever be left for something the customer actually bought.'),
+  "rating": zod.number().int().min(1).max(createShopOrderReviewBodyRatingMax).describe('The star rating, 1 (poor) to 5 (excellent).'),
+  "comment": zod.string().min(1).max(createShopOrderReviewBodyCommentMax).describe('The customer\'s testimonial about the piece.'),
+  "displayName": zod.string().max(createShopOrderReviewBodyDisplayNameMax).optional().describe('How the customer would like to be credited if the review is featured (e.g. \"Ada L.\" or \"Ada, Chicago\"). Optional.'),
+  "consentToPublish": zod.boolean().optional().describe('Whether the customer gives permission to show this review publicly. Defaults to false — and, because the same two gates decide everything public, a review without it is never counted into the piece\'s average either.'),
+  "photoIds": zod.array(zod.string()).optional().describe('Notion file_upload ids for photos of the piece, uploaded ahead of time via POST \/orders\/reference-images. Attached to the review\'s Notion page as image blocks.')
+}).describe('A review of one ready-to-wear piece from a shop order. The same shape as NewReviewRequest plus the piece it is about — a shop order can hold several pieces, and an average belongs to a piece rather than to the order, so the review has to say which one.')
+
+export const CreateShopOrderReviewResponse = zod.object({
   "received": zod.boolean()
 })
 

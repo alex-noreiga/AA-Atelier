@@ -5,6 +5,7 @@ import { ArrowRight } from "lucide-react";
 import { ReturnExchangeDialog } from "@/components/return-exchange-dialog";
 import { StatusTimeline } from "@/components/status-timeline";
 import { FulfilmentPanel } from "@/components/fulfilment-panel";
+import { ShopReviewDialog } from "@/components/shop-review-dialog";
 
 /**
  * The "order found" body for a ready-to-wear shop order: header plus the
@@ -20,6 +21,11 @@ export function ShopOrderResult({
   onReset: () => void;
 }) {
   const isCancelled = order.cancelled === true;
+  // The pieces the server could name, present only once the order has reached
+  // its final status — so this is both "is it delivered?" and "is there anything
+  // to review?" in one, and it is the server's own answer to both rather than a
+  // second copy of the rule.
+  const reviewable = order.items ?? [];
 
   return (
     <div
@@ -63,6 +69,12 @@ export function ShopOrderResult({
       <div className="mt-16 flex flex-col items-center gap-6">
         {!isCancelled && (
           <>
+            {reviewable.length > 0 && (
+              <ShopReviewDialog
+                orderNumber={order.orderNumber}
+                items={reviewable}
+              />
+            )}
             <CancellationRequestDialog
               orderNumber={order.orderNumber}
               variant="shop"

@@ -15,6 +15,7 @@ import { returnRequestInput } from "@workspace/test-fixtures";
 import app from "../../src/app.js";
 import { findShopOrderVerification } from "../../src/lib/notion/shop-orders.repository.js";
 import { createReturnRequest } from "../../src/lib/notion/return-request.repository.js";
+import { shopOrderVerification } from "../support/shop-order-verification.js";
 
 const mockFind = vi.mocked(findShopOrderVerification);
 const mockWrite = vi.mocked(createReturnRequest);
@@ -24,10 +25,12 @@ const validBody = returnRequestInput({ email: "grace@example.com" });
 
 describe("POST /api/shop-orders/:orderNumber/return-requests", () => {
   it("returns 201 when the email matches the order", async () => {
-    mockFind.mockResolvedValue({
-      pageId: "page-shop-test",
-      email: "grace@example.com",
-    });
+    mockFind.mockResolvedValue(
+      shopOrderVerification({
+        pageId: "page-shop-test",
+        email: "grace@example.com",
+      }),
+    );
     mockWrite.mockResolvedValue();
 
     const res = await request(app).post(url).send(validBody);
@@ -38,10 +41,12 @@ describe("POST /api/shop-orders/:orderNumber/return-requests", () => {
   });
 
   it("returns 201 for an exchange with exchangeFor + items", async () => {
-    mockFind.mockResolvedValue({
-      pageId: "page-shop-test",
-      email: "grace@example.com",
-    });
+    mockFind.mockResolvedValue(
+      shopOrderVerification({
+        pageId: "page-shop-test",
+        email: "grace@example.com",
+      }),
+    );
     mockWrite.mockResolvedValue();
 
     const res = await request(app)
@@ -71,10 +76,12 @@ describe("POST /api/shop-orders/:orderNumber/return-requests", () => {
   });
 
   it("returns 403 when the email doesn't match the order", async () => {
-    mockFind.mockResolvedValue({
-      pageId: "page-shop-test",
-      email: "someone-else@example.com",
-    });
+    mockFind.mockResolvedValue(
+      shopOrderVerification({
+        pageId: "page-shop-test",
+        email: "someone-else@example.com",
+      }),
+    );
 
     const res = await request(app).post(url).send(validBody);
 

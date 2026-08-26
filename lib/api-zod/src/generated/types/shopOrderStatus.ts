@@ -6,6 +6,7 @@
  * OpenAPI spec version: 0.1.0
  */
 import type { OrderFulfilment } from './orderFulfilment';
+import type { ShopOrderItem } from './shopOrderItem';
 
 export interface ShopOrderStatus {
   orderNumber: string;
@@ -18,4 +19,6 @@ export interface ShopOrderStatus {
   /** True once the atelier has cancelled the shop order (the `Cancelled` marker on the Notion order). When true the tracking page shows a cancelled banner and suppresses the request affordance. Absent/false for an active order. */
   cancelled?: boolean;
   fulfilment?: OrderFulfilment;
+  /** The pieces on this order, so a customer at the delivered status can say which one they are reviewing. Resolved from the order's `Inventory Items` relation against live inventory, and therefore best-effort: an order placed before that relation was written, or one whose inventory read fails, carries an empty list — which the tracking page reads as "no piece to review", never as an error. Only the piece's id and name are served; quantities, prices and the shipping address stay in Notion, because this lookup is gated by order number alone. */
+  items?: ShopOrderItem[];
 }

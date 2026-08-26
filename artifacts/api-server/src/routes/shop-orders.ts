@@ -8,6 +8,9 @@ import {
   CreateReturnRequestParams,
   CreateReturnRequestBody,
   CreateReturnRequestResponse,
+  CreateShopOrderReviewParams,
+  CreateShopOrderReviewBody,
+  CreateShopOrderReviewResponse,
 } from "@workspace/api-zod";
 import { validate } from "../middlewares/validate.js";
 import { getShopOrderStatus } from "../services/shop-orders.service.js";
@@ -15,6 +18,8 @@ import { submitShopOrderCancellationRequest } from "../services/cancellation.ser
 import type { CreateCancellationInput } from "../services/cancellation.service.js";
 import { submitReturnRequest } from "../services/return-request.service.js";
 import type { CreateReturnInput } from "../lib/notion/return-request.blocks.js";
+import { submitShopOrderReview } from "../services/shop-review.service.js";
+import type { CreateShopReviewInput } from "../services/shop-review.service.js";
 
 const router = Router();
 
@@ -55,6 +60,20 @@ router.post(
     const body = res.locals.body as CreateReturnInput;
     const result = await submitReturnRequest(orderNumber, body);
     res.status(201).json(CreateReturnRequestResponse.parse(result));
+  },
+);
+
+router.post(
+  "/shop-orders/:orderNumber/reviews",
+  validate({
+    params: CreateShopOrderReviewParams,
+    body: CreateShopOrderReviewBody,
+  }),
+  async (_req, res) => {
+    const { orderNumber } = res.locals.params as { orderNumber: string };
+    const body = res.locals.body as CreateShopReviewInput;
+    const result = await submitShopOrderReview(orderNumber, body);
+    res.status(201).json(CreateShopOrderReviewResponse.parse(result));
   },
 );
 
