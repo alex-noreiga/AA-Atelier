@@ -138,11 +138,10 @@ describe("OrderForm submission mapping", () => {
     // The measurement inputs are gone in appointment mode.
     expect(document.getElementById("waist")).toBeNull();
 
-    // The appointment panel offers a direct link to book the fitting.
-    expect(screen.getByTestId("link-book-fitting")).toHaveAttribute(
-      "href",
-      "/appointments?type=fitting",
-    );
+    // The appointment panel deliberately offers NO fitting link: a fitting is
+    // booked against an order number the customer doesn't have until this form
+    // is submitted, so the link is only on the confirmation screen.
+    expect(screen.queryByTestId("link-book-fitting")).toBeNull();
 
     await continueToSubmit(user);
     await user.click(screen.getByRole("button", { name: "Submit Order" }));
