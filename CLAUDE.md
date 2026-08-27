@@ -4861,12 +4861,14 @@ in the maintainer's env without edits.
   `main` via pull requests. `main` is the **integration** branch — merging there
   deploys a Vercel **preview**, not the live site.
 - Production is the **`release`** branch (Vercel's Production Branch setting).
-  Shipping is a deliberate promotion of `main` into `release` — see
-  `BRANCHING.md` for the flow, the hotfix path, and the fast-forward-only rule.
-  Never commit feature work directly to `release`. An optional `development`
-  branch may exist as a combined-preview testing surface; features are promoted
-  from their own branches, never from `development` (see "Choosing which
-  features ship" in `BRANCHING.md`).
+  Shipping is a deliberate promotion of `main` into `release`
+  (`git merge --ff-only origin/main`, so production is always a snapshot of a
+  commit that passed CI on `main`); each push to `release` is auto-tagged by
+  `.github/workflows/release-tag.yml`. Never commit feature work directly to
+  `release`; a hotfix branches off `release` and is merged back into `main`
+  afterward. An optional `development` branch may exist as a combined-preview
+  testing surface; features are promoted from their own branches, never from
+  `development`.
 - Do **not** open a pull request unless explicitly asked.
 - Vercel deploys from the repo using `vercel.json`:
   `installCommand: pnpm install`, `buildCommand: pnpm run build:vercel`,

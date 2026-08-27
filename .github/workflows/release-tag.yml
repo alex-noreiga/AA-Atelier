@@ -2,8 +2,8 @@ name: Tag release
 
 # Every push to the production branch gets an annotated version tag plus a
 # GitHub Release whose notes list the PRs since the previous tag — i.e. what
-# this promotion actually shipped. Tags are the rollback points: see
-# BRANCHING.md ("Versions & rolling back").
+# this promotion actually shipped. Tags are the rollback points: revert the
+# offending merge on release, or restore a tag's tree as a new commit.
 #
 # The tag scheme is CalVer in the studio's timezone — v2026.08.27, with a
 # .2 / .3 suffix when the same day ships more than once.

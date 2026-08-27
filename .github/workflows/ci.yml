@@ -2,8 +2,8 @@ name: CI
 
 on:
   push:
-    # release is the production branch (see BRANCHING.md); a promotion or
-    # hotfix push there gets the same checks as main.
+    # release is the production branch; a promotion or hotfix push there
+    # gets the same checks as main.
     branches: [main, release]
   pull_request:
 
