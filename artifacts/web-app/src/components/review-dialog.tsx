@@ -16,6 +16,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { ReferenceImageUpload } from "@/components/reference-image-upload";
+import { StarRatingInput } from "@/components/star-rating-input";
 import {
   useRequestDialog,
   REQUEST_FORM_INPUT_CLASS,
@@ -204,34 +205,13 @@ export function ReviewDialog({ orderNumber }: ReviewDialogProps) {
                   <Label className="text-sm font-light tracking-wide">
                     Your rating <span className="text-primary">*</span>
                   </Label>
-                  <div
-                    className="mt-2 flex items-center gap-1"
-                    role="radiogroup"
-                    aria-label="Star rating"
-                  >
-                    {[1, 2, 3, 4, 5].map((value) => (
-                      <button
-                        key={value}
-                        type="button"
-                        onClick={() =>
-                          setValue("rating", value, { shouldValidate: true })
-                        }
-                        aria-label={`${value} star${value === 1 ? "" : "s"}`}
-                        aria-pressed={rating >= value}
-                        data-testid={`review-rating-${value}`}
-                        className="p-1 text-muted-foreground/40 hover:text-primary transition-colors"
-                      >
-                        <Star
-                          className={`w-7 h-7 transition-colors ${
-                            rating >= value
-                              ? "fill-primary text-primary"
-                              : "fill-transparent"
-                          }`}
-                          strokeWidth={1.5}
-                        />
-                      </button>
-                    ))}
-                  </div>
+                  <StarRatingInput
+                    value={rating}
+                    onChange={(value) =>
+                      setValue("rating", value, { shouldValidate: true })
+                    }
+                    idPrefix="review-rating"
+                  />
                   {errors.rating && (
                     <p className="text-destructive text-xs mt-1">
                       {errors.rating.message}

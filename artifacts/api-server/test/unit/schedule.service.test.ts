@@ -545,6 +545,7 @@ describe("reconcileMilestones", () => {
       appointmentRemindersSent: 1,
       materialsDigestItems: 0,
       cartRemindersSent: 2,
+      instagramTokenRefreshed: false,
     });
   });
 });

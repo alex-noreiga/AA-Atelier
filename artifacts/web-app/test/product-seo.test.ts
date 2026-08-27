@@ -218,3 +218,45 @@ describe("productTitle / productUrl", () => {
     expect(productUrl(product())).toBe(`${SITE_ORIGIN}/shop/abc`);
   });
 });
+
+// A star rating in a search result is a claim about real customers, so the tag
+// is emitted only when there are real customers behind it.
+describe("productJsonLd — aggregateRating", () => {
+  it("publishes the rating a piece actually has", () => {
+    const json = productJsonLd(
+      product({ rating: { average: 4.7, count: 12, reviews: [] } }),
+    );
+
+    expect(json.aggregateRating).toEqual({
+      "@type": "AggregateRating",
+      ratingValue: 4.7,
+      reviewCount: 12,
+      bestRating: 5,
+      worstRating: 1,
+    });
+  });
+
+  it("omits the tag entirely for a piece with no reviews", () => {
+    expect(productJsonLd(product())).not.toHaveProperty("aggregateRating");
+  });
+
+  // A zero rating over zero reviews is both invalid and a policy violation.
+  it("omits the tag rather than publishing a zero count", () => {
+    const json = productJsonLd(
+      product({ rating: { average: 0, count: 0, reviews: [] } }),
+    );
+
+    expect(json).not.toHaveProperty("aggregateRating");
+  });
+
+  // The server rounds once, so the page and the crawler read the same number.
+  it("publishes the average verbatim, without re-rounding it", () => {
+    const json = productJsonLd(
+      product({ rating: { average: 4.5, count: 2, reviews: [] } }),
+    );
+
+    expect((json.aggregateRating as { ratingValue: number }).ratingValue).toBe(
+      4.5,
+    );
+  });
+});

@@ -511,6 +511,11 @@ export interface OrderStageNotification {
   stages: string[];
   /** The furthest stage already emailed about; empty when never notified. */
   lastNotifiedStage: string;
+  /** The `Cancelled` checkbox. The notification path doesn't read it (a
+   * cancelled order's stage rarely moves, and the webhook would rather log than
+   * refuse); the dashboard's stage write does, because moving a cancelled order
+   * along changes nothing the customer can see. */
+  cancelled: boolean;
   estimatedCompletion?: string;
   /** The raw `Service` property value, for the payment-reminder email's stage
    * wording (`services/payment-labels.ts`) — this record is how that pass
@@ -534,6 +539,7 @@ function buildStageNotification(
     currentStage: extractCurrentStage(page),
     stages: pipelineFor(page, stages),
     lastNotifiedStage: extractLastNotifiedStage(page),
+    cancelled: extractCancelled(page),
     ...(estimatedCompletion !== undefined ? { estimatedCompletion } : {}),
     ...(service !== undefined ? { service } : {}),
   };
@@ -643,6 +649,98 @@ export async function updateLastNotifiedStage(
     const errorText = await response.text();
     throw new Error(
       `Notion last-notified-stage update failed with status ${response.status}: ${errorText}`,
+    );
+  }
+}
+
+/**
+ * Every custom order still being made, for the dashboard's stage board.
+ *
+ * Deliberately a *filtered* query rather than the analytics' full scan, for the
+ * same reason as {@link listOpenOrderServices}: the board is about the work in
+ * hand, so asking Notion for the orders that are neither cancelled nor at their
+ * final stage bounds the read by the studio's real open workload rather than by
+ * every order ever placed. The two terminal conditions mirror
+ * `orderLifecycleState` exactly, and the final stage is the *superset's* — every
+ * service's pipeline is a subsequence ending there — so a repair counts as open
+ * until it is delivered, just like a commission.
+ *
+ * Rows come back as the same {@link OrderStageNotification} the status-change
+ * webhook reads, because the board needs precisely what a notification needs:
+ * the page id to write to, the order's own pipeline, the current stage, and the
+ * marker saying how far the customer has been told. The email rides along and is
+ * dropped at the service boundary — a stage board has no use for the address.
+ *
+ * A stage list that comes back empty (a Notion hiccup on the schema read) drops
+ * the stage half of the filter rather than guessing a name: the board then also
+ * lists delivered orders, which is visibly wrong rather than silently short.
+ */
+export async function listOrdersForStageBoard(
+  client: NotionClient = getNotionClient(),
+): Promise<OrderStageNotification[]> {
+  assertConfigured(client);
+
+  const stages = await fetchLiveOrderStages(client);
+  const finalStage = stages[stages.length - 1];
+
+  const conditions: Record<string, unknown>[] = [
+    // An absent checkbox reads as false, so this matches the orders of a
+    // workspace that hasn't added the property as well as the un-cancelled ones
+    // of a workspace that has.
+    { property: ORDER_CANCELLED_PROPERTY, checkbox: { equals: false } },
+  ];
+  if (finalStage) {
+    // "Stage" is a Notion `status` property, not a select — see
+    // `.agents/memory/notion-status-filters.md`.
+    conditions.push({
+      property: ORDER_STAGE_PROPERTY,
+      status: { does_not_equal: finalStage },
+    });
+  }
+
+  const rows = await scanDatabase<NotionOrderPage>(
+    client,
+    "open orders (stage board)",
+    { filter: { and: conditions } },
+  );
+
+  return rows.map((page) => buildStageNotification(page, stages));
+}
+
+/**
+ * Move an order to a stage.
+ *
+ * `Stage` is a Notion **status** property, so the write is `status: { name }`
+ * and not `select` — and, unlike a select, Notion will **not create a missing
+ * option**: a name that isn't already on the database answers 400. That is why
+ * the caller validates the target against the order's own live pipeline first;
+ * this layer reports the failure rather than papering over it, since a stage
+ * that silently didn't move is the one way this can be wrong invisibly.
+ *
+ * Writing the same stage again is harmless, so it is idempotent — but the
+ * caller skips that case anyway, because an unchanged stage is also nothing to
+ * email about.
+ */
+export async function updateOrderStage(
+  pageId: string,
+  stage: string,
+  client: NotionClient = getNotionClient(),
+): Promise<void> {
+  assertConfigured(client);
+
+  const response = await client.fetch(`/v1/pages/${pageId}`, {
+    method: "PATCH",
+    body: JSON.stringify({
+      properties: {
+        [ORDER_STAGE_PROPERTY]: { status: { name: stage } },
+      },
+    }),
+  });
+
+  if (!response.ok) {
+    const errorText = await response.text();
+    throw new Error(
+      `Notion stage update failed with status ${response.status}: ${errorText}`,
     );
   }
 }

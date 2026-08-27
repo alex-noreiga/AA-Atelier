@@ -42,6 +42,7 @@ function order(
     currentStage: "Sketching",
     stages: ["Consultation", "Sketching", "Sewing/Construction", "Delivery"],
     lastNotifiedStage: "Consultation",
+    cancelled: false,
     ...overrides,
   };
 }

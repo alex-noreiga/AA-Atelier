@@ -28,6 +28,7 @@ import type {
   AppointmentOptions,
   AppointmentStaffing,
   AppointmentStaffingRequest,
+  BuyShippingLabelRequest,
   CancelAppointmentRequest,
   CapacityStatus,
   CheckoutSessionResponse,
@@ -39,6 +40,7 @@ import type {
   GetAppointmentParams,
   GetPublishedReviewsParams,
   HealthStatus,
+  InstagramFeed,
   MaterialsOverview,
   MessageResponse,
   NewAccountDeletionRequest,
@@ -62,21 +64,28 @@ import type {
   NewReturnResponse,
   NewReviewRequest,
   NewReviewResponse,
+  NewShopReviewRequest,
   NewWaitlistRequest,
   NewWaitlistResponse,
   NewsletterSignup,
   NewsletterSignupList,
   OrderNotFound,
+  OrderStageChange,
+  OrderStageRequest,
   OrderStatus,
   PaymentSessionResponse,
   PortfolioList,
   ProductList,
   ProductionPayOverview,
+  PurchasedLabel,
   RequestStateRequest,
   RescheduleAppointmentRequest,
   ReviewList,
   ReviewStatusRequest,
   ServiceList,
+  ShippingOptions,
+  ShippingRates,
+  ShippingRatesRequest,
   ShopOrderStatus,
   StaffAvailabilityEntry,
   StaffAvailabilityList,
@@ -85,6 +94,7 @@ import type {
   StudioAnalytics,
   StudioGuideContent,
   StudioGuideList,
+  StudioOrderBoard,
   StudioRequest,
   StudioRequestList,
   StudioReview,
@@ -1318,6 +1328,86 @@ export function useGetPortfolio<TData = Awaited<ReturnType<typeof getPortfolio>>
 
 
 
+export const getGetInstagramFeedUrl = () => {
+
+
+
+
+  return `/api/instagram`
+}
+
+/**
+ * Returns the studio account's most recent posts, newest first, for the social-proof strip on the home and shop pages. Read-only and anonymous.
+ * A post that shows a piece the shop sells carries that piece's shop card id, which is how the strip becomes shoppable: the atelier records the post's URL on the inventory row it photographed, and the join is made here rather than guessed from the caption. A post with no such record simply links out to Instagram.
+ * Degrades to an empty list rather than an error whenever the feed cannot be read — the integration isn't configured, the access token has expired, or Instagram is down — because this is a garnish on pages that must stand without it. Clients render nothing when the list is empty.
+ * @summary List the studio's recent Instagram posts
+ */
+export const getInstagramFeed = async ( options?: Parameters<typeof customFetch>[1]): Promise<InstagramFeed> => {
+
+  return customFetch<InstagramFeed>(getGetInstagramFeedUrl(),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
+
+
+
+
+export const getGetInstagramFeedQueryKey = () => {
+    return [
+    `/api/instagram`
+    ] as const;
+    }
+
+
+export const getGetInstagramFeedQueryOptions = <TData = Awaited<ReturnType<typeof getInstagramFeed>>, TError = ErrorType<ErrorEnvelope>>( options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getInstagramFeed>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getGetInstagramFeedQueryKey();
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof getInstagramFeed>>> = ({ signal }) => getInstagramFeed({ signal, ...requestOptions });
+
+
+
+
+
+   return  { queryKey, queryFn, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof getInstagramFeed>>, TError, TData> & { queryKey: QueryKey }
+}
+
+export type GetInstagramFeedQueryResult = NonNullable<Awaited<ReturnType<typeof getInstagramFeed>>>
+export type GetInstagramFeedQueryError = ErrorType<ErrorEnvelope>
+
+
+/**
+ * @summary List the studio's recent Instagram posts
+ */
+
+export function useGetInstagramFeed<TData = Awaited<ReturnType<typeof getInstagramFeed>>, TError = ErrorType<ErrorEnvelope>>(
+  options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getInstagramFeed>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+
+ ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+
+  const queryOptions = getGetInstagramFeedQueryOptions(options)
+
+  const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
+
+  return withQueryKey(query, queryOptions.queryKey);
+}
+
+
+
+
+
+
+
 export const getGetColorsUrl = () => {
 
 
@@ -1931,6 +2021,79 @@ export const useCreateReturnRequest = <TError = ErrorType<ErrorEnvelope | OrderN
         TContext
       > => {
       return useMutation(getCreateReturnRequestMutationOptions(options));
+    }
+
+export const getCreateShopOrderReviewUrl = (orderNumber: string,) => {
+
+
+
+
+  return `/api/shop-orders/${orderNumber}/reviews`
+}
+
+/**
+ * Captures a customer's review of a ready-to-wear piece they bought — a star rating, a short testimonial, an optional display name and photos — once their shop order has reached its final fulfilment status. The review names ONE piece from the order (`productId`, an inventory row id served on the order's `items`), which is what gives a shop piece an average to show; a piece that isn't on the order is rejected. The customer is verified against the email on the order. Accepted reviews land in the same Notion reviews database the custom-order reviews use, with the same "New" status, so the atelier curates them in one queue. Photos are uploaded ahead of time via POST /orders/reference-images; their file_upload ids are passed as photoIds.
+ * @summary Review one piece from a shop order
+ */
+export const createShopOrderReview = async (orderNumber: string,
+    newShopReviewRequest: NewShopReviewRequest, options?: Parameters<typeof customFetch>[1]): Promise<NewReviewResponse> => {
+
+  return customFetch<NewReviewResponse>(getCreateShopOrderReviewUrl(orderNumber),
+  {
+    ...options,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    body: JSON.stringify(newShopReviewRequest)
+  }
+);}
+
+
+
+
+
+export const getCreateShopOrderReviewMutationOptions = <TError = ErrorType<ErrorEnvelope | OrderNotFound>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof createShopOrderReview>>, TError,{orderNumber: string;data: BodyType<NewShopReviewRequest>}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof createShopOrderReview>>, TError,{orderNumber: string;data: BodyType<NewShopReviewRequest>}, TContext> => {
+
+const mutationKey = ['createShopOrderReview'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof createShopOrderReview>>, {orderNumber: string;data: BodyType<NewShopReviewRequest>}> = (props) => {
+          const {orderNumber,data} = props ?? {};
+
+          return  createShopOrderReview(orderNumber,data,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type CreateShopOrderReviewMutationResult = NonNullable<Awaited<ReturnType<typeof createShopOrderReview>>>
+    export type CreateShopOrderReviewMutationBody = BodyType<NewShopReviewRequest>
+    export type CreateShopOrderReviewMutationError = ErrorType<ErrorEnvelope | OrderNotFound>
+
+    /**
+ * @summary Review one piece from a shop order
+ */
+export const useCreateShopOrderReview = <TError = ErrorType<ErrorEnvelope | OrderNotFound>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof createShopOrderReview>>, TError,{orderNumber: string;data: BodyType<NewShopReviewRequest>}, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof createShopOrderReview>>,
+        TError,
+        {orderNumber: string;data: BodyType<NewShopReviewRequest>},
+        TContext
+      > => {
+      return useMutation(getCreateShopOrderReviewMutationOptions(options));
     }
 
 export const getGetAppointmentOptionsUrl = () => {
@@ -3082,6 +3245,167 @@ export function useGetStudioAnalytics<TData = Awaited<ReturnType<typeof getStudi
 
 
 
+export const getListStudioOrdersUrl = () => {
+
+
+
+
+  return `/api/studio/orders`
+}
+
+/**
+ * The orders still being made, each with the stage it is at and the pipeline its own service walks — the read half of advancing a stage from the dashboard.
+ *
+ * Deliberately a *filtered* query rather than the analytics' full scan: it asks Notion for the orders that are neither cancelled nor at their final stage, so what comes back is bounded by the studio's real open workload rather than by every order ever placed. The two terminal conditions mirror `orderLifecycleState` exactly.
+ *
+ * The customer's email address is never returned — the board only needs to know whether there is one to write to, which is what `notifiable` carries.
+ * @summary Where every open custom order has got to
+ */
+export const listStudioOrders = async ( options?: Parameters<typeof customFetch>[1]): Promise<StudioOrderBoard> => {
+
+  return customFetch<StudioOrderBoard>(getListStudioOrdersUrl(),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
+
+
+
+
+export const getListStudioOrdersQueryKey = () => {
+    return [
+    `/api/studio/orders`
+    ] as const;
+    }
+
+
+export const getListStudioOrdersQueryOptions = <TData = Awaited<ReturnType<typeof listStudioOrders>>, TError = ErrorType<ErrorEnvelope | OrderNotFound>>( options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof listStudioOrders>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getListStudioOrdersQueryKey();
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof listStudioOrders>>> = ({ signal }) => listStudioOrders({ signal, ...requestOptions });
+
+
+
+
+
+   return  { queryKey, queryFn, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof listStudioOrders>>, TError, TData> & { queryKey: QueryKey }
+}
+
+export type ListStudioOrdersQueryResult = NonNullable<Awaited<ReturnType<typeof listStudioOrders>>>
+export type ListStudioOrdersQueryError = ErrorType<ErrorEnvelope | OrderNotFound>
+
+
+/**
+ * @summary Where every open custom order has got to
+ */
+
+export function useListStudioOrders<TData = Awaited<ReturnType<typeof listStudioOrders>>, TError = ErrorType<ErrorEnvelope | OrderNotFound>>(
+  options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof listStudioOrders>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+
+ ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+
+  const queryOptions = getListStudioOrdersQueryOptions(options)
+
+  const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
+
+  return withQueryKey(query, queryOptions.queryKey);
+}
+
+
+
+
+
+
+
+export const getSetStudioOrderStageUrl = (orderNumber: string,) => {
+
+
+
+
+  return `/api/studio/orders/${orderNumber}/stage`
+}
+
+/**
+ * Writes one custom order's `Stage` and, unless asked not to, emails the customer the same status update the Notion automation's webhook sends — so advancing an order is one action on the dashboard rather than an edit in Notion that a webhook has to notice.
+ *
+ * The send is not duplicated: it runs through the same notifier as the webhook, which re-reads the order, applies the same forward-only gate, and advances the same `Last Notified Stage` high-water marker. If the Notion automation is also wired up it will fire on this write, find the marker already at the new stage, and send nothing.
+ *
+ * `stage` must be one of the stages the order's own service walks — moving a repair to `Sketching` is refused with a 400. A stage BEHIND the current one is allowed (that is how a mis-click is corrected) and never emails, because the notifier only sends on forward movement.
+ *
+ * `notify: false` advances the marker without sending, so a stage the atelier chose not to announce stays unannounced even if the Notion automation is still wired. The customer is still emailed about the next forward move.
+ * @summary Move an order to a stage, and tell the customer
+ */
+export const setStudioOrderStage = async (orderNumber: string,
+    orderStageRequest: OrderStageRequest, options?: Parameters<typeof customFetch>[1]): Promise<OrderStageChange> => {
+
+  return customFetch<OrderStageChange>(getSetStudioOrderStageUrl(orderNumber),
+  {
+    ...options,
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    body: JSON.stringify(orderStageRequest)
+  }
+);}
+
+
+
+
+
+export const getSetStudioOrderStageMutationOptions = <TError = ErrorType<ErrorEnvelope | OrderNotFound>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof setStudioOrderStage>>, TError,{orderNumber: string;data: BodyType<OrderStageRequest>}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof setStudioOrderStage>>, TError,{orderNumber: string;data: BodyType<OrderStageRequest>}, TContext> => {
+
+const mutationKey = ['setStudioOrderStage'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof setStudioOrderStage>>, {orderNumber: string;data: BodyType<OrderStageRequest>}> = (props) => {
+          const {orderNumber,data} = props ?? {};
+
+          return  setStudioOrderStage(orderNumber,data,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type SetStudioOrderStageMutationResult = NonNullable<Awaited<ReturnType<typeof setStudioOrderStage>>>
+    export type SetStudioOrderStageMutationBody = BodyType<OrderStageRequest>
+    export type SetStudioOrderStageMutationError = ErrorType<ErrorEnvelope | OrderNotFound>
+
+    /**
+ * @summary Move an order to a stage, and tell the customer
+ */
+export const useSetStudioOrderStage = <TError = ErrorType<ErrorEnvelope | OrderNotFound>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof setStudioOrderStage>>, TError,{orderNumber: string;data: BodyType<OrderStageRequest>}, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof setStudioOrderStage>>,
+        TError,
+        {orderNumber: string;data: BodyType<OrderStageRequest>},
+        TContext
+      > => {
+      return useMutation(getSetStudioOrderStageMutationOptions(options));
+    }
+
 export const getRunStudioToolUrl = (tool: StudioTool,) => {
 
 
@@ -3241,6 +3565,240 @@ export function useGetStudioProductionPay<TData = Awaited<ReturnType<typeof getS
 
 
 
+
+export const getGetShippingOptionsUrl = () => {
+
+
+
+
+  return `/api/studio/shipments/options`
+}
+
+/**
+ * The studio's packaging sizes, its ship-from address, and whether a label can be bought at all. Read before anything is asked for, so an unset vendor token or a half-filled ship-from address is said plainly on the panel rather than surfacing as an opaque carrier rejection at the point of sale.
+ *
+ * Reports rather than throws: both failures are states only a human can clear, and a panel that errors on load can't tell anyone which one it is. `problems` is empty when the panel is ready to use.
+ *
+ * `testMode` is load-bearing rather than diagnostic. A test label has a tracking number, a PDF and a price, and no carrier has ever heard of it — an atelier who sticks one on a parcel finds out when the customer doesn't get their dress.
+ * @summary What the label panel can do, and what's stopping it
+ */
+export const getShippingOptions = async ( options?: Parameters<typeof customFetch>[1]): Promise<ShippingOptions> => {
+
+  return customFetch<ShippingOptions>(getGetShippingOptionsUrl(),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
+
+
+
+
+export const getGetShippingOptionsQueryKey = () => {
+    return [
+    `/api/studio/shipments/options`
+    ] as const;
+    }
+
+
+export const getGetShippingOptionsQueryOptions = <TData = Awaited<ReturnType<typeof getShippingOptions>>, TError = ErrorType<ErrorEnvelope>>( options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getShippingOptions>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getGetShippingOptionsQueryKey();
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof getShippingOptions>>> = ({ signal }) => getShippingOptions({ signal, ...requestOptions });
+
+
+
+
+
+   return  { queryKey, queryFn, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof getShippingOptions>>, TError, TData> & { queryKey: QueryKey }
+}
+
+export type GetShippingOptionsQueryResult = NonNullable<Awaited<ReturnType<typeof getShippingOptions>>>
+export type GetShippingOptionsQueryError = ErrorType<ErrorEnvelope>
+
+
+/**
+ * @summary What the label panel can do, and what's stopping it
+ */
+
+export function useGetShippingOptions<TData = Awaited<ReturnType<typeof getShippingOptions>>, TError = ErrorType<ErrorEnvelope>>(
+  options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getShippingOptions>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+
+ ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+
+  const queryOptions = getGetShippingOptionsQueryOptions(options)
+
+  const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
+
+  return withQueryKey(query, queryOptions.queryKey);
+}
+
+
+
+
+
+
+
+export const getGetShippingRatesUrl = () => {
+
+
+
+
+  return `/api/studio/shipments/rates`
+}
+
+/**
+ * Quotes a parcel for one shop order across the carriers the studio has connected. Reads and quotes; buys nothing — the purchase is the separate operation below, because a label has a carrier, a service level and a price, and the difference between two of them is three days and eleven dollars. A one-press "buy the cheapest" would put a ground label on a dress needed on Saturday.
+ *
+ * The ship-to address comes from the order's **Stripe checkout**, never from the one-line `Shipping Address` on the Notion order: that line was assembled for a human to read, and parsing it back into components is guesswork that ends in a parcel not arriving. It is returned as envelope lines so a wrong address is caught by eye before it is paid for.
+ *
+ * Rates come back cheapest first, and an empty list is a legitimate answer — no connected carrier will take this parcel to this address — with the carrier's own explanation in `notes`.
+ * @summary What it would cost to post one shop order
+ */
+export const getShippingRates = async (shippingRatesRequest: ShippingRatesRequest, options?: Parameters<typeof customFetch>[1]): Promise<ShippingRates> => {
+
+  return customFetch<ShippingRates>(getGetShippingRatesUrl(),
+  {
+    ...options,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    body: JSON.stringify(shippingRatesRequest)
+  }
+);}
+
+
+
+
+
+export const getGetShippingRatesMutationOptions = <TError = ErrorType<ErrorEnvelope | OrderNotFound>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof getShippingRates>>, TError,{data: BodyType<ShippingRatesRequest>}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof getShippingRates>>, TError,{data: BodyType<ShippingRatesRequest>}, TContext> => {
+
+const mutationKey = ['getShippingRates'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof getShippingRates>>, {data: BodyType<ShippingRatesRequest>}> = (props) => {
+          const {data} = props ?? {};
+
+          return  getShippingRates(data,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type GetShippingRatesMutationResult = NonNullable<Awaited<ReturnType<typeof getShippingRates>>>
+    export type GetShippingRatesMutationBody = BodyType<ShippingRatesRequest>
+    export type GetShippingRatesMutationError = ErrorType<ErrorEnvelope | OrderNotFound>
+
+    /**
+ * @summary What it would cost to post one shop order
+ */
+export const useGetShippingRates = <TError = ErrorType<ErrorEnvelope | OrderNotFound>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof getShippingRates>>, TError,{data: BodyType<ShippingRatesRequest>}, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof getShippingRates>>,
+        TError,
+        {data: BodyType<ShippingRatesRequest>},
+        TContext
+      > => {
+      return useMutation(getGetShippingRatesMutationOptions(options));
+    }
+
+export const getBuyShippingLabelUrl = () => {
+
+
+
+
+  return `/api/studio/shipments/label`
+}
+
+/**
+ * Buys the rate the atelier picked and writes its carrier, tracking number and tracking URL onto the shop order — the three columns that were the last thing on an order still copied by hand from a second website into a third. Everything downstream already reads them, so the customer's tracking page fills itself.
+ *
+ * **This spends money and is not idempotent at the vendor**, which is why the ORDER is the guard: one that already carries a tracking number is refused with 409 unless `replace` is set, which the dashboard confirms.
+ *
+ * `recorded: false` means the label was bought and Notion refused the write. The response still carries the tracking number and the label URL, because throwing would lose a label the studio has already paid for — the purchase outranks its bookkeeping. The dashboard says to paste the number onto the order by hand.
+ * @summary Buy a chosen rate as a label
+ */
+export const buyShippingLabel = async (buyShippingLabelRequest: BuyShippingLabelRequest, options?: Parameters<typeof customFetch>[1]): Promise<PurchasedLabel> => {
+
+  return customFetch<PurchasedLabel>(getBuyShippingLabelUrl(),
+  {
+    ...options,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    body: JSON.stringify(buyShippingLabelRequest)
+  }
+);}
+
+
+
+
+
+export const getBuyShippingLabelMutationOptions = <TError = ErrorType<ErrorEnvelope | OrderNotFound>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof buyShippingLabel>>, TError,{data: BodyType<BuyShippingLabelRequest>}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof buyShippingLabel>>, TError,{data: BodyType<BuyShippingLabelRequest>}, TContext> => {
+
+const mutationKey = ['buyShippingLabel'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof buyShippingLabel>>, {data: BodyType<BuyShippingLabelRequest>}> = (props) => {
+          const {data} = props ?? {};
+
+          return  buyShippingLabel(data,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type BuyShippingLabelMutationResult = NonNullable<Awaited<ReturnType<typeof buyShippingLabel>>>
+    export type BuyShippingLabelMutationBody = BodyType<BuyShippingLabelRequest>
+    export type BuyShippingLabelMutationError = ErrorType<ErrorEnvelope | OrderNotFound>
+
+    /**
+ * @summary Buy a chosen rate as a label
+ */
+export const useBuyShippingLabel = <TError = ErrorType<ErrorEnvelope | OrderNotFound>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof buyShippingLabel>>, TError,{data: BodyType<BuyShippingLabelRequest>}, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof buyShippingLabel>>,
+        TError,
+        {data: BodyType<BuyShippingLabelRequest>},
+        TContext
+      > => {
+      return useMutation(getBuyShippingLabelMutationOptions(options));
+    }
 
 export const getGetStudioMaterialsUrl = () => {
 

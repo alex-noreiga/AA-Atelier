@@ -34,6 +34,8 @@ tags:
     description: Published customer testimonials, curated by the atelier
   - name: portfolio
     description: The atelier's published portfolio of finished work and sketches
+  - name: instagram
+    description: The studio's recent Instagram posts, shown as social proof
   - name: services
     description: The intake service catalog a custom order is placed against
   - name: capacity
@@ -686,6 +688,38 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/ErrorEnvelope"
+  /instagram:
+    get:
+      operationId: getInstagramFeed
+      tags: [instagram]
+      summary: List the studio's recent Instagram posts
+      description: >-
+        Returns the studio account's most recent posts, newest first, for the
+        social-proof strip on the home and shop pages. Read-only and anonymous.
+
+        A post that shows a piece the shop sells carries that piece's shop card
+        id, which is how the strip becomes shoppable: the atelier records the
+        post's URL on the inventory row it photographed, and the join is made
+        here rather than guessed from the caption. A post with no such record
+        simply links out to Instagram.
+
+        Degrades to an empty list rather than an error whenever the feed cannot
+        be read — the integration isn't configured, the access token has
+        expired, or Instagram is down — because this is a garnish on pages that
+        must stand without it. Clients render nothing when the list is empty.
+      responses:
+        "200":
+          description: Recent posts, newest first
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/InstagramFeed"
+        "500":
+          description: Server error
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorEnvelope"
   /colors:
     get:
       operationId: getColors
@@ -972,6 +1006,75 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/OrderNotFound"
+        "500":
+          description: Server error
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorEnvelope"
+  /shop-orders/{orderNumber}/reviews:
+    post:
+      operationId: createShopOrderReview
+      tags: [checkout]
+      summary: Review one piece from a shop order
+      description: >-
+        Captures a customer's review of a ready-to-wear piece they bought — a
+        star rating, a short testimonial, an optional display name and photos —
+        once their shop order has reached its final fulfilment status. The
+        review names ONE piece from the order (`productId`, an inventory row id
+        served on the order's `items`), which is what gives a shop piece an
+        average to show; a piece that isn't on the order is rejected. The
+        customer is verified against the email on the order. Accepted reviews
+        land in the same Notion reviews database the custom-order reviews use,
+        with the same "New" status, so the atelier curates them in one queue.
+        Photos are uploaded ahead of time via POST /orders/reference-images;
+        their file_upload ids are passed as photoIds.
+      parameters:
+        - name: orderNumber
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/NewShopReviewRequest"
+      responses:
+        "201":
+          description: Review received
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/NewReviewResponse"
+        "400":
+          description: >-
+            Validation error, or the named piece is not on this order
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorEnvelope"
+        "403":
+          description: The email does not match the one on the order
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorEnvelope"
+        "404":
+          description: No shop order with that number
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/OrderNotFound"
+        "409":
+          description: >-
+            The order has not been delivered yet (or was cancelled), so it can't
+            be reviewed
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorEnvelope"
         "500":
           description: Server error
           content:
@@ -1734,6 +1837,161 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/ErrorEnvelope"
+  /studio/orders:
+    get:
+      operationId: listStudioOrders
+      tags: [studio]
+      summary: Where every open custom order has got to
+      description: >-
+        The orders still being made, each with the stage it is at and the
+        pipeline its own service walks — the read half of advancing a stage from
+        the dashboard.
+
+
+        Deliberately a *filtered* query rather than the analytics' full scan: it
+        asks Notion for the orders that are neither cancelled nor at their final
+        stage, so what comes back is bounded by the studio's real open workload
+        rather than by every order ever placed. The two terminal conditions
+        mirror `orderLifecycleState` exactly.
+
+
+        The customer's email address is never returned — the board only needs to
+        know whether there is one to write to, which is what `notifiable`
+        carries.
+      security:
+        - bearerAuth: []
+      responses:
+        "200":
+          description: The open orders, nearest due date first
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/StudioOrderBoard"
+        "401":
+          description: Not signed in (missing or expired session)
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorEnvelope"
+        "403":
+          description: >-
+            A studio account whose session wasn't established with Google (the
+            default policy).
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorEnvelope"
+        "404":
+          description: >-
+            Signed in, but not a studio account — the same answer a URL that
+            doesn't exist gets (see the other studio operations).
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/OrderNotFound"
+        "500":
+          description: Server error
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorEnvelope"
+  /studio/orders/{orderNumber}/stage:
+    put:
+      operationId: setStudioOrderStage
+      tags: [studio]
+      summary: Move an order to a stage, and tell the customer
+      description: >-
+        Writes one custom order's `Stage` and, unless asked not to, emails the
+        customer the same status update the Notion automation's webhook sends —
+        so advancing an order is one action on the dashboard rather than an edit
+        in Notion that a webhook has to notice.
+
+
+        The send is not duplicated: it runs through the same notifier as the
+        webhook, which re-reads the order, applies the same forward-only gate,
+        and advances the same `Last Notified Stage` high-water marker. If the
+        Notion automation is also wired up it will fire on this write, find the
+        marker already at the new stage, and send nothing.
+
+
+        `stage` must be one of the stages the order's own service walks —
+        moving a repair to `Sketching` is refused with a 400. A stage BEHIND
+        the current one is allowed (that is how a mis-click is corrected) and
+        never emails, because the notifier only sends on forward movement.
+
+
+        `notify: false` advances the marker without sending, so a stage the
+        atelier chose not to announce stays unannounced even if the Notion
+        automation is still wired. The customer is still emailed about the next
+        forward move.
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: orderNumber
+          in: path
+          required: true
+          schema:
+            type: string
+            maxLength: 64
+          description: The custom order's number, e.g. `ORD-000002`.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/OrderStageRequest"
+      responses:
+        "200":
+          description: The order as it now stands, and what the email did
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/OrderStageChange"
+        "400":
+          description: >-
+            Not a stage this order's service walks, or an empty stage name
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorEnvelope"
+        "401":
+          description: Not signed in (missing or expired session)
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorEnvelope"
+        "403":
+          description: >-
+            A studio account whose session wasn't established with Google (the
+            default policy).
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorEnvelope"
+        "404":
+          description: >-
+            No order matches that number — or the caller isn't a studio account,
+            which answers identically by design (see the other studio
+            operations).
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/OrderNotFound"
+        "409":
+          description: >-
+            The order is cancelled. Its tracking page shows a cancelled banner
+            rather than a timeline, so moving it along would be a change nobody
+            can see.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorEnvelope"
+        "500":
+          description: Server error
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorEnvelope"
   /studio/tools/{tool}:
     post:
       operationId: runStudioTool
@@ -1878,6 +2136,225 @@ paths:
           description: >-
             Signed in, but not a studio account — the same answer a URL that
             doesn't exist gives, by design.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorEnvelope"
+        "500":
+          description: Server error
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorEnvelope"
+  /studio/shipments/options:
+    get:
+      operationId: getShippingOptions
+      tags: [studio]
+      summary: What the label panel can do, and what's stopping it
+      description: >-
+        The studio's packaging sizes, its ship-from address, and whether a label
+        can be bought at all. Read before anything is asked for, so an unset
+        vendor token or a half-filled ship-from address is said plainly on the
+        panel rather than surfacing as an opaque carrier rejection at the point
+        of sale.
+
+
+        Reports rather than throws: both failures are states only a human can
+        clear, and a panel that errors on load can't tell anyone which one it
+        is. `problems` is empty when the panel is ready to use.
+
+
+        `testMode` is load-bearing rather than diagnostic. A test label has a
+        tracking number, a PDF and a price, and no carrier has ever heard of it
+        — an atelier who sticks one on a parcel finds out when the customer
+        doesn't get their dress.
+      security:
+        - bearerAuth: []
+      responses:
+        "200":
+          description: The panel's readiness and the packaging catalog
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ShippingOptions"
+        "401":
+          description: Not signed in (missing or expired session)
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorEnvelope"
+        "403":
+          description: A studio account whose session wasn't established with Google
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorEnvelope"
+        "404":
+          description: The caller isn't a studio account
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorEnvelope"
+        "500":
+          description: Server error
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorEnvelope"
+  /studio/shipments/rates:
+    post:
+      operationId: getShippingRates
+      tags: [studio]
+      summary: What it would cost to post one shop order
+      description: >-
+        Quotes a parcel for one shop order across the carriers the studio has
+        connected. Reads and quotes; buys nothing — the purchase is the separate
+        operation below, because a label has a carrier, a service level and a
+        price, and the difference between two of them is three days and eleven
+        dollars. A one-press "buy the cheapest" would put a ground label on a
+        dress needed on Saturday.
+
+
+        The ship-to address comes from the order's **Stripe checkout**, never
+        from the one-line `Shipping Address` on the Notion order: that line was
+        assembled for a human to read, and parsing it back into components is
+        guesswork that ends in a parcel not arriving. It is returned as envelope
+        lines so a wrong address is caught by eye before it is paid for.
+
+
+        Rates come back cheapest first, and an empty list is a legitimate answer
+        — no connected carrier will take this parcel to this address — with the
+        carrier's own explanation in `notes`.
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ShippingRatesRequest"
+      responses:
+        "200":
+          description: The quoted rates, cheapest first
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ShippingRates"
+        "400":
+          description: >-
+            The parcel size isn't one of the studio's, the weight is missing or
+            implausible, or the order number isn't a shop order's
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorEnvelope"
+        "401":
+          description: Not signed in (missing or expired session)
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorEnvelope"
+        "403":
+          description: A studio account whose session wasn't established with Google
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorEnvelope"
+        "404":
+          description: >-
+            No shop order matches that number — or the caller isn't a studio
+            account, which answers identically by design
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/OrderNotFound"
+        "409":
+          description: >-
+            Nothing is wrong with the request, but this order can't be posted:
+            no vendor is connected, the studio's ship-from address is
+            incomplete, the order is cancelled or being collected in person, or
+            it wasn't paid through the website and so has no address on file
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorEnvelope"
+        "500":
+          description: Server error
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorEnvelope"
+  /studio/shipments/label:
+    post:
+      operationId: buyShippingLabel
+      tags: [studio]
+      summary: Buy a chosen rate as a label
+      description: >-
+        Buys the rate the atelier picked and writes its carrier, tracking number
+        and tracking URL onto the shop order — the three columns that were the
+        last thing on an order still copied by hand from a second website into a
+        third. Everything downstream already reads them, so the customer's
+        tracking page fills itself.
+
+
+        **This spends money and is not idempotent at the vendor**, which is why
+        the ORDER is the guard: one that already carries a tracking number is
+        refused with 409 unless `replace` is set, which the dashboard confirms.
+
+
+        `recorded: false` means the label was bought and Notion refused the
+        write. The response still carries the tracking number and the label URL,
+        because throwing would lose a label the studio has already paid for —
+        the purchase outranks its bookkeeping. The dashboard says to paste the
+        number onto the order by hand.
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/BuyShippingLabelRequest"
+      responses:
+        "200":
+          description: The label was bought; `recorded` says whether the order took it
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PurchasedLabel"
+        "400":
+          description: >-
+            No rate was chosen, the order number isn't a shop order's, or the
+            carrier rejected the purchase (an expired rate, an unconnected
+            carrier account)
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorEnvelope"
+        "401":
+          description: Not signed in (missing or expired session)
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorEnvelope"
+        "403":
+          description: A studio account whose session wasn't established with Google
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorEnvelope"
+        "404":
+          description: >-
+            No shop order matches that number — or the caller isn't a studio
+            account, which answers identically by design
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/OrderNotFound"
+        "409":
+          description: >-
+            The order already has a label on it (and `replace` wasn't set), or
+            it can't be posted for one of the reasons the rate operation lists
           content:
             application/json:
               schema:
@@ -3045,10 +3522,38 @@ components:
             for an active order.
         fulfilment:
           $ref: "#/components/schemas/OrderFulfilment"
+        items:
+          type: array
+          description: >-
+            The pieces on this order, so a customer at the delivered status can
+            say which one they are reviewing. Resolved from the order's
+            `Inventory Items` relation against live inventory, and therefore
+            best-effort: an order placed before that relation was written, or one
+            whose inventory read fails, carries an empty list — which the
+            tracking page reads as "no piece to review", never as an error. Only
+            the piece's id and name are served; quantities, prices and the
+            shipping address stay in Notion, because this lookup is gated by
+            order number alone.
+          items:
+            $ref: "#/components/schemas/ShopOrderItem"
       required:
         - orderNumber
         - status
         - statuses
+    ShopOrderItem:
+      type: object
+      required:
+        - id
+        - name
+      properties:
+        id:
+          type: string
+          description: >-
+            The inventory row's Notion page id — the same id a ProductVariant
+            carries, and what a shop review names as the piece it is about.
+        name:
+          type: string
+          description: The piece's name, as the shop lists it.
     OrderFulfilment:
       type: object
       description: >-
@@ -3468,6 +3973,64 @@ components:
             review's Notion page as image blocks.
           items:
             type: string
+    NewShopReviewRequest:
+      type: object
+      required:
+        - email
+        - productId
+        - rating
+        - comment
+      description: >-
+        A review of one ready-to-wear piece from a shop order. The same shape as
+        NewReviewRequest plus the piece it is about — a shop order can hold
+        several pieces, and an average belongs to a piece rather than to the
+        order, so the review has to say which one.
+      properties:
+        email:
+          type: string
+          format: email
+          description: >-
+            The email to verify against the one on the order. A review whose
+            email doesn't match the order is rejected.
+        productId:
+          type: string
+          minLength: 1
+          description: >-
+            The inventory row id of the piece being reviewed — one of the `id`s
+            on the order's `items`. The server checks it against the order's own
+            pieces, so a review can only ever be left for something the customer
+            actually bought.
+        rating:
+          type: integer
+          minimum: 1
+          maximum: 5
+          description: The star rating, 1 (poor) to 5 (excellent).
+        comment:
+          type: string
+          minLength: 1
+          maxLength: 2000
+          description: The customer's testimonial about the piece.
+        displayName:
+          type: string
+          maxLength: 120
+          description: >-
+            How the customer would like to be credited if the review is
+            featured (e.g. "Ada L." or "Ada, Chicago"). Optional.
+        consentToPublish:
+          type: boolean
+          description: >-
+            Whether the customer gives permission to show this review publicly.
+            Defaults to false — and, because the same two gates decide everything
+            public, a review without it is never counted into the piece's
+            average either.
+        photoIds:
+          type: array
+          description: >-
+            Notion file_upload ids for photos of the piece, uploaded ahead of
+            time via POST /orders/reference-images. Attached to the review's
+            Notion page as image blocks.
+          items:
+            type: string
     NewReviewResponse:
       type: object
       required:
@@ -3630,6 +4193,86 @@ components:
           type: array
           items:
             $ref: "#/components/schemas/PortfolioFilter"
+    InstagramMediaType:
+      type: string
+      enum: [image, video, carousel]
+      description: >-
+        What kind of post this is, lowercased from Instagram's own
+        IMAGE / VIDEO / CAROUSEL_ALBUM. Clients use it only to badge the
+        thumbnail (a play glyph on a video, a stack glyph on a carousel) — every
+        post carries a still `imageUrl` whatever its type, so a client that
+        ignores this renders correctly.
+    InstagramPost:
+      type: object
+      required:
+        - id
+        - permalink
+        - imageUrl
+        - mediaType
+      description: >-
+        One post from the studio's Instagram account. Deliberately narrow: no
+        like or comment counts, no author, and no video file — the strip is a
+        grid of stills that link out to Instagram.
+      properties:
+        id:
+          type: string
+          description: Instagram's own media id, used only as a render key.
+        permalink:
+          type: string
+          description: The post's public Instagram URL, opened in a new tab.
+        imageUrl:
+          type: string
+          description: >-
+            The still to render. Instagram's image for a photo or carousel, and
+            the poster frame for a video. These are CDN URLs that expire, which
+            is why this response's edge cache is deliberately short — the same
+            reasoning as the portfolio's Notion-signed images. Never empty: a
+            post Instagram returned no usable image for is dropped rather than
+            served as a broken tile.
+        mediaType:
+          $ref: "#/components/schemas/InstagramMediaType"
+        caption:
+          type: string
+          description: >-
+            The post's caption, verbatim and untruncated. Omitted when the post
+            has none. Clients clamp it for display and derive the image's
+            alternative text from it.
+        postedAt:
+          type: string
+          format: date-time
+          description: >-
+            When the post was published. Omitted when Instagram returned no
+            timestamp; the list is already in Instagram's own newest-first
+            order, so this is for display only.
+        productId:
+          type: string
+          description: >-
+            The `Product.id` of the shop card this post shows, when the atelier
+            has recorded this post's URL against an inventory row. Present only
+            for a piece currently published to the shop, so the client can link
+            straight to `/shop/{productId}` without checking. Absent — the
+            common case — means the post is not tied to a purchasable piece and
+            the tile links to Instagram alone.
+        productTitle:
+          type: string
+          description: >-
+            The name of the piece this post shows, as the atelier names it in
+            the inventory — what the "Shop this piece" link is labelled with.
+            Always present alongside `productId`, and absent without it.
+    InstagramFeed:
+      type: object
+      required:
+        - posts
+      properties:
+        posts:
+          type: array
+          description: >-
+            The studio's recent posts, newest first. Empty when the integration
+            is unconfigured or the feed could not be read — the two are
+            deliberately indistinguishable to the client, which renders nothing
+            either way.
+          items:
+            $ref: "#/components/schemas/InstagramPost"
     ReviewModerationStatus:
       type: string
       enum: [pending, published, rejected]
@@ -5066,6 +5709,49 @@ components:
           type: array
           items:
             $ref: "#/components/schemas/ProductVariant"
+        rating:
+          $ref: "#/components/schemas/ProductRating"
+    ProductRating:
+      type: object
+      required:
+        - average
+        - count
+        - reviews
+      description: >-
+        What customers who bought this piece said about it. Built from reviews
+        left against a shop order and passing the SAME two gates as a public
+        testimonial — the atelier published it and the customer consented — so a
+        rating can never appear beside a piece from a row the testimonials
+        couldn't show.
+
+        Absent when the piece has no such review yet, which is not an error
+        state: most pieces will have none, and a card showing "0 reviews" reads
+        worse than a card showing none. A grouped card (several colourways under
+        one `Website Group`) pools the reviews of all its variants, because that
+        is the piece a shopper is looking at.
+      properties:
+        average:
+          type: number
+          minimum: 1
+          maximum: 5
+          description: >-
+            The mean star rating, rounded to one decimal place. Shown beside the
+            piece and published as `aggregateRating` in its Product structured
+            data.
+        count:
+          type: integer
+          minimum: 1
+          description: How many reviews the average is built from.
+        reviews:
+          type: array
+          description: >-
+            A few of those reviews in the customer's own words, newest first, for
+            the piece's quick view. Capped server-side — the shop list is a
+            single edge-cached payload, so it carries a taste rather than the
+            whole history. Narrow like `PublishedReview`: no email, no order
+            number.
+          items:
+            $ref: "#/components/schemas/PublishedReview"
     ProductList:
       type: object
       required:
@@ -6606,6 +7292,119 @@ components:
           type: string
         orders:
           type: integer
+    StudioOrderBoard:
+      type: object
+      description: >-
+        The open custom orders, for the dashboard's stage board. Nearest due
+        date first, then by order number — the order the atelier works them in.
+      required: [orders]
+      properties:
+        orders:
+          type: array
+          items:
+            $ref: "#/components/schemas/StudioOrderStage"
+    StudioOrderStage:
+      type: object
+      description: >-
+        One order's position in its pipeline, and what can be done about it.
+      required: [orderNumber, orderName, currentStage, stages, notifiable]
+      properties:
+        orderNumber:
+          type: string
+          description: The order's number — its address in every studio operation.
+        orderName:
+          type: string
+          description: The Notion page title, e.g. "Ada – Custom Costume".
+        currentStage:
+          type: string
+          description: >-
+            The stage the order is at now. Empty when the `Stage` property has
+            never been set, which is the one case the board cannot advance from.
+        stages:
+          type: array
+          description: >-
+            The stages this order's own service walks, in order — not the whole
+            live list, so a repair is never offered `Sketching`. Includes the
+            current stage even if it has since been renamed out of the live
+            options.
+          items:
+            type: string
+        nextStage:
+          type: string
+          description: >-
+            The stage after the current one, i.e. what "advance" means for this
+            order. Absent at the final stage, or when the current stage isn't
+            in the list.
+        lastNotifiedStage:
+          type: string
+          description: >-
+            The furthest stage the customer has already been emailed about (the
+            `Last Notified Stage` high-water marker). Absent when they have
+            never been emailed.
+        service:
+          type: string
+          description: The service the order was placed for, as stored on it.
+        dueDate:
+          type: string
+          description: >-
+            The order's `Due Date` as an ISO date (yyyy-mm-dd), when the atelier
+            has set one. A pass-through string (no `format: date`) so it isn't
+            coerced to a Date and reserialized as a UTC timestamp — a due date
+            is a calendar day, and an instant read in a western zone lands on
+            the day before.
+        notifiable:
+          type: boolean
+          description: >-
+            Whether the order carries a customer email to write to. The address
+            itself is never returned — a stage board has no use for it, and this
+            endpoint is not the place to publish one.
+    OrderStageRequest:
+      type: object
+      description: One stage change, as asked for from the dashboard.
+      required: [stage]
+      properties:
+        stage:
+          type: string
+          maxLength: 120
+          description: >-
+            The stage to move the order to. Must be one of the order's own
+            `stages`; a Notion `status` option cannot be created through the
+            API, so a name that isn't already an option would fail the write.
+        notify:
+          type: boolean
+          default: true
+          description: >-
+            Whether to email the customer. Default true — sending on the action
+            is the point of advancing here rather than in Notion. False marks
+            the stage as already announced without sending, so the change stays
+            quiet even where the Notion automation is still wired.
+    OrderStageChange:
+      type: object
+      description: What one stage change did.
+      required: [order, previousStage, changed, notification]
+      properties:
+        order:
+          $ref: "#/components/schemas/StudioOrderStage"
+        previousStage:
+          type: string
+          description: The stage the order was at before this ran.
+        changed:
+          type: boolean
+          description: >-
+            False when the order was already at that stage, in which case
+            nothing was written and nothing was sent.
+        notification:
+          type: string
+          enum: [sent, skipped, suppressed]
+          description: >-
+            `sent` — the customer was emailed. `skipped` — a send was attempted
+            and declined (the move wasn't forward, or the order carries no email
+            or no stage). `suppressed` — the atelier asked not to email.
+        notificationReason:
+          type: string
+          description: >-
+            Why nothing was sent, in the atelier's terms. Present on `skipped`
+            and `suppressed`.
     StudioToolRequest:
       type: object
       description: >-
@@ -6688,6 +7487,200 @@ components:
             nothing to add.
           items:
             type: string
+    ParcelPreset:
+      type: object
+      description: >-
+        One of the studio's packaging sizes, in inches. A code catalog served
+        rather than duplicated in the frontend, like the appointment and service
+        catalogs — a size the form offers that the server can't rate would be a
+        dead option nobody could diagnose. Dimensions are the catalog's; the
+        WEIGHT is not, because what goes in a box is a dress one day and a pair
+        of soakers the next.
+      required: [id, name, hint, length, width, height]
+      properties:
+        id:
+          type: string
+          description: What the rate request sends back.
+        name:
+          type: string
+          description: How it reads on the packing bench, e.g. "Small box".
+        hint:
+          type: string
+          description: What it is for, so the right one is picked without a tape measure.
+        length:
+          type: number
+        width:
+          type: number
+        height:
+          type: number
+    ShippingOptions:
+      type: object
+      description: >-
+        Whether a label can be bought, what's stopping it, and the packaging the
+        studio keeps.
+      required: [configured, testMode, problems, parcels]
+      properties:
+        configured:
+          type: boolean
+          description: A shipping vendor token is set.
+        testMode:
+          type: boolean
+          description: >-
+            The vendor token is a TEST one, so any label bought looks entirely
+            real — tracking number, PDF, price — and no carrier has heard of it.
+        shipFrom:
+          type: array
+          description: >-
+            The studio's ship-from address as envelope lines, present only when
+            it is complete enough to post from.
+          items:
+            type: string
+        problems:
+          type: array
+          description: >-
+            Everything standing between the atelier and a label, each phrased
+            with its own fix. Empty ⇒ the panel is ready to use.
+          items:
+            type: string
+        parcels:
+          type: array
+          items:
+            $ref: "#/components/schemas/ParcelPreset"
+    ShippingRatesRequest:
+      type: object
+      required: [orderNumber, parcelId, weightOz]
+      properties:
+        orderNumber:
+          type: string
+          maxLength: 64
+          description: The shop order to post, e.g. `SHP-M2X4K1-AB12`.
+        parcelId:
+          type: string
+          maxLength: 64
+          description: The id of one of the studio's packaging sizes.
+        weightOz:
+          type: number
+          exclusiveMinimum: 0
+          maximum: 800
+          description: >-
+            The parcel's weight in OUNCES, off the scale. Zero is refused rather
+            than treated as unset — a carrier rating a 0 oz package prices a
+            document envelope — and the 800 oz (50 lb) ceiling is there to catch
+            the typo that matters: pounds typed where ounces were wanted.
+    ShippingRate:
+      type: object
+      description: One buyable rate. `id` is opaque and short-lived — it is the
+        only thing the purchase takes, and it expires.
+      required: [id, carrier, service, amount, currency]
+      properties:
+        id:
+          type: string
+        carrier:
+          type: string
+          description: 'As the customer will read it: "USPS", "UPS".'
+        service:
+          type: string
+          description: 'The service level: "Priority Mail", "Ground Advantage".'
+        amount:
+          type: number
+          description: What the studio pays.
+        currency:
+          type: string
+        estimatedDays:
+          type: integer
+          description: The carrier's own estimate, when it gives one.
+        durationTerms:
+          type: string
+          description: The carrier's wording for the delivery window, when it gives one.
+    ShippingRates:
+      type: object
+      required: [orderNumber, shipTo, rates, notes]
+      properties:
+        orderNumber:
+          type: string
+        shipTo:
+          type: array
+          description: >-
+            The customer's address as envelope lines, read from the order's
+            Stripe checkout — so a wrong one is caught by eye before it is paid
+            for rather than after it is posted.
+          items:
+            type: string
+        rates:
+          type: array
+          description: Cheapest first, which is the order the atelier chooses in.
+          items:
+            $ref: "#/components/schemas/ShippingRate"
+        notes:
+          type: array
+          description: >-
+            The carriers' own words when they declined to quote — which is what
+            explains an empty list. Usually empty.
+          items:
+            type: string
+    BuyShippingLabelRequest:
+      type: object
+      required: [orderNumber, rateId]
+      properties:
+        orderNumber:
+          type: string
+          maxLength: 64
+        rateId:
+          type: string
+          maxLength: 128
+          description: The `id` of the rate to buy, from the rates operation.
+        replace:
+          type: boolean
+          description: >-
+            Buy a second label for an order that already has tracking on it —
+            for when the first was voided. Without it such an order is refused
+            with 409, since the vendor will sell a duplicate as happily as the
+            first and has nothing to read back that says otherwise.
+    PurchasedLabel:
+      type: object
+      required:
+        [
+          orderNumber,
+          carrier,
+          service,
+          amount,
+          currency,
+          trackingNumber,
+          recorded,
+          testMode,
+        ]
+      properties:
+        orderNumber:
+          type: string
+        carrier:
+          type: string
+        service:
+          type: string
+        amount:
+          type: number
+          description: What the studio was charged for the label.
+        currency:
+          type: string
+        trackingNumber:
+          type: string
+        trackingUrl:
+          type: string
+          description: The carrier's own tracking page, when it gave one.
+        labelUrl:
+          type: string
+          description: >-
+            The label PDF to print. Served from a signed vendor URL that
+            expires, so it is fetched fresh rather than stored.
+        recorded:
+          type: boolean
+          description: >-
+            Whether the tracking was written onto the Notion order. False ⇒ the
+            label is bought and paid for but the write failed, so the number
+            above has to be pasted on by hand — reporting that beats throwing,
+            which would lose the label entirely.
+        testMode:
+          type: boolean
+          description: This label is a test one and no carrier will carry it.
     StudioTool:
       type: string
       description: >-

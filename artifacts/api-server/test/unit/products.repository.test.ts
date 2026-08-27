@@ -65,6 +65,7 @@ describe("listVariants", () => {
         category: "",
         categoryId: "cat-dress",
         group: null,
+        instagramPostUrl: "",
       },
     ]);
 

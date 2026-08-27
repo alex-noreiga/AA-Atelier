@@ -26,7 +26,10 @@ import {
   type ReviewRow,
 } from "./reviews.blocks.js";
 import { normalizeEmail } from "../email.js";
+import { createPageDroppingUnknownProperties } from "./create-page.js";
+import { scanDatabase } from "./scan.js";
 import {
+  extractProductReviews,
   extractPublishedReviews,
   extractStudioReview,
   extractStudioReviews,
@@ -36,6 +39,7 @@ import {
   type NotionBlockChildrenResponse,
   type NotionReviewPage,
   type NotionReviewsQueryResponse,
+  type ProductReviewRecord,
   type PublishedReviewRecord,
   type ReviewModeration,
   type StudioReviewRecord,
@@ -48,6 +52,18 @@ function assertConfigured(client: NotionClient): void {
   );
 }
 
+/**
+ * File one review.
+ *
+ * Goes through {@link createPageDroppingUnknownProperties} because a shop review
+ * names the piece it is about through two properties the atelier adds by hand
+ * (`Product` and `Item`), and Notion rejects the WHOLE page over a column it
+ * doesn't have. A customer's words are not something to lose to un-done setup:
+ * the review is recorded without the link, the page body still says which piece
+ * it was, and the warn names the column to add. The cost is that such a review
+ * can't be aggregated into that piece's rating until the atelier links it — the
+ * right way round, since the alternative loses the review outright.
+ */
 export async function createReview(
   row: ReviewRow,
   client: NotionClient = getReviewsNotionClient(),
@@ -55,23 +71,12 @@ export async function createReview(
 ): Promise<void> {
   assertConfigured(client);
 
-  const body: Record<string, unknown> = {
-    parent: { database_id: client.databaseId },
-    properties: buildReviewProperties(row, clientPageId),
-    children: buildReviewPageBlocks(row),
-  };
-
-  const response = await client.fetch("/v1/pages", {
-    method: "POST",
-    body: JSON.stringify(body),
-  });
-
-  if (!response.ok) {
-    const errorText = await response.text();
-    throw new Error(
-      `Notion review creation failed with status ${response.status}: ${errorText}`,
-    );
-  }
+  await createPageDroppingUnknownProperties(
+    client,
+    buildReviewProperties(row, clientPageId),
+    buildReviewPageBlocks(row),
+    "reviews",
+  );
 }
 
 // --- Read side: the curated testimonials the site shows ---
@@ -91,6 +96,30 @@ let cachedPublished: {
 } | null = null;
 
 /**
+ * The two gates that make a review public, as a Notion filter. Shared by the
+ * testimonial read below and the product-rating read at the bottom of this
+ * file, so neither can drift from the other about what "published" means.
+ *
+ * Deliberately does NOT name the `Product` relation, even though the rating read
+ * only wants rows that carry one: a filter naming a property the database lacks
+ * is a 400, and `Product` is a column the atelier adds by hand. Rows without one
+ * are dropped in the extractor instead, where an absent property simply reads as
+ * "not a shop review".
+ */
+const PUBLISHED_FILTER = {
+  and: [
+    {
+      property: REVIEW_STATUS_PROPERTY,
+      select: { equals: REVIEW_STATUS_PUBLISHED },
+    },
+    {
+      property: REVIEW_CONSENT_PROPERTY,
+      checkbox: { equals: true },
+    },
+  ],
+};
+
+/**
  * Query the reviews database for the rows the atelier has published AND the
  * customer consented to publish, newest first. Both gates are pushed into the
  * Notion filter so an unpublished review never crosses the wire; the pure
@@ -106,18 +135,7 @@ async function queryPublishedReviews(
       method: "POST",
       body: JSON.stringify({
         page_size: limit,
-        filter: {
-          and: [
-            {
-              property: REVIEW_STATUS_PROPERTY,
-              select: { equals: REVIEW_STATUS_PUBLISHED },
-            },
-            {
-              property: REVIEW_CONSENT_PROPERTY,
-              checkbox: { equals: true },
-            },
-          ],
-        },
+        filter: PUBLISHED_FILTER,
         sorts: [{ timestamp: "created_time", direction: "descending" }],
       }),
     },
@@ -169,9 +187,58 @@ export async function listPublishedReviews(
   }
 }
 
-/** Test seam: drop the published-reviews cache between cases. */
+/** Test seam: drop the published-reviews caches between cases. */
 export function __resetPublishedReviewsCache(): void {
   cachedPublished = null;
+  cachedProductReviews = null;
+}
+
+// --- Read side: the ratings shown beside a shop piece ---
+
+let cachedProductReviews: {
+  records: ProductReviewRecord[];
+  fetchedAt: number;
+} | null = null;
+
+/**
+ * Every published review that names a shop piece, newest first.
+ *
+ * A **scan** rather than the single page the testimonials take, because this
+ * one is arithmetic: a testimonial strip cut off at 50 rows simply shows the
+ * newest 50, while an average cut off at 50 rows is *wrong* — it would drop
+ * older reviews out of a piece's count silently as the studio collected more.
+ * Bounded by `scanDatabase` like the analytics.
+ *
+ * Cached and falling back to the cached list on error, like every other live
+ * Notion read: this is on the shop's own path, and a Notion blip should cost
+ * slightly stale ratings rather than the shop its cards. Returns `[]` when the
+ * reviews database isn't configured — a shop without ratings, not an error.
+ */
+export async function listPublishedProductReviews(
+  client: NotionClient = getReviewsNotionClient(),
+): Promise<ProductReviewRecord[]> {
+  if (!client.databaseId) return [];
+
+  if (
+    cachedProductReviews &&
+    Date.now() - cachedProductReviews.fetchedAt < PUBLISHED_CACHE_TTL_MS
+  ) {
+    return cachedProductReviews.records;
+  }
+
+  try {
+    const pages = await scanDatabase<NotionReviewPage>(client, "reviews", {
+      page_size: 100,
+      filter: PUBLISHED_FILTER,
+      sorts: [{ timestamp: "created_time", direction: "descending" }],
+    });
+    const records = extractProductReviews(pages);
+    cachedProductReviews = { records, fetchedAt: Date.now() };
+    return records;
+  } catch (error) {
+    if (cachedProductReviews) return cachedProductReviews.records;
+    throw error;
+  }
 }
 
 // --- Moderation: the studio dashboard's queue ---
@@ -319,7 +386,11 @@ export async function setReviewStatus(
     );
   }
 
+  // Both public reads: publishing a review and then not seeing it — as a
+  // testimonial, or in a piece's rating — for another minute reads as the
+  // decision having failed.
   cachedPublished = null;
+  cachedProductReviews = null;
   return extractStudioReview((await response.json()) as NotionReviewPage);
 }
 

@@ -9,6 +9,8 @@
 // share a `Website Group` value are grouped into a single shop card by the
 // service layer; each row becomes a selectable variant.
 
+import type { PublishedReviewRecord } from "./reviews.schema.js";
+
 const PRODUCT_NAME_PROPERTY = "Item Name"; // title
 const PRODUCT_CATEGORY_RELATION_PROPERTY = "Category"; // relation → Product Categories
 const PRODUCT_PRICE_PROPERTY = "Listed Price"; // number
@@ -21,6 +23,14 @@ const PRODUCT_GROUP_PROPERTY = "Website Group"; // select
 const PRODUCT_SIZES_AVAILABLE_PROPERTY = "Sizes Available"; // multi_select
 const PRODUCT_SIZES_OFFERED_PROPERTY = "Sizes Offered"; // multi_select
 const PRODUCT_ADDONS_RELATION_PROPERTY = "Matching Add-ons"; // relation → inventory (self)
+// The post the atelier photographed this piece for, pasted from Instagram. It is
+// what makes the social strip shoppable, and it is deliberately recorded HERE
+// rather than derived from the caption: matching a post to a piece by the words
+// in its caption is a guess that fails silently in both directions (a piece
+// never linked, or the wrong piece linked), while a URL on the row is a fact the
+// atelier stated. Optional and additive — a row without it is simply a piece no
+// post points at. See `lib/instagram/schema.ts` for how the two are matched.
+const PRODUCT_INSTAGRAM_POST_PROPERTY = "Instagram Post"; // url
 
 // The single status value that counts as sellable. This is an intentional,
 // targeted business rule (not a hardcoded copy of the full option list, which
@@ -59,6 +69,12 @@ export interface VariantRecord {
   categoryId?: string;
   /** Website Group value, or null when the row stands alone. */
   group: string | null;
+  /** The Instagram post the atelier recorded against this piece (`Instagram
+   * Post`), verbatim as they pasted it. Empty when the row has none — the
+   * common case. Read only by the social feed, which matches it to a post by
+   * shortcode; it is deliberately NOT part of the shop contract, since nothing
+   * on a product card renders it. */
+  instagramPostUrl: string;
 }
 
 /** One variant as exposed to the client (no grouping internals). */
@@ -77,6 +93,20 @@ export interface ProductVariantRecord {
   addOnIds?: string[];
 }
 
+/**
+ * What customers who bought a piece said about it, as a shop card carries it.
+ *
+ * Not read from the inventory database at all — it is built in the service layer
+ * from the reviews left against shop orders (see `product-ratings.ts`), and
+ * lives here because it is part of the shape a shop card is served as. Absent
+ * on a piece with no published, consented review, which is most of them.
+ */
+export interface ProductRatingSummary {
+  average: number;
+  count: number;
+  reviews: PublishedReviewRecord[];
+}
+
 /** A shop card: one or more variants sharing a group. */
 export interface ProductRecord {
   id: string;
@@ -92,6 +122,9 @@ export interface ProductRecord {
    * `sized`. Resolved from the category's "Size Guide Type", not the name. */
   sizeGuide?: "garment" | "soaker";
   variants: ProductVariantRecord[];
+  /** The piece's customer rating, when it has one. See
+   * {@link ProductRatingSummary}. */
+  rating?: ProductRatingSummary;
 }
 
 // --- Raw Notion payload typing (only the property types we read) ---
@@ -119,6 +152,7 @@ type NotionPropertyValue =
   | { type: "status"; status: { name: string } | null }
   | { type: "number"; number: number | null }
   | { type: "checkbox"; checkbox: boolean }
+  | { type: "url"; url: string | null }
   | { type: "formula"; formula: NotionFormulaValue }
   | { type: "files"; files: NotionFileValue[] };
 
@@ -186,6 +220,12 @@ function extractNumber(page: NotionInventoryPage, name: string): number | null {
   const p = page.properties[name];
   if (p?.type !== "number") return null;
   return p.number;
+}
+
+function extractUrl(page: NotionInventoryPage, name: string): string {
+  const p = page.properties[name];
+  if (p?.type !== "url") return "";
+  return p.url?.trim() ?? "";
 }
 
 function extractCheckbox(page: NotionInventoryPage, name: string): boolean {
@@ -289,5 +329,6 @@ export function extractVariant(page: NotionInventoryPage): VariantRecord {
     category: "",
     ...(categoryId ? { categoryId } : {}),
     group: extractSelect(page, PRODUCT_GROUP_PROPERTY),
+    instagramPostUrl: extractUrl(page, PRODUCT_INSTAGRAM_POST_PROPERTY),
   };
 }

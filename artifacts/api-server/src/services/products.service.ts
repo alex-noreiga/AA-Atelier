@@ -4,6 +4,9 @@
 
 import { listVariants } from "../lib/notion/products.repository.js";
 import { listCategoryRecords } from "../lib/notion/product-categories.repository.js";
+import { listPublishedProductReviews } from "../lib/notion/reviews.repository.js";
+import { summarizeProductRatings } from "./product-ratings.js";
+import { logger } from "../lib/logger.js";
 import type { CategoryRecord } from "../lib/notion/product-categories.schema.js";
 import type {
   ProductRecord,
@@ -164,6 +167,35 @@ export function resolveFromCategories(
   return { products, categories: visibleCategories(orderedNames, products) };
 }
 
+/**
+ * Resolve inventory page ids to the names the shop lists them under.
+ *
+ * Used where an order's `Inventory Items` relation has to be said out loud —
+ * the pieces on a delivered shop order, and the piece a review names. Reads the
+ * same 60s-cached inventory the shop does, and is **best-effort**: a Notion
+ * blip, or a piece the atelier has since unpublished, yields no entry rather
+ * than an error, because in both callers the name is a label on something that
+ * works without it.
+ */
+export async function findVariantNames(
+  ids: string[],
+): Promise<Map<string, string>> {
+  const wanted = new Set(ids);
+  if (wanted.size === 0) return new Map();
+
+  try {
+    const variants = await listVariants();
+    return new Map(
+      variants
+        .filter((variant) => wanted.has(variant.id) && variant.name)
+        .map((variant) => [variant.id, variant.name]),
+    );
+  } catch (err) {
+    logger.warn({ err }, "Could not resolve inventory names for an order");
+    return new Map();
+  }
+}
+
 export async function getProducts(): Promise<{
   products: ProductRecord[];
   categories: string[];
@@ -182,5 +214,52 @@ export async function getProducts(): Promise<{
     );
   }
 
-  return resolveFromCategories(variants, records);
+  const resolved = resolveFromCategories(variants, records);
+  return {
+    ...resolved,
+    products: await withRatings(resolved.products, variants),
+  };
+}
+
+/**
+ * Attach each card's customer rating, where it has one.
+ *
+ * **Best-effort, and deliberately the last thing that happens.** A rating is
+ * something extra beside a piece; the piece itself is the shop. So an
+ * unconfigured or unreachable reviews database costs the cards their stars and
+ * nothing else — never the shop its stock, which is what a thrown error here
+ * would mean. (`listPublishedProductReviews` already returns `[]` for an unset
+ * database and falls back to its cache on a blip; this catch is the backstop for
+ * a cold instance meeting a Notion outage.)
+ */
+async function withRatings(
+  products: ProductRecord[],
+  variants: VariantRecord[],
+): Promise<ProductRecord[]> {
+  let reviews;
+  try {
+    reviews = await listPublishedProductReviews();
+  } catch (err) {
+    logger.warn(
+      { err },
+      "Could not read shop reviews; serving without ratings",
+    );
+    return products;
+  }
+  if (reviews.length === 0) return products;
+
+  // The join: a review names an inventory row, and this is the card that row
+  // ended up on — the same `shopCardId` that decided the card's own id, so the
+  // two can't disagree.
+  const cardIdByVariant = new Map(
+    variants.map((variant) => [variant.id, shopCardId(variant)]),
+  );
+  const summaries = summarizeProductRatings(products, reviews, (variantId) =>
+    cardIdByVariant.get(variantId),
+  );
+
+  return products.map((product) => {
+    const rating = summaries.get(product.id);
+    return rating ? { ...product, rating } : product;
+  });
 }

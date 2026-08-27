@@ -17,6 +17,7 @@ import accountRouter from "./account.js";
 import studioRouter from "./studio.js";
 import reviewsRouter from "./reviews.js";
 import portfolioRouter from "./portfolio.js";
+import instagramRouter from "./instagram.js";
 
 const router = Router();
 
@@ -38,5 +39,6 @@ router.use(accountRouter);
 router.use(studioRouter);
 router.use(reviewsRouter);
 router.use(portfolioRouter);
+router.use(instagramRouter);
 
 export default router;
