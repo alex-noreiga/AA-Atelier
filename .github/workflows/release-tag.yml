@@ -1,0 +1,67 @@
+name: Tag release
+
+# Every push to the production branch gets an annotated version tag plus a
+# GitHub Release whose notes list the PRs since the previous tag — i.e. what
+# this promotion actually shipped. Tags are the rollback points: see
+# BRANCHING.md ("Versions & rolling back").
+#
+# The tag scheme is CalVer in the studio's timezone — v2026.08.27, with a
+# .2 / .3 suffix when the same day ships more than once.
+
+on:
+  push:
+    branches: [release]
+
+# Tagging writes to the repo; nothing else in CI needs more than read.
+permissions:
+  contents: write
+
+# Never run two tag jobs at once (they'd race computing the next suffix), and
+# never cancel one — a promotion must not lose its tag to a later push.
+concurrency:
+  group: release-tag
+  cancel-in-progress: false
+
+jobs:
+  tag:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      # Full history + tags: computing the previous release tag needs both.
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+
+      - name: Create version tag + GitHub release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TZ: America/Chicago
+        run: |
+          set -euo pipefail
+
+          # A re-run (or a force-push back to an already-tagged commit during
+          # a rollback) must not mint a second tag for the same commit.
+          existing=$(git tag --points-at HEAD 'v*')
+          if [ -n "$existing" ]; then
+            echo "HEAD is already tagged: $existing — nothing to do."
+            exit 0
+          fi
+
+          base="v$(date +%Y.%m.%d)"
+          tag="$base"
+          n=1
+          while git rev-parse -q --verify "refs/tags/$tag" >/dev/null; do
+            n=$((n + 1))
+            tag="${base}.${n}"
+          done
+
+          # The nearest ancestor tag is the previous release; the generated
+          # notes then cover exactly the PRs this promotion brings.
+          prev=$(git describe --tags --abbrev=0 --match 'v*' HEAD 2>/dev/null || true)
+
+          args=(--target "$GITHUB_SHA" --title "$tag" --generate-notes)
+          if [ -n "$prev" ]; then
+            args+=(--notes-start-tag "$prev")
+          fi
+          gh release create "$tag" "${args[@]}"
+          echo "Tagged $tag (previous: ${prev:-none})"

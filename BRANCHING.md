@@ -58,6 +58,59 @@ must ship while unrelated work on `main` isn't ready:
   guarantee until the next full promotion catches `release` up, so treat it as
   a hotfix, not a workflow.
 
+## Versions & rolling back
+
+Every push to `release` is tagged automatically by
+`.github/workflows/release-tag.yml`: a CalVer tag in the studio's timezone
+(`v2026.08.27`, then `v2026.08.27.2` if the same day ships twice) plus a
+GitHub **Release** whose notes list the PRs since the previous tag — the
+record of what each promotion shipped. Nothing to do by hand; the tags are
+the rollback points.
+
+Three ways back, from fastest to most surgical:
+
+1. **Vercel Instant Rollback** (production is broken _right now_): Vercel
+   dashboard → Deployments → the last good Production deployment → ⋯ →
+   **Instant Rollback**. Live in seconds, no git involved — but it's a
+   holding action: the next push to `release` deploys whatever `release`
+   says again, so follow up with one of the git options.
+
+2. **Revert one feature** (the rest of the release is fine):
+
+   ```bash
+   git checkout release
+   git revert -m 1 <merge-sha-of-the-feature-PR>   # find it in the release notes
+   git push origin release
+   ```
+
+   Production redeploys without that feature. Then merge `release` back into
+   `main` (as after a hotfix) so `main` agrees. To re-land the feature later,
+   revert the revert — git considers reverted code "already merged", so just
+   merging the original branch again won't bring it back.
+
+3. **Return to a previous version wholesale** (`release` should be exactly
+   what `vX` was):
+
+   ```bash
+   git checkout release
+   git rm -r --quiet .          # clear the tracked tree…
+   git checkout <tag> -- .      # …and restore the tagged version of every file
+   git commit -m "Roll back to <tag>"
+   git push origin release
+   ```
+
+   One new commit whose content is byte-for-byte the tagged release — history
+   keeps moving forward, so the branch protection and the next promotion
+   still work. (A range `git revert` doesn't work here: the range contains
+   PR merge commits, which git refuses to revert in bulk.) Note the next
+   `main` → `release` promotion re-includes everything, so hold `main` until
+   the problem is fixed there, or land the fix on `main` first and promote
+   past the rollback. Avoid `git reset --hard <tag>` + force-push: it fights
+   the ruleset and rewrites history other clones may hold.
+
+A tag is also the honest answer to "what exactly was live last Tuesday?" —
+`git checkout v2026.08.25` rebuilds it.
+
 ## Hotfixes (production is broken, `main` has moved on)
 
 ```bash
@@ -104,6 +157,8 @@ git push origin main
   before promoting a change that needs a new table, exactly as before.
 - **CI** runs on every PR and on pushes to both `main` and `release`
   (`ci.yml`); CodeQL keeps scanning `main`, which is where all promoted code
-  originates.
+  originates. The tag workflow (`release-tag.yml`) runs alongside CI on each
+  `release` push and never blocks a deploy — Vercel deploys from the push,
+  not from the workflow.
 - **The smoke suite** targets the deployed apex domain, i.e. production —
   unchanged, and now the post-release check.
