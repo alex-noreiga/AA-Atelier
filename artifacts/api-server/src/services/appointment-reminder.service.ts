@@ -36,10 +36,18 @@
 // sender. There is deliberately no atelier notification: the studio's own
 // calendar is already the day sheet.
 //
-// SMS (the roadmap's own card) drops in beside the email send below: the number
-// is already stamped on the event (`aptPhone`), the marker is already per-channel
-// (`aptRemindedSms`), and the content this composes is transport-agnostic. What
-// it still needs is a vendor and an opt-in — see `.agents/memory/appointment-reminders.md`.
+// A customer who has opted in to texts also gets one, and the two channels are
+// decided INDEPENDENTLY — `aptRemindedEmail` and `aptRemindedSms` are separate
+// markers, which is what the per-channel scheme was built for. That independence
+// is load-bearing rather than tidy: every booking taken before texts existed
+// already carries an email marker, so a single 'have we reminded them?' test
+// would have found the whole back catalogue already answered and sent nobody a
+// first text. The SMS marker is written only when a text actually goes out, so a
+// customer who opts in between two nightly runs still gets one.
+//
+// The text is best-effort on top of the best-effort email: it is the same news
+// through a second channel, so it can never be the reason a reminder is recorded
+// as failed. See `services/sms.service.ts`.
 
 import {
   listAppointmentsInRange,
@@ -65,9 +73,11 @@ import {
   eventToDetailsOrNull,
   type AppointmentManageDetails,
 } from "../lib/appointments/event-details.js";
-import { formatInZone } from "../lib/appointments/time.js";
+import { formatInZone, formatTimeInZone } from "../lib/appointments/time.js";
 import { buildManageUrl } from "./appointment-manage.service.js";
 import { appointmentReminderEmail } from "../lib/resend/emails.js";
+import { appointmentReminderSms } from "../lib/twilio/messages.js";
+import { textCustomer } from "./sms.service.js";
 import { sendEmailBestEffort } from "../lib/resend/send.js";
 import { fromAddress } from "../lib/resend/config.js";
 import { logger } from "../lib/logger.js";
@@ -77,6 +87,9 @@ export interface AppointmentReminderResult {
   status: "sent" | "skipped" | "unconfigured";
   /** Reminder emails sent this run. */
   sent: number;
+  /** Reminder texts sent this run, to the customers who opted in. Always a
+   * subset of the bookings reminded about — a text never goes out alone. */
+  texted: number;
   /** Bookings in the window whose customer had already been reminded. */
   alreadyReminded: number;
   /** Bookings in the window this couldn't remind about — cancelled, or missing
@@ -91,13 +104,39 @@ function empty(
   status: AppointmentReminderResult["status"],
   extra: Partial<AppointmentReminderResult> = {},
 ): AppointmentReminderResult {
-  return { status, sent: 0, alreadyReminded: 0, skipped: 0, ...extra };
+  return {
+    status,
+    sent: 0,
+    texted: 0,
+    alreadyReminded: 0,
+    skipped: 0,
+    ...extra,
+  };
 }
 
-/** Send one booking's reminder. Best-effort mail, then the marker; a marker
- * failure is logged rather than thrown, so one event can't strand the rest of
- * the night's reminders (see rule 2 in the header). */
-async function remind(
+/** Record that one channel has answered this booking at this start time. A
+ * marker failure is logged rather than thrown — one event must not strand the
+ * rest of the night's reminders (see rule 2 in the header). */
+async function markSent(
+  entry: StaffCalendarEvent,
+  channel: "email" | "sms",
+): Promise<void> {
+  const { staff, event } = entry;
+  try {
+    await markAppointmentReminded(staff, event.id, event.extended, {
+      key: reminderMarkerKey(channel),
+      value: reminderMarkerValue(event.start),
+    });
+  } catch (err) {
+    logger.warn(
+      { err, eventId: event.id, staff, channel },
+      "Sent an appointment reminder but couldn't mark the event; it may be sent again",
+    );
+  }
+}
+
+/** Email one booking's reminder, then mark the email channel. */
+async function remindByEmail(
   entry: StaffCalendarEvent,
   details: AppointmentManageDetails,
   now: Date,
@@ -123,17 +162,49 @@ async function remind(
     from: fromAddress("appointments"),
   });
 
-  try {
-    await markAppointmentReminded(staff, event.id, event.extended, {
-      key: reminderMarkerKey("email"),
-      value: reminderMarkerValue(event.start),
-    });
-  } catch (err) {
-    logger.warn(
-      { err, eventId: event.id, staff },
-      "Sent an appointment reminder but couldn't mark the event; it may be sent again",
-    );
-  }
+  await markSent(entry, "email");
+}
+
+/**
+ * Text one booking's reminder, if that customer has opted in. Returns whether a
+ * text actually went out.
+ *
+ * The number is NOT read from the event's own `aptPhone` stamp, even though it
+ * is right there. Consent and the number it was given for live together on the
+ * Client CRM row, and a booking taken months ago carries whatever number was
+ * typed then — so texting the event's copy would mean texting a number the
+ * customer may since have corrected, on the strength of a permission recorded
+ * against a different one. `aptPhone` stays what it was added for: the piece
+ * that couldn't be retro-fitted, and the atelier's record of how to reach
+ * someone about that specific booking.
+ *
+ * The marker is written only on a real send, so consent given after tonight's
+ * run still earns a text before the appointment.
+ */
+async function remindBySms(
+  entry: StaffCalendarEvent,
+  details: AppointmentManageDetails,
+  now: Date,
+  timeZone: string,
+): Promise<boolean> {
+  const { staff, event } = entry;
+  const email = event.extended[EVENT_PROP_EMAIL] ?? "";
+  const manageUrl = buildManageUrl(email, event.id, staff);
+
+  const outcome = await textCustomer(email, (to) =>
+    appointmentReminderSms({
+      to,
+      typeName: details.typeName.toLowerCase(),
+      whenPhrase: whenPhrase(details.start, now, timeZone),
+      time: formatTimeInZone(details.start, timeZone),
+      locationLabel: details.locationLabel,
+      ...(manageUrl ? { manageUrl } : {}),
+    }),
+  );
+
+  if (outcome !== "sent") return false;
+  await markSent(entry, "sms");
+  return true;
 }
 
 /**
@@ -166,6 +237,7 @@ export async function notifyUpcomingAppointments(
   const upcoming = await listAppointmentsInRange(from, to);
 
   let sent = 0;
+  let texted = 0;
   let alreadyReminded = 0;
   let skipped = 0;
 
@@ -176,7 +248,12 @@ export async function notifyUpcomingAppointments(
       skipped += 1;
       continue;
     }
-    if (!reminderDue(event.extended, event.start, "email")) {
+    // Each channel is asked separately — a booking already emailed about may
+    // still owe a text (see the header). Only when BOTH are answered is there
+    // nothing left to do for this one.
+    const emailDue = reminderDue(event.extended, event.start, "email");
+    const smsDue = reminderDue(event.extended, event.start, "sms");
+    if (!emailDue && !smsDue) {
       alreadyReminded += 1;
       continue;
     }
@@ -188,8 +265,28 @@ export async function notifyUpcomingAppointments(
     }
 
     try {
-      await remind(entry, details, now, timeZone);
-      sent += 1;
+      let reminded = false;
+      if (emailDue) {
+        await remindByEmail(entry, details, now, timeZone);
+        sent += 1;
+        reminded = true;
+      }
+      // Deliberately after the email and in the same `try`: the text is the
+      // second channel for news the first has already carried, so it is never
+      // attempted in place of an email that failed to go out.
+      if (smsDue && (await remindBySms(entry, details, now, timeZone))) {
+        texted += 1;
+        reminded = true;
+      }
+      // A booking can reach here with an SMS channel still open and no text to
+      // show for it — the customer never opted in, or Twilio isn't wired up.
+      // Nothing new was said about it, so it counts as already reminded rather
+      // than falling out of the tally: these numbers are what the dashboard's
+      // reconciliation tool reports, and a booking in none of the buckets reads
+      // as one the sweep silently lost.
+      if (!reminded) {
+        alreadyReminded += 1;
+      }
     } catch (err) {
       logger.warn(
         { err, eventId: event.id },
@@ -199,7 +296,7 @@ export async function notifyUpcomingAppointments(
     }
   }
 
-  if (sent === 0) {
+  if (sent === 0 && texted === 0) {
     return {
       ...empty("skipped"),
       alreadyReminded,
@@ -212,8 +309,8 @@ export async function notifyUpcomingAppointments(
   }
 
   logger.info(
-    { sent, alreadyReminded, skipped },
+    { sent, texted, alreadyReminded, skipped },
     "Sent day-before appointment reminders",
   );
-  return { status: "sent", sent, alreadyReminded, skipped };
+  return { status: "sent", sent, texted, alreadyReminded, skipped };
 }

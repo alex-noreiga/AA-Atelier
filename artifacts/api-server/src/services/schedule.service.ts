@@ -8,6 +8,7 @@
 // duplicates, mirroring the shop-orders webhook's idempotency.
 
 import { reportError } from "./alert.service.js";
+import { logger } from "../lib/logger.js";
 import { notifyRestock } from "./restock-notification.service.js";
 import { sendWeeklyMaterialsDigest } from "./materials-digest.service.js";
 import { notifyUpcomingAppointments } from "./appointment-reminder.service.js";
@@ -44,6 +45,8 @@ import {
   paymentReminderEmail,
 } from "../lib/resend/emails.js";
 import { sendEmailBestEffort } from "../lib/resend/send.js";
+import { paymentDueSms } from "../lib/twilio/messages.js";
+import { textCustomer } from "./sms.service.js";
 import { fromAddress } from "../lib/resend/config.js";
 
 export interface MilestoneGenerationResult {
@@ -300,6 +303,7 @@ export async function sendDuePaymentReminders(
 
   const todayIso = toIsoDate(now);
   let remindersSent = 0;
+  let textsSent = 0;
   for (const invoice of invoices) {
     // Re-derive which stages qualify (the query filtered by the same conditions;
     // this is belt-and-suspenders and shields against a widened filter).
@@ -316,24 +320,53 @@ export async function sendDuePaymentReminders(
 
       for (const stage of dueStages) {
         if (order?.email) {
+          // Both channels are told the same thing from the same values — the
+          // stage's label, its date and its amount are resolved once here, so a
+          // customer can't be emailed one figure and texted another.
+          const stageLabel = paymentStageLabel(
+            stage.stage,
+            resolveStoredOrderService(order.service).payment,
+            stage.label,
+            { soleDeposit: invoice.depositCount === 1 },
+          );
+          const overdue = isPaymentOverdue(stage.dueDate, todayIso);
+
           await sendEmailBestEffort({
             ...paymentReminderEmail({
               email: order.email,
               orderNumber: order.orderNumber,
-              stageLabel: paymentStageLabel(
-                stage.stage,
-                resolveStoredOrderService(order.service).payment,
-                stage.label,
-                { soleDeposit: invoice.depositCount === 1 },
-              ),
+              stageLabel,
               dueDate: stage.dueDate,
-              overdue: isPaymentOverdue(stage.dueDate, todayIso),
+              overdue,
               ...(stage.amount !== undefined ? { amount: stage.amount } : {}),
               ...(link ? { payUrl: link } : {}),
             }),
             from: fromAddress("orders"),
           });
           remindersSent += 1;
+
+          // And a text, for the customers who asked for one. No marker of its
+          // own: the stage's existing `Reminded` checkbox already gates this
+          // whole block, so the two channels share one "told them once" record
+          // — which is right here, because unlike an appointment there is no
+          // reschedule that could make the same stage worth saying twice.
+          // Best-effort and unreported: the email above is the reminder, the
+          // text is a nudge toward it.
+          if (
+            (await textCustomer(order.email, (to) =>
+              paymentDueSms({
+                to,
+                orderNumber: order.orderNumber,
+                stageLabel,
+                dueDate: stage.dueDate,
+                overdue,
+                ...(stage.amount !== undefined ? { amount: stage.amount } : {}),
+                ...(link ? { payUrl: link } : {}),
+              }),
+            )) === "sent"
+          ) {
+            textsSent += 1;
+          }
         }
         // Mark handled even when there was no email to send, so an unreachable
         // (legacy, email-less) order isn't re-checked every night.
@@ -347,6 +380,9 @@ export async function sendDuePaymentReminders(
     }
   }
 
+  if (textsSent > 0) {
+    logger.info({ textsSent }, "Sent payment-reminder texts");
+  }
   return remindersSent;
 }
 

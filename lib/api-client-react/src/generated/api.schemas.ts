@@ -216,6 +216,8 @@ export interface NewOrderRequest {
   colorUsage?: string;
   /** An optional referral code the customer received from another skater. The server looks it up against the Client CRM (best-effort): a valid code — not the customer's own — earns the new customer a welcome discount code now and credits the referrer once this order is first paid. An unknown or self-referring code is ignored, and referral capture never blocks the order. Optional. */
   referralCode?: string;
+  /** True when the customer ticked the opt-in to receive transactional text alerts (a deposit or balance falling due, an appointment coming up, and their order being finished) on the phone number above, alongside the emails they get either way. Recorded on the order for the atelier and — the copy that is actually read — on their Client CRM row, which is where every send path asks whether they may be texted. Deliberately independent of `preferredContact`: that says how the atelier should reach them, which is not the same permission. Optional; omitted or false means no texts. */
+  smsConsent?: boolean;
 }
 
 export interface NewOrderResponse {

@@ -1681,6 +1681,115 @@ reminded about (the sweep only recognizes bookings this app made), and there is 
 reminder per booking per start time — an additional "and again an hour before" would
 need a second marker, which the per-channel key scheme extends to cleanly.
 
+## SMS notifications (opt-in text alerts)
+
+The three notifications that cost somebody something when they go unread — a
+payment falling due, an appointment tomorrow, a finished piece — are also sent
+as a **text**, to the customers who asked for one. Always **alongside** the
+email, never instead of it. Code: `lib/twilio/{client,send,messages}.ts` (the
+vendor, mirroring `lib/resend/` file for file), `services/sms.ts` (the pure
+rules), `services/sms.service.ts` (consent), and the three send sites —
+`sendDuePaymentReminders`, `notifyUpcomingAppointments`, and
+`notifyOrderStageChange`.
+
+1. **Consent is a fact about the PERSON, so it lives on the Client CRM.**
+   `SMS Consent` (checkbox) + `SMS Consent At` (date), with the row's existing
+   `Phone` as the number. Not on the order: the three flows that read it are
+   three different features, and a customer who opts in on their second
+   commission has not opted in twice. The order keeps its own write-only
+   `SMS Consent` checkbox as the atelier's record of what was ticked at intake —
+   the same relationship `Referral Code` has with the reward engine's CRM state.
+   Captured by `smsConsent` on `NewOrderRequest` (contract-first) and written by
+   `recordSmsConsent`, which also writes the **number** — load-bearing, because
+   a CRM row created by an earlier contact-form inquiry carries no phone and
+   `upsertClientByEmail` only ever writes one on CREATE.
+
+2. **`preferredContact: "text"` does NOT imply consent.** It says how the atelier
+   should reach somebody, which is not permission to send automated messages. The
+   box starts unticked and is never pre-ticked from it — the same deliberate-tick
+   rule as the newsletter opt-in, pinned by a frontend test.
+
+3. **Everything fails closed** — no Twilio, no CRM, no row, no tick, no readable
+   number all mean "no text", quietly. The opposite of `services/capacity.ts`,
+   and for the opposite reason: there, refusing a customer you could have served
+   is the costly mistake; here, texting somebody who never agreed is. `toE164`
+   carries most of it: a number it can't read yields `""` and nothing is sent,
+   because a number we guess at is a text sent to a stranger.
+
+4. **The carrier's record of an opt-out beats ours.** Twilio refuses a send to a
+   number that replied STOP (error 21610); that is the opt-out arriving, not a
+   failure, so `sendSmsBestEffort` reports it as its own outcome and
+   `textCustomer` clears the consent checkbox that contradicts it. Otherwise the
+   studio would text a number nightly that can never be delivered to while the
+   CRM went on claiming permission — the same instinct as "Stripe is the source
+   of truth for money, the Notion markers are not".
+
+5. **A text is never why a notification failed**, and so is deliberately **not**
+   alert-emailed where a rejected customer email is. Every send is best-effort,
+   swallowed, and always follows the email — so a dropped text costs a
+   notification its second channel, never the notification itself, which is the
+   bar the alerting section sets for staying high-signal.
+
+6. **One stage earns the order-ready text, not fourteen.** `isShippedStage`
+   (default `Ready for delivery/pickup`, overridable with `SMS_SHIPPED_STAGES`)
+   is a targeted business rule naming live Notion option values, like
+   `FITTING_REMINDER_STAGES`. The customer is _emailed_ at every forward step;
+   texting each would turn an opt-in given for three alerts into a running
+   commentary the studio pays for by the message. No marker of its own — the
+   `Last Notified Stage` high-water mark stops the text with the email. Its copy
+   says "finished and ready", never "shipped": that stage covers a posted parcel
+   **and** a collection at the studio, and the tracking page it links to already
+   answers whichever applies.
+
+7. **The appointment sweep reads its two markers INDEPENDENTLY.** This is what
+   the per-channel `aptRemindedEmail` / `aptRemindedSms` scheme was built for and
+   the delicate part of the change: every booking taken before texts existed
+   already carries an email marker, so a shared "have we reminded them?" test
+   would have found the whole back catalogue answered and sent nobody a first
+   text. The SMS marker is written **only on a real send**, so consent given
+   between two nightly runs still earns a text before the appointment. The
+   payment reminder, by contrast, shares **one** marker across both channels —
+   there is no reschedule that could make the same payment stage worth saying
+   twice, so "told them once" is one fact.
+
+8. **The vendor is raw `fetch`, not the SDK.** Sending a text is a form-encoded
+   POST with basic auth; the `twilio` package would be the largest dependency in
+   the app for that, against the pruned-dependencies rule and the house style
+   already used for Notion and Google. The sending identity is either
+   `TWILIO_MESSAGING_SERVICE_SID` (preferred — a US A2P 10DLC campaign registers
+   against a Messaging Service, and it lets Twilio handle STOP/HELP for the
+   studio) or a single `TWILIO_FROM_NUMBER`; the service wins when both are set.
+   Every message ends "Reply STOP to opt out." even though a Messaging Service
+   appends its own — ~22 characters against a possible second segment, and being
+   unmistakably opt-out-able is worth more than a fraction of a cent.
+
+**Customer-facing copy** lives in one file, `lib/twilio/messages.ts`, so the
+atelier can read and approve all of it at once. The three messages read:
+
+- **Payment due** — `A.A Atelier: Your final balance ($450) for ORD-000002 is
+due September 3. Pay: https://…/track?orderNumber=ORD-000002 Reply STOP to opt
+out.` ("was due" when overdue.)
+- **Appointment** — `A.A Atelier: Your fitting is tomorrow at 10:00 AM CDT (The
+studio). Reschedule or cancel: https://… Reply STOP to opt out.`
+- **Order ready** — `A.A Atelier: Ada, your order ORD-000002 is finished and
+ready. Delivery details: https://… Reply STOP to opt out.`
+
+The intake checkbox reads: _"Text me about my order — when a payment is due, the
+day before an appointment, and when the piece is finished. Message rates may
+apply; reply STOP at any time."_ With no `PUBLIC_BASE_URL` each link sentence
+degrades to "Details are in the email we've just sent." rather than to nothing —
+there is always a fuller version already in the inbox.
+
+**Atelier setup: two things, and it is inert until both are done.** (1) Twilio:
+`TWILIO_ACCOUNT_SID`, `TWILIO_AUTH_TOKEN`, and one of the two sending
+identities; A2P 10DLC registration is a console step. (2) Two **Client CRM**
+properties — `SMS Consent` (checkbox) and `SMS Consent At` (date) — plus,
+optionally, `SMS Consent` (checkbox) on the Order Tracking Pipeline (missing, it
+is dropped with a pointed warn and still appears in the page body). Known limits
+— capture is the order form only, so a consultation-only customer is never
+texted; revoking is STOP or the atelier unticking the box; no delivery receipts
+— are in `.agents/memory/sms-notifications.md`.
+
 ## In-place measurement editing
 
 A customer changes the measurements on their own order and the app **writes
@@ -2684,7 +2793,8 @@ delivered as **Stripe promotion codes** redeemed in the checkout promo box
    `REFERRAL_CREDIT_AMOUNT` (40), `REFERRAL_WELCOME_PERCENT` (10),
    `RETURNING_DISCOUNT_PERCENT` (10), `REWARD_CODE_EXPIRES_DAYS` (90).
 
-One-time setup: **seven properties on the Client CRM** database (no new database, no new
+One-time setup: **seven properties on the Client CRM** database (the text-alert
+opt-in adds two more — see "SMS notifications") (no new database, no new
 env var, no Stripe Dashboard setup — codes are created programmatically):
 `Referral Code`, `Referred By Email`, `Referral Rewarded` (checkbox),
 `First Paid Order`, `Returning Reward Issued` (checkbox), `Referral Credit Code`,
@@ -5071,6 +5181,18 @@ in the maintainer's env without edits.
   hatch if Google sign-in is ever unavailable, not a normal setting. Read fresh
   from env in `lib/staff.ts`, env-only for the same reason as the allowlist. See
   "Studio analytics dashboard" above.
+- **Optional SMS env vars:** `TWILIO_ACCOUNT_SID` + `TWILIO_AUTH_TOKEN`, plus a
+  sending identity — either `TWILIO_MESSAGING_SERVICE_SID` (preferred; a US A2P
+  10DLC campaign registers against a Messaging Service, and it lets Twilio
+  handle STOP/HELP) or `TWILIO_FROM_NUMBER`. Unset ⇒ no texts are sent and no
+  per-recipient Notion read is made, so the app behaves exactly as it did before
+  (`smsConfigured()` is the first gate on every send path). The one knob is
+  `SMS_SHIPPED_STAGES` (default `Ready for delivery/pickup`) — a targeted
+  business rule naming a live Stage option, like `FITTING_REMINDER_STAGES`. Read
+  at call time in `services/sms.ts`; **not** Studio-Settings keys (credentials
+  are secrets, and the stage name is coupled to the copy). Also needs two
+  **Client CRM** properties, `SMS Consent` (checkbox) and `SMS Consent At`
+  (date). See "SMS notifications" above.
 - **Optional anti-spam env var:** `SPAM_MIN_FILL_MS` (default `2000`) — the minimum
   plausible human fill time, in ms, for the public submission forms (contact /
   notify / newsletter); a faster submit is silently dropped as a bot. `0` disables
@@ -5175,6 +5297,9 @@ scope went with the working-hours sheet.
 | Variable                                                                                                          | Effect when unset                                                   |
 | ----------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------- |
 | `NOTION_CLIENT_CRM_DATABASE_ID`                                                                                   | CRM linking + all reward paths are skipped                          |
+| `TWILIO_ACCOUNT_SID`, `TWILIO_AUTH_TOKEN`                                                                         | No texts are sent; the emails are unchanged                         |
+| `TWILIO_MESSAGING_SERVICE_SID` / `TWILIO_FROM_NUMBER`                                                             | No sending identity ⇒ no texts (the service wins when both are set) |
+| `SMS_SHIPPED_STAGES`                                                                                              | `Ready for delivery/pickup` — the one stage that earns a text       |
 | `NOTION_SETTINGS_DATABASE_ID`                                                                                     | Studio Settings is env-only (see "Studio Settings")                 |
 | `NOTION_ORDER_LINES_DATABASE_ID`                                                                                  | No order lines written ⇒ shop stock never decrements                |
 | `NOTION_MATERIALS_DATABASE_ID`                                                                                    | No materials panel (`configured: false`) and no weekly digest       |
@@ -5364,6 +5489,7 @@ Three things about it are load-bearing:
 | Change production-schedule milestones                    | `api-server/src/services/schedule.service.ts` + `routes/cron.ts` + `lib/notion/production-schedule.{blocks,repository}.ts` + `lib/notion/orders.repository.ts` (`findOrdersNeedingMilestones`/`markMilestonesGenerated`); cron in `vercel.json`                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                     |
 | Change order status-change emails (+ pipeline graphic)   | `api-server/src/lib/resend/emails.ts` (`orderStageChangeEmail`) + `services/order-notification.service.ts` + `routes/order-notification.ts` + `lib/notion/orders.repository.ts` (`findOrderForStageNotification`); Notion automation → `POST /api/webhooks/notion-stage-change`; on-demand send via the `status-email` studio tool                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                  |
 | Change back-in-stock alerts                              | `services/restock-notification.service.ts` + `services/restock.ts` + `sendDueRestockAlerts` in `services/schedule.service.ts` + `claimRestockAlert` in `lib/db/restock-alerts.repository.ts` + `findPendingBackInStockRequests` in `lib/notion/notify.repository.ts`; the on-demand run is the `restock-alert` studio tool                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                          |
+| Change SMS notifications / the text opt-in               | `api-server/src/services/sms.service.ts` (consent: `recordSmsConsent` / `textCustomer`) + `services/sms.ts` (the pure `toE164` / `isShippedStage`) + `lib/twilio/{client,send,messages}.ts` (the vendor + ALL the copy) + `findClientSmsContactByEmail` / `setClientSmsConsent` in `lib/notion/clients.repository.ts`; the three send sites are `sendDuePaymentReminders` (`services/schedule.service.ts`), `notifyUpcomingAppointments` (`services/appointment-reminder.service.ts`) and `notifyOrderStageChange` (`services/order-notification.service.ts`); capture is `smsConsent` on `NewOrderRequest` + the checkbox in `web-app/src/pages/order-form.tsx`. Read the consent + STOP rules in `.agents/memory/sms-notifications.md` before changing any of it                                                                  |
 | Change day-before appointment reminders                  | `lib/appointments/reminders.ts` (window, per-channel markers, `whenPhrase`) + `services/appointment-reminder.service.ts` (the sweep) + `sendDueAppointmentReminders` in `services/schedule.service.ts` + `listAppointmentsInRange` / `markAppointmentReminded` / the `aptPhone` stamp in `lib/google/calendar.repository.ts` + `appointmentReminderEmail` in `lib/resend/emails.ts`; runs in the milestone cron                                                                                                                                                                                                                                                                                                                                                                                                                     |
 | Change automated fitting reminders                       | `api-server/src/services/schedule.service.ts` (`sendDueFittingReminders`) + `services/fitting-reminder.ts` (env business rule) + `lib/notion/production-schedule.{blocks,repository}.ts` (`findMilestonesNeedingFittingReminder`/`markFittingReminderSent`, `Reminder Sent` prop) + `fittingReminderEmail` in `lib/resend/emails.ts`; runs in the milestone cron                                                                                                                                                                                                                                                                                                                                                                                                                                                                    |
 | Change payment & deposit due reminders                   | `api-server/src/services/schedule.service.ts` (`sendDuePaymentReminders`) + `services/payment-reminder.ts` (env business rule) + `lib/notion/invoice.repository.ts` (`findInvoicesNeedingPaymentReminder`/`markPaymentStageReminded`) + `extractPaymentReminderInvoice` + `PAYMENT_STAGE_REMINDER_FIELDS` in `lib/notion/invoice.schema.ts` + `paymentReminderEmail` in `lib/resend/emails.ts`; runs in the milestone cron                                                                                                                                                                                                                                                                                                                                                                                                          |

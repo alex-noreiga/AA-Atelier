@@ -130,3 +130,16 @@ export function formatInZone(instant: Date, timeZone: string): string {
     timeZoneName: "short",
   }).format(instant);
 }
+
+/** Just the clock time for an instant, in the studio's zone ("10:00 AM").
+ * `formatInZone` above names the day as well, which a text has already said in
+ * words ("tomorrow at …") — repeating it there would cost a segment to say the
+ * same thing twice. */
+export function formatTimeInZone(instant: Date, timeZone: string): string {
+  return new Intl.DateTimeFormat("en-US", {
+    timeZone,
+    hour: "numeric",
+    minute: "2-digit",
+    timeZoneName: "short",
+  }).format(instant);
+}

@@ -79,7 +79,13 @@ const STEP_FIELDS = [
     "bodyGirth",
   ],
   ["colors", "colorUsage", "description"],
-  ["neededBy", "rushAcknowledged", "referralCode", "subscribeNewsletter"],
+  [
+    "neededBy",
+    "rushAcknowledged",
+    "referralCode",
+    "smsConsent",
+    "subscribeNewsletter",
+  ],
 ] as const satisfies readonly (readonly (keyof FormInput)[])[];
 
 // Form-friendly schema (string inputs, friendly messages). Its output is mapped
@@ -127,6 +133,12 @@ function buildFormSchema(rules: ServiceRules) {
       // Set when the customer acknowledges the rush surcharge. Only *required*
       // when the needed-by date lands inside the rush window (see superRefine).
       rushAcknowledged: z.boolean().default(false),
+      // Opt-in to transactional text alerts on the phone number given on step
+      // one. Off by default for the same reason as the newsletter below —
+      // consent is a deliberate tick — and deliberately NOT pre-ticked when
+      // `preferredContact` is "text": that says how the atelier should reach
+      // them, which is not the same permission.
+      smsConsent: z.boolean().default(false),
       // Marketing opt-in, separate from the transactional order. Off by default —
       // consent must be a deliberate tick.
       subscribeNewsletter: z.boolean().default(false),
@@ -385,6 +397,7 @@ export default function OrderForm() {
       measurementMode,
       measurementUnit,
       rushAcknowledged: _rushAcknowledged,
+      smsConsent,
       subscribeNewsletter: optIn,
       waist,
       bust,
@@ -411,6 +424,7 @@ export default function OrderForm() {
       measurementMode,
       hasReferral: Boolean(referralCode?.trim()),
       hasReferenceImages: referenceImageIds.length > 0,
+      smsConsent: Boolean(smsConsent),
       subscribeNewsletter: Boolean(optIn),
     });
 
@@ -455,6 +469,10 @@ export default function OrderForm() {
         ...(description ? { description } : {}),
         ...(neededBy ? { neededBy } : {}),
         ...(rush ? { rush: true } : {}),
+        // Only sent when ticked, like every other optional flag — an absent
+        // field and `false` mean the same thing to the server, and omitting it
+        // keeps the payload a record of what the customer actually chose.
+        ...(smsConsent ? { smsConsent: true } : {}),
         ...(referralCode?.trim() ? { referralCode: referralCode.trim() } : {}),
         ...(referenceImageIds.length ? { referenceImageIds } : {}),
         // Dropped for a service that doesn't offer the palette — a customer who
@@ -1172,6 +1190,24 @@ export default function OrderForm() {
                   </p>
                 </div>
               </section>
+
+              <label
+                htmlFor="smsConsent"
+                className="flex items-start gap-3 max-w-md mx-auto cursor-pointer group"
+              >
+                <input
+                  id="smsConsent"
+                  type="checkbox"
+                  {...register("smsConsent")}
+                  data-testid="sms-consent"
+                  className="mt-1 h-4 w-4 shrink-0 rounded-sm border-border text-primary accent-primary focus-visible:ring-primary"
+                />
+                <span className="text-sm font-light text-muted-foreground group-hover:text-foreground transition-colors">
+                  Text me about my order — when a payment is due, the day before
+                  an appointment, and when the piece is finished. Message rates
+                  may apply; reply STOP at any time.
+                </span>
+              </label>
 
               <label
                 htmlFor="subscribeNewsletter"

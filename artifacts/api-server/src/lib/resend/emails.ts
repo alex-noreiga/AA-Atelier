@@ -27,6 +27,7 @@ import {
 import type { CreateReviewInput } from "../notion/reviews.blocks.js";
 import type { MarketingOptOutResult } from "../notion/data-deletion.blocks.js";
 import type { EmailMessage } from "./client.js";
+import { formatCalendarDate } from "../format-date.js";
 
 const ATELIER_NAME = "A.A Atelier";
 
@@ -101,6 +102,13 @@ function orderDetailFields(input: CreateOrderInput): Field[] {
     ...(input.rush ? [["Rush order", "Yes"] as Field] : []),
     ...(input.referralCode
       ? [["Referral code", input.referralCode] as Field]
+      : []),
+    // The text-alert opt-in, so the customer's confirmation reads back the
+    // permission they just gave (and can dispute by replying) and the atelier's
+    // notification says the number on the order is textable. Omitted when they
+    // didn't tick it, like every other optional row.
+    ...(input.smsConsent
+      ? [["Text alerts", "Yes — we'll text you order updates"] as Field]
       : []),
   ];
 }
@@ -987,25 +995,6 @@ function escapeHtml(value: string): string {
     .replace(/</g, "&lt;")
     .replace(/>/g, "&gt;")
     .replace(/"/g, "&quot;");
-}
-
-/**
- * Render an ISO calendar date (`yyyy-mm-dd`) as a friendly label, e.g.
- * `2026-08-15` -> "August 15, 2026". Formatted in UTC so a date-only value never
- * rolls back a day (parsing `yyyy-mm-dd` yields UTC midnight, which a westward
- * local zone would render as the previous day). Falls back to the raw string if
- * it isn't a parseable `yyyy-mm-dd`, so a malformed value is shown, not dropped.
- */
-function formatCalendarDate(isoDate: string): string {
-  if (!/^\d{4}-\d{2}-\d{2}$/.test(isoDate)) return isoDate;
-  const parsed = new Date(`${isoDate}T00:00:00Z`);
-  if (Number.isNaN(parsed.getTime())) return isoDate;
-  return new Intl.DateTimeFormat("en-US", {
-    timeZone: "UTC",
-    year: "numeric",
-    month: "long",
-    day: "numeric",
-  }).format(parsed);
 }
 
 /** A plain internal shell — no customer-facing sign-off. The tagline defaults to

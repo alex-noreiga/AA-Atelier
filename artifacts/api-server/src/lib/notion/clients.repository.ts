@@ -41,6 +41,19 @@ export const CLIENT_REFERRAL_CREDIT_CODE_PROPERTY = "Referral Credit Code"; // r
 export const CLIENT_RETURNING_DISCOUNT_CODE_PROPERTY =
   "Returning Discount Code"; // rich_text
 
+// Opt-in to transactional text alerts (see services/sms.service.ts). Consent
+// lives on the CRM row rather than on an order because it is a fact about the
+// PERSON, not about one commission: the deposit reminder, the fitting reminder
+// and the order-ready text are three different flows that must all read the
+// same answer, and a customer who opts in on their second order has not opted
+// in twice. The number is the row's existing `Phone` — one number per customer,
+// which is also what makes revoking consent a single edit.
+export const CLIENT_SMS_CONSENT_PROPERTY = "SMS Consent"; // checkbox
+// When they agreed. Written alongside the checkbox because a consent record
+// that can't say WHEN is not much of a record — and it is the atelier's answer
+// if a customer ever asks why they are being texted.
+export const CLIENT_SMS_CONSENT_AT_PROPERTY = "SMS Consent At"; // date
+
 // Default status for a newly-created client. A customer who reached us by
 // placing an order (custom or shop) is Active; a contact-form inquiry or a
 // back-in-stock request is a cold Lead — the caller passes `status` to say which.
@@ -389,6 +402,101 @@ export async function findClientProfileByEmail(
     referredByEmail: richText(p[CLIENT_REFERRED_BY_PROPERTY]),
     firstPaidOrder: richText(p[CLIENT_FIRST_PAID_ORDER_PROPERTY]),
   };
+}
+
+// ---------------------------------------------------------------------------
+// Text-message consent: the read the send paths gate on, and the write the
+// intake records.
+//
+// A third read rather than a widening of the two above, for the reason the
+// profile read gives: each exists to answer one question, and a read that
+// answers three is a read nobody can reason about. This one answers "may we
+// text this customer, and on what number?".
+// ---------------------------------------------------------------------------
+
+/** Whether the studio may text this customer, and the number to use. */
+export interface ClientSmsContact {
+  pageId: string;
+  /** The number as the customer typed it — normalized to E.164 by the caller
+   * (`services/sms.ts`), which is where the "unreadable number ⇒ no text" rule
+   * lives. */
+  phone: string;
+  consented: boolean;
+}
+
+/**
+ * The customer's text-message consent + number, or null when the CRM database
+ * isn't configured, the email is blank, or no row matches.
+ *
+ * Null and `consented: false` mean the same thing to every caller — no text —
+ * so this deliberately doesn't distinguish them. Everything about it fails
+ * CLOSED: an absent property, an unticked box or a missing row all read as "no
+ * consent on file", because the cost of being wrong in the other direction is
+ * texting someone who never agreed to be texted.
+ */
+export async function findClientSmsContactByEmail(
+  email: string,
+  client: NotionClient = getClientCrmNotionClient(),
+): Promise<ClientSmsContact | null> {
+  const normalized = normalizeEmail(email);
+  if (!client.databaseId || !normalized) return null;
+
+  const response = await client.fetch(
+    `/v1/databases/${client.databaseId}/query`,
+    {
+      method: "POST",
+      body: JSON.stringify({
+        filter: {
+          property: CLIENT_EMAIL_PROPERTY,
+          email: { equals: normalized },
+        },
+        page_size: 1,
+      }),
+    },
+  );
+  if (!response.ok) {
+    throw new Error(
+      `Notion client SMS lookup failed with status ${response.status}`,
+    );
+  }
+
+  const page = ((await response.json()) as CrmPageQueryResponse).results[0];
+  if (!page) return null;
+  return {
+    pageId: page.id,
+    phone: phoneValue(page.properties[CLIENT_PHONE_PROPERTY]),
+    consented: checkbox(page.properties[CLIENT_SMS_CONSENT_PROPERTY]),
+  };
+}
+
+/**
+ * Record (or revoke) a customer's text-message consent on their CRM row.
+ *
+ * Granting also writes the number, which is the load-bearing half: a CRM row
+ * created by a contact-form inquiry carries no phone, and `upsertClientByEmail`
+ * only ever writes one on CREATE — so without this an existing customer could
+ * tick the box at intake and still never be textable.
+ *
+ * Revoking clears the checkbox and leaves the date and the number alone: the
+ * date is the record of a consent that genuinely was given, and the number is
+ * the atelier's ordinary contact detail, not something the SMS feature owns.
+ */
+export async function setClientSmsConsent(
+  pageId: string,
+  consent: { consented: boolean; phone?: string },
+  client: NotionClient = getClientCrmNotionClient(),
+): Promise<void> {
+  const properties: Record<string, unknown> = {
+    [CLIENT_SMS_CONSENT_PROPERTY]: { checkbox: consent.consented },
+  };
+  if (consent.consented) {
+    properties[CLIENT_SMS_CONSENT_AT_PROPERTY] = { date: { start: today() } };
+    const phone = consent.phone?.trim();
+    if (phone) {
+      properties[CLIENT_PHONE_PROPERTY] = { phone_number: phone };
+    }
+  }
+  await patchClientProperties(pageId, properties, client);
 }
 
 /**
