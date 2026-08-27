@@ -384,7 +384,11 @@ Express app (artifacts/api-server)  ──►  Notion REST API (orders database)
                                      `force` resend), the cancellation refund
                                      (`cancellation-refund`), the return /
                                      exchange refund (`return-refund`, with an
-                                     optional `amount` TARGET total) and the
+                                     optional `amount` TARGET total), a payment
+                                     taken outside Stripe (`record-payment` —
+                                     cash, check or transfer, which appends to
+                                     the payment ledger and settles the invoice
+                                     stage once the ledger covers it) and the
                                      back-in-stock sweep (`restock-alert`).
                                      Staff-gated (`requireStaff`) — see "Internal
                                      tools on the studio dashboard". Each returns a
@@ -4007,7 +4011,8 @@ the same reads. **No API change, no new env var, no atelier setup.**
 ## Internal tools on the studio dashboard
 
 The atelier's internal actions — **reconcile production milestones**, **itemize
-an invoice**, **quote a flat price**, **send a status update**, **cancel &
+an invoice**, **quote a flat price**, **record a payment** (one taken outside
+Stripe — see "The payment ledger" above), **send a status update**, **cancel &
 refund an order**, **refund a return**, **send back-in-stock alerts** — are run
 from the signed-in `/studio` page, through `POST /api/studio/tools/:tool`. None of the underlying work changed; who is
 allowed to trigger it did. This is the roadmap's "Staff authentication for
@@ -4441,15 +4446,37 @@ first slice of the roadmap's "move real invoicing to a finance tool" — see
    against a ledger the live path is already writing. Run it with the **live**
    Stripe key — it reads whichever mode the key belongs to.
 
+7. **Money that never went near a card is recorded by hand**, from `/studio` →
+   **Record a payment** (`POST /api/studio/tools/record-payment`) — cash at a
+   fitting, a check, a transfer. Without it the ledger would miss exactly the
+   payments it was built to date, since the atelier records those by ticking a
+   Notion checkbox that says nothing about when or how much. Four things about
+   it are load-bearing. It **fails loudly** where the Stripe writes are
+   best-effort (the row is the entire output, so an unconfigured ledger is
+   reported and an unknown order number is a 404). The stage **settles from the
+   ledger**, not on sight: the service sums every row for that stage — the
+   Stripe charge as readily as the cash — and ticks the invoice only once they
+   cover its amount, so a deposit taken as two piles of cash flips the checkbox
+   on the second and the result says what is still outstanding after the first.
+   It marks the stage paid with a **blank session id**, the established encoding
+   for "paid outside Stripe" that `refundCheckoutSession` already reads as
+   "refund manually". And the date is anchored at **midday in the studio's
+   timezone** (the same date-only trap `orderedOn` documents), with a future date
+   refused as a typo. `recordedBy` is stamped by the route from the verified
+   staff session and is deliberately not on the wire contract. There is no `card`
+   method — a card payment records itself — and no refunds, which the two refund
+   tools already handle.
+
 **Atelier setup: none beyond `db:migrate` + one backfill run.** No env var of its
 own (it rides `POSTGRES_URL`), no new vendor, no Notion property.
 
 **Known limits, all deliberate and all listed in the memory note:** nothing reads
 the ledger yet (the payoff is `studio-analytics` computing custom revenue by
-`paid_at`, a contract change kept separate); there is no offline-payment entry
-tool, so cash at a fitting is still a Notion checkbox and writes no row; and the
-Notion `… Paid` checkboxes remain a second, hand-tickable writer of the same
-fact — the intended end state is that they become app-written mirrors of the
+`paid_at`, a contract change kept separate); there is no ledger view beyond the
+history the `record-payment` result echoes back; a hand-recorded payment can't be
+corrected in the app (the table is append-only and there is no reversing entry);
+and the Notion `… Paid` checkboxes remain a second, hand-tickable writer of the
+same fact — the intended end state is that they become app-written mirrors of the
 ledger.
 
 ## Postgres (payment idempotency + the account order index)
@@ -5463,6 +5490,7 @@ Three things about it are load-bearing:
 | Change the internal studio dashboard                     | `artifacts/web-app/src/pages/studio.tsx` (+ the `/studio` route in `App.tsx`, `noindex` entry in `lib/seo-routes.ts`); `api-server/src/services/studio-analytics.service.ts` (the pure `aggregateStudioAnalytics` + the cached use-case) + `routes/studio.ts` + `requireStaff` in `middlewares/auth.ts` + `lib/staff.ts` (the `STUDIO_STAFF_EMAILS` allowlist + the `amr` Google check); the 403 panel's re-sign-in lands back via `web-app/src/lib/post-signin.ts` (read by `pages/account-callback.tsx`); reads via `lib/notion/scan.ts` + `listOrdersForAnalytics` / `listShopOrdersForAnalytics` / `listInvoicesForAnalytics`                                                                                                                                                                                                   |
 | Change the studio's how-to guides                        | `api-server/src/lib/guide-sections.ts` (the sections a guide can be filed against — a tool's id is its `StudioToolName`) + `lib/notion/guides.{schema,repository}.ts` (the Notion row + the file download) + `services/studio-guides.service.ts` (assembly, the HTML check, the 60s cache) + the `/studio/guides` route in `routes/studio.ts`; frontend `web-app/src/components/studio-guides.tsx` (`StudioGuides` panel + the `GuidesFor` slots), mounted by `pages/studio.tsx` and per tool by `components/studio-tools.tsx`. The sandboxed frame in that component is a security boundary — see the section above                                                                                                                                                                                                                |
 | Change the studio's internal tools (generators, refunds) | `api-server/src/services/studio-tools.service.ts` (the dispatcher + the composed result wording) + `routes/studio.ts` (`POST /studio/tools/:tool`, `requireStaff`) + `web-app/src/components/studio-tools.tsx` (rendered by `pages/studio.tsx`); the underlying work stays in `services/{schedule,invoice-generator,order-notification,order-cancellation,return-refund}.service.ts`. Contract in `openapi.yaml` (`StudioTool` / `StudioToolRequest` / `StudioToolRun`)                                                                                                                                                                                                                                                                                                                                                             |
+| Record a payment taken outside Stripe                    | `api-server/src/services/payment-record.service.ts` (the gates, the midday-in-studio-timezone date rule, and the settle-from-the-ledger check) + the `record-payment` runner in `services/studio-tools.service.ts` + the card in `web-app/src/components/studio-tools.tsx`. `recordedBy` is stamped by the route in `routes/studio.ts`, never read off the body                                                                                                                                                                                                                                                                                                                                                                                                                                                                     |
 | Change the payment ledger (what came in, and when)       | `api-server/src/lib/db/payments.repository.ts` (the append-only table's I/O; the sign is applied from `kind` here) + `services/payment-ledger.service.ts` (`recordStripeCharge` / `recordStripeRefund` — best-effort, never throwing), called from `recordPayment` (`invoice.service.ts`), `processPaidShopOrder` (`checkout.service.ts`), `refundCheckoutSession` (`order-cancellation.service.ts`) and `return-refund.service.ts`. Schema in `supabase/migrations/0005_payments.sql`; history recovered by `db:backfill-payments`. Read `.agents/memory/payment-ledger.md` before changing the `external_id` index or the sign rule                                                                                                                                                                                               |
 | Change the Postgres integrity layer / payment dedup      | `api-server/src/lib/db/client.ts` (`DbClient` seam + `postgresConfigured`) + `lib/db/processed-payments.repository.ts` (`claimPayment` / `confirmPayment` / `releasePayment`); consumed by `services/checkout.service.ts` (`recordPaidOrder`). Schema in `supabase/migrations/*.sql`, applied by `src/scripts/migrate.ts` (`pnpm db:migrate`, `.github/workflows/migrate.yml`)                                                                                                                                                                                                                                                                                                                                                                                                                                                      |
 | Change the newsletter opt-in                             | `artifacts/web-app/src/components/newsletter-signup.tsx` (footer field, in `footer.tsx`) + the intake checkbox in `pages/order-form.tsx`; `api-server/src/services/newsletter.service.ts` + `routes/newsletter.ts` + `lib/notion/newsletter.{blocks,repository}.ts` (writes to the **contact** database) + `newsletterWelcomeEmail` in `lib/resend/emails.ts`                                                                                                                                                                                                                                                                                                                                                                                                                                                                       |

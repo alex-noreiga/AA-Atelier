@@ -152,7 +152,13 @@ router.post(
   validate({ params: RunStudioToolParams, body: RunStudioToolBody }),
   async (_req, res) => {
     const { tool } = res.locals.params as { tool: StudioToolName };
-    const result = await runStudioTool(tool, res.locals.body as StudioToolArgs);
+    // `recordedBy` is stamped from the verified staff session, never taken off
+    // the body: a payment row names who recorded it, and a caller must not be
+    // able to sign somebody else's name to one.
+    const result = await runStudioTool(tool, {
+      ...(res.locals.body as StudioToolArgs),
+      recordedBy: res.locals.customer?.email ?? "",
+    });
     res.json(RunStudioToolResponse.parse(result));
   },
 );

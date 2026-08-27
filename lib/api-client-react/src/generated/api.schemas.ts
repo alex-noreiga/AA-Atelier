@@ -967,6 +967,7 @@ export const StudioTool = {
   'cancellation-refund': 'cancellation-refund',
   'return-refund': 'return-refund',
   'restock-alert': 'restock-alert',
+  'record-payment': 'record-payment',
 } as const;
 
 /**
@@ -2152,26 +2153,57 @@ export interface StudioAnalytics {
 }
 
 /**
+ * `record-payment` only. How the money arrived. Deliberately has no `card` option: a card payment goes through Stripe and records itself, so offering one here would only ever produce a second row for money already in the ledger.
+ */
+export type StudioToolRequestMethod = typeof StudioToolRequestMethod[keyof typeof StudioToolRequestMethod];
+
+
+export const StudioToolRequestMethod = {
+  cash: 'cash',
+  check: 'check',
+  transfer: 'transfer',
+  other: 'other',
+} as const;
+
+/**
+ * `record-payment` on a custom order only, where it is REQUIRED once the order has an invoice — an unattributed payment can settle nothing. Which of the invoice's three staged payments the money covers. Ignored for a shop order, which has no stages.
+ */
+export type StudioToolRequestStage = typeof StudioToolRequestStage[keyof typeof StudioToolRequestStage];
+
+
+export const StudioToolRequestStage = {
+  first_deposit: 'first_deposit',
+  second_deposit: 'second_deposit',
+  balance: 'balance',
+} as const;
+
+/**
  * The arguments for one internal tool run. Every field is optional here because each tool takes a different subset; the server rejects a run that is missing what its own tool needs. This replaces the query string of the retired `?secret=` links, so the argument names mirror them.
  */
 export interface StudioToolRequest {
   /**
-     * The order the tool acts on — `ORD-…` for a custom order, `SHP-…` for a shop order. Required by `invoice-lines`, `quote`, `status-email` and the two refunds; `milestones` sweeps the whole pipeline and `restock-alert` takes an optional `item` instead.
+     * The order the tool acts on — `ORD-…` for a custom order, `SHP-…` for a shop order. Required by `invoice-lines`, `quote`, `status-email`, `record-payment` and the two refunds; `milestones` sweeps the whole pipeline and `restock-alert` takes an optional `item` instead.
      * @maxLength 64
      */
   orderNumber?: string;
   /** `status-email` only. Resend the status update even when the order hasn't moved forward since the customer was last emailed. A forced resend never rewinds the high-water marker. */
   force?: boolean;
   /**
-     * Dollars, read by two tools. For `return-refund` it is the TARGET total to have refunded on the order — not an increment, so a repeated run can't double-refund; omit to refund in full. For `quote` it is the price of the work and is REQUIRED, since a quote with no amount is nothing to pay.
+     * Dollars, read by three tools, meaning something different in each — which is why the wording lives with the tool rather than here. For `return-refund` it is the TARGET total to have refunded on the order — not an increment, so a repeated run can't double-refund; omit to refund in full. For `quote` it is the price of the work and is REQUIRED, since a quote with no amount is nothing to pay. For `record-payment` it is REQUIRED and is how much actually changed hands.
      * @minimum 0
      */
   amount?: number;
   /**
-     * `quote` only, and optional even there. What the work is, as the customer should read it on their invoice — "Re-stone bodice", "Replace shoulder elastic". Omitted ⇒ the line is named after the order's service ("Repair", "Rhinestoning", "Alterations").
+     * Optional free text, read by two tools. For `quote` it is what the work is, as the customer should read it on their invoice — "Re-stone bodice", "Replace shoulder elastic"; omitted ⇒ the line is named after the order's service ("Repair", "Rhinestoning", "Alterations"). For `record-payment` it is an internal note kept on the ledger row ("cash at the fitting", "check #204") — the customer never sees it.
      * @maxLength 200
      */
   description?: string;
+  /** `record-payment` only. How the money arrived. Deliberately has no `card` option: a card payment goes through Stripe and records itself, so offering one here would only ever produce a second row for money already in the ledger. */
+  method?: StudioToolRequestMethod;
+  /** `record-payment` only. The calendar date (`YYYY-MM-DD`) the money actually changed hands, which is the whole reason the tool exists — cash handed over at a fitting is typed up whenever the atelier next sits down, and the ledger must date it to the day it arrived rather than the day it was recorded. Interpreted as midday in the studio's timezone, so it can't slip to the neighbouring day when read back. Omitted ⇒ today. A future date is rejected as a typo. */
+  paidOn?: string;
+  /** `record-payment` on a custom order only, where it is REQUIRED once the order has an invoice — an unattributed payment can settle nothing. Which of the invoice's three staged payments the money covers. Ignored for a shop order, which has no stages. */
+  stage?: StudioToolRequestStage;
   /**
      * `restock-alert` only, and optional even there. The exact `Item Name` of one inventory row to alert on, as it appears in Notion — the same text a back-in-stock request stores. Omit it to sweep every piece that is currently in stock, which is what the nightly run does.
      * @maxLength 200

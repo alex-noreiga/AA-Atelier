@@ -21,6 +21,9 @@ vi.mock("../../src/services/order-notification.service.js", () => ({
 vi.mock("../../src/services/order-cancellation.service.js", () => ({
   processCancellation: vi.fn(),
 }));
+vi.mock("../../src/services/payment-record.service.js", () => ({
+  recordOfflinePayment: vi.fn(),
+}));
 vi.mock("../../src/services/restock-notification.service.js", () => ({
   notifyRestock: vi.fn(),
 }));
@@ -40,6 +43,7 @@ import { notifyOrderStageChange } from "../../src/services/order-notification.se
 import { processCancellation } from "../../src/services/order-cancellation.service.js";
 import { processReturnRefund } from "../../src/services/return-refund.service.js";
 import { notifyRestock } from "../../src/services/restock-notification.service.js";
+import { recordOfflinePayment } from "../../src/services/payment-record.service.js";
 import { BadRequestError, NotFoundError } from "../../src/lib/errors.js";
 
 const mockMilestones = vi.mocked(reconcileMilestones);
@@ -48,6 +52,7 @@ const mockNotify = vi.mocked(notifyOrderStageChange);
 const mockCancel = vi.mocked(processCancellation);
 const mockReturn = vi.mocked(processReturnRefund);
 const mockRestock = vi.mocked(notifyRestock);
+const mockRecordPayment = vi.mocked(recordOfflinePayment);
 
 describe("runStudioTool — milestones", () => {
   it("reports what the reconciliation did, including the reminder passes", async () => {
@@ -550,5 +555,139 @@ describe("runStudioTool — restock-alert", () => {
     await expect(
       runStudioTool("restock-alert", { item: "Nothing" }),
     ).rejects.toBeInstanceOf(NotFoundError);
+  });
+});
+
+describe("runStudioTool — record-payment", () => {
+  const recorded = {
+    orderNumber: "ORD-000002",
+    orderKind: "custom" as const,
+    amount: 250,
+    method: "cash" as const,
+    paidAt: new Date("2026-08-14T17:00:00.000Z"),
+    stageLabel: "First deposit",
+    written: true,
+    stageMarkedPaid: true,
+    stageOutstanding: 0,
+    history: ["2026-08-14 · $250.00 paid · cash · first deposit"],
+  };
+
+  it("passes the typed figures through and reports what was recorded", async () => {
+    mockRecordPayment.mockResolvedValue(recorded);
+
+    const result = await runStudioTool("record-payment", {
+      orderNumber: "ORD-000002",
+      amount: 250,
+      method: "cash",
+      paidOn: "2026-08-14",
+      stage: "first_deposit",
+      description: "cash at the fitting",
+      recordedBy: "alexandra@example.com",
+    });
+
+    expect(mockRecordPayment).toHaveBeenCalledWith(
+      expect.objectContaining({
+        orderNumber: "ORD-000002",
+        amount: 250,
+        method: "cash",
+        paidOn: "2026-08-14",
+        stage: "first_deposit",
+        // The tool's free-text field is an INTERNAL note here, not the
+        // customer-facing line name it is for the quote.
+        note: "cash at the fitting",
+        recordedBy: "alexandra@example.com",
+      }),
+    );
+    expect(result.status).toBe("ok");
+    expect(result.message).toMatch(/\$250\.00 paid by cash on ORD-000002/);
+    expect(result.details.join(" ")).toMatch(/Marked the First deposit paid/);
+  });
+
+  it("says what a stage still needs when the payment didn't cover it", async () => {
+    mockRecordPayment.mockResolvedValue({
+      ...recorded,
+      amount: 100,
+      stageMarkedPaid: false,
+      stageOutstanding: 150,
+    });
+
+    const result = await runStudioTool("record-payment", {
+      orderNumber: "ORD-000002",
+      amount: 100,
+      method: "cash",
+      stage: "first_deposit",
+    });
+
+    expect(result.details.join(" ")).toMatch(/\$150\.00 of the first deposit/);
+  });
+
+  it("refuses a run that doesn't say how the money arrived", async () => {
+    await expect(
+      runStudioTool("record-payment", {
+        orderNumber: "ORD-000002",
+        amount: 20,
+      }),
+    ).rejects.toBeInstanceOf(BadRequestError);
+    expect(mockRecordPayment).not.toHaveBeenCalled();
+  });
+
+  it("requires an order number", async () => {
+    await expect(
+      runStudioTool("record-payment", { amount: 20, method: "cash" }),
+    ).rejects.toBeInstanceOf(BadRequestError);
+  });
+
+  it("reports an unconfigured ledger as attention, not as a bad request", async () => {
+    // Nothing is wrong with what the atelier typed; the fix is a deployment
+    // setting they need to see named.
+    mockRecordPayment.mockRejectedValue(
+      new BadRequestError(
+        "The payment ledger isn't configured — set POSTGRES_URL and run the migrations, then record this again.",
+      ),
+    );
+
+    const result = await runStudioTool("record-payment", {
+      orderNumber: "ORD-000002",
+      amount: 250,
+      method: "cash",
+      stage: "first_deposit",
+    });
+
+    expect(result.status).toBe("attention");
+    expect(result.message).toMatch(/POSTGRES_URL/);
+  });
+
+  it("still surfaces an ordinary validation failure as a 400", async () => {
+    mockRecordPayment.mockRejectedValue(
+      new BadRequestError("Enter how much was paid."),
+    );
+
+    await expect(
+      runStudioTool("record-payment", {
+        orderNumber: "ORD-000002",
+        method: "cash",
+      }),
+    ).rejects.toBeInstanceOf(BadRequestError);
+  });
+
+  it("notes that a shop order has no stages", async () => {
+    mockRecordPayment.mockResolvedValue({
+      orderNumber: "SHP-000042",
+      orderKind: "shop",
+      amount: 88,
+      method: "cash",
+      paidAt: new Date("2026-08-14T17:00:00.000Z"),
+      written: true,
+      stageMarkedPaid: false,
+      history: [],
+    });
+
+    const result = await runStudioTool("record-payment", {
+      orderNumber: "SHP-000042",
+      amount: 88,
+      method: "cash",
+    });
+
+    expect(result.details.join(" ")).toMatch(/no payment stages/);
   });
 });

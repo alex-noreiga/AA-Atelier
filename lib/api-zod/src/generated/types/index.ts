@@ -166,6 +166,8 @@ export * from './studioSettingsOverview';
 export * from './studioStageCount';
 export * from './studioTool';
 export * from './studioToolRequest';
+export * from './studioToolRequestMethod';
+export * from './studioToolRequestStage';
 export * from './studioToolRun';
 export * from './studioToolRunStatus';
 export * from './studioTopItem';

@@ -20,4 +20,5 @@ export const StudioTool = {
   'cancellation-refund': 'cancellation-refund',
   'return-refund': 'return-refund',
   'restock-alert': 'restock-alert',
+  'record-payment': 'record-payment',
 } as const;

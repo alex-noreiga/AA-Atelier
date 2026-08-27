@@ -54,6 +54,12 @@ import {
   notifyRestock,
   type RestockNotificationResult,
 } from "./restock-notification.service.js";
+import {
+  recordOfflinePayment,
+  type RecordPaymentResult,
+} from "./payment-record.service.js";
+import type { PaymentMethod } from "../lib/db/payments.repository.js";
+import type { PaymentStage } from "../lib/notion/invoice.schema.js";
 import { BadRequestError, NotFoundError } from "../lib/errors.js";
 import { logger } from "../lib/logger.js";
 
@@ -65,7 +71,8 @@ export type StudioToolName =
   | "status-email"
   | "cancellation-refund"
   | "return-refund"
-  | "restock-alert";
+  | "restock-alert"
+  | "record-payment";
 
 /** What a run did. See the spec's `StudioToolRun.status` for the contract. */
 export type StudioToolStatus = "ok" | "noop" | "attention";
@@ -79,6 +86,13 @@ export interface StudioToolArgs {
   amount?: number;
   item?: string;
   description?: string;
+  method?: PaymentMethod;
+  paidOn?: string;
+  stage?: PaymentStage;
+  /** Who is running the tool. Set by the ROUTE from the verified staff session,
+   * never read off the request body — otherwise a caller could sign somebody
+   * else's name to a payment they recorded. Not on the wire contract. */
+  recordedBy?: string;
 }
 
 /** One run's outcome, already composed for display. */
@@ -483,6 +497,85 @@ async function runRestockAlert(
  * schema-validated; what's left is the per-tool requirement check, which lives
  * inside each runner because only it knows what it needs.
  */
+/** Record a payment that arrived outside Stripe — cash at a fitting, a check, a
+ * transfer. The one tool that WRITES to the payment ledger rather than mirroring
+ * Stripe into it, and so the only one whose whole output is a row. */
+async function runRecordPayment(
+  args: StudioToolArgs,
+): Promise<StudioToolRunResult> {
+  const orderNumber = requireOrderNumber(args);
+  const method = args.method;
+  if (!method) {
+    throw new BadRequestError("Choose how the payment was made.");
+  }
+
+  let result: RecordPaymentResult;
+  try {
+    result = await recordOfflinePayment({
+      orderNumber,
+      // `amount` is optional on the shared request body, so an omitted figure
+      // arrives as NaN and the service rejects it with its own wording — the
+      // same handling as the quote tool.
+      amount: args.amount ?? Number.NaN,
+      method,
+      ...(args.paidOn ? { paidOn: args.paidOn } : {}),
+      ...(args.stage ? { stage: args.stage } : {}),
+      ...(args.description ? { note: args.description } : {}),
+      ...(args.recordedBy ? { recordedBy: args.recordedBy } : {}),
+    });
+  } catch (err) {
+    // The ledger being unconfigured is the one failure worth reporting as a run
+    // rather than a 400: nothing is wrong with what the atelier typed, and the
+    // fix is a deployment setting they need to see named.
+    if (
+      err instanceof BadRequestError &&
+      err.message.includes("payment ledger isn't configured")
+    ) {
+      return {
+        tool: "record-payment",
+        status: "attention",
+        title: "Nothing to record it in",
+        message: err.message,
+        details: [],
+      };
+    }
+    throw err;
+  }
+
+  const where =
+    result.stageLabel !== undefined
+      ? ` against the ${result.stageLabel.toLowerCase()}`
+      : "";
+
+  const details: string[] = [];
+  if (result.stageMarkedPaid) {
+    details.push(`Marked the ${result.stageLabel} paid on the invoice.`);
+  } else if (
+    result.stageOutstanding !== undefined &&
+    result.stageOutstanding > 0
+  ) {
+    details.push(
+      `${money(result.stageOutstanding)} of the ${result.stageLabel?.toLowerCase() ?? "stage"} is still outstanding, so it stays unpaid on the invoice.`,
+    );
+  }
+  if (result.orderKind === "shop") {
+    details.push(
+      "A shop order has no payment stages, so this was recorded against the order itself.",
+    );
+  }
+  if (result.history.length > 0) {
+    details.push(`Payments on this order: ${result.history.join("; ")}.`);
+  }
+
+  return {
+    tool: "record-payment",
+    status: "ok",
+    title: "Payment recorded",
+    message: `Recorded ${money(result.amount)} paid by ${method} on ${result.orderNumber}${where}.`,
+    details,
+  };
+}
+
 export async function runStudioTool(
   tool: StudioToolName,
   args: StudioToolArgs = {},
@@ -519,5 +612,7 @@ function dispatch(
       return runReturnRefund(args);
     case "restock-alert":
       return runRestockAlert(args);
+    case "record-payment":
+      return runRecordPayment(args);
   }
 }

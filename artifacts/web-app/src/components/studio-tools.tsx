@@ -52,6 +52,12 @@ interface ToolField {
   optional?: boolean;
 }
 
+/** Whether a typed order number names a shop order. Mirrors the server's own
+ * prefix test (`order-cancellation.service`, `payment-record.service`). */
+function isShopOrderNumber(value: string): boolean {
+  return value.trim().toUpperCase().startsWith("SHP-");
+}
+
 /** Every order-scoped tool asks the same way, so the descriptor is shared. */
 const orderField = (placeholder: string): ToolField => ({
   key: "orderNumber",
@@ -83,11 +89,35 @@ interface ToolSpec {
   };
   /** Offer a free-text line describing the work (the quote only). */
   offersDescription?: { label: string; placeholder: string };
+  /** Offer the offline-payment fields: how it was paid, when, and — for a
+   * custom order — which staged payment it covers. Grouped behind one flag
+   * because they are meaningless apart: a payment with no date is the very
+   * thing this tool exists to stop being recorded. */
+  offersPayment?: boolean;
   /** Ask again before running — the tools that move money. */
   destructive?: boolean;
   /** The button's verb. */
   action: string;
 }
+
+/** How an offline payment arrived. Mirrors `StudioToolRequest.method`, which
+ * deliberately has no `card` option — a card payment goes through Stripe and
+ * records itself, so offering one here could only ever double-count it. */
+const PAYMENT_METHODS = [
+  { value: "cash", label: "Cash" },
+  { value: "check", label: "Check" },
+  { value: "transfer", label: "Bank transfer" },
+  { value: "other", label: "Other" },
+] as const;
+
+/** The invoice's three staged payments. Their customer-facing names vary by
+ * service (a repair paid in one go reads "Deposit"), but the atelier picks the
+ * stage, and the result echoes back whatever the order calls it. */
+const PAYMENT_STAGES = [
+  { value: "first_deposit", label: "First deposit" },
+  { value: "second_deposit", label: "Second deposit" },
+  { value: "balance", label: "Balance" },
+] as const;
 
 const TOOLS: ToolSpec[] = [
   {
@@ -149,6 +179,21 @@ const TOOLS: ToolSpec[] = [
     action: "Refund",
   },
   {
+    tool: "record-payment",
+    name: "Record a payment",
+    description:
+      "For money that arrived outside Stripe — cash at a fitting, a check, a transfer. Dates it to the day it actually changed hands, and settles the stage on the invoice once the payments cover it.",
+    field: orderField("ORD-000002 or SHP-…"),
+    offersAmount: true,
+    amountSpec: { label: "Amount", placeholder: "250.00", required: true },
+    offersPayment: true,
+    offersDescription: {
+      label: "Note (optional)",
+      placeholder: "Cash at the fitting",
+    },
+    action: "Record",
+  },
+  {
     tool: "restock-alert",
     name: "Send back-in-stock alerts",
     description:
@@ -196,6 +241,9 @@ function ToolCard({
   const [subject, setSubject] = useState("");
   const [amount, setAmount] = useState("");
   const [description, setDescription] = useState("");
+  const [method, setMethod] = useState<string>("cash");
+  const [paidOn, setPaidOn] = useState("");
+  const [stage, setStage] = useState("");
   const [force, setForce] = useState(false);
   const [confirming, setConfirming] = useState(false);
   const [run, setRun] = useState<StudioToolRun | null>(null);
@@ -219,6 +267,13 @@ function ToolCard({
       quotedAmount > 0
     );
 
+  // A shop order has no staged payments, so the stage picker is neither shown
+  // nor required for one. Decided from the typed number's prefix, exactly as the
+  // server decides it — the two must agree or the atelier is asked for something
+  // that will be ignored, or not asked for something that will be demanded.
+  const staged = spec.offersPayment && !isShopOrderNumber(subject);
+  const missingStage = Boolean(staged) && stage === "";
+
   // A request handing this tool its argument: fill the field, bring the card
   // into view, and put the cursor in it so the value can be read and corrected
   // before anything runs. Deliberately stops there — a hand-off prepares a run,
@@ -229,9 +284,12 @@ function ToolCard({
     if (!handoff) return;
     const value = handoff.orderNumber ?? handoff.item ?? "";
     setSubject(value);
-    // The amount and description belonged to whatever was in the field before.
+    // The amount, description and payment details belonged to whatever was in
+    // the field before.
     setAmount("");
     setDescription("");
+    setPaidOn("");
+    setStage("");
     // Any previous result belongs to a different order; leaving it under a
     // freshly filled field would read as this request having been actioned.
     setRun(null);
@@ -263,6 +321,20 @@ function ToolCard({
           ...(spec.offersDescription && description.trim()
             ? { description: description.trim() }
             : {}),
+          ...(spec.offersPayment
+            ? {
+                method: method as "cash" | "check" | "transfer" | "other",
+                // Blank ⇒ omitted, and the server dates it today in the
+                // studio's timezone rather than the browser's.
+                ...(paidOn ? { paidOn } : {}),
+                ...(staged && stage
+                  ? {
+                      stage: stage as
+                        "first_deposit" | "second_deposit" | "balance",
+                    }
+                  : {}),
+              }
+            : {}),
         },
       },
       {
@@ -273,7 +345,7 @@ function ToolCard({
   };
 
   const start = () => {
-    if (missingSubject || missingAmount) return;
+    if (missingSubject || missingAmount || missingStage) return;
     if (spec.destructive) {
       setConfirming(true);
       return;
@@ -369,10 +441,88 @@ function ToolCard({
           </div>
         )}
 
+        {spec.offersPayment && (
+          <>
+            <div className="w-full sm:w-40">
+              <Label
+                htmlFor={`${fieldId}-method`}
+                className="text-[10px] tracking-[0.15em] uppercase text-muted-foreground"
+              >
+                How it was paid
+              </Label>
+              <select
+                id={`${fieldId}-method`}
+                value={method}
+                onChange={(event) => setMethod(event.target.value)}
+                className="mt-1 h-9 w-full rounded-sm border border-input bg-background px-3 text-sm"
+                data-testid={`tool-${spec.tool}-method`}
+              >
+                {PAYMENT_METHODS.map((option) => (
+                  <option key={option.value} value={option.value}>
+                    {option.label}
+                  </option>
+                ))}
+              </select>
+            </div>
+
+            <div className="w-full sm:w-44">
+              <Label
+                htmlFor={`${fieldId}-paid-on`}
+                className="text-[10px] tracking-[0.15em] uppercase text-muted-foreground"
+              >
+                Date paid
+              </Label>
+              <Input
+                id={`${fieldId}-paid-on`}
+                type="date"
+                value={paidOn}
+                onChange={(event) => setPaidOn(event.target.value)}
+                className="mt-1"
+                data-testid={`tool-${spec.tool}-paid-on`}
+              />
+            </div>
+
+            {/* Only a custom order has staged payments. Hidden rather than
+                disabled for a shop number, so the card asks for exactly what
+                the run will use. */}
+            {staged && (
+              <div className="w-full sm:w-44">
+                <Label
+                  htmlFor={`${fieldId}-stage`}
+                  className="text-[10px] tracking-[0.15em] uppercase text-muted-foreground"
+                >
+                  Which payment
+                </Label>
+                <select
+                  id={`${fieldId}-stage`}
+                  value={stage}
+                  onChange={(event) => setStage(event.target.value)}
+                  className="mt-1 h-9 w-full rounded-sm border border-input bg-background px-3 text-sm"
+                  data-testid={`tool-${spec.tool}-stage`}
+                >
+                  {/* Blank by default and required: defaulting to the first
+                      deposit would attribute money to a stage nobody chose. */}
+                  <option value="">Choose…</option>
+                  {PAYMENT_STAGES.map((option) => (
+                    <option key={option.value} value={option.value}>
+                      {option.label}
+                    </option>
+                  ))}
+                </select>
+              </div>
+            )}
+          </>
+        )}
+
         <Button
           variant={spec.destructive ? "outline" : "default"}
           onClick={start}
-          disabled={missingSubject || missingAmount || mutation.isPending}
+          disabled={
+            missingSubject ||
+            missingAmount ||
+            missingStage ||
+            mutation.isPending
+          }
           className="w-full gap-2 sm:w-auto"
           data-testid={`tool-${spec.tool}-run`}
         >

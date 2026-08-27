@@ -129,15 +129,91 @@ the same `external_id` index, so it is safe to re-run and safe to run against a
 ledger the live path is already writing to. **Run it with the LIVE Stripe key** —
 it reads whichever mode the key belongs to.
 
+## Recording a payment taken outside Stripe (the `record-payment` tool)
+
+The Stripe paths capture every payment a card touched, which left a hole exactly
+the shape of how a local skater actually pays. `/studio` → **Record a payment**
+is that hole closed: `POST /api/studio/tools/record-payment` with an order
+number, an amount, a method (`cash` / `check` / `transfer` / `other`), the date
+it arrived, and — on a custom order — which stage it covers. Code:
+`services/payment-record.service.ts`, the `record-payment` runner in
+`services/studio-tools.service.ts`, and the card in
+`web-app/src/components/studio-tools.tsx`.
+
+1. **It fails LOUDLY, unlike every other ledger write.** The Stripe writes are
+   best-effort because the payment succeeded either way. Here the row IS the
+   work, so an unconfigured `POSTGRES_URL` is reported (as `attention`, with the
+   fix named) rather than silently no-op'd, and an order number nobody holds is a
+   404 — on a Stripe path a typo'd number is impossible, but this is a hand-typed
+   field and a payment filed against a number nobody holds is money the studio
+   believes it has and cannot find.
+
+2. **The stage settles from the LEDGER, not on sight.** After the row is
+   written the service sums every ledger row for that stage — the Stripe charge
+   as readily as the cash — and ticks `First/Second Deposit Paid` or
+   `Balance Paid` only once the total covers the stage's amount. That condition
+   is the point: a deposit taken as two piles of cash a fortnight apart flips the
+   checkbox on the second, and the result says what is still outstanding after
+   the first. A hand-ticked box could never express the halfway state, which is
+   how a part-paid deposit came to read as settled.
+
+3. **It marks the stage paid with a BLANK session id**, which is the established
+   encoding for "paid outside Stripe" — `refundCheckoutSession` already reads a
+   paid stage with no session id as "refund manually" rather than trying to
+   refund a card that was never charged. Nothing new had to learn about offline
+   payments.
+
+4. **A date is anchored at MIDDAY in the studio's timezone.** The same date-only
+   trap `orderedOn` documents: `2026-09-01` parsed as UTC midnight and read in
+   `America/Chicago` lands on August 31, silently moving a payment into the
+   previous month. Midday sits safely inside the day in every zone. A future date
+   is refused — money cannot have arrived tomorrow, so it is always a typo, and
+   it is the one typo that would put money in a month nobody looks at.
+
+5. **`recordedBy` is stamped by the ROUTE from the verified staff session**, and
+   is deliberately absent from the wire contract, so a caller cannot sign
+   somebody else's name to a payment. (The generated zod body strips it anyway;
+   the route then adds it. Two layers, one reason.)
+
+6. **Everything after the row degrades rather than throws.** Reading the ledger
+   back (to settle the stage and to show the history) happens _after_ the write,
+   so a database blip there must not report a recorded payment as a failure and
+   invite the atelier to record it twice. An unreadable ledger is a "can't tell":
+   the stage stays unsettled and no outstanding figure is claimed. A failed
+   Notion checkbox write is likewise surfaced in the result, not thrown.
+
+7. **No `card` method, and no refunds.** A card payment goes through Stripe and
+   records itself, so offering the option could only ever double-count. Money
+   going back out is issued by the two refund tools, which record themselves; a
+   cash refund handed over in person has no tool yet, and would want its own with
+   its own confirmation rather than a sign toggle hidden in this one.
+
+8. **A shop order records unstaged**, since it has no staged payments and no
+   checkbox to settle — the row is the whole record. The dashboard hides the
+   stage picker for an `SHP-` number using the same prefix test the server uses,
+   so the card asks for exactly what the run will use.
+
+9. **An order with no invoice yet still records**, keeping whatever stage was
+   named, so the date isn't lost while the atelier gets to building the invoice
+   and the row is already attributed when it appears.
+
+**Atelier setup: none.** No env var, no new database, no Notion property — it
+writes the same `payments` table and the same invoice checkboxes as before.
+
 ## What is deliberately NOT done yet
 
 - **Nothing reads the ledger.** The capture side is complete; the payoff needs
   `studio-analytics.service.ts` to compute custom revenue by `paid_at` instead of
   attributing `Final Balance` to the order's month. That is a contract change
   (`StudioAnalytics`) plus the studio page, and was kept separate.
-- **No offline-payment entry.** Cash at a fitting still gets recorded by ticking
-  the Notion checkbox, which writes no ledger row. The table already supports it
-  (`method`, `recorded_by`, no `external_id`); it needs a studio tool.
+- **There is no ledger VIEW.** The `record-payment` result echoes the order's
+  payment history back as detail lines, which is the only place the rows are
+  readable today. A panel listing an order's payments would want its own read
+  endpoint.
+- **A payment recorded by hand can't be corrected or deleted.** The table is
+  append-only and there is no reversing entry for a mistyped amount — today that
+  means a SQL fix. A "correction" row (negative, `method: other`) would be the
+  natural shape if it comes up.
 - **Notion is still a second writer.** The `… Paid` checkboxes remain
   hand-tickable and are still what `getInvoicePaymentInfo` and the analytics
   read. The intended end state is that they become app-written mirrors of the
