@@ -8,6 +8,7 @@
 import type { StudioCapacity } from './studioCapacity';
 import type { StudioChannelSales } from './studioChannelSales';
 import type { StudioConsignment } from './studioConsignment';
+import type { StudioPaymentLedgerStatus } from './studioPaymentLedgerStatus';
 import type { StudioPaymentTotals } from './studioPaymentTotals';
 import type { StudioPipeline } from './studioPipeline';
 import type { StudioProductionLoad } from './studioProductionLoad';
@@ -27,6 +28,7 @@ export interface StudioAnalytics {
   /** One entry per month over the trailing window, oldest first. Months with no activity are included as zeroes so a chart has no gaps. */
   revenue: StudioRevenueMonth[];
   payments: StudioPaymentTotals;
+  paymentLedger: StudioPaymentLedgerStatus;
   /** The shop's best sellers, most-ordered first, across every sales channel. Empty when no shop order carries its inventory relation (legacy orders, hand-filed ones, or the relation-links flag being off) — item-level figures are only as good as that link, and `topItemCoverage` says how many orders it misses. */
   topItems: StudioTopItem[];
   topItemCoverage: StudioTopItemCoverage;

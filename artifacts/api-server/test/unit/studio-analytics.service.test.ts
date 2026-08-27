@@ -13,6 +13,7 @@ import {
   summarizeConsignment,
   type ConsignmentOverview,
 } from "../../src/services/consignment.service.js";
+import type { PaymentRecord } from "../../src/lib/db/payments.repository.js";
 
 /** A shelf with nothing on it, wired up. Built through the real summarizer so
  * the fixture can't drift from the shape the service actually returns. */
@@ -80,6 +81,32 @@ function invoice(
   };
 }
 
+/** One ledger row. Amounts are SIGNED cents, as the table stores them. */
+function payment(overrides: Partial<PaymentRecord> = {}): PaymentRecord {
+  seq += 1;
+  return {
+    id: `payment-${seq}`,
+    orderNumber: "ORD-000002",
+    orderKind: "custom",
+    stage: "first_deposit",
+    kind: "charge",
+    amountCents: 25000,
+    currency: "usd",
+    method: "stripe",
+    paidAt: new Date("2026-08-14T17:00:00.000Z"),
+    externalId: "",
+    paymentIntentId: "",
+    note: "",
+    recordedBy: "",
+    ...overrides,
+  };
+}
+
+/** The ledger source, with rows. */
+function ledger(rows: PaymentRecord[] = []) {
+  return { configured: true, unavailable: false, rows };
+}
+
 function aggregate(input: Partial<StudioAnalyticsInput> = {}) {
   return aggregateStudioAnalytics({
     orders: [],
@@ -89,6 +116,9 @@ function aggregate(input: Partial<StudioAnalyticsInput> = {}) {
     shopChannels: SHOP_CHANNELS,
     consignment: emptyConsignment(),
     invoices: [],
+    // Default: a configured ledger holding nothing, which is what an install
+    // that hasn't been backfilled looks like. Tests that care supply rows.
+    payments: { configured: true, unavailable: false, rows: [] },
     itemNames: new Map(),
     now: NOW,
     timeZone: "UTC",
@@ -665,5 +695,148 @@ describe("aggregateStudioAnalytics — envelope", () => {
     expect(result.production.activeOrders).toBe(0);
     expect(result.payments.outstandingTotal).toBe(0);
     expect(result.topItems).toEqual([]);
+  });
+});
+
+describe("aggregateStudioAnalytics — collected revenue from the ledger", () => {
+  it("buckets a payment by the month the MONEY moved, not the order's", () => {
+    // The whole point of the ledger. A commission placed in June and paid in
+    // August is June's booked figure and August's collected one.
+    const { revenue } = aggregate({
+      payments: ledger([
+        payment({ paidAt: new Date("2026-08-14T17:00:00.000Z") }),
+        payment({
+          amountCents: 100000,
+          paidAt: new Date("2026-07-02T17:00:00.000Z"),
+        }),
+      ]),
+    });
+
+    const byMonth = new Map(revenue.map((m) => [m.month, m]));
+    expect(byMonth.get("2026-08")?.customCollected).toBe(250);
+    expect(byMonth.get("2026-07")?.customCollected).toBe(1000);
+  });
+
+  it("nets refunds out of the month they were issued in", () => {
+    // A refund is a negative row, so a refunded order stops counting as
+    // collected — which the Notion paid-checkbox never did.
+    const { revenue } = aggregate({
+      payments: ledger([
+        payment({ amountCents: 25000 }),
+        payment({ kind: "refund", amountCents: -10000 }),
+      ]),
+    });
+
+    const august = revenue.find((m) => m.month === "2026-08");
+    expect(august?.customCollected).toBe(150);
+  });
+
+  it("reports a month that gave back more than it took as negative", () => {
+    // Honest rather than clamped: flooring it at zero would hide the refund
+    // somewhere nobody could find it.
+    const { revenue } = aggregate({
+      payments: ledger([payment({ kind: "refund", amountCents: -10000 })]),
+    });
+
+    expect(revenue.find((m) => m.month === "2026-08")?.customCollected).toBe(
+      -100,
+    );
+  });
+
+  it("ignores SHOP rows — shopRevenue already counts that money", () => {
+    // Drawing the same number from two places is how the two come to disagree.
+    const { revenue } = aggregate({
+      payments: ledger([
+        payment({ orderKind: "shop", orderNumber: "SHP-1", amountCents: 8800 }),
+      ]),
+    });
+
+    expect(revenue.find((m) => m.month === "2026-08")?.customCollected).toBe(0);
+  });
+
+  it("ignores a payment outside the reporting window", () => {
+    const { revenue } = aggregate({
+      payments: ledger([
+        payment({ paidAt: new Date("2020-01-01T12:00:00.000Z") }),
+      ]),
+    });
+
+    expect(revenue.every((m) => m.customCollected === 0)).toBe(true);
+  });
+
+  it("keeps booked and collected as separate answers about one order", () => {
+    const { revenue } = aggregate({
+      orders: [
+        order({ pageId: "page-a", createdTime: "2026-06-10T10:00:00.000Z" }),
+      ],
+      invoices: [invoice({ orderPageId: "page-a", finalBalance: 1200 })],
+      payments: ledger([
+        payment({ paidAt: new Date("2026-08-01T17:00:00.000Z") }),
+      ]),
+    });
+
+    const byMonth = new Map(revenue.map((m) => [m.month, m]));
+    expect(byMonth.get("2026-06")?.customBooked).toBe(1200);
+    expect(byMonth.get("2026-06")?.customCollected).toBe(0);
+    expect(byMonth.get("2026-08")?.customBooked).toBe(0);
+    expect(byMonth.get("2026-08")?.customCollected).toBe(250);
+  });
+
+  it("settles float noise so a sum of cents reads as dollars", () => {
+    const { revenue } = aggregate({
+      payments: ledger([
+        payment({ amountCents: 1 }),
+        payment({ amountCents: 2 }),
+      ]),
+    });
+
+    expect(revenue.find((m) => m.month === "2026-08")?.customCollected).toBe(
+      0.03,
+    );
+  });
+});
+
+describe("aggregateStudioAnalytics — what the ledger could tell us", () => {
+  it("reports an unconfigured ledger, so a nought can't read as no takings", () => {
+    const { paymentLedger } = aggregate({
+      payments: { configured: false, unavailable: false, rows: [] },
+    });
+
+    expect(paymentLedger).toEqual({ configured: false, payments: 0 });
+  });
+
+  it("reports an unreadable ledger as unavailable, not as empty", () => {
+    const { paymentLedger } = aggregate({
+      payments: { configured: true, unavailable: true, rows: [] },
+    });
+
+    expect(paymentLedger).toMatchObject({
+      configured: true,
+      unavailable: true,
+      payments: 0,
+    });
+  });
+
+  it("names the earliest month holding a payment — the backfill's watermark", () => {
+    // Months before this show 0 because nothing is recorded there, which is what
+    // an install that hasn't been backfilled looks like.
+    const { paymentLedger } = aggregate({
+      payments: ledger([
+        payment({ paidAt: new Date("2026-08-14T17:00:00.000Z") }),
+        payment({ paidAt: new Date("2026-06-02T17:00:00.000Z") }),
+      ]),
+    });
+
+    expect(paymentLedger).toEqual({
+      configured: true,
+      payments: 2,
+      recordedFrom: "2026-06",
+    });
+  });
+
+  it("omits recordedFrom when the window holds nothing", () => {
+    const { paymentLedger } = aggregate({ payments: ledger([]) });
+
+    expect(paymentLedger).toEqual({ configured: true, payments: 0 });
   });
 });

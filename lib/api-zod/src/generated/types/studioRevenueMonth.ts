@@ -7,7 +7,7 @@
  */
 
 /**
- * A month of trade. The two money figures are deliberately NOT summed: shop revenue is money actually collected, while the custom figure is work booked (Notion holds no per-payment dates, so a custom payment can't be attributed to the month it was made).
+ * A month of trade, carrying two different questions about custom work that must not be added together. `customBooked` is what was WON that month — the value of the orders placed in it. `customCollected` is what came IN that month, from the payment ledger. A commission booked in March and paid across April and June appears once in March's booked figure and twice in the collected one, which is correct for both and nonsense if summed. `shopRevenue` is a collected figure, so it is the one that adds cleanly to `customCollected`.
  */
 export interface StudioRevenueMonth {
   /** The month as YYYY-MM. */
@@ -18,6 +18,8 @@ export interface StudioRevenueMonth {
   shopOrders: number;
   /** Dollars invoiced on custom orders placed that month (each order's invoice Final Balance). Zero for orders not yet itemized. */
   customBooked: number;
+  /** Dollars actually collected on custom orders that month, from the payment ledger — every payment dated by when the money moved, net of refunds, whether it came through Stripe or was recorded by hand. Read `paymentLedger` before trusting a zero: a month before the ledger holds anything reads as 0 because nothing is recorded, not because nothing was collected. */
+  customCollected: number;
   /** Custom orders placed that month (cancelled excluded). */
   customOrders: number;
 }

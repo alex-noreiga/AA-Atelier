@@ -147,6 +147,7 @@ export * from './studioGuideContent';
 export * from './studioGuideContentUnavailable';
 export * from './studioGuideList';
 export * from './studioGuideUnavailable';
+export * from './studioPaymentLedgerStatus';
 export * from './studioPaymentTotals';
 export * from './studioPipeline';
 export * from './studioProductionLoad';

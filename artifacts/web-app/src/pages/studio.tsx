@@ -8,6 +8,7 @@ import {
   type StudioPipeline,
   type StudioProductionLoad,
   type StudioRevenueMonth,
+  type StudioPaymentLedgerStatus,
   type StudioPaymentTotals,
   type StudioTopItem,
   type StudioTopItemCoverage,
@@ -424,7 +425,7 @@ function Figures({ data }: { data: StudioAnalytics }) {
         testId="pipeline-shop"
       />
 
-      <RevenuePanel months={data.revenue} />
+      <RevenuePanel months={data.revenue} ledger={data.paymentLedger} />
 
       <ChannelsPanel channels={data.channels} />
 
@@ -893,16 +894,63 @@ function PipelinePanel({
   );
 }
 
-/** Twelve months of trade. The two series are shown side by side and never
- * summed — shop revenue is money collected, the custom figure is work booked
- * (see the API's own note; Notion holds no per-payment dates). */
-function RevenuePanel({ months }: { months: StudioRevenueMonth[] }) {
+/**
+ * Twelve months of trade — two collected figures and one booked one, never
+ * summed across that line.
+ *
+ * `shopRevenue` and `customCollected` are both money that came IN, so they add.
+ * `customBooked` is what was WON — the invoiced value of the orders placed that
+ * month — so a commission booked in March and paid across April and June shows
+ * once in March's booked bar and twice in the collected ones. Both are right;
+ * their sum is nonsense.
+ *
+ * The collected bar is HIDDEN, not zeroed, when the payment ledger can't answer.
+ * A nought bar would read as "nothing came in" when it actually means "we have
+ * no record", and those are the two things this panel most needs to keep apart.
+ *
+ * Known limit: `customCollected` is net of refunds and so can go negative, which
+ * `barHeight` floors to nothing — a month that gave more back than it took draws
+ * the same empty bar as a quiet one. The tooltip and the legend total carry the
+ * real figure; drawing it properly would need an axis this chart doesn't have.
+ */
+function RevenuePanel({
+  months,
+  ledger,
+}: {
+  months: StudioRevenueMonth[];
+  ledger: StudioPaymentLedgerStatus;
+}) {
+  const showCollected = ledger.configured && !ledger.unavailable;
+
   const max = months.reduce(
-    (top, m) => Math.max(top, m.shopRevenue, m.customBooked),
+    (top, m) =>
+      Math.max(
+        top,
+        m.shopRevenue,
+        m.customBooked,
+        showCollected ? m.customCollected : 0,
+      ),
     0,
   );
   const shopTotal = months.reduce((sum, m) => sum + m.shopRevenue, 0);
   const customTotal = months.reduce((sum, m) => sum + m.customBooked, 0);
+  const collectedTotal = months.reduce((sum, m) => sum + m.customCollected, 0);
+
+  // What the collected column can and can't be trusted to say. Ordered by how
+  // much it matters: no ledger at all, then a ledger that wouldn't answer, then
+  // one holding nothing, then one whose records start partway through the year —
+  // which is what an install looks like before the backfill is run, and the one
+  // case where a real nought and a missing record look identical.
+  const firstMonth = months[0]?.month;
+  const ledgerNote = !ledger.configured
+    ? "Collected figures need the payment ledger — set POSTGRES_URL and run the migrations."
+    : ledger.unavailable
+      ? "The payment ledger couldn't be read just now, so nothing collected is shown."
+      : ledger.payments === 0
+        ? "No payments are recorded yet. Run the Stripe backfill to fill in past months."
+        : ledger.recordedFrom && firstMonth && ledger.recordedFrom > firstMonth
+          ? `Payments are recorded from ${monthLabel(ledger.recordedFrom)} onward — earlier months show nothing collected because none is recorded, not because none came in.`
+          : null;
 
   // When the chart scrolls (phone widths), open it on the most recent month
   // rather than a year ago — "how is this month going" is the question being
@@ -919,16 +967,32 @@ function RevenuePanel({ months }: { months: StudioRevenueMonth[] }) {
       title="Money by month"
       testId="panel-revenue"
     >
-      <div className="flex flex-wrap items-center gap-x-4 gap-y-1 mb-4 text-xs text-muted-foreground">
+      <div className="flex flex-wrap items-center gap-x-4 gap-y-1 mb-1 text-xs text-muted-foreground">
         <span className="inline-flex items-center gap-1.5">
           <span className="w-2.5 h-2.5 rounded-sm bg-primary/70" />
           Shop taken {formatPrice(shopTotal)}
         </span>
+        {showCollected && (
+          <span className="inline-flex items-center gap-1.5">
+            <span className="w-2.5 h-2.5 rounded-sm bg-primary/45" />
+            Custom collected {formatPrice(collectedTotal)}
+          </span>
+        )}
         <span className="inline-flex items-center gap-1.5">
-          <span className="w-2.5 h-2.5 rounded-sm bg-primary/30" />
+          <span className="w-2.5 h-2.5 rounded-sm bg-primary/20" />
           Custom booked {formatPrice(customTotal)}
         </span>
       </div>
+
+      {ledgerNote && (
+        <p
+          className="mb-3 text-xs text-muted-foreground font-light"
+          data-testid="revenue-ledger-note"
+        >
+          {ledgerNote}
+        </p>
+      )}
+      {!ledgerNote && <div className="mb-4" />}
 
       {/* Twelve months of paired bars can't fit a phone at a readable width,
           so the chart scrolls sideways below `sm` (fixed-width columns) and
@@ -945,18 +1009,31 @@ function RevenuePanel({ months }: { months: StudioRevenueMonth[] }) {
           {months.map((month) => (
             <div
               key={month.month}
-              className="w-9 shrink-0 flex flex-col items-center gap-1 h-full justify-end sm:w-auto sm:flex-1"
+              className="w-12 shrink-0 flex flex-col items-center gap-1 h-full justify-end sm:w-auto sm:flex-1"
               title={`${monthLabel(month.month)} — shop ${formatPrice(
                 month.shopRevenue,
-              )}, custom booked ${formatPrice(month.customBooked)}`}
+              )}${
+                showCollected
+                  ? `, custom collected ${formatPrice(month.customCollected)}`
+                  : ""
+              }, custom booked ${formatPrice(month.customBooked)}`}
             >
               <span className="flex items-end gap-0.5 w-full h-full">
                 <span
                   className="flex-1 bg-primary/70 rounded-t-sm min-h-px self-end"
                   style={{ height: `${barHeight(month.shopRevenue, max)}%` }}
                 />
+                {showCollected && (
+                  <span
+                    className="flex-1 bg-primary/45 rounded-t-sm min-h-px self-end"
+                    data-testid="revenue-collected-bar"
+                    style={{
+                      height: `${barHeight(month.customCollected, max)}%`,
+                    }}
+                  />
+                )}
                 <span
-                  className="flex-1 bg-primary/30 rounded-t-sm min-h-px self-end"
+                  className="flex-1 bg-primary/20 rounded-t-sm min-h-px self-end"
                   style={{ height: `${barHeight(month.customBooked, max)}%` }}
                 />
               </span>

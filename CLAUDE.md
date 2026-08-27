@@ -108,9 +108,11 @@ Express app (artifacts/api-server)  ──►  Notion REST API (orders database)
   │                                  the handler IS the answer
   ├─ GET  /api/studio/analytics    → the INTERNAL studio dashboard's figures:
   │                                  custom + shop orders by stage, production
-  │                                  load against due dates, revenue by month,
-  │                                  deposits vs. balances, and best-selling
-  │                                  shop pieces. Aggregated live from Notion
+  │                                  load against due dates, revenue by month
+  │                                  (shop takings and custom work both booked
+  │                                  and collected, the latter from the payment
+  │                                  ledger), deposits vs. balances, and
+  │                                  best-selling shop pieces. Aggregated live from Notion
   │                                  (bounded full-database scans, 60s cached).
   │                                  Same Bearer JWT as the portal PLUS a staff
   │                                  allowlist: 401 not signed in, 404 signed in
@@ -3828,12 +3830,19 @@ Load-bearing decisions:
    invoice holds a paid _checkbox_ per stage — so the only honest monthly figure
    for bespoke work is what was **booked**: the invoice's `Final Balance`,
    attributed to the month the order came in. The contract carries them as two
-   fields (`shopRevenue` / `customBooked`) and the UI labels them apart. Dating
-   custom payments properly needs a real payment ledger, and **that ledger now
-   exists** — see "The payment ledger" above — but this aggregation does not read
-   it yet: switching `customBooked` for revenue attributed by `paid_at` is a
-   contract change kept deliberately separate. Until it lands, the figure is
-   still what was booked. Months and "today" are read in the studio's
+   fields (`shopRevenue` / `customBooked`) and the UI labels them apart.
+   **`customCollected` now sits beside them**, read from the payment ledger by
+   each payment's own `paid_at` and net of refunds — so bespoke work is finally
+   reportable as money _in_ as well as work _won_. The two custom figures are
+   deliberately not summed (a commission booked in March and paid across April
+   and June is once in March's booked figure and twice in the collected one) and
+   `customBooked` was **kept rather than replaced**: it answers a question the
+   collected figure can't, and it is the figure that still works on an install
+   whose ledger hasn't been backfilled. Shop revenue is deliberately NOT
+   re-sourced from the ledger even though the ledger holds shop charges — it is
+   already collected and correctly dated, and drawing one number from two places
+   is how the two come to disagree. A collected nought is ambiguous, so it always
+   travels with the `paymentLedger` block (see below). Months and "today" are read in the studio's
    timezone (`APPOINTMENT_TIMEZONE`), so a 9pm order on the 31st lands in the month
    the atelier worked it.
 
@@ -4467,17 +4476,34 @@ first slice of the roadmap's "move real invoicing to a finance tool" — see
    method — a card payment records itself — and no refunds, which the two refund
    tools already handle.
 
+8. **The dashboard reads it as `customCollected`**, alongside a `paymentLedger`
+   status block on `GET /studio/analytics`. Four things make that honest. The
+   read is **best-effort**, unlike the three Notion scans beside it — those ARE
+   the dashboard, so a failure there is a 500, whereas this adds a column to
+   figures that stand without it and a Postgres blip reports `unavailable`
+   instead of taking the page down. Only **custom** rows are counted, since
+   `shopRevenue` already covers the shop's money. A month can go **negative**,
+   because refunds are negative rows and are netted — which is what finally stops
+   a refunded order counting as collected revenue — and the figure is left signed
+   rather than clamped. And the status block carries **`recordedFrom`**, the
+   earliest month in the window holding a payment: the only thing that separates
+   "nothing came in that month" from "the ledger's records start later than
+   that", which is precisely what an install looks like before the backfill runs.
+   The panel **hides** the collected bar rather than drawing it at nought when
+   the ledger can't answer, and says which of the four states it is in.
+
 **Atelier setup: none beyond `db:migrate` + one backfill run.** No env var of its
 own (it rides `POSTGRES_URL`), no new vendor, no Notion property.
 
-**Known limits, all deliberate and all listed in the memory note:** nothing reads
-the ledger yet (the payoff is `studio-analytics` computing custom revenue by
-`paid_at`, a contract change kept separate); there is no ledger view beyond the
-history the `record-payment` result echoes back; a hand-recorded payment can't be
-corrected in the app (the table is append-only and there is no reversing entry);
-and the Notion `… Paid` checkboxes remain a second, hand-tickable writer of the
-same fact — the intended end state is that they become app-written mirrors of the
-ledger.
+**Known limits, all deliberate and all listed in the memory note:** the
+deposits-vs-balances panel still reads the Notion checkboxes (that is an
+_outstanding_ figure, which the ledger doesn't hold — the invoice's schedule is
+what says what was expected); shop revenue isn't netted of return refunds the way
+`customCollected` is; there is no ledger view beyond the history the
+`record-payment` result echoes back; a hand-recorded payment can't be corrected in
+the app (the table is append-only and there is no reversing entry); and the Notion
+`… Paid` checkboxes remain a second, hand-tickable writer of the same fact — the
+intended end state is that they become app-written mirrors of the ledger.
 
 ## Postgres (payment idempotency + the account order index)
 

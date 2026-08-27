@@ -241,6 +241,7 @@ const analytics = {
       shopRevenue: 120,
       shopOrders: 3,
       customBooked: 800,
+      customCollected: 300,
       customOrders: 1,
     },
     {
@@ -248,9 +249,11 @@ const analytics = {
       shopRevenue: 240,
       shopOrders: 4,
       customBooked: 1600,
+      customCollected: 450,
       customOrders: 2,
     },
   ],
+  paymentLedger: { configured: true, payments: 5, recordedFrom: "2026-07" },
   payments: {
     invoicedTotal: 2400,
     collectedTotal: 900,
@@ -514,11 +517,80 @@ describe("studio dashboard — figures", () => {
     );
   });
 
-  it("shows the two revenue series separately, never summed", () => {
+  it("shows the three revenue series separately, never summed", () => {
     renderPage();
     const panel = screen.getByTestId("panel-revenue");
     expect(panel).toHaveTextContent("Shop taken $360");
+    expect(panel).toHaveTextContent("Custom collected $750");
     expect(panel).toHaveTextContent("Custom booked $2,400");
+  });
+
+  it("says nothing about the ledger when its records cover the window", () => {
+    renderPage();
+    expect(screen.queryByTestId("revenue-ledger-note")).toBeNull();
+  });
+
+  it("HIDES the collected bar when there is no ledger, rather than zeroing it", () => {
+    // A nought bar reads as "nothing came in"; the truth is "we have no
+    // record", and keeping those apart is the panel's whole job here.
+    stubAnalytics({
+      data: { ...analytics, paymentLedger: { configured: false, payments: 0 } },
+    });
+    renderPage();
+
+    const panel = screen.getByTestId("panel-revenue");
+    expect(panel).not.toHaveTextContent("Custom collected");
+    expect(screen.queryAllByTestId("revenue-collected-bar")).toHaveLength(0);
+    expect(screen.getByTestId("revenue-ledger-note")).toHaveTextContent(
+      "POSTGRES_URL",
+    );
+  });
+
+  it("says so when the ledger couldn't be read, and still shows the rest", () => {
+    stubAnalytics({
+      data: {
+        ...analytics,
+        paymentLedger: { configured: true, unavailable: true, payments: 0 },
+      },
+    });
+    renderPage();
+
+    expect(screen.getByTestId("revenue-ledger-note")).toHaveTextContent(
+      /couldn't be read/,
+    );
+    expect(screen.getByTestId("panel-revenue")).toHaveTextContent(
+      "Shop taken $360",
+    );
+  });
+
+  it("points at the backfill when the ledger is empty", () => {
+    stubAnalytics({
+      data: { ...analytics, paymentLedger: { configured: true, payments: 0 } },
+    });
+    renderPage();
+
+    expect(screen.getByTestId("revenue-ledger-note")).toHaveTextContent(
+      /backfill/,
+    );
+  });
+
+  it("names the month the records start, when earlier months hold none", () => {
+    // The one case where a real nought and a missing record look identical.
+    stubAnalytics({
+      data: {
+        ...analytics,
+        paymentLedger: {
+          configured: true,
+          payments: 2,
+          recordedFrom: "2026-08",
+        },
+      },
+    });
+    renderPage();
+
+    expect(screen.getByTestId("revenue-ledger-note")).toHaveTextContent(
+      "recorded from August",
+    );
   });
 
   it("breaks payments into deposits and balances", () => {

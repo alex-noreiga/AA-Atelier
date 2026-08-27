@@ -200,12 +200,62 @@ it arrived, and — on a custom order — which stage it covers. Code:
 **Atelier setup: none.** No env var, no new database, no Notion property — it
 writes the same `payments` table and the same invoice checkboxes as before.
 
+## Reading it: collected revenue on the dashboard
+
+`StudioRevenueMonth` gained **`customCollected`**, and `StudioAnalytics` gained a
+**`paymentLedger`** status block. Code: `buildRevenue` / `buildPaymentLedger` /
+`readPaymentLedger` in `services/studio-analytics.service.ts`, and `RevenuePanel`
+in `web-app/src/pages/studio.tsx`.
+
+1. **`customBooked` was KEPT, not replaced.** It answers a question the collected
+   figure can't — how much work was _won_ — and it is the figure that still works
+   on an install whose ledger hasn't been backfilled. A commission booked in March
+   and paid across April and June appears once in March's booked figure and twice
+   in the collected one; both are right and their sum is nonsense, which is why
+   the contract's own description says so. Replacing it would also have meant a
+   deploy where every month read as zero until somebody ran a script.
+
+2. **Shop revenue is deliberately NOT re-sourced from the ledger**, even though
+   the ledger holds shop charges. It is already a collected, correctly-dated
+   figure, and drawing the same number from two places is how the two come to
+   disagree. So `buildRevenue` filters the ledger to `orderKind === "custom"`.
+   Known cost: shop revenue still isn't netted of return refunds the way
+   `customCollected` is — a cancelled order drops out, a returned one doesn't.
+
+3. **The read is best-effort, unlike the three Notion scans beside it.** Those
+   ARE the dashboard, so a failure is a 500 rather than a page of quiet zeroes.
+   This one adds a column to figures that stand without it, so a Postgres blip
+   reports `unavailable` and the rest of the page is unaffected.
+
+4. **A nought is ambiguous, so it always travels with context.**
+   `paymentLedger` carries `configured`, `unavailable`, a `payments` count for
+   the window, and `recordedFrom` — the earliest month in the window holding a
+   payment. That last one is the load-bearing one: it is the only thing that
+   distinguishes "nothing came in that month" from "the ledger's records start
+   later than that month", which is exactly what an install looks like before the
+   backfill is run. `recordedFrom` is scoped to the WINDOW on purpose — a claim
+   about anything outside it would be one the function hasn't read.
+
+5. **The panel HIDES the collected bar rather than drawing it at zero** when the
+   ledger can't answer, and prints one note saying which of the four states it is
+   in. A nought bar reads as "nothing came in"; the truth is "we have no record".
+
+6. **A month can be negative** — refunds are negative rows and are netted, which
+   is what finally stops a refunded order counting as collected revenue. The
+   figure is left signed rather than clamped (clamping would hide the refund
+   where nobody could find it), with the accepted cost that `barHeight` floors a
+   negative bar to nothing; the tooltip and the legend total carry the real
+   number.
+
 ## What is deliberately NOT done yet
 
-- **Nothing reads the ledger.** The capture side is complete; the payoff needs
-  `studio-analytics.service.ts` to compute custom revenue by `paid_at` instead of
-  attributing `Final Balance` to the order's month. That is a contract change
-  (`StudioAnalytics`) plus the studio page, and was kept separate.
+- **`buildPayments` still reads the Notion checkboxes.** Deposits-vs-balances is
+  an _outstanding_ figure — what is still owed — which the ledger doesn't hold;
+  it is the invoice's schedule that says what was expected. Left alone
+  deliberately.
+- **`finalBalance` vs `Σ(line totals)`.** The studio's `customBooked` reads
+  Notion's `Final Balance` while the customer's invoice sums the line rows. They
+  agree only while no `Deposit` line item exists. Untouched by any of this.
 - **There is no ledger VIEW.** The `record-payment` result echoes the order's
   payment history back as detail lines, which is the only place the rows are
   readable today. A panel listing an order's payments would want its own read

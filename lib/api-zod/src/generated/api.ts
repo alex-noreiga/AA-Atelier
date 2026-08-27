@@ -1074,8 +1074,9 @@ export const GetStudioAnalyticsResponse = zod.object({
   "shopRevenue": zod.number().describe('Dollars taken on shop orders placed that month, across every sales channel (order totals, including shipping and tax; cancelled orders excluded). The month comes from the order\'s own Order Date, falling back to when its row was created — so an Etsy receipt typed up weeks later still lands in the month it sold.'),
   "shopOrders": zod.number().int().describe('Shop orders placed that month (cancelled excluded).'),
   "customBooked": zod.number().describe('Dollars invoiced on custom orders placed that month (each order\'s invoice Final Balance). Zero for orders not yet itemized.'),
+  "customCollected": zod.number().describe('Dollars actually collected on custom orders that month, from the payment ledger — every payment dated by when the money moved, net of refunds, whether it came through Stripe or was recorded by hand. Read `paymentLedger` before trusting a zero: a month before the ledger holds anything reads as 0 because nothing is recorded, not because nothing was collected.'),
   "customOrders": zod.number().int().describe('Custom orders placed that month (cancelled excluded).')
-}).describe('A month of trade. The two money figures are deliberately NOT summed: shop revenue is money actually collected, while the custom figure is work booked (Notion holds no per-payment dates, so a custom payment can\'t be attributed to the month it was made).')).describe('One entry per month over the trailing window, oldest first. Months with no activity are included as zeroes so a chart has no gaps.'),
+}).describe('A month of trade, carrying two different questions about custom work that must not be added together. `customBooked` is what was WON that month — the value of the orders placed in it. `customCollected` is what came IN that month, from the payment ledger. A commission booked in March and paid across April and June appears once in March\'s booked figure and twice in the collected one, which is correct for both and nonsense if summed. `shopRevenue` is a collected figure, so it is the one that adds cleanly to `customCollected`.')).describe('One entry per month over the trailing window, oldest first. Months with no activity are included as zeroes so a chart has no gaps.'),
   "payments": zod.object({
   "invoicedTotal": zod.number().describe('The sum of every invoice\'s Final Balance.'),
   "collectedTotal": zod.number().describe('Deposits plus balances marked paid.'),
@@ -1087,6 +1088,12 @@ export const GetStudioAnalyticsResponse = zod.object({
   "invoiceCount": zod.number().int(),
   "unpaidInvoiceCount": zod.number().int().describe('Invoices with money still outstanding.')
 }).describe('Deposits against balances across every custom-order invoice on a live (non-cancelled) order — what has been collected and what is still out.'),
+  "paymentLedger": zod.object({
+  "configured": zod.boolean().describe('Whether there is a ledger at all (Postgres configured). False ⇒ every `customCollected` is 0 and means nothing.'),
+  "unavailable": zod.boolean().optional().describe('Set when the ledger is configured but could not be read on this run. The rest of the figures are unaffected — they come from Notion — so this degrades the collected column rather than failing the dashboard.'),
+  "payments": zod.number().int().describe('How many ledger movements fall inside the reported window (charges and refunds alike). Zero with `configured` true is the signature of a ledger nobody has backfilled yet.'),
+  "recordedFrom": zod.string().optional().describe('The earliest month (YYYY-MM) inside the window that has any recorded payment. Months before it show 0 because nothing is recorded there, not because nothing was collected. Absent when the window holds no payments at all.')
+}).describe('What the payment ledger could tell us about the reported window — the context `customCollected` has to be read against. A zero in a month is ambiguous on its own: it means \"nothing came in\" only if the ledger was actually holding payments for that month, and \"we have no record\" if it wasn\'t. The ledger is filled going forward by every Stripe payment and every payment recorded by hand, and backwards by a one-time backfill from Stripe, so an install that hasn\'t run the backfill has a real start date before which every collected figure is a nought.'),
   "topItems": zod.array(zod.object({
   "name": zod.string(),
   "orders": zod.number().int()

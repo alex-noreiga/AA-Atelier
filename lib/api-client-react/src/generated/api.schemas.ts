@@ -2003,7 +2003,7 @@ export interface StudioProductionLoad {
 }
 
 /**
- * A month of trade. The two money figures are deliberately NOT summed: shop revenue is money actually collected, while the custom figure is work booked (Notion holds no per-payment dates, so a custom payment can't be attributed to the month it was made).
+ * A month of trade, carrying two different questions about custom work that must not be added together. `customBooked` is what was WON that month — the value of the orders placed in it. `customCollected` is what came IN that month, from the payment ledger. A commission booked in March and paid across April and June appears once in March's booked figure and twice in the collected one, which is correct for both and nonsense if summed. `shopRevenue` is a collected figure, so it is the one that adds cleanly to `customCollected`.
  */
 export interface StudioRevenueMonth {
   /** The month as YYYY-MM. */
@@ -2014,6 +2014,8 @@ export interface StudioRevenueMonth {
   shopOrders: number;
   /** Dollars invoiced on custom orders placed that month (each order's invoice Final Balance). Zero for orders not yet itemized. */
   customBooked: number;
+  /** Dollars actually collected on custom orders that month, from the payment ledger — every payment dated by when the money moved, net of refunds, whether it came through Stripe or was recorded by hand. Read `paymentLedger` before trusting a zero: a month before the ledger holds anything reads as 0 because nothing is recorded, not because nothing was collected. */
+  customCollected: number;
   /** Custom orders placed that month (cancelled excluded). */
   customOrders: number;
 }
@@ -2038,6 +2040,20 @@ export interface StudioPaymentTotals {
   invoiceCount: number;
   /** Invoices with money still outstanding. */
   unpaidInvoiceCount: number;
+}
+
+/**
+ * What the payment ledger could tell us about the reported window — the context `customCollected` has to be read against. A zero in a month is ambiguous on its own: it means "nothing came in" only if the ledger was actually holding payments for that month, and "we have no record" if it wasn't. The ledger is filled going forward by every Stripe payment and every payment recorded by hand, and backwards by a one-time backfill from Stripe, so an install that hasn't run the backfill has a real start date before which every collected figure is a nought.
+ */
+export interface StudioPaymentLedgerStatus {
+  /** Whether there is a ledger at all (Postgres configured). False ⇒ every `customCollected` is 0 and means nothing. */
+  configured: boolean;
+  /** Set when the ledger is configured but could not be read on this run. The rest of the figures are unaffected — they come from Notion — so this degrades the collected column rather than failing the dashboard. */
+  unavailable?: boolean;
+  /** How many ledger movements fall inside the reported window (charges and refunds alike). Zero with `configured` true is the signature of a ledger nobody has backfilled yet. */
+  payments: number;
+  /** The earliest month (YYYY-MM) inside the window that has any recorded payment. Months before it show 0 because nothing is recorded there, not because nothing was collected. Absent when the window holds no payments at all. */
+  recordedFrom?: string;
 }
 
 /**
@@ -2143,6 +2159,7 @@ export interface StudioAnalytics {
   /** One entry per month over the trailing window, oldest first. Months with no activity are included as zeroes so a chart has no gaps. */
   revenue: StudioRevenueMonth[];
   payments: StudioPaymentTotals;
+  paymentLedger: StudioPaymentLedgerStatus;
   /** The shop's best sellers, most-ordered first, across every sales channel. Empty when no shop order carries its inventory relation (legacy orders, hand-filed ones, or the relation-links flag being off) — item-level figures are only as good as that link, and `topItemCoverage` says how many orders it misses. */
   topItems: StudioTopItem[];
   topItemCoverage: StudioTopItemCoverage;
