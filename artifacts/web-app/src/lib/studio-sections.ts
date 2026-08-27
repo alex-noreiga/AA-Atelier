@@ -49,6 +49,11 @@ export const STUDIO_SECTIONS = [
     summary: "Orders, production load, revenue and what's still to collect",
   },
   {
+    id: "orders",
+    label: "Orders",
+    summary: "Where each order has got to, and moving it on",
+  },
+  {
     id: "requests",
     label: "Requests",
     summary: "The customer-request queue, newsletter sign-ups, and the tools",

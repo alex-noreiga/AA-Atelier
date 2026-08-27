@@ -117,6 +117,19 @@ Express app (artifacts/api-server)  ──►  Notion REST API (orders database)
   │                                  but not staff (indistinguishable from a URL
   │                                  that doesn't exist, by design), 403 staff
   │                                  but not signed in with Google
+  ├─ GET  /api/studio/orders       → the dashboard's stage board: every custom
+  │                                  order still being made, with the stage it
+  │                                  is at, the pipeline its own service walks,
+  │                                  and what "advance" means for it. A filtered
+  │                                  query (not cancelled, not at the final
+  │                                  stage), so it is bounded by the studio's
+  │                                  real open workload. The customer's email is
+  │                                  never returned — only whether there is one.
+  │                                  PUT /api/studio/orders/:n/stage moves one
+  │                                  order and, unless asked not to, emails the
+  │                                  customer through the SAME notifier the
+  │                                  Notion stage-change webhook uses. Same
+  │                                  staff gate as the figures above
   ├─ GET  /api/orders/:orderNumber → order status + stage list, plus how the
   │                                  piece reaches the customer: carrier tracking
   │                                  and a ship-by date, or — for a local skater
@@ -3093,6 +3106,11 @@ so this is driven by a **Notion database automation** rather than a request or a
    per row. That property (and the `…/run` route) is gone; delete it in Notion —
    see "Internal tools on the studio dashboard".
 
+**The dashboard can now make the stage change itself**, in which case the same
+notifier below sends the email on the action and this webhook is the fallback for
+a stage still edited by hand in Notion — see "Advancing an order's stage from the
+dashboard". The two share the marker, so whichever fires second sends nothing.
+
 No new env vars (it reuses `CRON_SECRET`, `RESEND_FROM_EMAIL` via
 `fromAddress("orders")`, and `PUBLIC_BASE_URL` for the tracking link, omitted when
 unset). One-time setup: the Notion automation above **plus** a **`Last Notified Stage`**
@@ -3103,6 +3121,96 @@ stages). Code: `orderStageChangeEmail` in `lib/resend/emails.ts`,
 `findOrderForStageNotification` / `findOrderForStageNotificationByPageId` +
 `updateLastNotifiedStage` in `lib/notion/orders.repository.ts`,
 `services/order-notification.service.ts`, `routes/order-notification.ts`.
+
+## Advancing an order's stage from the dashboard
+
+A custom order used to move along its pipeline exactly one way: somebody opened
+Notion and changed the `Stage` property by hand. Everything in the section above
+is downstream of that one fact — the database automation, its webhook, the
+`Last Notified Stage` marker, and the last place in the app that reads a shared
+secret out of a URL all exist because the change happens where the app can't see
+it. `/studio` → **Orders** is that change made here, with the customer's status
+email riding the action. `GET /api/studio/orders` for the board,
+`PUT /api/studio/orders/:orderNumber/stage` for one move — both contract-first
+and behind the same `requireStaff` gate as the rest of the studio surface. Code:
+`services/studio-orders.service.ts`, the two handlers in `routes/studio.ts`,
+`listOrdersForStageBoard` + `updateOrderStage` in `lib/notion/orders.repository.ts`,
+and `web-app/src/components/studio-orders.tsx`.
+
+1. **It does not send the email — it calls the webhook's own notifier.** The
+   write is followed by `notifyOrderStageChange`, the same function the webhook
+   calls, so there is one forward-only gate, one `Last Notified Stage` marker,
+   one piece of email copy, and one "read the order back rather than trust the
+   caller's stage". That is also what makes the two paths **compose**: this write
+   fires whatever Notion automation is configured, and the automation then finds
+   the marker already at the new stage and sends nothing. The obvious
+   implementation — send the email here — would double-email every advance for an
+   atelier who had the automation wired.
+
+2. **The re-read is located by PAGE ID, not by order number.** The notifier
+   re-reads the order before sending, and `findOrderForStageNotification` is a
+   database **query** — the one Notion read that may not yet reflect a property
+   written a moment earlier. `findOrderForStageNotificationByPageId` is a direct
+   page fetch and is read-your-writes. Emailing the customer the stage their
+   order was at _before_ the press is the exact failure this feature would
+   otherwise introduce.
+
+3. **It writes a stage, not "the next one".** The button says advance, but the
+   primitive is "put this order at that stage", because the other half of what
+   sent the atelier to Notion is fixing a mis-click. A backward move is allowed
+   and simply never emails — the notifier's forward-only rule already says so,
+   and a second rule here could only disagree with it.
+
+4. **The target is validated against the order's OWN pipeline**, not the live
+   superset — a repair does not walk `Sketching`. This is also a hard
+   requirement of the write: **`Stage` is a Notion `status` property, and Notion
+   will not create a missing `status` option through the API** the way it
+   auto-creates a `select` one, so an unvalidated name is a 400 from Notion
+   rather than a stage change. The refusal names the pipeline, since the reason
+   is nearly always that the stage belongs to another service. The current stage
+   is folded into the list first (`stagesIncludingCurrent`, extracted from the
+   notifier so both callers run one rule), so an order sitting on a stage the
+   atelier has since renamed can still be advanced.
+
+5. **`notify: false` advances the marker without sending.** A quiet advance has
+   to be quiet everywhere: the write fires the Notion automation whether we asked
+   it to or not, so suppressing our own send without moving the marker would let
+   the automation email the very stage the atelier chose not to announce. The
+   marker only ever advances, so a backward quiet move leaves the high-water mark
+   alone and the next forward move still emails.
+
+6. **The read is a filtered query, not the analytics' full scan** — the same
+   call `listOpenOrderServices` makes. Neither cancelled nor at the final stage,
+   which mirrors `orderLifecycleState`; the final stage is the **superset's**
+   (`Delivered` for every pipeline, each service's stages being a subsequence
+   ending there), so a repair counts as open until delivered with no per-row
+   pipeline resolve.
+
+7. **The board never returns the customer's email**, only `notifiable`. A stage
+   board has no use for the address.
+
+8. **Refusals.** 404 an unknown order; 409 a cancelled one (its tracking page
+   shows a cancelled banner rather than a timeline, so moving it changes nothing
+   anybody sees); 400 a stage the service doesn't walk or an empty one. An order
+   already at the requested stage is a no-op reported as `changed: false` —
+   nothing written, and the notifier never reached, so a double press is not a
+   second chance to email.
+
+**The Notion automation and its webhook are deliberately KEPT.** The atelier can
+still edit `Stage` in Notion, and retiring the webhook would silently stop the
+customer email for every such edit — no error, no log, just a customer who stops
+hearing about their order. This card removes the _need_ to edit in Notion, not
+the ability; retiring the automation is the studio's call once they've stopped,
+and `.agents/memory/order-stage-advancement.md` records the sequence for when
+they do (note the **marker stays** either way — `setOrderStage` reads it to
+decide whether a move is forward).
+
+**Atelier setup: none.** No env var, no new database, no Notion property — it
+writes the `Stage` and `Last Notified Stage` that already exist and reads the
+`Due Date`, `Service` and `Cancelled` the app already reads. Known limits:
+custom orders only (a shop order's `Status` is a different workflow), no bulk
+advance, and no audit trail in the app beyond the server logs and Notion's own
+property history.
 
 ## Materials restock alerts (dashboard panel + a weekly digest)
 
@@ -4246,9 +4354,11 @@ two `/studio` routes in `App.tsx`.
    tools stay reachable during a Notion wobble — which is when the atelier is
    most likely to need them.
 
-The sections are **Figures / Requests / Shipping / Reviews / Bookings /
+The sections are **Figures / Orders / Requests / Shipping / Reviews / Bookings /
 Materials / Settings / Guides**, in that order — what needs doing first.
-Splitting them changed nothing about a panel: each is the same component, with
+(**Orders** is second because advancing a stage is the action taken most often;
+see "Advancing an order's stage from the dashboard".) Splitting them changed
+nothing about a panel: each is the same component, with
 the same `data-testid`, doing the same reads, and that move needed **no API
 change, no new env var and no atelier setup**. (**Shipping** was added later, by
 the label-buying card above; it is the one section whose panel did not already
@@ -5598,6 +5708,7 @@ Three things about it are load-bearing:
 | Change in-place measurement editing                      | `api-server/src/services/measurement-update.service.ts` (the gates + the file-instead-of-write fallback) + `updateOrderMeasurements` in `lib/notion/orders.repository.ts` (properties then an appended revision note) + `buildMeasurementProperties` / `buildMeasurementRevisionBlocks` in `lib/notion/orders.blocks.ts` + the two `measurementsUpdated*Email` builders in `lib/resend/emails.ts`; frontend `web-app/src/components/measurements-dialog.tsx` (tracking page) + `components/account-measurements.tsx` (portal), sharing `components/measurement-fields.tsx` + `lib/measurements.ts`. The lock rule is `services/measurement-lock.ts`, surfaced on the portal as `AccountOrderSummary.measurementsLocked` from `listCustomOrders`                                                                                     |
 | Change the measurement-change request                    | `artifacts/web-app/src/components/measurements-dialog.tsx` (its "re-measure at a fitting" branch, opened from `components/custom-order-result.tsx`); `api-server/src/services/measurement-change.service.ts` + `routes/orders.ts` + `lib/notion/measurement-change.{blocks,repository}.ts` (writes to the **contact** database)                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                     |
 | Change the studio settings editor                        | `web-app/src/components/studio-settings.tsx` (rendered by `pages/studio.tsx`); `services/studio-settings.service.ts` + the `/studio/settings` handlers in `routes/studio.ts` + `lib/settings/catalog.ts` (the per-key definition + its two validators) + `fetchSettingRows` / `saveSetting` in `lib/notion/settings.repository.ts`                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                  |
+| Advance an order's stage / the stage board               | `api-server/src/services/studio-orders.service.ts` (the board + `setOrderStage`) + the two `/studio/orders` handlers in `routes/studio.ts` + `listOrdersForStageBoard` / `updateOrderStage` in `lib/notion/orders.repository.ts`; frontend `web-app/src/components/studio-orders.tsx`, mounted by the `orders` section in `pages/studio.tsx`. The email is NOT sent here — it goes through `notifyOrderStageChange` (`services/order-notification.service.ts`), which is what keeps this and the Notion webhook sharing one forward-only gate and one `Last Notified Stage` marker                                                                                                                                                                                                                                                  |
 | Change review moderation on the dashboard                | `web-app/src/components/studio-reviews.tsx` (rendered by `pages/studio.tsx`); `services/studio-reviews.service.ts` + the `/studio/reviews` handlers in `routes/studio.ts` + the moderation half of `lib/notion/reviews.{schema,repository}.ts`                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                      |
 | Change the customer-request queue on the dashboard       | `web-app/src/components/studio-requests.tsx` + `lib/studio-handoff.ts` (the hand-off into `components/studio-tools.tsx`), rendered by `pages/studio.tsx`; `services/studio-requests.service.ts` + the `/studio/requests` handlers in `routes/studio.ts` + `lib/notion/requests.{schema,repository}.ts` — which tool actions which kind lives in `requestAction`                                                                                                                                                                                                                                                                                                                                                                                                                                                                     |
 | Change the newsletter panel on the dashboard             | `web-app/src/components/studio-newsletter.tsx` (rendered by `pages/studio.tsx`); `services/studio-newsletter.service.ts` + the `/studio/newsletter` handlers in `routes/studio.ts` + the newsletter half of `lib/notion/requests.{schema,repository}.ts` + the read side of `lib/resend/audience.ts` (`listAudienceContacts` / `membershipIn` — membership is never stored)                                                                                                                                                                                                                                                                                                                                                                                                                                                         |

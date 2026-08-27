@@ -68,6 +68,8 @@ import type {
   NewsletterSignup,
   NewsletterSignupList,
   OrderNotFound,
+  OrderStageChange,
+  OrderStageRequest,
   OrderStatus,
   PaymentSessionResponse,
   PortfolioList,
@@ -89,6 +91,7 @@ import type {
   StudioAnalytics,
   StudioGuideContent,
   StudioGuideList,
+  StudioOrderBoard,
   StudioRequest,
   StudioRequestList,
   StudioReview,
@@ -3166,6 +3169,167 @@ export function useGetStudioAnalytics<TData = Awaited<ReturnType<typeof getStudi
 
 
 
+
+export const getListStudioOrdersUrl = () => {
+
+
+
+
+  return `/api/studio/orders`
+}
+
+/**
+ * The orders still being made, each with the stage it is at and the pipeline its own service walks — the read half of advancing a stage from the dashboard.
+ *
+ * Deliberately a *filtered* query rather than the analytics' full scan: it asks Notion for the orders that are neither cancelled nor at their final stage, so what comes back is bounded by the studio's real open workload rather than by every order ever placed. The two terminal conditions mirror `orderLifecycleState` exactly.
+ *
+ * The customer's email address is never returned — the board only needs to know whether there is one to write to, which is what `notifiable` carries.
+ * @summary Where every open custom order has got to
+ */
+export const listStudioOrders = async ( options?: Parameters<typeof customFetch>[1]): Promise<StudioOrderBoard> => {
+
+  return customFetch<StudioOrderBoard>(getListStudioOrdersUrl(),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
+
+
+
+
+export const getListStudioOrdersQueryKey = () => {
+    return [
+    `/api/studio/orders`
+    ] as const;
+    }
+
+
+export const getListStudioOrdersQueryOptions = <TData = Awaited<ReturnType<typeof listStudioOrders>>, TError = ErrorType<ErrorEnvelope | OrderNotFound>>( options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof listStudioOrders>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getListStudioOrdersQueryKey();
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof listStudioOrders>>> = ({ signal }) => listStudioOrders({ signal, ...requestOptions });
+
+
+
+
+
+   return  { queryKey, queryFn, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof listStudioOrders>>, TError, TData> & { queryKey: QueryKey }
+}
+
+export type ListStudioOrdersQueryResult = NonNullable<Awaited<ReturnType<typeof listStudioOrders>>>
+export type ListStudioOrdersQueryError = ErrorType<ErrorEnvelope | OrderNotFound>
+
+
+/**
+ * @summary Where every open custom order has got to
+ */
+
+export function useListStudioOrders<TData = Awaited<ReturnType<typeof listStudioOrders>>, TError = ErrorType<ErrorEnvelope | OrderNotFound>>(
+  options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof listStudioOrders>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+
+ ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+
+  const queryOptions = getListStudioOrdersQueryOptions(options)
+
+  const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
+
+  return withQueryKey(query, queryOptions.queryKey);
+}
+
+
+
+
+
+
+
+export const getSetStudioOrderStageUrl = (orderNumber: string,) => {
+
+
+
+
+  return `/api/studio/orders/${orderNumber}/stage`
+}
+
+/**
+ * Writes one custom order's `Stage` and, unless asked not to, emails the customer the same status update the Notion automation's webhook sends — so advancing an order is one action on the dashboard rather than an edit in Notion that a webhook has to notice.
+ *
+ * The send is not duplicated: it runs through the same notifier as the webhook, which re-reads the order, applies the same forward-only gate, and advances the same `Last Notified Stage` high-water marker. If the Notion automation is also wired up it will fire on this write, find the marker already at the new stage, and send nothing.
+ *
+ * `stage` must be one of the stages the order's own service walks — moving a repair to `Sketching` is refused with a 400. A stage BEHIND the current one is allowed (that is how a mis-click is corrected) and never emails, because the notifier only sends on forward movement.
+ *
+ * `notify: false` advances the marker without sending, so a stage the atelier chose not to announce stays unannounced even if the Notion automation is still wired. The customer is still emailed about the next forward move.
+ * @summary Move an order to a stage, and tell the customer
+ */
+export const setStudioOrderStage = async (orderNumber: string,
+    orderStageRequest: OrderStageRequest, options?: Parameters<typeof customFetch>[1]): Promise<OrderStageChange> => {
+
+  return customFetch<OrderStageChange>(getSetStudioOrderStageUrl(orderNumber),
+  {
+    ...options,
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    body: JSON.stringify(orderStageRequest)
+  }
+);}
+
+
+
+
+
+export const getSetStudioOrderStageMutationOptions = <TError = ErrorType<ErrorEnvelope | OrderNotFound>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof setStudioOrderStage>>, TError,{orderNumber: string;data: BodyType<OrderStageRequest>}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof setStudioOrderStage>>, TError,{orderNumber: string;data: BodyType<OrderStageRequest>}, TContext> => {
+
+const mutationKey = ['setStudioOrderStage'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof setStudioOrderStage>>, {orderNumber: string;data: BodyType<OrderStageRequest>}> = (props) => {
+          const {orderNumber,data} = props ?? {};
+
+          return  setStudioOrderStage(orderNumber,data,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type SetStudioOrderStageMutationResult = NonNullable<Awaited<ReturnType<typeof setStudioOrderStage>>>
+    export type SetStudioOrderStageMutationBody = BodyType<OrderStageRequest>
+    export type SetStudioOrderStageMutationError = ErrorType<ErrorEnvelope | OrderNotFound>
+
+    /**
+ * @summary Move an order to a stage, and tell the customer
+ */
+export const useSetStudioOrderStage = <TError = ErrorType<ErrorEnvelope | OrderNotFound>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof setStudioOrderStage>>, TError,{orderNumber: string;data: BodyType<OrderStageRequest>}, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof setStudioOrderStage>>,
+        TError,
+        {orderNumber: string;data: BodyType<OrderStageRequest>},
+        TContext
+      > => {
+      return useMutation(getSetStudioOrderStageMutationOptions(options));
+    }
 
 export const getRunStudioToolUrl = (tool: StudioTool,) => {
 

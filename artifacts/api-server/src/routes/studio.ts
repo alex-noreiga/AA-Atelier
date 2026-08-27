@@ -18,12 +18,16 @@ import {
   GetStudioMaterialsResponse,
   GetStudioSettingsResponse,
   ListStaffAvailabilityResponse,
+  ListStudioOrdersResponse,
   ListNewsletterSignupsResponse,
   ListStudioRequestsResponse,
   ListStudioReviewsResponse,
   RunStudioToolBody,
   RunStudioToolParams,
   RunStudioToolResponse,
+  SetStudioOrderStageBody,
+  SetStudioOrderStageParams,
+  SetStudioOrderStageResponse,
   SetStudioRequestStateBody,
   SetStudioRequestStateParams,
   SetStudioRequestStateResponse,
@@ -62,6 +66,11 @@ import {
   type StudioToolArgs,
   type StudioToolName,
 } from "../services/studio-tools.service.js";
+import {
+  getOrderStageBoard,
+  setOrderStage,
+  type OrderStageInput,
+} from "../services/studio-orders.service.js";
 import {
   getReviewQueue,
   setReviewModeration,
@@ -122,6 +131,47 @@ router.get(
   async (_req, res) => {
     const analytics = await getStudioAnalytics();
     res.json(GetStudioAnalyticsResponse.parse(analytics));
+  },
+);
+
+// Where every open order has got to, and moving one along.
+//
+// Advancing a stage was the last routine atelier action that could only be done
+// in Notion, and that is the whole reason the stage-change automation and its
+// webhook exist: the app has no way to notice a property someone edited in
+// another tab. Doing it here means the customer's status email can ride the
+// action itself.
+//
+// The read is a filtered query, not a scan of every order ever placed, so this
+// section costs about what the request queue does.
+router.get(
+  "/studio/orders",
+  studioRateLimiter,
+  requireStaff,
+  async (_req, res) => {
+    const board = await getOrderStageBoard();
+    res.json(ListStudioOrdersResponse.parse(board));
+  },
+);
+
+// One stage change. The write is ours; the email is the same notifier the
+// webhook calls, so the two paths share one forward-only gate and one
+// `Last Notified Stage` marker and cannot email the same stage twice.
+router.put(
+  "/studio/orders/:orderNumber/stage",
+  studioRateLimiter,
+  requireStaff,
+  validate({
+    params: SetStudioOrderStageParams,
+    body: SetStudioOrderStageBody,
+  }),
+  async (_req, res) => {
+    const { orderNumber } = res.locals.params as { orderNumber: string };
+    const result = await setOrderStage(
+      orderNumber,
+      res.locals.body as OrderStageInput,
+    );
+    res.json(SetStudioOrderStageResponse.parse(result));
   },
 );
 
