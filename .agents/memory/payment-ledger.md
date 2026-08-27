@@ -269,4 +269,3 @@ in `web-app/src/pages/studio.tsx`.
   read. The intended end state is that they become app-written mirrors of the
   ledger with one writer; until then the two can disagree, and the ledger is the
   one with dates.
-- **The `finalBalance` vs `Σ(line totals)` split** described above is untouched.
