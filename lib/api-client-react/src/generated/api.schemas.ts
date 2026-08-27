@@ -2063,6 +2063,77 @@ export interface StudioAnalytics {
 }
 
 /**
+ * One order's position in its pipeline, and what can be done about it.
+ */
+export interface StudioOrderStage {
+  /** The order's number — its address in every studio operation. */
+  orderNumber: string;
+  /** The Notion page title, e.g. "Ada – Custom Costume". */
+  orderName: string;
+  /** The stage the order is at now. Empty when the `Stage` property has never been set, which is the one case the board cannot advance from. */
+  currentStage: string;
+  /** The stages this order's own service walks, in order — not the whole live list, so a repair is never offered `Sketching`. Includes the current stage even if it has since been renamed out of the live options. */
+  stages: string[];
+  /** The stage after the current one, i.e. what "advance" means for this order. Absent at the final stage, or when the current stage isn't in the list. */
+  nextStage?: string;
+  /** The furthest stage the customer has already been emailed about (the `Last Notified Stage` high-water marker). Absent when they have never been emailed. */
+  lastNotifiedStage?: string;
+  /** The service the order was placed for, as stored on it. */
+  service?: string;
+  /** The order's `Due Date` as an ISO date (yyyy-mm-dd), when the atelier has set one. A pass-through string (no `format: date`) so it isn't coerced to a Date and reserialized as a UTC timestamp — a due date is a calendar day, and an instant read in a western zone lands on the day before. */
+  dueDate?: string;
+  /** Whether the order carries a customer email to write to. The address itself is never returned — a stage board has no use for it, and this endpoint is not the place to publish one. */
+  notifiable: boolean;
+}
+
+/**
+ * The open custom orders, for the dashboard's stage board. Nearest due date first, then by order number — the order the atelier works them in.
+ */
+export interface StudioOrderBoard {
+  orders: StudioOrderStage[];
+}
+
+/**
+ * One stage change, as asked for from the dashboard.
+ */
+export interface OrderStageRequest {
+  /**
+     * The stage to move the order to. Must be one of the order's own `stages`; a Notion `status` option cannot be created through the API, so a name that isn't already an option would fail the write.
+     * @maxLength 120
+     */
+  stage: string;
+  /** Whether to email the customer. Default true — sending on the action is the point of advancing here rather than in Notion. False marks the stage as already announced without sending, so the change stays quiet even where the Notion automation is still wired. */
+  notify?: boolean;
+}
+
+/**
+ * `sent` — the customer was emailed. `skipped` — a send was attempted and declined (the move wasn't forward, or the order carries no email or no stage). `suppressed` — the atelier asked not to email.
+ */
+export type OrderStageChangeNotification = typeof OrderStageChangeNotification[keyof typeof OrderStageChangeNotification];
+
+
+export const OrderStageChangeNotification = {
+  sent: 'sent',
+  skipped: 'skipped',
+  suppressed: 'suppressed',
+} as const;
+
+/**
+ * What one stage change did.
+ */
+export interface OrderStageChange {
+  order: StudioOrderStage;
+  /** The stage the order was at before this ran. */
+  previousStage: string;
+  /** False when the order was already at that stage, in which case nothing was written and nothing was sent. */
+  changed: boolean;
+  /** `sent` — the customer was emailed. `skipped` — a send was attempted and declined (the move wasn't forward, or the order carries no email or no stage). `suppressed` — the atelier asked not to email. */
+  notification: OrderStageChangeNotification;
+  /** Why nothing was sent, in the atelier's terms. Present on `skipped` and `suppressed`. */
+  notificationReason?: string;
+}
+
+/**
  * The arguments for one internal tool run. Every field is optional here because each tool takes a different subset; the server rejects a run that is missing what its own tool needs. This replaces the query string of the retired `?secret=` links, so the argument names mirror them.
  */
 export interface StudioToolRequest {

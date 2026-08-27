@@ -1179,6 +1179,75 @@ export const GetStudioAnalyticsResponse = zod.object({
 
 
 /**
+ * The orders still being made, each with the stage it is at and the pipeline its own service walks — the read half of advancing a stage from the dashboard.
+ *
+ * Deliberately a *filtered* query rather than the analytics' full scan: it asks Notion for the orders that are neither cancelled nor at their final stage, so what comes back is bounded by the studio's real open workload rather than by every order ever placed. The two terminal conditions mirror `orderLifecycleState` exactly.
+ *
+ * The customer's email address is never returned — the board only needs to know whether there is one to write to, which is what `notifiable` carries.
+ * @summary Where every open custom order has got to
+ */
+export const ListStudioOrdersResponse = zod.object({
+  "orders": zod.array(zod.object({
+  "orderNumber": zod.string().describe('The order\'s number — its address in every studio operation.'),
+  "orderName": zod.string().describe('The Notion page title, e.g. \"Ada – Custom Costume\".'),
+  "currentStage": zod.string().describe('The stage the order is at now. Empty when the `Stage` property has never been set, which is the one case the board cannot advance from.'),
+  "stages": zod.array(zod.string()).describe('The stages this order\'s own service walks, in order — not the whole live list, so a repair is never offered `Sketching`. Includes the current stage even if it has since been renamed out of the live options.'),
+  "nextStage": zod.string().optional().describe('The stage after the current one, i.e. what \"advance\" means for this order. Absent at the final stage, or when the current stage isn\'t in the list.'),
+  "lastNotifiedStage": zod.string().optional().describe('The furthest stage the customer has already been emailed about (the `Last Notified Stage` high-water marker). Absent when they have never been emailed.'),
+  "service": zod.string().optional().describe('The service the order was placed for, as stored on it.'),
+  "dueDate": zod.string().optional().describe('The order\'s `Due Date` as an ISO date (yyyy-mm-dd), when the atelier has set one. A pass-through string (no `format: date`) so it isn\'t coerced to a Date and reserialized as a UTC timestamp — a due date is a calendar day, and an instant read in a western zone lands on the day before.'),
+  "notifiable": zod.boolean().describe('Whether the order carries a customer email to write to. The address itself is never returned — a stage board has no use for it, and this endpoint is not the place to publish one.')
+}).describe('One order\'s position in its pipeline, and what can be done about it.'))
+}).describe('The open custom orders, for the dashboard\'s stage board. Nearest due date first, then by order number — the order the atelier works them in.')
+
+
+/**
+ * Writes one custom order's `Stage` and, unless asked not to, emails the customer the same status update the Notion automation's webhook sends — so advancing an order is one action on the dashboard rather than an edit in Notion that a webhook has to notice.
+ *
+ * The send is not duplicated: it runs through the same notifier as the webhook, which re-reads the order, applies the same forward-only gate, and advances the same `Last Notified Stage` high-water marker. If the Notion automation is also wired up it will fire on this write, find the marker already at the new stage, and send nothing.
+ *
+ * `stage` must be one of the stages the order's own service walks — moving a repair to `Sketching` is refused with a 400. A stage BEHIND the current one is allowed (that is how a mis-click is corrected) and never emails, because the notifier only sends on forward movement.
+ *
+ * `notify: false` advances the marker without sending, so a stage the atelier chose not to announce stays unannounced even if the Notion automation is still wired. The customer is still emailed about the next forward move.
+ * @summary Move an order to a stage, and tell the customer
+ */
+export const setStudioOrderStagePathOrderNumberMax = 64;
+
+
+
+export const SetStudioOrderStageParams = zod.object({
+  "orderNumber": zod.coerce.string().max(setStudioOrderStagePathOrderNumberMax).describe('The custom order\'s number, e.g. `ORD-000002`.')
+})
+
+export const setStudioOrderStageBodyStageMax = 120;
+
+export const setStudioOrderStageBodyNotifyDefault = true;
+
+export const SetStudioOrderStageBody = zod.object({
+  "stage": zod.string().max(setStudioOrderStageBodyStageMax).describe('The stage to move the order to. Must be one of the order\'s own `stages`; a Notion `status` option cannot be created through the API, so a name that isn\'t already an option would fail the write.'),
+  "notify": zod.boolean().default(setStudioOrderStageBodyNotifyDefault).describe('Whether to email the customer. Default true — sending on the action is the point of advancing here rather than in Notion. False marks the stage as already announced without sending, so the change stays quiet even where the Notion automation is still wired.')
+}).describe('One stage change, as asked for from the dashboard.')
+
+export const SetStudioOrderStageResponse = zod.object({
+  "order": zod.object({
+  "orderNumber": zod.string().describe('The order\'s number — its address in every studio operation.'),
+  "orderName": zod.string().describe('The Notion page title, e.g. \"Ada – Custom Costume\".'),
+  "currentStage": zod.string().describe('The stage the order is at now. Empty when the `Stage` property has never been set, which is the one case the board cannot advance from.'),
+  "stages": zod.array(zod.string()).describe('The stages this order\'s own service walks, in order — not the whole live list, so a repair is never offered `Sketching`. Includes the current stage even if it has since been renamed out of the live options.'),
+  "nextStage": zod.string().optional().describe('The stage after the current one, i.e. what \"advance\" means for this order. Absent at the final stage, or when the current stage isn\'t in the list.'),
+  "lastNotifiedStage": zod.string().optional().describe('The furthest stage the customer has already been emailed about (the `Last Notified Stage` high-water marker). Absent when they have never been emailed.'),
+  "service": zod.string().optional().describe('The service the order was placed for, as stored on it.'),
+  "dueDate": zod.string().optional().describe('The order\'s `Due Date` as an ISO date (yyyy-mm-dd), when the atelier has set one. A pass-through string (no `format: date`) so it isn\'t coerced to a Date and reserialized as a UTC timestamp — a due date is a calendar day, and an instant read in a western zone lands on the day before.'),
+  "notifiable": zod.boolean().describe('Whether the order carries a customer email to write to. The address itself is never returned — a stage board has no use for it, and this endpoint is not the place to publish one.')
+}).describe('One order\'s position in its pipeline, and what can be done about it.'),
+  "previousStage": zod.string().describe('The stage the order was at before this ran.'),
+  "changed": zod.boolean().describe('False when the order was already at that stage, in which case nothing was written and nothing was sent.'),
+  "notification": zod.enum(['sent', 'skipped', 'suppressed']).describe('`sent` — the customer was emailed. `skipped` — a send was attempted and declined (the move wasn\'t forward, or the order carries no email or no stage). `suppressed` — the atelier asked not to email.'),
+  "notificationReason": zod.string().optional().describe('Why nothing was sent, in the atelier\'s terms. Present on `skipped` and `suppressed`.')
+}).describe('What one stage change did.')
+
+
+/**
  * Runs one of the atelier's internal actions — milestone reconciliation, invoice line-item generation, a flat service quote, an order status-change email, a cancellation refund, a return refund, or a back-in-stock alert — from the signed-in studio dashboard. Most were previously triggered by opening a link that carried a shared secret in its query string; the work is unchanged, the authorization is not: this requires the same Supabase access token as the rest of the studio surface, with the caller's email on the staff allowlist. 401 when not signed in, 404 when signed in but not staff, 403 when staff but not signed in with Google.
  * Every tool is idempotent — a repeat run reports `noop` rather than doing the work twice — but two of them move money, so the dashboard confirms before calling those.
  * @summary Run an internal atelier tool

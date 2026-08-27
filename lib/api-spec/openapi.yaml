@@ -1763,6 +1763,161 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/ErrorEnvelope"
+  /studio/orders:
+    get:
+      operationId: listStudioOrders
+      tags: [studio]
+      summary: Where every open custom order has got to
+      description: >-
+        The orders still being made, each with the stage it is at and the
+        pipeline its own service walks — the read half of advancing a stage from
+        the dashboard.
+
+
+        Deliberately a *filtered* query rather than the analytics' full scan: it
+        asks Notion for the orders that are neither cancelled nor at their final
+        stage, so what comes back is bounded by the studio's real open workload
+        rather than by every order ever placed. The two terminal conditions
+        mirror `orderLifecycleState` exactly.
+
+
+        The customer's email address is never returned — the board only needs to
+        know whether there is one to write to, which is what `notifiable`
+        carries.
+      security:
+        - bearerAuth: []
+      responses:
+        "200":
+          description: The open orders, nearest due date first
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/StudioOrderBoard"
+        "401":
+          description: Not signed in (missing or expired session)
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorEnvelope"
+        "403":
+          description: >-
+            A studio account whose session wasn't established with Google (the
+            default policy).
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorEnvelope"
+        "404":
+          description: >-
+            Signed in, but not a studio account — the same answer a URL that
+            doesn't exist gets (see the other studio operations).
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/OrderNotFound"
+        "500":
+          description: Server error
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorEnvelope"
+  /studio/orders/{orderNumber}/stage:
+    put:
+      operationId: setStudioOrderStage
+      tags: [studio]
+      summary: Move an order to a stage, and tell the customer
+      description: >-
+        Writes one custom order's `Stage` and, unless asked not to, emails the
+        customer the same status update the Notion automation's webhook sends —
+        so advancing an order is one action on the dashboard rather than an edit
+        in Notion that a webhook has to notice.
+
+
+        The send is not duplicated: it runs through the same notifier as the
+        webhook, which re-reads the order, applies the same forward-only gate,
+        and advances the same `Last Notified Stage` high-water marker. If the
+        Notion automation is also wired up it will fire on this write, find the
+        marker already at the new stage, and send nothing.
+
+
+        `stage` must be one of the stages the order's own service walks —
+        moving a repair to `Sketching` is refused with a 400. A stage BEHIND
+        the current one is allowed (that is how a mis-click is corrected) and
+        never emails, because the notifier only sends on forward movement.
+
+
+        `notify: false` advances the marker without sending, so a stage the
+        atelier chose not to announce stays unannounced even if the Notion
+        automation is still wired. The customer is still emailed about the next
+        forward move.
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: orderNumber
+          in: path
+          required: true
+          schema:
+            type: string
+            maxLength: 64
+          description: The custom order's number, e.g. `ORD-000002`.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/OrderStageRequest"
+      responses:
+        "200":
+          description: The order as it now stands, and what the email did
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/OrderStageChange"
+        "400":
+          description: >-
+            Not a stage this order's service walks, or an empty stage name
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorEnvelope"
+        "401":
+          description: Not signed in (missing or expired session)
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorEnvelope"
+        "403":
+          description: >-
+            A studio account whose session wasn't established with Google (the
+            default policy).
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorEnvelope"
+        "404":
+          description: >-
+            No order matches that number — or the caller isn't a studio account,
+            which answers identically by design (see the other studio
+            operations).
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/OrderNotFound"
+        "409":
+          description: >-
+            The order is cancelled. Its tracking page shows a cancelled banner
+            rather than a timeline, so moving it along would be a change nobody
+            can see.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorEnvelope"
+        "500":
+          description: Server error
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorEnvelope"
   /studio/tools/{tool}:
     post:
       operationId: runStudioTool
@@ -6615,6 +6770,119 @@ components:
           type: string
         orders:
           type: integer
+    StudioOrderBoard:
+      type: object
+      description: >-
+        The open custom orders, for the dashboard's stage board. Nearest due
+        date first, then by order number — the order the atelier works them in.
+      required: [orders]
+      properties:
+        orders:
+          type: array
+          items:
+            $ref: "#/components/schemas/StudioOrderStage"
+    StudioOrderStage:
+      type: object
+      description: >-
+        One order's position in its pipeline, and what can be done about it.
+      required: [orderNumber, orderName, currentStage, stages, notifiable]
+      properties:
+        orderNumber:
+          type: string
+          description: The order's number — its address in every studio operation.
+        orderName:
+          type: string
+          description: The Notion page title, e.g. "Ada – Custom Costume".
+        currentStage:
+          type: string
+          description: >-
+            The stage the order is at now. Empty when the `Stage` property has
+            never been set, which is the one case the board cannot advance from.
+        stages:
+          type: array
+          description: >-
+            The stages this order's own service walks, in order — not the whole
+            live list, so a repair is never offered `Sketching`. Includes the
+            current stage even if it has since been renamed out of the live
+            options.
+          items:
+            type: string
+        nextStage:
+          type: string
+          description: >-
+            The stage after the current one, i.e. what "advance" means for this
+            order. Absent at the final stage, or when the current stage isn't
+            in the list.
+        lastNotifiedStage:
+          type: string
+          description: >-
+            The furthest stage the customer has already been emailed about (the
+            `Last Notified Stage` high-water marker). Absent when they have
+            never been emailed.
+        service:
+          type: string
+          description: The service the order was placed for, as stored on it.
+        dueDate:
+          type: string
+          description: >-
+            The order's `Due Date` as an ISO date (yyyy-mm-dd), when the atelier
+            has set one. A pass-through string (no `format: date`) so it isn't
+            coerced to a Date and reserialized as a UTC timestamp — a due date
+            is a calendar day, and an instant read in a western zone lands on
+            the day before.
+        notifiable:
+          type: boolean
+          description: >-
+            Whether the order carries a customer email to write to. The address
+            itself is never returned — a stage board has no use for it, and this
+            endpoint is not the place to publish one.
+    OrderStageRequest:
+      type: object
+      description: One stage change, as asked for from the dashboard.
+      required: [stage]
+      properties:
+        stage:
+          type: string
+          maxLength: 120
+          description: >-
+            The stage to move the order to. Must be one of the order's own
+            `stages`; a Notion `status` option cannot be created through the
+            API, so a name that isn't already an option would fail the write.
+        notify:
+          type: boolean
+          default: true
+          description: >-
+            Whether to email the customer. Default true — sending on the action
+            is the point of advancing here rather than in Notion. False marks
+            the stage as already announced without sending, so the change stays
+            quiet even where the Notion automation is still wired.
+    OrderStageChange:
+      type: object
+      description: What one stage change did.
+      required: [order, previousStage, changed, notification]
+      properties:
+        order:
+          $ref: "#/components/schemas/StudioOrderStage"
+        previousStage:
+          type: string
+          description: The stage the order was at before this ran.
+        changed:
+          type: boolean
+          description: >-
+            False when the order was already at that stage, in which case
+            nothing was written and nothing was sent.
+        notification:
+          type: string
+          enum: [sent, skipped, suppressed]
+          description: >-
+            `sent` — the customer was emailed. `skipped` — a send was attempted
+            and declined (the move wasn't forward, or the order carries no email
+            or no stage). `suppressed` — the atelier asked not to email.
+        notificationReason:
+          type: string
+          description: >-
+            Why nothing was sent, in the atelier's terms. Present on `skipped`
+            and `suppressed`.
     StudioToolRequest:
       type: object
       description: >-

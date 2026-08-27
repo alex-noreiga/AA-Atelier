@@ -472,6 +472,7 @@ describe("findOrderForStageNotification", () => {
       currentStage: "Sewing",
       stages: ["Consultation", "Sewing", "Delivery"],
       lastNotifiedStage: "Consultation",
+      cancelled: false,
       estimatedCompletion: "2026-09-01",
     });
   });
@@ -583,6 +584,7 @@ describe("findOrderForStageNotificationByPageId", () => {
       currentStage: "Sewing",
       stages: ["Consultation", "Sewing", "Delivery"],
       lastNotifiedStage: "Consultation",
+      cancelled: false,
     });
     // It retrieves the page directly, not via a database query.
     expect(client.calls.some((c) => isPageFetch(c.path))).toBe(true);
