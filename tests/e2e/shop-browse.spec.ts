@@ -1,6 +1,6 @@
 import { test, expect } from "./support/test";
 import { productList } from "@workspace/test-fixtures";
-import { mockProducts } from "./support/mock-api";
+import { mockInstagramFeed, mockProducts } from "./support/mock-api";
 
 // The quick-view dialog in a real browser: opening a card, switching variants,
 // and the size selection being cleared across that switch. The category filter
@@ -63,6 +63,12 @@ const INVENTORY = productList({
 });
 
 test.describe("Shop browsing", () => {
+  // The page's Instagram strip renders nothing on an empty feed, which is what
+  // these specs want — they are about the catalogue.
+  test.beforeEach(async ({ page }) => {
+    await mockInstagramFeed(page);
+  });
+
   test("opens the quick-view dialog and switches variants, clearing the chosen size", async ({
     page,
   }) => {

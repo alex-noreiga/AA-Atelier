@@ -12,6 +12,7 @@ import { SizeSelector } from "@/components/size-selector";
 import { Input } from "@/components/ui/input";
 import { PageShell } from "@/components/page-shell";
 import { CtaLink } from "@/components/cta";
+import { InstagramFeed } from "@/components/instagram-feed";
 import { Seo, StructuredData, SITE_ORIGIN } from "@/components/seo";
 import { ROUTE_SEO } from "@/lib/seo-routes";
 import {
@@ -658,6 +659,17 @@ export default function Shop() {
             ))}
           </div>
         )}
+
+        {/* Instagram — pieces as they were photographed, each linking back
+            to its shop card where the atelier has recorded which one it is.
+            Deliberately below the grid: it is a way back INTO the catalogue for
+            someone who has scrolled past it, not a competitor for the top of
+            the page. */}
+        <InstagramFeed
+          eyebrow="Seen on Instagram"
+          title="Pieces in the wild"
+          limit={6}
+        />
 
         {/* Closing CTA */}
         <div className="mt-24 text-center">
