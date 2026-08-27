@@ -47,6 +47,7 @@ export const GENERAL_GUIDE_SECTION = "general";
 /** The sections, in the order the dashboard lays them out. */
 export const GUIDE_SECTIONS: readonly GuideSection[] = [
   { id: "figures", label: "Figures" },
+  { id: "orders", label: "Order stages" },
   { id: "materials", label: "Materials" },
   { id: "pay", label: "Production pay" },
   { id: "reviews", label: "Reviews" },
