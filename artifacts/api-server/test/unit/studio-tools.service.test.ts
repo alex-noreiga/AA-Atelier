@@ -24,6 +24,9 @@ vi.mock("../../src/services/order-cancellation.service.js", () => ({
 vi.mock("../../src/services/payment-record.service.js", () => ({
   recordOfflinePayment: vi.fn(),
 }));
+vi.mock("../../src/services/invoice-issue.service.js", () => ({
+  issueOrderInvoice: vi.fn(),
+}));
 vi.mock("../../src/services/restock-notification.service.js", () => ({
   notifyRestock: vi.fn(),
 }));
@@ -44,6 +47,7 @@ import { processCancellation } from "../../src/services/order-cancellation.servi
 import { processReturnRefund } from "../../src/services/return-refund.service.js";
 import { notifyRestock } from "../../src/services/restock-notification.service.js";
 import { recordOfflinePayment } from "../../src/services/payment-record.service.js";
+import { issueOrderInvoice } from "../../src/services/invoice-issue.service.js";
 import { BadRequestError, NotFoundError } from "../../src/lib/errors.js";
 
 const mockMilestones = vi.mocked(reconcileMilestones);
@@ -53,6 +57,7 @@ const mockCancel = vi.mocked(processCancellation);
 const mockReturn = vi.mocked(processReturnRefund);
 const mockRestock = vi.mocked(notifyRestock);
 const mockRecordPayment = vi.mocked(recordOfflinePayment);
+const mockIssue = vi.mocked(issueOrderInvoice);
 
 describe("runStudioTool — milestones", () => {
   it("reports what the reconciliation did, including the reminder passes", async () => {
@@ -689,5 +694,60 @@ describe("runStudioTool — record-payment", () => {
     });
 
     expect(result.details.join(" ")).toMatch(/no payment stages/);
+  });
+});
+
+describe("runStudioTool — issue-invoice", () => {
+  const issued = {
+    orderNumber: "ORD-000002",
+    invoiceNumber: "INV-000007",
+    issuedAt: new Date("2026-08-14T15:04:05.000Z"),
+    subtotal: 1250,
+    lineCount: 4,
+    alreadyIssued: false,
+    markedReady: true,
+  };
+
+  it("reports the number, the date and what was frozen", async () => {
+    mockIssue.mockResolvedValue(issued);
+
+    const result = await runStudioTool("issue-invoice", {
+      orderNumber: "ORD-000002",
+      recordedBy: "alexandra@example.com",
+    });
+
+    expect(mockIssue).toHaveBeenCalledWith({
+      orderNumber: "ORD-000002",
+      issuedBy: "alexandra@example.com",
+    });
+    expect(result.status).toBe("ok");
+    expect(result.message).toMatch(/INV-000007/);
+    expect(result.details.join(" ")).toMatch(/frozen/);
+    expect(result.details.join(" ")).toMatch(/Tax on the balance/);
+  });
+
+  it("reports a re-press as a no-op naming the standing document", async () => {
+    // An issued invoice can't be re-issued — that is what makes it the document
+    // the customer was shown.
+    mockIssue.mockResolvedValue({
+      ...issued,
+      alreadyIssued: true,
+      markedReady: false,
+    });
+
+    const result = await runStudioTool("issue-invoice", {
+      orderNumber: "ORD-000002",
+    });
+
+    expect(result.status).toBe("noop");
+    expect(result.message).toMatch(/INV-000007 on 2026-08-14/);
+    expect(result.details.join(" ")).toMatch(/can't be re-issued/);
+  });
+
+  it("requires an order number", async () => {
+    await expect(runStudioTool("issue-invoice", {})).rejects.toBeInstanceOf(
+      BadRequestError,
+    );
+    expect(mockIssue).not.toHaveBeenCalled();
   });
 });

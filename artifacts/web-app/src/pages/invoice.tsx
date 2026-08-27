@@ -10,7 +10,7 @@ import { DownloadPdfButton } from "@/components/download-pdf-button";
 import { PageShell } from "@/components/page-shell";
 import { ReceiptRow } from "@/components/receipt-row";
 import { Seo } from "@/components/seo";
-import { formatPrice } from "@/lib/format";
+import { formatPrice, formatDate } from "@/lib/format";
 import { groupLineItems } from "@/lib/invoice-format";
 import { useToast } from "@/hooks/use-toast";
 import { Loader2, ArrowLeft, Check, CreditCard } from "lucide-react";
@@ -58,10 +58,19 @@ function InvoiceBreakdown({
   return (
     <div className="w-full max-w-lg mx-auto px-6">
       <div className="text-center mb-12">
+        {/* The studio's own invoice number once the invoice has been ISSUED —
+            from that point the charges below are a frozen snapshot of what was
+            shown, not a live read. An invoice predating issuing falls back to
+            the atelier's Notion title, exactly as it always read. */}
         <p className="text-primary text-sm tracking-[0.15em] uppercase mb-2">
-          Invoice {invoice.invoiceId || orderNumber}
+          Invoice {invoice.invoiceNumber || invoice.invoiceId || orderNumber}
         </p>
         <h1 className="text-3xl font-serif">{orderName}</h1>
+        {invoice.issuedAt ? (
+          <p className="mt-2 text-sm text-muted-foreground">
+            Issued {formatDate(invoice.issuedAt)}
+          </p>
+        ) : null}
         {invoice.paymentDeadline ? (
           <p className="mt-2 text-sm text-muted-foreground">
             Due {invoice.paymentDeadline}

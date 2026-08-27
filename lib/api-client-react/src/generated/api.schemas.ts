@@ -58,6 +58,10 @@ export interface InvoiceLineItem {
 export interface Invoice {
   /** The atelier's invoice identifier (its Notion title). */
   invoiceId: string;
+  /** The studio's own invoice number (`INV-…`), assigned when the invoice was ISSUED. From that moment the line items and subtotal below are a frozen snapshot of what the customer was shown, not a live read of editable rows — so the document can't change under someone who has already seen it. Absent on an invoice issued before this existed, or while the record can't be read, in which case the figures are computed live as they always were. */
+  invoiceNumber?: string;
+  /** When the invoice was issued (ISO). Absent when it wasn't. A plain string rather than `format: date-time`, matching `paymentDeadline` below: the two zod/client generators disagree on that format (one emits `Date`, the other `string`), which makes the two packages' own `Invoice` types mutually unassignable — see `.agents/memory/orval-zod-codegen-drift.md`. */
+  issuedAt?: string;
   /** Whether the final balance has already been paid. */
   paid: boolean;
   /** The itemized charges (deposit lines excluded — deposits are credited via OrderStatus.deposits, not itemized here). */
@@ -968,6 +972,7 @@ export const StudioTool = {
   'return-refund': 'return-refund',
   'restock-alert': 'restock-alert',
   'record-payment': 'record-payment',
+  'issue-invoice': 'issue-invoice',
 } as const;
 
 /**
@@ -2199,7 +2204,7 @@ export const StudioToolRequestStage = {
  */
 export interface StudioToolRequest {
   /**
-     * The order the tool acts on — `ORD-…` for a custom order, `SHP-…` for a shop order. Required by `invoice-lines`, `quote`, `status-email`, `record-payment` and the two refunds; `milestones` sweeps the whole pipeline and `restock-alert` takes an optional `item` instead.
+     * The order the tool acts on — `ORD-…` for a custom order, `SHP-…` for a shop order. Required by `invoice-lines`, `quote`, `issue-invoice`, `status-email`, `record-payment` and the two refunds; `milestones` sweeps the whole pipeline and `restock-alert` takes an optional `item` instead.
      * @maxLength 64
      */
   orderNumber?: string;

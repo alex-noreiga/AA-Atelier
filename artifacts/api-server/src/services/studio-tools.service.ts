@@ -58,6 +58,7 @@ import {
   recordOfflinePayment,
   type RecordPaymentResult,
 } from "./payment-record.service.js";
+import { issueOrderInvoice } from "./invoice-issue.service.js";
 import type { PaymentMethod } from "../lib/db/payments.repository.js";
 import type { PaymentStage } from "../lib/notion/invoice.schema.js";
 import { BadRequestError, NotFoundError } from "../lib/errors.js";
@@ -72,7 +73,8 @@ export type StudioToolName =
   | "cancellation-refund"
   | "return-refund"
   | "restock-alert"
-  | "record-payment";
+  | "record-payment"
+  | "issue-invoice";
 
 /** What a run did. See the spec's `StudioToolRun.status` for the contract. */
 export type StudioToolStatus = "ok" | "noop" | "attention";
@@ -232,6 +234,8 @@ async function runInvoiceLines(
 async function runQuote(args: StudioToolArgs): Promise<StudioToolRunResult> {
   const result = await quoteOrder({
     orderNumber: requireOrderNumber(args),
+    // A quote issues the invoice it writes, so the issuer records who did it.
+    ...(args.recordedBy ? { issuedBy: args.recordedBy } : {}),
     // `amount` is optional on the shared request body (each tool takes a
     // different subset), so an omitted price arrives here as NaN and the
     // service rejects it with the message the atelier needs to read.
@@ -576,6 +580,51 @@ async function runRecordPayment(
   };
 }
 
+/** Issue an invoice: freeze its charges into a numbered, dated document and open
+ * it for payment. The one tool whose whole point is that its output can never be
+ * rewritten — so a re-press reports what already stands rather than doing it
+ * again. */
+async function runIssueInvoice(
+  args: StudioToolArgs,
+): Promise<StudioToolRunResult> {
+  const orderNumber = requireOrderNumber(args);
+  const result = await issueOrderInvoice({
+    orderNumber,
+    ...(args.recordedBy ? { issuedBy: args.recordedBy } : {}),
+  });
+
+  const issuedOn = result.issuedAt.toISOString().slice(0, 10);
+
+  if (result.alreadyIssued) {
+    return {
+      tool: "issue-invoice",
+      status: "noop",
+      title: "Already issued",
+      message: `${result.orderNumber} was issued as ${result.invoiceNumber} on ${issuedOn}, so nothing changed.`,
+      details: [
+        "An issued invoice can't be re-issued — that's what makes it the document the customer was shown. To change what is charged, raise a credit note or a new invoice.",
+        ...(result.markedReady
+          ? ["Ticked Invoice Ready, which had been left unset."]
+          : []),
+      ],
+    };
+  }
+
+  return {
+    tool: "issue-invoice",
+    status: "ok",
+    title: "Invoice issued",
+    message: `${result.orderNumber} is issued as ${result.invoiceNumber} — ${plural(result.lineCount, "line")} totalling ${money(result.subtotal)}.`,
+    details: [
+      "The charges are now frozen: the customer's invoice, its PDF and the balance checkout all read this document rather than the Notion rows, so editing a line won't change what they were shown or what they're charged.",
+      ...(result.markedReady
+        ? ["Ticked Invoice Ready, so the customer can pay the balance."]
+        : ["Invoice Ready was already set."]),
+      "Tax on the balance is calculated by Stripe at checkout, from the address collected there — so it isn't on the document.",
+    ],
+  };
+}
+
 export async function runStudioTool(
   tool: StudioToolName,
   args: StudioToolArgs = {},
@@ -614,5 +663,7 @@ function dispatch(
       return runRestockAlert(args);
     case "record-payment":
       return runRecordPayment(args);
+    case "issue-invoice":
+      return runIssueInvoice(args);
   }
 }

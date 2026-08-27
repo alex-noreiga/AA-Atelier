@@ -1701,7 +1701,8 @@ paths:
       summary: Run an internal atelier tool
       description: >-
         Runs one of the atelier's internal actions — milestone reconciliation,
-        invoice line-item generation, a flat service quote, recording a payment
+        invoice line-item generation, a flat service quote, issuing an invoice,
+        recording a payment
         that arrived outside Stripe, an order
         status-change email, a cancellation refund, a return refund, or a
         back-in-stock alert — from the signed-in studio dashboard. Most were previously triggered by
@@ -2907,6 +2908,25 @@ components:
         invoiceId:
           type: string
           description: The atelier's invoice identifier (its Notion title).
+        invoiceNumber:
+          type: string
+          description: >-
+            The studio's own invoice number (`INV-…`), assigned when the invoice
+            was ISSUED. From that moment the line items and subtotal below are a
+            frozen snapshot of what the customer was shown, not a live read of
+            editable rows — so the document can't change under someone who has
+            already seen it. Absent on an invoice issued before this existed, or
+            while the record can't be read, in which case the figures are
+            computed live as they always were.
+        issuedAt:
+          type: string
+          description: >-
+            When the invoice was issued (ISO). Absent when it wasn't. A plain
+            string rather than `format: date-time`, matching `paymentDeadline`
+            below: the two zod/client generators disagree on that format (one
+            emits `Date`, the other `string`), which makes the two packages' own
+            `Invoice` types mutually unassignable — see
+            `.agents/memory/orval-zod-codegen-drift.md`.
         paid:
           type: boolean
           description: Whether the final balance has already been paid.
@@ -6574,8 +6594,8 @@ components:
           maxLength: 64
           description: >-
             The order the tool acts on — `ORD-…` for a custom order, `SHP-…` for
-            a shop order. Required by `invoice-lines`, `quote`, `status-email`,
-            `record-payment` and the two refunds; `milestones` sweeps the whole
+            a shop order. Required by `invoice-lines`, `quote`, `issue-invoice`,
+            `status-email`, `record-payment` and the two refunds; `milestones` sweeps the whole
             pipeline and `restock-alert` takes an optional `item` instead.
         force:
           type: boolean
@@ -6691,3 +6711,4 @@ components:
         - return-refund
         - restock-alert
         - record-payment
+        - issue-invoice

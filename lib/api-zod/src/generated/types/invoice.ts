@@ -13,6 +13,10 @@ import type { InvoiceLineItem } from './invoiceLineItem';
 export interface Invoice {
   /** The atelier's invoice identifier (its Notion title). */
   invoiceId: string;
+  /** The studio's own invoice number (`INV-…`), assigned when the invoice was ISSUED. From that moment the line items and subtotal below are a frozen snapshot of what the customer was shown, not a live read of editable rows — so the document can't change under someone who has already seen it. Absent on an invoice issued before this existed, or while the record can't be read, in which case the figures are computed live as they always were. */
+  invoiceNumber?: string;
+  /** When the invoice was issued (ISO). Absent when it wasn't. A plain string rather than `format: date-time`, matching `paymentDeadline` below: the two zod/client generators disagree on that format (one emits `Date`, the other `string`), which makes the two packages' own `Invoice` types mutually unassignable — see `.agents/memory/orval-zod-codegen-drift.md`. */
+  issuedAt?: string;
   /** Whether the final balance has already been paid. */
   paid: boolean;
   /** The itemized charges (deposit lines excluded — deposits are credited via OrderStatus.deposits, not itemized here). */

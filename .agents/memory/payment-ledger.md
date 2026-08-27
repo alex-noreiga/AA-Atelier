@@ -301,12 +301,101 @@ amount }` — the only two things the rule reads — so the customer's display
    the nightly cron. The email already omits the amount when the property isn't
    set, so the failure mode there is a quieter email rather than a wrong figure.
 
+## Issuing the invoice (roadmap card 6b)
+
+`Invoice Ready` was a checkbox, not an event. Ticking it published an invoice
+whose line items stayed fully editable in Notion afterwards, so the charges could
+move under a customer who had already been shown them — and already paid a
+deposit against them — with nothing recording what the document used to say. It
+also carried no number and no date of its own (`Invoice ID` is the order's
+`ORD-` number, display-only).
+
+Issuing snapshots the charges into **`issued_invoices`**, once, and ticks the
+gate. Code: `supabase/migrations/0006_issued_invoices.sql`,
+`lib/db/issued-invoices.repository.ts`, `services/invoice-issue.service.ts`, the
+`issue-invoice` runner in `services/studio-tools.service.ts`, and the readers in
+`services/invoice.service.ts`.
+
+1. **What is frozen and what is not is the whole design.** FROZEN: the lines and
+   their subtotal — a charge that moves after the customer has seen it is the
+   defect. LIVE: which deposits have been PAID, and so the balance due, because
+   paying a deposit legitimately reduces what is owed. The deposit schedule is
+   snapshotted for the record, but the live invoice head still decides what is
+   payable — deposits are payable before an invoice is itemized at all.
+
+2. **The unique index IS the immutability guarantee.**
+   `issued_invoices.invoice_page_id` is unique, so an invoice can be issued
+   exactly once, enforced by the database rather than by a caller remembering to
+   check. A conflicting insert reads the standing row back and reports
+   `alreadyIssued`; a conflict with no visible row (an uncommitted peer) throws
+   rather than reporting a success with no document behind it.
+
+3. **There is deliberately no re-issue.** An invoice that genuinely needs to
+   change after being shown to a customer is a credit note or a new invoice, not
+   an edit. The tool says so in its own result.
+
+4. **Snapshot first, gate second.** `setInvoiceReady` runs only after the
+   snapshot exists, so a failure part-way through can never publish an invoice
+   with no document behind it. The reverse — a failed gate write after a
+   successful snapshot — is reported, not thrown: the document is immutable and
+   already written, and throwing would read as a failed issue and invite a
+   re-press that could only find it already issued.
+
+5. **One place decides which document is being read.** `chargedLinesOf` picks the
+   snapshot over the live rows, and the invoice page, its PDF and the BALANCE
+   CHECKOUT all go through it. Being shown one total and charged another is the
+   sharpest form of this bug, so the checkout prices from the same document the
+   page rendered.
+
+6. **The read is best-effort; the write is not.** An unconfigured or unreachable
+   database answers `null` and every reader falls back to computing live — the
+   pre-6b behaviour, so a customer can still see and pay their invoice during an
+   outage. Issuing itself refuses to run without a database, because ticking the
+   gate with no snapshot would publish exactly the mutable document this
+   replaces.
+
+7. **A quote issues the invoice it writes.** It was already ticking
+   `Invoice Ready` (a quote is a finished invoice by construction), so it now
+   issues instead — one press, a numbered document. Best-effort on the issuing
+   half only: the line is already written by then, so a database outage degrades
+   to the plain gate and the atelier can issue it later. `invoice-lines`
+   deliberately still does NOT tick the gate — an itemized commission is reviewed
+   first, and that review is now "issue it".
+
+8. **The number is derived from the row's own identity value** in the insert
+   statement (`'INV-' || lpad(nextval(…), 6, '0')`), so nothing reads a counter
+   and writes it back and two concurrent issues can't collide. Gaps are possible
+   — a rolled-back insert consumes an identity value — so the series is
+   sequential, not gapless.
+
+9. **Tax is NOT on the document, and that is honest rather than missing.** Stripe
+   computes it from an address collected at checkout, which the invoice does not
+   have at issue time, so the amount genuinely cannot be known. The snapshot
+   records only THAT the balance is taxed, and the tool's result says tax is
+   calculated at checkout. Putting a figure there would need an address the app
+   deliberately never stores for a custom order.
+
+10. **`issuedAt` is a plain ISO string, not `format: date-time`.** The zod and
+    client generators disagree on that format (one emits `Date`, the other
+    `string`), which makes the two packages' own `Invoice` types mutually
+    unassignable — the drift `.agents/memory/orval-zod-codegen-drift.md` warned
+    would show up "if more formats are added". `paymentDeadline` beside it
+    already avoids it the same way.
+
 ## What is deliberately NOT done yet
 
 - **`buildPayments` still reads the Notion checkboxes.** Deposits-vs-balances is
   an _outstanding_ figure — what is still owed — which the ledger doesn't hold;
   it is the invoice's schedule that says what was expected. Left alone
   deliberately.
+- **No credit notes.** An issued invoice can't be re-issued, which is the point,
+  but the thing that should replace an edit — a credit note against the issued
+  document — doesn't exist yet. Today a genuinely wrong issued invoice is a SQL
+  fix, exactly like a mis-recorded payment.
+- **`Invoice Ready` remains hand-tickable**, so an invoice can still be published
+  in Notion without a snapshot. It then reads live, as before, with no number.
+  Making the checkbox an app-written mirror is the same end state the `… Paid`
+  boxes want.
 - **There is no ledger VIEW.** The `record-payment` result echoes the order's
   payment history back as detail lines, which is the only place the rows are
   readable today. A panel listing an order's payments would want its own read

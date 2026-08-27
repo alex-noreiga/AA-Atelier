@@ -381,7 +381,10 @@ Express app (artifacts/api-server)  ──►  Notion REST API (orders database)
                                      (`invoice-lines`), a flat service quote
                                      (`quote` — a required `amount` + an optional
                                      `description`, for work with no costing
-                                     behind it; see "Flat-price quotes"), an order
+                                     behind it; see "Flat-price quotes"), issuing
+                                     an invoice (`issue-invoice` — freezing its
+                                     charges into a numbered, dated document that
+                                     can never be rewritten), an order
                                      status-change email (`status-email`, with a
                                      `force` resend), the cancellation refund
                                      (`cancellation-refund`), the return /
@@ -4039,8 +4042,10 @@ the same reads. **No API change, no new env var, no atelier setup.**
 ## Internal tools on the studio dashboard
 
 The atelier's internal actions — **reconcile production milestones**, **itemize
-an invoice**, **quote a flat price**, **record a payment** (one taken outside
-Stripe — see "The payment ledger" above), **send a status update**, **cancel &
+an invoice**, **quote a flat price**, **issue an invoice** (freezing its charges
+into a numbered document — see "Issuing an invoice" above), **record a payment**
+(one taken outside Stripe — see "The payment ledger" above), **send a status
+update**, **cancel &
 refund an order**, **refund a return**, **send back-in-stock alerts** — are run
 from the signed-in `/studio` page, through `POST /api/studio/tools/:tool`. None of the underlying work changed; who is
 allowed to trigger it did. This is the roadmap's "Staff authentication for
@@ -4399,6 +4404,68 @@ Google Calendar integration (unset ⇒ they just don't appear); measurements nee
 `Measurement Unit` `select` (`inches`/`cm`) on the Order Tracking Pipeline database. The
 Supabase auth email copy is version-controlled in
 `.agents/memory/supabase-auth-emails.md` and pasted into the Supabase dashboard.
+
+## Issuing an invoice (the document, not the rows)
+
+`Invoice Ready` was a checkbox, not an event: ticking it published an invoice
+whose line items stayed fully editable in Notion, so the charges could move under
+a customer who had already been shown them — and already paid a deposit against
+them — with nothing recording what the document used to say. It carried no number
+and no date of its own either (`Invoice ID` is the order's `ORD-` number,
+display-only).
+
+`/studio` → **Issue an invoice** (`POST /api/studio/tools/issue-invoice`)
+snapshots the charges into the write-once **`issued_invoices`** table and ticks
+the gate. Code: `supabase/migrations/0006_issued_invoices.sql`,
+`lib/db/issued-invoices.repository.ts`, `services/invoice-issue.service.ts`, and
+the readers in `services/invoice.service.ts`.
+
+1. **What is frozen and what is not is the whole design.** FROZEN: the lines and
+   their subtotal — a charge that moves after the customer has seen it is the
+   defect. LIVE: which deposits have been **paid**, and so the balance due,
+   because paying a deposit legitimately reduces what is owed. The deposit
+   schedule is snapshotted for the record, but the live invoice head still
+   decides what is payable — deposits are payable before an invoice is itemized
+   at all.
+
+2. **The unique index on `invoice_page_id` IS the immutability guarantee** — an
+   invoice can be issued exactly once, enforced by the database rather than by a
+   caller remembering to check. A re-press reports the number and date already on
+   file. There is deliberately **no re-issue**: an invoice that genuinely needs
+   to change after being shown to a customer is a credit note, not an edit.
+
+3. **Snapshot first, gate second.** `setInvoiceReady` runs only after the
+   snapshot exists, so a failure part-way can never publish an invoice with no
+   document behind it. A failed gate write afterwards is reported, not thrown —
+   the document is already immutable, and throwing would invite a re-press that
+   could only find it issued.
+
+4. **One place decides which document is read.** `chargedLinesOf` picks the
+   snapshot over the live rows, and the invoice page, its PDF and the **balance
+   checkout** all go through it. Shown one total and charged another is the
+   sharpest form of this bug.
+
+5. **The read is best-effort; the write is not.** No database ⇒ readers fall back
+   to computing live (the old behaviour, so a customer can still pay during an
+   outage), while issuing refuses to run — ticking the gate with no snapshot
+   would publish exactly the mutable document this replaces.
+
+6. **A quote issues the invoice it writes** (it was already ticking the gate), so
+   a service order becomes a numbered document in one press. Best-effort on the
+   issuing half only — the line is written by then. `invoice-lines` still does
+   NOT tick the gate: an itemized commission is reviewed first, and that review
+   is now "issue it".
+
+7. **Tax is NOT on the document, honestly rather than silently.** Stripe computes
+   it from an address collected at checkout, which the invoice does not have at
+   issue time, so the amount cannot be known here. The snapshot records only THAT
+   the balance is taxed, and the tool's result says tax is calculated at
+   checkout.
+
+**Atelier setup: none beyond `db:migrate`.** No env var, no new vendor, no Notion
+property. Known limits: there are no credit notes yet (a genuinely wrong issued
+invoice is a SQL fix), and `Invoice Ready` remains hand-tickable — an invoice
+published that way reads live, as before, with no number.
 
 ## The payment ledger (what came in, and when)
 
@@ -5536,6 +5603,7 @@ Three things about it are load-bearing:
 | Change the studio's how-to guides                        | `api-server/src/lib/guide-sections.ts` (the sections a guide can be filed against — a tool's id is its `StudioToolName`) + `lib/notion/guides.{schema,repository}.ts` (the Notion row + the file download) + `services/studio-guides.service.ts` (assembly, the HTML check, the 60s cache) + the `/studio/guides` route in `routes/studio.ts`; frontend `web-app/src/components/studio-guides.tsx` (`StudioGuides` panel + the `GuidesFor` slots), mounted by `pages/studio.tsx` and per tool by `components/studio-tools.tsx`. The sandboxed frame in that component is a security boundary — see the section above                                                                                                                                                                                                                |
 | Change the studio's internal tools (generators, refunds) | `api-server/src/services/studio-tools.service.ts` (the dispatcher + the composed result wording) + `routes/studio.ts` (`POST /studio/tools/:tool`, `requireStaff`) + `web-app/src/components/studio-tools.tsx` (rendered by `pages/studio.tsx`); the underlying work stays in `services/{schedule,invoice-generator,order-notification,order-cancellation,return-refund}.service.ts`. Contract in `openapi.yaml` (`StudioTool` / `StudioToolRequest` / `StudioToolRun`)                                                                                                                                                                                                                                                                                                                                                             |
 | Record a payment taken outside Stripe                    | `api-server/src/services/payment-record.service.ts` (the gates, the midday-in-studio-timezone date rule, and the settle-from-the-ledger check) + the `record-payment` runner in `services/studio-tools.service.ts` + the card in `web-app/src/components/studio-tools.tsx`. `recordedBy` is stamped by the route in `routes/studio.ts`, never read off the body                                                                                                                                                                                                                                                                                                                                                                                                                                                                     |
+| Issue an invoice (freeze the document)                   | `api-server/src/services/invoice-issue.service.ts` (`issueOrderInvoice`, and `chargedLinesOf` — the ONE place that decides whether a reader sees the snapshot or the live rows) + `lib/db/issued-invoices.repository.ts` + the `issue-invoice` runner in `services/studio-tools.service.ts`. Schema in `supabase/migrations/0006_issued_invoices.sql`. The customer's side is `buildInvoiceView` / `createPaymentCheckout` in `services/invoice.service.ts`, `pages/invoice.tsx` and `lib/pdf/invoice-pdf.ts`                                                                                                                                                                                                                                                                                                                       |
 | Change what an invoice is worth                          | `invoiceChargedTotal` / `chargedLines` in `api-server/src/lib/notion/invoice.schema.ts` — ONE rule, used by `buildInvoiceView` (the customer's invoice) and `invoiceValues` in `services/studio-analytics.service.ts` (the studio's figures), so the two can't drift. The studio's copy is fed by `listInvoiceLinesForAnalytics` (a fourth bounded scan) and falls back to Notion's `Final Balance` when that scan is incomplete — see `scanDatabaseChecked` in `lib/notion/scan.ts` and the note in `.agents/memory/payment-ledger.md`                                                                                                                                                                                                                                                                                             |
 | Change the payment ledger (what came in, and when)       | `api-server/src/lib/db/payments.repository.ts` (the append-only table's I/O; the sign is applied from `kind` here) + `services/payment-ledger.service.ts` (`recordStripeCharge` / `recordStripeRefund` — best-effort, never throwing), called from `recordPayment` (`invoice.service.ts`), `processPaidShopOrder` (`checkout.service.ts`), `refundCheckoutSession` (`order-cancellation.service.ts`) and `return-refund.service.ts`. Schema in `supabase/migrations/0005_payments.sql`; history recovered by `db:backfill-payments`. Read `.agents/memory/payment-ledger.md` before changing the `external_id` index or the sign rule                                                                                                                                                                                               |
 | Change the Postgres integrity layer / payment dedup      | `api-server/src/lib/db/client.ts` (`DbClient` seam + `postgresConfigured`) + `lib/db/processed-payments.repository.ts` (`claimPayment` / `confirmPayment` / `releasePayment`); consumed by `services/checkout.service.ts` (`recordPaidOrder`). Schema in `supabase/migrations/*.sql`, applied by `src/scripts/migrate.ts` (`pnpm db:migrate`, `.github/workflows/migrate.yml`)                                                                                                                                                                                                                                                                                                                                                                                                                                                      |

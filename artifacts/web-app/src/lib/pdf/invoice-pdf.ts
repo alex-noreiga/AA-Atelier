@@ -30,10 +30,16 @@ export function buildInvoiceDoc({
 }: InvoicePdfInput): PdfDocument {
   const pdf = new PdfDocument();
 
+  // The issued invoice number where there is one — a PDF is the copy that gets
+  // filed and forwarded, so it should carry the studio's own reference rather
+  // than the Notion title. Falls back exactly as the page does.
   const meta = [
-    `Invoice ${invoice.invoiceId || orderNumber}`,
+    `Invoice ${invoice.invoiceNumber || invoice.invoiceId || orderNumber}`,
     `Order ${orderNumber}`,
   ];
+  if (invoice.issuedAt) {
+    meta.push(`Issued ${formatDate(invoice.issuedAt) || invoice.issuedAt}`);
+  }
   if (invoice.paymentDeadline) {
     meta.push(
       `Due ${formatDate(invoice.paymentDeadline) || invoice.paymentDeadline}`,

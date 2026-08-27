@@ -176,6 +176,11 @@ export interface InvoiceDepositView {
  */
 export interface InvoiceView {
   invoiceId: string;
+  /** The studio's own invoice number (`INV-…`), once the invoice has been
+   * issued. Absent on a legacy invoice, or while the database can't be read. */
+  invoiceNumber?: string;
+  /** When it was issued (ISO). Absent for the same reasons. */
+  issuedAt?: string;
   paid: boolean;
   lineItems: InvoiceLineItemRecord[];
   subtotal: number;

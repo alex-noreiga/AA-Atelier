@@ -134,3 +134,31 @@ describe("Invoice breakdown", () => {
     });
   });
 });
+
+describe("an issued invoice shows its own number and date", () => {
+  it("prefers the studio's invoice number over the Notion title", () => {
+    // From issuing onward, the charges shown are a frozen snapshot — the number
+    // is how the customer (and the studio) refer to that document.
+    stubHook(mockHook, {
+      data: orderRecord({
+        invoice: {
+          ...invoice,
+          invoiceNumber: "INV-000007",
+          issuedAt: "2026-08-14T15:04:05.000Z",
+        },
+        deposits,
+      }),
+    });
+    render(<InvoicePage />);
+
+    expect(screen.getByText(/Invoice INV-000007/)).toBeInTheDocument();
+    expect(screen.getByText(/Issued/)).toBeInTheDocument();
+  });
+
+  it("falls back to the Notion title for an invoice never issued", () => {
+    stubHook(mockHook, { data: orderRecord({ invoice, deposits }) });
+    render(<InvoicePage />);
+
+    expect(screen.queryByText(/Issued/)).toBeNull();
+  });
+});

@@ -11,6 +11,9 @@ vi.mock("../../src/lib/notion/invoice.repository.js", () => ({
   setInvoiceTitle: vi.fn(),
   setInvoiceReady: vi.fn(),
 }));
+vi.mock("../../src/services/invoice-issue.service.js", () => ({
+  issueOrderInvoice: vi.fn(),
+}));
 
 import { quoteOrder } from "../../src/services/quote.service.js";
 import { findOrderByNumber } from "../../src/lib/notion/orders.repository.js";
@@ -21,6 +24,7 @@ import {
   setInvoiceReady,
 } from "../../src/lib/notion/invoice.repository.js";
 import type { OrderRecord } from "../../src/lib/notion/orders.schema.js";
+import { issueOrderInvoice } from "../../src/services/invoice-issue.service.js";
 
 const mockFindOrder = vi.mocked(findOrderByNumber);
 const mockListLines = vi.mocked(listInvoiceLineItems);
@@ -48,7 +52,7 @@ beforeEach(() => {
 });
 
 describe("quoteOrder", () => {
-  it("writes one priced Service line and marks the invoice ready", async () => {
+  it("writes one priced Service line and issues the invoice", async () => {
     const result = await quoteOrder({
       orderNumber: "ORD-000002",
       amount: 85,
@@ -63,7 +67,12 @@ describe("quoteOrder", () => {
       unitPrice: 85,
     });
     expect(mockSetTitle).toHaveBeenCalledWith("invoice-1", "ORD-000002");
-    expect(mockSetReady).toHaveBeenCalledWith("invoice-1", true);
+    // Issuing ticks the gate as part of writing the document, so the quote no
+    // longer sets it directly — see "a quote issues the invoice it writes".
+    expect(vi.mocked(issueOrderInvoice)).toHaveBeenCalledWith(
+      expect.objectContaining({ orderNumber: "ORD-000002" }),
+    );
+    expect(mockSetReady).not.toHaveBeenCalled();
     expect(result).toMatchObject({
       alreadyPresent: false,
       lineName: "Re-stone bodice",
@@ -170,5 +179,47 @@ describe("quoteOrder", () => {
       quoteOrder({ orderNumber: "ORD-000002", amount: 85 }),
     ).rejects.toThrow(/no invoice for this order/i);
     expect(mockCreateLine).not.toHaveBeenCalled();
+  });
+});
+
+describe("a quote issues the invoice it writes", () => {
+  it("issues rather than merely ticking the gate", async () => {
+    // A quote is a finished invoice by construction, so it becomes a numbered,
+    // dated document in one press instead of leaving a step to forget.
+    vi.mocked(issueOrderInvoice).mockResolvedValue({
+      orderNumber: "ORD-000002",
+      invoiceNumber: "INV-000007",
+      issuedAt: new Date("2026-08-14T15:04:05.000Z"),
+      subtotal: 85,
+      lineCount: 1,
+      alreadyIssued: false,
+      markedReady: true,
+    });
+
+    await quoteOrder({
+      orderNumber: "ORD-000002",
+      amount: 85,
+      issuedBy: "alexandra@example.com",
+    });
+
+    expect(vi.mocked(issueOrderInvoice)).toHaveBeenCalledWith(
+      expect.objectContaining({
+        orderNumber: "ORD-000002",
+        issuedBy: "alexandra@example.com",
+      }),
+    );
+    expect(mockSetReady).not.toHaveBeenCalled();
+  });
+
+  it("degrades to the plain gate when issuing fails, keeping the quote", async () => {
+    // The line is already written by this point, so a database outage must not
+    // lose the quote — it falls back to the pre-issuing behaviour and the
+    // atelier can issue it once the database is back.
+    vi.mocked(issueOrderInvoice).mockRejectedValue(new Error("no database"));
+
+    const result = await quoteOrder({ orderNumber: "ORD-000002", amount: 85 });
+
+    expect(result.amount).toBe(85);
+    expect(mockSetReady).toHaveBeenCalledWith("invoice-1", true);
   });
 });

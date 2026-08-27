@@ -179,6 +179,14 @@ const TOOLS: ToolSpec[] = [
     action: "Refund",
   },
   {
+    tool: "issue-invoice",
+    name: "Issue an invoice",
+    description:
+      "Freezes the invoice's charges into a numbered, dated document and opens it for payment. From then on the customer's invoice, its PDF and the balance checkout read that document, so editing a line in Notion can't change what they were shown. It can't be re-issued.",
+    field: orderField("ORD-000002"),
+    action: "Issue",
+  },
+  {
     tool: "record-payment",
     name: "Record a payment",
     description:

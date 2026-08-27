@@ -17,6 +17,19 @@ vi.mock("../../src/services/rewards.service.js", () => ({
 // The payment ledger is the other best-effort side effect on the recorder; its
 // own mapping is covered in payment-ledger.service.test.ts, so mock the service
 // here and assert only that the payment is handed to it with the right context.
+vi.mock(
+  "../../src/services/invoice-issue.service.js",
+  async (importOriginal) => {
+    // The pure helpers (`chargedLinesOf`, `issuedIdentity`) stay real — they ARE
+    // the "which document is this?" rule under test. Only the database read is
+    // stubbed.
+    const actual =
+      await importOriginal<
+        typeof import("../../src/services/invoice-issue.service.js")
+      >();
+    return { ...actual, readIssuedInvoice: vi.fn() };
+  },
+);
 vi.mock("../../src/services/payment-ledger.service.js", () => ({
   recordStripeCharge: vi.fn(),
 }));
@@ -46,6 +59,23 @@ import type {
   InvoiceLineItemRecord,
   InvoiceDepositView,
 } from "../../src/lib/notion/invoice.schema.js";
+import { readIssuedInvoice } from "../../src/services/invoice-issue.service.js";
+import type { IssuedInvoice } from "../../src/lib/db/issued-invoices.repository.js";
+
+/** An issued document whose charges deliberately DIFFER from the live rows, so a
+ * test can tell which one a reader used. */
+const ISSUED: IssuedInvoice = {
+  invoiceNumber: "INV-000007",
+  invoicePageId: "invoice-page",
+  orderNumber: "ORD-1",
+  issuedAt: new Date("2026-08-14T15:04:05.000Z"),
+  issuedBy: "",
+  currency: "usd",
+  subtotalCents: 100000,
+  taxed: true,
+  lines: [{ name: "As issued", type: "Garment", amountCents: 100000 }],
+  deposits: [],
+};
 
 const mockFindOrder = vi.mocked(findOrderByNumber);
 const mockFindForNotify = vi.mocked(findOrderForStageNotification);
@@ -53,6 +83,7 @@ const mockFindInvoice = vi.mocked(findInvoice);
 const mockListLines = vi.mocked(listInvoiceLineItems);
 const mockMark = vi.mocked(markInvoicePaid);
 const mockRewards = vi.mocked(runPaidOrderRewards);
+const mockReadIssued = vi.mocked(readIssuedInvoice);
 
 function order(overrides: Partial<OrderRecord> = {}): OrderRecord {
   return {
@@ -526,5 +557,94 @@ describe("recordPayment", () => {
       } as unknown as Stripe.Checkout.Session),
     ).resolves.toBeUndefined();
     expect(mockMark).toHaveBeenCalledWith("inv-1", "balance", "cs_rw3");
+  });
+});
+
+describe("an ISSUED invoice is the document", () => {
+  it("subtotals from the snapshot, not from the live rows", () => {
+    // The whole point of 6b: editing a line in Notion after issuing must not
+    // change what the customer was shown.
+    const view = buildInvoiceView(invoice(), LINES, ISSUED);
+
+    expect(view.subtotal).toBe(1000);
+    expect(view.lineItems).toEqual([
+      { name: "As issued", type: "Garment", amount: 1000 },
+    ]);
+  });
+
+  it("carries the invoice number and issue date", () => {
+    const view = buildInvoiceView(invoice(), LINES, ISSUED);
+
+    expect(view.invoiceNumber).toBe("INV-000007");
+    expect(view.issuedAt).toBe("2026-08-14T15:04:05.000Z");
+  });
+
+  it("still credits deposits LIVE — paying one legitimately reduces the balance", () => {
+    // Deposits are deliberately not frozen: that is the invoice working, not
+    // drifting.
+    const view = buildInvoiceView(
+      invoice({
+        deposits: [
+          {
+            stage: "first_deposit",
+            label: "First deposit",
+            amount: 250,
+            paid: true,
+          },
+        ],
+      }),
+      LINES,
+      ISSUED,
+    );
+
+    expect(view.subtotal).toBe(1000);
+    expect(view.depositsCreditedTotal).toBe(250);
+    expect(view.balanceDue).toBe(750);
+  });
+
+  it("computes live, with no number, for an invoice never issued", () => {
+    const view = buildInvoiceView(invoice(), LINES, null);
+
+    expect(view.subtotal).toBe(215.5);
+    expect(view.invoiceNumber).toBeUndefined();
+    expect(view.issuedAt).toBeUndefined();
+  });
+});
+
+describe("the balance checkout prices the document it showed", () => {
+  beforeEach(() => {
+    mockReadIssued.mockResolvedValue(null);
+  });
+
+  it("charges the ISSUED subtotal, not a live recomputation", async () => {
+    // Shown one total and charged another is the sharpest form of the bug this
+    // card closes, so the checkout reads the same document the page does.
+    mockFindOrder.mockResolvedValue(order());
+    mockFindInvoice.mockResolvedValue(invoice({ ready: true }));
+    mockListLines.mockResolvedValue(LINES);
+    mockReadIssued.mockResolvedValue(ISSUED);
+    const { stripe, create } = fakeStripe();
+
+    await createPaymentCheckout("ORD-1", "balance", stripe);
+
+    // The issued subtotal ($1,000) less the $100 deposit already paid — the
+    // charges come from the document, the credit stays live.
+    expect(create.mock.calls[0]?.[0].line_items[0].price_data.unit_amount).toBe(
+      90000,
+    );
+  });
+
+  it("falls back to the live rows when the invoice was never issued", async () => {
+    mockFindOrder.mockResolvedValue(order());
+    mockFindInvoice.mockResolvedValue(invoice({ ready: true }));
+    mockListLines.mockResolvedValue(LINES);
+    const { stripe, create } = fakeStripe();
+
+    await createPaymentCheckout("ORD-1", "balance", stripe);
+
+    // The live subtotal ($215.50, Deposit line excluded) less the same $100.
+    expect(create.mock.calls[0]?.[0].line_items[0].price_data.unit_amount).toBe(
+      11550,
+    );
   });
 });

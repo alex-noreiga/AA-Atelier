@@ -27,7 +27,12 @@ import { runPaidOrderRewards } from "./rewards.service.js";
 import { recordStripeCharge } from "./payment-ledger.service.js";
 import { logger } from "../lib/logger.js";
 import {
-  chargedLines,
+  chargedLinesOf,
+  issuedIdentity,
+  readIssuedInvoice,
+  type IssuedInvoice,
+} from "./invoice-issue.service.js";
+import {
   invoiceChargedTotal,
   type PaymentStage,
   type InvoiceRecord,
@@ -70,22 +75,32 @@ function roundCents(amount: number): number {
 export function buildInvoiceView(
   invoice: InvoiceRecord,
   lineItems: InvoiceLineItemRecord[],
+  issued: IssuedInvoice | null = null,
 ): InvoiceView {
-  // Which lines are charges, and what they come to, are the SHARED rule in
+  // The charges come from the ISSUED snapshot when the invoice has been issued,
+  // and from the live Notion rows when it hasn't (a legacy invoice, or a
+  // Postgres outage). That choice is `chargedLinesOf`, in one place, so this
+  // view, its PDF and the balance checkout can never disagree about which
+  // document they are looking at.
+  //
+  // Which lines are charges, and what they come to, are then the SHARED rule in
   // `invoice.schema.ts` — the studio's own figures derive an invoice's value the
   // same way, so the customer's total and the dashboard's can't drift. ("Deposit"
   // is no longer a live `Line Type` option; the filter is a guard, kept because
   // without it re-adding that option in Notion would bill a customer for their
   // own deposit.)
-  const charged = chargedLines(lineItems);
-  const subtotal = invoiceChargedTotal(lineItems);
+  const charged = chargedLinesOf(issued, lineItems);
+  const subtotal = invoiceChargedTotal(charged);
   const depositsCreditedTotal = roundCents(
     invoice.deposits.reduce((sum, d) => (d.paid ? sum + d.amount : sum), 0),
   );
   const balanceDue = Math.max(0, roundCents(subtotal - depositsCreditedTotal));
 
+  const identity = issuedIdentity(issued);
+
   return {
     invoiceId: invoice.invoiceId,
+    ...(identity ?? {}),
     paid: invoice.balancePaid,
     lineItems: charged,
     subtotal,
@@ -116,10 +131,13 @@ export async function getInvoicePaymentInfo(
   const { payment } = resolveStoredOrderService(order.service);
   const deposits = labelDeposits(invoice.deposits, payment);
   if (!invoice.ready) return { deposits, invoice: null };
-  const lineItems = await listInvoiceLineItems(invoice.pageId);
+  const [lineItems, issued] = await Promise.all([
+    listInvoiceLineItems(invoice.pageId),
+    readIssuedInvoice(invoice.pageId),
+  ]);
   return {
     deposits,
-    invoice: buildInvoiceView(invoice, lineItems),
+    invoice: buildInvoiceView(invoice, lineItems, issued),
   };
 }
 
@@ -165,8 +183,14 @@ export async function createPaymentCheckout(
     if (invoice.balancePaid) {
       throw new BadRequestError("This balance has already been paid.");
     }
-    const lineItems = await listInvoiceLineItems(invoice.pageId);
-    const view = buildInvoiceView(invoice, lineItems);
+    // Priced from the ISSUED document where there is one. Reading the live rows
+    // here while showing the customer a snapshot would be the sharpest form of
+    // the bug this closes: shown one total, charged another.
+    const [lineItems, issued] = await Promise.all([
+      listInvoiceLineItems(invoice.pageId),
+      readIssuedInvoice(invoice.pageId),
+    ]);
+    const view = buildInvoiceView(invoice, lineItems, issued);
     if (view.balanceDue <= 0) {
       throw new BadRequestError("There's no balance due on this order.");
     }
