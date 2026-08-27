@@ -59,6 +59,7 @@ describe("runStudioTool — milestones", () => {
       restockAlertsSent: 0,
       appointmentRemindersSent: 0,
       materialsDigestItems: 0,
+      cartRemindersSent: 0,
     });
 
     const result = await runStudioTool("milestones");
@@ -83,6 +84,7 @@ describe("runStudioTool — milestones", () => {
       restockAlertsSent: 4,
       appointmentRemindersSent: 0,
       materialsDigestItems: 0,
+      cartRemindersSent: 0,
     });
 
     const result = await runStudioTool("milestones");
@@ -102,12 +104,32 @@ describe("runStudioTool — milestones", () => {
       restockAlertsSent: 0,
       appointmentRemindersSent: 2,
       materialsDigestItems: 0,
+      cartRemindersSent: 0,
     });
 
     const result = await runStudioTool("milestones");
 
     expect(result.status).toBe("ok");
     expect(result.details).toEqual(["Sent 2 appointment reminders."]);
+  });
+
+  // And for the abandoned-cart pass, the newest rider on the nightly run.
+  it("counts the abandoned-cart reminders as work done", async () => {
+    mockMilestones.mockResolvedValue({
+      ordersProcessed: 0,
+      milestonesCreated: 0,
+      remindersSent: 0,
+      paymentRemindersSent: 0,
+      restockAlertsSent: 0,
+      appointmentRemindersSent: 0,
+      materialsDigestItems: 0,
+      cartRemindersSent: 3,
+    });
+
+    const result = await runStudioTool("milestones");
+
+    expect(result.status).toBe("ok");
+    expect(result.details).toEqual(["Sent 3 abandoned-cart reminders."]);
   });
 
   it("is a noop when there was nothing to generate and nothing to send", async () => {
@@ -119,6 +141,7 @@ describe("runStudioTool — milestones", () => {
       restockAlertsSent: 0,
       appointmentRemindersSent: 0,
       materialsDigestItems: 0,
+      cartRemindersSent: 0,
     });
 
     const result = await runStudioTool("milestones");
@@ -136,6 +159,7 @@ describe("runStudioTool — milestones", () => {
       restockAlertsSent: 0,
       appointmentRemindersSent: 0,
       materialsDigestItems: 0,
+      cartRemindersSent: 0,
     });
 
     const result = await runStudioTool("milestones");

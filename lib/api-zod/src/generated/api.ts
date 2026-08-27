@@ -336,6 +336,41 @@ export const SubscribeNewsletterResponse = zod.object({
 
 
 /**
+ * Saves a snapshot of the visitor's cart against their email so the app can send ONE follow-up reminder if the cart is never checked out. The cart itself stays client-side (localStorage); this records only what the reminder email needs to say. A completed checkout with the same email cancels the reminder, and a second save replaces the first (restarting the clock). Anonymous and public, so it carries the same invisible anti-spam signals as the other capture forms.
+ * @summary Ask to be emailed a reminder about a cart left behind
+ */
+export const requestCartReminderBodyItemsItemNameMax = 200;
+
+export const requestCartReminderBodyItemsItemSizeMax = 50;
+
+
+export const requestCartReminderBodyItemsItemPriceMin = 0;
+
+export const requestCartReminderBodyItemsMax = 50;
+
+export const requestCartReminderBodyElapsedMsMin = 0;
+
+
+
+export const RequestCartReminderBody = zod.object({
+  "email": zod.string().email().describe('Where to send the one-time reminder.'),
+  "items": zod.array(zod.object({
+  "variantId": zod.string().describe('The Notion inventory page id of the variant (a ProductVariant `id`).'),
+  "name": zod.string().max(requestCartReminderBodyItemsItemNameMax).describe('Display name of the variant, without the size suffix.'),
+  "size": zod.string().max(requestCartReminderBodyItemsItemSizeMax).optional().describe('The selected size band, when the variant is offered in sizes.'),
+  "quantity": zod.number().int().min(1),
+  "price": zod.number().min(requestCartReminderBodyItemsItemPriceMin).optional().describe('Listed unit price in dollars at the time the cart was saved, for the email\'s copy only.')
+}).describe('One cart line, snapshotted for the reminder email\'s copy. Display-only — nothing here is trusted for money (checkout reprices everything from live inventory, exactly as it does for the cart itself).')).min(1).max(requestCartReminderBodyItemsMax),
+  "website": zod.string().optional().describe('Anti-spam honeypot. A hidden field that real visitors never fill; a non-empty value marks the submission as spam and it is silently dropped. Always send empty (or omit).'),
+  "elapsedMs": zod.number().int().min(requestCartReminderBodyElapsedMsMin).optional().describe('Anti-spam timing signal: milliseconds the visitor spent on the form before submitting. Implausibly fast submissions are dropped. Omit when unmeasurable (treated as human).')
+})
+
+export const RequestCartReminderResponse = zod.object({
+  "success": zod.boolean()
+})
+
+
+/**
  * Reports whether the atelier's books are open for the capacity-gated services (today, the bespoke commission — see `Service.capacityGated`), so the intake form can offer the waitlist instead of a form that would be refused. The same decision gates `POST /orders`, so the form and the server can't disagree.
  * Closed means one of two things: the atelier paused intake by hand, or the number of commissions in production has reached the studio's capacity. Both are atelier-editable Studio Settings (`COMMISSION_INTAKE`, `COMMISSION_CAPACITY`).
  * Deliberately degrade-safe and fail-OPEN: with no capacity configured, or when the order count can't be read, this reports open. Turning a customer away because of an outage is the worst way to be wrong.

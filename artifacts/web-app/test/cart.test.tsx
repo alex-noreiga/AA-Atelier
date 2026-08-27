@@ -13,6 +13,13 @@ vi.mock("@workspace/api-client-react", () => ({
     mutate: vi.fn(),
     isPending: false,
   })),
+  // The drawer renders the abandoned-cart reminder form (its own tests live in
+  // cart-reminder.test.tsx); stub its mutation so the drawer mounts.
+  useRequestCartReminder: vi.fn(() => ({
+    mutate: vi.fn(),
+    isPending: false,
+    isSuccess: false,
+  })),
 }));
 
 import { useCreateCheckoutSession } from "@workspace/api-client-react";

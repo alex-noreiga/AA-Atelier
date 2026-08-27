@@ -40,6 +40,8 @@ tags:
     description: Whether the studio's books are open for new bespoke commissions
   - name: waitlist
     description: The waitlist collected while the studio's books are closed
+  - name: cart
+    description: Saved-cart recovery reminders for the shop
 paths:
   /health:
     get:
@@ -511,6 +513,44 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/NewNewsletterResponse"
+        "400":
+          description: Validation error
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorEnvelope"
+        "500":
+          description: Server error
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorEnvelope"
+  /cart-reminders:
+    post:
+      operationId: requestCartReminder
+      tags: [cart]
+      summary: Ask to be emailed a reminder about a cart left behind
+      description: >-
+        Saves a snapshot of the visitor's cart against their email so the app
+        can send ONE follow-up reminder if the cart is never checked out. The
+        cart itself stays client-side (localStorage); this records only what
+        the reminder email needs to say. A completed checkout with the same
+        email cancels the reminder, and a second save replaces the first
+        (restarting the clock). Anonymous and public, so it carries the same
+        invisible anti-spam signals as the other capture forms.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/NewCartReminderRequest"
+      responses:
+        "201":
+          description: Reminder request received
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/NewCartReminderResponse"
         "400":
           description: Validation error
           content:
@@ -4806,6 +4846,73 @@ components:
             before submitting. Implausibly fast submissions are dropped. Omit
             when unmeasurable (treated as human).
     NewNewsletterResponse:
+      type: object
+      required:
+        - success
+      properties:
+        success:
+          type: boolean
+    CartReminderItem:
+      type: object
+      required:
+        - variantId
+        - name
+        - quantity
+      description: >-
+        One cart line, snapshotted for the reminder email's copy. Display-only —
+        nothing here is trusted for money (checkout reprices everything from
+        live inventory, exactly as it does for the cart itself).
+      properties:
+        variantId:
+          type: string
+          description: The Notion inventory page id of the variant (a ProductVariant `id`).
+        name:
+          type: string
+          maxLength: 200
+          description: Display name of the variant, without the size suffix.
+        size:
+          type: string
+          maxLength: 50
+          description: The selected size band, when the variant is offered in sizes.
+        quantity:
+          type: integer
+          minimum: 1
+        price:
+          type: number
+          minimum: 0
+          description: >-
+            Listed unit price in dollars at the time the cart was saved, for
+            the email's copy only.
+    NewCartReminderRequest:
+      type: object
+      required:
+        - email
+        - items
+      properties:
+        email:
+          type: string
+          format: email
+          description: Where to send the one-time reminder.
+        items:
+          type: array
+          minItems: 1
+          maxItems: 50
+          items:
+            $ref: "#/components/schemas/CartReminderItem"
+        website:
+          type: string
+          description: >-
+            Anti-spam honeypot. A hidden field that real visitors never fill; a
+            non-empty value marks the submission as spam and it is silently
+            dropped. Always send empty (or omit).
+        elapsedMs:
+          type: integer
+          minimum: 0
+          description: >-
+            Anti-spam timing signal: milliseconds the visitor spent on the form
+            before submitting. Implausibly fast submissions are dropped. Omit
+            when unmeasurable (treated as human).
+    NewCartReminderResponse:
       type: object
       required:
         - success

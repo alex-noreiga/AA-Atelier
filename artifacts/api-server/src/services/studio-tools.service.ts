@@ -132,6 +132,7 @@ async function runMilestones(): Promise<StudioToolRunResult> {
     restockAlertsSent,
     appointmentRemindersSent,
     materialsDigestItems,
+    cartRemindersSent,
   } = result;
 
   const details: string[] = [];
@@ -155,6 +156,11 @@ async function runMilestones(): Promise<StudioToolRunResult> {
       `Emailed the weekly materials digest — ${plural(materialsDigestItems, "material")} to reorder.`,
     );
   }
+  if (cartRemindersSent > 0) {
+    details.push(
+      `Sent ${plural(cartRemindersSent, "abandoned-cart reminder")}.`,
+    );
+  }
 
   const didSomething =
     milestonesCreated > 0 ||
@@ -162,7 +168,8 @@ async function runMilestones(): Promise<StudioToolRunResult> {
     paymentRemindersSent > 0 ||
     restockAlertsSent > 0 ||
     appointmentRemindersSent > 0 ||
-    materialsDigestItems > 0;
+    materialsDigestItems > 0 ||
+    cartRemindersSent > 0;
 
   return {
     tool: "milestones",

@@ -249,6 +249,13 @@ Express app (artifacts/api-server)  ──►  Notion REST API (orders database)
   │                                  session; returns the hosted-checkout URL
   ├─ GET  /api/checkout/session/:id→ a session's status + itemized receipt
   │                                  (items, shipping, tax, total)
+  ├─ POST /api/cart-reminders      → "email me a reminder about my cart": stores
+  │                                  a display snapshot of the cart against the
+  │                                  email as ONE pending reminder in Postgres.
+  │                                  The nightly reconciliation sends the single
+  │                                  follow-up for carts still un-checked-out;
+  │                                  a paid checkout with the same email cancels
+  │                                  it. Anonymous + spam-filtered like /contact
   ├─ GET  /api/appointments/options→ bookable appointment types (duration, allowed
   │                                  staff + locations, gates) + booking timezone
   ├─ GET  /api/appointments/availability
@@ -2976,6 +2983,83 @@ Code: `services/restock-notification.service.ts`, `services/restock.ts`,
 `lib/db/restock-alerts.repository.ts`, and the `restock-alert` runner in
 `services/studio-tools.service.ts` + its card in `web-app/src/components/studio-tools.tsx`.
 
+## Abandoned-cart recovery emails (explicit capture + a one-time follow-up)
+
+The shop's cart lives in the browser (localStorage) — the server has no cart to
+watch go stale — so recovery starts with an **explicit ask**: the cart drawer
+offers "leave your email and we'll send you a one-time reminder", and
+`POST /api/cart-reminders` (contract-first, `useRequestCartReminder`) stores a
+display snapshot of the lines against the email. The nightly reconciliation
+sends the single follow-up for carts still un-checked-out. Code:
+`services/cart-recovery.service.ts`, `routes/cart-reminders.ts`,
+`lib/db/abandoned-carts.repository.ts` (+
+`supabase/migrations/0005_abandoned_carts.sql`), `abandonedCartEmail` in
+`lib/resend/emails.ts`, `sendDueCartReminders` in `services/schedule.service.ts`,
+the cancel hook at the tail of `processPaidShopOrder` (`checkout.service.ts`),
+and `web-app/src/components/cart-reminder.tsx` (rendered by `cart-drawer.tsx`).
+Load-bearing decisions:
+
+1. **A row is a PENDING reminder, not a history — deletion is the state
+   machine.** One row per email (`citext` primary key; a second save replaces
+   the snapshot and restarts the clock). The row is deleted when the reminder
+   sends, when a **paid checkout with the same email** lands (the Stripe
+   webhook's best-effort `cancelCartReminderBestEffort` — someone who bought
+   their cart must never be told they abandoned it), or when it ages past
+   `CART_REMINDER_MAX_AGE_DAYS` (14) unsent. That shape is simultaneously the
+   idempotency marker (no row ⇒ nothing to send twice), the "one reminder per
+   cart, ever" promise the email makes, and the data-minimization story — a
+   saved email + cart snapshot never outlives the days it takes to act on it,
+   which is also why it is deliberately **not** folded into the account data
+   export.
+
+2. **The claim is the delete, and it re-checks the cutoff rather than matching
+   a timestamp.** `claimAbandonedCart` is
+   `delete … where email = $1 and updated_at <= <cutoff> returning` — atomic, so
+   an overlapping run can't double-email, and the cutoff re-check leaves a cart
+   re-saved mid-sweep alone (it keeps its full delay). Deliberately not a
+   timestamp-equality match: the driver's `Date` is millisecond-truncated while
+   Postgres stores microseconds, so equality would never hold. A claim **error**
+   is treated as "not claimed" and the send skipped — an unclaimed send repeats
+   tomorrow, and a duplicate marketing-adjacent email is worse than a late one.
+   Claim-then-send (the restock sweep's direction, not the appointment
+   reminder's): a won claim followed by a failed send costs one lost reminder,
+   the safe way to fail.
+
+3. **The snapshot is copy, never money.** `CartReminderItem` carries name /
+   size / quantity / listed price purely so the email can say what was left
+   behind; checkout reprices everything from live Notion inventory exactly as it
+   does for the cart itself, and the email links to `/shop` (the cart is still
+   in the customer's browser — there is no server cart to link to).
+
+4. **Anonymous capture ⇒ the full anti-spam stack.** The endpoint carries the
+   shared `submissionRateLimiter` + `spamFilter` (honeypot + fill-time), so a
+   flagged submit gets the success shape and stores nothing — otherwise a bot
+   could queue reminder emails to strangers. Note this makes `/cart-reminders`
+   a fourth anonymous capture form alongside contact / notify / newsletter, and
+   its integration test must stay at ≤5 requests (the limiter's window budget).
+
+5. **Postgres is the one requirement, and it degrades quieter than the restock
+   sweep's.** Unset ⇒ the sweep no-ops with a warn, and the **capture still
+   answers success** (also with a warn): the customer can't fix the studio's
+   configuration, and erroring the drawer over it helps nobody. The trade is
+   that an unconfigured install silently never sends — the warn in the logs is
+   the visibility.
+
+6. **No atelier notification and no studio tool, deliberately.** The email is
+   customer-only from the **orders** sender (best-effort as everywhere); a cart
+   is not a request to triage, and unlike a restock there is no "go out the same
+   day" urgency — the whole point is the delay. The nightly cron's JSON (and the
+   milestones tool's detail line) reports the count.
+
+**Atelier setup: none beyond migrations** — run `db:migrate` so
+`abandoned_carts` exists. No env var required, no Notion database, no property.
+The one optional knob is `CART_REMINDER_DELAY_HOURS` (default `24`) — how long a
+cart sits before the reminder; read fresh from env in
+`services/cart-recovery.service.ts`, not a Studio-Settings key. Known limits: a
+cart saved under one email and checked out under another keeps its reminder (the
+copy says "if you've already checked out, ignore this"), and the capture is
+explicit-only — nothing is stored for a customer who never asks.
+
 ## Appointment scheduling (real-time slot booking)
 
 Customers book appointments (consultations, fittings, design reviews, general) with a
@@ -5204,6 +5288,7 @@ scope went with the working-hours sheet.
 | `VITE_RUSH_WINDOW_DAYS`, `VITE_RUSH_SURCHARGE_NOTE` (build-time)                                                  | `21`, `"a 15% rush surcharge"`                                      |
 | `FITTING_REMINDER_STAGES`, `FITTING_REMINDER_LEAD_DAYS`                                                           | `Fitting`, `10`                                                     |
 | `PAYMENT_REMINDER_LEAD_DAYS`                                                                                      | `7`                                                                 |
+| `CART_REMINDER_DELAY_HOURS`                                                                                       | `24` (hours a saved cart sits before its one recovery reminder)     |
 | `REFERRAL_CREDIT_AMOUNT` / `REFERRAL_WELCOME_PERCENT` / `RETURNING_DISCOUNT_PERCENT` / `REWARD_CODE_EXPIRES_DAYS` | `40` / `10` / `10` / `90`                                           |
 | `SPAM_MIN_FILL_MS`                                                                                                | `2000` (`0` disables the timing check)                              |
 | `PINTEREST_DOMAIN_VERIFY` (build-time)                                                                            | No `p:domain_verify` tag at all                                     |
@@ -5364,6 +5449,7 @@ Three things about it are load-bearing:
 | Change production-schedule milestones                    | `api-server/src/services/schedule.service.ts` + `routes/cron.ts` + `lib/notion/production-schedule.{blocks,repository}.ts` + `lib/notion/orders.repository.ts` (`findOrdersNeedingMilestones`/`markMilestonesGenerated`); cron in `vercel.json`                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                     |
 | Change order status-change emails (+ pipeline graphic)   | `api-server/src/lib/resend/emails.ts` (`orderStageChangeEmail`) + `services/order-notification.service.ts` + `routes/order-notification.ts` + `lib/notion/orders.repository.ts` (`findOrderForStageNotification`); Notion automation → `POST /api/webhooks/notion-stage-change`; on-demand send via the `status-email` studio tool                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                  |
 | Change back-in-stock alerts                              | `services/restock-notification.service.ts` + `services/restock.ts` + `sendDueRestockAlerts` in `services/schedule.service.ts` + `claimRestockAlert` in `lib/db/restock-alerts.repository.ts` + `findPendingBackInStockRequests` in `lib/notion/notify.repository.ts`; the on-demand run is the `restock-alert` studio tool                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                          |
+| Change abandoned-cart recovery emails                    | `services/cart-recovery.service.ts` (capture + the sweep policy) + `routes/cart-reminders.ts` + `lib/db/abandoned-carts.repository.ts` (schema in `supabase/migrations/0005_abandoned_carts.sql`) + `abandonedCartEmail` in `lib/resend/emails.ts` + `sendDueCartReminders` in `services/schedule.service.ts`; the checkout-completion cancel is at the tail of `processPaidShopOrder` (`services/checkout.service.ts`); frontend `web-app/src/components/cart-reminder.tsx`, rendered by `components/cart-drawer.tsx`                                                                                                                                                                                                                                                                                                              |
 | Change day-before appointment reminders                  | `lib/appointments/reminders.ts` (window, per-channel markers, `whenPhrase`) + `services/appointment-reminder.service.ts` (the sweep) + `sendDueAppointmentReminders` in `services/schedule.service.ts` + `listAppointmentsInRange` / `markAppointmentReminded` / the `aptPhone` stamp in `lib/google/calendar.repository.ts` + `appointmentReminderEmail` in `lib/resend/emails.ts`; runs in the milestone cron                                                                                                                                                                                                                                                                                                                                                                                                                     |
 | Change automated fitting reminders                       | `api-server/src/services/schedule.service.ts` (`sendDueFittingReminders`) + `services/fitting-reminder.ts` (env business rule) + `lib/notion/production-schedule.{blocks,repository}.ts` (`findMilestonesNeedingFittingReminder`/`markFittingReminderSent`, `Reminder Sent` prop) + `fittingReminderEmail` in `lib/resend/emails.ts`; runs in the milestone cron                                                                                                                                                                                                                                                                                                                                                                                                                                                                    |
 | Change payment & deposit due reminders                   | `api-server/src/services/schedule.service.ts` (`sendDuePaymentReminders`) + `services/payment-reminder.ts` (env business rule) + `lib/notion/invoice.repository.ts` (`findInvoicesNeedingPaymentReminder`/`markPaymentStageReminded`) + `extractPaymentReminderInvoice` + `PAYMENT_STAGE_REMINDER_FIELDS` in `lib/notion/invoice.schema.ts` + `paymentReminderEmail` in `lib/resend/emails.ts`; runs in the milestone cron                                                                                                                                                                                                                                                                                                                                                                                                          |

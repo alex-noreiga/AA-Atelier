@@ -23,6 +23,9 @@ vi.mock("../../src/services/restock-notification.service.js", () => ({
 vi.mock("../../src/services/appointment-reminder.service.js", () => ({
   notifyUpcomingAppointments: vi.fn(),
 }));
+vi.mock("../../src/services/cart-recovery.service.js", () => ({
+  sweepAbandonedCarts: vi.fn(),
+}));
 vi.mock("../../src/lib/resend/send.js", () => ({
   sendEmailBestEffort: vi.fn(),
 }));
@@ -38,6 +41,7 @@ import {
   sendDuePaymentReminders,
   sendDueRestockAlerts,
   sendDueAppointmentReminders,
+  sendDueCartReminders,
   reconcileMilestones,
 } from "../../src/services/schedule.service.js";
 import {
@@ -59,6 +63,7 @@ import {
 import { sendEmailBestEffort } from "../../src/lib/resend/send.js";
 import { notifyRestock } from "../../src/services/restock-notification.service.js";
 import { notifyUpcomingAppointments } from "../../src/services/appointment-reminder.service.js";
+import { sweepAbandonedCarts } from "../../src/services/cart-recovery.service.js";
 import { logger } from "../../src/lib/logger.js";
 
 const mockFind = vi.mocked(findOrdersNeedingMilestones);
@@ -73,6 +78,7 @@ const mockMarkPaymentReminded = vi.mocked(markPaymentStageReminded);
 const mockSend = vi.mocked(sendEmailBestEffort);
 const mockRestock = vi.mocked(notifyRestock);
 const mockAppointmentReminders = vi.mocked(notifyUpcomingAppointments);
+const mockCartSweep = vi.mocked(sweepAbandonedCarts);
 
 const from = new Date("2026-01-01T00:00:00Z");
 
@@ -477,6 +483,7 @@ describe("reconcileMilestones", () => {
     mockFindPaymentInvoices.mockResolvedValue([]);
     mockMarkPaymentReminded.mockResolvedValue();
     mockSend.mockResolvedValue();
+    mockCartSweep.mockResolvedValue({ remindersSent: 0, expired: 0 });
   });
 
   it("runs generation plus the fitting/payment reminder passes and combines their counts", async () => {
@@ -523,6 +530,7 @@ describe("reconcileMilestones", () => {
       alreadyReminded: 0,
       skipped: 0,
     });
+    mockCartSweep.mockResolvedValue({ remindersSent: 2, expired: 1 });
 
     const result = await reconcileMilestones(from);
 
@@ -536,7 +544,26 @@ describe("reconcileMilestones", () => {
       restockAlertsSent: 3,
       appointmentRemindersSent: 1,
       materialsDigestItems: 0,
+      cartRemindersSent: 2,
     });
+  });
+});
+
+// The abandoned-cart pass is only the schedule — `sweepAbandonedCarts` owns the
+// delay window, the claim and the expiry (see cart-recovery.service.test.ts).
+// What matters here is that one bad sweep can't fail the whole reconciliation.
+describe("sendDueCartReminders", () => {
+  it("reports how many reminders the sweep sent", async () => {
+    mockCartSweep.mockResolvedValue({ remindersSent: 2, expired: 0 });
+
+    await expect(sendDueCartReminders(from)).resolves.toBe(2);
+    expect(mockCartSweep).toHaveBeenCalledWith(from);
+  });
+
+  it("swallows a failed sweep so the rest of the run still completes", async () => {
+    mockCartSweep.mockRejectedValue(new Error("postgres down"));
+
+    await expect(sendDueCartReminders(from)).resolves.toBe(0);
   });
 });
 

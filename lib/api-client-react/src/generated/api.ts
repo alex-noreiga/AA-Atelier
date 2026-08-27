@@ -46,6 +46,8 @@ import type {
   NewAppointmentResponse,
   NewCancellationRequest,
   NewCancellationResponse,
+  NewCartReminderRequest,
+  NewCartReminderResponse,
   NewContactRequest,
   NewContactResponse,
   NewMeasurementChangeRequest,
@@ -932,6 +934,78 @@ export const useSubscribeNewsletter = <TError = ErrorType<ErrorEnvelope>,
         TContext
       > => {
       return useMutation(getSubscribeNewsletterMutationOptions(options));
+    }
+
+export const getRequestCartReminderUrl = () => {
+
+
+
+
+  return `/api/cart-reminders`
+}
+
+/**
+ * Saves a snapshot of the visitor's cart against their email so the app can send ONE follow-up reminder if the cart is never checked out. The cart itself stays client-side (localStorage); this records only what the reminder email needs to say. A completed checkout with the same email cancels the reminder, and a second save replaces the first (restarting the clock). Anonymous and public, so it carries the same invisible anti-spam signals as the other capture forms.
+ * @summary Ask to be emailed a reminder about a cart left behind
+ */
+export const requestCartReminder = async (newCartReminderRequest: NewCartReminderRequest, options?: Parameters<typeof customFetch>[1]): Promise<NewCartReminderResponse> => {
+
+  return customFetch<NewCartReminderResponse>(getRequestCartReminderUrl(),
+  {
+    ...options,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    body: JSON.stringify(newCartReminderRequest)
+  }
+);}
+
+
+
+
+
+export const getRequestCartReminderMutationOptions = <TError = ErrorType<ErrorEnvelope>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof requestCartReminder>>, TError,{data: BodyType<NewCartReminderRequest>}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof requestCartReminder>>, TError,{data: BodyType<NewCartReminderRequest>}, TContext> => {
+
+const mutationKey = ['requestCartReminder'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof requestCartReminder>>, {data: BodyType<NewCartReminderRequest>}> = (props) => {
+          const {data} = props ?? {};
+
+          return  requestCartReminder(data,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type RequestCartReminderMutationResult = NonNullable<Awaited<ReturnType<typeof requestCartReminder>>>
+    export type RequestCartReminderMutationBody = BodyType<NewCartReminderRequest>
+    export type RequestCartReminderMutationError = ErrorType<ErrorEnvelope>
+
+    /**
+ * @summary Ask to be emailed a reminder about a cart left behind
+ */
+export const useRequestCartReminder = <TError = ErrorType<ErrorEnvelope>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof requestCartReminder>>, TError,{data: BodyType<NewCartReminderRequest>}, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof requestCartReminder>>,
+        TError,
+        {data: BodyType<NewCartReminderRequest>},
+        TContext
+      > => {
+      return useMutation(getRequestCartReminderMutationOptions(options));
     }
 
 export const getGetCapacityUrl = () => {

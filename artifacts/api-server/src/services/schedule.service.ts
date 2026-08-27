@@ -9,6 +9,7 @@
 
 import { reportError } from "./alert.service.js";
 import { notifyRestock } from "./restock-notification.service.js";
+import { sweepAbandonedCarts } from "./cart-recovery.service.js";
 import { sendWeeklyMaterialsDigest } from "./materials-digest.service.js";
 import { notifyUpcomingAppointments } from "./appointment-reminder.service.js";
 import { paymentStageLabel } from "./payment-labels.js";
@@ -63,6 +64,8 @@ export interface MilestoneReconcileResult extends MilestoneGenerationResult {
   appointmentRemindersSent: number;
   /** Materials listed in the weekly digest; 0 on the six days it doesn't run. */
   materialsDigestItems: number;
+  /** One-time reminders sent for saved carts never checked out. */
+  cartRemindersSent: number;
 }
 
 /** Format a Date as an ISO calendar date (`yyyy-mm-dd`), in UTC. */
@@ -422,6 +425,7 @@ export async function reconcileMilestones(
   const restockAlertsSent = await sendDueRestockAlerts();
   const appointmentRemindersSent = await sendDueAppointmentReminders(now);
   const materialsDigestItems = await sendDueMaterialsDigest(now);
+  const cartRemindersSent = await sendDueCartReminders(now);
   return {
     ...generation,
     remindersSent,
@@ -429,7 +433,35 @@ export async function reconcileMilestones(
     restockAlertsSent,
     appointmentRemindersSent,
     materialsDigestItems,
+    cartRemindersSent,
   };
+}
+
+/**
+ * Send the one-time reminder for every saved cart that was never checked out.
+ *
+ * Rides the nightly run like the passes above: a cart goes stale by nothing
+ * happening, so there is no event to hang a trigger on and a sweep is the whole
+ * design. `sweepAbandonedCarts` owns the policy (the delay window, the claim,
+ * the expiry) — this is only the schedule.
+ *
+ * Swallows its own failure (alerting instead) so a Postgres blip can't fail the
+ * whole reconciliation — the next run retries, and unclaimed carts are still
+ * pending.
+ */
+export async function sendDueCartReminders(
+  now: Date = new Date(),
+): Promise<number> {
+  try {
+    const result = await sweepAbandonedCarts(now);
+    return result.remindersSent;
+  } catch (err) {
+    await reportError(
+      { err },
+      "Failed to send abandoned-cart reminders; will retry next run",
+    );
+    return 0;
+  }
 }
 
 /**

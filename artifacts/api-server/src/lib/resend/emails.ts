@@ -841,6 +841,121 @@ export function newsletterWelcomeEmail(
   };
 }
 
+// ---------------------------------------------------------------------------
+// Abandoned-cart reminder
+//
+// The one follow-up sent when a saved cart was never checked out. Like the
+// back-in-stock alert, its source isn't a `CreateXInput` — the sweep
+// (cart-recovery.service) reads the pending row back and hands this builder an
+// already-shaped struct. The copy keeps two promises the capture form made:
+// this is the ONLY reminder for this cart, and the cart itself is still in
+// their browser (we stored a snapshot for the email, not the cart).
+// ---------------------------------------------------------------------------
+
+/** One line of the saved cart, as the reminder reads it back. */
+export interface AbandonedCartEmailItem {
+  name: string;
+  size?: string;
+  quantity: number;
+  /** Listed unit price in dollars when the cart was saved, when known. */
+  price?: number;
+}
+
+/** The details needed to render an abandoned-cart reminder. */
+export interface AbandonedCartEmailDetails {
+  email: string;
+  items: AbandonedCartEmailItem[];
+  /** Absolute URL of the shop, when PUBLIC_BASE_URL is configured. */
+  shopUrl?: string;
+}
+
+/** One item as prose: "Bow Fleece Soaker · S × 2". */
+function cartItemLabel(item: AbandonedCartEmailItem): string {
+  const piece = item.size ? `${item.name} · ${item.size}` : item.name;
+  return item.quantity > 1 ? `${piece} × ${item.quantity}` : piece;
+}
+
+/** Sent once when a saved cart is still un-checked-out after the delay window. */
+export function abandonedCartEmail(
+  details: AbandonedCartEmailDetails,
+): EmailMessage {
+  const { items, shopUrl } = details;
+
+  const itemRows = items
+    .map(
+      (item) =>
+        `<tr>
+           <td style="padding:6px 0;">${escapeHtml(cartItemLabel(item))}</td>
+           <td style="padding:6px 0 6px 16px;text-align:right;white-space:nowrap;color:#8a7f74;">${
+             item.price !== undefined
+               ? formatUsd(item.price * item.quantity)
+               : ""
+           }</td>
+         </tr>`,
+    )
+    .join("");
+
+  const ctaHtml = shopUrl
+    ? `<p style="margin:28px 0;">
+         <a href="${encodeURI(shopUrl)}" style="display:inline-block;background:#2b2622;color:#faf8f5;
+            text-decoration:none;padding:12px 24px;border-radius:2px;font-size:15px;">Back to the shop</a>
+       </p>
+       <p style="font-size:13px;color:#8a7f74;word-break:break-all;">Or paste this link
+          into your browser:<br/>${escapeHtml(shopUrl)}</p>`
+    : "";
+
+  const html = layout(
+    "Still thinking it over?",
+    `<p>Hi there,</p>
+     <p>You left ${items.length === 1 ? "a piece" : "a few pieces"} in your cart
+        the other day and asked us to remind you, so here we are:</p>
+     <table style="width:100%;border-collapse:collapse;margin:16px 0;border-top:1px solid #e7e0d8;border-bottom:1px solid #e7e0d8;">
+       ${itemRows}
+     </table>
+     <p>Your cart is saved in your browser on the device you used, so picking up
+        where you left off only takes a minute. Our ready-to-wear pieces are made
+        in small numbers, so it may not stay on the shelf for long.</p>
+     ${ctaHtml}
+     <p style="font-size:13px;color:#8a7f74;">This is the only reminder we'll send
+        about this cart. If you've already checked out, or changed your mind,
+        there's nothing you need to do.</p>`,
+  );
+
+  const text = [
+    `Hi there,`,
+    ``,
+    `You left ${items.length === 1 ? "a piece" : "a few pieces"} in your cart the other day and asked us to`,
+    `remind you, so here we are:`,
+    ``,
+    ...items.map(
+      (item) =>
+        `  - ${cartItemLabel(item)}${
+          item.price !== undefined
+            ? ` (${formatUsd(item.price * item.quantity)})`
+            : ""
+        }`,
+    ),
+    ``,
+    `Your cart is saved in your browser on the device you used, so picking up where`,
+    `you left off only takes a minute. Our ready-to-wear pieces are made in small`,
+    `numbers, so it may not stay on the shelf for long.`,
+    ...(shopUrl ? [``, `Back to the shop: ${shopUrl}`] : []),
+    ``,
+    `This is the only reminder we'll send about this cart. If you've already checked`,
+    `out, or changed your mind, there's nothing you need to do.`,
+    ``,
+    `Thank you,`,
+    `The ${ATELIER_NAME} team`,
+  ].join("\n");
+
+  return {
+    to: details.email,
+    subject: `Still thinking it over?`,
+    html,
+    text,
+  };
+}
+
 /**
  * What the acknowledgement says about the mailing list, which is the only part
  * of an erasure request the app completes on the spot. `unavailable` promises

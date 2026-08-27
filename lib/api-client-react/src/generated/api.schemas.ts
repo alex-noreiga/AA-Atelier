@@ -1192,6 +1192,52 @@ export interface NewNewsletterResponse {
 }
 
 /**
+ * One cart line, snapshotted for the reminder email's copy. Display-only — nothing here is trusted for money (checkout reprices everything from live inventory, exactly as it does for the cart itself).
+ */
+export interface CartReminderItem {
+  /** The Notion inventory page id of the variant (a ProductVariant `id`). */
+  variantId: string;
+  /**
+     * Display name of the variant, without the size suffix.
+     * @maxLength 200
+     */
+  name: string;
+  /**
+     * The selected size band, when the variant is offered in sizes.
+     * @maxLength 50
+     */
+  size?: string;
+  /** @minimum 1 */
+  quantity: number;
+  /**
+     * Listed unit price in dollars at the time the cart was saved, for the email's copy only.
+     * @minimum 0
+     */
+  price?: number;
+}
+
+export interface NewCartReminderRequest {
+  /** Where to send the one-time reminder. */
+  email: string;
+  /**
+     * @minItems 1
+     * @maxItems 50
+     */
+  items: CartReminderItem[];
+  /** Anti-spam honeypot. A hidden field that real visitors never fill; a non-empty value marks the submission as spam and it is silently dropped. Always send empty (or omit). */
+  website?: string;
+  /**
+     * Anti-spam timing signal: milliseconds the visitor spent on the form before submitting. Implausibly fast submissions are dropped. Omit when unmeasurable (treated as human).
+     * @minimum 0
+     */
+  elapsedMs?: number;
+}
+
+export interface NewCartReminderResponse {
+  success: boolean;
+}
+
+/**
  * Whether the customer wants a refund (return) or a swap (exchange).
  */
 export type NewReturnRequestKind = typeof NewReturnRequestKind[keyof typeof NewReturnRequestKind];
