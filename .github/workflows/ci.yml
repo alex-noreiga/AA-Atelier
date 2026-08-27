@@ -2,7 +2,9 @@ name: CI
 
 on:
   push:
-    branches: [main]
+    # release is the production branch (see BRANCHING.md); a promotion or
+    # hotfix push there gets the same checks as main.
+    branches: [main, release]
   pull_request:
 
 # Cancel superseded runs on the same ref (e.g. rapid pushes to a PR).

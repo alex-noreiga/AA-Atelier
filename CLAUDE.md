@@ -2010,10 +2010,10 @@ property the database lacks simply contributes nothing.
 | `Show on website` | checkbox — **required**    | Ticking it publishes that piece. Until it exists, nothing is published       |
 | `Completed`       | date _(optional)_          | Orders the gallery by when the piece was made rather than when it was typed  |
 | `Stage`           | select _(optional)_        | `Concept` / `In progress` / `Delivered`; the rename of `Type`, both are read |
-| `Discipline`      | multi_select _(optional)_  | Adds a Discipline chip row once two published pieces differ                  |
+| `Discipline`      | multi*select *(optional)\_ | Adds a Discipline chip row once two published pieces differ                  |
 | `Season`          | select / text _(optional)_ | Adds a Season chip row; match the Competitions database's `2026-27` form     |
-| `Colorway`        | multi_select _(optional)_  | Adds a Colorway chip row. Reuse the intake picker's colour names             |
-| `Techniques`      | multi_select _(optional)_  | Adds a Technique chip row (Rhinestoning, Appliqué, Hand-beading, …)          |
+| `Colorway`        | multi*select *(optional)\_ | Adds a Colorway chip row. Reuse the intake picker's colour names             |
+| `Techniques`      | multi*select *(optional)\_ | Adds a Technique chip row (Rhinestoning, Appliqué, Hand-beading, …)          |
 | `Competition`     | select _(optional)_        | Adds a Competition chip row                                                  |
 | `Finished`        | files _(optional)_         | A design's finished photographs; leads the card, ahead of every other image  |
 | `Mockup`          | files _(optional)_         | A design's digital mockups                                                   |
@@ -4858,7 +4858,12 @@ in the maintainer's env without edits.
 ## Git & deployment
 
 - Default branch: **`main`**. Feature work happens on branches; changes reach
-  `main` via pull requests.
+  `main` via pull requests. `main` is the **integration** branch — merging there
+  deploys a Vercel **preview**, not the live site.
+- Production is the **`release`** branch (Vercel's Production Branch setting).
+  Shipping is a deliberate promotion of `main` into `release` — see
+  `BRANCHING.md` for the flow, the hotfix path, and the fast-forward-only rule.
+  Never commit feature work directly to `release`.
 - Do **not** open a pull request unless explicitly asked.
 - Vercel deploys from the repo using `vercel.json`:
   `installCommand: pnpm install`, `buildCommand: pnpm run build:vercel`,
