@@ -42,21 +42,77 @@ After promoting, verify: the Vercel dashboard shows a new Production
 deployment, and the daily smoke suite (`.github/workflows/smoke.yml`) runs
 against the apex domain, so it now exercises exactly what `release` shipped.
 
-## Shipping one feature ahead of the rest
+## Choosing which features ship (selective promotion)
 
-The model promotes `main` wholesale — everything merged so far. That's the
-right default: features are tested together on the integration preview, and
-partial promotion is where drift and conflicts come from. If something truly
-must ship while unrelated work on `main` isn't ready:
+The promotion `main` → `release` is wholesale by design: it carries
+everything merged so far. Shipping _selectively_ is done by choosing **which
+feature branches merge, and when** — never by moving individual commits
+between the long-lived branches. Routine cherry-picking leaves `main` and
+`release` permanently diverged (the same change as two different commits),
+breeds phantom conflicts, and breaks the fast-forward rule. Three levers,
+ordered by where the choice happens:
 
-- **Best:** hold the not-ready work out of `main` (keep it on its feature
-  branch, or behind one of the app's existing env-var gates) and promote
-  normally. Most features here already degrade to "off" when their env var or
-  Notion property is absent — that is the repo's own feature-flag mechanism.
-- **Escape hatch:** cherry-pick the feature's merge commit onto `release`
-  (`git cherry-pick -m 1 <merge-sha>`). This forfeits the fast-forward
-  guarantee until the next full promotion catches `release` up, so treat it as
-  a hotfix, not a workflow.
+### 1. Choose at the merge into `main` (the default lever)
+
+Merge a feature PR into `main` only when you'd be happy for the **next
+promotion to carry it**. `main` is the releasable set, not a parking lot.
+An unmerged feature is not invisible: every feature branch push already gets
+its own Vercel preview URL, so a feature can be reviewed and tried on its
+own branch for as long as it needs.
+
+If you find yourself routinely wanting to promote only _part_ of `main`,
+that is the signal features are merging into `main` too early — move the
+decision here (or to lever 2) rather than fighting it at release time.
+
+### 2. An optional `development` branch, for trying features _together_
+
+A feature branch's own preview shows it alone. When several in-flight
+features need to be tried **in combination** before deciding which ones are
+ready, add a third branch:
+
+```bash
+git checkout -b development origin/main && git push -u origin development
+```
+
+- Merge any feature branch into `development` freely; its Vercel preview
+  (stable alias `aa-atelier-git-development-…`) shows the combined state.
+- When a feature earns its place, merge **the feature branch itself** into
+  `main` via an ordinary PR — **never merge `development` into `main`**.
+  `development` is a testing surface, not a source of promotions: it holds
+  experiments that may never ship, so promoting it wholesale would defeat
+  the entire selection.
+- Because it accumulates half-features and abandoned experiments, reset it
+  whenever it gets muddy:
+  ```bash
+  git checkout development
+  git reset --hard origin/main
+  git push --force-with-lease origin development
+  ```
+  then re-merge the feature branches still alive. It is the one branch where
+  force-pushing is fine — precisely _because_ nothing is ever promoted from
+  it and nobody's work lives only there.
+- The honest cost: a conflict between two features gets resolved twice
+  (once in `development`, again when the second one reaches `main`), and the
+  combination you tested isn't literally what ships if only one is chosen —
+  so after the chosen feature lands, give the `main` preview a look too.
+
+### 3. Env-var gates, for features that ride along dark
+
+Most features in this app already degrade to "off" when their env var or
+Notion property is absent — that is the repo's own feature-flag mechanism.
+A feature behind such a gate can merge to `main` and promote to `release`
+**dark** (the var unset in Vercel's Production scope, set in Preview), then
+launch by setting the var — no deploy, no promotion, and "rolling it back"
+is unsetting the var, which is faster than any git operation. Prefer this
+for risky features and anything you may want to switch off in a hurry.
+
+### The escape hatch: cherry-pick onto `release`
+
+If something truly must ship while unrelated work on `main` isn't ready and
+none of the above was in place: cherry-pick the feature's merge commit onto
+`release` (`git cherry-pick -m 1 <merge-sha>`). This forfeits the
+fast-forward guarantee until the next full promotion catches `release` up,
+so treat it as a hotfix, not a workflow.
 
 ## Versions & rolling back
 

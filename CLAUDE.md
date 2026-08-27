@@ -4863,7 +4863,10 @@ in the maintainer's env without edits.
 - Production is the **`release`** branch (Vercel's Production Branch setting).
   Shipping is a deliberate promotion of `main` into `release` — see
   `BRANCHING.md` for the flow, the hotfix path, and the fast-forward-only rule.
-  Never commit feature work directly to `release`.
+  Never commit feature work directly to `release`. An optional `development`
+  branch may exist as a combined-preview testing surface; features are promoted
+  from their own branches, never from `development` (see "Choosing which
+  features ship" in `BRANCHING.md`).
 - Do **not** open a pull request unless explicitly asked.
 - Vercel deploys from the repo using `vercel.json`:
   `installCommand: pnpm install`, `buildCommand: pnpm run build:vercel`,
