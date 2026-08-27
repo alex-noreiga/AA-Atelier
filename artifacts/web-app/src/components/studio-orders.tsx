@@ -185,8 +185,7 @@ function OrderCard({ order }: { order: StudioOrderStage }) {
           data-testid={`${fieldId}-unreachable`}
         >
           <MailX className="w-3.5 h-3.5 mt-px shrink-0" strokeWidth={1.5} />
-          No email on this order, so the customer can&apos;t be told — the stage
-          still moves.
+          No email on this order.
         </p>
       )}
 
