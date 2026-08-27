@@ -9,13 +9,13 @@ allowBuilds:
 autoInstallPeers: false
 
 catalog:
-  "@supabase/supabase-js": ^2.48.0
+  "@supabase/supabase-js": ^2.112.4
   "@tailwindcss/vite": ^4.3.3
-  "@tanstack/react-query": ^5.101.4
-  "@types/node": ^26.1.2
-  "@types/react": ^19.2.0
-  "@types/react-dom": ^19.2.0
-  "@vitejs/plugin-react": ^6.0.4
+  "@tanstack/react-query": ^5.102.2
+  "@types/node": ^26.2.0
+  "@types/react": ^19.2.18
+  "@types/react-dom": ^19.2.5
+  "@vitejs/plugin-react": ^6.1.0
   class-variance-authority: ^0.7.1
   clsx: ^2.1.1
   lucide-react: ^0.545.0
@@ -24,7 +24,7 @@ catalog:
   react-dom: 19.2.8
   tailwind-merge: ^3.3.1
   tailwindcss: ^4.3.3
-  vite: ^8.1.5
+  vite: ^8.2.2
   wouter: ^3.3.5
   zod: ^3.25.76
 
@@ -33,7 +33,7 @@ catalog:
 # alongside the app's catalog v8 — two Vite instances break the shared Plugin
 # type and the React JSX transform under Vitest. Pin every consumer to v8.
 overrides:
-  vite: "^8.1.5"
+  vite: "^8.2.2"
 
 minimumReleaseAge: 1440
 
