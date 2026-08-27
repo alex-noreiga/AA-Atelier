@@ -429,6 +429,26 @@ export const GetPortfolioResponse = zod.object({
 
 
 /**
+ * Returns the studio account's most recent posts, newest first, for the social-proof strip on the home and shop pages. Read-only and anonymous.
+ * A post that shows a piece the shop sells carries that piece's shop card id, which is how the strip becomes shoppable: the atelier records the post's URL on the inventory row it photographed, and the join is made here rather than guessed from the caption. A post with no such record simply links out to Instagram.
+ * Degrades to an empty list rather than an error whenever the feed cannot be read — the integration isn't configured, the access token has expired, or Instagram is down — because this is a garnish on pages that must stand without it. Clients render nothing when the list is empty.
+ * @summary List the studio's recent Instagram posts
+ */
+export const GetInstagramFeedResponse = zod.object({
+  "posts": zod.array(zod.object({
+  "id": zod.string().describe('Instagram\'s own media id, used only as a render key.'),
+  "permalink": zod.string().describe('The post\'s public Instagram URL, opened in a new tab.'),
+  "imageUrl": zod.string().describe('The still to render. Instagram\'s image for a photo or carousel, and the poster frame for a video. These are CDN URLs that expire, which is why this response\'s edge cache is deliberately short — the same reasoning as the portfolio\'s Notion-signed images. Never empty: a post Instagram returned no usable image for is dropped rather than served as a broken tile.'),
+  "mediaType": zod.enum(['image', 'video', 'carousel']).describe('What kind of post this is, lowercased from Instagram\'s own IMAGE \/ VIDEO \/ CAROUSEL_ALBUM. Clients use it only to badge the thumbnail (a play glyph on a video, a stack glyph on a carousel) — every post carries a still `imageUrl` whatever its type, so a client that ignores this renders correctly.'),
+  "caption": zod.string().optional().describe('The post\'s caption, verbatim and untruncated. Omitted when the post has none. Clients clamp it for display and derive the image\'s alternative text from it.'),
+  "postedAt": zod.coerce.date().optional().describe('When the post was published. Omitted when Instagram returned no timestamp; the list is already in Instagram\'s own newest-first order, so this is for display only.'),
+  "productId": zod.string().optional().describe('The `Product.id` of the shop card this post shows, when the atelier has recorded this post\'s URL against an inventory row. Present only for a piece currently published to the shop, so the client can link straight to `\/shop\/{productId}` without checking. Absent — the common case — means the post is not tied to a purchasable piece and the tile links to Instagram alone.'),
+  "productTitle": zod.string().optional().describe('The name of the piece this post shows, as the atelier names it in the inventory — what the \"Shop this piece\" link is labelled with. Always present alongside `productId`, and absent without it.')
+}).describe('One post from the studio\'s Instagram account. Deliberately narrow: no like or comment counts, no author, and no video file — the strip is a grid of stills that link out to Instagram.')).describe('The studio\'s recent posts, newest first. Empty when the integration is unconfigured or the feed could not be read — the two are deliberately indistinguishable to the client, which renders nothing either way.')
+})
+
+
+/**
  * Returns the studio's color palette for the custom-order intake form's color picker. The palette is an atelier-editable "Studio Settings" value (`COLOR_PALETTE`), falling back to a built-in primary-color palette, so this always returns a non-empty list.
  * @summary List custom-order palette colors
  */

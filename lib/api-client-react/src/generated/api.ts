@@ -39,6 +39,7 @@ import type {
   GetAppointmentParams,
   GetPublishedReviewsParams,
   HealthStatus,
+  InstagramFeed,
   MaterialsOverview,
   MessageResponse,
   NewAccountDeletionRequest,
@@ -1232,6 +1233,86 @@ export function useGetPortfolio<TData = Awaited<ReturnType<typeof getPortfolio>>
  ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
 
   const queryOptions = getGetPortfolioQueryOptions(options)
+
+  const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
+
+  return withQueryKey(query, queryOptions.queryKey);
+}
+
+
+
+
+
+
+
+export const getGetInstagramFeedUrl = () => {
+
+
+
+
+  return `/api/instagram`
+}
+
+/**
+ * Returns the studio account's most recent posts, newest first, for the social-proof strip on the home and shop pages. Read-only and anonymous.
+ * A post that shows a piece the shop sells carries that piece's shop card id, which is how the strip becomes shoppable: the atelier records the post's URL on the inventory row it photographed, and the join is made here rather than guessed from the caption. A post with no such record simply links out to Instagram.
+ * Degrades to an empty list rather than an error whenever the feed cannot be read — the integration isn't configured, the access token has expired, or Instagram is down — because this is a garnish on pages that must stand without it. Clients render nothing when the list is empty.
+ * @summary List the studio's recent Instagram posts
+ */
+export const getInstagramFeed = async ( options?: Parameters<typeof customFetch>[1]): Promise<InstagramFeed> => {
+
+  return customFetch<InstagramFeed>(getGetInstagramFeedUrl(),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
+
+
+
+
+export const getGetInstagramFeedQueryKey = () => {
+    return [
+    `/api/instagram`
+    ] as const;
+    }
+
+
+export const getGetInstagramFeedQueryOptions = <TData = Awaited<ReturnType<typeof getInstagramFeed>>, TError = ErrorType<ErrorEnvelope>>( options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getInstagramFeed>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getGetInstagramFeedQueryKey();
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof getInstagramFeed>>> = ({ signal }) => getInstagramFeed({ signal, ...requestOptions });
+
+
+
+
+
+   return  { queryKey, queryFn, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof getInstagramFeed>>, TError, TData> & { queryKey: QueryKey }
+}
+
+export type GetInstagramFeedQueryResult = NonNullable<Awaited<ReturnType<typeof getInstagramFeed>>>
+export type GetInstagramFeedQueryError = ErrorType<ErrorEnvelope>
+
+
+/**
+ * @summary List the studio's recent Instagram posts
+ */
+
+export function useGetInstagramFeed<TData = Awaited<ReturnType<typeof getInstagramFeed>>, TError = ErrorType<ErrorEnvelope>>(
+  options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getInstagramFeed>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+
+ ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+
+  const queryOptions = getGetInstagramFeedQueryOptions(options)
 
   const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
 

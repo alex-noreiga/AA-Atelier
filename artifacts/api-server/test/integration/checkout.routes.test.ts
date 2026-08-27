@@ -30,6 +30,7 @@ function variant(overrides: Partial<VariantRecord> = {}): VariantRecord {
     addOnIds: [],
     category: "Soaker",
     group: null,
+    instagramPostUrl: "",
     ...overrides,
   };
 }

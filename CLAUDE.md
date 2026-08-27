@@ -222,6 +222,16 @@ Express app (artifacts/api-server)  ──►  Notion REST API (orders database)
   │                                  published AND the customer consented to,
   │                                  and never the email / order number. Unset
   │                                  database ⇒ an empty list, not an error
+  ├─ GET  /api/instagram           → the studio's recent Instagram posts, for the
+  │                                  social-proof strip on the home and shop
+  │                                  pages. Anonymous + read-only. A post the
+  │                                  atelier tied to a shop piece (by pasting its
+  │                                  URL onto the inventory row) carries that
+  │                                  piece's card id, which is what makes the
+  │                                  strip shoppable. Unconfigured, an expired
+  │                                  token, or an Instagram outage ⇒ an empty
+  │                                  list, not an error — the strip then renders
+  │                                  nothing at all
   ├─ GET  /api/shop-orders/:orderNumber
   │                                → a shop order's current fulfillment Status +
   │                                  the live status list (tracking timeline) +
@@ -2172,6 +2182,124 @@ option auto-creates on first write. Deliberately **not** built: any customer
 email on a moderation decision — publishing a testimonial the customer already
 consented to needs no notification.
 
+## Instagram feed & social proof
+
+`/` and `/shop` carry a strip of the studio's recent Instagram posts, and a post
+that shows a piece the shop sells links straight to it. `GET /api/instagram`
+(contract-first, `useGetInstagramFeed`). Code:
+`lib/instagram/{config,schema,token,media.repository}.ts`,
+`services/instagram.service.ts`, `routes/instagram.ts`,
+`lib/db/integration-tokens.repository.ts`, the `refreshDueInstagramToken` pass in
+`services/schedule.service.ts`, and on the frontend
+`web-app/src/components/instagram-feed.tsx` (rendered by `pages/home.tsx` and
+`pages/shop.tsx`). Load-bearing decisions:
+
+1. **The shoppable half is a JOIN the atelier states, not an inference.** The
+   inventory row gains an optional **`Instagram Post`** (url) property; the feed
+   matches it to a post and serves that piece's `productId` + `productTitle`.
+   Matching a post to a piece by the words in its caption was the obvious
+   alternative and is a guess that fails silently in both directions — a piece
+   never linked, or the wrong piece linked under "Shop this" — whereas a URL on
+   the row is a fact somebody asserted. It needs **no new database**, and the
+   place it is recorded is the row the atelier already opens when they photograph
+   a piece.
+
+2. **The join key is the SHORTCODE, never the URL.** Instagram serves one post
+   under several addresses that are all correct: a reel answers at both `/reel/`
+   and `/p/`, the share sheet appends `?igsh=…`, the profile-scoped permalink
+   inserts the account name, and any of them may or may not end in a slash.
+   Comparing URLs would make the join depend on which button the atelier happened
+   to press. `instagramShortcode` (`lib/instagram/schema.ts`) reads the code out
+   of all of them, and yields `null` for anything that isn't a post URL — so an
+   unreadable value means "not linked", never "linked to something else".
+
+3. **The two halves degrade independently, and the posts win.** No Instagram ⇒ no
+   strip at all. No shop (an unconfigured inventory database, a Notion outage) ⇒
+   a strip of posts that link to Instagram. The posts are the feature and the
+   shop link is the upsell, so an inventory failure costs the upsell rather than
+   the section — and never a 500 on the home page, which is why
+   `getInstagramFeed` catches the inventory read that `/products` rightly lets
+   throw.
+
+4. **The access token expires after 60 days, and that is the real feature here.**
+   Instagram issues no permanent token. The naive build works perfectly for two
+   months and then stops with no error anywhere: an expired token degrades to an
+   empty feed, the strip stops rendering, and the site looks exactly as it does
+   for a studio that never set Instagram up. So `refreshDueInstagramToken` rides
+   the nightly reconciliation, exchanging the token for a fresh one inside its
+   last fortnight and keeping the answer in the **`integration_tokens`** Postgres
+   table — the only part of the stack writable at runtime (Vercel's env is not,
+   and a credential does not belong in the Notion settings database). It is the
+   second table here that IS the record rather than an integrity layer, after
+   `staff_availability`, and for the same reason: there is no second store.
+   A failed refresh **alerts** rather than being swallowed like the other passes;
+   those retry against data still sitting there, this one is racing an expiry.
+
+5. **`INSTAGRAM_ACCESS_TOKEN` is the seed and the last resort, and replacing it
+   takes effect at once.** Reads prefer the stored token while it is valid and
+   fall back to the env var otherwise, so a studio whose refresh has been broken
+   long enough is fixed by pasting a fresh token into Vercel — where they would
+   look anyway — with no database surgery. Each stored row records a **digest of
+   the seed its chain grew from**; when that stops matching the env var the chain
+   is abandoned and the new seed takes over. Without that, a pasted-in
+   replacement would do nothing for weeks, which reads as the fix not working.
+   `instagramConfigured()` asks about the **seed**, so deleting the env var
+   actually turns the feature off rather than leaving a stored token running.
+
+6. **The caches are sized by a QUOTA, not by politeness.** Every other cached
+   read here is 60s; this one is **5 minutes** in the repository and
+   `s-maxage=600` at the edge, because Instagram publishes a rate limit (200
+   calls per hour per user) and the strip sits on the two busiest pages. Posts
+   appear a few times a week, so nobody is waiting on a fresher answer. The Graph
+   call is deliberately **unversioned**: a pinned version is a dated bomb (Meta
+   sunsets them on a two-year cycle, and the day it goes the feed 400s with
+   nobody watching) while the unversioned path advances on its own.
+
+7. **The media read never throws, unlike the portfolio's.** There, configuration
+   degrades and an outage throws-and-alerts. Here every failure mode looks
+   identical from outside — expired token, revoked permission, outage, quota trip
+   — and none is worth a 500 on the home page; the one that would otherwise go
+   unnoticed forever (the expiry) is watched by the refresh pass, which is where
+   an alert about it belongs. A stale list is preferred over an empty one, so the
+   strip does not blink out while the refresh still has a fortnight of retries.
+
+8. **A tile is dropped rather than shown broken, on both sides.** Server-side, a
+   post with no id, no permalink or no usable still never reaches the client (a
+   video's `media_url` is the MP4, so `thumbnail_url` leads for a video — putting
+   the MP4 in an `<img>` is a blank tile, not an error). Client-side, a tile whose
+   image fails to load is removed: Instagram's CDN URLs are signed and do expire,
+   and a grid of the atelier's work is the last place a broken-image icon should
+   appear. The section renders **nothing at all** while loading, on error, or with
+   nothing to show — the same contract as `<Testimonials />`.
+
+9. **The shop link is a SIBLING of the Instagram link, not a child.** An anchor
+   inside an anchor is invalid markup and leaves the inner link unreachable by
+   keyboard in some browsers, so the photograph's outbound link and the "Shop this
+   piece" pill sit side by side inside the tile. Pinned by a test, since the
+   markup renders fine either way.
+
+**Atelier setup.** Two things, and the second is optional and additive:
+
+| Step                                                 | What                                                                                                                                                                                     |
+| ---------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **`INSTAGRAM_ACCESS_TOKEN`**                         | The long-lived token from Instagram Business Login (Meta app → Instagram → API setup with Instagram login → generate a token). Unset ⇒ no strip renders anywhere                         |
+| **`POSTGRES_URL` + `db:migrate`**                    | Already required for booking. Without the `integration_tokens` table the token cannot be renewed and the feed stops after 60 days — the refresh pass says so rather than failing quietly |
+| `Instagram Post` (url) on **inventory** _(optional)_ | Paste a post's URL onto the piece it shows; that post's tile then offers "Shop &lt;piece&gt;". A row without it is simply a piece no post points at                                      |
+
+Nothing else: no new Notion database, no Studio Setting (the token is a secret,
+so it stays in Vercel), and no display knob — how many tiles a strip shows is a
+prop on the component. `SMOKE_EXPECT_INSTAGRAM=1` is worth setting once the strip
+is live, for the same reason as `SMOKE_EXPECT_REVIEWS`: until then an empty feed
+is ambiguous between "not configured" and "the token expired", and the endpoint
+is degrade-safe so it cannot tell you which.
+
+**Known limits.** A post can carry only one shop piece, so a group photograph
+links to the first row naming it (first-wins, stable across reads). Instagram's
+own product tags are not readable through this API, which is why the link is the
+atelier's to record. And a token that lapses entirely still needs a person: the
+first token always comes from an interactive Instagram login, so this keeps one
+alive but cannot mint one.
+
 ## Rush order surcharge
 
 A custom order whose **needed-by date is sooner than the studio's standard lead time**
@@ -3142,14 +3270,15 @@ edited it there. Load-bearing decisions:
    and times as `time` inputs, so most of those refusals are unreachable from the
    UI at all.
 
-2. **This is the one table in `lib/db/` that IS the record.** Every other one
-   (`processed_payments`, `clients`, `order_index`, `restock_alerts`) is an
-   optional integrity layer over something Notion owns, and degrades to a Notion
+2. **This is one of the two tables in `lib/db/` that ARE the record.** Most of
+   them (`processed_payments`, `clients`, `order_index`, `restock_alerts`) are an
+   optional integrity layer over something Notion owns, and degrade to a Notion
    fallback when `POSTGRES_URL` is unset. This one has no second store, so
    **appointment booking now requires Postgres** — the deliberate trade for a
    single, validated, app-owned schedule. Notion stays the record for what the
    _atelier_ manages by hand (orders, inventory, invoices); the working hours are
-   not one of those.
+   not one of those. (`integration_tokens`, added later for the Instagram feed's
+   60-day access token, is the other — see "Instagram feed & social proof".)
 
 3. **The database enforces what the service validates.** `end_time > start_time`
    is a check constraint, and `weekdays` / `locations` are checked against the
@@ -4371,16 +4500,17 @@ the order lifecycle; Postgres holds **app-owned facts** Notion can't enforce or 
 stake in. Most of it is **degrade-safe**: unset `POSTGRES_URL` ⇒ `postgresConfigured()`
 is false and those callers fall back to the pre-Postgres behavior.
 
-**Two features are the exception and hard-require it**, because they have no second
+**Three features are the exception and hard-require it**, because they have no second
 store to fall back to: the **back-in-stock alert's** sent-marker (without it a nightly
-sweep re-emails everyone) and the **staff working hours** (without them there are no
-appointment slots to offer). Both fail loudly with a pointed message rather than
-degrading to empty — see "Automated back-in-stock alerts" and "Staff availability,
-edited on the dashboard". Adapter: `lib/db/client.ts` (lazy first-use env read, the narrow
+sweep re-emails everyone), the **staff working hours** (without them there are no
+appointment slots to offer), and the **Instagram access token's** renewal (without
+somewhere to keep the renewed token, the feed stops 60 days after launch). All three
+say so plainly rather than degrading to empty — see "Automated back-in-stock alerts",
+"Staff availability, edited on the dashboard" and "Instagram feed & social proof". Adapter: `lib/db/client.ts` (lazy first-use env read, the narrow
 injectable `DbClient` seam — `query` + `end` — so repos are driver-agnostic and fakeable
 like `NotionClient`; test seams `__setDbForTests` / `__resetDb`).
 
-1. **Three data tables, all wired.** `supabase/migrations/0001_init.sql` provisions
+1. **Three data tables in the initial migration, all wired.** `supabase/migrations/0001_init.sql` provisions
    `schema_migrations`, `clients`, `order_index`, and `processed_payments`.
    `processed_payments` is Stripe idempotency (below); `clients` + `order_index` are the
    email-keyed customer/order discovery index for the account portal — written
@@ -4402,7 +4532,12 @@ like `NotionClient`; test seams `__setDbForTests` / `__resetDb`).
    caught and logged, falling back to that Notion dedup — so a Postgres outage never
    blocks recording a paid order. **Custom-order payments don't use it.**
 
-3. **Pooled at runtime, direct for migrations; never in the deploy path.** The running app
+3. **Later migrations add the tables that came with their features.**
+   `restock_alerts` (0003), `staff_availability` (0004) and `integration_tokens`
+   (0005) each arrived with the feature that needed them, and each carries its own
+   `enable row level security` + `revoke` pair per the rule in point 5 below.
+
+4. **Pooled at runtime, direct for migrations; never in the deploy path.** The running app
    reads the **pooled** `POSTGRES_URL` (Supabase PgBouncer, transaction mode) with
    `prepare: false, max: 1, idle_timeout: 20` (each warm serverless instance holds its own
    tiny pool feeding the shared pooler). Migrations run **out-of-band** via
@@ -4413,7 +4548,7 @@ like `NotionClient`; test seams `__setDbForTests` / `__resetDb`).
    (`.github/workflows/migrate.yml`), deliberately kept out of `build:vercel` and cold
    starts. `postgres` (porsager) is a prod dependency.
 
-4. **These tables are closed to the Data API — keep them that way.** Supabase serves the
+5. **These tables are closed to the Data API — keep them that way.** Supabase serves the
    `public` schema through PostgREST, and the `anon` key is public (it ships in the
    browser bundle as `VITE_PUBLIC_SUPABASE_ANON_KEY`), so a table left at Supabase's
    defaults is world-readable **and world-writable** by anyone who reads the JS.
@@ -4428,10 +4563,11 @@ like `NotionClient`; test seams `__setDbForTests` / `__resetDb`).
 
 One-time setup: on Vercel the Supabase integration provides `POSTGRES_URL` +
 `POSTGRES_URL_NON_POOLING`; run `db:migrate` once against the non-pooled URL. Unset ⇒ the
-degrade-safe callers no-op, but appointment booking and the back-in-stock sweep do not
-work at all. Tests: `test/unit/db.client.test.ts`,
+degrade-safe callers no-op, but appointment booking, the back-in-stock sweep and the
+Instagram token's renewal do not work at all. Tests: `test/unit/db.client.test.ts`,
 `test/unit/processed-payments.repository.test.ts`,
-`test/unit/staff-availability.repository.test.ts`, and the `checkout.service`
+`test/unit/staff-availability.repository.test.ts`,
+`test/unit/integration-tokens.repository.test.ts`, and the `checkout.service`
 dedup-branch tests, all over `test/support/fake-db.ts`.
 
 ## Web analytics & cookie consent
@@ -5110,6 +5246,16 @@ in the maintainer's env without edits.
   replacing the file, never a deploy. Unset ⇒ the guides panel says it isn't
   connected. Read at first use in `getStudioGuidesNotionClient`; gated by
   `guidesConfigured()`. See "How-to guides on the studio dashboard" above.
+- **Optional Instagram token:** `INSTAGRAM_ACCESS_TOKEN` — the long-lived token
+  from Instagram Business Login, used to read the studio's recent posts for the
+  social-proof strip on the home and shop pages. Unset ⇒ no strip renders and
+  the section is simply absent. It expires after **60 days**, so the nightly
+  reconciliation renews it and stores the result in the `integration_tokens`
+  Postgres table — which means `POSTGRES_URL` must be set and `db:migrate` must
+  have run, or the feed stops two months after launch. Replacing the value here
+  takes effect immediately (the stored chain is abandoned when it stops matching
+  the seed). Env-only, never a Studio Setting — it is a secret. Read in
+  `lib/instagram/config.ts`. See "Instagram feed & social proof" above.
 - **Optional portfolio database:** `NOTION_PORTFOLIO_DATABASE_ID` (the "🎨 Design
   Portfolio & Sketch Library" database). When set (and the integration is shared
   with it), `/portfolio` shows every row whose **`Show on website`** checkbox is
@@ -5196,6 +5342,7 @@ scope went with the working-hours sheet.
 | `PAYMENT_REMINDER_LEAD_DAYS`                                                                                      | `7`                                                                 |
 | `REFERRAL_CREDIT_AMOUNT` / `REFERRAL_WELCOME_PERCENT` / `RETURNING_DISCOUNT_PERCENT` / `REWARD_CODE_EXPIRES_DAYS` | `40` / `10` / `10` / `90`                                           |
 | `SPAM_MIN_FILL_MS`                                                                                                | `2000` (`0` disables the timing check)                              |
+| `INSTAGRAM_ACCESS_TOKEN`                                                                                          | No Instagram strip on the home or shop pages                        |
 | `PINTEREST_DOMAIN_VERIFY` (build-time)                                                                            | No `p:domain_verify` tag at all                                     |
 
 Several of these are also **Studio-Settings tunables** editable in Notion — see that
@@ -5332,6 +5479,7 @@ Three things about it are load-bearing:
 | Change the newsletter panel on the dashboard             | `web-app/src/components/studio-newsletter.tsx` (rendered by `pages/studio.tsx`); `services/studio-newsletter.service.ts` + the `/studio/newsletter` handlers in `routes/studio.ts` + the newsletter half of `lib/notion/requests.{schema,repository}.ts` + the read side of `lib/resend/audience.ts` (`listAudienceContacts` / `membershipIn` — membership is never stored)                                                                                                                                                                                                                                                                                                                                                                                                                                                         |
 | Change post-delivery review capture                      | `artifacts/web-app/src/components/review-dialog.tsx` (opened from `components/custom-order-result.tsx` for delivered orders); `api-server/src/services/review.service.ts` + `services/delivery.ts` + `routes/orders.ts` + `lib/notion/reviews.{blocks,repository}.ts` (writes to the **Reviews** database)                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                          |
 | Change the published testimonials                        | `artifacts/web-app/src/components/testimonials.tsx` (rendered by `pages/home.tsx` + `pages/about.tsx`); `getPublishedReviews` in `api-server/src/services/review.service.ts` + `routes/reviews.ts` + `lib/notion/reviews.schema.ts`                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                 |
+| Change the Instagram strip                               | `web-app/src/components/instagram-feed.tsx` (rendered by `pages/home.tsx` + `pages/shop.tsx`); `api-server/src/lib/instagram/schema.ts` (the pure media mapping + `instagramShortcode`, the join key) + `media.repository.ts` (the cached, never-throwing read) + `token.ts` (the 60-day renewal — read its header before touching it) + `services/instagram.service.ts` (the shop join) + `routes/instagram.ts`. The stored credential is `lib/db/integration-tokens.repository.ts`; the nightly renewal is `refreshDueInstagramToken` in `services/schedule.service.ts`. The atelier's end of the join is the `Instagram Post` url property in `lib/notion/products.schema.ts`                                                                                                                                                    |
 | Change the portfolio gallery                             | `artifacts/web-app/src/pages/portfolio.tsx` (the grid, chips and lightbox); `api-server/src/lib/notion/portfolio.schema.ts` (`FACET_DEFINITIONS` — the filter DIMENSIONS; the options are derived, never hardcoded) + `portfolio.repository.ts` (the bounded scan + degrade rules) + `services/portfolio.service.ts` + `routes/portfolio.ts`. Reads the "Design Portfolio & Sketch Library" database via `NOTION_PORTFOLIO_DATABASE_ID`; the app never writes it                                                                                                                                                                                                                                                                                                                                                                    |
 | Change the studio's daily Notion ops page                | The **🧭 Studio Operations** page under **{ A.A. Atelier }** — four linked views over Custom Orders / Production Schedule / Reviews / Website Contact Messages; no code; see `.agents/memory/studio-operations-page.md`                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                             |
 | Curate which reviews show on the site                    | The **Reviews** Notion database's saved views (Curate / Live on the site / Awaiting curation / Published but not showing) — no code; see `.agents/memory/reviews-curation-views.md`                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                 |

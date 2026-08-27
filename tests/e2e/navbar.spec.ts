@@ -1,9 +1,10 @@
 import { test, expect } from "./support/test";
-import { mockPublishedReviews } from "./support/mock-api";
+import { mockInstagramFeed, mockPublishedReviews } from "./support/mock-api";
 
 // The navbar fetches nothing, and the status page calls the API only on submit.
-// One endpoint still needs stubbing to satisfy the unmocked-/api guard: the home
-// page these specs start from fetches its testimonial strip.
+// Two endpoints still need stubbing to satisfy the unmocked-/api guard: the home
+// page these specs start from fetches its testimonial strip and its Instagram
+// strip. Both render nothing when empty, which is what these specs want.
 //
 // Only what a real browser can settle lives here — that a dropdown item actually
 // navigates, and that Escape dismisses the menu. The link set, the active-state
@@ -13,6 +14,7 @@ import { mockPublishedReviews } from "./support/mock-api";
 test.describe("Navbar", () => {
   test.beforeEach(async ({ page }) => {
     await mockPublishedReviews(page);
+    await mockInstagramFeed(page);
   });
 
   test("reaches order tracking through the Services dropdown", async ({

@@ -34,6 +34,8 @@ tags:
     description: Published customer testimonials, curated by the atelier
   - name: portfolio
     description: The atelier's published portfolio of finished work and sketches
+  - name: instagram
+    description: The studio's recent Instagram posts, shown as social proof
   - name: services
     description: The intake service catalog a custom order is placed against
   - name: capacity
@@ -640,6 +642,38 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/PortfolioList"
+        "500":
+          description: Server error
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorEnvelope"
+  /instagram:
+    get:
+      operationId: getInstagramFeed
+      tags: [instagram]
+      summary: List the studio's recent Instagram posts
+      description: >-
+        Returns the studio account's most recent posts, newest first, for the
+        social-proof strip on the home and shop pages. Read-only and anonymous.
+
+        A post that shows a piece the shop sells carries that piece's shop card
+        id, which is how the strip becomes shoppable: the atelier records the
+        post's URL on the inventory row it photographed, and the join is made
+        here rather than guessed from the caption. A post with no such record
+        simply links out to Instagram.
+
+        Degrades to an empty list rather than an error whenever the feed cannot
+        be read — the integration isn't configured, the access token has
+        expired, or Instagram is down — because this is a garnish on pages that
+        must stand without it. Clients render nothing when the list is empty.
+      responses:
+        "200":
+          description: Recent posts, newest first
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/InstagramFeed"
         "500":
           description: Server error
           content:
@@ -3590,6 +3624,86 @@ components:
           type: array
           items:
             $ref: "#/components/schemas/PortfolioFilter"
+    InstagramMediaType:
+      type: string
+      enum: [image, video, carousel]
+      description: >-
+        What kind of post this is, lowercased from Instagram's own
+        IMAGE / VIDEO / CAROUSEL_ALBUM. Clients use it only to badge the
+        thumbnail (a play glyph on a video, a stack glyph on a carousel) — every
+        post carries a still `imageUrl` whatever its type, so a client that
+        ignores this renders correctly.
+    InstagramPost:
+      type: object
+      required:
+        - id
+        - permalink
+        - imageUrl
+        - mediaType
+      description: >-
+        One post from the studio's Instagram account. Deliberately narrow: no
+        like or comment counts, no author, and no video file — the strip is a
+        grid of stills that link out to Instagram.
+      properties:
+        id:
+          type: string
+          description: Instagram's own media id, used only as a render key.
+        permalink:
+          type: string
+          description: The post's public Instagram URL, opened in a new tab.
+        imageUrl:
+          type: string
+          description: >-
+            The still to render. Instagram's image for a photo or carousel, and
+            the poster frame for a video. These are CDN URLs that expire, which
+            is why this response's edge cache is deliberately short — the same
+            reasoning as the portfolio's Notion-signed images. Never empty: a
+            post Instagram returned no usable image for is dropped rather than
+            served as a broken tile.
+        mediaType:
+          $ref: "#/components/schemas/InstagramMediaType"
+        caption:
+          type: string
+          description: >-
+            The post's caption, verbatim and untruncated. Omitted when the post
+            has none. Clients clamp it for display and derive the image's
+            alternative text from it.
+        postedAt:
+          type: string
+          format: date-time
+          description: >-
+            When the post was published. Omitted when Instagram returned no
+            timestamp; the list is already in Instagram's own newest-first
+            order, so this is for display only.
+        productId:
+          type: string
+          description: >-
+            The `Product.id` of the shop card this post shows, when the atelier
+            has recorded this post's URL against an inventory row. Present only
+            for a piece currently published to the shop, so the client can link
+            straight to `/shop/{productId}` without checking. Absent — the
+            common case — means the post is not tied to a purchasable piece and
+            the tile links to Instagram alone.
+        productTitle:
+          type: string
+          description: >-
+            The name of the piece this post shows, as the atelier names it in
+            the inventory — what the "Shop this piece" link is labelled with.
+            Always present alongside `productId`, and absent without it.
+    InstagramFeed:
+      type: object
+      required:
+        - posts
+      properties:
+        posts:
+          type: array
+          description: >-
+            The studio's recent posts, newest first. Empty when the integration
+            is unconfigured or the feed could not be read — the two are
+            deliberately indistinguishable to the client, which renders nothing
+            either way.
+          items:
+            $ref: "#/components/schemas/InstagramPost"
     ReviewModerationStatus:
       type: string
       enum: [pending, published, rejected]

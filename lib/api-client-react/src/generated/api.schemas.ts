@@ -444,6 +444,44 @@ export interface PortfolioList {
 }
 
 /**
+ * What kind of post this is, lowercased from Instagram's own IMAGE / VIDEO / CAROUSEL_ALBUM. Clients use it only to badge the thumbnail (a play glyph on a video, a stack glyph on a carousel) — every post carries a still `imageUrl` whatever its type, so a client that ignores this renders correctly.
+ */
+export type InstagramMediaType = typeof InstagramMediaType[keyof typeof InstagramMediaType];
+
+
+export const InstagramMediaType = {
+  image: 'image',
+  video: 'video',
+  carousel: 'carousel',
+} as const;
+
+/**
+ * One post from the studio's Instagram account. Deliberately narrow: no like or comment counts, no author, and no video file — the strip is a grid of stills that link out to Instagram.
+ */
+export interface InstagramPost {
+  /** Instagram's own media id, used only as a render key. */
+  id: string;
+  /** The post's public Instagram URL, opened in a new tab. */
+  permalink: string;
+  /** The still to render. Instagram's image for a photo or carousel, and the poster frame for a video. These are CDN URLs that expire, which is why this response's edge cache is deliberately short — the same reasoning as the portfolio's Notion-signed images. Never empty: a post Instagram returned no usable image for is dropped rather than served as a broken tile. */
+  imageUrl: string;
+  mediaType: InstagramMediaType;
+  /** The post's caption, verbatim and untruncated. Omitted when the post has none. Clients clamp it for display and derive the image's alternative text from it. */
+  caption?: string;
+  /** When the post was published. Omitted when Instagram returned no timestamp; the list is already in Instagram's own newest-first order, so this is for display only. */
+  postedAt?: string;
+  /** The `Product.id` of the shop card this post shows, when the atelier has recorded this post's URL against an inventory row. Present only for a piece currently published to the shop, so the client can link straight to `/shop/{productId}` without checking. Absent — the common case — means the post is not tied to a purchasable piece and the tile links to Instagram alone. */
+  productId?: string;
+  /** The name of the piece this post shows, as the atelier names it in the inventory — what the "Shop this piece" link is labelled with. Always present alongside `productId`, and absent without it. */
+  productTitle?: string;
+}
+
+export interface InstagramFeed {
+  /** The studio's recent posts, newest first. Empty when the integration is unconfigured or the feed could not be read — the two are deliberately indistinguishable to the client, which renders nothing either way. */
+  posts: InstagramPost[];
+}
+
+/**
  * Where a review stands with the atelier. `pending` is anything not yet decided — including the "New" it is captured with — so a review can only ever be waiting, shown, or set aside.
  */
 export type ReviewModerationStatus = typeof ReviewModerationStatus[keyof typeof ReviewModerationStatus];

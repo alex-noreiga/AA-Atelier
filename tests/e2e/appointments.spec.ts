@@ -4,6 +4,7 @@ import {
   mockAppointmentOptions,
   mockAppointmentAvailability,
   mockCreateAppointment,
+  mockInstagramFeed,
   mockPublishedReviews,
 } from "./support/mock-api";
 
@@ -109,6 +110,7 @@ test.describe("Appointment booking", () => {
     await mockAppointmentOptions(page, { body: OPTIONS });
     // The home page fetches its testimonial strip on the way through.
     await mockPublishedReviews(page);
+    await mockInstagramFeed(page);
     await page.goto("/");
     // Desktop dropdown under Services (Radix opens on click).
     await page.getByTestId("nav-services").click();
