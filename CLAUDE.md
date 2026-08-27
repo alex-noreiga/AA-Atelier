@@ -384,7 +384,10 @@ Express app (artifacts/api-server)  ──►  Notion REST API (orders database)
                                      behind it; see "Flat-price quotes"), issuing
                                      an invoice (`issue-invoice` — freezing its
                                      charges into a numbered, dated document that
-                                     can never be rewritten), an order
+                                     can never be rewritten), crediting one
+                                     (`credit-note` — a second document reducing
+                                     what the first charges; it moves no money),
+                                     an order
                                      status-change email (`status-email`, with a
                                      `force` resend), the cancellation refund
                                      (`cancellation-refund`), the return /
@@ -4043,7 +4046,8 @@ the same reads. **No API change, no new env var, no atelier setup.**
 
 The atelier's internal actions — **reconcile production milestones**, **itemize
 an invoice**, **quote a flat price**, **issue an invoice** (freezing its charges
-into a numbered document — see "Issuing an invoice" above), **record a payment**
+into a numbered document — see "Issuing an invoice" above), **credit an invoice**
+(a second document reducing what an issued one charges), **record a payment**
 (one taken outside Stripe — see "The payment ledger" above), **send a status
 update**, **cancel &
 refund an order**, **refund a return**, **send back-in-stock alerts** — are run
@@ -4462,10 +4466,52 @@ the readers in `services/invoice.service.ts`.
    the balance is taxed, and the tool's result says tax is calculated at
    checkout.
 
+### Credit notes — how an issued invoice changes
+
+Issuing deliberately left no re-issue, which also left no way to REDUCE an
+invoice: one issued for too much, work that was dropped, a goodwill discount.
+`/studio` → **Credit an invoice** (`POST /api/studio/tools/credit-note`) writes a
+second document against the first, into the append-only **`credit_notes`** table.
+Code: `supabase/migrations/0007_credit_notes.sql`,
+`lib/db/credit-notes.repository.ts`, `services/credit-note.service.ts`.
+
+1. **A credit note reduces what is OWED — it is NOT a refund.** If the customer
+   has already paid, moving money back is a separate act with its own tools
+   (`cancellation-refund` / `return-refund`). Crediting a settled invoice leaves
+   them owed money and the result says so outright; it never quietly sends any.
+
+2. **It requires an ISSUED invoice, and that refusal is the feature.** An invoice
+   never issued is still editable rows — change them and issue it instead.
+
+3. **The credits on an invoice may never exceed what it charges**, which is also
+   what bounds a double press: the second is refused once the two would
+   overshoot. The card is `destructive` (it asks again, like the refunds) and the
+   result echoes every credit note on the invoice.
+
+4. **Amounts are stored POSITIVE**, unlike the ledger's signed cents — the sign
+   is in the word "credit" and every consumer subtracts explicitly, so nobody can
+   add one to a subtotal and be right by accident.
+
+5. **The reason is part of the document.** Required, and rendered on the
+   customer's invoice and PDF beside the credit number.
+
+6. **The credits read is three-valued and the balance checkout refuses what it
+   can't confirm.** Flattening a database failure into "no credits" would charge
+   the FULL amount, taking money from a customer who had been credited — so
+   `readCreditNotes` carries `unavailable`, the page still renders, and
+   `createPaymentCheckout` throws a retriable 503. A deposit is unaffected (it is
+   priced from the invoice head, not the document).
+
+7. **The studio's figures subtract credits too** (`sumCreditsByInvoice`, one
+   query folded into `invoiceValues`), best-effort — a failure reports invoices
+   at their uncredited value, overstating rather than erasing.
+
 **Atelier setup: none beyond `db:migrate`.** No env var, no new vendor, no Notion
-property. Known limits: there are no credit notes yet (a genuinely wrong issued
-invoice is a SQL fix), and `Invoice Ready` remains hand-tickable — an invoice
-published that way reads live, as before, with no number.
+property. Known limits: a credit note can't be voided (append-only, no reverse
+entry — a credit raised in error is a SQL fix); credits are a single amount plus
+a reason rather than itemized against specific lines; and `Invoice Ready` remains
+hand-tickable — an invoice published that way reads live, as before, with no
+number.
 
 ## The payment ledger (what came in, and when)
 
@@ -5603,6 +5649,7 @@ Three things about it are load-bearing:
 | Change the studio's how-to guides                        | `api-server/src/lib/guide-sections.ts` (the sections a guide can be filed against — a tool's id is its `StudioToolName`) + `lib/notion/guides.{schema,repository}.ts` (the Notion row + the file download) + `services/studio-guides.service.ts` (assembly, the HTML check, the 60s cache) + the `/studio/guides` route in `routes/studio.ts`; frontend `web-app/src/components/studio-guides.tsx` (`StudioGuides` panel + the `GuidesFor` slots), mounted by `pages/studio.tsx` and per tool by `components/studio-tools.tsx`. The sandboxed frame in that component is a security boundary — see the section above                                                                                                                                                                                                                |
 | Change the studio's internal tools (generators, refunds) | `api-server/src/services/studio-tools.service.ts` (the dispatcher + the composed result wording) + `routes/studio.ts` (`POST /studio/tools/:tool`, `requireStaff`) + `web-app/src/components/studio-tools.tsx` (rendered by `pages/studio.tsx`); the underlying work stays in `services/{schedule,invoice-generator,order-notification,order-cancellation,return-refund}.service.ts`. Contract in `openapi.yaml` (`StudioTool` / `StudioToolRequest` / `StudioToolRun`)                                                                                                                                                                                                                                                                                                                                                             |
 | Record a payment taken outside Stripe                    | `api-server/src/services/payment-record.service.ts` (the gates, the midday-in-studio-timezone date rule, and the settle-from-the-ledger check) + the `record-payment` runner in `services/studio-tools.service.ts` + the card in `web-app/src/components/studio-tools.tsx`. `recordedBy` is stamped by the route in `routes/studio.ts`, never read off the body                                                                                                                                                                                                                                                                                                                                                                                                                                                                     |
+| Credit an issued invoice                                 | `api-server/src/services/credit-note.service.ts` (the issued-invoice requirement, the credits-can't-exceed-the-charges ceiling, and `readCreditNotes` — three-valued so the balance checkout can refuse what it can't confirm) + `lib/db/credit-notes.repository.ts` + the `credit-note` runner in `services/studio-tools.service.ts`. Schema in `supabase/migrations/0007_credit_notes.sql`. Subtracted in `buildInvoiceView` (the customer) and `invoiceValues` (the figures). A credit note is NOT a refund — see `.agents/memory/payment-ledger.md`                                                                                                                                                                                                                                                                             |
 | Issue an invoice (freeze the document)                   | `api-server/src/services/invoice-issue.service.ts` (`issueOrderInvoice`, and `chargedLinesOf` — the ONE place that decides whether a reader sees the snapshot or the live rows) + `lib/db/issued-invoices.repository.ts` + the `issue-invoice` runner in `services/studio-tools.service.ts`. Schema in `supabase/migrations/0006_issued_invoices.sql`. The customer's side is `buildInvoiceView` / `createPaymentCheckout` in `services/invoice.service.ts`, `pages/invoice.tsx` and `lib/pdf/invoice-pdf.ts`                                                                                                                                                                                                                                                                                                                       |
 | Change what an invoice is worth                          | `invoiceChargedTotal` / `chargedLines` in `api-server/src/lib/notion/invoice.schema.ts` — ONE rule, used by `buildInvoiceView` (the customer's invoice) and `invoiceValues` in `services/studio-analytics.service.ts` (the studio's figures), so the two can't drift. The studio's copy is fed by `listInvoiceLinesForAnalytics` (a fourth bounded scan) and falls back to Notion's `Final Balance` when that scan is incomplete — see `scanDatabaseChecked` in `lib/notion/scan.ts` and the note in `.agents/memory/payment-ledger.md`                                                                                                                                                                                                                                                                                             |
 | Change the payment ledger (what came in, and when)       | `api-server/src/lib/db/payments.repository.ts` (the append-only table's I/O; the sign is applied from `kind` here) + `services/payment-ledger.service.ts` (`recordStripeCharge` / `recordStripeRefund` — best-effort, never throwing), called from `recordPayment` (`invoice.service.ts`), `processPaidShopOrder` (`checkout.service.ts`), `refundCheckoutSession` (`order-cancellation.service.ts`) and `return-refund.service.ts`. Schema in `supabase/migrations/0005_payments.sql`; history recovered by `db:backfill-payments`. Read `.agents/memory/payment-ledger.md` before changing the `external_id` index or the sign rule                                                                                                                                                                                               |

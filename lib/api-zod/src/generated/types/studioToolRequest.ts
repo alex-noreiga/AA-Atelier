@@ -13,19 +13,19 @@ import type { StudioToolRequestStage } from './studioToolRequestStage';
  */
 export interface StudioToolRequest {
   /**
-     * The order the tool acts on — `ORD-…` for a custom order, `SHP-…` for a shop order. Required by `invoice-lines`, `quote`, `issue-invoice`, `status-email`, `record-payment` and the two refunds; `milestones` sweeps the whole pipeline and `restock-alert` takes an optional `item` instead.
+     * The order the tool acts on — `ORD-…` for a custom order, `SHP-…` for a shop order. Required by `invoice-lines`, `quote`, `issue-invoice`, `credit-note`, `status-email`, `record-payment` and the two refunds; `milestones` sweeps the whole pipeline and `restock-alert` takes an optional `item` instead.
      * @maxLength 64
      */
   orderNumber?: string;
   /** `status-email` only. Resend the status update even when the order hasn't moved forward since the customer was last emailed. A forced resend never rewinds the high-water marker. */
   force?: boolean;
   /**
-     * Dollars, read by three tools, meaning something different in each — which is why the wording lives with the tool rather than here. For `return-refund` it is the TARGET total to have refunded on the order — not an increment, so a repeated run can't double-refund; omit to refund in full. For `quote` it is the price of the work and is REQUIRED, since a quote with no amount is nothing to pay. For `record-payment` it is REQUIRED and is how much actually changed hands.
+     * Dollars, read by four tools, meaning something different in each — which is why the wording lives with the tool rather than here. For `return-refund` it is the TARGET total to have refunded on the order — not an increment, so a repeated run can't double-refund; omit to refund in full. For `quote` it is the price of the work and is REQUIRED, since a quote with no amount is nothing to pay. For `record-payment` it is REQUIRED and is how much actually changed hands. For `credit-note` it is REQUIRED and is how much to take off the invoice.
      * @minimum 0
      */
   amount?: number;
   /**
-     * Optional free text, read by two tools. For `quote` it is what the work is, as the customer should read it on their invoice — "Re-stone bodice", "Replace shoulder elastic"; omitted ⇒ the line is named after the order's service ("Repair", "Rhinestoning", "Alterations"). For `record-payment` it is an internal note kept on the ledger row ("cash at the fitting", "check #204") — the customer never sees it.
+     * Optional free text, read by two tools. For `quote` it is what the work is, as the customer should read it on their invoice — "Re-stone bodice", "Replace shoulder elastic"; omitted ⇒ the line is named after the order's service ("Repair", "Rhinestoning", "Alterations"). For `record-payment` it is an internal note kept on the ledger row ("cash at the fitting", "check #204") — the customer never sees it. For `credit-note` it is REQUIRED and is the reason the credit was raised ("rhinestoning not completed"), which the customer DOES see on their invoice.
      * @maxLength 200
      */
   description?: string;

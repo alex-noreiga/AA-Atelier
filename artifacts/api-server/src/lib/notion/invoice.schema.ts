@@ -174,6 +174,14 @@ export interface InvoiceDepositView {
  * items. Deposits are surfaced separately (OrderStatus.deposits) because they're
  * payable before the itemized invoice is flipped "ready".
  */
+/** One credit note as the customer's invoice shows it. */
+export interface InvoiceCreditView {
+  creditNumber: string;
+  issuedAt: string;
+  amount: number;
+  reason: string;
+}
+
 export interface InvoiceView {
   invoiceId: string;
   /** The studio's own invoice number (`INV-…`), once the invoice has been
@@ -184,6 +192,10 @@ export interface InvoiceView {
   paid: boolean;
   lineItems: InvoiceLineItemRecord[];
   subtotal: number;
+  /** Credit notes raised against this invoice, when there are any. */
+  credits?: InvoiceCreditView[];
+  /** What they come to, in dollars. Omitted when there are none. */
+  creditsTotal?: number;
   depositsCreditedTotal: number;
   balanceDue: number;
   paymentDeadline?: string;

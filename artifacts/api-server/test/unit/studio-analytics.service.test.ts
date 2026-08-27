@@ -127,6 +127,7 @@ function aggregate(input: Partial<StudioAnalyticsInput> = {}) {
     consignment: emptyConsignment(),
     invoices: [],
     invoiceLines: { rows: [], complete: true },
+    creditsByInvoice: new Map(),
     // Default: a configured ledger holding nothing, which is what an install
     // that hasn't been backfilled looks like. Tests that care supply rows.
     payments: { configured: true, unavailable: false, rows: [] },
@@ -911,6 +912,40 @@ describe("aggregateStudioAnalytics — what an invoice is worth", () => {
     });
 
     expect(payments.invoicedTotal).toBe(0);
+  });
+
+  it("takes credit notes off what an invoice is worth", () => {
+    // Otherwise the figures go on reporting money the studio has told a
+    // customer it will not be asking for.
+    const { payments } = aggregate({
+      invoices: [invoice({ pageId: "inv-a" })],
+      invoiceLines: { rows: [line("inv-a", 1000)], complete: true },
+      creditsByInvoice: new Map([["inv-a", 15000]]),
+    });
+
+    expect(payments.invoicedTotal).toBe(850);
+  });
+
+  it("floors a fully-credited invoice at zero rather than going negative", () => {
+    const { payments } = aggregate({
+      invoices: [invoice({ pageId: "inv-a" })],
+      invoiceLines: { rows: [line("inv-a", 1000)], complete: true },
+      creditsByInvoice: new Map([["inv-a", 200000]]),
+    });
+
+    expect(payments.invoicedTotal).toBe(0);
+  });
+
+  it("reports uncredited values when the credits read found nothing", () => {
+    // A failed read is an empty map, which overstates rather than erases — the
+    // safe direction for a figure that stands without it.
+    const { payments } = aggregate({
+      invoices: [invoice({ pageId: "inv-a" })],
+      invoiceLines: { rows: [line("inv-a", 1000)], complete: true },
+      creditsByInvoice: new Map(),
+    });
+
+    expect(payments.invoicedTotal).toBe(1000);
   });
 
   it("falls the WHOLE pass back to Final Balance on a truncated scan", () => {

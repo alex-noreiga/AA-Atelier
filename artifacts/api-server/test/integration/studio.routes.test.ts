@@ -29,6 +29,9 @@ vi.mock("../../src/lib/notion/invoice.repository.js", () => ({
     .fn()
     .mockResolvedValue({ rows: [], complete: true }),
 }));
+vi.mock("../../src/lib/db/credit-notes.repository.js", () => ({
+  sumCreditsByInvoice: vi.fn().mockResolvedValue(new Map()),
+}));
 vi.mock("../../src/lib/notion/products.repository.js", () => ({
   listVariants: vi.fn().mockResolvedValue([]),
 }));

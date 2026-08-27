@@ -382,16 +382,82 @@ gate. Code: `supabase/migrations/0006_issued_invoices.sql`,
     would show up "if more formats are added". `paymentDeadline` beside it
     already avoids it the same way.
 
+## Credit notes — the way an issued invoice changes
+
+Issuing made an invoice's charges immutable and deliberately left no re-issue,
+which is right and left the atelier no way to REDUCE one: an invoice issued for
+too much, work that was dropped, a goodwill discount. A credit note is the answer
+invoicing has always used — a second document against the first. `/studio` →
+**Credit an invoice** (`POST /api/studio/tools/credit-note`, `{ orderNumber,
+amount, description }`). Code: `supabase/migrations/0007_credit_notes.sql`,
+`lib/db/credit-notes.repository.ts`, `services/credit-note.service.ts`, the
+`credit-note` runner, and the readers in `services/invoice.service.ts` +
+`services/studio-analytics.service.ts`.
+
+1. **A credit note reduces what is OWED. It is not a refund.** If the customer
+   has already paid, moving money back is a separate act with its own tools
+   (`cancellation-refund` / `return-refund`), which go through Stripe and record
+   themselves in the payment ledger. Crediting a settled invoice leaves them owed
+   money and the tool's result **says so outright**; it never quietly sends any.
+   This is the one thing about the feature that must not be misread.
+
+2. **It requires an ISSUED invoice, and that refusal is the feature.** A credit
+   note credits a document. An invoice that was never issued is still editable
+   rows — the atelier changes them and issues it. Refusing says which of the two
+   situations they are in.
+
+3. **The credits on an invoice may never exceed what it charges.** A document
+   cannot be reduced below nothing, and the ceiling is also what bounds a double
+   press: the second is refused outright once the two together would overshoot.
+   Beyond that, the dashboard asks for confirmation (`destructive`, like the two
+   refunds) and the result echoes every credit note on the invoice, so a
+   duplicate is visible immediately.
+
+4. **Amounts are stored POSITIVE**, unlike the payment ledger's signed cents. The
+   sign lives in the word "credit" and every consumer subtracts explicitly —
+   storing them negative would let a reader add them to a subtotal and be right
+   by accident, which is how a rule stops being checked.
+
+5. **The reason is part of the document, not an internal note.** It is required,
+   and it renders on the customer's invoice and PDF beside the credit number. A
+   line taken off an invoice with no explanation is the sort of thing that
+   prompts a phone call.
+
+6. **The credits read is three-valued, and the balance checkout REFUSES what it
+   cannot confirm.** Swallowing a database failure into an empty list would be
+   indistinguishable from an uncredited invoice — and an uncredited invoice is
+   charged at its full amount, so a transient blip would take money from a
+   customer who had been credited. So `readCreditNotes` carries `unavailable`:
+   the invoice page still renders (a display showing too high a balance is
+   recoverable) while `createPaymentCheckout` throws a retriable 503. A DEPOSIT
+   is unaffected — it is priced from the invoice head, not from the document —
+   so refusing that too would be caution with nothing behind it.
+
+7. **There is no unique key on the invoice**, unlike `issued_invoices`: an
+   invoice may legitimately be credited more than once, for different reasons, on
+   different days. The ceiling in the service is what bounds it instead.
+
+8. **The studio's figures subtract credits too**, via `sumCreditsByInvoice` (one
+   query, not one per invoice) folded into `invoiceValues` — otherwise the
+   dashboard would go on reporting money the studio has told a customer it will
+   not be asking for. Best-effort like the ledger: a failure reports invoices at
+   their UNCREDITED value, which overstates rather than erases.
+
+**Atelier setup: none beyond `db:migrate`.**
+
 ## What is deliberately NOT done yet
 
 - **`buildPayments` still reads the Notion checkboxes.** Deposits-vs-balances is
   an _outstanding_ figure — what is still owed — which the ledger doesn't hold;
   it is the invoice's schedule that says what was expected. Left alone
   deliberately.
-- **No credit notes.** An issued invoice can't be re-issued, which is the point,
-  but the thing that should replace an edit — a credit note against the issued
-  document — doesn't exist yet. Today a genuinely wrong issued invoice is a SQL
-  fix, exactly like a mis-recorded payment.
+- **A credit note can't be voided.** It is append-only like everything else here,
+  and there is no reverse entry — a credit raised in error is a SQL fix. Voiding
+  would want its own document type (a debit note), which nobody has asked for.
+- **Credits are a single amount, not itemized.** "Credit the rhinestoning line"
+  is expressed as an amount plus a reason rather than by crediting specific
+  lines. Enough for the cases that prompted it; a line-level credit would need
+  the snapshot's lines to be addressable.
 - **`Invoice Ready` remains hand-tickable**, so an invoice can still be published
   in Notion without a snapshot. It then reads live, as before, with no number.
   Making the checkbox an app-written mirror is the same end state the `… Paid`

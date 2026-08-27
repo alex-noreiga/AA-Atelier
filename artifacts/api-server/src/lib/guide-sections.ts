@@ -59,6 +59,7 @@ export const GUIDE_SECTIONS: readonly GuideSection[] = [
   { id: "invoice-lines", label: "Itemize an invoice" },
   { id: "quote", label: "Quote a flat price" },
   { id: "issue-invoice", label: "Issue an invoice" },
+  { id: "credit-note", label: "Credit an invoice" },
   { id: "status-email", label: "Send a status update" },
   { id: "cancellation-refund", label: "Cancel & refund an order" },
   { id: "return-refund", label: "Refund a return" },

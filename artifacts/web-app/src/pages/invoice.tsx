@@ -106,6 +106,22 @@ function InvoiceBreakdown({
 
         <div className="mt-4 space-y-1 border-t border-border/60 pt-4">
           <ReceiptRow label="Subtotal" amount={invoice.subtotal} />
+          {/* Credit notes: the way an issued invoice changes, since the document
+              itself is never rewritten. Each carries its own number and the
+              atelier's reason, because a line taken off an invoice with no
+              explanation is the sort of thing that prompts a phone call. */}
+          {(invoice.credits ?? []).map((credit) => (
+            <div
+              key={credit.creditNumber}
+              className="flex justify-between gap-4 text-sm text-muted-foreground"
+              data-testid="invoice-credit"
+            >
+              <span>
+                {credit.creditNumber} · {credit.reason}
+              </span>
+              <span className="shrink-0">−{formatPrice(credit.amount)}</span>
+            </div>
+          ))}
           {deposits.map((deposit, i) => (
             <div
               key={i}

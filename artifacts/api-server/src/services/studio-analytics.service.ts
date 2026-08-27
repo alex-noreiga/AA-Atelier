@@ -89,6 +89,7 @@ import {
   listPaymentsInRange,
   type PaymentRecord,
 } from "../lib/db/payments.repository.js";
+import { sumCreditsByInvoice } from "../lib/db/credit-notes.repository.js";
 import {
   dateInZone,
   addCalendarDays,
@@ -281,6 +282,10 @@ export interface StudioAnalyticsInput {
    * Incomplete (a failed or truncated scan) falls every invoice back to Notion's
    * `Final Balance` — see `invoiceValues`. */
   invoiceLines: InvoiceLineScan;
+  /** Credited cents per invoice page id. An invoice carrying a credit note is
+   * worth less than its lines say — see `invoiceValues`. Empty when the read
+   * failed, which reports every invoice at its uncredited value. */
+  creditsByInvoice: Map<string, number>;
   /** The payment ledger over the reporting window, and how the read went. */
   payments: StudioPaymentLedgerSource;
   /** Inventory page id → piece name, for the best-seller list. */
@@ -508,6 +513,7 @@ function inWindow(date: string, window: { from: string; to: string }): boolean {
 function invoiceValues(
   invoices: InvoiceAnalyticsRecord[],
   scan: InvoiceLineScan,
+  creditsByInvoice: Map<string, number>,
 ): Map<string, number> {
   // An INCOMPLETE scan is not a partial answer, it is no answer: the rows are
   // grouped by invoice, so a truncated read doesn't drop an invoice, it halves
@@ -525,10 +531,17 @@ function invoiceValues(
   const values = new Map<string, number>();
   for (const invoice of invoices) {
     const own = linesByInvoice.get(invoice.pageId);
-    values.set(
-      invoice.pageId,
-      own ? invoiceChargedTotal(own) : (invoice.finalBalance ?? 0),
-    );
+    const charged = own
+      ? invoiceChargedTotal(own)
+      : (invoice.finalBalance ?? 0);
+    // Credit notes reduce what an invoice charges, so they reduce what it is
+    // worth here too — otherwise the figures would go on reporting money the
+    // studio has told a customer it will not be asking for. Floored at 0 for
+    // the same reason the customer's view floors it: the service caps credits
+    // at the invoice's own subtotal, but an invariant enforced elsewhere is one
+    // nobody reads.
+    const credited = (creditsByInvoice.get(invoice.pageId) ?? 0) / 100;
+    values.set(invoice.pageId, Math.max(0, round2(charged - credited)));
   }
   return values;
 }
@@ -837,7 +850,11 @@ export function aggregateStudioAnalytics(
   const today = dateInZone(input.now, input.timeZone);
   const window = reportingWindow(input.now, input.timeZone);
 
-  const invoiceValueByPage = invoiceValues(input.invoices, input.invoiceLines);
+  const invoiceValueByPage = invoiceValues(
+    input.invoices,
+    input.invoiceLines,
+    input.creditsByInvoice,
+  );
   const invoiceByOrderPage = new Map<string, InvoiceAnalyticsRecord>();
   for (const invoice of input.invoices) {
     if (invoice.orderPageId)
@@ -988,6 +1005,22 @@ async function readPaymentLedger(
   }
 }
 
+/** Credited cents per invoice. Best-effort: an unconfigured or unreachable
+ * database reports nothing credited, which overstates the invoices rather than
+ * erasing them — the safe direction for a figure that stands without it. */
+async function readCredits(): Promise<Map<string, number>> {
+  if (!postgresConfigured()) return new Map();
+  try {
+    return await sumCreditsByInvoice();
+  } catch (err) {
+    logger.warn(
+      { err },
+      "Studio analytics: could not read credit notes; invoices are reported at their uncredited value",
+    );
+    return new Map();
+  }
+}
+
 export async function getStudioAnalytics(): Promise<StudioAnalyticsResult> {
   if (cached && Date.now() - cached.fetchedAt < CACHE_TTL_MS) {
     return cached.result;
@@ -1009,6 +1042,7 @@ export async function getStudioAnalytics(): Promise<StudioAnalyticsResult> {
     variants,
     consignment,
     payments,
+    creditsByInvoice,
   ] = await Promise.all([
     listOrdersForAnalytics(),
     listShopOrdersForAnalytics(),
@@ -1036,6 +1070,11 @@ export async function getStudioAnalytics(): Promise<StudioAnalyticsResult> {
     // dashboard its figures.
     getConsignmentOverview(window),
     readPaymentLedger(window, timeZone),
+    // Best-effort, like the ledger: a failure reports every invoice at its
+    // UNCREDITED value, which overstates rather than erasing the figures — and
+    // the three Notion scans beside it are what the dashboard actually is, so a
+    // Postgres blip must not take the page down.
+    readCredits(),
   ]);
 
   const result = aggregateStudioAnalytics({
@@ -1048,6 +1087,7 @@ export async function getStudioAnalytics(): Promise<StudioAnalyticsResult> {
     invoices,
     invoiceLines,
     payments,
+    creditsByInvoice,
     itemNames: new Map(variants.map((variant) => [variant.id, variant.name])),
     now,
     timeZone,

@@ -5,6 +5,7 @@
  * API specification
  * OpenAPI spec version: 0.1.0
  */
+import type { InvoiceCredit } from './invoiceCredit';
 import type { InvoiceLineItem } from './invoiceLineItem';
 
 /**
@@ -25,7 +26,11 @@ export interface Invoice {
   subtotal: number;
   /** Sum of the deposits already paid, in dollars. */
   depositsCreditedTotal: number;
-  /** subtotal − depositsCreditedTotal, floored at 0, in dollars. */
+  /** Credit notes raised against this invoice — the way an ISSUED invoice changes, since the document itself can never be rewritten. Absent when there are none. A credit reduces what is OWED; it is not a refund, so on an invoice the customer has already settled it leaves them owed money rather than sending any. */
+  credits?: InvoiceCredit[];
+  /** What the credit notes come to, in dollars. Absent when there are none. */
+  creditsTotal?: number;
+  /** subtotal − creditsTotal − depositsCreditedTotal, floored at 0, in dollars. This is what the balance checkout charges. */
   balanceDue: number;
   /** The invoice's payment-due date (ISO), if the atelier set one. */
   paymentDeadline?: string;

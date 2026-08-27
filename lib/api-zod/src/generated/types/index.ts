@@ -53,6 +53,7 @@ export * from './getPublishedReviewsParams';
 export * from './guideSection';
 export * from './healthStatus';
 export * from './invoice';
+export * from './invoiceCredit';
 export * from './invoiceDeposit';
 export * from './invoiceDepositStage';
 export * from './invoiceLineItem';

@@ -59,6 +59,7 @@ import {
   type RecordPaymentResult,
 } from "./payment-record.service.js";
 import { issueOrderInvoice } from "./invoice-issue.service.js";
+import { creditOrderInvoice } from "./credit-note.service.js";
 import type { PaymentMethod } from "../lib/db/payments.repository.js";
 import type { PaymentStage } from "../lib/notion/invoice.schema.js";
 import { BadRequestError, NotFoundError } from "../lib/errors.js";
@@ -74,7 +75,8 @@ export type StudioToolName =
   | "return-refund"
   | "restock-alert"
   | "record-payment"
-  | "issue-invoice";
+  | "issue-invoice"
+  | "credit-note";
 
 /** What a run did. See the spec's `StudioToolRun.status` for the contract. */
 export type StudioToolStatus = "ok" | "noop" | "attention";
@@ -625,6 +627,47 @@ async function runIssueInvoice(
   };
 }
 
+/** Credit an issued invoice: the way a document that can never be rewritten
+ * changes. Reduces what is OWED — it moves no money, which is the distinction
+ * the result is careful to make when the balance has already been settled. */
+async function runCreditNote(
+  args: StudioToolArgs,
+): Promise<StudioToolRunResult> {
+  const orderNumber = requireOrderNumber(args);
+  const result = await creditOrderInvoice({
+    orderNumber,
+    // `amount` is optional on the shared body, so an omitted figure arrives as
+    // NaN and the service rejects it with its own wording.
+    amount: args.amount ?? Number.NaN,
+    reason: args.description ?? "",
+    ...(args.recordedBy ? { issuedBy: args.recordedBy } : {}),
+  });
+
+  const details: string[] = [];
+  if (result.alreadyPaid) {
+    // The one thing that must not be misread: a credit is not a refund.
+    details.push(
+      `This balance was already paid, so ${money(result.amount)} is now owed back to the customer — a credit note doesn't move any money. Use "Refund a return" or "Cancel & refund an order" to send it.`,
+    );
+  }
+  details.push(
+    result.remaining > 0
+      ? `${money(result.remaining)} of the ${money(result.invoiceSubtotal)} invoice is left to charge.`
+      : "The invoice is now fully credited — there's nothing left to charge.",
+  );
+  if (result.history.length > 1) {
+    details.push(`Credit notes on this invoice: ${result.history.join("; ")}.`);
+  }
+
+  return {
+    tool: "credit-note",
+    status: "ok",
+    title: "Credit note raised",
+    message: `${result.creditNumber} credits ${money(result.amount)} against ${result.orderNumber} — ${result.reason}.`,
+    details,
+  };
+}
+
 export async function runStudioTool(
   tool: StudioToolName,
   args: StudioToolArgs = {},
@@ -665,5 +708,7 @@ function dispatch(
       return runRecordPayment(args);
     case "issue-invoice":
       return runIssueInvoice(args);
+    case "credit-note":
+      return runCreditNote(args);
   }
 }

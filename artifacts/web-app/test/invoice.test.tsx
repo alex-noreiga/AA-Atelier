@@ -162,3 +162,43 @@ describe("an issued invoice shows its own number and date", () => {
     expect(screen.queryByText(/Issued/)).toBeNull();
   });
 });
+
+describe("credit notes on the invoice", () => {
+  it("shows each credit with its number and reason, and the reduced balance", () => {
+    // A line taken off an invoice with no explanation is the sort of thing that
+    // prompts a phone call, so the reason is part of the document.
+    stubHook(mockHook, {
+      data: orderRecord({
+        invoice: {
+          ...invoice,
+          credits: [
+            {
+              creditNumber: "CN-000001",
+              issuedAt: "2026-08-14T15:04:05.000Z",
+              amount: 150,
+              reason: "Rhinestoning not completed",
+            },
+          ],
+          creditsTotal: 150,
+          balanceDue: 50,
+        },
+        deposits,
+      }),
+    });
+    render(<InvoicePage />);
+
+    const rows = screen.getAllByTestId("invoice-credit");
+    expect(rows).toHaveLength(1);
+    expect(rows[0]).toHaveTextContent("CN-000001");
+    expect(rows[0]).toHaveTextContent("Rhinestoning not completed");
+    expect(rows[0]).toHaveTextContent("−$150");
+    expect(screen.getByTestId("invoice-balance")).toHaveTextContent("$50");
+  });
+
+  it("renders no credit rows on an invoice with none", () => {
+    stubHook(mockHook, { data: orderRecord({ invoice, deposits }) });
+    render(<InvoicePage />);
+
+    expect(screen.queryAllByTestId("invoice-credit")).toHaveLength(0);
+  });
+});

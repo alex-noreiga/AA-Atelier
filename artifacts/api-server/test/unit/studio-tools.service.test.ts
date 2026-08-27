@@ -27,6 +27,9 @@ vi.mock("../../src/services/payment-record.service.js", () => ({
 vi.mock("../../src/services/invoice-issue.service.js", () => ({
   issueOrderInvoice: vi.fn(),
 }));
+vi.mock("../../src/services/credit-note.service.js", () => ({
+  creditOrderInvoice: vi.fn(),
+}));
 vi.mock("../../src/services/restock-notification.service.js", () => ({
   notifyRestock: vi.fn(),
 }));
@@ -48,6 +51,7 @@ import { processReturnRefund } from "../../src/services/return-refund.service.js
 import { notifyRestock } from "../../src/services/restock-notification.service.js";
 import { recordOfflinePayment } from "../../src/services/payment-record.service.js";
 import { issueOrderInvoice } from "../../src/services/invoice-issue.service.js";
+import { creditOrderInvoice } from "../../src/services/credit-note.service.js";
 import { BadRequestError, NotFoundError } from "../../src/lib/errors.js";
 
 const mockMilestones = vi.mocked(reconcileMilestones);
@@ -58,6 +62,7 @@ const mockReturn = vi.mocked(processReturnRefund);
 const mockRestock = vi.mocked(notifyRestock);
 const mockRecordPayment = vi.mocked(recordOfflinePayment);
 const mockIssue = vi.mocked(issueOrderInvoice);
+const mockCredit = vi.mocked(creditOrderInvoice);
 
 describe("runStudioTool — milestones", () => {
   it("reports what the reconciliation did, including the reminder passes", async () => {
@@ -749,5 +754,78 @@ describe("runStudioTool — issue-invoice", () => {
       BadRequestError,
     );
     expect(mockIssue).not.toHaveBeenCalled();
+  });
+});
+
+describe("runStudioTool — credit-note", () => {
+  const credited = {
+    orderNumber: "ORD-000002",
+    creditNumber: "CN-000001",
+    issuedAt: new Date("2026-08-14T15:04:05.000Z"),
+    amount: 150,
+    reason: "Rhinestoning not completed",
+    invoiceSubtotal: 1000,
+    creditedTotal: 150,
+    remaining: 850,
+    alreadyPaid: false,
+    history: ["CN-000001 · 2026-08-14 · $150.00 · Rhinestoning not completed"],
+  };
+
+  it("reports the credit and what is left to charge", async () => {
+    mockCredit.mockResolvedValue(credited);
+
+    const result = await runStudioTool("credit-note", {
+      orderNumber: "ORD-000002",
+      amount: 150,
+      description: "Rhinestoning not completed",
+      recordedBy: "alexandra@example.com",
+    });
+
+    expect(mockCredit).toHaveBeenCalledWith({
+      orderNumber: "ORD-000002",
+      amount: 150,
+      reason: "Rhinestoning not completed",
+      issuedBy: "alexandra@example.com",
+    });
+    expect(result.status).toBe("ok");
+    expect(result.message).toMatch(/CN-000001 credits \$150\.00/);
+    expect(result.details.join(" ")).toMatch(/\$850\.00 of the \$1000\.00/);
+  });
+
+  it("says outright that a credit on a PAID balance is money owed back", async () => {
+    // The distinction the whole feature turns on: a credit note moves no money.
+    mockCredit.mockResolvedValue({ ...credited, alreadyPaid: true });
+
+    const result = await runStudioTool("credit-note", {
+      orderNumber: "ORD-000002",
+      amount: 150,
+      description: "Rhinestoning not completed",
+    });
+
+    expect(result.details.join(" ")).toMatch(/owed back to the customer/);
+    expect(result.details.join(" ")).toMatch(/doesn't move any money/);
+  });
+
+  it("says so when an invoice ends up fully credited", async () => {
+    mockCredit.mockResolvedValue({
+      ...credited,
+      remaining: 0,
+      creditedTotal: 1000,
+    });
+
+    const result = await runStudioTool("credit-note", {
+      orderNumber: "ORD-000002",
+      amount: 1000,
+      description: "Order cancelled",
+    });
+
+    expect(result.details.join(" ")).toMatch(/fully credited/);
+  });
+
+  it("requires an order number", async () => {
+    await expect(runStudioTool("credit-note", {})).rejects.toBeInstanceOf(
+      BadRequestError,
+    );
+    expect(mockCredit).not.toHaveBeenCalled();
   });
 });

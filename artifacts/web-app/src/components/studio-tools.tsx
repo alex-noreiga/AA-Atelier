@@ -187,6 +187,21 @@ const TOOLS: ToolSpec[] = [
     action: "Issue",
   },
   {
+    tool: "credit-note",
+    name: "Credit an invoice",
+    description:
+      "Reduces what an issued invoice charges, without rewriting it — for work that was dropped, an overcharge, or a goodwill discount. The reason appears on the customer's invoice. It moves no money: if they've already paid, they're owed a refund on top.",
+    field: orderField("ORD-000002"),
+    offersAmount: true,
+    amountSpec: { label: "Credit", placeholder: "150.00", required: true },
+    offersDescription: {
+      label: "Reason (the customer sees this)",
+      placeholder: "Rhinestoning not completed",
+    },
+    destructive: true,
+    action: "Raise credit note",
+  },
+  {
     tool: "record-payment",
     name: "Record a payment",
     description:

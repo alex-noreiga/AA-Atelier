@@ -53,6 +53,20 @@ export interface InvoiceLineItem {
 }
 
 /**
+ * One credit note against an issued invoice: its own numbered, dated document reducing what the invoice charges.
+ */
+export interface InvoiceCredit {
+  /** The studio's credit-note number (`CN-…`). */
+  creditNumber: string;
+  /** When it was raised (ISO). */
+  issuedAt: string;
+  /** How much it takes off the invoice, in dollars (positive). */
+  amount: number;
+  /** Why it was raised, in the atelier's words. Shown to the customer, so it is part of the document rather than an internal note. */
+  reason: string;
+}
+
+/**
  * The customer's invoice for a custom order, present only once the atelier has itemized it and flipped the "Invoice Ready" gate. Line items and deposits are dollars; balanceDue is what's charged online.
  */
 export interface Invoice {
@@ -70,7 +84,11 @@ export interface Invoice {
   subtotal: number;
   /** Sum of the deposits already paid, in dollars. */
   depositsCreditedTotal: number;
-  /** subtotal − depositsCreditedTotal, floored at 0, in dollars. */
+  /** Credit notes raised against this invoice — the way an ISSUED invoice changes, since the document itself can never be rewritten. Absent when there are none. A credit reduces what is OWED; it is not a refund, so on an invoice the customer has already settled it leaves them owed money rather than sending any. */
+  credits?: InvoiceCredit[];
+  /** What the credit notes come to, in dollars. Absent when there are none. */
+  creditsTotal?: number;
+  /** subtotal − creditsTotal − depositsCreditedTotal, floored at 0, in dollars. This is what the balance checkout charges. */
   balanceDue: number;
   /** The invoice's payment-due date (ISO), if the atelier set one. */
   paymentDeadline?: string;
@@ -973,6 +991,7 @@ export const StudioTool = {
   'restock-alert': 'restock-alert',
   'record-payment': 'record-payment',
   'issue-invoice': 'issue-invoice',
+  'credit-note': 'credit-note',
 } as const;
 
 /**
@@ -2204,19 +2223,19 @@ export const StudioToolRequestStage = {
  */
 export interface StudioToolRequest {
   /**
-     * The order the tool acts on — `ORD-…` for a custom order, `SHP-…` for a shop order. Required by `invoice-lines`, `quote`, `issue-invoice`, `status-email`, `record-payment` and the two refunds; `milestones` sweeps the whole pipeline and `restock-alert` takes an optional `item` instead.
+     * The order the tool acts on — `ORD-…` for a custom order, `SHP-…` for a shop order. Required by `invoice-lines`, `quote`, `issue-invoice`, `credit-note`, `status-email`, `record-payment` and the two refunds; `milestones` sweeps the whole pipeline and `restock-alert` takes an optional `item` instead.
      * @maxLength 64
      */
   orderNumber?: string;
   /** `status-email` only. Resend the status update even when the order hasn't moved forward since the customer was last emailed. A forced resend never rewinds the high-water marker. */
   force?: boolean;
   /**
-     * Dollars, read by three tools, meaning something different in each — which is why the wording lives with the tool rather than here. For `return-refund` it is the TARGET total to have refunded on the order — not an increment, so a repeated run can't double-refund; omit to refund in full. For `quote` it is the price of the work and is REQUIRED, since a quote with no amount is nothing to pay. For `record-payment` it is REQUIRED and is how much actually changed hands.
+     * Dollars, read by four tools, meaning something different in each — which is why the wording lives with the tool rather than here. For `return-refund` it is the TARGET total to have refunded on the order — not an increment, so a repeated run can't double-refund; omit to refund in full. For `quote` it is the price of the work and is REQUIRED, since a quote with no amount is nothing to pay. For `record-payment` it is REQUIRED and is how much actually changed hands. For `credit-note` it is REQUIRED and is how much to take off the invoice.
      * @minimum 0
      */
   amount?: number;
   /**
-     * Optional free text, read by two tools. For `quote` it is what the work is, as the customer should read it on their invoice — "Re-stone bodice", "Replace shoulder elastic"; omitted ⇒ the line is named after the order's service ("Repair", "Rhinestoning", "Alterations"). For `record-payment` it is an internal note kept on the ledger row ("cash at the fitting", "check #204") — the customer never sees it.
+     * Optional free text, read by two tools. For `quote` it is what the work is, as the customer should read it on their invoice — "Re-stone bodice", "Replace shoulder elastic"; omitted ⇒ the line is named after the order's service ("Repair", "Rhinestoning", "Alterations"). For `record-payment` it is an internal note kept on the ledger row ("cash at the fitting", "check #204") — the customer never sees it. For `credit-note` it is REQUIRED and is the reason the credit was raised ("rhinestoning not completed"), which the customer DOES see on their invoice.
      * @maxLength 200
      */
   description?: string;

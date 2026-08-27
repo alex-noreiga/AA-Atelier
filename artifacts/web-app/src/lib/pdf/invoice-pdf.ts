@@ -59,6 +59,15 @@ export function buildInvoiceDoc({
 
   pdf.divider();
   pdf.row("Subtotal", formatPrice(invoice.subtotal), { muted: true });
+  // Credit notes, each named and reasoned — the PDF is the copy that gets filed,
+  // so it has to explain a reduction rather than just show a smaller total.
+  for (const credit of invoice.credits ?? []) {
+    pdf.row(
+      `${credit.creditNumber} — ${credit.reason}`,
+      `−${formatPrice(credit.amount)}`,
+      { muted: true },
+    );
+  }
   for (const deposit of deposits) {
     const label = deposit.paid ? deposit.label : `${deposit.label} (unpaid)`;
     const value = deposit.paid

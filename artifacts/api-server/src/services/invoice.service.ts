@@ -32,6 +32,7 @@ import {
   readIssuedInvoice,
   type IssuedInvoice,
 } from "./invoice-issue.service.js";
+import { readCreditNotes, type CreditNote } from "./credit-note.service.js";
 import {
   invoiceChargedTotal,
   type PaymentStage,
@@ -46,7 +47,11 @@ import { labelDeposits } from "./payment-labels.js";
 import { getStripeClient } from "../lib/stripe/client.js";
 import { bnplPaymentMethodTypes } from "../lib/stripe/payment-methods.js";
 import { siteBaseUrl } from "../lib/site.js";
-import { BadRequestError, NotFoundError } from "../lib/errors.js";
+import {
+  BadRequestError,
+  NotFoundError,
+  ServiceUnavailableError,
+} from "../lib/errors.js";
 
 const CURRENCY = "usd";
 
@@ -76,6 +81,7 @@ export function buildInvoiceView(
   invoice: InvoiceRecord,
   lineItems: InvoiceLineItemRecord[],
   issued: IssuedInvoice | null = null,
+  credits: CreditNote[] = [],
 ): InvoiceView {
   // The charges come from the ISSUED snapshot when the invoice has been issued,
   // and from the live Notion rows when it hasn't (a legacy invoice, or a
@@ -91,10 +97,21 @@ export function buildInvoiceView(
   // own deposit.)
   const charged = chargedLinesOf(issued, lineItems);
   const subtotal = invoiceChargedTotal(charged);
+
+  // Credit notes reduce what the invoice CHARGES, so they come off before the
+  // deposits already paid are credited against it. The service caps the credits
+  // on an invoice at its own subtotal, so this can't go negative — but it is
+  // floored anyway, because an arithmetic invariant enforced two files away is
+  // one nobody reads.
+  const creditsTotal = roundCents(
+    credits.reduce((sum, note) => sum + note.amountCents / 100, 0),
+  );
+  const charges = Math.max(0, roundCents(subtotal - creditsTotal));
+
   const depositsCreditedTotal = roundCents(
     invoice.deposits.reduce((sum, d) => (d.paid ? sum + d.amount : sum), 0),
   );
-  const balanceDue = Math.max(0, roundCents(subtotal - depositsCreditedTotal));
+  const balanceDue = Math.max(0, roundCents(charges - depositsCreditedTotal));
 
   const identity = issuedIdentity(issued);
 
@@ -104,6 +121,17 @@ export function buildInvoiceView(
     paid: invoice.balancePaid,
     lineItems: charged,
     subtotal,
+    ...(credits.length > 0
+      ? {
+          creditsTotal,
+          credits: credits.map((note) => ({
+            creditNumber: note.creditNumber,
+            issuedAt: note.issuedAt.toISOString(),
+            amount: note.amountCents / 100,
+            reason: note.reason,
+          })),
+        }
+      : {}),
     depositsCreditedTotal,
     balanceDue,
     ...(invoice.paymentDeadline !== undefined
@@ -131,13 +159,17 @@ export async function getInvoicePaymentInfo(
   const { payment } = resolveStoredOrderService(order.service);
   const deposits = labelDeposits(invoice.deposits, payment);
   if (!invoice.ready) return { deposits, invoice: null };
-  const [lineItems, issued] = await Promise.all([
+  const [lineItems, issued, creditRead] = await Promise.all([
     listInvoiceLineItems(invoice.pageId),
     readIssuedInvoice(invoice.pageId),
+    readCreditNotes(invoice.pageId),
   ]);
   return {
     deposits,
-    invoice: buildInvoiceView(invoice, lineItems, issued),
+    // A credits read that failed shows the invoice UNcredited here. That is the
+    // recoverable direction for a display; the checkout below refuses instead,
+    // because charging an unconfirmed balance is not recoverable.
+    invoice: buildInvoiceView(invoice, lineItems, issued, creditRead.credits),
   };
 }
 
@@ -186,11 +218,26 @@ export async function createPaymentCheckout(
     // Priced from the ISSUED document where there is one. Reading the live rows
     // here while showing the customer a snapshot would be the sharpest form of
     // the bug this closes: shown one total, charged another.
-    const [lineItems, issued] = await Promise.all([
+    const [lineItems, issued, creditRead] = await Promise.all([
       listInvoiceLineItems(invoice.pageId),
       readIssuedInvoice(invoice.pageId),
+      readCreditNotes(invoice.pageId),
     ]);
-    const view = buildInvoiceView(invoice, lineItems, issued);
+    if (creditRead.unavailable) {
+      // We could not confirm what this invoice has been credited, and an
+      // uncredited invoice charges its FULL amount — so a blip here would take
+      // money from a customer who had been credited. Refuse, retriably, rather
+      // than price a document we can't read.
+      throw new ServiceUnavailableError(
+        "We couldn't confirm your invoice just now. Please try again in a moment.",
+      );
+    }
+    const view = buildInvoiceView(
+      invoice,
+      lineItems,
+      issued,
+      creditRead.credits,
+    );
     if (view.balanceDue <= 0) {
       throw new BadRequestError("There's no balance due on this order.");
     }
