@@ -87,6 +87,7 @@ describe("extractVariant mapping", () => {
       category: "",
       categoryId: "cat-dress",
       group: "Competition",
+      instagramPostUrl: "",
     });
   });
 
@@ -110,6 +111,34 @@ describe("extractVariant mapping", () => {
       },
     } as unknown as NotionInventoryPage;
     expect(extractVariant(withoutAddOns).addOnIds).toEqual([]);
+  });
+
+  it("reads the Instagram Post url, trimmed, and empty when there is none", () => {
+    // Additive and optional: a database that hasn't had the column added yet,
+    // and a row nobody has filled in, both read as "no post points at this
+    // piece" rather than breaking the shop read.
+    const linked = {
+      id: "soaker",
+      properties: {
+        "Item Name": { type: "title", title: [{ plain_text: "Bow Soaker" }] },
+        "Instagram Post": {
+          type: "url",
+          url: "  https://www.instagram.com/p/AAA111/  ",
+        },
+      },
+    } as unknown as NotionInventoryPage;
+    expect(extractVariant(linked).instagramPostUrl).toBe(
+      "https://www.instagram.com/p/AAA111/",
+    );
+
+    const unlinked = {
+      id: "cloth",
+      properties: {
+        "Item Name": { type: "title", title: [{ plain_text: "Blade Towel" }] },
+        "Instagram Post": { type: "url", url: null },
+      },
+    } as unknown as NotionInventoryPage;
+    expect(extractVariant(unlinked).instagramPostUrl).toBe("");
   });
 
   it("omits optional fields when the source properties are absent or empty", () => {

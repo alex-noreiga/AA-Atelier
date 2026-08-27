@@ -3,6 +3,7 @@ import { GENERIC_ERROR, productList } from "@workspace/test-fixtures";
 import {
   mockCreateCheckout,
   mockGetCheckoutSession,
+  mockInstagramFeed,
   mockProducts,
 } from "./support/mock-api";
 
@@ -10,6 +11,7 @@ test.describe("Shop checkout", () => {
   // One in-stock, priced, one-size item — the simplest thing the shop can sell.
   test.beforeEach(async ({ page }) => {
     await mockProducts(page, { body: productList() });
+    await mockInstagramFeed(page);
   });
 
   test("adds an item and redirects to the Stripe payment page with the right line items", async ({

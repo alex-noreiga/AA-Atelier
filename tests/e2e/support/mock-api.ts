@@ -317,6 +317,22 @@ export async function mockPublishedReviews(
 }
 
 /**
+ * Mock `GET /api/instagram` (the social strip on the home and shop pages).
+ * Defaults to an empty feed, which is the right default for a spec about
+ * anything else: the strip then renders nothing at all, exactly as it does for
+ * a studio with the integration switched off.
+ */
+export async function mockInstagramFeed(
+  page: Page,
+  opts: { status?: number; body: unknown } = { body: { posts: [] } },
+): Promise<void> {
+  await page.route("**/api/instagram*", async (route) => {
+    if (route.request().method() !== "GET") return route.fallback();
+    await json(route, opts.status ?? 200, opts.body);
+  });
+}
+
+/**
  * Mock `GET /api/portfolio` (the gallery and its derived filter chips). The
  * server decides both halves, so a spec states them together — a `filters`
  * entry the pieces don't back would be a payload the real API can't produce.

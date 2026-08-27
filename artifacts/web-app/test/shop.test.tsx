@@ -32,6 +32,9 @@ function renderShopAt(path: string): RenderResult {
 vi.mock("@workspace/api-client-react", () => ({
   useGetProducts: vi.fn(),
   useCreateBackInStockRequest: vi.fn(),
+  // The page's Instagram strip renders nothing without posts, which is exactly
+  // the state these tests want: they are about the catalogue, not the feed.
+  useGetInstagramFeed: vi.fn(() => ({ data: { posts: [] } })),
 }));
 
 import {

@@ -1,5 +1,9 @@
 import { test, expect } from "./support/test";
-import { mockPortfolio, mockPublishedReviews } from "./support/mock-api";
+import {
+  mockInstagramFeed,
+  mockPortfolio,
+  mockPublishedReviews,
+} from "./support/mock-api";
 
 // The gallery in a real browser: the chips the server derived actually narrow
 // the grid, and combining two of them ANDs. The render states (loading, error,
@@ -51,6 +55,7 @@ test.describe("Portfolio gallery", () => {
     await mockPortfolio(page, { body: GALLERY });
     // The home page renders the testimonial strip, which fetches on its own.
     await mockPublishedReviews(page);
+    await mockInstagramFeed(page);
 
     await page.goto("/");
     if (isMobile) {
