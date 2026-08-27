@@ -48,6 +48,7 @@ import {
   recordShopOrderRefund,
 } from "../lib/notion/shop-orders.repository.js";
 import { NotFoundError, BadRequestError } from "../lib/errors.js";
+import { recordStripeRefund } from "./payment-ledger.service.js";
 import { logger } from "../lib/logger.js";
 import { returnRefundEmail } from "../lib/resend/emails.js";
 import { sendEmailBestEffort } from "../lib/resend/send.js";
@@ -207,6 +208,19 @@ export async function processReturnRefund(
 
     const refundedNow = refund.amount ?? delta;
     const totalCents = alreadyRefunded + refundedNow;
+
+    // Write this refund to the payment ledger as its own negative movement,
+    // keyed on the refund id rather than the order — so a return refunded in two
+    // parts (a restocking-fee partial, later topped up) lands as two rows that
+    // sum to what the customer actually got back. The single `Refunded Amount`
+    // number on the Notion order can only ever show the latest total, and is
+    // best-effort besides. Never throws: the money has already moved.
+    await recordStripeRefund({
+      orderNumber: order.orderNumber,
+      orderKind: "shop",
+      refund,
+    });
+
     const marked = await recordShopOrderRefund(
       order.pageId,
       toDollars(totalCents),

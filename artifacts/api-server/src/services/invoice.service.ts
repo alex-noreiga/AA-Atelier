@@ -24,6 +24,7 @@ import {
   markInvoicePaid,
 } from "../lib/notion/invoice.repository.js";
 import { runPaidOrderRewards } from "./rewards.service.js";
+import { recordStripeCharge } from "./payment-ledger.service.js";
 import { logger } from "../lib/logger.js";
 import {
   LINE_TYPE_DEPOSIT,
@@ -260,12 +261,28 @@ export async function recordPayment(
   }
   await markInvoicePaid(invoicePageId, stage, session.id);
 
+  const orderNumber = session.metadata?.orderNumber;
+
+  // The payment ledger. The invoice records THAT this stage was paid; the ledger
+  // records when, how much actually arrived (tax included — it is a cash record,
+  // not a restatement of the invoice) and against which Stripe session. That
+  // timestamp is the whole reason it exists: a checkbox cannot say which month
+  // the money landed in, which is why bespoke work has only ever been reportable
+  // as *booked*. Best-effort and never throwing — see payment-ledger.service.
+  if (orderNumber) {
+    await recordStripeCharge({
+      orderNumber,
+      orderKind: "custom",
+      stage,
+      session,
+    });
+  }
+
   // Best-effort referral / returning-skater rewards on the paid custom order (see
   // rewards.service). The reward passes are idempotent by the CRM flags + the
   // first-paid-order number, so running on every payment stage (not just the
   // first deposit) can't double-issue. A failure must never bubble into the
   // webhook — swallow and log, like the shop path.
-  const orderNumber = session.metadata?.orderNumber;
   if (orderNumber) {
     try {
       const order = await findOrderForStageNotification(orderNumber);

@@ -32,16 +32,26 @@ import {
 import { findInvoice } from "../lib/notion/invoice.repository.js";
 import { NotFoundError } from "../lib/errors.js";
 import { logger } from "../lib/logger.js";
+import { recordStripeRefund } from "./payment-ledger.service.js";
+import type { PaymentOrderKind } from "../lib/db/payments.repository.js";
 import { cancellationRefundEmail } from "../lib/resend/emails.js";
 import { sendEmailBestEffort } from "../lib/resend/send.js";
 import { fromAddress } from "../lib/resend/config.js";
 
 /** A single payment to attempt a refund on: a human label + the Stripe Checkout
  * session id it was collected through (blank when the stage was paid without a
- * recorded session — e.g. offline). */
+ * recorded session — e.g. offline), plus the order context a refund is written
+ * to the payment ledger under. The ledger context is carried on the target
+ * rather than looked up here because only the caller knows which order (and, for
+ * a custom order, which stage) the session belonged to. */
 interface RefundTarget {
   label: string;
   sessionId: string;
+  ledger: {
+    orderNumber: string;
+    orderKind: PaymentOrderKind;
+    stage?: string;
+  };
 }
 
 type SessionRefundStatus =
@@ -122,6 +132,20 @@ export async function refundCheckoutSession(
       { payment_intent: paymentIntent },
       { idempotencyKey: `refund_${paymentIntent}` },
     );
+
+    // Write the refund to the payment ledger as a negative movement. Until this
+    // existed a cancellation refunded the money through Stripe and left the
+    // invoice's `… Paid` checkbox ticked, so the studio figures went on counting
+    // a refunded order as collected revenue. Best-effort and never throwing —
+    // the money has already moved, and a failure here must not report that
+    // refund as failed (see payment-ledger.service).
+    await recordStripeRefund({
+      orderNumber: target.ledger.orderNumber,
+      orderKind: target.ledger.orderKind,
+      ...(target.ledger.stage ? { stage: target.ledger.stage } : {}),
+      refund,
+    });
+
     return { label, status: "refunded", amount: (refund.amount ?? 0) / 100 };
   } catch (err) {
     // A mode-mismatched/deleted session, or a Stripe hiccup — don't 500 the whole
@@ -220,6 +244,11 @@ async function processCustomCancellation(
           targets.push({
             label: deposit.label,
             sessionId: deposit.sessionId ?? "",
+            ledger: {
+              orderNumber: order.orderNumber,
+              orderKind: "custom",
+              stage: deposit.stage,
+            },
           });
         }
       }
@@ -227,6 +256,11 @@ async function processCustomCancellation(
         targets.push({
           label: "Balance",
           sessionId: invoice.balanceSessionId ?? "",
+          ledger: {
+            orderNumber: order.orderNumber,
+            orderKind: "custom",
+            stage: "balance",
+          },
         });
       }
     }
@@ -258,7 +292,11 @@ async function processShopCancellation(
 
   const results = [
     await refundCheckoutSession(
-      { label: "Order", sessionId: order.sessionId },
+      {
+        label: "Order",
+        sessionId: order.sessionId,
+        ledger: { orderNumber: order.orderNumber, orderKind: "shop" },
+      },
       stripe,
     ),
   ];

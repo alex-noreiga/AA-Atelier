@@ -14,6 +14,12 @@ vi.mock("../../src/lib/notion/invoice.repository.js", () => ({
 vi.mock("../../src/services/rewards.service.js", () => ({
   runPaidOrderRewards: vi.fn(),
 }));
+// The payment ledger is the other best-effort side effect on the recorder; its
+// own mapping is covered in payment-ledger.service.test.ts, so mock the service
+// here and assert only that the payment is handed to it with the right context.
+vi.mock("../../src/services/payment-ledger.service.js", () => ({
+  recordStripeCharge: vi.fn(),
+}));
 
 import type Stripe from "stripe";
 import {
@@ -33,6 +39,7 @@ import {
   markInvoicePaid,
 } from "../../src/lib/notion/invoice.repository.js";
 import { runPaidOrderRewards } from "../../src/services/rewards.service.js";
+import { recordStripeCharge } from "../../src/services/payment-ledger.service.js";
 import type { OrderRecord } from "../../src/lib/notion/orders.schema.js";
 import type {
   InvoiceRecord,
@@ -404,6 +411,43 @@ describe("recordPayment", () => {
     } as unknown as Stripe.Checkout.Session);
 
     expect(mockMark).toHaveBeenCalledWith("inv-1", "second_deposit", "cs_9");
+  });
+
+  it("records the payment in the ledger, with its order and stage", async () => {
+    // The invoice checkbox says THAT the stage was paid; the ledger is the only
+    // place that will say when, and for how much.
+    await recordPayment({
+      id: "cs_9",
+      payment_status: "paid",
+      metadata: {
+        kind: "custom_payment",
+        stage: "second_deposit",
+        invoicePageId: "inv-1",
+        orderNumber: "ORD-000002",
+      },
+    } as unknown as Stripe.Checkout.Session);
+
+    expect(vi.mocked(recordStripeCharge)).toHaveBeenCalledWith(
+      expect.objectContaining({
+        orderNumber: "ORD-000002",
+        orderKind: "custom",
+        stage: "second_deposit",
+      }),
+    );
+  });
+
+  it("does not reach the ledger for an unpaid session", async () => {
+    await recordPayment({
+      id: "cs_x",
+      payment_status: "unpaid",
+      metadata: {
+        stage: "balance",
+        invoicePageId: "inv-1",
+        orderNumber: "ORD-000002",
+      },
+    } as unknown as Stripe.Checkout.Session);
+
+    expect(vi.mocked(recordStripeCharge)).not.toHaveBeenCalled();
   });
 
   it("does nothing for an unpaid session", async () => {

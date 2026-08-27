@@ -3825,8 +3825,11 @@ Load-bearing decisions:
    for bespoke work is what was **booked**: the invoice's `Final Balance`,
    attributed to the month the order came in. The contract carries them as two
    fields (`shopRevenue` / `customBooked`) and the UI labels them apart. Dating
-   custom payments properly needs a real payment ledger — the roadmap's "move real
-   invoicing to a finance tool". Months and "today" are read in the studio's
+   custom payments properly needs a real payment ledger, and **that ledger now
+   exists** — see "The payment ledger" above — but this aggregation does not read
+   it yet: switching `customBooked` for revenue attributed by `paid_at` is a
+   contract change kept deliberately separate. Until it lands, the figure is
+   still what was booked. Months and "today" are read in the studio's
    timezone (`APPOINTMENT_TIMEZONE`), so a 9pm order on the 31st lands in the month
    the atelier worked it.
 
@@ -4364,6 +4367,91 @@ Google Calendar integration (unset ⇒ they just don't appear); measurements nee
 Supabase auth email copy is version-controlled in
 `.agents/memory/supabase-auth-emails.md` and pasted into the Supabase dashboard.
 
+## The payment ledger (what came in, and when)
+
+An **append-only `payments` table** in Postgres holding one row per movement of
+money against an order: a charge is positive cents, a refund is negative, rows
+are never updated or deleted, and an order's position is their sum. Code:
+`supabase/migrations/0005_payments.sql`, `lib/db/payments.repository.ts` (I/O),
+`services/payment-ledger.service.ts` (the best-effort layer the money paths
+call), and `src/scripts/backfill-payments.ts`.
+
+It exists because the Notion invoice records **that** a stage was paid and never
+**when**. Three defects followed from that, and each was a wrong number somebody
+had already read: bespoke work could only ever be reported as _booked_ in the
+month the order came in (`studio-analytics.service.ts` says so in its own
+header); an order could hold exactly three payments forever, so a deposit split
+across two cards or half a balance was unrepresentable; and a refund issued
+through Stripe wrote nothing back, so `Balance Paid` stayed ticked on a
+fully-refunded order and the dashboard counted it as collected. This is the
+first slice of the roadmap's "move real invoicing to a finance tool" — see
+`.agents/memory/payment-ledger.md` for why the ledger came before the vendor.
+
+1. **The sign is applied from `kind`, in one place.** Callers pass a positive
+   magnitude and `recordPaymentEntry` negates a refund, so no call site can
+   write a refund as income. The database repeats the rule as a check
+   constraint, so a hand-run `insert` can't invert a month's takings either.
+
+2. **`external_id` is the idempotency key, and its unique index is PARTIAL.** It
+   holds the Stripe object that identifies the movement — the Checkout session
+   for a charge, the refund for a refund. The webhook is at-least-once, so
+   without it a redelivery would append a second row and double-count revenue,
+   the exact failure the table exists to prevent. The index is
+   `where external_id <> ''` so a hand-recorded payment (which has none) stays
+   repeatable — a deposit paid as two piles of cash is two rows. **The insert's
+   `on conflict` clause must repeat that predicate**, or Postgres can't infer
+   the index and the statement errors. A **$0** movement is refused outright:
+   it would change no total and would burn a fully-promo session's id so a
+   later real charge on it could never be recorded.
+
+3. **`paid_at` is not `recorded_at`, and that IS the feature.** A payment
+   backfilled months later still lands in the month it was collected. Where the
+   payment intent is already expanded (the shop path and the backfill) `paid_at`
+   is the instant of the charge; otherwise it's the instant checkout was
+   opened. The difference is the minutes spent typing a card, which decides one
+   thing — an order paid either side of midnight on the last of the month — so
+   the exact value is taken where it's free (the shop path added
+   `payment_intent` to an expand list it was already sending) and not bought
+   with an extra round-trip where it isn't.
+
+4. **Every write is best-effort and never throws, and failures log at `error`.**
+   Each caller is either the Stripe webhook — where a throw makes Stripe
+   redeliver into the dedupe guard, losing the very write it retried for — or a
+   refund that has **already moved real money**, where a throw would report a
+   success as a failure. `error` rather than `warn` because a missed row doesn't
+   announce itself: it understates a month, and nothing downstream can tell "no
+   payment" from "a payment we failed to write". Same call as the shop's
+   order-lines write. Unset `POSTGRES_URL` ⇒ the whole thing no-ops (unlike
+   `restock_alerts` and `staff_availability`, which hard-require it).
+
+5. **Refunds key on the refund's own id, not the payment intent**, so a return
+   refunded in two parts (a restocking fee, later topped up to full) lands as
+   two rows summing to what the customer actually got back — which the single
+   `Refunded Amount` on the Notion order can't show. The order context rides on
+   `RefundTarget`, because only the caller knows which order a session was.
+
+6. **The backfill is not optional.** The ledger starts empty and **Stripe is the
+   only place the history exists** — the Notion invoice has no dates at all,
+   which is the whole problem — so without it every month before deploy day
+   reads as zero. `db:backfill-payments` sweeps Checkout sessions (attributed
+   from the same session metadata the live webhook reads) then refunds
+   (attributed via the payment-intent map built during the first sweep); a
+   refund matching no swept session is **reported, never guessed at**.
+   Idempotent by the same `external_id` index, so it's safe to re-run and safe
+   against a ledger the live path is already writing. Run it with the **live**
+   Stripe key — it reads whichever mode the key belongs to.
+
+**Atelier setup: none beyond `db:migrate` + one backfill run.** No env var of its
+own (it rides `POSTGRES_URL`), no new vendor, no Notion property.
+
+**Known limits, all deliberate and all listed in the memory note:** nothing reads
+the ledger yet (the payoff is `studio-analytics` computing custom revenue by
+`paid_at`, a contract change kept separate); there is no offline-payment entry
+tool, so cash at a fitting is still a Notion checkbox and writes no row; and the
+Notion `… Paid` checkboxes remain a second, hand-tickable writer of the same
+fact — the intended end state is that they become app-written mirrors of the
+ledger.
+
 ## Postgres (payment idempotency + the account order index)
 
 A **Postgres layer**, provided by the same Supabase project. Notion stays the record for
@@ -4380,7 +4468,9 @@ edited on the dashboard". Adapter: `lib/db/client.ts` (lazy first-use env read, 
 injectable `DbClient` seam — `query` + `end` — so repos are driver-agnostic and fakeable
 like `NotionClient`; test seams `__setDbForTests` / `__resetDb`).
 
-1. **Three data tables, all wired.** `supabase/migrations/0001_init.sql` provisions
+1. **Three data tables in 0001, all wired** (plus `restock_alerts`,
+   `staff_availability` and `payments`, each documented in its own section
+   above). `supabase/migrations/0001_init.sql` provisions
    `schema_migrations`, `clients`, `order_index`, and `processed_payments`.
    `processed_payments` is Stripe idempotency (below); `clients` + `order_index` are the
    email-keyed customer/order discovery index for the account portal — written
@@ -5373,6 +5463,7 @@ Three things about it are load-bearing:
 | Change the internal studio dashboard                     | `artifacts/web-app/src/pages/studio.tsx` (+ the `/studio` route in `App.tsx`, `noindex` entry in `lib/seo-routes.ts`); `api-server/src/services/studio-analytics.service.ts` (the pure `aggregateStudioAnalytics` + the cached use-case) + `routes/studio.ts` + `requireStaff` in `middlewares/auth.ts` + `lib/staff.ts` (the `STUDIO_STAFF_EMAILS` allowlist + the `amr` Google check); the 403 panel's re-sign-in lands back via `web-app/src/lib/post-signin.ts` (read by `pages/account-callback.tsx`); reads via `lib/notion/scan.ts` + `listOrdersForAnalytics` / `listShopOrdersForAnalytics` / `listInvoicesForAnalytics`                                                                                                                                                                                                   |
 | Change the studio's how-to guides                        | `api-server/src/lib/guide-sections.ts` (the sections a guide can be filed against — a tool's id is its `StudioToolName`) + `lib/notion/guides.{schema,repository}.ts` (the Notion row + the file download) + `services/studio-guides.service.ts` (assembly, the HTML check, the 60s cache) + the `/studio/guides` route in `routes/studio.ts`; frontend `web-app/src/components/studio-guides.tsx` (`StudioGuides` panel + the `GuidesFor` slots), mounted by `pages/studio.tsx` and per tool by `components/studio-tools.tsx`. The sandboxed frame in that component is a security boundary — see the section above                                                                                                                                                                                                                |
 | Change the studio's internal tools (generators, refunds) | `api-server/src/services/studio-tools.service.ts` (the dispatcher + the composed result wording) + `routes/studio.ts` (`POST /studio/tools/:tool`, `requireStaff`) + `web-app/src/components/studio-tools.tsx` (rendered by `pages/studio.tsx`); the underlying work stays in `services/{schedule,invoice-generator,order-notification,order-cancellation,return-refund}.service.ts`. Contract in `openapi.yaml` (`StudioTool` / `StudioToolRequest` / `StudioToolRun`)                                                                                                                                                                                                                                                                                                                                                             |
+| Change the payment ledger (what came in, and when)       | `api-server/src/lib/db/payments.repository.ts` (the append-only table's I/O; the sign is applied from `kind` here) + `services/payment-ledger.service.ts` (`recordStripeCharge` / `recordStripeRefund` — best-effort, never throwing), called from `recordPayment` (`invoice.service.ts`), `processPaidShopOrder` (`checkout.service.ts`), `refundCheckoutSession` (`order-cancellation.service.ts`) and `return-refund.service.ts`. Schema in `supabase/migrations/0005_payments.sql`; history recovered by `db:backfill-payments`. Read `.agents/memory/payment-ledger.md` before changing the `external_id` index or the sign rule                                                                                                                                                                                               |
 | Change the Postgres integrity layer / payment dedup      | `api-server/src/lib/db/client.ts` (`DbClient` seam + `postgresConfigured`) + `lib/db/processed-payments.repository.ts` (`claimPayment` / `confirmPayment` / `releasePayment`); consumed by `services/checkout.service.ts` (`recordPaidOrder`). Schema in `supabase/migrations/*.sql`, applied by `src/scripts/migrate.ts` (`pnpm db:migrate`, `.github/workflows/migrate.yml`)                                                                                                                                                                                                                                                                                                                                                                                                                                                      |
 | Change the newsletter opt-in                             | `artifacts/web-app/src/components/newsletter-signup.tsx` (footer field, in `footer.tsx`) + the intake checkbox in `pages/order-form.tsx`; `api-server/src/services/newsletter.service.ts` + `routes/newsletter.ts` + `lib/notion/newsletter.{blocks,repository}.ts` (writes to the **contact** database) + `newsletterWelcomeEmail` in `lib/resend/emails.ts`                                                                                                                                                                                                                                                                                                                                                                                                                                                                       |
 | Change invisible anti-spam (honeypot/timing/limit)       | `api-server/src/middlewares/spam-filter.ts` (`isLikelySpam` + `spamFilter`) + `submissionRateLimiter` in `middlewares/rate-limit.ts`; applied in `routes/{contact,notify,newsletter}.ts`; frontend `web-app/src/lib/anti-spam.tsx` (`HoneypotField` / `honeypotSchema` / `useSubmitTimer`) wired into `pages/contact.tsx` + `components/{notify-dialog,newsletter-signup}.tsx` + `pages/order-form.tsx`. Fields `website` + `elapsedMs` on the contact/notify/newsletter request schemas in `openapi.yaml`                                                                                                                                                                                                                                                                                                                          |
