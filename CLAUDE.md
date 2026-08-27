@@ -117,6 +117,17 @@ Express app (artifacts/api-server)  ──►  Notion REST API (orders database)
   │                                  but not staff (indistinguishable from a URL
   │                                  that doesn't exist, by design), 403 staff
   │                                  but not signed in with Google
+  ├─ GET  /api/studio/production-pay
+  │                                → the other side of the figures: what the
+  │                                  studio owes its own PEOPLE. Joins the
+  │                                  atelier's "work distribution" rows (who did
+  │                                  the consult / sourcing / cutting / sewing /
+  │                                  detailing on each item) to the "Category Pay
+  │                                  Splits" rows (what each stage is worth as a
+  │                                  share of the piece), and reports owed vs.
+  │                                  settled per maker, the items behind it, and
+  │                                  the rows nothing could be worked out from.
+  │                                  Same staff gate as the figures above
   ├─ GET  /api/studio/orders       → the dashboard's stage board: every custom
   │                                  order still being made, with the stage it
   │                                  is at, the pipeline its own service walks,
@@ -278,6 +289,13 @@ Express app (artifacts/api-server)  ──►  Notion REST API (orders database)
   │                                  session; returns the hosted-checkout URL
   ├─ GET  /api/checkout/session/:id→ a session's status + itemized receipt
   │                                  (items, shipping, tax, total)
+  ├─ POST /api/cart-reminders      → "email me a reminder about my cart": stores
+  │                                  a display snapshot of the cart against the
+  │                                  email as ONE pending reminder in Postgres.
+  │                                  The nightly reconciliation sends the single
+  │                                  follow-up for carts still un-checked-out;
+  │                                  a paid checkout with the same email cancels
+  │                                  it. Anonymous + spam-filtered like /contact
   ├─ GET  /api/appointments/options→ bookable appointment types (duration, allowed
   │                                  staff + locations, gates) + booking timezone
   ├─ GET  /api/appointments/availability
@@ -2244,10 +2262,10 @@ property the database lacks simply contributes nothing.
 | `Show on website` | checkbox — **required**    | Ticking it publishes that piece. Until it exists, nothing is published       |
 | `Completed`       | date _(optional)_          | Orders the gallery by when the piece was made rather than when it was typed  |
 | `Stage`           | select _(optional)_        | `Concept` / `In progress` / `Delivered`; the rename of `Type`, both are read |
-| `Discipline`      | multi_select _(optional)_  | Adds a Discipline chip row once two published pieces differ                  |
+| `Discipline`      | multi*select *(optional)\_ | Adds a Discipline chip row once two published pieces differ                  |
 | `Season`          | select / text _(optional)_ | Adds a Season chip row; match the Competitions database's `2026-27` form     |
-| `Colorway`        | multi_select _(optional)_  | Adds a Colorway chip row. Reuse the intake picker's colour names             |
-| `Techniques`      | multi_select _(optional)_  | Adds a Technique chip row (Rhinestoning, Appliqué, Hand-beading, …)          |
+| `Colorway`        | multi*select *(optional)\_ | Adds a Colorway chip row. Reuse the intake picker's colour names             |
+| `Techniques`      | multi*select *(optional)\_ | Adds a Technique chip row (Rhinestoning, Appliqué, Hand-beading, …)          |
 | `Competition`     | select _(optional)_        | Adds a Competition chip row                                                  |
 | `Finished`        | files _(optional)_         | A design's finished photographs; leads the card, ahead of every other image  |
 | `Mockup`          | files _(optional)_         | A design's digital mockups                                                   |
@@ -3423,6 +3441,83 @@ Code: `services/restock-notification.service.ts`, `services/restock.ts`,
 `lib/db/restock-alerts.repository.ts`, and the `restock-alert` runner in
 `services/studio-tools.service.ts` + its card in `web-app/src/components/studio-tools.tsx`.
 
+## Abandoned-cart recovery emails (explicit capture + a one-time follow-up)
+
+The shop's cart lives in the browser (localStorage) — the server has no cart to
+watch go stale — so recovery starts with an **explicit ask**: the cart drawer
+offers "leave your email and we'll send you a one-time reminder", and
+`POST /api/cart-reminders` (contract-first, `useRequestCartReminder`) stores a
+display snapshot of the lines against the email. The nightly reconciliation
+sends the single follow-up for carts still un-checked-out. Code:
+`services/cart-recovery.service.ts`, `routes/cart-reminders.ts`,
+`lib/db/abandoned-carts.repository.ts` (+
+`supabase/migrations/0005_abandoned_carts.sql`), `abandonedCartEmail` in
+`lib/resend/emails.ts`, `sendDueCartReminders` in `services/schedule.service.ts`,
+the cancel hook at the tail of `processPaidShopOrder` (`checkout.service.ts`),
+and `web-app/src/components/cart-reminder.tsx` (rendered by `cart-drawer.tsx`).
+Load-bearing decisions:
+
+1. **A row is a PENDING reminder, not a history — deletion is the state
+   machine.** One row per email (`citext` primary key; a second save replaces
+   the snapshot and restarts the clock). The row is deleted when the reminder
+   sends, when a **paid checkout with the same email** lands (the Stripe
+   webhook's best-effort `cancelCartReminderBestEffort` — someone who bought
+   their cart must never be told they abandoned it), or when it ages past
+   `CART_REMINDER_MAX_AGE_DAYS` (14) unsent. That shape is simultaneously the
+   idempotency marker (no row ⇒ nothing to send twice), the "one reminder per
+   cart, ever" promise the email makes, and the data-minimization story — a
+   saved email + cart snapshot never outlives the days it takes to act on it,
+   which is also why it is deliberately **not** folded into the account data
+   export.
+
+2. **The claim is the delete, and it re-checks the cutoff rather than matching
+   a timestamp.** `claimAbandonedCart` is
+   `delete … where email = $1 and updated_at <= <cutoff> returning` — atomic, so
+   an overlapping run can't double-email, and the cutoff re-check leaves a cart
+   re-saved mid-sweep alone (it keeps its full delay). Deliberately not a
+   timestamp-equality match: the driver's `Date` is millisecond-truncated while
+   Postgres stores microseconds, so equality would never hold. A claim **error**
+   is treated as "not claimed" and the send skipped — an unclaimed send repeats
+   tomorrow, and a duplicate marketing-adjacent email is worse than a late one.
+   Claim-then-send (the restock sweep's direction, not the appointment
+   reminder's): a won claim followed by a failed send costs one lost reminder,
+   the safe way to fail.
+
+3. **The snapshot is copy, never money.** `CartReminderItem` carries name /
+   size / quantity / listed price purely so the email can say what was left
+   behind; checkout reprices everything from live Notion inventory exactly as it
+   does for the cart itself, and the email links to `/shop` (the cart is still
+   in the customer's browser — there is no server cart to link to).
+
+4. **Anonymous capture ⇒ the full anti-spam stack.** The endpoint carries the
+   shared `submissionRateLimiter` + `spamFilter` (honeypot + fill-time), so a
+   flagged submit gets the success shape and stores nothing — otherwise a bot
+   could queue reminder emails to strangers. Note this makes `/cart-reminders`
+   a fourth anonymous capture form alongside contact / notify / newsletter, and
+   its integration test must stay at ≤5 requests (the limiter's window budget).
+
+5. **Postgres is the one requirement, and it degrades quieter than the restock
+   sweep's.** Unset ⇒ the sweep no-ops with a warn, and the **capture still
+   answers success** (also with a warn): the customer can't fix the studio's
+   configuration, and erroring the drawer over it helps nobody. The trade is
+   that an unconfigured install silently never sends — the warn in the logs is
+   the visibility.
+
+6. **No atelier notification and no studio tool, deliberately.** The email is
+   customer-only from the **orders** sender (best-effort as everywhere); a cart
+   is not a request to triage, and unlike a restock there is no "go out the same
+   day" urgency — the whole point is the delay. The nightly cron's JSON (and the
+   milestones tool's detail line) reports the count.
+
+**Atelier setup: none beyond migrations** — run `db:migrate` so
+`abandoned_carts` exists. No env var required, no Notion database, no property.
+The one optional knob is `CART_REMINDER_DELAY_HOURS` (default `24`) — how long a
+cart sits before the reminder; read fresh from env in
+`services/cart-recovery.service.ts`, not a Studio-Settings key. Known limits: a
+cart saved under one email and checked out under another keeps its reminder (the
+copy says "if you've already checked out, ignore this"), and the capture is
+explicit-only — nothing is stored for a customer who never asks.
+
 ## Appointment scheduling (real-time slot booking)
 
 Customers book appointments (consultations, fittings, design reviews, general) with a
@@ -4102,6 +4197,96 @@ limits, including why `Skate Shop (opening)` isn't counted and why consignment
 units stay out of `topItems`, are in
 `.agents/memory/sales-channels-and-consignment.md`.
 
+## Production pay (what the studio owes its own people)
+
+Every figure on the dashboard until this one was money coming **in** — revenue by
+month, deposits against balances, what customers still owe. The atelier has
+recorded what goes **out** by hand since long before the app existed: a **"work
+distribution"** row per item naming who did the consult, the sourcing, the
+cutting, the sewing and the detailing, and a **"Category Pay Splits"** row saying
+what each of those stages is worth as a share of the piece. Nothing had ever read
+either. `GET /api/studio/production-pay` is that read, rendered at `/studio/pay`.
+Code: `lib/notion/work-distribution.{schema,repository}.ts`,
+`lib/notion/pay-splits.{schema,repository}.ts`, the two lazy clients in
+`notion/client.ts`, `services/production-pay.service.ts`, the handler in
+`routes/studio.ts`, and `web-app/src/components/studio-production-pay.tsx`.
+
+1. **The splits are READ; the money is derived from them — and the per-person
+   `… owed` formulas are deliberately NOT read.** Notion carries an
+   `Alexandra owed` and an `Alayna owed` formula doing this same multiplication,
+   and reading those two numbers the way the consignment reader reads
+   `Your Payout` would have been less code. It loses on three counts: those
+   property names **hardcode today's two makers** (a third would need two
+   formulas and two columns before the app could see any of their pay), a single
+   number per person **cannot be broken down** into the sewing-vs-sourcing split
+   that is the whole reason to open the panel, and the formula bodies aren't
+   readable through the API anyway. So the assignee is read out of each select —
+   making the roster **data** — and what is read rather than invented is the
+   thing that genuinely is a commercial term: the category's pay splits, which
+   the two of them renegotiate. The standing cost is a **duplicated rule**: the
+   owed arithmetic now lives in those Notion formulas and in
+   `production-pay.service.ts` — **change one and change the other**, exactly
+   like `classifyMaterials` against the `Restock Alert` formula.
+
+2. **`Split` divides a stage evenly across the whole roster.** With the studio's
+   two makers that is the plain 50/50 everyone means by it. Were a third added it
+   would divide three ways — stated rather than guessed, because the alternative
+   (picking two names out of the roster) would be the app deciding who worked on
+   a piece. A targeted business rule naming one live option value, like
+   `STATUS_IN_STOCK`. The roster itself comes from the five `… by` select
+   **options** on the live schema (so a maker with no work still gets a nought
+   row and the panel reads as the payroll rather than as a list of who is owed);
+   that read is **best-effort**, because `summarizeProductionPay` widens whatever
+   roster it is handed with the names the rows carry — a failed schema read costs
+   a nought row, never anybody's pay.
+
+3. **A blank `Units` is ONE; a blank `Sale price` is UNKNOWN.** The row is an
+   item, so a count nobody typed is one piece — folding it to zero would value
+   real work at nothing, which is the one way a payroll figure must not be wrong.
+   There is no such default for a price, so an unpriced row is **named** instead
+   of guessed at. Likewise a maker with no `Paid <name>` column reads as
+   **unpaid**: the panel may overstate what is owed, which is visible, never hide
+   it, which is not. Settlement checkboxes are read by the `Paid ` **prefix** so
+   they follow the roster rather than two names in code.
+
+4. **Nothing uncomputable is dropped — it is named.** No sale price, no category,
+   or a stage nobody is assigned to all produce a `needsAttention` row carrying
+   the reason, the same shape as the materials panel's `untracked` list. A
+   payroll number that reads as complete while it is short is the worst way for
+   this to be wrong. A category whose five shares don't total 100% is flagged for
+   the same reason: in Notion a mistyped split looks exactly like a correct one
+   and silently underpays whoever did the missing stage, and this panel is the
+   only place it is visible.
+
+5. **Owed means "not ticked paid", and nothing else.** The order's `Order Stage`
+   rollup rides along on each row so the atelier can see what they are settling
+   on, but the app never gates pay on it. Whether work on a half-sewn dress has
+   been earned is their judgement, recorded by ticking the box; inventing an
+   earned-at-delivery rule here would contradict a table they already keep.
+
+6. **Its own section, and its own endpoint.** `/studio/pay` is a `STUDIO_SECTIONS`
+   entry, so only opening it runs the read. Folding two more bounded
+   full-database scans into `GET /studio/analytics` would make everyone opening
+   the **figures** pay for a payroll question they didn't ask — the exact cost
+   "The dashboard's sections" exists to remove. Contract-first and behind the
+   same `requireStaff` gate (401 / 404 / 403) as the rest of the studio surface.
+
+Degrades exactly like the materials and consignment panels: either database
+unset ⇒ `configured: false` **naming which one** (nought owed would read as
+"everyone has been paid"), a Notion 404 ⇒ `unreachable` with the sharing fix in
+the panel, anything else still throws.
+
+The atelier's one-time setup: share the Notion integration with **work
+distribution** and **Category Pay Splits**, and set
+**`NOTION_WORK_DISTRIBUTION_DATABASE_ID`** + **`NOTION_PAY_SPLITS_DATABASE_ID`**.
+**Nothing to add in Notion** — every property read already exists. Two data-entry
+habits make it useful: give each row a `Sale price` and a `Category`, and fill in
+the five `… by` selects as the work is done (the existing **"Needs stage
+entries"** view is the same idea from the other side). Known limits — both makers
+see each other's pay, ticking `Paid` is still done in Notion, and the figures are
+the whole book rather than a period — are in
+`.agents/memory/production-pay-dashboard.md`.
+
 ## Studio analytics dashboard (internal, staff-gated)
 
 The atelier's own numbers in one place — `pages/studio.tsx` at **`/studio`**, fed
@@ -4355,7 +4540,7 @@ two `/studio` routes in `App.tsx`.
    most likely to need them.
 
 The sections are **Figures / Orders / Requests / Shipping / Reviews / Bookings /
-Materials / Settings / Guides**, in that order — what needs doing first.
+Materials / Pay / Settings / Guides**, in that order — what needs doing first.
 (**Orders** is second because advancing a stage is the action taken most often;
 see "Advancing an order's stage from the dashboard".) Splitting them changed
 nothing about a panel: each is the same component, with
@@ -5228,7 +5413,17 @@ in the maintainer's env without edits.
 ## Git & deployment
 
 - Default branch: **`main`**. Feature work happens on branches; changes reach
-  `main` via pull requests.
+  `main` via pull requests. `main` is the **integration** branch — merging there
+  deploys a Vercel **preview**, not the live site.
+- Production is the **`release`** branch (Vercel's Production Branch setting).
+  Shipping is a deliberate promotion of `main` into `release`
+  (`git merge --ff-only origin/main`, so production is always a snapshot of a
+  commit that passed CI on `main`); each push to `release` is auto-tagged by
+  `.github/workflows/release-tag.yml`. Never commit feature work directly to
+  `release`; a hotfix branches off `release` and is merged back into `main`
+  afterward. An optional `development` branch may exist as a combined-preview
+  testing surface; features are promoted from their own branches, never from
+  `development`.
 - Do **not** open a pull request unless explicitly asked.
 - Vercel deploys from the repo using `vercel.json`:
   `installCommand: pnpm install`, `buildCommand: pnpm run build:vercel`,
@@ -5551,6 +5746,8 @@ scope went with the working-hours sheet.
 | `NOTION_STUDIO_GUIDES_DATABASE_ID`                                                                                | No how-to guides; the dashboard panel says it isn't connected       |
 | `NOTION_PORTFOLIO_DATABASE_ID`                                                                                    | No portfolio pieces; `/portfolio` shows its empty state             |
 | `NOTION_CONSIGNMENT_DATABASE_ID`                                                                                  | No consignment panel; the shelf at the skate shop isn't counted     |
+| `NOTION_WORK_DISTRIBUTION_DATABASE_ID`                                                                            | No production-pay panel; what the studio owes its makers isn't read |
+| `NOTION_PAY_SPLITS_DATABASE_ID`                                                                                   | No production-pay panel; there is nothing to divide a piece by      |
 | `COMMISSION_CAPACITY`                                                                                             | `0` — no cap, so the books never close on the count                 |
 | `COMMISSION_INTAKE`                                                                                               | `auto` — the cap decides (`open` / `closed` override it)            |
 | `COMMISSION_CLOSED_MESSAGE`                                                                                       | A built-in "our books are full, join the waitlist" sentence         |
@@ -5574,6 +5771,7 @@ scope went with the working-hours sheet.
 | `VITE_RUSH_WINDOW_DAYS`, `VITE_RUSH_SURCHARGE_NOTE` (build-time)                                                  | `21`, `"a 15% rush surcharge"`                                      |
 | `FITTING_REMINDER_STAGES`, `FITTING_REMINDER_LEAD_DAYS`                                                           | `Fitting`, `10`                                                     |
 | `PAYMENT_REMINDER_LEAD_DAYS`                                                                                      | `7`                                                                 |
+| `CART_REMINDER_DELAY_HOURS`                                                                                       | `24` (hours a saved cart sits before its one recovery reminder)     |
 | `REFERRAL_CREDIT_AMOUNT` / `REFERRAL_WELCOME_PERCENT` / `RETURNING_DISCOUNT_PERCENT` / `REWARD_CODE_EXPIRES_DAYS` | `40` / `10` / `10` / `90`                                           |
 | `SPAM_MIN_FILL_MS`                                                                                                | `2000` (`0` disables the timing check)                              |
 | `INSTAGRAM_ACCESS_TOKEN`                                                                                          | No Instagram strip on the home or shop pages                        |
@@ -5739,6 +5937,7 @@ Three things about it are load-bearing:
 | Change production-schedule milestones                    | `api-server/src/services/schedule.service.ts` + `routes/cron.ts` + `lib/notion/production-schedule.{blocks,repository}.ts` + `lib/notion/orders.repository.ts` (`findOrdersNeedingMilestones`/`markMilestonesGenerated`); cron in `vercel.json`                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                     |
 | Change order status-change emails (+ pipeline graphic)   | `api-server/src/lib/resend/emails.ts` (`orderStageChangeEmail`) + `services/order-notification.service.ts` + `routes/order-notification.ts` + `lib/notion/orders.repository.ts` (`findOrderForStageNotification`); Notion automation → `POST /api/webhooks/notion-stage-change`; on-demand send via the `status-email` studio tool                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                  |
 | Change back-in-stock alerts                              | `services/restock-notification.service.ts` + `services/restock.ts` + `sendDueRestockAlerts` in `services/schedule.service.ts` + `claimRestockAlert` in `lib/db/restock-alerts.repository.ts` + `findPendingBackInStockRequests` in `lib/notion/notify.repository.ts`; the on-demand run is the `restock-alert` studio tool                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                          |
+| Change abandoned-cart recovery emails                    | `services/cart-recovery.service.ts` (capture + the sweep policy) + `routes/cart-reminders.ts` + `lib/db/abandoned-carts.repository.ts` (schema in `supabase/migrations/0005_abandoned_carts.sql`) + `abandonedCartEmail` in `lib/resend/emails.ts` + `sendDueCartReminders` in `services/schedule.service.ts`; the checkout-completion cancel is at the tail of `processPaidShopOrder` (`services/checkout.service.ts`); frontend `web-app/src/components/cart-reminder.tsx`, rendered by `components/cart-drawer.tsx`                                                                                                                                                                                                                                                                                                              |
 | Change day-before appointment reminders                  | `lib/appointments/reminders.ts` (window, per-channel markers, `whenPhrase`) + `services/appointment-reminder.service.ts` (the sweep) + `sendDueAppointmentReminders` in `services/schedule.service.ts` + `listAppointmentsInRange` / `markAppointmentReminded` / the `aptPhone` stamp in `lib/google/calendar.repository.ts` + `appointmentReminderEmail` in `lib/resend/emails.ts`; runs in the milestone cron                                                                                                                                                                                                                                                                                                                                                                                                                     |
 | Change automated fitting reminders                       | `api-server/src/services/schedule.service.ts` (`sendDueFittingReminders`) + `services/fitting-reminder.ts` (env business rule) + `lib/notion/production-schedule.{blocks,repository}.ts` (`findMilestonesNeedingFittingReminder`/`markFittingReminderSent`, `Reminder Sent` prop) + `fittingReminderEmail` in `lib/resend/emails.ts`; runs in the milestone cron                                                                                                                                                                                                                                                                                                                                                                                                                                                                    |
 | Change payment & deposit due reminders                   | `api-server/src/services/schedule.service.ts` (`sendDuePaymentReminders`) + `services/payment-reminder.ts` (env business rule) + `lib/notion/invoice.repository.ts` (`findInvoicesNeedingPaymentReminder`/`markPaymentStageReminded`) + `extractPaymentReminderInvoice` + `PAYMENT_STAGE_REMINDER_FIELDS` in `lib/notion/invoice.schema.ts` + `paymentReminderEmail` in `lib/resend/emails.ts`; runs in the milestone cron                                                                                                                                                                                                                                                                                                                                                                                                          |
@@ -5753,6 +5952,7 @@ Three things about it are load-bearing:
 | Change the customer account portal (Supabase Auth)       | `artifacts/web-app/src/pages/account.tsx` (+ `components/appointment-manage-panel.tsx`, shared with `pages/appointment-manage.tsx`) + `pages/account-login.tsx` / `account-callback.tsx` / `account-reset.tsx` + `lib/supabase.ts` + `lib/auth-context.tsx` (frontend); `api-server/src/services/account.service.ts` + `routes/account.ts` + `middlewares/auth.ts` + `lib/supabase/client.ts`; queries `findOrdersByEmail` / `findShopOrdersByEmail` + `listUpcomingAppointmentsByEmail` (`lib/google/calendar.repository.ts`, mapped via `lib/appointments/event-details.ts`) + `extractMeasurements` (`lib/notion/orders.schema.ts`). Auth emails: `.agents/memory/supabase-auth-emails.md`                                                                                                                                       |
 | Change the customer data export / deletion request       | `web-app/src/components/account-data.tsx` (rendered by `pages/account.tsx`) + the "Your choices" section of `pages/privacy.tsx`; `api-server/src/services/account-data.service.ts` + the two `/account` handlers in `routes/account.ts` + `lib/notion/data-deletion.{blocks,repository}.ts` + the by-email reads (`listRequestsByEmail`, `listReviewsByEmail`, `findClientProfileByEmail`) + `unsubscribeAudienceContact` in `lib/resend/audience.ts` + the two `dataDeletionRequest*Email` builders. The dashboard side is the `data-deletion` kind in `lib/notion/requests.schema.ts` + `components/studio-requests.tsx`                                                                                                                                                                                                          |
 | Change how the dashboard is laid out / add a section     | `web-app/src/lib/studio-sections.ts` (the registry — id, label, summary) + the `SECTION_VIEWS` map and `SectionNav` in `pages/studio.tsx` + the two `/studio` routes in `App.tsx`. Only the open section mounts, so a view fetches what it shows; the gate is `useStudioAccess` (`lib/studio-access.ts`), not the figures. Read "The dashboard's sections" before splitting the request queue from the tools                                                                                                                                                                                                                                                                                                                                                                                                                        |
+| Change production pay (what the studio owes its makers)  | `api-server/src/lib/notion/work-distribution.{schema,repository}.ts` (the rows + the live maker roster; `PRODUCTION_STAGES` and `SPLIT_ASSIGNEE` live there) + `lib/notion/pay-splits.{schema,repository}.ts` (the commercial term, read never invented) + `services/production-pay.service.ts` (the pure `attributeItem` / `summarizeProductionPay` + the cached use-case) + the `/studio/production-pay` route in `routes/studio.ts`; panel in `web-app/src/components/studio-production-pay.tsx`, mounted by the `pay` section in `pages/studio.tsx`. The owed arithmetic is DUPLICATED in Notion's `Alexandra owed` / `Alayna owed` formulas — read `.agents/memory/production-pay-dashboard.md` before changing either                                                                                                         |
 | Change sales-channel / consignment figures               | `SHOP_ORDER_CHANNEL_PROPERTY` / `SHOP_ORDER_ONLINE_STORE_CHANNEL` / `SHOP_ORDER_DATE_PROPERTY` in `api-server/src/lib/notion/shop-orders.blocks.ts` (what the app stamps) + the channel/date reads and `fetchLiveShopOrderChannels` in `shop-orders.repository.ts`; the aggregation is `buildChannels` / `orderedOn` / `buildTopItemCoverage` in `services/studio-analytics.service.ts`. The skate-shop shelf is `lib/notion/consignment.{schema,repository}.ts` + `services/consignment.service.ts` (`unitsAtShop` / `summarizeConsignment`) + `getConsignmentNotionClient`; panels in `web-app/src/pages/studio.tsx` (`ChannelsPanel` / `ConsignmentPanel`). Read the date-only gotcha in `.agents/memory/sales-channels-and-consignment.md` before touching `orderedOn`                                                          |
 | Change the internal studio dashboard                     | `artifacts/web-app/src/pages/studio.tsx` (+ the `/studio` route in `App.tsx`, `noindex` entry in `lib/seo-routes.ts`); `api-server/src/services/studio-analytics.service.ts` (the pure `aggregateStudioAnalytics` + the cached use-case) + `routes/studio.ts` + `requireStaff` in `middlewares/auth.ts` + `lib/staff.ts` (the `STUDIO_STAFF_EMAILS` allowlist + the `amr` Google check); the 403 panel's re-sign-in lands back via `web-app/src/lib/post-signin.ts` (read by `pages/account-callback.tsx`); reads via `lib/notion/scan.ts` + `listOrdersForAnalytics` / `listShopOrdersForAnalytics` / `listInvoicesForAnalytics`                                                                                                                                                                                                   |
 | Change the studio's how-to guides                        | `api-server/src/lib/guide-sections.ts` (the sections a guide can be filed against — a tool's id is its `StudioToolName`) + `lib/notion/guides.{schema,repository}.ts` (the Notion row + the file download) + `services/studio-guides.service.ts` (assembly, the HTML check, the 60s cache) + the `/studio/guides` route in `routes/studio.ts`; frontend `web-app/src/components/studio-guides.tsx` (`StudioGuides` panel + the `GuidesFor` slots), mounted by `pages/studio.tsx` and per tool by `components/studio-tools.tsx`. The sandboxed frame in that component is a security boundary — see the section above                                                                                                                                                                                                                |

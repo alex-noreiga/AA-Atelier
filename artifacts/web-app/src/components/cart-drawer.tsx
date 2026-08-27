@@ -9,6 +9,7 @@ import {
   SheetTrigger,
 } from "@/components/ui/sheet";
 import { useCart, lineKey } from "@/lib/cart";
+import { CartReminder } from "@/components/cart-reminder";
 import { useAnalytics, AnalyticsEvent } from "@/lib/analytics";
 import { formatPrice } from "@/lib/format";
 import { useToast } from "@/hooks/use-toast";
@@ -237,6 +238,7 @@ export function CartButton({ className }: { className?: string }) {
                   "Checkout"
                 )}
               </button>
+              <CartReminder />
             </div>
           </>
         )}

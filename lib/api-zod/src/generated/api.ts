@@ -336,6 +336,41 @@ export const SubscribeNewsletterResponse = zod.object({
 
 
 /**
+ * Saves a snapshot of the visitor's cart against their email so the app can send ONE follow-up reminder if the cart is never checked out. The cart itself stays client-side (localStorage); this records only what the reminder email needs to say. A completed checkout with the same email cancels the reminder, and a second save replaces the first (restarting the clock). Anonymous and public, so it carries the same invisible anti-spam signals as the other capture forms.
+ * @summary Ask to be emailed a reminder about a cart left behind
+ */
+export const requestCartReminderBodyItemsItemNameMax = 200;
+
+export const requestCartReminderBodyItemsItemSizeMax = 50;
+
+
+export const requestCartReminderBodyItemsItemPriceMin = 0;
+
+export const requestCartReminderBodyItemsMax = 50;
+
+export const requestCartReminderBodyElapsedMsMin = 0;
+
+
+
+export const RequestCartReminderBody = zod.object({
+  "email": zod.string().email().describe('Where to send the one-time reminder.'),
+  "items": zod.array(zod.object({
+  "variantId": zod.string().describe('The Notion inventory page id of the variant (a ProductVariant `id`).'),
+  "name": zod.string().max(requestCartReminderBodyItemsItemNameMax).describe('Display name of the variant, without the size suffix.'),
+  "size": zod.string().max(requestCartReminderBodyItemsItemSizeMax).optional().describe('The selected size band, when the variant is offered in sizes.'),
+  "quantity": zod.number().int().min(1),
+  "price": zod.number().min(requestCartReminderBodyItemsItemPriceMin).optional().describe('Listed unit price in dollars at the time the cart was saved, for the email\'s copy only.')
+}).describe('One cart line, snapshotted for the reminder email\'s copy. Display-only — nothing here is trusted for money (checkout reprices everything from live inventory, exactly as it does for the cart itself).')).min(1).max(requestCartReminderBodyItemsMax),
+  "website": zod.string().optional().describe('Anti-spam honeypot. A hidden field that real visitors never fill; a non-empty value marks the submission as spam and it is silently dropped. Always send empty (or omit).'),
+  "elapsedMs": zod.number().int().min(requestCartReminderBodyElapsedMsMin).optional().describe('Anti-spam timing signal: milliseconds the visitor spent on the form before submitting. Implausibly fast submissions are dropped. Omit when unmeasurable (treated as human).')
+})
+
+export const RequestCartReminderResponse = zod.object({
+  "success": zod.boolean()
+})
+
+
+/**
  * Reports whether the atelier's books are open for the capacity-gated services (today, the bespoke commission — see `Service.capacityGated`), so the intake form can offer the waitlist instead of a form that would be refused. The same decision gates `POST /orders`, so the form and the server can't disagree.
  * Closed means one of two things: the atelier paused intake by hand, or the number of commissions in production has reached the studio's capacity. Both are atelier-editable Studio Settings (`COMMISSION_INTAKE`, `COMMISSION_CAPACITY`).
  * Deliberately degrade-safe and fail-OPEN: with no capacity configured, or when the order count can't be read, this reports open. Turning a customer away because of an outage is the worst way to be wrong.
@@ -1301,6 +1336,70 @@ export const RunStudioToolResponse = zod.object({
   "message": zod.string().describe('One sentence summarizing what happened.'),
   "details": zod.array(zod.string()).describe('Any per-item notes worth showing under the message — payments that were skipped, reasons a send was suppressed. Empty when there is nothing to add.')
 }).describe('The outcome of one internal tool run, already composed for display. The server owns the wording — it is the same summary the retired confirmation pages rendered — so the dashboard renders the result rather than re-deriving it from per-tool fields.')
+
+
+/**
+ * Production pay, joined from the atelier's own two Notion databases: a "work distribution" row per item naming who did each of the five stages of making it, and a "Category Pay Splits" row saying what each stage is worth as a share of the piece.
+ *
+ * The splits are READ — they are a commercial term the makers renegotiate between themselves — and the money is derived from them here. Notion also carries a per-person `… owed` formula doing the same multiplication; it is deliberately not read, because those property names hardcode today's two makers, so a third would need two formulas and two columns before the app could see any of their pay. Reading the assignee out of each select instead makes the roster data. The standing cost is that the arithmetic now exists in both places and must be changed in both.
+ *
+ * Nothing that cannot be computed is dropped. A row with no sale price, no category, or a stage nobody is assigned to is reported in `needsAttention` with the reason, because a payroll figure that reads as complete while it is short is the worst way for this to be wrong.
+ *
+ * Owed means the row's `Paid <name>` checkbox is not ticked, and nothing else. Whether work on a half-made piece has been earned is the atelier's judgement; the order's stage rides along so they can see it, but it never gates pay.
+ *
+ * Same staff gate as the rest of the studio surface: 401 when not signed in, 404 when signed in but not staff, 403 when staff but not signed in with Google.
+ * @summary What the studio owes its own people
+ */
+export const GetStudioProductionPayResponse = zod.object({
+  "configured": zod.boolean().describe('False when either database isn\'t wired up, in which case everything is empty and the panel says which one is missing — rather than reporting nought owed, which reads as \"everyone has been paid\".'),
+  "missing": zod.array(zod.enum(['work-distribution', 'pay-splits'])).optional().describe('Which of the two databases are unset, when `configured` is false.'),
+  "unreachable": zod.boolean().optional().describe('True when an id IS set but Notion answered 404 — the integration has not been shared, or the id is wrong. Same kind of state as unset: configuration a human has to clear, not an outage worth erroring the panel over. Absent when the read worked.'),
+  "makers": zod.array(zod.object({
+  "maker": zod.string(),
+  "owed": zod.number().describe('Due and not yet ticked paid. The figure the panel leads with.'),
+  "paid": zod.number().describe('Due and ticked paid — what has already been settled.'),
+  "total": zod.number().describe('Everything they have earned, owed and settled together.'),
+  "owedItems": zod.number().int().describe('How many item rows still owe them something.'),
+  "owedByStage": zod.array(zod.object({
+  "stage": zod.enum(['consult', 'sourcing', 'cutting', 'sewing', 'detailing']).describe('One of the five stages of making a piece. The ids are the app\'s own; the Notion property naming who did each and the Category Pay Splits column holding its share are listed beside them in `lib\/notion\/work-distribution.schema.ts`.'),
+  "amount": zod.number()
+})).describe('What the outstanding money is for, most owed first. A breakdown of `owed`, not of `total` — this is what the atelier settles against.')
+}).describe('One maker\'s totals across the whole book.')).describe('Per maker, most owed first. Includes a maker with nothing outstanding, so this reads as the roster rather than as a list of who happens to be owed money.'),
+  "totalOwed": zod.number().describe('Owed across every maker — what the studio owes its people now.'),
+  "totalPaid": zod.number().describe('Settled across every maker.'),
+  "items": zod.array(zod.object({
+  "id": zod.string().describe('The Notion page id of the work-distribution row.'),
+  "item": zod.string().describe('The item\'s title, e.g. \"Knight of Midnight Dress\".'),
+  "product": zod.string().optional().describe('Size, colour or variation, when the atelier noted one.'),
+  "category": zod.string().optional().describe('The category the pay splits came from, by name.'),
+  "orderStage": zod.string().optional().describe('The related order\'s current stage, when the row belongs to a commission. Shown so the atelier can see what they are settling up on; it never decides whether pay is owed.'),
+  "value": zod.number().describe('`Sale price` × `Units` — the pot the five stage shares divide.'),
+  "units": zod.number().int().describe('How many pieces the row covers. A blank `Units` reads as one: the row is an item, and folding it to nought would value real work at nothing.'),
+  "makers": zod.array(zod.object({
+  "maker": zod.string().describe('The maker\'s name, exactly as typed into the Notion select.'),
+  "amount": zod.number().describe('What they are due for this item, across every stage they worked on.'),
+  "paid": zod.boolean().describe('Whether this row\'s `Paid <name>` checkbox is ticked. A maker with no such column reads as false — the panel may overstate what is owed, but must never hide it.'),
+  "stages": zod.array(zod.object({
+  "stage": zod.enum(['consult', 'sourcing', 'cutting', 'sewing', 'detailing']).describe('One of the five stages of making a piece. The ids are the app\'s own; the Notion property naming who did each and the Category Pay Splits column holding its share are listed beside them in `lib\/notion\/work-distribution.schema.ts`.'),
+  "amount": zod.number().describe('Money attributed to this maker for this stage of this row.'),
+  "shared": zod.boolean().describe('True when the stage was marked `Split`, so this is a share of it rather than the whole. Reported so a half-size sewing share reads as shared work rather than as a wrong number.')
+}).describe('What one maker earned on one stage of one item.')).describe('Which stages that money is for.')
+}).describe('One maker\'s share of one item.')).describe('Per maker, most owed first.'),
+  "unassigned": zod.number().describe('Value belonging to stages nobody is assigned to. Attributed to no one and in no total, but reported so the row\'s shares visibly don\'t add up to its value rather than invisibly not adding up.')
+}).describe('One item being made, and what it owes whom.')).describe('Item rows, most owed first, capped by the server.'),
+  "itemCount": zod.number().int().describe('How many item rows there are in all, so a capped list can say so.'),
+  "needsAttention": zod.array(zod.object({
+  "id": zod.string(),
+  "item": zod.string(),
+  "reason": zod.enum(['no-sale-price', 'no-pay-split', 'unassigned-stages']).describe('`no-sale-price` — nothing to divide. `no-pay-split` — no category relation, or one pointing at a row the splits database doesn\'t hold. `unassigned-stages` — priced and categorised, but part of the work has no name against it, so part of its value is owed to nobody.'),
+  "unassigned": zod.number().optional().describe('For `unassigned-stages`, the money hanging on those stages.')
+}).describe('A row no pay could be computed from, and why.')).describe('Rows no pay could be computed from, and why.'),
+  "attentionCount": zod.number().int().describe('How many such rows there are in all.'),
+  "unbalancedSplits": zod.array(zod.object({
+  "category": zod.string(),
+  "total": zod.number().describe('What the five shares actually total, as a fraction of one.')
+}).describe('A category whose five shares don\'t add up to the whole piece. A mistyped split silently underpays whoever did the missing stage, and this is the only place that is visible.'))
+}).describe('Production pay — who is owed what, the items behind it, and the rows nothing could be computed from.')
 
 
 /**

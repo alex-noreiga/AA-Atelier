@@ -16,6 +16,7 @@ import {
   GetStudioGuideContentResponse,
   GetStudioGuidesResponse,
   GetStudioMaterialsResponse,
+  GetStudioProductionPayResponse,
   GetStudioSettingsResponse,
   ListStaffAvailabilityResponse,
   ListStudioOrdersResponse,
@@ -50,6 +51,7 @@ import { studioRateLimiter } from "../middlewares/rate-limit.js";
 import { validate } from "../middlewares/validate.js";
 import { getStudioAnalytics } from "../services/studio-analytics.service.js";
 import { getMaterialsOverview } from "../services/materials.service.js";
+import { getProductionPayOverview } from "../services/production-pay.service.js";
 import {
   buyShippingLabel,
   getShippingOptions,
@@ -131,6 +133,24 @@ router.get(
   async (_req, res) => {
     const analytics = await getStudioAnalytics();
     res.json(GetStudioAnalyticsResponse.parse(analytics));
+  },
+);
+
+// What the studio owes its own people — the other side of the figures above.
+//
+// `/studio/analytics` reports money coming in: revenue by month, deposits
+// against balances, what customers still owe. This is the money going out, and
+// it is deliberately a SEPARATE read rather than another block on the analytics
+// response: the dashboard mounts one section at a time, so folding two bounded
+// full-database scans into the figures would make everyone opening the figures
+// pay for a payroll question they didn't ask.
+router.get(
+  "/studio/production-pay",
+  studioRateLimiter,
+  requireStaff,
+  async (_req, res) => {
+    const pay = await getProductionPayOverview();
+    res.json(GetStudioProductionPayResponse.parse(pay));
   },
 );
 

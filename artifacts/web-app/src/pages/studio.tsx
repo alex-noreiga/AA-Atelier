@@ -26,6 +26,7 @@ import { StudioAvailability } from "@/components/studio-availability";
 import { StudioAppointmentStaff } from "@/components/studio-appointment-staff";
 import { StudioReviews } from "@/components/studio-reviews";
 import { StudioMaterials } from "@/components/studio-materials";
+import { StudioProductionPay } from "@/components/studio-production-pay";
 import { StudioShipping } from "@/components/studio-shipping";
 import { StudioGuides, GuidesFor } from "@/components/studio-guides";
 import { StudioSettings } from "@/components/studio-settings";
@@ -307,6 +308,7 @@ const SECTION_VIEWS: Record<StudioSectionId, () => React.ReactElement> = {
   reviews: ReviewsSection,
   bookings: BookingsSection,
   materials: MaterialsSection,
+  pay: PaySection,
   settings: SettingsSection,
   guides: GuidesSection,
 };
@@ -518,6 +520,18 @@ function MaterialsSection() {
     <>
       <StudioMaterials />
       <GuidesFor section="materials" />
+    </>
+  );
+}
+
+/** What the studio owes its own people. Its own section, and its own read,
+ * because folding it into the figures would make everyone opening the figures
+ * pay for two more full-database scans to answer a payroll question. */
+function PaySection() {
+  return (
+    <>
+      <StudioProductionPay />
+      <GuidesFor section="pay" />
     </>
   );
 }

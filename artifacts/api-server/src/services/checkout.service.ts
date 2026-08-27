@@ -25,6 +25,7 @@ import {
 import { upsertClientIndex } from "../lib/db/clients.repository.js";
 import { writeOrderIndex } from "../lib/db/order-index.repository.js";
 import { runPaidOrderRewards } from "./rewards.service.js";
+import { cancelCartReminderBestEffort } from "./cart-recovery.service.js";
 import { relationLinksEnabled } from "./request-links.js";
 import {
   purchasedLinesFromSession,
@@ -587,6 +588,16 @@ async function processPaidShopOrder(
         "Failed to run rewards for a paid shop order; the order is recorded",
       );
     }
+  }
+
+  // A completed checkout cancels any pending abandoned-cart reminder for this
+  // email — someone who bought their cart must never be told they left it
+  // behind. Best-effort and never throwing, like everything else on the webhook
+  // tail. Known limit: a cart saved under one email and checked out under
+  // another keeps its reminder — the one-time email tells them to ignore it.
+  const cartEmail = full.customer_details?.email;
+  if (cartEmail) {
+    await cancelCartReminderBestEffort(cartEmail);
   }
 
   return true;

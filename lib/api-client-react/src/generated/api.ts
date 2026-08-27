@@ -48,6 +48,8 @@ import type {
   NewAppointmentResponse,
   NewCancellationRequest,
   NewCancellationResponse,
+  NewCartReminderRequest,
+  NewCartReminderResponse,
   NewContactRequest,
   NewContactResponse,
   NewMeasurementChangeRequest,
@@ -74,6 +76,7 @@ import type {
   PaymentSessionResponse,
   PortfolioList,
   ProductList,
+  ProductionPayOverview,
   PurchasedLabel,
   RequestStateRequest,
   RescheduleAppointmentRequest,
@@ -941,6 +944,78 @@ export const useSubscribeNewsletter = <TError = ErrorType<ErrorEnvelope>,
         TContext
       > => {
       return useMutation(getSubscribeNewsletterMutationOptions(options));
+    }
+
+export const getRequestCartReminderUrl = () => {
+
+
+
+
+  return `/api/cart-reminders`
+}
+
+/**
+ * Saves a snapshot of the visitor's cart against their email so the app can send ONE follow-up reminder if the cart is never checked out. The cart itself stays client-side (localStorage); this records only what the reminder email needs to say. A completed checkout with the same email cancels the reminder, and a second save replaces the first (restarting the clock). Anonymous and public, so it carries the same invisible anti-spam signals as the other capture forms.
+ * @summary Ask to be emailed a reminder about a cart left behind
+ */
+export const requestCartReminder = async (newCartReminderRequest: NewCartReminderRequest, options?: Parameters<typeof customFetch>[1]): Promise<NewCartReminderResponse> => {
+
+  return customFetch<NewCartReminderResponse>(getRequestCartReminderUrl(),
+  {
+    ...options,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    body: JSON.stringify(newCartReminderRequest)
+  }
+);}
+
+
+
+
+
+export const getRequestCartReminderMutationOptions = <TError = ErrorType<ErrorEnvelope>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof requestCartReminder>>, TError,{data: BodyType<NewCartReminderRequest>}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof requestCartReminder>>, TError,{data: BodyType<NewCartReminderRequest>}, TContext> => {
+
+const mutationKey = ['requestCartReminder'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof requestCartReminder>>, {data: BodyType<NewCartReminderRequest>}> = (props) => {
+          const {data} = props ?? {};
+
+          return  requestCartReminder(data,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type RequestCartReminderMutationResult = NonNullable<Awaited<ReturnType<typeof requestCartReminder>>>
+    export type RequestCartReminderMutationBody = BodyType<NewCartReminderRequest>
+    export type RequestCartReminderMutationError = ErrorType<ErrorEnvelope>
+
+    /**
+ * @summary Ask to be emailed a reminder about a cart left behind
+ */
+export const useRequestCartReminder = <TError = ErrorType<ErrorEnvelope>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof requestCartReminder>>, TError,{data: BodyType<NewCartReminderRequest>}, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof requestCartReminder>>,
+        TError,
+        {data: BodyType<NewCartReminderRequest>},
+        TContext
+      > => {
+      return useMutation(getRequestCartReminderMutationOptions(options));
     }
 
 export const getGetCapacityUrl = () => {
@@ -3404,6 +3479,92 @@ export const useRunStudioTool = <TError = ErrorType<ErrorEnvelope | OrderNotFoun
       > => {
       return useMutation(getRunStudioToolMutationOptions(options));
     }
+
+export const getGetStudioProductionPayUrl = () => {
+
+
+
+
+  return `/api/studio/production-pay`
+}
+
+/**
+ * Production pay, joined from the atelier's own two Notion databases: a "work distribution" row per item naming who did each of the five stages of making it, and a "Category Pay Splits" row saying what each stage is worth as a share of the piece.
+ *
+ * The splits are READ — they are a commercial term the makers renegotiate between themselves — and the money is derived from them here. Notion also carries a per-person `… owed` formula doing the same multiplication; it is deliberately not read, because those property names hardcode today's two makers, so a third would need two formulas and two columns before the app could see any of their pay. Reading the assignee out of each select instead makes the roster data. The standing cost is that the arithmetic now exists in both places and must be changed in both.
+ *
+ * Nothing that cannot be computed is dropped. A row with no sale price, no category, or a stage nobody is assigned to is reported in `needsAttention` with the reason, because a payroll figure that reads as complete while it is short is the worst way for this to be wrong.
+ *
+ * Owed means the row's `Paid <name>` checkbox is not ticked, and nothing else. Whether work on a half-made piece has been earned is the atelier's judgement; the order's stage rides along so they can see it, but it never gates pay.
+ *
+ * Same staff gate as the rest of the studio surface: 401 when not signed in, 404 when signed in but not staff, 403 when staff but not signed in with Google.
+ * @summary What the studio owes its own people
+ */
+export const getStudioProductionPay = async ( options?: Parameters<typeof customFetch>[1]): Promise<ProductionPayOverview> => {
+
+  return customFetch<ProductionPayOverview>(getGetStudioProductionPayUrl(),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
+
+
+
+
+export const getGetStudioProductionPayQueryKey = () => {
+    return [
+    `/api/studio/production-pay`
+    ] as const;
+    }
+
+
+export const getGetStudioProductionPayQueryOptions = <TData = Awaited<ReturnType<typeof getStudioProductionPay>>, TError = ErrorType<ErrorEnvelope>>( options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getStudioProductionPay>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getGetStudioProductionPayQueryKey();
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof getStudioProductionPay>>> = ({ signal }) => getStudioProductionPay({ signal, ...requestOptions });
+
+
+
+
+
+   return  { queryKey, queryFn, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof getStudioProductionPay>>, TError, TData> & { queryKey: QueryKey }
+}
+
+export type GetStudioProductionPayQueryResult = NonNullable<Awaited<ReturnType<typeof getStudioProductionPay>>>
+export type GetStudioProductionPayQueryError = ErrorType<ErrorEnvelope>
+
+
+/**
+ * @summary What the studio owes its own people
+ */
+
+export function useGetStudioProductionPay<TData = Awaited<ReturnType<typeof getStudioProductionPay>>, TError = ErrorType<ErrorEnvelope>>(
+  options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getStudioProductionPay>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+
+ ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+
+  const queryOptions = getGetStudioProductionPayQueryOptions(options)
+
+  const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
+
+  return withQueryKey(query, queryOptions.queryKey);
+}
+
+
+
+
+
+
 
 export const getGetShippingOptionsUrl = () => {
 

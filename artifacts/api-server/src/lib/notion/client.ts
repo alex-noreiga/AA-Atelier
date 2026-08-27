@@ -63,6 +63,8 @@ let productCategoriesClient: NotionClient | null = null;
 let shopOrdersClient: NotionClient | null = null;
 let materialsClient: NotionClient | null = null;
 let consignmentClient: NotionClient | null = null;
+let workDistributionClient: NotionClient | null = null;
+let paySplitsClient: NotionClient | null = null;
 let orderLinesClient: NotionClient | null = null;
 let productionScheduleClient: NotionClient | null = null;
 let clientCrmClient: NotionClient | null = null;
@@ -186,6 +188,42 @@ export function getConsignmentNotionClient(): NotionClient {
     });
   }
   return consignmentClient;
+}
+
+/**
+ * Client for the "work distribution" database — one row per item the studio has
+ * made, naming who did each of the five stages of the work and whether they
+ * have been paid for it. READ-ONLY: the atelier records the work by hand and
+ * ticks the paid checkbox by hand; the app only reports what it owes. Optional:
+ * when `NOTION_WORK_DISTRIBUTION_DATABASE_ID` is unset the client's `databaseId`
+ * is empty and the repository treats that as "not configured", so the dashboard
+ * says production pay isn't tracked rather than reporting nothing owed.
+ */
+export function getWorkDistributionNotionClient(): NotionClient {
+  if (!workDistributionClient) {
+    workDistributionClient = createNotionClient({
+      apiKey: process.env.NOTION_API_KEY ?? "",
+      databaseId: process.env.NOTION_WORK_DISTRIBUTION_DATABASE_ID ?? "",
+    });
+  }
+  return workDistributionClient;
+}
+
+/**
+ * Client for the "Category Pay Splits" database — what share of a finished
+ * piece's value each stage of making it is worth, per product category.
+ * READ-ONLY, and the commercial term the production-pay figures are derived
+ * from rather than a rate held in code. Optional: unset ⇒ the pay panel says
+ * which database is missing instead of attributing nothing without saying why.
+ */
+export function getPaySplitsNotionClient(): NotionClient {
+  if (!paySplitsClient) {
+    paySplitsClient = createNotionClient({
+      apiKey: process.env.NOTION_API_KEY ?? "",
+      databaseId: process.env.NOTION_PAY_SPLITS_DATABASE_ID ?? "",
+    });
+  }
+  return paySplitsClient;
 }
 
 /**
