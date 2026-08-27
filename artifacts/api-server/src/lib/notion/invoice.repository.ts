@@ -11,7 +11,7 @@ import {
   assertDatabaseConfigured,
 } from "./client.js";
 import { logger } from "../logger.js";
-import { scanDatabase } from "./scan.js";
+import { scanDatabase, scanDatabaseChecked } from "./scan.js";
 import {
   LINE_ITEM_INVOICE_RELATION_PROPERTY,
   INVOICE_ID_PROPERTY,
@@ -23,6 +23,9 @@ import {
   extractLineItem,
   extractPaymentReminderInvoice,
   extractInvoiceAnalytics,
+  extractInvoiceLineAnalytics,
+  type InvoiceLineAnalyticsRecord,
+  type NotionLineItemPage,
   type PaymentStage,
   type InvoiceRecord,
   type InvoiceLineItemRecord,
@@ -380,4 +383,42 @@ export async function listInvoicesForAnalytics(
 
   const pages = await scanDatabase<NotionInvoicePage>(client, "invoices");
   return pages.map(extractInvoiceAnalytics);
+}
+
+/** Every invoice line, and whether the scan read the whole database. */
+export interface InvoiceLineScan {
+  rows: InvoiceLineAnalyticsRecord[];
+  complete: boolean;
+}
+
+/**
+ * Read every invoice LINE for the studio analytics — one bounded scan of the
+ * line-items database, grouped by the caller.
+ *
+ * This exists so the studio's figures compute an invoice's total the same way
+ * the customer's invoice page does, rather than reading Notion's `Final Balance`
+ * formula. Two readers of one invoice that derive its value differently agree
+ * only by convention, and the convention had two ways to break: `Final Balance`
+ * applies no Deposit filter, and — being a formula — reads as absent when it
+ * errors, which would silently drop that invoice to $0 in every money figure on
+ * the dashboard.
+ *
+ * A scan rather than a per-invoice query for the same reason the invoice scan
+ * itself is one: `listInvoiceLineItems` is right for ONE invoice, and would be a
+ * request per invoice here.
+ */
+export async function listInvoiceLinesForAnalytics(
+  client: NotionClient = getInvoiceLineItemsNotionClient(),
+): Promise<InvoiceLineScan> {
+  assertConfigured(client, "NOTION_INVOICE_LINE_ITEMS_DATABASE_ID");
+
+  // `scanDatabaseChecked`, not `scanDatabase`, because these rows are grouped BY
+  // invoice: hitting the page cap wouldn't drop an invoice from the figures, it
+  // would silently halve one, which is a wrong number rather than a short list.
+  // The caller uses the derived values only when this says it read everything.
+  const { rows, complete } = await scanDatabaseChecked<NotionLineItemPage>(
+    client,
+    "invoice line items",
+  );
+  return { rows: rows.map(extractInvoiceLineAnalytics), complete };
 }

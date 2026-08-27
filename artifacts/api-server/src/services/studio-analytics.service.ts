@@ -47,7 +47,21 @@
 //     folded into a channel it might not belong to. The consignment shelf is
 //     the one channel with no orders at all, and has a reader of its own.
 //
-//  4. **The aggregation is a pure function.** `aggregateStudioAnalytics` takes
+//  4. **An invoice is worth what its LINES say, not what a formula says.** The
+//     value of an invoice is derived here exactly as `buildInvoiceView` derives
+//     it for the customer — `invoiceChargedTotal` over the invoice's lines, one
+//     shared function — rather than read from Notion's `Final Balance`. Two
+//     readers of one invoice that compute its value separately agree only by
+//     convention, and that convention had two ways to break: `Final Balance`
+//     applies no Deposit filter (so a Deposit line, were the option ever
+//     re-added, would inflate the atelier's view while the customer's stayed
+//     correct), and it is a FORMULA, which reads as absent when it errors — as
+//     `Payment Status` silently did for months — dropping that invoice to $0 in
+//     every money figure here with nothing to see. `Final Balance` remains the
+//     fallback for an invoice the line scan found nothing for, so a failed scan
+//     degrades to the previous behavior rather than to noughts.
+//
+//  5. **The aggregation is a pure function.** `aggregateStudioAnalytics` takes
 //     records and a clock and returns the response, so every rule above is unit
 //     testable without Notion; the exported use-case just fetches, caches, and
 //     calls it.
@@ -59,8 +73,16 @@ import {
   type ShopOrderAnalyticsRecord,
 } from "../lib/notion/shop-orders.repository.js";
 import { SHOP_ORDER_ONLINE_STORE_CHANNEL } from "../lib/notion/shop-orders.blocks.js";
-import { listInvoicesForAnalytics } from "../lib/notion/invoice.repository.js";
-import type { InvoiceAnalyticsRecord } from "../lib/notion/invoice.schema.js";
+import {
+  listInvoicesForAnalytics,
+  listInvoiceLinesForAnalytics,
+  type InvoiceLineScan,
+} from "../lib/notion/invoice.repository.js";
+import {
+  invoiceChargedTotal,
+  type InvoiceAnalyticsRecord,
+  type InvoiceLineAnalyticsRecord,
+} from "../lib/notion/invoice.schema.js";
 import { listVariants } from "../lib/notion/products.repository.js";
 import { postgresConfigured } from "../lib/db/client.js";
 import {
@@ -254,6 +276,11 @@ export interface StudioAnalyticsInput {
   /** The consignment shelf, read separately (it has no orders to scan). */
   consignment: ConsignmentOverview;
   invoices: InvoiceAnalyticsRecord[];
+  /** Every invoice line, for deriving each invoice's value the way the
+   * customer's own invoice derives it, plus whether the scan read them all.
+   * Incomplete (a failed or truncated scan) falls every invoice back to Notion's
+   * `Final Balance` — see `invoiceValues`. */
+  invoiceLines: InvoiceLineScan;
   /** The payment ledger over the reporting window, and how the read went. */
   payments: StudioPaymentLedgerSource;
   /** Inventory page id → piece name, for the best-seller list. */
@@ -463,11 +490,55 @@ function inWindow(date: string, window: { from: string; to: string }): boolean {
   return date >= window.from && date <= window.to;
 }
 
+/**
+ * What each invoice is worth, keyed on its page id.
+ *
+ * Derived from the invoice's own lines with `invoiceChargedTotal` — the same
+ * function the customer's invoice page uses — so the two can differ only if the
+ * inputs do. Two fallbacks to Notion's `Final Balance`, both degrading to the
+ * behaviour these figures had before rather than to noughts: the whole pass
+ * falls back when the line scan is incomplete (see below), and an individual
+ * invoice falls back when the scan found no lines for it — which in the ordinary
+ * case is an un-itemized invoice, worth 0 either way.
+ *
+ * A line with no `Invoice` relation is skipped rather than guessed at — an
+ * orphaned row belongs to no invoice, and attributing it to one would put money
+ * on an order that never charged it.
+ */
+function invoiceValues(
+  invoices: InvoiceAnalyticsRecord[],
+  scan: InvoiceLineScan,
+): Map<string, number> {
+  // An INCOMPLETE scan is not a partial answer, it is no answer: the rows are
+  // grouped by invoice, so a truncated read doesn't drop an invoice, it halves
+  // one — and an invoice quietly worth less than it is would be the worst kind
+  // of wrong here. So the whole pass falls back to `Final Balance`, which is
+  // exactly the behaviour these figures had before.
+  const linesByInvoice = new Map<string, InvoiceLineAnalyticsRecord[]>();
+  for (const line of scan.complete ? scan.rows : []) {
+    if (!line.invoicePageId) continue;
+    const bucket = linesByInvoice.get(line.invoicePageId);
+    if (bucket) bucket.push(line);
+    else linesByInvoice.set(line.invoicePageId, [line]);
+  }
+
+  const values = new Map<string, number>();
+  for (const invoice of invoices) {
+    const own = linesByInvoice.get(invoice.pageId);
+    values.set(
+      invoice.pageId,
+      own ? invoiceChargedTotal(own) : (invoice.finalBalance ?? 0),
+    );
+  }
+  return values;
+}
+
 /** The trailing revenue series — shop money collected beside custom work
  * booked, one entry per month with no gaps (see decision 2 in the header). */
 function buildRevenue(
   input: StudioAnalyticsInput,
   invoiceByOrderPage: Map<string, InvoiceAnalyticsRecord>,
+  invoiceValueByPage: Map<string, number>,
 ): StudioRevenueMonth[] {
   const thisMonth = monthOf(input.now, input.timeZone);
   const months = new Map<string, StudioRevenueMonth>();
@@ -501,7 +572,9 @@ function buildRevenue(
     if (!entry) continue;
     entry.customOrders += 1;
     const invoice = invoiceByOrderPage.get(order.pageId);
-    entry.customBooked += invoice?.finalBalance ?? 0;
+    entry.customBooked += invoice
+      ? (invoiceValueByPage.get(invoice.pageId) ?? 0)
+      : 0;
   }
 
   // What actually came in, by the month the money moved. CUSTOM ROWS ONLY — the
@@ -563,6 +636,7 @@ function buildPaymentLedger(
  */
 function buildPayments(
   invoices: InvoiceAnalyticsRecord[],
+  invoiceValueByPage: Map<string, number>,
   cancelledOrderPages: Set<string>,
 ): StudioPaymentTotals {
   let invoicedTotal = 0;
@@ -581,7 +655,7 @@ function buildPayments(
       continue;
     }
     invoiceCount += 1;
-    const total = invoice.finalBalance ?? 0;
+    const total = invoiceValueByPage.get(invoice.pageId) ?? 0;
     invoicedTotal += total;
     depositsCollected += invoice.depositsPaid;
 
@@ -763,6 +837,7 @@ export function aggregateStudioAnalytics(
   const today = dateInZone(input.now, input.timeZone);
   const window = reportingWindow(input.now, input.timeZone);
 
+  const invoiceValueByPage = invoiceValues(input.invoices, input.invoiceLines);
   const invoiceByOrderPage = new Map<string, InvoiceAnalyticsRecord>();
   for (const invoice of input.invoices) {
     if (invoice.orderPageId)
@@ -800,8 +875,12 @@ export function aggregateStudioAnalytics(
       input.shopStatuses,
     ),
     production: buildProductionLoad(activeOrders, today),
-    revenue: buildRevenue(input, invoiceByOrderPage),
-    payments: buildPayments(input.invoices, cancelledOrderPages),
+    revenue: buildRevenue(input, invoiceByOrderPage, invoiceValueByPage),
+    payments: buildPayments(
+      input.invoices,
+      invoiceValueByPage,
+      cancelledOrderPages,
+    ),
     paymentLedger: buildPaymentLedger(input.payments, input.timeZone),
     topItems: buildTopItems(input.shopOrders, input.itemNames),
     topItemCoverage: buildTopItemCoverage(
@@ -922,24 +1001,42 @@ export async function getStudioAnalytics(): Promise<StudioAnalyticsResult> {
 
   const window = reportingWindow(now, timeZone);
 
-  const [orders, shop, invoices, variants, consignment, payments] =
-    await Promise.all([
-      listOrdersForAnalytics(),
-      listShopOrdersForAnalytics(),
-      listInvoicesForAnalytics(),
-      listVariants().catch((err) => {
-        logger.warn(
-          { err },
-          "Studio analytics: could not read inventory; best sellers will be empty",
-        );
-        return [];
-      }),
-      // Reports its own unconfigured / unreachable states rather than throwing,
-      // so a shelf nobody has wired up costs the panel its numbers and not the
-      // dashboard its figures.
-      getConsignmentOverview(window),
-      readPaymentLedger(window, timeZone),
-    ]);
+  const [
+    orders,
+    shop,
+    invoices,
+    invoiceLines,
+    variants,
+    consignment,
+    payments,
+  ] = await Promise.all([
+    listOrdersForAnalytics(),
+    listShopOrdersForAnalytics(),
+    listInvoicesForAnalytics(),
+    // Best-effort, unlike the invoice heads beside it: a failed line scan
+    // falls every invoice back to its `Final Balance`, which is exactly the
+    // behavior these figures had before — degraded, not wrong, and never a
+    // page of noughts.
+    listInvoiceLinesForAnalytics().catch((err) => {
+      logger.warn(
+        { err },
+        "Studio analytics: could not read invoice lines; invoice values fall back to Notion's Final Balance",
+      );
+      return { rows: [], complete: false };
+    }),
+    listVariants().catch((err) => {
+      logger.warn(
+        { err },
+        "Studio analytics: could not read inventory; best sellers will be empty",
+      );
+      return [];
+    }),
+    // Reports its own unconfigured / unreachable states rather than throwing,
+    // so a shelf nobody has wired up costs the panel its numbers and not the
+    // dashboard its figures.
+    getConsignmentOverview(window),
+    readPaymentLedger(window, timeZone),
+  ]);
 
   const result = aggregateStudioAnalytics({
     orders: orders.orders,
@@ -949,6 +1046,7 @@ export async function getStudioAnalytics(): Promise<StudioAnalyticsResult> {
     shopChannels: shop.channels,
     consignment,
     invoices,
+    invoiceLines,
     payments,
     itemNames: new Map(variants.map((variant) => [variant.id, variant.name])),
     now,

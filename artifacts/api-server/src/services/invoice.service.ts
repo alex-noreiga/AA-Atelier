@@ -27,7 +27,8 @@ import { runPaidOrderRewards } from "./rewards.service.js";
 import { recordStripeCharge } from "./payment-ledger.service.js";
 import { logger } from "../lib/logger.js";
 import {
-  LINE_TYPE_DEPOSIT,
+  chargedLines,
+  invoiceChargedTotal,
   type PaymentStage,
   type InvoiceRecord,
   type InvoiceLineItemRecord,
@@ -70,13 +71,14 @@ export function buildInvoiceView(
   invoice: InvoiceRecord,
   lineItems: InvoiceLineItemRecord[],
 ): InvoiceView {
-  // "Deposit" is no longer an option on the live `Line Type` select, so this is
-  // a guard rather than an active filter — see `LINE_TYPE_DEPOSIT`. Keep it:
-  // without it, re-adding that option in Notion would bill a customer for their
-  // own deposit.
-  const charged = lineItems.filter((li) => li.type !== LINE_TYPE_DEPOSIT);
-
-  const subtotal = roundCents(charged.reduce((sum, li) => sum + li.amount, 0));
+  // Which lines are charges, and what they come to, are the SHARED rule in
+  // `invoice.schema.ts` — the studio's own figures derive an invoice's value the
+  // same way, so the customer's total and the dashboard's can't drift. ("Deposit"
+  // is no longer a live `Line Type` option; the filter is a guard, kept because
+  // without it re-adding that option in Notion would bill a customer for their
+  // own deposit.)
+  const charged = chargedLines(lineItems);
+  const subtotal = invoiceChargedTotal(lineItems);
   const depositsCreditedTotal = roundCents(
     invoice.deposits.reduce((sum, d) => (d.paid ? sum + d.amount : sum), 0),
   );

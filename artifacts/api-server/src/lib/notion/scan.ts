@@ -30,19 +30,33 @@ interface NotionPagedResponse<TRow> {
   next_cursor?: string | null;
 }
 
+/** A scan, and whether it read the whole database. */
+export interface DatabaseScan<TRow> {
+  rows: TRow[];
+  /** False when the page cap cut the read short — so a caller whose arithmetic
+   * would be WRONG on a partial read (rather than merely short) can say so or
+   * fall back, instead of quietly reporting a smaller number. */
+  complete: boolean;
+}
+
 /**
  * Read every row of a Notion database, following the cursor up to
- * {@link MAX_SCAN_PAGES}. `label` names the scan in the cap warning so a
- * truncated aggregation is traceable to the database it came from.
+ * {@link MAX_SCAN_PAGES}, and report whether that was all of them.
+ *
+ * Most callers want {@link scanDatabase} — a row missing from a sum makes that
+ * sum short, which the cap warning covers. This variant is for the caller where
+ * a partial read is qualitatively different: the invoice-line scan groups rows
+ * BY invoice, so truncation doesn't drop an invoice, it silently halves one.
  */
-export async function scanDatabase<TRow>(
+export async function scanDatabaseChecked<TRow>(
   client: NotionClient,
   label: string,
   body: Record<string, unknown> = {},
-): Promise<TRow[]> {
+): Promise<DatabaseScan<TRow>> {
   const rows: TRow[] = [];
   let cursor: string | undefined;
   let pages = 0;
+  let complete = true;
 
   do {
     const response = await client.fetch(
@@ -77,8 +91,23 @@ export async function scanDatabase<TRow>(
         "Notion scan hit the page cap; figures are computed from a partial read",
       );
       cursor = undefined;
+      complete = false;
     }
   } while (cursor);
 
+  return { rows, complete };
+}
+
+/**
+ * Read every row of a Notion database, following the cursor up to
+ * {@link MAX_SCAN_PAGES}. `label` names the scan in the cap warning so a
+ * truncated aggregation is traceable to the database it came from.
+ */
+export async function scanDatabase<TRow>(
+  client: NotionClient,
+  label: string,
+  body: Record<string, unknown> = {},
+): Promise<TRow[]> {
+  const { rows } = await scanDatabaseChecked<TRow>(client, label, body);
   return rows;
 }

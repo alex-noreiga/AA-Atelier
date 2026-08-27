@@ -3824,7 +3824,26 @@ Load-bearing decisions:
    cached for 60s (the same TTL as every other live Notion read), so a refreshed
    dashboard doesn't re-scan.
 
-4. **Shop revenue and custom bookings are side by side, never summed.** A shop
+4. **An invoice is worth what its LINES say, not what a formula says.** The
+   studio's figures derive each invoice's value with the shared
+   `invoiceChargedTotal` over the invoice's own lines — the same function
+   `buildInvoiceView` uses for the customer — rather than reading Notion's
+   `Final Balance`. Two readers computing one invoice's value separately agree
+   only by convention, and that convention had two ways to break: `Final
+Balance` applies no `Deposit` filter (so a Deposit line, were the option
+   re-added, would inflate the atelier's view while the customer's stayed
+   correct), and it is a **formula**, which reads as absent when it errors — as
+   `Payment Status` silently did for months — dropping that invoice to $0 across
+   `customBooked`, `invoicedTotal` and the outstanding split at once. It costs a
+   fourth bounded scan (`listInvoiceLinesForAnalytics`). An **incomplete** scan
+   falls the whole pass back to `Final Balance`: these rows are grouped by
+   invoice, so hitting the page cap doesn't drop an invoice, it halves one —
+   which is why `scanDatabaseChecked` (returning `{ rows, complete }`) exists
+   beside `scanDatabase`. `services/payment-reminder.ts` still reads `Final
+Balance`, deliberately: it is a filtered query, so deriving the figure there
+   would be a line fetch per invoice on the nightly cron.
+
+5. **Shop revenue and custom bookings are side by side, never summed.** A shop
    order records what was collected and when (Stripe took it, Notion stamped the
    page `created_time`). A custom order's payments carry **no dates at all** — the
    invoice holds a paid _checkbox_ per stage — so the only honest monthly figure
@@ -3846,7 +3865,7 @@ Load-bearing decisions:
    timezone (`APPOINTMENT_TIMEZONE`), so a 9pm order on the 31st lands in the month
    the atelier worked it.
 
-5. **Deposits vs. balances split without double counting.** Across every invoice
+6. **Deposits vs. balances split without double counting.** Across every invoice
    on a live (non-cancelled) order: an unpaid deposit counts once as
    `depositsOutstanding`, and `balancesOutstanding` is what's left **beyond every
    deposit scheduled against the invoice** — so the two add to `outstandingTotal`
@@ -3855,13 +3874,13 @@ Load-bearing decisions:
    deposit), so it leaves nothing outstanding. An invoice whose `Order` relation is
    empty still counts; one on a cancelled order doesn't.
 
-6. **Completion is positional, as everywhere else.** Both pipelines classify with
+7. **Completion is positional, as everywhere else.** Both pipelines classify with
    the shared `orderLifecycleState` (`services/delivery.ts`) against the live
    stage / fulfilment-status lists, so an atelier rename never miscounts. An active
    order whose stage isn't in the live list still counts as active — it just has no
    bucket.
 
-7. **Best sellers ride the inventory relation, and can legitimately be empty.**
+8. **Best sellers ride the inventory relation, and can legitimately be empty.**
    Top items are counted from each shop order's `Inventory Items` relation (the
    Phase-2 "relate shop orders to inventory rows" card), deduped per order and
    resolved to names via `listVariants()`. That relation records _which_ pieces
@@ -3872,7 +3891,7 @@ Load-bearing decisions:
    sellers); the orders / shop orders / invoices scans **are** the dashboard, so a
    failure there surfaces as a 500 rather than quietly rendering zeroes.
 
-8. **No charting dependency.** The panels are plain CSS bars. A charting library
+9. **No charting dependency.** The panels are plain CSS bars. A charting library
    would be the largest dependency in the app for six panels of numbers, against
    the repo's pruned-dependencies rule. The page is `noindex` (so it's out of
    the sitemap and the prerender pass) — the gate that matters is server-side,
@@ -3880,31 +3899,31 @@ Load-bearing decisions:
    dashboard rather than the whole page, and the page's access gate is no longer
    this endpoint — see "The dashboard's sections" below.
 
-9. **The way in is a staff-only nav link, gated by the server's own answer —
-   and it takes Account's place.** `/studio` was originally reachable _only_ by
-   typing the URL, which is what made it invisible in practice — a staff member
-   on a preview deployment had no way to find it. It is still **not in
-   `NAV_LINKS`** (the public array stays flat and unconditional):
-   `useNavLinks()` in `navbar.tsx` swaps the `/account` entry for a separate
-   `DASHBOARD_LINK` when — and only when — `useStudioAccess()`
-   (`web-app/src/lib/studio-access.ts`) says so. That hook asks
-   **`GET /api/studio/access`**, which is mounted behind the **same
-   `requireStaff`** as the figures rather than re-deriving the answer
-   client-side — one decision, so the link can never be offered to an account
-   the dashboard would then refuse. The allowlist is deliberately never shipped
-   to the browser, so asking the server is the only honest test. It **fails
-   closed**: signed out it doesn't ask at all (an anonymous probe can only be a
-   401), a 401/403/outage renders no link, and a refusal is **not retried**
-   (`retry: false`) — a 403 is an answer. It counts against the shared
-   `studioRateLimiter` budget, which is separate from (and much looser than) the
-   account overview's: past the staff gate the ceiling exists to stop a runaway
-   client, not to deter a stranger, and a dashboard load is already six reads. The answer is cached for
-   the session (`staleTime: Infinity`; staff membership changes when an env var
-   does, not mid-browse) and dropped on **any** auth-state change in
-   `lib/auth-context.tsx` alongside the overview — otherwise a customer signing
-   in after a staff member on the same tab would keep being offered the link.
+10. **The way in is a staff-only nav link, gated by the server's own answer —
+    and it takes Account's place.** `/studio` was originally reachable _only_ by
+    typing the URL, which is what made it invisible in practice — a staff member
+    on a preview deployment had no way to find it. It is still **not in
+    `NAV_LINKS`** (the public array stays flat and unconditional):
+    `useNavLinks()` in `navbar.tsx` swaps the `/account` entry for a separate
+    `DASHBOARD_LINK` when — and only when — `useStudioAccess()`
+    (`web-app/src/lib/studio-access.ts`) says so. That hook asks
+    **`GET /api/studio/access`**, which is mounted behind the **same
+    `requireStaff`** as the figures rather than re-deriving the answer
+    client-side — one decision, so the link can never be offered to an account
+    the dashboard would then refuse. The allowlist is deliberately never shipped
+    to the browser, so asking the server is the only honest test. It **fails
+    closed**: signed out it doesn't ask at all (an anonymous probe can only be a
+    401), a 401/403/outage renders no link, and a refusal is **not retried**
+    (`retry: false`) — a 403 is an answer. It counts against the shared
+    `studioRateLimiter` budget, which is separate from (and much looser than) the
+    account overview's: past the staff gate the ceiling exists to stop a runaway
+    client, not to deter a stranger, and a dashboard load is already six reads. The answer is cached for
+    the session (`staleTime: Infinity`; staff membership changes when an env var
+    does, not mid-browse) and dropped on **any** auth-state change in
+    `lib/auth-context.tsx` alongside the overview — otherwise a customer signing
+    in after a staff member on the same tab would keep being offered the link.
 
-10. **For staff the dashboard REPLACES the account portal, and is labelled
+11. **For staff the dashboard REPLACES the account portal, and is labelled
     "Dashboard".** A staff member doesn't place orders through the shop, so the
     customer portal is empty by construction for them — offering both only ever
     led somewhere blank. So `pages/account.tsx` hands a confirmed staff session
@@ -5517,6 +5536,7 @@ Three things about it are load-bearing:
 | Change the studio's how-to guides                        | `api-server/src/lib/guide-sections.ts` (the sections a guide can be filed against — a tool's id is its `StudioToolName`) + `lib/notion/guides.{schema,repository}.ts` (the Notion row + the file download) + `services/studio-guides.service.ts` (assembly, the HTML check, the 60s cache) + the `/studio/guides` route in `routes/studio.ts`; frontend `web-app/src/components/studio-guides.tsx` (`StudioGuides` panel + the `GuidesFor` slots), mounted by `pages/studio.tsx` and per tool by `components/studio-tools.tsx`. The sandboxed frame in that component is a security boundary — see the section above                                                                                                                                                                                                                |
 | Change the studio's internal tools (generators, refunds) | `api-server/src/services/studio-tools.service.ts` (the dispatcher + the composed result wording) + `routes/studio.ts` (`POST /studio/tools/:tool`, `requireStaff`) + `web-app/src/components/studio-tools.tsx` (rendered by `pages/studio.tsx`); the underlying work stays in `services/{schedule,invoice-generator,order-notification,order-cancellation,return-refund}.service.ts`. Contract in `openapi.yaml` (`StudioTool` / `StudioToolRequest` / `StudioToolRun`)                                                                                                                                                                                                                                                                                                                                                             |
 | Record a payment taken outside Stripe                    | `api-server/src/services/payment-record.service.ts` (the gates, the midday-in-studio-timezone date rule, and the settle-from-the-ledger check) + the `record-payment` runner in `services/studio-tools.service.ts` + the card in `web-app/src/components/studio-tools.tsx`. `recordedBy` is stamped by the route in `routes/studio.ts`, never read off the body                                                                                                                                                                                                                                                                                                                                                                                                                                                                     |
+| Change what an invoice is worth                          | `invoiceChargedTotal` / `chargedLines` in `api-server/src/lib/notion/invoice.schema.ts` — ONE rule, used by `buildInvoiceView` (the customer's invoice) and `invoiceValues` in `services/studio-analytics.service.ts` (the studio's figures), so the two can't drift. The studio's copy is fed by `listInvoiceLinesForAnalytics` (a fourth bounded scan) and falls back to Notion's `Final Balance` when that scan is incomplete — see `scanDatabaseChecked` in `lib/notion/scan.ts` and the note in `.agents/memory/payment-ledger.md`                                                                                                                                                                                                                                                                                             |
 | Change the payment ledger (what came in, and when)       | `api-server/src/lib/db/payments.repository.ts` (the append-only table's I/O; the sign is applied from `kind` here) + `services/payment-ledger.service.ts` (`recordStripeCharge` / `recordStripeRefund` — best-effort, never throwing), called from `recordPayment` (`invoice.service.ts`), `processPaidShopOrder` (`checkout.service.ts`), `refundCheckoutSession` (`order-cancellation.service.ts`) and `return-refund.service.ts`. Schema in `supabase/migrations/0005_payments.sql`; history recovered by `db:backfill-payments`. Read `.agents/memory/payment-ledger.md` before changing the `external_id` index or the sign rule                                                                                                                                                                                               |
 | Change the Postgres integrity layer / payment dedup      | `api-server/src/lib/db/client.ts` (`DbClient` seam + `postgresConfigured`) + `lib/db/processed-payments.repository.ts` (`claimPayment` / `confirmPayment` / `releasePayment`); consumed by `services/checkout.service.ts` (`recordPaidOrder`). Schema in `supabase/migrations/*.sql`, applied by `src/scripts/migrate.ts` (`pnpm db:migrate`, `.github/workflows/migrate.yml`)                                                                                                                                                                                                                                                                                                                                                                                                                                                      |
 | Change the newsletter opt-in                             | `artifacts/web-app/src/components/newsletter-signup.tsx` (footer field, in `footer.tsx`) + the intake checkbox in `pages/order-form.tsx`; `api-server/src/services/newsletter.service.ts` + `routes/newsletter.ts` + `lib/notion/newsletter.{blocks,repository}.ts` (writes to the **contact** database) + `newsletterWelcomeEmail` in `lib/resend/emails.ts`                                                                                                                                                                                                                                                                                                                                                                                                                                                                       |

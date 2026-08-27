@@ -247,15 +247,66 @@ in `web-app/src/pages/studio.tsx`.
    negative bar to nothing; the tooltip and the legend total carry the real
    number.
 
+## One invoice, one value (the `Final Balance` fix)
+
+The studio's figures used to read Notion's **`Final Balance`** while the
+customer's invoice summed the line rows — two readers deriving one invoice's
+value separately, agreeing only by convention. Both now go through
+**`invoiceChargedTotal`** (`lib/notion/invoice.schema.ts`), over the invoice's
+own lines. Code: `chargedLines` / `invoiceChargedTotal` / `ChargeableLine` in
+that file, `listInvoiceLinesForAnalytics` in `invoice.repository.ts`,
+`invoiceValues` in `studio-analytics.service.ts`, and `scanDatabaseChecked` in
+`notion/scan.ts`.
+
+The convention had two ways to break, and one of them was live:
+
+- **`Final Balance` applies no Deposit filter.** `buildInvoiceView` excludes
+  `Line Type = Deposit` because a deposit is a credit held on the invoice head,
+  never a charge. Notion's rollup doesn't, so a Deposit line — were that option
+  ever re-added — would inflate the atelier's view while the customer's stayed
+  correct. Dormant, but exactly what `LINE_TYPE_DEPOSIT` exists to guard.
+- **It is a FORMULA, so it reads as absent when it errors** — and this repo has
+  watched that happen: `Payment Status` called a function Notion doesn't have and
+  sat empty for months with nothing to see. An errored `Final Balance` silently
+  dropped that invoice to $0 in `customBooked`, `invoicedTotal` and the
+  outstanding split at once.
+
+Deriving it also closes the loop on roadmap card 6's own premise: the studio's
+figures no longer depend on a hand-editable Notion formula either.
+
+1. **The rule is structural, not duplicated.** `ChargeableLine` is `{ type,
+amount }` — the only two things the rule reads — so the customer's display
+   record and the studio's leaner analytics record both satisfy it and there is
+   one implementation.
+
+2. **A fourth bounded scan, not a per-invoice fetch.** `listInvoiceLineItems` is
+   right for ONE invoice and would be a request per invoice here, which is the
+   same reason the invoice heads are scanned rather than fetched per order.
+
+3. **An INCOMPLETE line scan falls the whole pass back to `Final Balance`**, and
+   this is the subtle part. These rows are grouped BY invoice, so hitting
+   `MAX_SCAN_PAGES` doesn't drop an invoice from the figures — it silently HALVES
+   one, which is a wrong number rather than a short list. `scanDatabase` couldn't
+   express that, so `scanDatabaseChecked` was added beside it (returning
+   `{ rows, complete }`); `scanDatabase` now delegates to it and the three
+   existing callers are unchanged. A failed scan takes the same path.
+
+4. **An individual invoice with no lines falls back too**, which in the ordinary
+   case is an un-itemized invoice worth 0 either way, and a line with no
+   `Invoice` relation is skipped rather than guessed at — attributing an orphan
+   would put money on an order that never charged it.
+
+5. **`payment-reminder.ts` still reads `Final Balance`.** It is a filtered query,
+   not a scan, so deriving the figure there would be a line fetch per invoice on
+   the nightly cron. The email already omits the amount when the property isn't
+   set, so the failure mode there is a quieter email rather than a wrong figure.
+
 ## What is deliberately NOT done yet
 
 - **`buildPayments` still reads the Notion checkboxes.** Deposits-vs-balances is
   an _outstanding_ figure — what is still owed — which the ledger doesn't hold;
   it is the invoice's schedule that says what was expected. Left alone
   deliberately.
-- **`finalBalance` vs `Σ(line totals)`.** The studio's `customBooked` reads
-  Notion's `Final Balance` while the customer's invoice sums the line rows. They
-  agree only while no `Deposit` line item exists. Untouched by any of this.
 - **There is no ledger VIEW.** The `record-payment` result echoes the order's
   payment history back as detail lines, which is the only place the rows are
   readable today. A panel listing an order's payments would want its own read

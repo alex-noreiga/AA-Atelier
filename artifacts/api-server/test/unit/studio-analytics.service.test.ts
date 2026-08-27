@@ -14,6 +14,7 @@ import {
   type ConsignmentOverview,
 } from "../../src/services/consignment.service.js";
 import type { PaymentRecord } from "../../src/lib/db/payments.repository.js";
+import type { InvoiceLineAnalyticsRecord } from "../../src/lib/notion/invoice.schema.js";
 
 /** A shelf with nothing on it, wired up. Built through the real summarizer so
  * the fixture can't drift from the shape the service actually returns. */
@@ -81,6 +82,15 @@ function invoice(
   };
 }
 
+/** One invoice line, as the analytics scan reads it. */
+function line(
+  invoicePageId: string,
+  amount: number,
+  type = "Material",
+): InvoiceLineAnalyticsRecord {
+  return { invoicePageId, type, amount };
+}
+
 /** One ledger row. Amounts are SIGNED cents, as the table stores them. */
 function payment(overrides: Partial<PaymentRecord> = {}): PaymentRecord {
   seq += 1;
@@ -116,6 +126,7 @@ function aggregate(input: Partial<StudioAnalyticsInput> = {}) {
     shopChannels: SHOP_CHANNELS,
     consignment: emptyConsignment(),
     invoices: [],
+    invoiceLines: { rows: [], complete: true },
     // Default: a configured ledger holding nothing, which is what an install
     // that hasn't been backfilled looks like. Tests that care supply rows.
     payments: { configured: true, unavailable: false, rows: [] },
@@ -838,5 +849,128 @@ describe("aggregateStudioAnalytics — what the ledger could tell us", () => {
     const { paymentLedger } = aggregate({ payments: ledger([]) });
 
     expect(paymentLedger).toEqual({ configured: true, payments: 0 });
+  });
+});
+
+describe("aggregateStudioAnalytics — what an invoice is worth", () => {
+  it("values an invoice from its LINES, not from Notion's Final Balance", () => {
+    // The two used to be derived separately and agreed only by convention. A
+    // Final Balance that disagrees with the lines now loses to the lines, which
+    // is what the customer is actually shown.
+    const { revenue, payments } = aggregate({
+      orders: [
+        order({ pageId: "page-a", createdTime: "2026-08-04T10:00:00.000Z" }),
+      ],
+      invoices: [
+        invoice({
+          pageId: "inv-a",
+          orderPageId: "page-a",
+          finalBalance: 9999,
+        }),
+      ],
+      invoiceLines: {
+        rows: [line("inv-a", 400), line("inv-a", 350, "Labor")],
+        complete: true,
+      },
+    });
+
+    expect(revenue.find((m) => m.month === "2026-08")?.customBooked).toBe(750);
+    expect(payments.invoicedTotal).toBe(750);
+  });
+
+  it("excludes a Deposit line, which is a credit and not a charge", () => {
+    // Notion's Final Balance applies no such filter, so a Deposit line would
+    // inflate the atelier's view while the customer's stayed correct. This is
+    // the divergence the shared rule closes.
+    const { payments } = aggregate({
+      invoices: [invoice({ pageId: "inv-a", finalBalance: 900 })],
+      invoiceLines: {
+        rows: [line("inv-a", 700), line("inv-a", 200, "Deposit")],
+        complete: true,
+      },
+    });
+
+    expect(payments.invoicedTotal).toBe(700);
+  });
+
+  it("falls back to Final Balance for an invoice with no lines at all", () => {
+    // Which is what a failed or truncated line scan looks like: the previous
+    // behaviour, degraded rather than a page of noughts.
+    const { payments } = aggregate({
+      invoices: [invoice({ pageId: "inv-a", finalBalance: 900 })],
+      invoiceLines: { rows: [], complete: true },
+    });
+
+    expect(payments.invoicedTotal).toBe(900);
+  });
+
+  it("reads 0 for an invoice with neither lines nor a Final Balance", () => {
+    const { payments } = aggregate({
+      invoices: [invoice({ pageId: "inv-a" })],
+      invoiceLines: { rows: [], complete: true },
+    });
+
+    expect(payments.invoicedTotal).toBe(0);
+  });
+
+  it("falls the WHOLE pass back to Final Balance on a truncated scan", () => {
+    // The rows are grouped by invoice, so a cut-short read doesn't drop an
+    // invoice, it halves one. An invoice quietly worth less than it is would be
+    // the worst way for this to be wrong, so a partial read is treated as no
+    // read at all — the previous behaviour, degraded rather than incorrect.
+    const { payments } = aggregate({
+      invoices: [invoice({ pageId: "inv-a", finalBalance: 900 })],
+      invoiceLines: { rows: [line("inv-a", 100)], complete: false },
+    });
+
+    expect(payments.invoicedTotal).toBe(900);
+  });
+
+  it("does not let one invoice's lines reach another", () => {
+    const { payments } = aggregate({
+      invoices: [
+        invoice({ pageId: "inv-a", finalBalance: 111 }),
+        invoice({ pageId: "inv-b", finalBalance: 222 }),
+      ],
+      invoiceLines: {
+        rows: [line("inv-a", 500), line("inv-b", 40)],
+        complete: true,
+      },
+    });
+
+    expect(payments.invoicedTotal).toBe(540);
+  });
+
+  it("skips an orphaned line rather than guessing which invoice it belongs to", () => {
+    // Attributing it would put money on an order that never charged it.
+    const { payments } = aggregate({
+      invoices: [invoice({ pageId: "inv-a" })],
+      invoiceLines: {
+        rows: [line("inv-a", 100), line("", 5000)],
+        complete: true,
+      },
+    });
+
+    expect(payments.invoicedTotal).toBe(100);
+  });
+
+  it("nets the derived value against deposits when splitting the balance", () => {
+    // The value flows into the outstanding split too, not just the headline.
+    const { payments } = aggregate({
+      invoices: [
+        invoice({
+          pageId: "inv-a",
+          finalBalance: 9999,
+          depositsPaid: 200,
+          depositsUnpaid: 100,
+        }),
+      ],
+      invoiceLines: { rows: [line("inv-a", 800)], complete: true },
+    });
+
+    expect(payments.invoicedTotal).toBe(800);
+    expect(payments.depositsCollected).toBe(200);
+    expect(payments.depositsOutstanding).toBe(100);
+    expect(payments.balancesOutstanding).toBe(500);
   });
 });
