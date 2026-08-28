@@ -15,6 +15,7 @@
 // cannot hold.
 
 import { getDb, type DbClient } from "./client.js";
+import { STUDIO_CURRENCY } from "../currency.js";
 
 export type PaymentOrderKind = "custom" | "shop";
 export type PaymentKind = "charge" | "refund";
@@ -145,7 +146,7 @@ export async function recordPaymentEntry(
       entry.stage ?? "",
       entry.kind,
       signed,
-      entry.currency ?? "usd",
+      entry.currency ?? STUDIO_CURRENCY,
       entry.method ?? "stripe",
       entry.paidAt.toISOString(),
       entry.externalId ?? "",

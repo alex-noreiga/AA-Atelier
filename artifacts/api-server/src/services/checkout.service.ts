@@ -47,8 +47,9 @@ import { bnplPaymentMethodTypes } from "../lib/stripe/payment-methods.js";
 import { siteBaseUrl } from "../lib/site.js";
 import { BadRequestError, NotFoundError } from "../lib/errors.js";
 import { logger } from "../lib/logger.js";
+import { STUDIO_CURRENCY } from "../lib/currency.js";
 
-const CURRENCY = "usd";
+const CURRENCY = STUDIO_CURRENCY;
 // v1 default — the atelier can widen this to the markets it ships to.
 const SHIPPING_COUNTRIES: Stripe.Checkout.SessionCreateParams.ShippingAddressCollection.AllowedCountry[] =
   ["US", "CA"];

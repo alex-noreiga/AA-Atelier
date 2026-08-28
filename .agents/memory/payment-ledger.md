@@ -445,6 +445,51 @@ amount, description }`). Code: `supabase/migrations/0007_credit_notes.sql`,
 
 **Atelier setup: none beyond `db:migrate`.**
 
+## Currency: what the roadmap's multi-currency card would and wouldn't change
+
+Checked before card 11 (multi-currency & international shipping) rather than
+after, on the reasoning that a storage decision is cheap to revisit now and
+expensive later. The finding, so nobody has to redo it:
+
+**The tables are right and would not need a migration.** `payments`,
+`issued_invoices` and `credit_notes` each store a `currency`, in integer minor
+units — the same shape Stripe uses. `recordStripeCharge` already records
+whatever currency Stripe reports rather than assuming.
+
+**The AGGREGATIONS were the gap, and it was invisible.** `buildRevenue` summed
+every custom payment row and `sumCreditsByInvoice` summed every credit,
+regardless of currency. Nothing could produce a non-USD row (both checkout paths
+pin the currency), so it was a trap rather than a bug — but the kind that fails
+by adding euros to dollars in a revenue figure with nothing on the page to show
+for it, and card 11 would have armed it. Both now scope to `STUDIO_CURRENCY`;
+the revenue pass logs at `error` on a row it skips, because such a row means
+somebody started selling in a second currency without teaching the figures to
+convert.
+
+**`lib/currency.ts` is not a multi-currency implementation** and must not be
+mistaken for one. It writes down the assumption those aggregations were already
+making. It replaced four separate `const CURRENCY = "usd"` declarations
+(`checkout.service`, `invoice.service`, `lib/stripe/promotions`) and three
+repository defaults. `isStudioCurrency` treats an ABSENT currency as the
+studio's: every row predating the columns was in it, and reading unknown as
+foreign would drop real money out of the figures.
+
+**What card 11 would still need, none of which touches the above:** presentment
+currencies at checkout, per-currency Stripe shipping rates (they are
+currency-scoped as well as mode-scoped), duties/DDP, international VAT/GST, and
+a reporting-currency conversion with rates and the dates they were taken.
+
+**One real limit if it ever lands:** `amount_cents` and the `Math.round(x * 100)`
+conversions assume a TWO-decimal currency. Fine for CAD/GBP/EUR/AUD; wrong for
+JPY (zero decimals) and KWD (three). The storage is fine — minor units are minor
+units — but the column name and the fixed exponent would need to become a
+per-currency one. Worth knowing that Japan is a real figure-skating market, so
+this is not purely theoretical.
+
+`formatPrice` on the frontend hardcodes `currency: "USD"` and is deliberately
+left alone: it would need a currency argument threaded through every caller, and
+card 11 rewrites it anyway.
+
 ## What is deliberately NOT done yet
 
 - **`buildPayments` still reads the Notion checkboxes.** Deposits-vs-balances is

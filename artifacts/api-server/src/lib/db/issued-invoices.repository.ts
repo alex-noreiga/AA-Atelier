@@ -8,6 +8,7 @@
 // computed at read time.
 
 import { getDb, type DbClient } from "./client.js";
+import { STUDIO_CURRENCY } from "../currency.js";
 
 /** One charged line, as issued. Cents, like the payment ledger. */
 export interface IssuedInvoiceLine {
@@ -128,7 +129,7 @@ export async function issueInvoice(
       input.invoicePageId,
       input.orderNumber,
       input.issuedBy ?? "",
-      input.currency ?? "usd",
+      input.currency ?? STUDIO_CURRENCY,
       Math.round(input.subtotalCents),
       input.taxed,
       JSON.stringify(input.lines),

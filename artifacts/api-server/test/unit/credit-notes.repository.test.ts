@@ -80,4 +80,13 @@ describe("sumCreditsByInvoice", () => {
     expect(sums.get("inv-2")).toBe(500);
     expect(db.calls).toHaveLength(1);
   });
+
+  it("scopes the sum to the studio's currency", () => {
+    // Summing across currencies would subtract euros from a dollar invoice.
+    const db = makeFakeDb(() => []);
+    return sumCreditsByInvoice(db).then(() => {
+      expect(db.calls[0]?.text).toContain("where currency = $1");
+      expect(db.calls[0]?.params).toEqual(["usd"]);
+    });
+  });
 });

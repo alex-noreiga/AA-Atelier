@@ -52,8 +52,9 @@ import {
   NotFoundError,
   ServiceUnavailableError,
 } from "../lib/errors.js";
+import { STUDIO_CURRENCY } from "../lib/currency.js";
 
-const CURRENCY = "usd";
+const CURRENCY = STUDIO_CURRENCY;
 
 /** The metadata kind that marks a Checkout session as a custom-order payment
  * (any of the three stages). The webhook routes on this; the shop-success page

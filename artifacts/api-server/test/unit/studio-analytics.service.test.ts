@@ -755,6 +755,31 @@ describe("aggregateStudioAnalytics — collected revenue from the ledger", () =>
     );
   });
 
+  it("SKIPS a foreign-currency payment rather than adding it to dollars", () => {
+    // Nothing can write such a row today; an aggregate that would be wrong if
+    // one existed is one nobody would catch. See lib/currency.ts.
+    const { revenue } = aggregate({
+      payments: ledger([
+        payment({ amountCents: 25000 }),
+        payment({ amountCents: 90000, currency: "eur" }),
+      ]),
+    });
+
+    expect(revenue.find((m) => m.month === "2026-08")?.customCollected).toBe(
+      250,
+    );
+  });
+
+  it("counts a row whose currency is blank — it predates the column", () => {
+    const { revenue } = aggregate({
+      payments: ledger([payment({ amountCents: 25000, currency: "" })]),
+    });
+
+    expect(revenue.find((m) => m.month === "2026-08")?.customCollected).toBe(
+      250,
+    );
+  });
+
   it("ignores SHOP rows — shopRevenue already counts that money", () => {
     // Drawing the same number from two places is how the two come to disagree.
     const { revenue } = aggregate({

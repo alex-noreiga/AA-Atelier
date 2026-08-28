@@ -10,6 +10,7 @@
 // checked.
 
 import { getDb, type DbClient } from "./client.js";
+import { STUDIO_CURRENCY } from "../currency.js";
 
 export interface CreditNoteInput {
   invoicePageId: string;
@@ -90,7 +91,7 @@ export async function createCreditNote(
       input.invoicePageId,
       input.orderNumber,
       input.issuedBy ?? "",
-      input.currency ?? "usd",
+      input.currency ?? STUDIO_CURRENCY,
       Math.round(input.amountCents),
       input.reason,
     ],
@@ -115,8 +116,14 @@ export async function listCreditNotes(
   return rows.map(toCreditNote);
 }
 
-/** Credited cents per invoice page id, for the studio's figures — one query
- * rather than one per invoice, since the dashboard reads every invoice at once. */
+/**
+ * Credited cents per invoice page id, for the studio's figures — one query
+ * rather than one per invoice, since the dashboard reads every invoice at once.
+ *
+ * Scoped to the studio's reporting currency. Summing across currencies would
+ * subtract euros from a dollar invoice; nothing can write such a row today, but
+ * an aggregate that would be wrong if one existed is one nobody would catch.
+ */
 export async function sumCreditsByInvoice(
   db: DbClient = getDb(),
 ): Promise<Map<string, number>> {
@@ -125,7 +132,10 @@ export async function sumCreditsByInvoice(
     credited: string | number;
   }>(
     `select invoice_page_id, sum(amount_cents) as credited
-       from credit_notes group by invoice_page_id`,
+       from credit_notes
+      where currency = $1
+      group by invoice_page_id`,
+    [STUDIO_CURRENCY],
   );
   return new Map(
     rows.map((row) => [row.invoice_page_id, toNumber(row.credited)]),

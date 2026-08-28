@@ -90,6 +90,7 @@ import {
   type PaymentRecord,
 } from "../lib/db/payments.repository.js";
 import { sumCreditsByInvoice } from "../lib/db/credit-notes.repository.js";
+import { isStudioCurrency } from "../lib/currency.js";
 import {
   dateInZone,
   addCalendarDays,
@@ -601,6 +602,20 @@ function buildRevenue(
   // it.
   for (const payment of input.payments.rows) {
     if (payment.orderKind !== "custom") continue;
+    // A foreign-currency row is SKIPPED, not summed. The ledger records whatever
+    // currency Stripe reports, and adding euros to dollars would understate or
+    // overstate a month with nothing on the page to show for it. Nothing can
+    // produce such a row today — both checkout paths pin `STUDIO_CURRENCY` — so
+    // one appearing means somebody has started selling in a second currency
+    // without teaching these figures to convert. That wants an error in the log,
+    // not a quietly wrong number.
+    if (!isStudioCurrency(payment.currency)) {
+      logger.error(
+        { paymentId: payment.id, currency: payment.currency },
+        "Studio analytics: skipping a payment in a currency the figures don't report in",
+      );
+      continue;
+    }
     const entry = months.get(monthOf(payment.paidAt, input.timeZone));
     if (!entry) continue; // outside the window
     entry.customCollected += payment.amountCents / 100;
