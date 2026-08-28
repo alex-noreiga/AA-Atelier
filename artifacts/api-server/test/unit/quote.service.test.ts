@@ -194,6 +194,7 @@ describe("a quote issues the invoice it writes", () => {
       lineCount: 1,
       alreadyIssued: false,
       markedReady: true,
+      emailed: true,
     });
 
     await quoteOrder({

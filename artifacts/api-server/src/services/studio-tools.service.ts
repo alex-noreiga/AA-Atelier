@@ -614,10 +614,15 @@ async function runIssueInvoice(
 
   return {
     tool: "issue-invoice",
-    status: "ok",
+    // The document is written either way, but an invoice the customer was never
+    // sent is half an outcome — say so rather than reporting a clean success.
+    status: result.emailed ? "ok" : "attention",
     title: "Invoice issued",
     message: `${result.orderNumber} is issued as ${result.invoiceNumber} — ${plural(result.lineCount, "line")} totalling ${money(result.subtotal)}.`,
     details: [
+      result.emailed
+        ? "Emailed the invoice to the customer."
+        : `The invoice was NOT emailed — ${result.emailSkipped ?? "no reason given"}. Send it by hand, or add an email to the order and issue the next one.`,
       "The charges are now frozen: the customer's invoice, its PDF and the balance checkout all read this document rather than the Notion rows, so editing a line won't change what they were shown or what they're charged.",
       ...(result.markedReady
         ? ["Ticked Invoice Ready, so the customer can pay the balance."]

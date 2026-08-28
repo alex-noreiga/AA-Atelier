@@ -490,12 +490,55 @@ this is not purely theoretical.
 left alone: it would need a currency argument threaded through every caller, and
 card 11 rewrites it anyway.
 
+## Emailing the customer their invoice
+
+Until this, the app never sent anyone their invoice. The payment reminders
+linked to the tracking page, and a customer only saw the document if they went
+looking — which was the one genuinely customer-facing thing Stripe Invoicing
+would have given that this stack didn't. `issuedInvoiceEmail`
+(`lib/resend/emails.ts`), sent from `issueOrderInvoice`.
+
+1. **It sends on ISSUE, and only when this run issued something.** A re-press
+   changed nothing, and a second copy of the same document reads as a chase
+   rather than a delivery — the same "only when something new happened" rule the
+   cancellation refund email keeps. A quote sends it too, since a quote issues
+   the invoice it writes.
+
+2. **The address costs one extra Notion read**, through
+   `findOrderForStageNotification` — the established way the app gets a
+   customer's email, because `findOrderByNumber` deliberately doesn't carry one
+   (the tracking lookup is gated by order number alone, so it must not echo an
+   address back).
+
+3. **The balance in the email is LIVE, not frozen.** Deposits already paid are
+   credited exactly as the invoice page credits them. Credit notes cannot exist
+   at issue time — crediting requires an issued invoice, and this one has only
+   just become one — so they need no handling here.
+
+4. **A failed send is reported, not thrown, and the tool says `attention`.** The
+   document is written either way, so a Resend hiccup must not read as a failed
+   issue and invite a re-press that could only find the invoice already issued.
+   But an invoice the customer never received is half an outcome, so the result
+   names why and the run is not a clean `ok`. A legacy order with no email is the
+   same shape.
+
+5. **`PUBLIC_BASE_URL` unset omits the link rather than failing the send.** Note
+   `siteBaseUrl()` THROWS when it's unset — using it here would have taken the
+   whole send down over a missing link, on any install that hadn't set it. Read
+   defensively instead, like `schedule.service`'s reminder links, and the copy
+   falls back to "look up your order number".
+
+**No atelier notification**, deliberately: they just pressed the button.
+
 ## What is deliberately NOT done yet
 
 - **`buildPayments` still reads the Notion checkboxes.** Deposits-vs-balances is
   an _outstanding_ figure — what is still owed — which the ledger doesn't hold;
   it is the invoice's schedule that says what was expected. Left alone
   deliberately.
+- **A credit note isn't emailed.** Issuing sends the invoice; raising a credit
+  against it tells only the atelier. The customer sees it next time they open the
+  invoice. Worth adding if credits turn out to be common.
 - **A credit note can't be voided.** It is append-only like everything else here,
   and there is no reverse entry — a credit raised in error is a SQL fix. Voiding
   would want its own document type (a debit note), which nobody has asked for.

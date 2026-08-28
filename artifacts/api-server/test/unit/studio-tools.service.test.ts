@@ -711,6 +711,7 @@ describe("runStudioTool — issue-invoice", () => {
     lineCount: 4,
     alreadyIssued: false,
     markedReady: true,
+    emailed: true,
   };
 
   it("reports the number, the date and what was frozen", async () => {
@@ -731,6 +732,34 @@ describe("runStudioTool — issue-invoice", () => {
     expect(result.details.join(" ")).toMatch(/Tax on the balance/);
   });
 
+  it("says the invoice was emailed", async () => {
+    mockIssue.mockResolvedValue(issued);
+
+    const result = await runStudioTool("issue-invoice", {
+      orderNumber: "ORD-000002",
+    });
+
+    expect(result.details.join(" ")).toMatch(/Emailed the invoice/);
+  });
+
+  it("flags an invoice that was issued but NOT sent", async () => {
+    // The document is written either way, but an invoice the customer never
+    // received is half an outcome.
+    mockIssue.mockResolvedValue({
+      ...issued,
+      emailed: false,
+      emailSkipped: "this order has no email address on file",
+    });
+
+    const result = await runStudioTool("issue-invoice", {
+      orderNumber: "ORD-000002",
+    });
+
+    expect(result.status).toBe("attention");
+    expect(result.details.join(" ")).toMatch(/was NOT emailed/);
+    expect(result.details.join(" ")).toMatch(/no email address on file/);
+  });
+
   it("reports a re-press as a no-op naming the standing document", async () => {
     // An issued invoice can't be re-issued — that is what makes it the document
     // the customer was shown.
@@ -738,6 +767,8 @@ describe("runStudioTool — issue-invoice", () => {
       ...issued,
       alreadyIssued: true,
       markedReady: false,
+      emailed: false,
+      emailSkipped: "already issued — no email sent",
     });
 
     const result = await runStudioTool("issue-invoice", {

@@ -4460,7 +4460,17 @@ the readers in `services/invoice.service.ts`.
    NOT tick the gate: an itemized commission is reviewed first, and that review
    is now "issue it".
 
-7. **Tax is NOT on the document, honestly rather than silently.** Stripe computes
+7. **Issuing emails the customer their invoice** — the app never sent anyone
+   one before; the payment reminders link to the tracking page, and a customer
+   only saw the document if they went looking. Sent on issue and only when the
+   run actually issued something (a re-press reads as a chase, not a delivery),
+   so a quote sends it too. A failed send or an order with no email is reported
+   and the tool answers `attention` rather than a clean `ok` — the document is
+   written either way, but an invoice nobody received is half an outcome.
+   `PUBLIC_BASE_URL` unset omits the link rather than failing the send (note
+   `siteBaseUrl()` throws when it's unset — don't use it on a mail path).
+
+8. **Tax is NOT on the document, honestly rather than silently.** Stripe computes
    it from an address collected at checkout, which the invoice does not have at
    issue time, so the amount cannot be known here. The snapshot records only THAT
    the balance is taxed, and the tool's result says tax is calculated at

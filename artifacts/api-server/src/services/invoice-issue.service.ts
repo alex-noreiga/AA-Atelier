@@ -34,7 +34,10 @@ import {
   listInvoiceLineItems,
   setInvoiceReady,
 } from "../lib/notion/invoice.repository.js";
-import { findOrderByNumber } from "../lib/notion/orders.repository.js";
+import {
+  findOrderByNumber,
+  findOrderForStageNotification,
+} from "../lib/notion/orders.repository.js";
 import {
   chargedLines,
   invoiceChargedTotal,
@@ -49,6 +52,9 @@ import {
   findIssuedInvoice,
   type IssuedInvoice,
 } from "../lib/db/issued-invoices.repository.js";
+import { issuedInvoiceEmail } from "../lib/resend/emails.js";
+import { sendEmailBestEffort } from "../lib/resend/send.js";
+import { fromAddress } from "../lib/resend/config.js";
 import { BadRequestError, NotFoundError } from "../lib/errors.js";
 import { logger } from "../lib/logger.js";
 
@@ -67,6 +73,10 @@ export interface IssueInvoiceResult {
   alreadyIssued: boolean;
   /** The `Invoice Ready` gate was flipped by this run. */
   markedReady: boolean;
+  /** The customer was emailed their invoice. */
+  emailed: boolean;
+  /** Why they weren't, when they weren't — for the atelier's summary. */
+  emailSkipped?: string;
 }
 
 /**
@@ -164,6 +174,14 @@ export async function issueOrderInvoice(input: {
     }
   }
 
+  // Send the customer their invoice — but only when this run actually issued
+  // one. A re-press changed nothing, and a second copy of the same document
+  // reads as a chase rather than a delivery. Best-effort, like every other
+  // customer email: the document is written either way.
+  const delivery = alreadyIssued
+    ? { emailed: false, emailSkipped: "already issued — no email sent" }
+    : await sendIssuedInvoiceEmail(order.orderNumber, invoice, issued);
+
   return {
     orderNumber: order.orderNumber,
     invoiceNumber: issued.invoiceNumber,
@@ -172,7 +190,91 @@ export async function issueOrderInvoice(input: {
     lineCount: issued.lines.length,
     alreadyIssued,
     markedReady,
+    ...delivery,
   };
+}
+
+/**
+ * Email the customer their newly issued invoice.
+ *
+ * Resolves the address through `findOrderForStageNotification` — one extra
+ * Notion read, and the established way the app gets a customer's email, since
+ * `findOrderByNumber` deliberately doesn't carry one (the tracking lookup is
+ * gated by order number alone, so it must not echo an address back).
+ *
+ * Never throws, and reports why it didn't send: this runs after an immutable
+ * document has been written, so a Resend hiccup must not read as a failed issue
+ * and invite a re-press that could only find the invoice already issued.
+ */
+async function sendIssuedInvoiceEmail(
+  orderNumber: string,
+  invoice: InvoiceRecord,
+  issued: IssuedInvoice,
+): Promise<{ emailed: boolean; emailSkipped?: string }> {
+  try {
+    const notify = await findOrderForStageNotification(orderNumber);
+    if (!notify?.email?.trim()) {
+      return {
+        emailed: false,
+        emailSkipped: "this order has no email address on file",
+      };
+    }
+
+    // The balance as it stands right now. Deposits already paid are credited
+    // live, exactly as the invoice page credits them; CREDIT NOTES cannot exist
+    // yet, because crediting requires an issued invoice and this one has only
+    // just become one.
+    const subtotal = issued.subtotalCents / 100;
+    const depositsPaid = invoice.deposits.reduce(
+      (sum, deposit) => (deposit.paid ? sum + deposit.amount : sum),
+      0,
+    );
+    const balanceDue = Math.max(
+      0,
+      Math.round((subtotal - depositsPaid) * 100) / 100,
+    );
+
+    // Read defensively rather than through `siteBaseUrl()`, which THROWS when
+    // PUBLIC_BASE_URL is unset — that would take the whole send down over a
+    // missing link. Every other customer email omits its CTA the same way (see
+    // `schedule.service`'s reminder links), and this one's copy already falls
+    // back to "look up your order number".
+    const base = process.env.PUBLIC_BASE_URL?.trim().replace(/\/+$/, "");
+
+    await sendEmailBestEffort({
+      ...issuedInvoiceEmail({
+        email: notify.email,
+        orderNumber,
+        orderName: notify.orderName,
+        invoiceNumber: issued.invoiceNumber,
+        issuedAt: issued.issuedAt.toISOString(),
+        lines: issued.lines.map((line) => ({
+          name: line.name,
+          amount: line.amountCents / 100,
+        })),
+        subtotal,
+        deposits: invoice.deposits.map((deposit) => ({
+          label: deposit.label,
+          amount: deposit.amount,
+          paid: deposit.paid,
+        })),
+        balanceDue,
+        taxed: issued.taxed,
+        ...(invoice.paymentDeadline
+          ? { paymentDeadline: invoice.paymentDeadline }
+          : {}),
+        ...(base ? { invoiceUrl: `${base}/invoice/${orderNumber}` } : {}),
+      }),
+      from: fromAddress("orders"),
+    });
+    return { emailed: true };
+  } catch (err) {
+    logger.error(
+      { err, orderNumber },
+      "Issued the invoice but could not email it to the customer",
+    );
+    return { emailed: false, emailSkipped: "the email could not be sent" };
+  }
 }
 
 /**

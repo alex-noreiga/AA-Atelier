@@ -9,6 +9,10 @@ import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 
 vi.mock("../../src/lib/notion/orders.repository.js", () => ({
   findOrderByNumber: vi.fn(),
+  findOrderForStageNotification: vi.fn(),
+}));
+vi.mock("../../src/lib/resend/send.js", () => ({
+  sendEmailBestEffort: vi.fn(),
 }));
 vi.mock("../../src/lib/notion/invoice.repository.js", () => ({
   findInvoice: vi.fn(),
@@ -27,7 +31,11 @@ import {
   issuedIdentity,
 } from "../../src/services/invoice-issue.service.js";
 import { BadRequestError, NotFoundError } from "../../src/lib/errors.js";
-import { findOrderByNumber } from "../../src/lib/notion/orders.repository.js";
+import {
+  findOrderByNumber,
+  findOrderForStageNotification,
+} from "../../src/lib/notion/orders.repository.js";
+import { sendEmailBestEffort } from "../../src/lib/resend/send.js";
 import {
   findInvoice,
   listInvoiceLineItems,
@@ -42,6 +50,8 @@ import type { InvoiceRecord } from "../../src/lib/notion/invoice.schema.js";
 import type { IssuedInvoice } from "../../src/lib/db/issued-invoices.repository.js";
 
 const mockOrder = vi.mocked(findOrderByNumber);
+const mockNotify = vi.mocked(findOrderForStageNotification);
+const mockSend = vi.mocked(sendEmailBestEffort);
 const mockInvoice = vi.mocked(findInvoice);
 const mockLines = vi.mocked(listInvoiceLineItems);
 const mockReady = vi.mocked(setInvoiceReady);
@@ -90,6 +100,11 @@ beforeEach(() => {
     { name: "Design & finishing", type: "Adjustment", amount: 250 },
   ]);
   mockIssue.mockResolvedValue({ issued: ISSUED, alreadyIssued: false });
+  mockNotify.mockResolvedValue({
+    orderNumber: "ORD-000002",
+    orderName: "Ada – Custom Costume",
+    email: "ada@example.com",
+  } as never);
 });
 
 afterEach(() => {
@@ -251,5 +266,100 @@ describe("issuedIdentity", () => {
 
   it("is null for an invoice never issued", () => {
     expect(issuedIdentity(null)).toBeNull();
+  });
+});
+
+describe("sending the customer their invoice", () => {
+  it("emails it, with the number, the lines and the balance", async () => {
+    const result = await issueOrderInvoice({ orderNumber: "ORD-000002" });
+
+    expect(result.emailed).toBe(true);
+    const message = mockSend.mock.calls[0]?.[0];
+    expect(message?.to).toBe("ada@example.com");
+    expect(message?.subject).toMatch(/INV-000007/);
+    expect(message?.text).toMatch(/Main fabric/);
+    expect(message?.text).toMatch(/Balance due: \$750\.00/);
+  });
+
+  it("credits a deposit already paid against the balance", async () => {
+    // Deposits are credited LIVE, exactly as the invoice page credits them.
+    // Credit notes can't exist yet — crediting requires an issued invoice, and
+    // this one has only just become one.
+    mockInvoice.mockResolvedValue(
+      invoice({
+        deposits: [
+          {
+            stage: "first_deposit",
+            label: "First deposit",
+            amount: 250,
+            paid: true,
+          },
+        ],
+      }),
+    );
+
+    await issueOrderInvoice({ orderNumber: "ORD-000002" });
+
+    expect(mockSend.mock.calls[0]?.[0].text).toMatch(/Balance due: \$500\.00/);
+  });
+
+  it("does NOT email on a re-press — a second copy reads as a chase", async () => {
+    mockIssue.mockResolvedValue({ issued: ISSUED, alreadyIssued: true });
+
+    const result = await issueOrderInvoice({ orderNumber: "ORD-000002" });
+
+    expect(result.emailed).toBe(false);
+    expect(result.emailSkipped).toMatch(/already issued/);
+    expect(mockSend).not.toHaveBeenCalled();
+  });
+
+  it("says so for a legacy order with no email, and still issues", async () => {
+    mockNotify.mockResolvedValue({
+      orderNumber: "ORD-000002",
+      orderName: "Ada – Custom Costume",
+      email: "",
+    } as never);
+
+    const result = await issueOrderInvoice({ orderNumber: "ORD-000002" });
+
+    expect(result.invoiceNumber).toBe("INV-000007");
+    expect(result.emailed).toBe(false);
+    expect(result.emailSkipped).toMatch(/no email address/);
+    expect(mockSend).not.toHaveBeenCalled();
+  });
+
+  it("still sends when PUBLIC_BASE_URL is unset, just without the link", async () => {
+    // `siteBaseUrl()` throws when it's unset, which would have taken the whole
+    // send down over a missing link. Every other customer email omits its CTA
+    // the same way.
+    delete process.env.PUBLIC_BASE_URL;
+
+    const result = await issueOrderInvoice({ orderNumber: "ORD-000002" });
+
+    expect(result.emailed).toBe(true);
+    expect(mockSend.mock.calls[0]?.[0].text).not.toMatch(/View your invoice:/);
+  });
+
+  it("includes the invoice link when the site origin is configured", async () => {
+    process.env.PUBLIC_BASE_URL = "https://a3iceanddance.com/";
+
+    await issueOrderInvoice({ orderNumber: "ORD-000002" });
+
+    expect(mockSend.mock.calls[0]?.[0].text).toMatch(
+      "https://a3iceanddance.com/invoice/ORD-000002",
+    );
+    delete process.env.PUBLIC_BASE_URL;
+  });
+
+  it("keeps the issued document when the send throws", async () => {
+    // This runs after an immutable document has been written, so a Resend
+    // hiccup must not read as a failed issue.
+    mockSend.mockRejectedValue(new Error("Resend down"));
+
+    const result = await issueOrderInvoice({ orderNumber: "ORD-000002" });
+
+    expect(result.invoiceNumber).toBe("INV-000007");
+    expect(result.emailed).toBe(false);
+    expect(result.emailSkipped).toMatch(/could not be sent/);
   });
 });
