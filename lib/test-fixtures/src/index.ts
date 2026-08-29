@@ -30,6 +30,7 @@ import type {
   NewOrderRequest,
   NewReturnRequest,
   NewReviewRequest,
+  NewShopReviewRequest,
   OrderStatus,
   ProductList,
   ServiceList,
@@ -115,6 +116,21 @@ export function reviewInput(
     email: "ada@example.com",
     rating: 5,
     comment: "Absolutely stunning craftsmanship — it fit like a dream.",
+    ...overrides,
+  };
+}
+
+/** A valid review of one ready-to-wear piece from a shop order. The same shape
+ * as `reviewInput` plus the piece it names; `productId` matches the default
+ * item on the shop-order verification stub, so the piece gate passes. */
+export function shopReviewInput(
+  overrides: Partial<NewShopReviewRequest> = {},
+): NewShopReviewRequest {
+  return {
+    email: "ada@example.com",
+    productId: "inv-aurora",
+    rating: 5,
+    comment: "Warm, beautifully finished, and they dry overnight.",
     ...overrides,
   };
 }

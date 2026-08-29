@@ -43,6 +43,7 @@ function variant(overrides: Partial<VariantRecord> = {}): VariantRecord {
     addOnIds: [],
     category: "Skate Soakers",
     group: null,
+    instagramPostUrl: "",
     ...overrides,
   };
 }

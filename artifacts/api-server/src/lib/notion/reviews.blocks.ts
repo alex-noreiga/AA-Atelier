@@ -25,6 +25,8 @@ export const REVIEW_VERIFIED_PROPERTY = "Email Verified"; // checkbox
 export const REVIEW_STATUS_PROPERTY = "Status"; // select
 export const REVIEW_CLIENT_PROPERTY = "Client"; // relation → Client CRM
 export const REVIEW_ORDER_RELATION_PROPERTY = "Order"; // relation → Custom Orders
+export const REVIEW_PRODUCT_RELATION_PROPERTY = "Product"; // relation → inventory
+export const REVIEW_ITEM_PROPERTY = "Item"; // rich_text — the piece's name
 
 /** The triage stage a fresh review lands in; the atelier moves it to a
  * "Published" (or similar) value when curating it into the portfolio. */
@@ -42,6 +44,18 @@ export interface ReviewRow {
   /** The custom order's Notion page id, to link the review via the `Order`
    * relation. Omitted when the `NOTION_RELATION_LINKS` gate is off. */
   orderPageId?: string;
+  /**
+   * The reviewed piece: its inventory page id (for the `Product` relation) and
+   * its name. Set only by the shop-order review — a custom order is a piece of
+   * its own with no inventory row behind it.
+   *
+   * The relation is what a shop rating is aggregated by, so unlike the `Order`
+   * link above it is NOT behind the `NOTION_RELATION_LINKS` gate: it is the
+   * feature rather than a nicety. The `name` rides alongside as ordinary text
+   * so that a workspace which hasn't added the relation column yet still
+   * records — legibly, for a human — which piece was reviewed.
+   */
+  product?: { pageId: string; name: string };
 }
 
 /** A filled/empty star string, e.g. 4 → "★★★★☆". Bounded to the 1–5 the
@@ -71,15 +85,21 @@ export function buildReviewProperties(
   row: ReviewRow,
   clientPageId?: string,
 ): Record<string, unknown> {
-  const { orderNumber, emailVerified, request } = row;
+  const { orderNumber, emailVerified, request, product } = row;
   const credited = request.displayName?.trim();
+  // The piece is named in the title as well as its own properties, so the row
+  // still says what was reviewed if the `Product` relation or `Item` column
+  // hasn't been added to the database yet (both are dropped on the way in).
+  const subject = product?.name
+    ? `${product.name}, order ${orderNumber}`
+    : `order ${orderNumber}`;
 
   const properties: Record<string, unknown> = {
     [REVIEW_TITLE_PROPERTY]: {
       title: [
         {
           text: {
-            content: `${stars(request.rating)} — ${credited || "Anonymous"} (order ${orderNumber})`,
+            content: `${stars(request.rating)} — ${credited || "Anonymous"} (${subject})`,
           },
         },
       ],
@@ -122,6 +142,19 @@ export function buildReviewProperties(
       relation: [{ id: row.orderPageId }],
     };
   }
+  if (product) {
+    properties[REVIEW_PRODUCT_RELATION_PROPERTY] = {
+      relation: [{ id: product.pageId }],
+    };
+    // The name is looked up from live inventory and can legitimately come back
+    // blank (a piece the atelier has since unpublished), so it is written only
+    // when there is something to write — never as an empty column.
+    if (product.name) {
+      properties[REVIEW_ITEM_PROPERTY] = {
+        rich_text: [{ text: { content: product.name } }],
+      };
+    }
+  }
 
   return properties;
 }
@@ -129,16 +162,31 @@ export function buildReviewProperties(
 /** Notion page body (`children`) for a review: the testimonial as a quote, then
  * the customer's photos of the finished piece as inline image blocks. */
 export function buildReviewPageBlocks(row: ReviewRow): unknown[] {
-  const { request } = row;
-  const blocks: unknown[] = [
-    {
+  const { request, product } = row;
+  const blocks: unknown[] = [];
+
+  // A shop review is about one piece, so the body names it — the same "the page
+  // body carries the value as text" contract the intake form keeps, so an
+  // un-added `Product`/`Item` column costs the atelier a filter, never the fact.
+  if (product?.name) {
+    blocks.push({
       object: "block",
-      type: "quote",
-      quote: {
-        rich_text: [{ type: "text", text: { content: request.comment } }],
+      type: "paragraph",
+      paragraph: {
+        rich_text: [
+          { type: "text", text: { content: `Piece: ${product.name}` } },
+        ],
       },
+    });
+  }
+
+  blocks.push({
+    object: "block",
+    type: "quote",
+    quote: {
+      rich_text: [{ type: "text", text: { content: request.comment } }],
     },
-  ];
+  });
 
   if (request.photoIds && request.photoIds.length > 0) {
     blocks.push(...request.photoIds.map(imageBlock));

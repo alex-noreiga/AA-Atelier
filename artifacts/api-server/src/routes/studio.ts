@@ -1,7 +1,12 @@
 import { Router } from "express";
 import {
+  BuyShippingLabelBody,
+  BuyShippingLabelResponse,
   CreateStaffAvailabilityBody,
   CreateStaffAvailabilityResponse,
+  GetShippingOptionsResponse,
+  GetShippingRatesBody,
+  GetShippingRatesResponse,
   DeleteStaffAvailabilityParams,
   DeleteStaffAvailabilityResponse,
   GetAppointmentStaffingResponse,
@@ -14,12 +19,16 @@ import {
   GetStudioProductionPayResponse,
   GetStudioSettingsResponse,
   ListStaffAvailabilityResponse,
+  ListStudioOrdersResponse,
   ListNewsletterSignupsResponse,
   ListStudioRequestsResponse,
   ListStudioReviewsResponse,
   RunStudioToolBody,
   RunStudioToolParams,
   RunStudioToolResponse,
+  SetStudioOrderStageBody,
+  SetStudioOrderStageParams,
+  SetStudioOrderStageResponse,
   SetStudioRequestStateBody,
   SetStudioRequestStateParams,
   SetStudioRequestStateResponse,
@@ -44,6 +53,13 @@ import { getStudioAnalytics } from "../services/studio-analytics.service.js";
 import { getMaterialsOverview } from "../services/materials.service.js";
 import { getProductionPayOverview } from "../services/production-pay.service.js";
 import {
+  buyShippingLabel,
+  getShippingOptions,
+  getShippingRates,
+  type LabelRequest,
+  type RateRequest,
+} from "../services/shipping-label.service.js";
+import {
   getStudioGuides,
   getStudioGuideContent,
 } from "../services/studio-guides.service.js";
@@ -52,6 +68,11 @@ import {
   type StudioToolArgs,
   type StudioToolName,
 } from "../services/studio-tools.service.js";
+import {
+  getOrderStageBoard,
+  setOrderStage,
+  type OrderStageInput,
+} from "../services/studio-orders.service.js";
 import {
   getReviewQueue,
   setReviewModeration,
@@ -130,6 +151,47 @@ router.get(
   async (_req, res) => {
     const pay = await getProductionPayOverview();
     res.json(GetStudioProductionPayResponse.parse(pay));
+  },
+);
+
+// Where every open order has got to, and moving one along.
+//
+// Advancing a stage was the last routine atelier action that could only be done
+// in Notion, and that is the whole reason the stage-change automation and its
+// webhook exist: the app has no way to notice a property someone edited in
+// another tab. Doing it here means the customer's status email can ride the
+// action itself.
+//
+// The read is a filtered query, not a scan of every order ever placed, so this
+// section costs about what the request queue does.
+router.get(
+  "/studio/orders",
+  studioRateLimiter,
+  requireStaff,
+  async (_req, res) => {
+    const board = await getOrderStageBoard();
+    res.json(ListStudioOrdersResponse.parse(board));
+  },
+);
+
+// One stage change. The write is ours; the email is the same notifier the
+// webhook calls, so the two paths share one forward-only gate and one
+// `Last Notified Stage` marker and cannot email the same stage twice.
+router.put(
+  "/studio/orders/:orderNumber/stage",
+  studioRateLimiter,
+  requireStaff,
+  validate({
+    params: SetStudioOrderStageParams,
+    body: SetStudioOrderStageBody,
+  }),
+  async (_req, res) => {
+    const { orderNumber } = res.locals.params as { orderNumber: string };
+    const result = await setOrderStage(
+      orderNumber,
+      res.locals.body as OrderStageInput,
+    );
+    res.json(SetStudioOrderStageResponse.parse(result));
   },
 );
 
@@ -273,6 +335,55 @@ router.get(
   async (_req, res) => {
     const overview = await getMaterialsOverview();
     res.json(GetStudioMaterialsResponse.parse(overview));
+  },
+);
+
+// Buying a shipping label for a shop order — the three carrier-tracking columns
+// on an order, filled in by the app instead of copied by hand from a second
+// website. Same `requireStaff` gate as everything else here, and it earns it
+// twice over: the second of these spends the studio's money.
+//
+// THREE operations rather than one tool, and the split is the design. A label
+// has a carrier, a service level and a price, and the gap between two of them is
+// three days and eleven dollars — so the atelier asks what it would cost, reads
+// the list, and buys one. The options read comes first so an unset vendor token
+// or a half-filled ship-from address is said on the panel rather than surfacing
+// as an opaque carrier rejection at the point of sale.
+//
+// This is why the flow doesn't live under `/studio/tools/:tool` like the other
+// seven: that shape is one press, one composed result. Nothing about it can
+// carry a list of rates back and take a choice.
+router.get(
+  "/studio/shipments/options",
+  studioRateLimiter,
+  requireStaff,
+  (_req, res) => {
+    res.json(GetShippingOptionsResponse.parse(getShippingOptions()));
+  },
+);
+
+router.post(
+  "/studio/shipments/rates",
+  studioRateLimiter,
+  requireStaff,
+  validate({ body: GetShippingRatesBody }),
+  async (_req, res) => {
+    const rates = await getShippingRates(res.locals.body as RateRequest);
+    res.json(GetShippingRatesResponse.parse(rates));
+  },
+);
+
+// The one that moves money. `replace` is the deliberate second press for an
+// order that already carries a label — the vendor will sell a duplicate as
+// happily as the first, so the ORDER is the idempotency guard.
+router.post(
+  "/studio/shipments/label",
+  studioRateLimiter,
+  requireStaff,
+  validate({ body: BuyShippingLabelBody }),
+  async (_req, res) => {
+    const label = await buyShippingLabel(res.locals.body as LabelRequest);
+    res.json(BuyShippingLabelResponse.parse(label));
   },
 );
 

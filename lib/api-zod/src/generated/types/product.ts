@@ -5,6 +5,7 @@
  * API specification
  * OpenAPI spec version: 0.1.0
  */
+import type { ProductRating } from './productRating';
 import type { ProductSizeGuide } from './productSizeGuide';
 import type { ProductVariant } from './productVariant';
 
@@ -17,4 +18,5 @@ export interface Product {
   /** Which size chart this product's category uses. "garment" (the default, and the value when this field is omitted) is the ready-to- wear body-measurement chart; "soaker" is the skate-soaker blade-length chart. Resolved server-side from the Notion "Product Categories" database ("Size guide type" select per category, following the inventory `Category` relation) — clients pick the chart from this and must not hardcode which category is a soaker. Only meaningful when `sized` is true. */
   sizeGuide?: ProductSizeGuide;
   variants: ProductVariant[];
+  rating?: ProductRating;
 }

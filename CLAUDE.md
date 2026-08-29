@@ -130,6 +130,19 @@ Express app (artifacts/api-server)  ──►  Notion REST API (orders database)
   │                                  settled per maker, the items behind it, and
   │                                  the rows nothing could be worked out from.
   │                                  Same staff gate as the figures above
+  ├─ GET  /api/studio/orders       → the dashboard's stage board: every custom
+  │                                  order still being made, with the stage it
+  │                                  is at, the pipeline its own service walks,
+  │                                  and what "advance" means for it. A filtered
+  │                                  query (not cancelled, not at the final
+  │                                  stage), so it is bounded by the studio's
+  │                                  real open workload. The customer's email is
+  │                                  never returned — only whether there is one.
+  │                                  PUT /api/studio/orders/:n/stage moves one
+  │                                  order and, unless asked not to, emails the
+  │                                  customer through the SAME notifier the
+  │                                  Notion stage-change webhook uses. Same
+  │                                  staff gate as the figures above
   ├─ GET  /api/orders/:orderNumber → order status + stage list, plus how the
   │                                  piece reaches the customer: carrier tracking
   │                                  and a ship-by date, or — for a local skater
@@ -190,7 +203,11 @@ Express app (artifacts/api-server)  ──►  Notion REST API (orders database)
   │                                  "Website Contact Messages" database + sends
   │                                  an acknowledgement email
   ├─ GET  /api/products            → shop inventory + the live category list,
-  │                                  from the Notion "inventory" database
+  │                                  from the Notion "inventory" database — plus,
+  │                                  per piece, the customer rating its published
+  │                                  reviews average to (best-effort: no reviews
+  │                                  database ⇒ cards without stars, never a shop
+  │                                  without stock)
   ├─ GET  /api/colors              → the studio's intake color palette for the
   │                                  order form's color picker (id + name + hex per
   │                                  chip). Read from the atelier-editable
@@ -224,12 +241,25 @@ Express app (artifacts/api-server)  ──►  Notion REST API (orders database)
   │                                  published AND the customer consented to,
   │                                  and never the email / order number. Unset
   │                                  database ⇒ an empty list, not an error
+  ├─ GET  /api/instagram           → the studio's recent Instagram posts, for the
+  │                                  social-proof strip on the home and shop
+  │                                  pages. Anonymous + read-only. A post the
+  │                                  atelier tied to a shop piece (by pasting its
+  │                                  URL onto the inventory row) carries that
+  │                                  piece's card id, which is what makes the
+  │                                  strip shoppable. Unconfigured, an expired
+  │                                  token, or an Instagram outage ⇒ an empty
+  │                                  list, not an error — the strip then renders
+  │                                  nothing at all
   ├─ GET  /api/shop-orders/:orderNumber
   │                                → a shop order's current fulfillment Status +
   │                                  the live status list (tracking timeline) +
   │                                  the same `OrderFulfilment` the custom order
   │                                  above carries (this replaced the old
-  │                                  shop-only `tracking` field)
+  │                                  shop-only `tracking` field). Once the order
+  │                                  is finished it also names its `items`, which
+  │                                  is what lets the page ask which piece a
+  │                                  review is about
   ├─ POST /api/shop-orders/:n/cancellation-requests
   │                                → shop-order cancellation request into the same
   │                                  contact database. Gated on email match only
@@ -240,6 +270,16 @@ Express app (artifacts/api-server)  ──►  Notion REST API (orders database)
   │                                  Gated on email match (403); legacy orders with
   │                                  no stored email are accepted but flagged
   │                                  unverified. Never refunds or edits the order
+  ├─ POST /api/shop-orders/:n/reviews
+  │                                → reviews ONE ready-to-wear piece from a shop
+  │                                  order, into the same Notion "Reviews"
+  │                                  database (and so the same moderation queue)
+  │                                  the custom-order review uses. Gated: order
+  │                                  at its final status + not cancelled + email
+  │                                  must match + the named `productId` must be
+  │                                  on the order. The piece is what gives a shop
+  │                                  card a rating to average — see "Reviews on
+  │                                  shop pieces"
   ├─ POST /api/notify              → back-in-stock request (email + item +
   │                                  optional size), tagged "Back in stock"
   ├─ POST /api/newsletter          → marketing newsletter opt-in (email + optional
@@ -325,6 +365,22 @@ Express app (artifacts/api-server)  ──►  Notion REST API (orders database)
   │                                  in one Studio Settings row, so an unmentioned
   │                                  type keeps the catalog's default. Same staff
   │                                  gate as the figures above
+  ├─ GET  /api/studio/shipments/options
+  │                                → whether a shipping label can be bought at
+  │                                  all: the vendor token, the studio's own
+  │                                  ship-from address, and the packaging sizes
+  │                                  it rates against. Reports `problems[]`
+  │                                  rather than erroring — both blockers are
+  │                                  states only a human can clear. POST
+  │                                  /api/studio/shipments/rates quotes one shop
+  │                                  order's parcel (and buys nothing), reading
+  │                                  the ship-to address from the order's STRIPE
+  │                                  checkout rather than parsing Notion's
+  │                                  display line; POST
+  │                                  /api/studio/shipments/label buys the chosen
+  │                                  rate and writes `Carrier` / `Tracking
+  │                                  Number` / `Tracking URL` onto the order.
+  │                                  Same staff gate as the figures above
   ├─ GET  /api/studio/reviews      → the review moderation queue: every review
   │                                  awaiting a decision (with its rating,
   │                                  testimonial, author, and the photos read
@@ -1441,6 +1497,98 @@ its id to `STRIPE_SHIPPING_RATE_IDS` **in both modes**; a rate named without
 those words still sells, it just doesn't mark the order. Known limit: a **custom**
 order isn't bought through the cart, so its method is still set by hand.
 
+## Buying shipping labels (Shippo, from the dashboard)
+
+The atelier rates a parcel for a shop order and buys the label from `/studio` →
+**Shipping**, and the order's `Carrier`, `Tracking Number` and `Tracking URL`
+fill themselves — the three columns that were the last thing on an order still
+copied by hand from a second website into a third. Note how little of this is
+customer-facing: `lib/fulfilment.ts` has read those columns since the
+shipping-and-pickup card, so this adds a **writer to a pipeline that was already
+finished**. Code: `lib/shipping/{address,parcels,from-address}.ts` (pure),
+`lib/shippo/{client,labels.repository}.ts` (the vendor adapter),
+`services/shipping-label.service.ts`, `findShopOrderForShipping` /
+`recordShopOrderTracking` in `lib/notion/shop-orders.repository.ts`, the three
+`/studio/shipments/*` handlers in `routes/studio.ts`, and
+`web-app/src/components/studio-shipping.tsx`.
+
+1. **The ship-to address comes from STRIPE, never from Notion.** A shop order
+   carries a `Shipping Address`, but as one display line assembled by
+   `formatShippingAddress` for a human. Parsing it back into components is
+   guesswork — the comma before the country is a different kind of comma from the
+   one after "Apt 4" — and a guessed address is a parcel that doesn't arrive. The
+   order stores its `Stripe Session Id`, and Stripe still holds the address in its
+   parts. Same instinct as "Stripe is the source of truth for money". The
+   corollary is the honest refusal: an order with **no session** (a hand-filed
+   Etsy or skate-shop row) is refused with 409 rather than having its display line
+   parsed as a fallback.
+
+2. **Three operations, not one tool.** `GET /studio/shipments/options` says what
+   the panel can do and what's stopping it; `POST /studio/shipments/rates` quotes
+   and buys nothing; `POST /studio/shipments/label` spends the money. A label has
+   a carrier, a service level and a price, and the gap between the top and bottom
+   of a rate list is routinely three days and eleven dollars — a one-press "buy
+   the cheapest" would put a ground label on a dress needed Saturday. That is
+   also why this isn't an eighth `/studio/tools/:tool`: that shape is one press
+   and one composed result, and nothing about it can carry a list back and take a
+   choice.
+
+3. **The ORDER is the idempotency guard, because the vendor isn't.** Shippo will
+   sell a second label as happily as the first, and unlike a Stripe refund there
+   is nothing to read back that says otherwise. An order that already carries a
+   tracking number is refused (409); a replacement for a voided label is the
+   explicit `replace` flag, confirmed in the panel — the same shape as the status
+   email's `force`. The **rates** call deliberately doesn't apply that guard:
+   asking what a second label would cost is reasonable.
+
+4. **The purchase outranks its bookkeeping — the opposite call from
+   `recordShopOrderRefund`.** There, Stripe holds the truth and a failed marker
+   costs visibility only, so it's best-effort. Here the Notion write is the
+   **only** record of the tracking number the customer will ever see, so losing it
+   means a parcel posted and a tracking page silent forever — but throwing would
+   lose the label the studio has already paid for. So a failed write answers
+   **200 with `recorded: false`**, carrying the number and the label URL, and the
+   panel says to paste it into Notion. Logged at `error`, not `warn`.
+
+5. **Test mode is said out loud, every time.** A test label has a tracking
+   number, a PDF and a price, and no carrier has ever heard of it — the one
+   failure that looks exactly like success. Read from the token's own prefix
+   (`shippo_test_…`) so there is no second var to keep in step.
+
+6. **A 201 is not a successful purchase.** Shippo answers 201 for a transaction
+   whose `status` is `"ERROR"`. Reading only the status code would report a label
+   bought and write a blank tracking number onto the order; the transaction's own
+   status decides, and a `SUCCESS` with no tracking number is a failure too.
+
+7. **Dimensions are the catalog's; weight is not.** `PARCEL_PRESETS` is a
+   targeted business rule in code, **served** like the appointment and service
+   catalogs so a size the form offers is one the server can rate. Weight is typed
+   per shipment, and `weightProblem` refuses **zero** (a carrier rating 0 oz
+   prices a document envelope) and anything over 800 oz — the ceiling exists to
+   catch pounds typed where ounces were wanted.
+
+8. **The ship-from address is seven Studio Settings keys, not one line.** A
+   single field split back apart here is the same parsing point 1 avoids, and it
+   fails at the worst moment: an origin postcode read wrong misprices every rate
+   silently. All but the country default to **empty** — there is no sensible
+   built-in for somebody's address, and a placeholder would print on a parcel.
+
+9. **Both unconfigured states are reported, never thrown.** An unset token and a
+   half-filled ship-from address are states only a human can clear, so the options
+   read answers 200 with `problems[]` and the panel says which — the same shape as
+   the materials panel's unreachable database. A **pickup** order (matched through
+   the shared `looksLikePickup`) and a **cancelled** one are refused with 409.
+
+**Atelier setup:** open a Shippo account, connect the carriers, set
+**`SHIPPO_API_KEY`** (a `shippo_test_…` token in Preview/Development, the live
+one in Production — mode-mapped exactly like the Stripe keys), and fill in the
+ship-from address under `/studio` → **Settings** → **Shipping**. **Nothing to add
+in Notion** — `Tracking Number`, `Carrier` and `Tracking URL` already exist on
+shop orders and the app has read all three since the fulfilment card. Unset ⇒ the
+panel says no vendor is connected and everything behaves exactly as before. Known
+limits (shop orders only, no label void, no batch or manifest, no address
+validation) are in `.agents/memory/shipping-labels.md`.
+
 ## Production schedule (auto-generated stage milestones)
 
 The atelier plans work in the **"📅 Production Schedule"** Notion database
@@ -1895,6 +2043,103 @@ minutes behind the edge cache.
    authoritative over the other. See "Curating which reviews show" below and
    `.agents/memory/reviews-curation-views.md`.
 
+### Reviews on shop pieces, and the ratings they average to
+
+Reviews were captured against custom orders only, so a ready-to-wear piece had
+nothing to average and the shop cards carried no social proof at all. A customer
+whose shop order is finished now reviews **one piece from it**, and the piece's
+average shows on its card, in its quick view, and in its `Product` structured
+data. Code: `services/shop-review.service.ts` +
+`POST /shop-orders/:n/reviews` (`routes/shop-orders.ts`), the `Product`/`Item`
+half of `lib/notion/reviews.{blocks,schema,repository}.ts`,
+`services/product-ratings.ts` (the pure aggregation) + `withRatings` in
+`services/products.service.ts`, and on the frontend
+`components/shop-review-dialog.tsx`, `components/star-rating.tsx` and
+`aggregateRating` in `lib/product-seo.ts`.
+
+1. **It is the same review, not a second kind of one.** The shop flow reuses the
+   Reviews database, the `"New"` capture status, the identity gate, the photo
+   upload and — the payoff — the dashboard's **moderation queue**, which needed
+   no change to start showing shop reviews. The only thing that is genuinely new
+   is that the review names a piece.
+
+2. **A review counts toward an average only if it could have been a
+   testimonial.** `extractProductReviews` runs the **same `isPublishable`** as
+   the testimonial read: the atelier published it AND the customer consented. One
+   predicate decides everything public, so a star rating can never appear beside
+   a piece from a row the testimonial strip couldn't show. The consequence is
+   worth stating plainly: **a shop rating does not move until the atelier
+   publishes the review.**
+
+   The one deliberate difference is the empty-comment rule. The testimonial
+   extractor drops a review with no words (a blank quote card); the rating
+   extractor keeps it, because there the rating is the point — such a row counts
+   toward the average and simply isn't quoted.
+
+3. **Which piece is a GATE, not a field.** A shop order can hold several pieces,
+   so `productId` (an inventory page id) is required and checked against the
+   order's own `Inventory Items` — an order number is not permission to rate a
+   piece nobody bought (400). An order carrying no linked pieces at all is told
+   so plainly rather than refused as though the customer named the wrong thing.
+   The tracking response carries the order's `items` so the customer picks from
+   what they actually have.
+
+4. **Delivery is the same positional rule as everywhere else.** `orderDelivered`
+   against the live `Status` list, so no status name is baked in and it fails
+   closed on an unknown one; a cancelled order is refused first, because it can
+   also sit at a final status and "it hasn't arrived yet" would be the wrong
+   thing to say. `getShopOrderStatus` resolves `items` **only** at that same
+   moment, so the affordance and the gate agree and an in-progress lookup pays
+   for no inventory read.
+
+5. **The join is id → card, never name → name.** A review names the inventory
+   row; `shopCardId` maps that to the card it was grouped onto — the same
+   function that decided the card's id, so the two can't disagree. A grouped card
+   pools its colourways' reviews (that is the piece a shopper is looking at), and
+   a review naming several rows of one card counts **once** for it. Matching by
+   name instead would orphan every review the day a piece was renamed, exactly as
+   it does for the back-in-stock requests.
+
+6. **The rating is the last thing `getProducts` does, and it is best-effort.** A
+   rating is something extra beside a piece; the piece is the shop. An
+   unconfigured or unreachable reviews database costs the cards their stars and
+   nothing else. The read is a bounded **scan** rather than the testimonials'
+   single page — a strip cut off at 50 rows shows the newest 50, but an average
+   cut off at 50 rows is simply _wrong_ — cached 60s with the usual
+   fall-back-to-stale, and busted by a moderation decision.
+
+7. **`aggregateRating` is emitted only when there is something to aggregate.**
+   Google's policy requires a rating to come from genuine customers, and a
+   `ratingValue` of 0 over 0 reviews is both invalid and a violation, so a piece
+   with no reviews publishes no tag. The average is rounded **once**, server-side,
+   so the number a shopper reads and the number a crawler reads are the same one.
+   Prerendered product pages get it for free: they are baked from the verbatim
+   `/products` payload.
+
+8. **A card with no reviews shows nothing** — no "0 reviews", no "be the first".
+   Most pieces will have none, and an invitation on every card is a shop that
+   looks unvisited. Where a rating does show, the count always shows with it:
+   "5.0" from one review reads very differently from "4.8" from forty.
+
+**Atelier setup: DONE (2026-08-26) — nothing outstanding.** The Reviews database
+gained a **`Product`** relation → **inventory** and an **`Item`** rich_text. The
+relation is what a rating is built from; the text is so a human can read which
+piece was reviewed. It was made **two-way**, so inventory carries a matching
+**`Reviews`** back-relation — the same shape as its `Shop Orders` and
+`Order Lines` links, which is what lets the atelier read a piece's reviews from
+the piece rather than only from the review, and what a future "average rating"
+rollup would hang off. Nothing in the app reads that side; it can be made one-way
+again with no code change. Never needed an env var, a new database, or a change
+to the moderation queue.
+
+Had they not existed, `createReview` would have **dropped them and kept the
+review** (it goes through `createPageDroppingUnknownProperties`, and the piece is
+still named in the row's title and page body) — a customer's words are not
+something to lose to un-done setup. That path stays live for a workspace restored
+from an older backup. Known limits: a piece the atelier has since unpublished can
+still be reviewed but has no card to show the rating on, and a review filed
+before the relation existed needs linking by hand before it counts.
+
 ## Portfolio & finished-work gallery
 
 `/portfolio` is the public showcase of the atelier's work — finished costumes and
@@ -2183,6 +2428,124 @@ database and the same `Status` select the Notion views use. The `"Rejected"`
 option auto-creates on first write. Deliberately **not** built: any customer
 email on a moderation decision — publishing a testimonial the customer already
 consented to needs no notification.
+
+## Instagram feed & social proof
+
+`/` and `/shop` carry a strip of the studio's recent Instagram posts, and a post
+that shows a piece the shop sells links straight to it. `GET /api/instagram`
+(contract-first, `useGetInstagramFeed`). Code:
+`lib/instagram/{config,schema,token,media.repository}.ts`,
+`services/instagram.service.ts`, `routes/instagram.ts`,
+`lib/db/integration-tokens.repository.ts`, the `refreshDueInstagramToken` pass in
+`services/schedule.service.ts`, and on the frontend
+`web-app/src/components/instagram-feed.tsx` (rendered by `pages/home.tsx` and
+`pages/shop.tsx`). Load-bearing decisions:
+
+1. **The shoppable half is a JOIN the atelier states, not an inference.** The
+   inventory row gains an optional **`Instagram Post`** (url) property; the feed
+   matches it to a post and serves that piece's `productId` + `productTitle`.
+   Matching a post to a piece by the words in its caption was the obvious
+   alternative and is a guess that fails silently in both directions — a piece
+   never linked, or the wrong piece linked under "Shop this" — whereas a URL on
+   the row is a fact somebody asserted. It needs **no new database**, and the
+   place it is recorded is the row the atelier already opens when they photograph
+   a piece.
+
+2. **The join key is the SHORTCODE, never the URL.** Instagram serves one post
+   under several addresses that are all correct: a reel answers at both `/reel/`
+   and `/p/`, the share sheet appends `?igsh=…`, the profile-scoped permalink
+   inserts the account name, and any of them may or may not end in a slash.
+   Comparing URLs would make the join depend on which button the atelier happened
+   to press. `instagramShortcode` (`lib/instagram/schema.ts`) reads the code out
+   of all of them, and yields `null` for anything that isn't a post URL — so an
+   unreadable value means "not linked", never "linked to something else".
+
+3. **The two halves degrade independently, and the posts win.** No Instagram ⇒ no
+   strip at all. No shop (an unconfigured inventory database, a Notion outage) ⇒
+   a strip of posts that link to Instagram. The posts are the feature and the
+   shop link is the upsell, so an inventory failure costs the upsell rather than
+   the section — and never a 500 on the home page, which is why
+   `getInstagramFeed` catches the inventory read that `/products` rightly lets
+   throw.
+
+4. **The access token expires after 60 days, and that is the real feature here.**
+   Instagram issues no permanent token. The naive build works perfectly for two
+   months and then stops with no error anywhere: an expired token degrades to an
+   empty feed, the strip stops rendering, and the site looks exactly as it does
+   for a studio that never set Instagram up. So `refreshDueInstagramToken` rides
+   the nightly reconciliation, exchanging the token for a fresh one inside its
+   last fortnight and keeping the answer in the **`integration_tokens`** Postgres
+   table — the only part of the stack writable at runtime (Vercel's env is not,
+   and a credential does not belong in the Notion settings database). It is the
+   second table here that IS the record rather than an integrity layer, after
+   `staff_availability`, and for the same reason: there is no second store.
+   A failed refresh **alerts** rather than being swallowed like the other passes;
+   those retry against data still sitting there, this one is racing an expiry.
+
+5. **`INSTAGRAM_ACCESS_TOKEN` is the seed and the last resort, and replacing it
+   takes effect at once.** Reads prefer the stored token while it is valid and
+   fall back to the env var otherwise, so a studio whose refresh has been broken
+   long enough is fixed by pasting a fresh token into Vercel — where they would
+   look anyway — with no database surgery. Each stored row records a **digest of
+   the seed its chain grew from**; when that stops matching the env var the chain
+   is abandoned and the new seed takes over. Without that, a pasted-in
+   replacement would do nothing for weeks, which reads as the fix not working.
+   `instagramConfigured()` asks about the **seed**, so deleting the env var
+   actually turns the feature off rather than leaving a stored token running.
+
+6. **The caches are sized by a QUOTA, not by politeness.** Every other cached
+   read here is 60s; this one is **5 minutes** in the repository and
+   `s-maxage=600` at the edge, because Instagram publishes a rate limit (200
+   calls per hour per user) and the strip sits on the two busiest pages. Posts
+   appear a few times a week, so nobody is waiting on a fresher answer. The Graph
+   call is deliberately **unversioned**: a pinned version is a dated bomb (Meta
+   sunsets them on a two-year cycle, and the day it goes the feed 400s with
+   nobody watching) while the unversioned path advances on its own.
+
+7. **The media read never throws, unlike the portfolio's.** There, configuration
+   degrades and an outage throws-and-alerts. Here every failure mode looks
+   identical from outside — expired token, revoked permission, outage, quota trip
+   — and none is worth a 500 on the home page; the one that would otherwise go
+   unnoticed forever (the expiry) is watched by the refresh pass, which is where
+   an alert about it belongs. A stale list is preferred over an empty one, so the
+   strip does not blink out while the refresh still has a fortnight of retries.
+
+8. **A tile is dropped rather than shown broken, on both sides.** Server-side, a
+   post with no id, no permalink or no usable still never reaches the client (a
+   video's `media_url` is the MP4, so `thumbnail_url` leads for a video — putting
+   the MP4 in an `<img>` is a blank tile, not an error). Client-side, a tile whose
+   image fails to load is removed: Instagram's CDN URLs are signed and do expire,
+   and a grid of the atelier's work is the last place a broken-image icon should
+   appear. The section renders **nothing at all** while loading, on error, or with
+   nothing to show — the same contract as `<Testimonials />`.
+
+9. **The shop link is a SIBLING of the Instagram link, not a child.** An anchor
+   inside an anchor is invalid markup and leaves the inner link unreachable by
+   keyboard in some browsers, so the photograph's outbound link and the "Shop this
+   piece" pill sit side by side inside the tile. Pinned by a test, since the
+   markup renders fine either way.
+
+**Atelier setup.** Two things, and the second is optional and additive:
+
+| Step                                                 | What                                                                                                                                                                                     |
+| ---------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **`INSTAGRAM_ACCESS_TOKEN`**                         | The long-lived token from Instagram Business Login (Meta app → Instagram → API setup with Instagram login → generate a token). Unset ⇒ no strip renders anywhere                         |
+| **`POSTGRES_URL` + `db:migrate`**                    | Already required for booking. Without the `integration_tokens` table the token cannot be renewed and the feed stops after 60 days — the refresh pass says so rather than failing quietly |
+| `Instagram Post` (url) on **inventory** _(optional)_ | Paste a post's URL onto the piece it shows; that post's tile then offers "Shop &lt;piece&gt;". A row without it is simply a piece no post points at                                      |
+
+Nothing else: no new Notion database, no Studio Setting (the token is a secret,
+so it stays in Vercel), and no display knob — how many tiles a strip shows is a
+prop on the component. `SMOKE_EXPECT_INSTAGRAM=1` is worth setting once the strip
+is live, for the same reason as `SMOKE_EXPECT_REVIEWS`: until then an empty feed
+is ambiguous between "not configured" and "the token expired", and the endpoint
+is degrade-safe so it cannot tell you which.
+
+**Known limits.** A post can carry only one shop piece, so a group photograph
+links to the first row naming it (first-wins, stable across reads). Instagram's
+own product tags are not readable through this API, which is why the link is the
+atelier's to record. And a token that lapses entirely still needs a person: the
+first token always comes from an interactive Instagram login, so this keeps one
+alive but cannot mint one.
 
 ## Rush order surcharge
 
@@ -2766,6 +3129,11 @@ so this is driven by a **Notion database automation** rather than a request or a
    per row. That property (and the `…/run` route) is gone; delete it in Notion —
    see "Internal tools on the studio dashboard".
 
+**The dashboard can now make the stage change itself**, in which case the same
+notifier below sends the email on the action and this webhook is the fallback for
+a stage still edited by hand in Notion — see "Advancing an order's stage from the
+dashboard". The two share the marker, so whichever fires second sends nothing.
+
 No new env vars (it reuses `CRON_SECRET`, `RESEND_FROM_EMAIL` via
 `fromAddress("orders")`, and `PUBLIC_BASE_URL` for the tracking link, omitted when
 unset). One-time setup: the Notion automation above **plus** a **`Last Notified Stage`**
@@ -2776,6 +3144,96 @@ stages). Code: `orderStageChangeEmail` in `lib/resend/emails.ts`,
 `findOrderForStageNotification` / `findOrderForStageNotificationByPageId` +
 `updateLastNotifiedStage` in `lib/notion/orders.repository.ts`,
 `services/order-notification.service.ts`, `routes/order-notification.ts`.
+
+## Advancing an order's stage from the dashboard
+
+A custom order used to move along its pipeline exactly one way: somebody opened
+Notion and changed the `Stage` property by hand. Everything in the section above
+is downstream of that one fact — the database automation, its webhook, the
+`Last Notified Stage` marker, and the last place in the app that reads a shared
+secret out of a URL all exist because the change happens where the app can't see
+it. `/studio` → **Orders** is that change made here, with the customer's status
+email riding the action. `GET /api/studio/orders` for the board,
+`PUT /api/studio/orders/:orderNumber/stage` for one move — both contract-first
+and behind the same `requireStaff` gate as the rest of the studio surface. Code:
+`services/studio-orders.service.ts`, the two handlers in `routes/studio.ts`,
+`listOrdersForStageBoard` + `updateOrderStage` in `lib/notion/orders.repository.ts`,
+and `web-app/src/components/studio-orders.tsx`.
+
+1. **It does not send the email — it calls the webhook's own notifier.** The
+   write is followed by `notifyOrderStageChange`, the same function the webhook
+   calls, so there is one forward-only gate, one `Last Notified Stage` marker,
+   one piece of email copy, and one "read the order back rather than trust the
+   caller's stage". That is also what makes the two paths **compose**: this write
+   fires whatever Notion automation is configured, and the automation then finds
+   the marker already at the new stage and sends nothing. The obvious
+   implementation — send the email here — would double-email every advance for an
+   atelier who had the automation wired.
+
+2. **The re-read is located by PAGE ID, not by order number.** The notifier
+   re-reads the order before sending, and `findOrderForStageNotification` is a
+   database **query** — the one Notion read that may not yet reflect a property
+   written a moment earlier. `findOrderForStageNotificationByPageId` is a direct
+   page fetch and is read-your-writes. Emailing the customer the stage their
+   order was at _before_ the press is the exact failure this feature would
+   otherwise introduce.
+
+3. **It writes a stage, not "the next one".** The button says advance, but the
+   primitive is "put this order at that stage", because the other half of what
+   sent the atelier to Notion is fixing a mis-click. A backward move is allowed
+   and simply never emails — the notifier's forward-only rule already says so,
+   and a second rule here could only disagree with it.
+
+4. **The target is validated against the order's OWN pipeline**, not the live
+   superset — a repair does not walk `Sketching`. This is also a hard
+   requirement of the write: **`Stage` is a Notion `status` property, and Notion
+   will not create a missing `status` option through the API** the way it
+   auto-creates a `select` one, so an unvalidated name is a 400 from Notion
+   rather than a stage change. The refusal names the pipeline, since the reason
+   is nearly always that the stage belongs to another service. The current stage
+   is folded into the list first (`stagesIncludingCurrent`, extracted from the
+   notifier so both callers run one rule), so an order sitting on a stage the
+   atelier has since renamed can still be advanced.
+
+5. **`notify: false` advances the marker without sending.** A quiet advance has
+   to be quiet everywhere: the write fires the Notion automation whether we asked
+   it to or not, so suppressing our own send without moving the marker would let
+   the automation email the very stage the atelier chose not to announce. The
+   marker only ever advances, so a backward quiet move leaves the high-water mark
+   alone and the next forward move still emails.
+
+6. **The read is a filtered query, not the analytics' full scan** — the same
+   call `listOpenOrderServices` makes. Neither cancelled nor at the final stage,
+   which mirrors `orderLifecycleState`; the final stage is the **superset's**
+   (`Delivered` for every pipeline, each service's stages being a subsequence
+   ending there), so a repair counts as open until delivered with no per-row
+   pipeline resolve.
+
+7. **The board never returns the customer's email**, only `notifiable`. A stage
+   board has no use for the address.
+
+8. **Refusals.** 404 an unknown order; 409 a cancelled one (its tracking page
+   shows a cancelled banner rather than a timeline, so moving it changes nothing
+   anybody sees); 400 a stage the service doesn't walk or an empty one. An order
+   already at the requested stage is a no-op reported as `changed: false` —
+   nothing written, and the notifier never reached, so a double press is not a
+   second chance to email.
+
+**The Notion automation and its webhook are deliberately KEPT.** The atelier can
+still edit `Stage` in Notion, and retiring the webhook would silently stop the
+customer email for every such edit — no error, no log, just a customer who stops
+hearing about their order. This card removes the _need_ to edit in Notion, not
+the ability; retiring the automation is the studio's call once they've stopped,
+and `.agents/memory/order-stage-advancement.md` records the sequence for when
+they do (note the **marker stays** either way — `setOrderStage` reads it to
+decide whether a move is forward).
+
+**Atelier setup: none.** No env var, no new database, no Notion property — it
+writes the `Stage` and `Last Notified Stage` that already exist and reads the
+`Due Date`, `Service` and `Cancelled` the app already reads. Known limits:
+custom orders only (a shop order's `Status` is a different workflow), no bulk
+advance, and no audit trail in the app beyond the server logs and Notion's own
+property history.
 
 ## Materials restock alerts (dashboard panel + a weekly digest)
 
@@ -3154,14 +3612,15 @@ edited it there. Load-bearing decisions:
    and times as `time` inputs, so most of those refusals are unreachable from the
    UI at all.
 
-2. **This is the one table in `lib/db/` that IS the record.** Every other one
-   (`processed_payments`, `clients`, `order_index`, `restock_alerts`) is an
-   optional integrity layer over something Notion owns, and degrades to a Notion
+2. **This is one of the two tables in `lib/db/` that ARE the record.** Most of
+   them (`processed_payments`, `clients`, `order_index`, `restock_alerts`) are an
+   optional integrity layer over something Notion owns, and degrade to a Notion
    fallback when `POSTGRES_URL` is unset. This one has no second store, so
    **appointment booking now requires Postgres** — the deliberate trade for a
    single, validated, app-owned schedule. Notion stays the record for what the
    _atelier_ manages by hand (orders, inventory, invoices); the working hours are
-   not one of those.
+   not one of those. (`integration_tokens`, added later for the Instagram feed's
+   60-day access token, is the other — see "Instagram feed & social proof".)
 
 3. **The database enforces what the service validates.** `end_time > start_time`
    is a check constraint, and `weekdays` / `locations` are checked against the
@@ -4037,10 +4496,13 @@ two `/studio` routes in `App.tsx`.
    tools stay reachable during a Notion wobble — which is when the atelier is
    most likely to need them.
 
-The sections are **Figures / Requests / Reviews / Bookings / Materials / Pay /
-Settings / Guides**, in that order — what needs doing first. Nothing about a
-panel changed: each is the same component, with the same `data-testid`, doing
-the same reads. **No API change, no new env var, no atelier setup.**
+The sections are **Figures / Orders / Requests / Shipping / Reviews / Bookings /
+Materials / Pay / Settings / Guides**, in that order — what needs doing first.
+(**Orders** is second because advancing a stage is the action taken most often;
+see "Advancing an order's stage from the dashboard".) Splitting them changed
+nothing about a panel: each is the same component, with the same `data-testid`,
+doing the same reads, and that move needed **no API change, no new env var and
+no atelier setup**.
 
 ## Internal tools on the studio dashboard
 
@@ -4654,18 +5116,20 @@ the order lifecycle; Postgres holds **app-owned facts** Notion can't enforce or 
 stake in. Most of it is **degrade-safe**: unset `POSTGRES_URL` ⇒ `postgresConfigured()`
 is false and those callers fall back to the pre-Postgres behavior.
 
-**Two features are the exception and hard-require it**, because they have no second
+**Three features are the exception and hard-require it**, because they have no second
 store to fall back to: the **back-in-stock alert's** sent-marker (without it a nightly
-sweep re-emails everyone) and the **staff working hours** (without them there are no
-appointment slots to offer). Both fail loudly with a pointed message rather than
-degrading to empty — see "Automated back-in-stock alerts" and "Staff availability,
-edited on the dashboard". Adapter: `lib/db/client.ts` (lazy first-use env read, the narrow
+sweep re-emails everyone), the **staff working hours** (without them there are no
+appointment slots to offer), and the **Instagram access token's** renewal (without
+somewhere to keep the renewed token, the feed stops 60 days after launch). All three
+say so plainly rather than degrading to empty — see "Automated back-in-stock alerts",
+"Staff availability, edited on the dashboard" and "Instagram feed & social proof". Adapter: `lib/db/client.ts` (lazy first-use env read, the narrow
 injectable `DbClient` seam — `query` + `end` — so repos are driver-agnostic and fakeable
 like `NotionClient`; test seams `__setDbForTests` / `__resetDb`).
 
 1. **Three data tables in 0001, all wired** (plus `restock_alerts`,
-   `staff_availability` and `payments`, each documented in its own section
-   above). `supabase/migrations/0001_init.sql` provisions
+   `staff_availability`, `payments`, `issued_invoices` and `credit_notes`, each
+   documented in its own section above).
+   `supabase/migrations/0001_init.sql` provisions
    `schema_migrations`, `clients`, `order_index`, and `processed_payments`.
    `processed_payments` is Stripe idempotency (below); `clients` + `order_index` are the
    email-keyed customer/order discovery index for the account portal — written
@@ -4687,7 +5151,12 @@ like `NotionClient`; test seams `__setDbForTests` / `__resetDb`).
    caught and logged, falling back to that Notion dedup — so a Postgres outage never
    blocks recording a paid order. **Custom-order payments don't use it.**
 
-3. **Pooled at runtime, direct for migrations; never in the deploy path.** The running app
+3. **Later migrations add the tables that came with their features.**
+   `restock_alerts` (0003), `staff_availability` (0004) and `integration_tokens`
+   (0005) each arrived with the feature that needed them, and each carries its own
+   `enable row level security` + `revoke` pair per the rule in point 5 below.
+
+4. **Pooled at runtime, direct for migrations; never in the deploy path.** The running app
    reads the **pooled** `POSTGRES_URL` (Supabase PgBouncer, transaction mode) with
    `prepare: false, max: 1, idle_timeout: 20` (each warm serverless instance holds its own
    tiny pool feeding the shared pooler). Migrations run **out-of-band** via
@@ -4698,7 +5167,7 @@ like `NotionClient`; test seams `__setDbForTests` / `__resetDb`).
    (`.github/workflows/migrate.yml`), deliberately kept out of `build:vercel` and cold
    starts. `postgres` (porsager) is a prod dependency.
 
-4. **These tables are closed to the Data API — keep them that way.** Supabase serves the
+5. **These tables are closed to the Data API — keep them that way.** Supabase serves the
    `public` schema through PostgREST, and the `anon` key is public (it ships in the
    browser bundle as `VITE_PUBLIC_SUPABASE_ANON_KEY`), so a table left at Supabase's
    defaults is world-readable **and world-writable** by anyone who reads the JS.
@@ -4713,10 +5182,11 @@ like `NotionClient`; test seams `__setDbForTests` / `__resetDb`).
 
 One-time setup: on Vercel the Supabase integration provides `POSTGRES_URL` +
 `POSTGRES_URL_NON_POOLING`; run `db:migrate` once against the non-pooled URL. Unset ⇒ the
-degrade-safe callers no-op, but appointment booking and the back-in-stock sweep do not
-work at all. Tests: `test/unit/db.client.test.ts`,
+degrade-safe callers no-op, but appointment booking, the back-in-stock sweep and the
+Instagram token's renewal do not work at all. Tests: `test/unit/db.client.test.ts`,
 `test/unit/processed-payments.repository.test.ts`,
-`test/unit/staff-availability.repository.test.ts`, and the `checkout.service`
+`test/unit/staff-availability.repository.test.ts`,
+`test/unit/integration-tokens.repository.test.ts`, and the `checkout.service`
 dedup-branch tests, all over `test/support/fake-db.ts`.
 
 ## Web analytics & cookie consent
@@ -5395,6 +5865,16 @@ in the maintainer's env without edits.
   replacing the file, never a deploy. Unset ⇒ the guides panel says it isn't
   connected. Read at first use in `getStudioGuidesNotionClient`; gated by
   `guidesConfigured()`. See "How-to guides on the studio dashboard" above.
+- **Optional Instagram token:** `INSTAGRAM_ACCESS_TOKEN` — the long-lived token
+  from Instagram Business Login, used to read the studio's recent posts for the
+  social-proof strip on the home and shop pages. Unset ⇒ no strip renders and
+  the section is simply absent. It expires after **60 days**, so the nightly
+  reconciliation renews it and stores the result in the `integration_tokens`
+  Postgres table — which means `POSTGRES_URL` must be set and `db:migrate` must
+  have run, or the feed stops two months after launch. Replacing the value here
+  takes effect immediately (the stored chain is abandoned when it stops matching
+  the seed). Env-only, never a Studio Setting — it is a secret. Read in
+  `lib/instagram/config.ts`. See "Instagram feed & social proof" above.
 - **Optional portfolio database:** `NOTION_PORTFOLIO_DATABASE_ID` (the "🎨 Design
   Portfolio & Sketch Library" database). When set (and the integration is shared
   with it), `/portfolio` shows every row whose **`Show on website`** checkbox is
@@ -5465,6 +5945,8 @@ scope went with the working-hours sheet.
 | `NOTION_RELATION_LINKS` (`1`/`true`/`yes`)                                                                        | Off — no order/inventory relations written (see "Relate requests…") |
 | `STRIPE_SHIPPING_RATE_IDS`                                                                                        | No shipping charged, no shipping options at checkout                |
 | `STRIPE_BNPL_METHODS`                                                                                             | Payment methods stay dynamic (Dashboard-managed)                    |
+| `SHIPPO_API_KEY`                                                                                                  | No labels can be bought; the dashboard's Shipping panel says so     |
+| `SHIP_FROM_*` (seven keys, Studio Settings)                                                                       | Empty ⇒ no label can be bought until the origin is filled in        |
 | `ALERT_INBOX_EMAIL`                                                                                               | Defaults to `alexandra@a3iceanddance.com`                           |
 | `ATELIER_INBOX_EMAIL`                                                                                             | No internal atelier notifications                                   |
 | `RESEND_CONTACT_FROM_EMAIL`, `ATELIER_CONTACT_INBOX_EMAIL`                                                        | Falls back to the base sender/inbox                                 |
@@ -5481,6 +5963,7 @@ scope went with the working-hours sheet.
 | `PAYMENT_REMINDER_LEAD_DAYS`                                                                                      | `7`                                                                 |
 | `REFERRAL_CREDIT_AMOUNT` / `REFERRAL_WELCOME_PERCENT` / `RETURNING_DISCOUNT_PERCENT` / `REWARD_CODE_EXPIRES_DAYS` | `40` / `10` / `10` / `90`                                           |
 | `SPAM_MIN_FILL_MS`                                                                                                | `2000` (`0` disables the timing check)                              |
+| `INSTAGRAM_ACCESS_TOKEN`                                                                                          | No Instagram strip on the home or shop pages                        |
 | `PINTEREST_DOMAIN_VERIFY` (build-time)                                                                            | No `p:domain_verify` tag at all                                     |
 
 Several of these are also **Studio-Settings tunables** editable in Notion — see that
@@ -5612,11 +6095,14 @@ Three things about it are load-bearing:
 | Change in-place measurement editing                      | `api-server/src/services/measurement-update.service.ts` (the gates + the file-instead-of-write fallback) + `updateOrderMeasurements` in `lib/notion/orders.repository.ts` (properties then an appended revision note) + `buildMeasurementProperties` / `buildMeasurementRevisionBlocks` in `lib/notion/orders.blocks.ts` + the two `measurementsUpdated*Email` builders in `lib/resend/emails.ts`; frontend `web-app/src/components/measurements-dialog.tsx` (tracking page) + `components/account-measurements.tsx` (portal), sharing `components/measurement-fields.tsx` + `lib/measurements.ts`. The lock rule is `services/measurement-lock.ts`, surfaced on the portal as `AccountOrderSummary.measurementsLocked` from `listCustomOrders`                                                                                     |
 | Change the measurement-change request                    | `artifacts/web-app/src/components/measurements-dialog.tsx` (its "re-measure at a fitting" branch, opened from `components/custom-order-result.tsx`); `api-server/src/services/measurement-change.service.ts` + `routes/orders.ts` + `lib/notion/measurement-change.{blocks,repository}.ts` (writes to the **contact** database)                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                     |
 | Change the studio settings editor                        | `web-app/src/components/studio-settings.tsx` (rendered by `pages/studio.tsx`); `services/studio-settings.service.ts` + the `/studio/settings` handlers in `routes/studio.ts` + `lib/settings/catalog.ts` (the per-key definition + its two validators) + `fetchSettingRows` / `saveSetting` in `lib/notion/settings.repository.ts`                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                  |
+| Advance an order's stage / the stage board               | `api-server/src/services/studio-orders.service.ts` (the board + `setOrderStage`) + the two `/studio/orders` handlers in `routes/studio.ts` + `listOrdersForStageBoard` / `updateOrderStage` in `lib/notion/orders.repository.ts`; frontend `web-app/src/components/studio-orders.tsx`, mounted by the `orders` section in `pages/studio.tsx`. The email is NOT sent here — it goes through `notifyOrderStageChange` (`services/order-notification.service.ts`), which is what keeps this and the Notion webhook sharing one forward-only gate and one `Last Notified Stage` marker                                                                                                                                                                                                                                                  |
 | Change review moderation on the dashboard                | `web-app/src/components/studio-reviews.tsx` (rendered by `pages/studio.tsx`); `services/studio-reviews.service.ts` + the `/studio/reviews` handlers in `routes/studio.ts` + the moderation half of `lib/notion/reviews.{schema,repository}.ts`                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                      |
 | Change the customer-request queue on the dashboard       | `web-app/src/components/studio-requests.tsx` + `lib/studio-handoff.ts` (the hand-off into `components/studio-tools.tsx`), rendered by `pages/studio.tsx`; `services/studio-requests.service.ts` + the `/studio/requests` handlers in `routes/studio.ts` + `lib/notion/requests.{schema,repository}.ts` — which tool actions which kind lives in `requestAction`                                                                                                                                                                                                                                                                                                                                                                                                                                                                     |
 | Change the newsletter panel on the dashboard             | `web-app/src/components/studio-newsletter.tsx` (rendered by `pages/studio.tsx`); `services/studio-newsletter.service.ts` + the `/studio/newsletter` handlers in `routes/studio.ts` + the newsletter half of `lib/notion/requests.{schema,repository}.ts` + the read side of `lib/resend/audience.ts` (`listAudienceContacts` / `membershipIn` — membership is never stored)                                                                                                                                                                                                                                                                                                                                                                                                                                                         |
 | Change post-delivery review capture                      | `artifacts/web-app/src/components/review-dialog.tsx` (opened from `components/custom-order-result.tsx` for delivered orders); `api-server/src/services/review.service.ts` + `services/delivery.ts` + `routes/orders.ts` + `lib/notion/reviews.{blocks,repository}.ts` (writes to the **Reviews** database)                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                          |
 | Change the published testimonials                        | `artifacts/web-app/src/components/testimonials.tsx` (rendered by `pages/home.tsx` + `pages/about.tsx`); `getPublishedReviews` in `api-server/src/services/review.service.ts` + `routes/reviews.ts` + `lib/notion/reviews.schema.ts`                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                 |
+| Change reviews & ratings on shop pieces                  | Capture: `web-app/src/components/shop-review-dialog.tsx` (opened from `components/shop-order-result.tsx` once the server names the order's pieces) + `api-server/src/services/shop-review.service.ts` + `POST /shop-orders/:n/reviews` in `routes/shop-orders.ts` + the `Product`/`Item` half of `lib/notion/reviews.blocks.ts`. Ratings: `services/product-ratings.ts` (the pure aggregation — read the id → card join rule there before touching it) + `withRatings` in `services/products.service.ts` + `listPublishedProductReviews` / `extractProductReviews` in `lib/notion/reviews.{repository,schema}.ts`. Display: `web-app/src/components/star-rating.tsx` + `ProductReviews` in `pages/shop.tsx` + `aggregateRating` in `lib/product-seo.ts`                                                                             |
+| Change the Instagram strip                               | `web-app/src/components/instagram-feed.tsx` (rendered by `pages/home.tsx` + `pages/shop.tsx`); `api-server/src/lib/instagram/schema.ts` (the pure media mapping + `instagramShortcode`, the join key) + `media.repository.ts` (the cached, never-throwing read) + `token.ts` (the 60-day renewal — read its header before touching it) + `services/instagram.service.ts` (the shop join) + `routes/instagram.ts`. The stored credential is `lib/db/integration-tokens.repository.ts`; the nightly renewal is `refreshDueInstagramToken` in `services/schedule.service.ts`. The atelier's end of the join is the `Instagram Post` url property in `lib/notion/products.schema.ts`                                                                                                                                                    |
 | Change the portfolio gallery                             | `artifacts/web-app/src/pages/portfolio.tsx` (the grid, chips and lightbox); `api-server/src/lib/notion/portfolio.schema.ts` (`FACET_DEFINITIONS` — the filter DIMENSIONS; the options are derived, never hardcoded) + `portfolio.repository.ts` (the bounded scan + degrade rules) + `services/portfolio.service.ts` + `routes/portfolio.ts`. Reads the "Design Portfolio & Sketch Library" database via `NOTION_PORTFOLIO_DATABASE_ID`; the app never writes it                                                                                                                                                                                                                                                                                                                                                                    |
 | Change the studio's daily Notion ops page                | The **🧭 Studio Operations** page under **{ A.A. Atelier }** — four linked views over Custom Orders / Production Schedule / Reviews / Website Contact Messages; no code; see `.agents/memory/studio-operations-page.md`                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                             |
 | Curate which reviews show on the site                    | The **Reviews** Notion database's saved views (Curate / Live on the site / Awaiting curation / Published but not showing) — no code; see `.agents/memory/reviews-curation-views.md`                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                 |
@@ -5628,6 +6114,7 @@ Three things about it are load-bearing:
 | Change the shop's inventory decrement                    | `api-server/src/services/order-lines.service.ts` (`purchasedLinesFromSession` + the best-effort `recordShopOrderLines`) + `lib/notion/order-lines.{blocks,repository}.ts` + `getOrderLinesNotionClient`; called at the tail of `processPaidShopOrder` in `services/checkout.service.ts`. The `Voided` release is `setShopOrderCancelled` in `lib/notion/shop-orders.repository.ts`                                                                                                                                                                                                                                                                                                                                                                                                                                                  |
 | Change shop checkout / payments                          | `artifacts/web-app/src/lib/cart.tsx` + `components/cart-drawer.tsx` + `components/add-to-cart.tsx` (frontend); `api-server/src/services/checkout.service.ts` + `routes/checkout.ts` + `routes/stripe-webhook.ts` + `lib/stripe/*` + `lib/notion/shop-orders.*` (backend)                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                            |
 | Change what the tracking page says about shipping/pickup | `api-server/src/lib/fulfilment.ts` (the pure ship-vs-pickup rules + what's worth showing; `looksLikePickup` is shared with checkout) + `extractFulfilmentFields` in `lib/notion/orders.schema.ts` / `readFulfilmentFields` in `lib/notion/shop-orders.repository.ts` (the reads) + `chosePickupRate` in `lib/notion/shop-orders.blocks.ts` (the one write — a checkout paid with the local-pickup Stripe rate marks itself) + the resolve calls in `services/orders.service.ts` and `services/shop-orders.service.ts`; frontend `web-app/src/components/fulfilment-panel.tsx` + `lib/fulfilment-format.ts` (the pickup-time formatting + the handoff-state wording). Contract: `OrderFulfilment` in `openapi.yaml`, on both `OrderStatus` and `ShopOrderStatus`                                                                     |
+| Change how a shipping label is bought                    | `api-server/src/lib/shipping/{address,parcels,from-address}.ts` (the pure halves — an address in its PARTS, the packaging catalog, the studio's origin) + `lib/shippo/{client,labels.repository}.ts` (the vendor: rate a parcel, buy a rate) + `services/shipping-label.service.ts` (the gates, the Stripe address read, the write-back) + `findShopOrderForShipping` / `recordShopOrderTracking` in `lib/notion/shop-orders.repository.ts` + the three `/studio/shipments/*` handlers in `routes/studio.ts`; panel in `web-app/src/components/studio-shipping.tsx`. Read the "the address comes from Stripe, never from Notion" rule in `.agents/memory/shipping-labels.md` before touching `shipToFromSession`                                                                                                                    |
 | Change shop-order tracking                               | `artifacts/web-app/src/components/shop-order-result.tsx` (rendered by `pages/track.tsx`; + order number on `pages/shop-success.tsx`); `api-server/src/services/shop-orders.service.ts` + `routes/shop-orders.ts` + `lib/notion/shop-orders.{blocks,repository}.ts` + `services/checkout.service.ts` (mints the number)                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                              |
 | Change the return / exchange request                     | `artifacts/web-app/src/components/return-exchange-dialog.tsx` (opened from `components/shop-order-result.tsx`); `api-server/src/services/return-request.service.ts` + `routes/shop-orders.ts` (`POST /shop-orders/:n/return-requests`) + `lib/notion/return-request.{blocks,repository}.ts` (writes to the **contact** database) + `findShopOrderVerification` in `lib/notion/shop-orders.repository.ts`; policy copy in `pages/shipping-returns.tsx`                                                                                                                                                                                                                                                                                                                                                                               |
 | Change return / exchange refunds (atelier action)        | `api-server/src/services/return-refund.service.ts` (the target-total refund engine + `parseRefundTarget`) + the `return-refund` studio tool (`services/studio-tools.service.ts`) + `lib/stripe/refunds.ts` (shared Stripe refund primitives) + `recordShopOrderRefund` / `SHOP_ORDER_REFUNDED_PROPERTY` / `SHOP_ORDER_RETURN_PROCESSED_PROPERTY` in `lib/notion/shop-orders.{repository,blocks}.ts` + `returnRefundEmail` in `lib/resend/emails.ts`                                                                                                                                                                                                                                                                                                                                                                                 |

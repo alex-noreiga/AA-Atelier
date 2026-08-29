@@ -170,6 +170,13 @@ export interface OrderNotFound {
   message: string;
 }
 
+export interface ShopOrderItem {
+  /** The inventory row's Notion page id — the same id a ProductVariant carries, and what a shop review names as the piece it is about. */
+  id: string;
+  /** The piece's name, as the shop lists it. */
+  name: string;
+}
+
 export interface ShopOrderStatus {
   orderNumber: string;
   /** The order's current fulfilment status. */
@@ -181,6 +188,8 @@ export interface ShopOrderStatus {
   /** True once the atelier has cancelled the shop order (the `Cancelled` marker on the Notion order). When true the tracking page shows a cancelled banner and suppresses the request affordance. Absent/false for an active order. */
   cancelled?: boolean;
   fulfilment?: OrderFulfilment;
+  /** The pieces on this order, so a customer at the delivered status can say which one they are reviewing. Resolved from the order's `Inventory Items` relation against live inventory, and therefore best-effort: an order placed before that relation was written, or one whose inventory read fails, carries an empty list — which the tracking page reads as "no piece to review", never as an error. Only the piece's id and name are served; quantities, prices and the shipping address stay in Notion, because this lookup is gated by order number alone. */
+  items?: ShopOrderItem[];
 }
 
 export type NewOrderRequestPreferredContact = typeof NewOrderRequestPreferredContact[keyof typeof NewOrderRequestPreferredContact];
@@ -1295,6 +1304,26 @@ export const ProductSizeGuide = {
   soaker: 'soaker',
 } as const;
 
+/**
+ * What customers who bought this piece said about it. Built from reviews left against a shop order and passing the SAME two gates as a public testimonial — the atelier published it and the customer consented — so a rating can never appear beside a piece from a row the testimonials couldn't show.
+ * Absent when the piece has no such review yet, which is not an error state: most pieces will have none, and a card showing "0 reviews" reads worse than a card showing none. A grouped card (several colourways under one `Website Group`) pools the reviews of all its variants, because that is the piece a shopper is looking at.
+ */
+export interface ProductRating {
+  /**
+     * The mean star rating, rounded to one decimal place. Shown beside the piece and published as `aggregateRating` in its Product structured data.
+     * @minimum 1
+     * @maximum 5
+     */
+  average: number;
+  /**
+     * How many reviews the average is built from.
+     * @minimum 1
+     */
+  count: number;
+  /** A few of those reviews in the customer's own words, newest first, for the piece's quick view. Capped server-side — the shop list is a single edge-cached payload, so it carries a taste rather than the whole history. Narrow like `PublishedReview`: no email, no order number. */
+  reviews: PublishedReview[];
+}
+
 export interface Product {
   id: string;
   title: string;
@@ -1304,6 +1333,7 @@ export interface Product {
   /** Which size chart this product's category uses. "garment" (the default, and the value when this field is omitted) is the ready-to- wear body-measurement chart; "soaker" is the skate-soaker blade-length chart. Resolved server-side from the Notion "Product Categories" database ("Size guide type" select per category, following the inventory `Category` relation) — clients pick the chart from this and must not hardcode which category is a soaker. Only meaningful when `sized` is true. */
   sizeGuide?: ProductSizeGuide;
   variants: ProductVariant[];
+  rating?: ProductRating;
 }
 
 export interface ProductList {
@@ -2277,6 +2307,256 @@ export interface StudioToolRun {
   message: string;
   /** Any per-item notes worth showing under the message — payments that were skipped, reasons a send was suppressed. Empty when there is nothing to add. */
   details: string[];
+}
+
+export interface BuyShippingLabelRequest {
+  /** @maxLength 64 */
+  orderNumber: string;
+  /**
+     * The `id` of the rate to buy, from the rates operation.
+     * @maxLength 128
+     */
+  rateId: string;
+  /** Buy a second label for an order that already has tracking on it — for when the first was voided. Without it such an order is refused with 409, since the vendor will sell a duplicate as happily as the first and has nothing to read back that says otherwise. */
+  replace?: boolean;
+}
+
+/**
+ * What kind of post this is, lowercased from Instagram's own IMAGE / VIDEO / CAROUSEL_ALBUM. Clients use it only to badge the thumbnail (a play glyph on a video, a stack glyph on a carousel) — every post carries a still `imageUrl` whatever its type, so a client that ignores this renders correctly.
+ */
+export type InstagramMediaType = typeof InstagramMediaType[keyof typeof InstagramMediaType];
+
+
+export const InstagramMediaType = {
+  image: 'image',
+  video: 'video',
+  carousel: 'carousel',
+} as const;
+
+/**
+ * One post from the studio's Instagram account. Deliberately narrow: no like or comment counts, no author, and no video file — the strip is a grid of stills that link out to Instagram.
+ */
+export interface InstagramPost {
+  /** Instagram's own media id, used only as a render key. */
+  id: string;
+  /** The post's public Instagram URL, opened in a new tab. */
+  permalink: string;
+  /** The still to render. Instagram's image for a photo or carousel, and the poster frame for a video. These are CDN URLs that expire, which is why this response's edge cache is deliberately short — the same reasoning as the portfolio's Notion-signed images. Never empty: a post Instagram returned no usable image for is dropped rather than served as a broken tile. */
+  imageUrl: string;
+  mediaType: InstagramMediaType;
+  /** The post's caption, verbatim and untruncated. Omitted when the post has none. Clients clamp it for display and derive the image's alternative text from it. */
+  caption?: string;
+  /** When the post was published. Omitted when Instagram returned no timestamp; the list is already in Instagram's own newest-first order, so this is for display only. */
+  postedAt?: string;
+  /** The `Product.id` of the shop card this post shows, when the atelier has recorded this post's URL against an inventory row. Present only for a piece currently published to the shop, so the client can link straight to `/shop/{productId}` without checking. Absent — the common case — means the post is not tied to a purchasable piece and the tile links to Instagram alone. */
+  productId?: string;
+  /** The name of the piece this post shows, as the atelier names it in the inventory — what the "Shop this piece" link is labelled with. Always present alongside `productId`, and absent without it. */
+  productTitle?: string;
+}
+
+export interface InstagramFeed {
+  /** The studio's recent posts, newest first. Empty when the integration is unconfigured or the feed could not be read — the two are deliberately indistinguishable to the client, which renders nothing either way. */
+  posts: InstagramPost[];
+}
+
+/**
+ * A review of one ready-to-wear piece from a shop order. The same shape as NewReviewRequest plus the piece it is about — a shop order can hold several pieces, and an average belongs to a piece rather than to the order, so the review has to say which one.
+ */
+export interface NewShopReviewRequest {
+  /** The email to verify against the one on the order. A review whose email doesn't match the order is rejected. */
+  email: string;
+  /**
+     * The inventory row id of the piece being reviewed — one of the `id`s on the order's `items`. The server checks it against the order's own pieces, so a review can only ever be left for something the customer actually bought.
+     * @minLength 1
+     */
+  productId: string;
+  /**
+     * The star rating, 1 (poor) to 5 (excellent).
+     * @minimum 1
+     * @maximum 5
+     */
+  rating: number;
+  /**
+     * The customer's testimonial about the piece.
+     * @minLength 1
+     * @maxLength 2000
+     */
+  comment: string;
+  /**
+     * How the customer would like to be credited if the review is featured (e.g. "Ada L." or "Ada, Chicago"). Optional.
+     * @maxLength 120
+     */
+  displayName?: string;
+  /** Whether the customer gives permission to show this review publicly. Defaults to false — and, because the same two gates decide everything public, a review without it is never counted into the piece's average either. */
+  consentToPublish?: boolean;
+  /** Notion file_upload ids for photos of the piece, uploaded ahead of time via POST /orders/reference-images. Attached to the review's Notion page as image blocks. */
+  photoIds?: string[];
+}
+
+/**
+ * `sent` — the customer was emailed. `skipped` — a send was attempted and declined (the move wasn't forward, or the order carries no email or no stage). `suppressed` — the atelier asked not to email.
+ */
+export type OrderStageChangeNotification = typeof OrderStageChangeNotification[keyof typeof OrderStageChangeNotification];
+
+
+export const OrderStageChangeNotification = {
+  sent: 'sent',
+  skipped: 'skipped',
+  suppressed: 'suppressed',
+} as const;
+
+/**
+ * One order's position in its pipeline, and what can be done about it.
+ */
+export interface StudioOrderStage {
+  /** The order's number — its address in every studio operation. */
+  orderNumber: string;
+  /** The Notion page title, e.g. "Ada – Custom Costume". */
+  orderName: string;
+  /** The stage the order is at now. Empty when the `Stage` property has never been set, which is the one case the board cannot advance from. */
+  currentStage: string;
+  /** The stages this order's own service walks, in order — not the whole live list, so a repair is never offered `Sketching`. Includes the current stage even if it has since been renamed out of the live options. */
+  stages: string[];
+  /** The stage after the current one, i.e. what "advance" means for this order. Absent at the final stage, or when the current stage isn't in the list. */
+  nextStage?: string;
+  /** The furthest stage the customer has already been emailed about (the `Last Notified Stage` high-water marker). Absent when they have never been emailed. */
+  lastNotifiedStage?: string;
+  /** The service the order was placed for, as stored on it. */
+  service?: string;
+  /** The order's `Due Date` as an ISO date (yyyy-mm-dd), when the atelier has set one. A pass-through string (no `format: date`) so it isn't coerced to a Date and reserialized as a UTC timestamp — a due date is a calendar day, and an instant read in a western zone lands on the day before. */
+  dueDate?: string;
+  /** Whether the order carries a customer email to write to. The address itself is never returned — a stage board has no use for it, and this endpoint is not the place to publish one. */
+  notifiable: boolean;
+}
+
+/**
+ * What one stage change did.
+ */
+export interface OrderStageChange {
+  order: StudioOrderStage;
+  /** The stage the order was at before this ran. */
+  previousStage: string;
+  /** False when the order was already at that stage, in which case nothing was written and nothing was sent. */
+  changed: boolean;
+  /** `sent` — the customer was emailed. `skipped` — a send was attempted and declined (the move wasn't forward, or the order carries no email or no stage). `suppressed` — the atelier asked not to email. */
+  notification: OrderStageChangeNotification;
+  /** Why nothing was sent, in the atelier's terms. Present on `skipped` and `suppressed`. */
+  notificationReason?: string;
+}
+
+/**
+ * One stage change, as asked for from the dashboard.
+ */
+export interface OrderStageRequest {
+  /**
+     * The stage to move the order to. Must be one of the order's own `stages`; a Notion `status` option cannot be created through the API, so a name that isn't already an option would fail the write.
+     * @maxLength 120
+     */
+  stage: string;
+  /** Whether to email the customer. Default true — sending on the action is the point of advancing here rather than in Notion. False marks the stage as already announced without sending, so the change stays quiet even where the Notion automation is still wired. */
+  notify?: boolean;
+}
+
+/**
+ * One of the studio's packaging sizes, in inches. A code catalog served rather than duplicated in the frontend, like the appointment and service catalogs — a size the form offers that the server can't rate would be a dead option nobody could diagnose. Dimensions are the catalog's; the WEIGHT is not, because what goes in a box is a dress one day and a pair of soakers the next.
+ */
+export interface ParcelPreset {
+  /** What the rate request sends back. */
+  id: string;
+  /** How it reads on the packing bench, e.g. "Small box". */
+  name: string;
+  /** What it is for, so the right one is picked without a tape measure. */
+  hint: string;
+  length: number;
+  width: number;
+  height: number;
+}
+
+export interface PurchasedLabel {
+  orderNumber: string;
+  carrier: string;
+  service: string;
+  /** What the studio was charged for the label. */
+  amount: number;
+  currency: string;
+  trackingNumber: string;
+  /** The carrier's own tracking page, when it gave one. */
+  trackingUrl?: string;
+  /** The label PDF to print. Served from a signed vendor URL that expires, so it is fetched fresh rather than stored. */
+  labelUrl?: string;
+  /** Whether the tracking was written onto the Notion order. False ⇒ the label is bought and paid for but the write failed, so the number above has to be pasted on by hand — reporting that beats throwing, which would lose the label entirely. */
+  recorded: boolean;
+  /** This label is a test one and no carrier will carry it. */
+  testMode: boolean;
+}
+
+/**
+ * Whether a label can be bought, what's stopping it, and the packaging the studio keeps.
+ */
+export interface ShippingOptions {
+  /** A shipping vendor token is set. */
+  configured: boolean;
+  /** The vendor token is a TEST one, so any label bought looks entirely real — tracking number, PDF, price — and no carrier has heard of it. */
+  testMode: boolean;
+  /** The studio's ship-from address as envelope lines, present only when it is complete enough to post from. */
+  shipFrom?: string[];
+  /** Everything standing between the atelier and a label, each phrased with its own fix. Empty ⇒ the panel is ready to use. */
+  problems: string[];
+  parcels: ParcelPreset[];
+}
+
+/**
+ * One buyable rate. `id` is opaque and short-lived — it is the only thing the purchase takes, and it expires.
+ */
+export interface ShippingRate {
+  id: string;
+  /** As the customer will read it: "USPS", "UPS". */
+  carrier: string;
+  /** The service level: "Priority Mail", "Ground Advantage". */
+  service: string;
+  /** What the studio pays. */
+  amount: number;
+  currency: string;
+  /** The carrier's own estimate, when it gives one. */
+  estimatedDays?: number;
+  /** The carrier's wording for the delivery window, when it gives one. */
+  durationTerms?: string;
+}
+
+export interface ShippingRates {
+  orderNumber: string;
+  /** The customer's address as envelope lines, read from the order's Stripe checkout — so a wrong one is caught by eye before it is paid for rather than after it is posted. */
+  shipTo: string[];
+  /** Cheapest first, which is the order the atelier chooses in. */
+  rates: ShippingRate[];
+  /** The carriers' own words when they declined to quote — which is what explains an empty list. Usually empty. */
+  notes: string[];
+}
+
+export interface ShippingRatesRequest {
+  /**
+     * The shop order to post, e.g. `SHP-M2X4K1-AB12`.
+     * @maxLength 64
+     */
+  orderNumber: string;
+  /**
+     * The id of one of the studio's packaging sizes.
+     * @maxLength 64
+     */
+  parcelId: string;
+  /**
+     * The parcel's weight in OUNCES, off the scale. Zero is refused rather than treated as unset — a carrier rating a 0 oz package prices a document envelope — and the 800 oz (50 lb) ceiling is there to catch the typo that matters: pounds typed where ounces were wanted.
+     * @maximum 800
+     * @exclusiveMinimum 0
+     */
+  weightOz: number;
+}
+
+/**
+ * The open custom orders, for the dashboard's stage board. Nearest due date first, then by order number — the order the atelier works them in.
+ */
+export interface StudioOrderBoard {
+  orders: StudioOrderStage[];
 }
 
 export type GetPublishedReviewsParams = {

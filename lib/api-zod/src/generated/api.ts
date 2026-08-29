@@ -388,6 +388,13 @@ export const JoinWaitlistResponse = zod.object({
  * Returns published, in-stock shop items from the Notion inventory database, grouped into cards with selectable variants.
  * @summary List shop products
  */
+export const getProductsResponseProductsItemRatingAverageMax = 5;
+
+
+export const getProductsResponseProductsItemRatingReviewsItemRatingMax = 5;
+
+
+
 export const GetProductsResponse = zod.object({
   "products": zod.array(zod.object({
   "id": zod.string(),
@@ -408,7 +415,18 @@ export const GetProductsResponse = zod.object({
 })).describe('Every size band this item is offered in (\"Sizes Offered\" in Notion), each flagged with whether it is currently in stock (\"Sizes Available\"). A size that is offered but not available is sold out, and the shop offers a per-size back-in-stock request. Empty for one-size items (soakers, cloths).'),
   "quantityAvailable": zod.number().optional(),
   "addOnIds": zod.array(zod.string()).optional().describe('Ids of other ProductVariants offered as matching add-ons for this variant (the \"Matching Add-ons\" self-relation in the Notion inventory database) — e.g. a skate soaker points at its matching blade towel. Each id is the `id` of a ProductVariant that also appears in this same product list, so clients resolve the add-on\'s name\/price\/availability locally rather than the payload carrying it twice. Empty or absent when the variant has no add-ons.')
-}))
+})),
+  "rating": zod.object({
+  "average": zod.number().min(1).max(getProductsResponseProductsItemRatingAverageMax).describe('The mean star rating, rounded to one decimal place. Shown beside the piece and published as `aggregateRating` in its Product structured data.'),
+  "count": zod.number().int().min(1).describe('How many reviews the average is built from.'),
+  "reviews": zod.array(zod.object({
+  "id": zod.string().describe('The review\'s Notion page id, used only as a render key.'),
+  "rating": zod.number().int().min(1).max(getProductsResponseProductsItemRatingReviewsItemRatingMax).describe('The star rating, 1 (poor) to 5 (excellent).'),
+  "comment": zod.string().describe('The customer\'s testimonial.'),
+  "customerName": zod.string().optional().describe('How the customer asked to be credited. Omitted when they left the credit blank, in which case the testimonial is shown unattributed.'),
+  "publishedAt": zod.coerce.date().optional().describe('When the review was submitted (its Notion created time), used to order the list and to date the testimonial.')
+}).describe('One curated testimonial, as shown on the site. Deliberately narrow: the author\'s email, order number, and verification flag stay in Notion and are never served here.')).describe('A few of those reviews in the customer\'s own words, newest first, for the piece\'s quick view. Capped server-side — the shop list is a single edge-cached payload, so it carries a taste rather than the whole history. Narrow like `PublishedReview`: no email, no order number.')
+}).optional().describe('What customers who bought this piece said about it. Built from reviews left against a shop order and passing the SAME two gates as a public testimonial — the atelier published it and the customer consented — so a rating can never appear beside a piece from a row the testimonials couldn\'t show.\nAbsent when the piece has no such review yet, which is not an error state: most pieces will have none, and a card showing \"0 reviews\" reads worse than a card showing none. A grouped card (several colourways under one `Website Group`) pools the reviews of all its variants, because that is the piece a shopper is looking at.')
 })),
   "categories": zod.array(zod.string()).describe('The shop\'s category filters, read live from the Notion \"Product Categories\" database and returned in the order the atelier arranged them (its `Sort` field). Each inventory item links to its category through a `Category` relation. Editing the categories in Notion changes this list without a redeploy, so clients must not hardcode it.')
 })
@@ -571,7 +589,11 @@ export const GetShopOrderStatusResponse = zod.object({
   "location": zod.string().optional().describe('Where to collect from (the studio\'s own address or a rink), as free text. The customer\'s own shipping address is deliberately never returned — this lookup is gated by order number alone.'),
   "timezone": zod.string().optional().describe('The IANA zone `at` should be read in (the studio\'s APPOINTMENT_TIMEZONE), so a customer in another timezone still sees the studio\'s local time. Same contract as AppointmentDetails.timezone.')
 }).optional().describe('The collection details for a local-pickup order. Always present when `method` is `pickup`, even before a time is arranged — that the order is a pickup at all is itself the answer to \"is there tracking?\".')
-}).optional().describe('How the finished piece reaches the customer, and everything that can be said about that right now. One shape for both order kinds (custom and shop), so the tracking page answers \"where is my order?\" the same way either side.\n`method` decides which half is filled in. A shipped order carries `tracking` once the atelier has entered a tracking number, and `shipBy` until then. A \*\*local-pickup\*\* order carries `pickup` instead: local customers collect in person, so there is no tracking number to show and the order must not read as though something is missing — the scheduled pickup time is the answer.\nAbsent entirely when there is nothing yet to say (a shipped order with no tracking number and no ship-by date), and never present on an order the atelier has cancelled.')
+}).optional().describe('How the finished piece reaches the customer, and everything that can be said about that right now. One shape for both order kinds (custom and shop), so the tracking page answers \"where is my order?\" the same way either side.\n`method` decides which half is filled in. A shipped order carries `tracking` once the atelier has entered a tracking number, and `shipBy` until then. A \*\*local-pickup\*\* order carries `pickup` instead: local customers collect in person, so there is no tracking number to show and the order must not read as though something is missing — the scheduled pickup time is the answer.\nAbsent entirely when there is nothing yet to say (a shipped order with no tracking number and no ship-by date), and never present on an order the atelier has cancelled.'),
+  "items": zod.array(zod.object({
+  "id": zod.string().describe('The inventory row\'s Notion page id — the same id a ProductVariant carries, and what a shop review names as the piece it is about.'),
+  "name": zod.string().describe('The piece\'s name, as the shop lists it.')
+})).optional().describe('The pieces on this order, so a customer at the delivered status can say which one they are reviewing. Resolved from the order\'s `Inventory Items` relation against live inventory, and therefore best-effort: an order placed before that relation was written, or one whose inventory read fails, carries an empty list — which the tracking page reads as \"no piece to review\", never as an error. Only the piece\'s id and name are served; quantities, prices and the shipping address stay in Notion, because this lookup is gated by order number alone.')
 })
 
 
@@ -1739,5 +1761,223 @@ export const SubscribeNewsletterSignupResponse = zod.object({
   "submittedAt": zod.coerce.date().optional().describe('When they opted in (the row\'s Notion created time).'),
   "notionUrl": zod.string().optional().describe('The opt-in\'s page in Notion.')
 }).describe('One marketing opt-in, and whether it reached the mailing list. Staff-only.')
+
+
+/**
+ * Returns the studio account's most recent posts, newest first, for the social-proof strip on the home and shop pages. Read-only and anonymous.
+ * A post that shows a piece the shop sells carries that piece's shop card id, which is how the strip becomes shoppable: the atelier records the post's URL on the inventory row it photographed, and the join is made here rather than guessed from the caption. A post with no such record simply links out to Instagram.
+ * Degrades to an empty list rather than an error whenever the feed cannot be read — the integration isn't configured, the access token has expired, or Instagram is down — because this is a garnish on pages that must stand without it. Clients render nothing when the list is empty.
+ * @summary List the studio's recent Instagram posts
+ */
+export const GetInstagramFeedResponse = zod.object({
+  "posts": zod.array(zod.object({
+  "id": zod.string().describe('Instagram\'s own media id, used only as a render key.'),
+  "permalink": zod.string().describe('The post\'s public Instagram URL, opened in a new tab.'),
+  "imageUrl": zod.string().describe('The still to render. Instagram\'s image for a photo or carousel, and the poster frame for a video. These are CDN URLs that expire, which is why this response\'s edge cache is deliberately short — the same reasoning as the portfolio\'s Notion-signed images. Never empty: a post Instagram returned no usable image for is dropped rather than served as a broken tile.'),
+  "mediaType": zod.enum(['image', 'video', 'carousel']).describe('What kind of post this is, lowercased from Instagram\'s own IMAGE \/ VIDEO \/ CAROUSEL_ALBUM. Clients use it only to badge the thumbnail (a play glyph on a video, a stack glyph on a carousel) — every post carries a still `imageUrl` whatever its type, so a client that ignores this renders correctly.'),
+  "caption": zod.string().optional().describe('The post\'s caption, verbatim and untruncated. Omitted when the post has none. Clients clamp it for display and derive the image\'s alternative text from it.'),
+  "postedAt": zod.coerce.date().optional().describe('When the post was published. Omitted when Instagram returned no timestamp; the list is already in Instagram\'s own newest-first order, so this is for display only.'),
+  "productId": zod.string().optional().describe('The `Product.id` of the shop card this post shows, when the atelier has recorded this post\'s URL against an inventory row. Present only for a piece currently published to the shop, so the client can link straight to `\/shop\/{productId}` without checking. Absent — the common case — means the post is not tied to a purchasable piece and the tile links to Instagram alone.'),
+  "productTitle": zod.string().optional().describe('The name of the piece this post shows, as the atelier names it in the inventory — what the \"Shop this piece\" link is labelled with. Always present alongside `productId`, and absent without it.')
+}).describe('One post from the studio\'s Instagram account. Deliberately narrow: no like or comment counts, no author, and no video file — the strip is a grid of stills that link out to Instagram.')).describe('The studio\'s recent posts, newest first. Empty when the integration is unconfigured or the feed could not be read — the two are deliberately indistinguishable to the client, which renders nothing either way.')
+})
+
+
+/**
+ * The orders still being made, each with the stage it is at and the pipeline its own service walks — the read half of advancing a stage from the dashboard.
+ *
+ * Deliberately a *filtered* query rather than the analytics' full scan: it asks Notion for the orders that are neither cancelled nor at their final stage, so what comes back is bounded by the studio's real open workload rather than by every order ever placed. The two terminal conditions mirror `orderLifecycleState` exactly.
+ *
+ * The customer's email address is never returned — the board only needs to know whether there is one to write to, which is what `notifiable` carries.
+ * @summary Where every open custom order has got to
+ */
+export const ListStudioOrdersResponse = zod.object({
+  "orders": zod.array(zod.object({
+  "orderNumber": zod.string().describe('The order\'s number — its address in every studio operation.'),
+  "orderName": zod.string().describe('The Notion page title, e.g. \"Ada – Custom Costume\".'),
+  "currentStage": zod.string().describe('The stage the order is at now. Empty when the `Stage` property has never been set, which is the one case the board cannot advance from.'),
+  "stages": zod.array(zod.string()).describe('The stages this order\'s own service walks, in order — not the whole live list, so a repair is never offered `Sketching`. Includes the current stage even if it has since been renamed out of the live options.'),
+  "nextStage": zod.string().optional().describe('The stage after the current one, i.e. what \"advance\" means for this order. Absent at the final stage, or when the current stage isn\'t in the list.'),
+  "lastNotifiedStage": zod.string().optional().describe('The furthest stage the customer has already been emailed about (the `Last Notified Stage` high-water marker). Absent when they have never been emailed.'),
+  "service": zod.string().optional().describe('The service the order was placed for, as stored on it.'),
+  "dueDate": zod.string().optional().describe('The order\'s `Due Date` as an ISO date (yyyy-mm-dd), when the atelier has set one. A pass-through string (no `format: date`) so it isn\'t coerced to a Date and reserialized as a UTC timestamp — a due date is a calendar day, and an instant read in a western zone lands on the day before.'),
+  "notifiable": zod.boolean().describe('Whether the order carries a customer email to write to. The address itself is never returned — a stage board has no use for it, and this endpoint is not the place to publish one.')
+}).describe('One order\'s position in its pipeline, and what can be done about it.'))
+}).describe('The open custom orders, for the dashboard\'s stage board. Nearest due date first, then by order number — the order the atelier works them in.')
+
+
+/**
+ * Buys the rate the atelier picked and writes its carrier, tracking number and tracking URL onto the shop order — the three columns that were the last thing on an order still copied by hand from a second website into a third. Everything downstream already reads them, so the customer's tracking page fills itself.
+ *
+ * **This spends money and is not idempotent at the vendor**, which is why the ORDER is the guard: one that already carries a tracking number is refused with 409 unless `replace` is set, which the dashboard confirms.
+ *
+ * `recorded: false` means the label was bought and Notion refused the write. The response still carries the tracking number and the label URL, because throwing would lose a label the studio has already paid for — the purchase outranks its bookkeeping. The dashboard says to paste the number onto the order by hand.
+ * @summary Buy a chosen rate as a label
+ */
+export const buyShippingLabelBodyOrderNumberMax = 64;
+
+export const buyShippingLabelBodyRateIdMax = 128;
+
+
+
+export const BuyShippingLabelBody = zod.object({
+  "orderNumber": zod.string().max(buyShippingLabelBodyOrderNumberMax),
+  "rateId": zod.string().max(buyShippingLabelBodyRateIdMax).describe('The `id` of the rate to buy, from the rates operation.'),
+  "replace": zod.boolean().optional().describe('Buy a second label for an order that already has tracking on it — for when the first was voided. Without it such an order is refused with 409, since the vendor will sell a duplicate as happily as the first and has nothing to read back that says otherwise.')
+})
+
+export const BuyShippingLabelResponse = zod.object({
+  "orderNumber": zod.string(),
+  "carrier": zod.string(),
+  "service": zod.string(),
+  "amount": zod.number().describe('What the studio was charged for the label.'),
+  "currency": zod.string(),
+  "trackingNumber": zod.string(),
+  "trackingUrl": zod.string().optional().describe('The carrier\'s own tracking page, when it gave one.'),
+  "labelUrl": zod.string().optional().describe('The label PDF to print. Served from a signed vendor URL that expires, so it is fetched fresh rather than stored.'),
+  "recorded": zod.boolean().describe('Whether the tracking was written onto the Notion order. False ⇒ the label is bought and paid for but the write failed, so the number above has to be pasted on by hand — reporting that beats throwing, which would lose the label entirely.'),
+  "testMode": zod.boolean().describe('This label is a test one and no carrier will carry it.')
+})
+
+
+/**
+ * The studio's packaging sizes, its ship-from address, and whether a label can be bought at all. Read before anything is asked for, so an unset vendor token or a half-filled ship-from address is said plainly on the panel rather than surfacing as an opaque carrier rejection at the point of sale.
+ *
+ * Reports rather than throws: both failures are states only a human can clear, and a panel that errors on load can't tell anyone which one it is. `problems` is empty when the panel is ready to use.
+ *
+ * `testMode` is load-bearing rather than diagnostic. A test label has a tracking number, a PDF and a price, and no carrier has ever heard of it — an atelier who sticks one on a parcel finds out when the customer doesn't get their dress.
+ * @summary What the label panel can do, and what's stopping it
+ */
+export const GetShippingOptionsResponse = zod.object({
+  "configured": zod.boolean().describe('A shipping vendor token is set.'),
+  "testMode": zod.boolean().describe('The vendor token is a TEST one, so any label bought looks entirely real — tracking number, PDF, price — and no carrier has heard of it.'),
+  "shipFrom": zod.array(zod.string()).optional().describe('The studio\'s ship-from address as envelope lines, present only when it is complete enough to post from.'),
+  "problems": zod.array(zod.string()).describe('Everything standing between the atelier and a label, each phrased with its own fix. Empty ⇒ the panel is ready to use.'),
+  "parcels": zod.array(zod.object({
+  "id": zod.string().describe('What the rate request sends back.'),
+  "name": zod.string().describe('How it reads on the packing bench, e.g. \"Small box\".'),
+  "hint": zod.string().describe('What it is for, so the right one is picked without a tape measure.'),
+  "length": zod.number(),
+  "width": zod.number(),
+  "height": zod.number()
+}).describe('One of the studio\'s packaging sizes, in inches. A code catalog served rather than duplicated in the frontend, like the appointment and service catalogs — a size the form offers that the server can\'t rate would be a dead option nobody could diagnose. Dimensions are the catalog\'s; the WEIGHT is not, because what goes in a box is a dress one day and a pair of soakers the next.'))
+}).describe('Whether a label can be bought, what\'s stopping it, and the packaging the studio keeps.')
+
+
+/**
+ * Quotes a parcel for one shop order across the carriers the studio has connected. Reads and quotes; buys nothing — the purchase is the separate operation below, because a label has a carrier, a service level and a price, and the difference between two of them is three days and eleven dollars. A one-press "buy the cheapest" would put a ground label on a dress needed on Saturday.
+ *
+ * The ship-to address comes from the order's **Stripe checkout**, never from the one-line `Shipping Address` on the Notion order: that line was assembled for a human to read, and parsing it back into components is guesswork that ends in a parcel not arriving. It is returned as envelope lines so a wrong address is caught by eye before it is paid for.
+ *
+ * Rates come back cheapest first, and an empty list is a legitimate answer — no connected carrier will take this parcel to this address — with the carrier's own explanation in `notes`.
+ * @summary What it would cost to post one shop order
+ */
+export const getShippingRatesBodyOrderNumberMax = 64;
+
+export const getShippingRatesBodyParcelIdMax = 64;
+
+export const getShippingRatesBodyWeightOzExclusiveMin = 0;
+export const getShippingRatesBodyWeightOzMax = 800;
+
+
+
+export const GetShippingRatesBody = zod.object({
+  "orderNumber": zod.string().max(getShippingRatesBodyOrderNumberMax).describe('The shop order to post, e.g. `SHP-M2X4K1-AB12`.'),
+  "parcelId": zod.string().max(getShippingRatesBodyParcelIdMax).describe('The id of one of the studio\'s packaging sizes.'),
+  "weightOz": zod.number().gt(getShippingRatesBodyWeightOzExclusiveMin).max(getShippingRatesBodyWeightOzMax).describe('The parcel\'s weight in OUNCES, off the scale. Zero is refused rather than treated as unset — a carrier rating a 0 oz package prices a document envelope — and the 800 oz (50 lb) ceiling is there to catch the typo that matters: pounds typed where ounces were wanted.')
+})
+
+export const GetShippingRatesResponse = zod.object({
+  "orderNumber": zod.string(),
+  "shipTo": zod.array(zod.string()).describe('The customer\'s address as envelope lines, read from the order\'s Stripe checkout — so a wrong one is caught by eye before it is paid for rather than after it is posted.'),
+  "rates": zod.array(zod.object({
+  "id": zod.string(),
+  "carrier": zod.string().describe('As the customer will read it: \"USPS\", \"UPS\".'),
+  "service": zod.string().describe('The service level: \"Priority Mail\", \"Ground Advantage\".'),
+  "amount": zod.number().describe('What the studio pays.'),
+  "currency": zod.string(),
+  "estimatedDays": zod.number().int().optional().describe('The carrier\'s own estimate, when it gives one.'),
+  "durationTerms": zod.string().optional().describe('The carrier\'s wording for the delivery window, when it gives one.')
+}).describe('One buyable rate. `id` is opaque and short-lived — it is the only thing the purchase takes, and it expires.')).describe('Cheapest first, which is the order the atelier chooses in.'),
+  "notes": zod.array(zod.string()).describe('The carriers\' own words when they declined to quote — which is what explains an empty list. Usually empty.')
+})
+
+
+/**
+ * Captures a customer's review of a ready-to-wear piece they bought — a star rating, a short testimonial, an optional display name and photos — once their shop order has reached its final fulfilment status. The review names ONE piece from the order (`productId`, an inventory row id served on the order's `items`), which is what gives a shop piece an average to show; a piece that isn't on the order is rejected. The customer is verified against the email on the order. Accepted reviews land in the same Notion reviews database the custom-order reviews use, with the same "New" status, so the atelier curates them in one queue. Photos are uploaded ahead of time via POST /orders/reference-images; their file_upload ids are passed as photoIds.
+ * @summary Review one piece from a shop order
+ */
+export const CreateShopOrderReviewParams = zod.object({
+  "orderNumber": zod.coerce.string()
+})
+
+
+export const createShopOrderReviewBodyRatingMax = 5;
+
+export const createShopOrderReviewBodyCommentMax = 2000;
+
+export const createShopOrderReviewBodyDisplayNameMax = 120;
+
+
+
+export const CreateShopOrderReviewBody = zod.object({
+  "email": zod.string().email().describe('The email to verify against the one on the order. A review whose email doesn\'t match the order is rejected.'),
+  "productId": zod.string().min(1).describe('The inventory row id of the piece being reviewed — one of the `id`s on the order\'s `items`. The server checks it against the order\'s own pieces, so a review can only ever be left for something the customer actually bought.'),
+  "rating": zod.number().int().min(1).max(createShopOrderReviewBodyRatingMax).describe('The star rating, 1 (poor) to 5 (excellent).'),
+  "comment": zod.string().min(1).max(createShopOrderReviewBodyCommentMax).describe('The customer\'s testimonial about the piece.'),
+  "displayName": zod.string().max(createShopOrderReviewBodyDisplayNameMax).optional().describe('How the customer would like to be credited if the review is featured (e.g. \"Ada L.\" or \"Ada, Chicago\"). Optional.'),
+  "consentToPublish": zod.boolean().optional().describe('Whether the customer gives permission to show this review publicly. Defaults to false — and, because the same two gates decide everything public, a review without it is never counted into the piece\'s average either.'),
+  "photoIds": zod.array(zod.string()).optional().describe('Notion file_upload ids for photos of the piece, uploaded ahead of time via POST \/orders\/reference-images. Attached to the review\'s Notion page as image blocks.')
+}).describe('A review of one ready-to-wear piece from a shop order. The same shape as NewReviewRequest plus the piece it is about — a shop order can hold several pieces, and an average belongs to a piece rather than to the order, so the review has to say which one.')
+
+export const CreateShopOrderReviewResponse = zod.object({
+  "received": zod.boolean()
+})
+
+
+/**
+ * Writes one custom order's `Stage` and, unless asked not to, emails the customer the same status update the Notion automation's webhook sends — so advancing an order is one action on the dashboard rather than an edit in Notion that a webhook has to notice.
+ *
+ * The send is not duplicated: it runs through the same notifier as the webhook, which re-reads the order, applies the same forward-only gate, and advances the same `Last Notified Stage` high-water marker. If the Notion automation is also wired up it will fire on this write, find the marker already at the new stage, and send nothing.
+ *
+ * `stage` must be one of the stages the order's own service walks — moving a repair to `Sketching` is refused with a 400. A stage BEHIND the current one is allowed (that is how a mis-click is corrected) and never emails, because the notifier only sends on forward movement.
+ *
+ * `notify: false` advances the marker without sending, so a stage the atelier chose not to announce stays unannounced even if the Notion automation is still wired. The customer is still emailed about the next forward move.
+ * @summary Move an order to a stage, and tell the customer
+ */
+export const setStudioOrderStagePathOrderNumberMax = 64;
+
+
+
+export const SetStudioOrderStageParams = zod.object({
+  "orderNumber": zod.coerce.string().max(setStudioOrderStagePathOrderNumberMax).describe('The custom order\'s number, e.g. `ORD-000002`.')
+})
+
+export const setStudioOrderStageBodyStageMax = 120;
+
+export const setStudioOrderStageBodyNotifyDefault = true;
+
+export const SetStudioOrderStageBody = zod.object({
+  "stage": zod.string().max(setStudioOrderStageBodyStageMax).describe('The stage to move the order to. Must be one of the order\'s own `stages`; a Notion `status` option cannot be created through the API, so a name that isn\'t already an option would fail the write.'),
+  "notify": zod.boolean().default(setStudioOrderStageBodyNotifyDefault).describe('Whether to email the customer. Default true — sending on the action is the point of advancing here rather than in Notion. False marks the stage as already announced without sending, so the change stays quiet even where the Notion automation is still wired.')
+}).describe('One stage change, as asked for from the dashboard.')
+
+export const SetStudioOrderStageResponse = zod.object({
+  "order": zod.object({
+  "orderNumber": zod.string().describe('The order\'s number — its address in every studio operation.'),
+  "orderName": zod.string().describe('The Notion page title, e.g. \"Ada – Custom Costume\".'),
+  "currentStage": zod.string().describe('The stage the order is at now. Empty when the `Stage` property has never been set, which is the one case the board cannot advance from.'),
+  "stages": zod.array(zod.string()).describe('The stages this order\'s own service walks, in order — not the whole live list, so a repair is never offered `Sketching`. Includes the current stage even if it has since been renamed out of the live options.'),
+  "nextStage": zod.string().optional().describe('The stage after the current one, i.e. what \"advance\" means for this order. Absent at the final stage, or when the current stage isn\'t in the list.'),
+  "lastNotifiedStage": zod.string().optional().describe('The furthest stage the customer has already been emailed about (the `Last Notified Stage` high-water marker). Absent when they have never been emailed.'),
+  "service": zod.string().optional().describe('The service the order was placed for, as stored on it.'),
+  "dueDate": zod.string().optional().describe('The order\'s `Due Date` as an ISO date (yyyy-mm-dd), when the atelier has set one. A pass-through string (no `format: date`) so it isn\'t coerced to a Date and reserialized as a UTC timestamp — a due date is a calendar day, and an instant read in a western zone lands on the day before.'),
+  "notifiable": zod.boolean().describe('Whether the order carries a customer email to write to. The address itself is never returned — a stage board has no use for it, and this endpoint is not the place to publish one.')
+}).describe('One order\'s position in its pipeline, and what can be done about it.'),
+  "previousStage": zod.string().describe('The stage the order was at before this ran.'),
+  "changed": zod.boolean().describe('False when the order was already at that stage, in which case nothing was written and nothing was sent.'),
+  "notification": zod.enum(['sent', 'skipped', 'suppressed']).describe('`sent` — the customer was emailed. `skipped` — a send was attempted and declined (the move wasn\'t forward, or the order carries no email or no stage). `suppressed` — the atelier asked not to email.'),
+  "notificationReason": zod.string().optional().describe('Why nothing was sent, in the atelier\'s terms. Present on `skipped` and `suppressed`.')
+}).describe('What one stage change did.')
 
 
