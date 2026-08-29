@@ -12,6 +12,7 @@ import { logger } from "../lib/logger.js";
 import { notifyRestock } from "./restock-notification.service.js";
 import { sendWeeklyMaterialsDigest } from "./materials-digest.service.js";
 import { notifyUpcomingAppointments } from "./appointment-reminder.service.js";
+import { refreshInstagramToken } from "../lib/instagram/token.js";
 import { paymentStageLabel } from "./payment-labels.js";
 import { resolveStoredOrderService } from "../lib/service-catalog.js";
 import {
@@ -66,6 +67,10 @@ export interface MilestoneReconcileResult extends MilestoneGenerationResult {
   appointmentRemindersSent: number;
   /** Materials listed in the weekly digest; 0 on the six days it doesn't run. */
   materialsDigestItems: number;
+  /** Whether tonight's run renewed the Instagram access token. False on the
+   * ~46 nights out of every 60 when it isn't yet near expiry, and on a run that
+   * couldn't renew it (which alerts). */
+  instagramTokenRefreshed: boolean;
 }
 
 /** Format a Date as an ISO calendar date (`yyyy-mm-dd`), in UTC. */
@@ -458,6 +463,7 @@ export async function reconcileMilestones(
   const restockAlertsSent = await sendDueRestockAlerts();
   const appointmentRemindersSent = await sendDueAppointmentReminders(now);
   const materialsDigestItems = await sendDueMaterialsDigest(now);
+  const instagramTokenRefreshed = await refreshDueInstagramToken();
   return {
     ...generation,
     remindersSent,
@@ -465,7 +471,52 @@ export async function reconcileMilestones(
     restockAlertsSent,
     appointmentRemindersSent,
     materialsDigestItems,
+    instagramTokenRefreshed,
   };
+}
+
+/**
+ * Renew the Instagram access token before it expires.
+ *
+ * The odd one out among these passes: it emails nobody and reconciles nothing,
+ * it keeps a credential alive. It rides this run because the alternative is a
+ * feature that works for exactly 60 days and then stops with no error anywhere
+ * — an expired token degrades to an empty feed, which is indistinguishable from
+ * a studio that never set Instagram up (see `lib/instagram/token.ts`).
+ *
+ * Idempotent and mostly a no-op: the token is only renewed inside its last
+ * fortnight, so this skips on roughly 46 nights in every 60.
+ *
+ * A failure is ALERTED rather than logged, unlike the swallowed failures above.
+ * Those all retry against data that is still sitting there; this one is racing
+ * an expiry, and a run of failed nights is the only warning anyone gets before
+ * the feed dies silently. It still can't fail the reconciliation — the alert is
+ * awaited and the pass returns.
+ */
+export async function refreshDueInstagramToken(): Promise<boolean> {
+  try {
+    const result = await refreshInstagramToken();
+    if (result.status === "failed") {
+      await reportError(
+        { detail: result.detail },
+        "Could not refresh the Instagram access token; the feed will stop when it expires",
+      );
+      return false;
+    }
+    if (result.status === "refreshed") {
+      logger.info(
+        { detail: result.detail },
+        "Refreshed the Instagram access token",
+      );
+    }
+    return result.status === "refreshed";
+  } catch (err) {
+    await reportError(
+      { err },
+      "Could not refresh the Instagram access token; the feed will stop when it expires",
+    );
+    return false;
+  }
 }
 
 /**

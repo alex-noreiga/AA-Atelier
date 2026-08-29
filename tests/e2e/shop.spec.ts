@@ -1,6 +1,10 @@
 import { test, expect } from "./support/test";
 import { GENERIC_ERROR, productList } from "@workspace/test-fixtures";
-import { mockCreateNotify, mockProducts } from "./support/mock-api";
+import {
+  mockCreateNotify,
+  mockInstagramFeed,
+  mockProducts,
+} from "./support/mock-api";
 
 // One sold-out variant (whole item) and one dress sold out in a single size —
 // the two ways the shop offers a back-in-stock request. Typed via the shared
@@ -49,6 +53,7 @@ const INVENTORY = productList({
 test.describe("Shop back-in-stock dialog", () => {
   test.beforeEach(async ({ page }) => {
     await mockProducts(page, { body: INVENTORY });
+    await mockInstagramFeed(page);
   });
 
   test("shows a destructive toast when the API rejects the request", async ({

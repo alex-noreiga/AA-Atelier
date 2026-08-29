@@ -64,8 +64,44 @@ describe("createReview", () => {
       errorResponse(400, "validation_error: bad property"),
     );
     await expect(createReview(row(), client)).rejects.toThrow(
-      /Notion review creation failed with status 400: validation_error: bad property/,
+      /Notion page creation failed with status 400: validation_error: bad property/,
     );
+  });
+
+  // A shop review names its piece through two columns the atelier adds by hand.
+  // Losing a customer's words to un-done setup is the failure this must not have.
+  it("drops a property the reviews database doesn't have and keeps the review", async () => {
+    let attempt = 0;
+    const client = makeFakeClient(() => {
+      attempt += 1;
+      return attempt === 1
+        ? errorResponse(
+            400,
+            JSON.stringify({
+              message: "Product is not a property that exists",
+            }),
+          )
+        : jsonResponse({ id: "new-page" }, 200);
+    });
+
+    await createReview(
+      row({ product: { pageId: "inv-aurora", name: "Aurora Soaker" } }),
+      client,
+    );
+
+    expect(client.calls).toHaveLength(2);
+    const retried = JSON.parse(client.calls[1].init!.body as string);
+    expect(retried.properties.Product).toBeUndefined();
+    // The piece survives as text: the `Item` column and the page body still say
+    // which one was reviewed, so the atelier can link it by hand.
+    expect(retried.properties.Item).toEqual({
+      rich_text: [{ text: { content: "Aurora Soaker" } }],
+    });
+    expect(
+      retried.children.some((b: any) =>
+        b.paragraph?.rich_text?.[0]?.text?.content?.includes("Aurora Soaker"),
+      ),
+    ).toBe(true);
   });
 });
 

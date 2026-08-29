@@ -32,6 +32,9 @@ function renderShopAt(path: string): RenderResult {
 vi.mock("@workspace/api-client-react", () => ({
   useGetProducts: vi.fn(),
   useCreateBackInStockRequest: vi.fn(),
+  // The page's Instagram strip renders nothing without posts, which is exactly
+  // the state these tests want: they are about the catalogue, not the feed.
+  useGetInstagramFeed: vi.fn(() => ({ data: { posts: [] } })),
 }));
 
 import {
@@ -703,5 +706,69 @@ describe("resolveAddOns", () => {
 
   it("returns an empty list when the variant has no add-ons", () => {
     expect(resolveAddOns(v({ id: "s" }), new Map())).toEqual([]);
+  });
+});
+
+// The rating is the card's social proof. What matters is that it shows the count
+// alongside the average, and that a piece with no reviews shows nothing at all —
+// "be the first to review" on every card is a shop that looks unvisited.
+describe("Shop — customer ratings", () => {
+  it("shows the average and the count on a card that has reviews", () => {
+    setHook({
+      products: [product({ rating: { average: 4.5, count: 2, reviews: [] } })],
+    });
+    renderShop(<Shop />);
+
+    expect(screen.getByTestId("star-rating-count")).toHaveTextContent(
+      "4.5 (2)",
+    );
+  });
+
+  it("shows nothing on a card with no reviews", () => {
+    setHook({ products: [product()] });
+    renderShop(<Shop />);
+
+    expect(screen.queryByTestId("star-rating")).not.toBeInTheDocument();
+  });
+
+  it("quotes the reviews in the quick view, crediting the ones that asked", () => {
+    setHook({
+      products: [
+        product({
+          rating: {
+            average: 5,
+            count: 1,
+            reviews: [
+              {
+                id: "r1",
+                rating: 5,
+                comment: "Warm and beautifully finished.",
+                customerName: "Ada L.",
+              },
+            ],
+          },
+        }),
+      ],
+    });
+    renderShopAt("/shop/p1");
+
+    expect(screen.getByTestId("product-reviews-p1")).toHaveTextContent(
+      "Warm and beautifully finished.",
+    );
+    expect(screen.getByTestId("product-reviews-p1")).toHaveTextContent(
+      "Ada L.",
+    );
+  });
+
+  // A rating with no words still counts; the quote list is simply empty.
+  it("shows a rating with no quotes behind it", () => {
+    setHook({
+      products: [product({ rating: { average: 4, count: 3, reviews: [] } })],
+    });
+    renderShopAt("/shop/p1");
+
+    expect(screen.getByTestId("product-reviews-p1")).toHaveTextContent(
+      "4.0 (3)",
+    );
   });
 });

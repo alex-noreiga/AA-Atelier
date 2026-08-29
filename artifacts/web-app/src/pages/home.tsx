@@ -16,6 +16,7 @@ import { CtaLink } from "@/components/cta";
 import { SectionHeader } from "@/components/section-header";
 import { Seo } from "@/components/seo";
 import { Testimonials } from "@/components/testimonials";
+import { InstagramFeed } from "@/components/instagram-feed";
 import { ROUTE_SEO } from "@/lib/seo-routes";
 
 // A trimmed teaser of the four offerings on /services — same icons and titles,
@@ -224,6 +225,11 @@ export default function Home() {
         {/* Testimonials — the reviews the atelier has curated. Renders nothing
             until there is something published, so the page never shows a hole. */}
         <Testimonials />
+
+        {/* Instagram — the studio's recent work, with a shop link on any post
+            the atelier has tied to a piece. Renders nothing until there is
+            something to show, so the page never shows a hole. */}
+        <InstagramFeed />
 
         {/* Ready-to-wear shop teaser */}
         <div

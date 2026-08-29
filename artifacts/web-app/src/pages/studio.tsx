@@ -20,12 +20,14 @@ import { PageShell } from "@/components/page-shell";
 import NotFound from "@/pages/not-found";
 import { StudioTools } from "@/components/studio-tools";
 import { StudioRequests } from "@/components/studio-requests";
+import { StudioOrders } from "@/components/studio-orders";
 import { StudioNewsletter } from "@/components/studio-newsletter";
 import { StudioAvailability } from "@/components/studio-availability";
 import { StudioAppointmentStaff } from "@/components/studio-appointment-staff";
 import { StudioReviews } from "@/components/studio-reviews";
 import { StudioMaterials } from "@/components/studio-materials";
 import { StudioProductionPay } from "@/components/studio-production-pay";
+import { StudioShipping } from "@/components/studio-shipping";
 import { StudioGuides, GuidesFor } from "@/components/studio-guides";
 import { StudioSettings } from "@/components/studio-settings";
 import { Seo } from "@/components/seo";
@@ -300,7 +302,9 @@ function RefreshButton() {
  */
 const SECTION_VIEWS: Record<StudioSectionId, () => React.ReactElement> = {
   figures: FiguresSection,
+  orders: OrdersSection,
   requests: RequestsSection,
+  shipping: ShippingSection,
   reviews: ReviewsSection,
   bookings: BookingsSection,
   materials: MaterialsSection,
@@ -448,6 +452,17 @@ function Figures({ data }: { data: StudioAnalytics }) {
  * the confirmation stays: the queue prepares a run, it never starts one. Split
  * across sections, the hand-off would be filling a form that isn't mounted.
  */
+/** Where the work has got to, and moving it on. The one action that used to be
+ * possible only in Notion, which is why the stage-change automation exists. */
+function OrdersSection() {
+  return (
+    <>
+      <StudioOrders />
+      <GuidesFor section="orders" />
+    </>
+  );
+}
+
 function RequestsSection() {
   const [handoff, setHandoff] = useState<ToolHandoff | undefined>();
 
@@ -469,6 +484,19 @@ function ReviewsSection() {
     <>
       <StudioReviews />
       <GuidesFor section="reviews" />
+    </>
+  );
+}
+
+/** The label desk: what a parcel would cost to post, and the label itself.
+ * Its own section rather than a card among the tools, because it is the one
+ * action on the dashboard that asks a question and waits for an answer before
+ * it does anything — the tool shape is one press and one composed result. */
+function ShippingSection() {
+  return (
+    <>
+      <StudioShipping />
+      <GuidesFor section="shipping" />
     </>
   );
 }

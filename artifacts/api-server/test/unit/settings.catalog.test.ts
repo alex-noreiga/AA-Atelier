@@ -36,6 +36,7 @@ import {
 } from "../../src/services/rewards.service.js";
 import { atelierInbox } from "../../src/lib/resend/config.js";
 import { alertInbox } from "../../src/services/alert.service.js";
+import { shipFromAddress } from "../../src/lib/shipping/from-address.js";
 
 /**
  * The catalog restates each setting's built-in default as display text, and the
@@ -211,6 +212,57 @@ const CASES: Case[] = [
     key: "ALERT_INBOX_EMAIL",
     read: alertInbox,
     sample: "alerts@example.com",
+  },
+
+  // The ship-from address. Each key is read through `shipFromAddress()` — the
+  // same call every rate is quoted against — so the catalog can't claim a
+  // default the label flow doesn't actually post from. Seven of the eight
+  // default to EMPTY on purpose: there is no sensible built-in for somebody's
+  // address, and the panel reports an unfilled one as the reason no label can
+  // be bought rather than quietly posting from a placeholder.
+  {
+    key: "SHIP_FROM_NAME",
+    read: () => shipFromAddress().name,
+    sample: "A.A Atelier",
+  },
+  {
+    key: "SHIP_FROM_STREET1",
+    read: () => shipFromAddress().street1,
+    sample: "1200 Rink Road",
+  },
+  {
+    key: "SHIP_FROM_STREET2",
+    read: () => shipFromAddress().street2 ?? "",
+    sample: "Suite 4",
+  },
+  {
+    key: "SHIP_FROM_CITY",
+    read: () => shipFromAddress().city,
+    sample: "Austin",
+  },
+  {
+    key: "SHIP_FROM_STATE",
+    // The getter uppercases, so a lowercase code IS honoured — `accepts` is
+    // non-empty to match, while the write guard insists on two letters.
+    read: () => shipFromAddress().state,
+    sample: "tx",
+    sampleReads: "TX",
+  },
+  {
+    key: "SHIP_FROM_ZIP",
+    read: () => shipFromAddress().zip,
+    sample: "78701",
+  },
+  {
+    key: "SHIP_FROM_COUNTRY",
+    read: () => shipFromAddress().country,
+    sample: "ca",
+    sampleReads: "CA",
+  },
+  {
+    key: "SHIP_FROM_PHONE",
+    read: () => shipFromAddress().phone ?? "",
+    sample: "512-555-0100",
   },
 ];
 

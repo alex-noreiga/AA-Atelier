@@ -50,6 +50,7 @@ const CACHED_READS = [
   { path: "/api/colors", route: "routes/colors.ts" },
   { path: "/api/products", route: "routes/products.ts" },
   { path: "/api/capacity", route: "routes/capacity.ts" },
+  { path: "/api/instagram", route: "routes/instagram.ts" },
   { path: "/api/portfolio", route: "routes/portfolio.ts" },
 ];
 

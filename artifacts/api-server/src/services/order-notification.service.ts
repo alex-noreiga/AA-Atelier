@@ -117,6 +117,24 @@ function customerFirstName(orderName: string): string {
   return namePart.trim().split(/\s+/)[0] ?? "";
 }
 
+/**
+ * The order's pipeline with its current stage guaranteed to be in it.
+ *
+ * A stage the atelier has since renamed or removed from the live options is
+ * still what the order says it is at, and dropping it would leave the timeline
+ * (and the forward-only comparison below) reasoning about a list the order isn't
+ * in. Exported because the dashboard's stage board applies the same fixup, and
+ * two copies of it would eventually disagree about whether a renamed stage can
+ * be advanced from.
+ */
+export function stagesIncludingCurrent(
+  stages: string[],
+  currentStage: string,
+): string[] {
+  if (!currentStage || stages.includes(currentStage)) return stages;
+  return [...stages, currentStage];
+}
+
 /** A direct link to this order's tracking page, when PUBLIC_BASE_URL is set (same
  * base Stripe uses). The track page reads `?orderNumber=` and looks it up on
  * arrival, so this deep-links straight to the customer's order. */
@@ -160,9 +178,7 @@ export async function notifyOrderStageChange(
 
   // Ensure the current stage appears in the pipeline even if it was renamed or
   // removed from the live options — mirrors getOrderStatus's timeline fixup.
-  const stages = order.stages.includes(order.currentStage)
-    ? order.stages
-    : [...order.stages, order.currentStage];
+  const stages = stagesIncludingCurrent(order.stages, order.currentStage);
 
   const forward = isForwardStageChange(
     order.lastNotifiedStage,

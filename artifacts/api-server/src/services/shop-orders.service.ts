@@ -9,6 +9,7 @@ import {
 import { resolveFulfilment, type FulfilmentView } from "../lib/fulfilment.js";
 import { appointmentTimezone } from "../lib/appointments/settings.js";
 import { orderDelivered } from "./delivery.js";
+import { findVariantNames } from "./products.service.js";
 import { NotFoundError } from "../lib/errors.js";
 
 export interface ShopOrderStatusView {
@@ -20,6 +21,9 @@ export interface ShopOrderStatusView {
   /** How the order reaches the customer — carrier tracking, or a scheduled
    * local pickup for a customer collecting in person. */
   fulfilment?: FulfilmentView;
+  /** The pieces on the order, so a delivered one can offer a review of a
+   * particular piece. Absent when there are none to name. */
+  items?: Array<{ id: string; name: string }>;
 }
 
 export async function getShopOrderStatus(
@@ -52,6 +56,19 @@ export async function getShopOrderStatus(
         delivered: orderDelivered(order.status, timeline),
       });
 
+  // The pieces on the order, named. Only worth resolving once the order is
+  // finished and not cancelled, which is the one moment the tracking page asks
+  // the question ("which piece are you reviewing?") — so an in-progress lookup
+  // costs no inventory read. Best-effort by construction: `findVariantNames`
+  // swallows its own failures, and a piece it can't name is left out rather than
+  // offered as a blank choice.
+  const items =
+    !order.cancelled &&
+    order.itemIds?.length &&
+    orderDelivered(order.status, timeline)
+      ? await namedItems(order.itemIds)
+      : [];
+
   return {
     orderNumber: order.orderNumber,
     status: order.status,
@@ -59,5 +76,17 @@ export async function getShopOrderStatus(
     ...(order.total !== undefined ? { total: order.total } : {}),
     ...(order.cancelled ? { cancelled: true } : {}),
     ...(fulfilment ? { fulfilment } : {}),
+    ...(items.length > 0 ? { items } : {}),
   };
+}
+
+/** Inventory ids paired with their names, in the order's own order, dropping
+ * any the shop can't name (an unpublished piece, or a failed inventory read). */
+async function namedItems(
+  ids: string[],
+): Promise<Array<{ id: string; name: string }>> {
+  const names = await findVariantNames(ids);
+  return ids
+    .map((id) => ({ id, name: names.get(id) ?? "" }))
+    .filter((item) => item.name !== "");
 }

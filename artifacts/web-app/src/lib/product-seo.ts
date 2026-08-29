@@ -106,6 +106,32 @@ export function productJsonLd(product: Product): Record<string, unknown> {
     ...(variant?.description ? { description: variant.description } : {}),
     ...(variant && variant.photos.length > 0 ? { image: variant.photos } : {}),
     ...(offers ? { offers } : {}),
+    ...aggregateRating(product),
+  };
+}
+
+/**
+ * `aggregateRating` for a piece that has one — the star rating a search result
+ * can show beside it.
+ *
+ * Emitted only when the piece actually has reviews. Google's structured-data
+ * policy is explicit that a rating must come from genuine customers, and a
+ * `ratingValue` of 0 over a `reviewCount` of 0 is both a policy violation and an
+ * invalid value, so a piece with nothing to say says nothing. The numbers are
+ * exactly the ones on the page — the server rounds the average once, so the
+ * rating a shopper reads and the rating a crawler reads can never differ.
+ */
+function aggregateRating(product: Product): Record<string, unknown> {
+  const rating = product.rating;
+  if (!rating || rating.count < 1) return {};
+  return {
+    aggregateRating: {
+      "@type": "AggregateRating",
+      ratingValue: rating.average,
+      reviewCount: rating.count,
+      bestRating: 5,
+      worstRating: 1,
+    },
   };
 }
 
