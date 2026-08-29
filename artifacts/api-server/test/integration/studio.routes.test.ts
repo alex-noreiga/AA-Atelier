@@ -23,6 +23,14 @@ vi.mock("../../src/lib/notion/consignment.repository.js", () => ({
 }));
 vi.mock("../../src/lib/notion/invoice.repository.js", () => ({
   listInvoicesForAnalytics: vi.fn().mockResolvedValue([]),
+  // The figures derive each invoice's value from its own lines, the same way
+  // the customer's invoice page does, rather than from Notion's Final Balance.
+  listInvoiceLinesForAnalytics: vi
+    .fn()
+    .mockResolvedValue({ rows: [], complete: true }),
+}));
+vi.mock("../../src/lib/db/credit-notes.repository.js", () => ({
+  sumCreditsByInvoice: vi.fn().mockResolvedValue(new Map()),
 }));
 vi.mock("../../src/lib/notion/products.repository.js", () => ({
   listVariants: vi.fn().mockResolvedValue([]),

@@ -560,8 +560,14 @@ describe("recordPaidOrder", () => {
 
     expect(retrieve).toHaveBeenCalledWith("cs_1", {
       // The product carries the `variantId` we stamped at checkout; the shipping
-      // rate carries the display name that tells a local pickup from a posting.
-      expand: ["line_items.data.price.product", "shipping_cost.shipping_rate"],
+      // rate carries the display name that tells a local pickup from a posting;
+      // the payment intent carries the instant the charge actually settled,
+      // which is what the payment ledger dates the row by.
+      expand: [
+        "line_items.data.price.product",
+        "shipping_cost.shipping_rate",
+        "payment_intent",
+      ],
     });
     // No customer email on this session -> no CRM upsert, no client link.
     expect(mockUpsertClient).not.toHaveBeenCalled();
@@ -956,6 +962,58 @@ describe("recordPaidOrder (Postgres dedup)", () => {
     expect(mockCreate).toHaveBeenCalled();
     // The claim was confirmed (status set to done).
     expect(db.calls.some((c) => /status = 'done'/.test(c.text))).toBe(true);
+  });
+
+  it("writes the paid session to the payment ledger", async () => {
+    process.env.POSTGRES_URL = "postgres://test";
+    const db = claimDb("claimed");
+    __setDbForTests(db);
+    mockFind.mockResolvedValue(false);
+    const { stripe, retrieve } = fakeStripe();
+    retrieve.mockResolvedValue({
+      ...paidSession,
+      created: 1786633445,
+      amount_total: 8500,
+      currency: "usd",
+      payment_intent: { id: "pi_pg", created: 1786633745 },
+      metadata: { orderNumber: "SHP-000042" },
+    });
+
+    await recordPaidOrder({ id: "cs_pg" } as Stripe.Checkout.Session, stripe);
+
+    const ledger = db.calls.find((c) => /insert into payments/.test(c.text));
+    expect(ledger).toBeDefined();
+    // order_number, order_kind, stage, kind, amount_cents ...
+    expect(ledger?.params?.[0]).toBe("SHP-000042");
+    expect(ledger?.params?.[1]).toBe("shop");
+    expect(ledger?.params?.[3]).toBe("charge");
+    expect(ledger?.params?.[4]).toBe(8500);
+    // Dated from the expanded intent (the charge), not the session (checkout open).
+    expect(ledger?.params?.[7]).toBe(new Date(1786633745 * 1000).toISOString());
+  });
+
+  it("still records the money on the reclaim path, where the order already exists", async () => {
+    // A prior attempt created the Notion page and died before confirming its
+    // claim. The order isn't re-created, but the ledger row is idempotent on the
+    // session id — so skipping it here would lose the payment for good.
+    process.env.POSTGRES_URL = "postgres://test";
+    const db = claimDb("claimed");
+    __setDbForTests(db);
+    mockFind.mockResolvedValue(true);
+    const { stripe, retrieve } = fakeStripe();
+    retrieve.mockResolvedValue({
+      ...paidSession,
+      created: 1786633445,
+      amount_total: 8500,
+      metadata: { orderNumber: "SHP-000042" },
+    });
+
+    await recordPaidOrder({ id: "cs_pg" } as Stripe.Checkout.Session, stripe);
+
+    expect(mockCreate).not.toHaveBeenCalled();
+    expect(db.calls.some((c) => /insert into payments/.test(c.text))).toBe(
+      true,
+    );
   });
 
   it("no-ops a redelivered, already-done session (no retrieve/create)", async () => {

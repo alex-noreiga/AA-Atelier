@@ -24,9 +24,17 @@ import {
   markInvoicePaid,
 } from "../lib/notion/invoice.repository.js";
 import { runPaidOrderRewards } from "./rewards.service.js";
+import { recordStripeCharge } from "./payment-ledger.service.js";
 import { logger } from "../lib/logger.js";
 import {
-  LINE_TYPE_DEPOSIT,
+  chargedLinesOf,
+  issuedIdentity,
+  readIssuedInvoice,
+  type IssuedInvoice,
+} from "./invoice-issue.service.js";
+import { readCreditNotes, type CreditNote } from "./credit-note.service.js";
+import {
+  invoiceChargedTotal,
   type PaymentStage,
   type InvoiceRecord,
   type InvoiceLineItemRecord,
@@ -39,9 +47,14 @@ import { labelDeposits } from "./payment-labels.js";
 import { getStripeClient } from "../lib/stripe/client.js";
 import { bnplPaymentMethodTypes } from "../lib/stripe/payment-methods.js";
 import { siteBaseUrl } from "../lib/site.js";
-import { BadRequestError, NotFoundError } from "../lib/errors.js";
+import {
+  BadRequestError,
+  NotFoundError,
+  ServiceUnavailableError,
+} from "../lib/errors.js";
+import { STUDIO_CURRENCY } from "../lib/currency.js";
 
-const CURRENCY = "usd";
+const CURRENCY = STUDIO_CURRENCY;
 
 /** The metadata kind that marks a Checkout session as a custom-order payment
  * (any of the three stages). The webhook routes on this; the shop-success page
@@ -68,24 +81,58 @@ function roundCents(amount: number): number {
 export function buildInvoiceView(
   invoice: InvoiceRecord,
   lineItems: InvoiceLineItemRecord[],
+  issued: IssuedInvoice | null = null,
+  credits: CreditNote[] = [],
 ): InvoiceView {
-  // "Deposit" is no longer an option on the live `Line Type` select, so this is
-  // a guard rather than an active filter — see `LINE_TYPE_DEPOSIT`. Keep it:
-  // without it, re-adding that option in Notion would bill a customer for their
-  // own deposit.
-  const charged = lineItems.filter((li) => li.type !== LINE_TYPE_DEPOSIT);
+  // The charges come from the ISSUED snapshot when the invoice has been issued,
+  // and from the live Notion rows when it hasn't (a legacy invoice, or a
+  // Postgres outage). That choice is `chargedLinesOf`, in one place, so this
+  // view, its PDF and the balance checkout can never disagree about which
+  // document they are looking at.
+  //
+  // Which lines are charges, and what they come to, are then the SHARED rule in
+  // `invoice.schema.ts` — the studio's own figures derive an invoice's value the
+  // same way, so the customer's total and the dashboard's can't drift. ("Deposit"
+  // is no longer a live `Line Type` option; the filter is a guard, kept because
+  // without it re-adding that option in Notion would bill a customer for their
+  // own deposit.)
+  const charged = chargedLinesOf(issued, lineItems);
+  const subtotal = invoiceChargedTotal(charged);
 
-  const subtotal = roundCents(charged.reduce((sum, li) => sum + li.amount, 0));
+  // Credit notes reduce what the invoice CHARGES, so they come off before the
+  // deposits already paid are credited against it. The service caps the credits
+  // on an invoice at its own subtotal, so this can't go negative — but it is
+  // floored anyway, because an arithmetic invariant enforced two files away is
+  // one nobody reads.
+  const creditsTotal = roundCents(
+    credits.reduce((sum, note) => sum + note.amountCents / 100, 0),
+  );
+  const charges = Math.max(0, roundCents(subtotal - creditsTotal));
+
   const depositsCreditedTotal = roundCents(
     invoice.deposits.reduce((sum, d) => (d.paid ? sum + d.amount : sum), 0),
   );
-  const balanceDue = Math.max(0, roundCents(subtotal - depositsCreditedTotal));
+  const balanceDue = Math.max(0, roundCents(charges - depositsCreditedTotal));
+
+  const identity = issuedIdentity(issued);
 
   return {
     invoiceId: invoice.invoiceId,
+    ...(identity ?? {}),
     paid: invoice.balancePaid,
     lineItems: charged,
     subtotal,
+    ...(credits.length > 0
+      ? {
+          creditsTotal,
+          credits: credits.map((note) => ({
+            creditNumber: note.creditNumber,
+            issuedAt: note.issuedAt.toISOString(),
+            amount: note.amountCents / 100,
+            reason: note.reason,
+          })),
+        }
+      : {}),
     depositsCreditedTotal,
     balanceDue,
     ...(invoice.paymentDeadline !== undefined
@@ -113,10 +160,17 @@ export async function getInvoicePaymentInfo(
   const { payment } = resolveStoredOrderService(order.service);
   const deposits = labelDeposits(invoice.deposits, payment);
   if (!invoice.ready) return { deposits, invoice: null };
-  const lineItems = await listInvoiceLineItems(invoice.pageId);
+  const [lineItems, issued, creditRead] = await Promise.all([
+    listInvoiceLineItems(invoice.pageId),
+    readIssuedInvoice(invoice.pageId),
+    readCreditNotes(invoice.pageId),
+  ]);
   return {
     deposits,
-    invoice: buildInvoiceView(invoice, lineItems),
+    // A credits read that failed shows the invoice UNcredited here. That is the
+    // recoverable direction for a display; the checkout below refuses instead,
+    // because charging an unconfirmed balance is not recoverable.
+    invoice: buildInvoiceView(invoice, lineItems, issued, creditRead.credits),
   };
 }
 
@@ -162,8 +216,29 @@ export async function createPaymentCheckout(
     if (invoice.balancePaid) {
       throw new BadRequestError("This balance has already been paid.");
     }
-    const lineItems = await listInvoiceLineItems(invoice.pageId);
-    const view = buildInvoiceView(invoice, lineItems);
+    // Priced from the ISSUED document where there is one. Reading the live rows
+    // here while showing the customer a snapshot would be the sharpest form of
+    // the bug this closes: shown one total, charged another.
+    const [lineItems, issued, creditRead] = await Promise.all([
+      listInvoiceLineItems(invoice.pageId),
+      readIssuedInvoice(invoice.pageId),
+      readCreditNotes(invoice.pageId),
+    ]);
+    if (creditRead.unavailable) {
+      // We could not confirm what this invoice has been credited, and an
+      // uncredited invoice charges its FULL amount — so a blip here would take
+      // money from a customer who had been credited. Refuse, retriably, rather
+      // than price a document we can't read.
+      throw new ServiceUnavailableError(
+        "We couldn't confirm your invoice just now. Please try again in a moment.",
+      );
+    }
+    const view = buildInvoiceView(
+      invoice,
+      lineItems,
+      issued,
+      creditRead.credits,
+    );
     if (view.balanceDue <= 0) {
       throw new BadRequestError("There's no balance due on this order.");
     }
@@ -260,12 +335,28 @@ export async function recordPayment(
   }
   await markInvoicePaid(invoicePageId, stage, session.id);
 
+  const orderNumber = session.metadata?.orderNumber;
+
+  // The payment ledger. The invoice records THAT this stage was paid; the ledger
+  // records when, how much actually arrived (tax included — it is a cash record,
+  // not a restatement of the invoice) and against which Stripe session. That
+  // timestamp is the whole reason it exists: a checkbox cannot say which month
+  // the money landed in, which is why bespoke work has only ever been reportable
+  // as *booked*. Best-effort and never throwing — see payment-ledger.service.
+  if (orderNumber) {
+    await recordStripeCharge({
+      orderNumber,
+      orderKind: "custom",
+      stage,
+      session,
+    });
+  }
+
   // Best-effort referral / returning-skater rewards on the paid custom order (see
   // rewards.service). The reward passes are idempotent by the CRM flags + the
   // first-paid-order number, so running on every payment stage (not just the
   // first deposit) can't double-issue. A failure must never bubble into the
   // webhook — swallow and log, like the shop path.
-  const orderNumber = session.metadata?.orderNumber;
   if (orderNumber) {
     try {
       const order = await findOrderForStageNotification(orderNumber);

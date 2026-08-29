@@ -8,6 +8,10 @@ import {
   type NotionInvoicePage,
   type NotionLineItemPage,
 } from "../../src/lib/notion/invoice.schema.js";
+import {
+  chargedLines,
+  invoiceChargedTotal,
+} from "../../src/lib/notion/invoice.schema.js";
 
 describe("extractInvoice", () => {
   it("reads the id, gate, paid flag, rollup balance, and deadline", () => {
@@ -270,5 +274,44 @@ describe("extractPaymentReminderInvoice — depositCount", () => {
   it("counts none on an invoice with no deposits set", () => {
     const page = invoicePage({ id: "inv-1" }) as NotionInvoicePage;
     expect(extractPaymentReminderInvoice(page).depositCount).toBe(0);
+  });
+});
+
+describe("what an invoice charges", () => {
+  // One rule, two readers: the customer's invoice page and the studio's figures.
+  // They used to derive this separately and agreed only by convention.
+  const lines = [
+    { type: "Material", amount: 120.5 },
+    { type: "Labor", amount: 300 },
+    { type: "Adjustment", amount: 79.5 },
+  ];
+
+  it("sums the charged lines", () => {
+    expect(invoiceChargedTotal(lines)).toBe(500);
+  });
+
+  it("excludes a Deposit — a credit against the total, never a charge", () => {
+    expect(
+      invoiceChargedTotal([...lines, { type: "Deposit", amount: 250 }]),
+    ).toBe(500);
+  });
+
+  it("keeps the charged lines themselves, for display", () => {
+    const kept = chargedLines([...lines, { type: "Deposit", amount: 250 }]);
+    expect(kept).toHaveLength(3);
+    expect(kept.every((l) => l.type !== "Deposit")).toBe(true);
+  });
+
+  it("settles to whole cents so a float tail can't leak into a figure", () => {
+    expect(
+      invoiceChargedTotal([
+        { type: "Material", amount: 0.1 },
+        { type: "Material", amount: 0.2 },
+      ]),
+    ).toBe(0.3);
+  });
+
+  it("is 0 for an invoice with no lines", () => {
+    expect(invoiceChargedTotal([])).toBe(0);
   });
 });

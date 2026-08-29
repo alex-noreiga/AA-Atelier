@@ -9,6 +9,12 @@ vi.mock("../../src/lib/notion/shop-orders.repository.js", () => ({
 vi.mock("../../src/lib/resend/send.js", () => ({
   sendEmailBestEffort: vi.fn(),
 }));
+// The payment ledger records the refund as its own negative movement, keyed on
+// the refund id — so a partial later topped up to full lands as two rows. Its
+// mapping is covered in payment-ledger.service.test.ts; assert the wiring here.
+vi.mock("../../src/services/payment-ledger.service.js", () => ({
+  recordStripeRefund: vi.fn(),
+}));
 
 import type Stripe from "stripe";
 import {
@@ -22,6 +28,7 @@ import {
 import { sendEmailBestEffort } from "../../src/lib/resend/send.js";
 import { NotFoundError, BadRequestError } from "../../src/lib/errors.js";
 import { logger } from "../../src/lib/logger.js";
+import { recordStripeRefund } from "../../src/services/payment-ledger.service.js";
 
 const mockFindShop = vi.mocked(findShopOrderForCancellation);
 const mockRecord = vi.mocked(recordShopOrderRefund);
@@ -150,6 +157,35 @@ describe("processReturnRefund", () => {
       { payment_intent: "pi_1", amount: 20000 },
       { idempotencyKey: "return_pi_1_20000" },
     );
+  });
+
+  it("records the refund in the payment ledger", async () => {
+    mockFindShop.mockResolvedValue(shopOrder());
+    const { stripe } = fakeStripe({
+      sessions: { cs_1: "pi_1" },
+      captured: { pi_1: 20000 },
+    });
+
+    await processReturnRefund("SHP-1", 18000, stripe);
+
+    expect(vi.mocked(recordStripeRefund)).toHaveBeenCalledWith(
+      expect.objectContaining({ orderNumber: "SHP-1", orderKind: "shop" }),
+    );
+  });
+
+  it("records nothing in the ledger when no money moved", async () => {
+    // An even exchange, or a re-press at the same target. The Notion marker is
+    // still written; the ledger must stay a record of actual movements.
+    mockFindShop.mockResolvedValue(shopOrder({ refundedAmount: 180 }));
+    const { stripe } = fakeStripe({
+      sessions: { cs_1: "pi_1" },
+      captured: { pi_1: 20000 },
+      existingRefunds: { pi_1: [18000] },
+    });
+
+    await processReturnRefund("SHP-1", 18000, stripe);
+
+    expect(vi.mocked(recordStripeRefund)).not.toHaveBeenCalled();
   });
 
   it("refunds a partial amount for a restocking fee", async () => {

@@ -5,28 +5,36 @@
  * API specification
  * OpenAPI spec version: 0.1.0
  */
+import type { StudioToolRequestMethod } from './studioToolRequestMethod';
+import type { StudioToolRequestStage } from './studioToolRequestStage';
 
 /**
  * The arguments for one internal tool run. Every field is optional here because each tool takes a different subset; the server rejects a run that is missing what its own tool needs. This replaces the query string of the retired `?secret=` links, so the argument names mirror them.
  */
 export interface StudioToolRequest {
   /**
-     * The order the tool acts on — `ORD-…` for a custom order, `SHP-…` for a shop order. Required by `invoice-lines`, `quote`, `status-email` and the two refunds; `milestones` sweeps the whole pipeline and `restock-alert` takes an optional `item` instead.
+     * The order the tool acts on — `ORD-…` for a custom order, `SHP-…` for a shop order. Required by `invoice-lines`, `quote`, `issue-invoice`, `credit-note`, `status-email`, `record-payment` and the two refunds; `milestones` sweeps the whole pipeline and `restock-alert` takes an optional `item` instead.
      * @maxLength 64
      */
   orderNumber?: string;
   /** `status-email` only. Resend the status update even when the order hasn't moved forward since the customer was last emailed. A forced resend never rewinds the high-water marker. */
   force?: boolean;
   /**
-     * Dollars, read by two tools. For `return-refund` it is the TARGET total to have refunded on the order — not an increment, so a repeated run can't double-refund; omit to refund in full. For `quote` it is the price of the work and is REQUIRED, since a quote with no amount is nothing to pay.
+     * Dollars, read by four tools, meaning something different in each — which is why the wording lives with the tool rather than here. For `return-refund` it is the TARGET total to have refunded on the order — not an increment, so a repeated run can't double-refund; omit to refund in full. For `quote` it is the price of the work and is REQUIRED, since a quote with no amount is nothing to pay. For `record-payment` it is REQUIRED and is how much actually changed hands. For `credit-note` it is REQUIRED and is how much to take off the invoice.
      * @minimum 0
      */
   amount?: number;
   /**
-     * `quote` only, and optional even there. What the work is, as the customer should read it on their invoice — "Re-stone bodice", "Replace shoulder elastic". Omitted ⇒ the line is named after the order's service ("Repair", "Rhinestoning", "Alterations").
+     * Optional free text, read by two tools. For `quote` it is what the work is, as the customer should read it on their invoice — "Re-stone bodice", "Replace shoulder elastic"; omitted ⇒ the line is named after the order's service ("Repair", "Rhinestoning", "Alterations"). For `record-payment` it is an internal note kept on the ledger row ("cash at the fitting", "check #204") — the customer never sees it. For `credit-note` it is REQUIRED and is the reason the credit was raised ("rhinestoning not completed"), which the customer DOES see on their invoice.
      * @maxLength 200
      */
   description?: string;
+  /** `record-payment` only. How the money arrived. Deliberately has no `card` option: a card payment goes through Stripe and records itself, so offering one here would only ever produce a second row for money already in the ledger. */
+  method?: StudioToolRequestMethod;
+  /** `record-payment` only. The calendar date (`YYYY-MM-DD`) the money actually changed hands, which is the whole reason the tool exists — cash handed over at a fitting is typed up whenever the atelier next sits down, and the ledger must date it to the day it arrived rather than the day it was recorded. Interpreted as midday in the studio's timezone, so it can't slip to the neighbouring day when read back. Omitted ⇒ today. A future date is rejected as a typo. */
+  paidOn?: Date;
+  /** `record-payment` on a custom order only, where it is REQUIRED once the order has an invoice — an unattributed payment can settle nothing. Which of the invoice's three staged payments the money covers. Ignored for a shop order, which has no stages. */
+  stage?: StudioToolRequestStage;
   /**
      * `restock-alert` only, and optional even there. The exact `Item Name` of one inventory row to alert on, as it appears in Notion — the same text a back-in-stock request stores. Omit it to sweep every piece that is currently in stock, which is what the nightly run does.
      * @maxLength 200

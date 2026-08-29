@@ -26,6 +26,7 @@ import { upsertClientIndex } from "../lib/db/clients.repository.js";
 import { writeOrderIndex } from "../lib/db/order-index.repository.js";
 import { runPaidOrderRewards } from "./rewards.service.js";
 import { relationLinksEnabled } from "./request-links.js";
+import { recordStripeCharge } from "./payment-ledger.service.js";
 import {
   purchasedLinesFromSession,
   recordShopOrderLines,
@@ -46,8 +47,9 @@ import { bnplPaymentMethodTypes } from "../lib/stripe/payment-methods.js";
 import { siteBaseUrl } from "../lib/site.js";
 import { BadRequestError, NotFoundError } from "../lib/errors.js";
 import { logger } from "../lib/logger.js";
+import { STUDIO_CURRENCY } from "../lib/currency.js";
 
-const CURRENCY = "usd";
+const CURRENCY = STUDIO_CURRENCY;
 // v1 default — the atelier can widen this to the markets it ships to.
 const SHIPPING_COUNTRIES: Stripe.Checkout.SessionCreateParams.ShippingAddressCollection.AllowedCountry[] =
   ["US", "CA"];
@@ -480,12 +482,39 @@ async function processPaidShopOrder(
   // — and the chosen shipping rate, whose display name is how we tell a local
   // pickup from a posting (`chosePickupRate`).
   const full = await stripe.checkout.sessions.retrieve(session.id, {
-    expand: ["line_items.data.price.product", "shipping_cost.shipping_rate"],
+    expand: [
+      "line_items.data.price.product",
+      "shipping_cost.shipping_rate",
+      // For the payment ledger's `paid_at`: the intent carries the instant the
+      // charge actually settled, where the session carries the instant checkout
+      // was opened. The difference only decides an order paid either side of
+      // midnight on the last of the month — but it is free here, since the
+      // session is being retrieved anyway.
+      "payment_intent",
+    ],
   });
 
   if (full.payment_status !== "paid") {
     return false;
   }
+
+  // The payment ledger: what came in, and when. The shop order carries its
+  // Stripe session id but neither the instant nor the amount, so a refund later
+  // has nothing to net against and the month's takings can only be inferred from
+  // when the Notion page happened to be created.
+  //
+  // Deliberately ABOVE the reclaim guard below, unlike the order lines and the
+  // confirmation email. Those are skipped on a reclaim because repeating them
+  // would double-decrement stock or re-mail the customer; a ledger row is
+  // idempotent on the session id, so running it on every delivery is free and
+  // closes the gap where a first attempt created the Notion page and died before
+  // recording the money. Best-effort and never throwing — see
+  // payment-ledger.service.
+  await recordStripeCharge({
+    orderNumber: full.metadata?.orderNumber ?? "",
+    orderKind: "shop",
+    session: full,
+  });
 
   // Reclaim-only duplicate guard: on the rare reclaim path (a prior attempt
   // created the Notion order but crashed before confirming the claim) the order

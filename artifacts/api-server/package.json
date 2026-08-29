@@ -12,6 +12,7 @@
     "db:migrate": "node --experimental-strip-types src/scripts/migrate.ts",
     "db:backfill": "node --experimental-strip-types src/scripts/backfill-order-index.ts",
     "db:backfill-legacy": "node --experimental-strip-types src/scripts/backfill-legacy-fields.ts",
+    "db:backfill-payments": "node --experimental-strip-types src/scripts/backfill-payments.ts",
     "test": "vitest run",
     "test:coverage": "vitest run --coverage",
     "test:watch": "vitest"

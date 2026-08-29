@@ -21,6 +21,7 @@
 import type { SmsMessage } from "./client.js";
 import { clampField } from "../../services/sms.js";
 import { formatCalendarDateShort } from "../format-date.js";
+import { STUDIO_CURRENCY } from "../currency.js";
 
 /** How the studio names itself in a text. Shorter than the email's signature —
  * every character here is billed. */
@@ -75,7 +76,9 @@ export function paymentDueSms(details: PaymentDueSmsDetails): SmsMessage {
     details.amount !== undefined
       ? ` (${new Intl.NumberFormat("en-US", {
           style: "currency",
-          currency: "USD",
+          // The studio's one declared currency rather than a fifth hardcoded
+          // "USD" — the trap `lib/currency.ts` exists to close.
+          currency: STUDIO_CURRENCY,
           minimumFractionDigits: 0,
           maximumFractionDigits: 2,
         }).format(details.amount)})`
