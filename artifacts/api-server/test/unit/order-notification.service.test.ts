@@ -13,6 +13,9 @@ vi.mock("../../src/lib/notion/orders.repository.js", () => ({
 vi.mock("../../src/lib/resend/send.js", () => ({
   sendEmailBestEffort: vi.fn(),
 }));
+vi.mock("../../src/services/sms.service.js", () => ({
+  textCustomer: vi.fn(async () => "sent"),
+}));
 
 import {
   notifyOrderStageChange,
@@ -24,12 +27,14 @@ import {
   updateLastNotifiedStage,
 } from "../../src/lib/notion/orders.repository.js";
 import { sendEmailBestEffort } from "../../src/lib/resend/send.js";
+import { textCustomer } from "../../src/services/sms.service.js";
 import type { OrderStageNotification } from "../../src/lib/notion/orders.repository.js";
 
 const mockFind = vi.mocked(findOrderForStageNotification);
 const mockFindByPageId = vi.mocked(findOrderForStageNotificationByPageId);
 const mockUpdateMarker = vi.mocked(updateLastNotifiedStage);
 const mockSend = vi.mocked(sendEmailBestEffort);
+const mockText = vi.mocked(textCustomer);
 
 function order(
   overrides: Partial<OrderStageNotification> = {},
@@ -262,5 +267,112 @@ describe("notifyOrderStageChange", () => {
     await notifyOrderStageChange("000002");
 
     expect(mockSend.mock.calls[0][0].html).not.toContain("tracking page");
+  });
+});
+
+// --- The "on its way" text ---------------------------------------------------
+//
+// Exactly one stage in the pipeline earns a text. The customer is emailed at
+// every forward step; texting all fourteen would turn an opt-in given for three
+// alerts into a running commentary the studio pays for by the message.
+
+describe("notifyOrderStageChange: the order-ready text", () => {
+  afterEach(() => {
+    delete process.env.SMS_SHIPPED_STAGES;
+  });
+
+  it("texts on the ready stage, alongside the email", async () => {
+    mockFind.mockResolvedValue(
+      order({
+        currentStage: "Ready for delivery/pickup",
+        stages: ["Consultation", "Sketching", "Ready for delivery/pickup"],
+      }),
+    );
+
+    await notifyOrderStageChange("000002");
+
+    expect(mockSend).toHaveBeenCalledTimes(1);
+    expect(mockText).toHaveBeenCalledTimes(1);
+    expect(mockText.mock.calls[0][0]).toBe("ada@example.com");
+    // The builder is handed the recipient and composes the copy itself.
+    const message = mockText.mock.calls[0][1]("+15125550123");
+    expect(message.to).toBe("+15125550123");
+    expect(message.body).toContain("000002");
+    // Worded for a posted parcel AND a collection at the studio, because the
+    // same stage covers both.
+    expect(message.body).not.toContain("shipped");
+    expect(message.body).toContain("Reply STOP to opt out.");
+  });
+
+  it("takes the customer's first name off an order title the app wrote", async () => {
+    mockFind.mockResolvedValue(
+      order({
+        orderName: "Ada Lovelace – Custom Costume",
+        currentStage: "Ready for delivery/pickup",
+        stages: ["Consultation", "Ready for delivery/pickup"],
+      }),
+    );
+
+    await notifyOrderStageChange("000002");
+
+    expect(mockText.mock.calls[0][1]("+1").body).toContain("Ada, your order");
+  });
+
+  it("uses no name at all for a title somebody typed by hand", async () => {
+    // A row created in Notion can be titled anything, and "Rush job, your order
+    // is finished" is worse than no name — so the name is only taken from a
+    // title carrying the separator `buildOrderProperties` writes.
+    mockFind.mockResolvedValue(
+      order({
+        orderName: "Rush job for the Nationals gala",
+        currentStage: "Ready for delivery/pickup",
+        stages: ["Consultation", "Ready for delivery/pickup"],
+      }),
+    );
+
+    await notifyOrderStageChange("000002");
+
+    const body = mockText.mock.calls[0][1]("+1").body;
+    expect(body).toContain("Your order 000002 is finished and ready.");
+    expect(body).not.toContain("Rush");
+  });
+
+  it("sends no text on the other stages, only the email", async () => {
+    mockFind.mockResolvedValue(order({ currentStage: "Sketching" }));
+
+    await notifyOrderStageChange("000002");
+
+    expect(mockSend).toHaveBeenCalledTimes(1);
+    expect(mockText).not.toHaveBeenCalled();
+  });
+
+  it("follows the override when the atelier renames the stage", async () => {
+    process.env.SMS_SHIPPED_STAGES = "Off to the post";
+    mockFind.mockResolvedValue(
+      order({
+        currentStage: "Off to the post",
+        stages: ["Consultation", "Off to the post"],
+      }),
+    );
+
+    await notifyOrderStageChange("000002");
+
+    expect(mockText).toHaveBeenCalledTimes(1);
+  });
+
+  it("sends no text when the email itself was skipped as backward", async () => {
+    mockFind.mockResolvedValue(
+      order({
+        currentStage: "Ready for delivery/pickup",
+        stages: ["Consultation", "Ready for delivery/pickup", "Delivered"],
+        lastNotifiedStage: "Delivered",
+      }),
+    );
+
+    const result = await notifyOrderStageChange("000002");
+
+    expect(result.status).toBe("skipped");
+    expect(mockSend).not.toHaveBeenCalled();
+    expect(mockText).not.toHaveBeenCalled();
   });
 });

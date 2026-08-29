@@ -54,6 +54,9 @@ import {
 } from "../lib/resend/emails.js";
 import { sendEmailBestEffort } from "../lib/resend/send.js";
 import { fromAddress, atelierInbox } from "../lib/resend/config.js";
+import { recordSmsConsent } from "./sms.service.js";
+import { logger } from "../lib/logger.js";
+import { deferBestEffort } from "../lib/background.js";
 import { buildManageUrl } from "./appointment-manage.service.js";
 import { findOrderVerification } from "../lib/notion/orders.repository.js";
 import { normalizeEmail } from "../lib/email.js";
@@ -308,6 +311,10 @@ export async function bookAppointment(input: BookInput): Promise<BookResult> {
 
   const orderNumber = input.orderNumber?.trim() || undefined;
   const projectDetails = input.projectDetails?.trim() || undefined;
+  // A tick with no number to text is not an opt-in — the same fail-closed rule
+  // `recordSmsConsent` applies, resolved here so the confirmation email can't
+  // promise a text that will never come.
+  const textsOptedIn = Boolean(input.smsConsent && input.phone?.trim());
 
   const appointment: BookedAppointment = {
     customerName: input.fullName,
@@ -354,6 +361,7 @@ export async function bookAppointment(input: BookInput): Promise<BookResult> {
     ...(manageUrl ? { manageUrl } : {}),
     ...(orderNumber ? { orderNumber } : {}),
     ...(projectDetails ? { projectDetails } : {}),
+    ...(textsOptedIn ? { smsConsent: true } : {}),
   };
   const from = fromAddress("appointments");
   await sendEmailBestEffort({ ...appointmentConfirmationEmail(details), from });
@@ -362,6 +370,46 @@ export async function bookAppointment(input: BookInput): Promise<BookResult> {
     await sendEmailBestEffort({
       ...appointmentNotificationEmail(details, inbox),
       from,
+    });
+  }
+
+  // Best-effort: record a text-alert opt-in on the customer's Client CRM row,
+  // which is where every send path asks whether they may be texted — so an
+  // opt-in given here covers their orders too, not just this booking.
+  //
+  // This is the capture surface for somebody who has never placed an order: a
+  // consultation customer has no intake form to tick a box on, so without it
+  // they could never be texted the day before the appointment they just made.
+  //
+  // Deferred rather than awaited: it is a Notion read and a write that the
+  // confirmation code does not wait on. `deferBestEffort` awaits inline where
+  // the platform offers no `waitUntil` (dev, tests), so the opt-in is never
+  // traded away for the latency.
+  //
+  // Nothing is stamped on the calendar event itself. `aptPhone` is there
+  // because a number cannot be retro-fitted onto a booking already taken, but
+  // consent has a home of its own — and an extended property is invisible in
+  // Google's UI, so a copy there would be read by nobody and drift from the
+  // row that decides.
+  if (textsOptedIn) {
+    const { email, fullName, phone } = input;
+    await deferBestEffort("appointment sms consent", async () => {
+      try {
+        await recordSmsConsent({
+          email,
+          phone: phone ?? "",
+          fullName,
+          // A booking is not a purchase. Someone whose first contact is a
+          // consultation is a Lead; an existing row keeps whatever status the
+          // atelier has given it.
+          status: "Lead",
+        });
+      } catch (err) {
+        logger.warn(
+          { err },
+          "Failed to record SMS consent for a booking; the appointment is unaffected",
+        );
+      }
     });
   }
 

@@ -11,6 +11,7 @@ import { postgresConfigured } from "../lib/db/client.js";
 import { upsertClientIndex } from "../lib/db/clients.repository.js";
 import { writeOrderIndex } from "../lib/db/order-index.repository.js";
 import { captureReferralOnOrder } from "./rewards.service.js";
+import { recordSmsConsent } from "./sms.service.js";
 import { measurementsLocked } from "./measurement-lock.js";
 import { orderDelivered } from "./delivery.js";
 import { getIntakeStatus } from "./capacity.service.js";
@@ -233,6 +234,40 @@ export async function submitOrder(
         logger.warn(
           { err },
           "Failed to capture referral on order; the order is unaffected",
+        );
+      }
+    });
+  }
+
+  // Best-effort: record the customer's text-alert opt-in on their Client CRM
+  // row, which is where every send path asks whether they may be texted. The
+  // order already carries its own `SMS Consent` checkbox (the atelier's record
+  // of what was ticked here); this is the copy that is read.
+  //
+  // Deferred for the same reason as the referral capture below it — a CRM read
+  // plus a write, neither of which the order number waits on — and with the
+  // same inner `try/catch`, so a consent that doesn't stick stays a `warn`
+  // about an unaffected order rather than the error `deferBestEffort` logs.
+  // `recordSmsConsent` swallows its own failures too; this is belt-and-braces
+  // for anything thrown before it (an unset env read, say).
+  if (input.smsConsent) {
+    const { email, phone, fullName } = input;
+    const crmPageId = clientPageId;
+    await deferBestEffort("sms consent", async () => {
+      try {
+        await recordSmsConsent({
+          email,
+          phone,
+          fullName,
+          // Reuse the row the upsert above already resolved rather than
+          // querying for it a second time. Undefined when that upsert failed
+          // or the CRM isn't configured, and then this looks it up itself.
+          ...(crmPageId ? { clientPageId: crmPageId } : {}),
+        });
+      } catch (err) {
+        logger.warn(
+          { err },
+          "Failed to record SMS consent; the order is unaffected",
         );
       }
     });

@@ -519,6 +519,7 @@ describe("reconcileMilestones", () => {
     });
     mockAppointmentReminders.mockResolvedValue({
       status: "sent",
+      texted: 0,
       sent: 1,
       alreadyReminded: 0,
       skipped: 0,
@@ -569,6 +570,7 @@ describe("sendDueAppointmentReminders", () => {
   it("reports how many reminders the sweep sent", async () => {
     mockAppointmentReminders.mockResolvedValue({
       status: "sent",
+      texted: 0,
       sent: 3,
       alreadyReminded: 1,
       skipped: 0,

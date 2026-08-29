@@ -852,6 +852,23 @@ describe("appointmentConfirmationEmail", () => {
     expect(email.html).toContain("reply to this email");
     expect(email.html).not.toContain("/appointments/manage");
   });
+
+  // A permission the person who gave it can read back is what catches a box
+  // ticked by accident — so the opt-in is confirmed in the customer's own copy.
+  it("confirms a text opt-in, with how to stop it", () => {
+    const email = appointmentConfirmationEmail(
+      appointmentDetails({ smsConsent: true }),
+    );
+    expect(email.html).toContain("we'll send a reminder the day");
+    expect(email.html).toContain("Reply STOP");
+    expect(email.text).toContain("Reply STOP");
+  });
+
+  it("says nothing about texts when they weren't opted into", () => {
+    const email = appointmentConfirmationEmail(appointmentDetails());
+    expect(email.html).not.toContain("Reply STOP");
+    expect(email.text).not.toContain("Reply STOP");
+  });
 });
 
 describe("appointmentReminderEmail", () => {

@@ -27,6 +27,7 @@ import {
 import type { CreateReviewInput } from "../notion/reviews.blocks.js";
 import type { MarketingOptOutResult } from "../notion/data-deletion.blocks.js";
 import type { EmailMessage } from "./client.js";
+import { formatCalendarDate } from "../format-date.js";
 
 const ATELIER_NAME = "A.A Atelier";
 
@@ -101,6 +102,13 @@ function orderDetailFields(input: CreateOrderInput): Field[] {
     ...(input.rush ? [["Rush order", "Yes"] as Field] : []),
     ...(input.referralCode
       ? [["Referral code", input.referralCode] as Field]
+      : []),
+    // The text-alert opt-in, so the customer's confirmation reads back the
+    // permission they just gave (and can dispute by replying) and the atelier's
+    // notification says the number on the order is textable. Omitted when they
+    // didn't tick it, like every other optional row.
+    ...(input.smsConsent
+      ? [["Text alerts", "Yes — we'll text you order updates"] as Field]
       : []),
   ];
 }
@@ -1165,25 +1173,6 @@ function escapeHtml(value: string): string {
     .replace(/"/g, "&quot;");
 }
 
-/**
- * Render an ISO calendar date (`yyyy-mm-dd`) as a friendly label, e.g.
- * `2026-08-15` -> "August 15, 2026". Formatted in UTC so a date-only value never
- * rolls back a day (parsing `yyyy-mm-dd` yields UTC midnight, which a westward
- * local zone would render as the previous day). Falls back to the raw string if
- * it isn't a parseable `yyyy-mm-dd`, so a malformed value is shown, not dropped.
- */
-function formatCalendarDate(isoDate: string): string {
-  if (!/^\d{4}-\d{2}-\d{2}$/.test(isoDate)) return isoDate;
-  const parsed = new Date(`${isoDate}T00:00:00Z`);
-  if (Number.isNaN(parsed.getTime())) return isoDate;
-  return new Intl.DateTimeFormat("en-US", {
-    timeZone: "UTC",
-    year: "numeric",
-    month: "long",
-    day: "numeric",
-  }).format(parsed);
-}
-
 /** A plain internal shell — no customer-facing sign-off. The tagline defaults to
  * "new submission" (most internal mail is a new form), overridable for alerts. */
 function internalLayout(
@@ -1847,6 +1836,30 @@ export interface AppointmentEmailDetails {
    * PUBLIC_BASE_URL are configured); falls back to "reply to us" copy when
    * absent. */
   manageUrl?: string;
+  /** True when the customer opted in to text alerts while booking. The
+   * confirmation says so — an opt-in the customer can read back is the
+   * tripwire if they didn't mean to give it. */
+  smsConsent?: boolean;
+}
+
+/** One line confirming a text opt-in, in the customer's own confirmation. It is
+ * deliberately here and not only on the atelier's copy: a permission the person
+ * who gave it can read back is what catches a box ticked by accident. */
+function smsHtml(details: AppointmentEmailDetails): string {
+  return details.smsConsent
+    ? `<p>You've asked us to text you as well, so we'll send a reminder the day
+        before. Reply STOP to any of those messages to stop them.</p>`
+    : "";
+}
+
+function smsText(details: AppointmentEmailDetails): string[] {
+  return details.smsConsent
+    ? [
+        `You've asked us to text you as well, so we'll send a reminder the day`,
+        `before. Reply STOP to any of those messages to stop them.`,
+        ``,
+      ]
+    : [];
 }
 
 /** A styled "Manage your appointment" button, matching the sign-in link's look. */
@@ -1904,6 +1917,7 @@ export function appointmentConfirmationEmail(
      ${meetHtml}
      <p>A calendar invitation is on its way to your inbox. Your confirmation code
         is <strong>${details.confirmationCode}</strong>.</p>
+     ${smsHtml(details)}
      ${manageHtml(details)}
      <p>We look forward to seeing you.</p>`,
   );
@@ -1920,6 +1934,7 @@ export function appointmentConfirmationEmail(
     `A calendar invitation is on its way to your inbox. Your confirmation code is`,
     `${details.confirmationCode}.`,
     ``,
+    ...smsText(details),
     ...manageText(details),
     ``,
     `We look forward to seeing you.`,

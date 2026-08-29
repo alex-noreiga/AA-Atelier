@@ -21,6 +21,7 @@ import {
   ORDER_PREFERRED_CONTACT_PROPERTY,
   ORDER_MEASUREMENT_APPOINTMENT_PROPERTY,
   ORDER_REFERRAL_CODE_PROPERTY,
+  ORDER_SMS_CONSENT_PROPERTY,
   ORDER_SERVICE_PROPERTY,
   type CreateOrderInput,
 } from "./orders.schema.js";
@@ -174,6 +175,12 @@ export function buildOrderProperties(
       rich_text: [{ text: { content: data.referralCode } }],
     };
   }
+  // The text-alert opt-in as ticked at intake. Only written when true (Notion
+  // leaves an unset checkbox false), like the rush and measurement-appointment
+  // flags above.
+  if (data.smsConsent) {
+    properties[ORDER_SMS_CONSENT_PROPERTY] = { checkbox: true };
+  }
   if (clientPageId) {
     properties[ORDER_CLIENT_PROPERTY] = {
       relation: [{ id: clientPageId }],
@@ -261,6 +268,14 @@ export function buildOrderPageBlocks(data: CreateOrderInput): unknown[] {
   // page reads complete without opening the property panel.
   if (data.referralCode) {
     costumeSection.push(textBlock("Referral Code", data.referralCode));
+  }
+  // Mirrors the `SMS Consent` property so the page reads complete without
+  // opening the property panel, and so the atelier can see at a glance that a
+  // customer agreed to be texted.
+  if (data.smsConsent) {
+    costumeSection.push(
+      textBlock("Text alerts", "Yes — opted in to text updates"),
+    );
   }
   costumeSection.push(dividerBlock());
 

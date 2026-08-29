@@ -22,6 +22,14 @@
 //
 // The on-demand `/run` link may pass `force` to bypass the forward-only gate (a
 // manual "notify now" / resend); forcing still never moves the marker backward.
+//
+// ONE of those stages also earns a text, for a customer who opted in: the point
+// at which the piece is finished and on its way (`services/sms.ts`,
+// `isShippedStage`). Deliberately one and not fourteen — the customer is emailed
+// at every forward step, and texting each of them would turn an opt-in given for
+// three alerts into a running commentary the studio also pays for by the
+// message. It needs no marker of its own: the same `Last Notified Stage`
+// high-water mark that stops the email repeating stops the text with it.
 
 import {
   findOrderForStageNotification,
@@ -30,6 +38,9 @@ import {
   type OrderStageNotification,
 } from "../lib/notion/orders.repository.js";
 import { orderStageChangeEmail } from "../lib/resend/emails.js";
+import { orderReadySms } from "../lib/twilio/messages.js";
+import { textCustomer } from "./sms.service.js";
+import { isShippedStage } from "./sms.js";
 import { sendEmailBestEffort } from "../lib/resend/send.js";
 import { fromAddress } from "../lib/resend/config.js";
 import { logger } from "../lib/logger.js";
@@ -93,6 +104,17 @@ export function isForwardStageChange(
   const newIndex = stages.indexOf(currentStage);
   if (oldIndex === -1 || newIndex === -1) return false;
   return newIndex > oldIndex;
+}
+
+/**
+ * The customer's first name, taken from an order title the APP wrote
+ * ("Ada Lovelace – Custom Costume"), or "" for one that doesn't carry that
+ * shape. See the call site for why a hand-typed title yields no name.
+ */
+function customerFirstName(orderName: string): string {
+  const [namePart] = orderName.split("–");
+  if (!namePart || namePart === orderName) return "";
+  return namePart.trim().split(/\s+/)[0] ?? "";
 }
 
 /**
@@ -204,11 +226,37 @@ export async function notifyOrderStageChange(
     }
   }
 
+  // "Your order is finished and ready" — the one stage worth a text. Sent after
+  // the email and never instead of it, and best-effort like everything else on
+  // this path: a customer who hasn't opted in, a number that can't be read, or
+  // Twilio being unreachable all leave the email exactly as it was.
+  let texted = false;
+  if (isShippedStage(order.currentStage)) {
+    texted =
+      (await textCustomer(order.email, (to) =>
+        orderReadySms({
+          to,
+          // `buildOrderProperties` titles an order "Ada Lovelace – Custom
+          // Costume", so the first word is the customer's first name — the
+          // same derivation the confirmation email makes, from the only field
+          // this record carries. Taken ONLY from a title carrying that
+          // separator: a row somebody typed by hand in Notion may be titled
+          // anything, and "Rush job, your order is finished" is worse than no
+          // name at all. `orderReadySms` renders an empty name as plain "Your
+          // order …".
+          firstName: customerFirstName(order.orderName),
+          orderNumber: order.orderNumber,
+          ...(link ? { trackingUrl: link } : {}),
+        }),
+      )) === "sent";
+  }
+
   logger.info(
     {
       orderNumber: order.orderNumber,
       stage: order.currentStage,
       forced: !forward,
+      texted,
     },
     "Sent order status-change email",
   );

@@ -97,6 +97,13 @@ export const ORDER_MEASUREMENT_APPOINTMENT_PROPERTY = "Measurement Appointment";
 // the atelier can see who sent them even when the code resolved to nothing. The
 // reward engine reads the CRM, never this — it's a record, not a mechanism.
 export const ORDER_REFERRAL_CODE_PROPERTY = "Referral Code"; // rich_text
+// Whether the customer ticked the text-alert opt-in at intake. Write-only, and
+// deliberately NOT the copy any send path reads: consent is a fact about the
+// person, so the authoritative record is the `SMS Consent` checkbox on their
+// Client CRM row (see `services/sms.service.ts`). This is the atelier's record
+// of what was ticked on THIS order — the same relationship the `Referral Code`
+// property above has with the reward engine's own CRM state.
+export const ORDER_SMS_CONSENT_PROPERTY = "SMS Consent"; // checkbox
 // Which of the studio's services the order was placed for — a bespoke
 // commission, alterations, rhinestoning, or a repair (`lib/service-catalog.ts`).
 // It decides what the intake asked for, so recording it is what lets the atelier

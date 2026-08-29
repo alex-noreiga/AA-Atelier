@@ -367,6 +367,49 @@ describe("OrderForm newsletter opt-in", () => {
   });
 });
 
+describe("OrderForm text-alert opt-in", () => {
+  it("sends no smsConsent when the box is left unticked", async () => {
+    const user = userEvent.setup();
+    render(<OrderForm />);
+    await fillRequired(user);
+    await continueToSubmit(user);
+    await user.click(screen.getByRole("button", { name: "Submit Order" }));
+
+    await waitFor(() => expect(mutate).toHaveBeenCalledTimes(1));
+    // Absent, not `false`: the two mean the same to the server, and omitting it
+    // keeps the payload a record of what the customer actually chose.
+    expect(mutate.mock.calls[0][0].data).not.toHaveProperty("smsConsent");
+  });
+
+  it("sends smsConsent when ticked", async () => {
+    const user = userEvent.setup();
+    render(<OrderForm />);
+    await fillRequired(user);
+    await continueToSubmit(user);
+    await user.click(screen.getByTestId("sms-consent"));
+    await user.click(screen.getByRole("button", { name: "Submit Order" }));
+
+    await waitFor(() => expect(mutate).toHaveBeenCalledTimes(1));
+    expect(mutate.mock.calls[0][0].data).toMatchObject({ smsConsent: true });
+  });
+
+  it("is not implied by choosing 'text' as the preferred contact method", async () => {
+    // `preferredContact` says how the atelier should reach them, which is not
+    // the same permission — consent has to be a deliberate tick.
+    const user = userEvent.setup();
+    render(<OrderForm />);
+    await fillRequired(user);
+    await user.click(screen.getByRole("button", { name: "Text" }));
+    await continueToSubmit(user);
+
+    expect(screen.getByTestId("sms-consent")).not.toBeChecked();
+
+    await user.click(screen.getByRole("button", { name: "Submit Order" }));
+    await waitFor(() => expect(mutate).toHaveBeenCalledTimes(1));
+    expect(mutate.mock.calls[0][0].data).not.toHaveProperty("smsConsent");
+  });
+});
+
 describe("OrderForm validation", () => {
   it("blocks advancing and shows messages when required fields are empty", async () => {
     const user = userEvent.setup();

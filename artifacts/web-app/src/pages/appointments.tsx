@@ -41,6 +41,12 @@ const detailsSchema = z.object({
   phone: z.string().optional(),
   preferredContact: z.enum(["email", "phone", "text"]).optional(),
   notes: z.string().optional(),
+  // Opt-in to transactional text alerts. Off by default — consent is a
+  // deliberate tick, and deliberately not implied by choosing "text" as the
+  // preferred contact method, which says how the atelier should reach you
+  // rather than granting permission to send automated messages. Needs a phone
+  // number, enforced in the submit handler alongside the gates below.
+  smsConsent: z.boolean().optional(),
   // Conditionally required based on the chosen type's gate — enforced in the
   // submit handler (which knows the selected type), then re-checked server-side.
   orderNumber: z.string().optional(),
@@ -209,6 +215,15 @@ export default function Appointments() {
       });
       return;
     }
+    // A tick with no number is not an opt-in — the server ignores it, so say so
+    // here rather than silently booking without the texts they just asked for.
+    const phone = values.phone?.trim();
+    if (values.smsConsent && !phone) {
+      setError("phone", {
+        message: "We need a mobile number to text you about this appointment.",
+      });
+      return;
+    }
 
     createAppointment.mutate({
       data: {
@@ -218,13 +233,14 @@ export default function Appointments() {
         ...(staffParam ? { staff: staffParam } : {}),
         fullName: values.fullName,
         email: values.email,
-        ...(values.phone ? { phone: values.phone } : {}),
+        ...(phone ? { phone } : {}),
         ...(values.preferredContact
           ? { preferredContact: values.preferredContact }
           : {}),
         ...(values.notes ? { notes: values.notes } : {}),
         ...(orderNumber ? { orderNumber } : {}),
         ...(projectDetails ? { projectDetails } : {}),
+        ...(values.smsConsent ? { smsConsent: true } : {}),
       },
     });
   }
@@ -656,6 +672,13 @@ export default function Appointments() {
                     placeholder="+1 (555) 000-0000"
                     className="mt-1.5 bg-transparent border-0 border-b border-border rounded-none px-0 py-3 focus-visible:ring-0 focus-visible:border-primary transition-colors shadow-none"
                   />
+                  {/* The field is optional in itself, but the text opt-in below
+                      needs it — so it can carry an error like the others. */}
+                  {errors.phone && (
+                    <p className="text-destructive text-xs mt-1">
+                      {errors.phone.message}
+                    </p>
+                  )}
                 </div>
               </div>
 
@@ -701,6 +724,24 @@ export default function Appointments() {
                   className="mt-1.5 bg-transparent border border-border rounded-lg px-3 py-2 text-sm focus-visible:ring-0 focus-visible:border-primary transition-colors resize-none shadow-none"
                 />
               </div>
+
+              <label
+                htmlFor="smsConsent"
+                className="flex items-start gap-3 cursor-pointer group"
+              >
+                <input
+                  id="smsConsent"
+                  type="checkbox"
+                  {...register("smsConsent")}
+                  data-testid="appointment-sms-consent"
+                  className="mt-1 h-4 w-4 shrink-0 rounded-sm border-border text-primary accent-primary focus-visible:ring-primary"
+                />
+                <span className="text-sm font-light text-muted-foreground group-hover:text-foreground transition-colors">
+                  Text me a reminder the day before, and about my orders — when
+                  a payment is due and when a piece is finished. Message rates
+                  may apply; reply STOP at any time.
+                </span>
+              </label>
 
               <div className="flex justify-center pt-2">
                 <Button

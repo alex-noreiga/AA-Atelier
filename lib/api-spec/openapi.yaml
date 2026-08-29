@@ -3775,6 +3775,18 @@ components:
             discount code now and credits the referrer once this order is first
             paid. An unknown or self-referring code is ignored, and referral
             capture never blocks the order. Optional.
+        smsConsent:
+          type: boolean
+          description: >-
+            True when the customer ticked the opt-in to receive transactional
+            text alerts (a deposit or balance falling due, an appointment
+            coming up, and their order being finished) on the phone number
+            above, alongside the emails they get either way. Recorded on the
+            order for the atelier and — the copy that is actually read — on
+            their Client CRM row, which is where every send path asks whether
+            they may be texted. Deliberately independent of `preferredContact`:
+            that says how the atelier should reach them, which is not the same
+            permission. Optional; omitted or false means no texts.
     NewOrderResponse:
       type: object
       required:
@@ -5867,6 +5879,18 @@ components:
           description: >-
             A short description of what the customer wants made. Required for
             new-customer types (requiresProjectDetails); ignored otherwise.
+        smsConsent:
+          type: boolean
+          description: >-
+            True when the customer ticked the opt-in to receive transactional
+            text alerts on the phone number above, alongside the emails they
+            get either way. Requires `phone` — a consent with no number to
+            attach it to is ignored. Recorded on their Client CRM row, which is
+            the one place every send path asks whether they may be texted, so
+            an opt-in given here also covers their orders. Deliberately
+            independent of `preferredContact`: that says how the atelier should
+            reach them, which is not the same permission. Optional; omitted or
+            false means no texts.
     NewAppointmentResponse:
       type: object
       required:

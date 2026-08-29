@@ -23,6 +23,9 @@ vi.mock("../../src/lib/db/client.js", () => ({
 vi.mock("../../src/lib/resend/send.js", () => ({
   sendEmailBestEffort: vi.fn(),
 }));
+vi.mock("../../src/services/sms.service.js", () => ({
+  textCustomer: vi.fn(async () => "no-consent"),
+}));
 vi.mock("../../src/services/appointment-manage.service.js", () => ({
   buildManageUrl: vi.fn(
     () => "https://atelier.test/appointments/manage?token=t",
@@ -39,6 +42,7 @@ import {
 import { googleCalendarConfigured } from "../../src/lib/google/client.js";
 import { postgresConfigured } from "../../src/lib/db/client.js";
 import { sendEmailBestEffort } from "../../src/lib/resend/send.js";
+import { textCustomer } from "../../src/services/sms.service.js";
 import { reminderMarkerValue } from "../../src/lib/appointments/reminders.js";
 
 const mockList = vi.mocked(listAppointmentsInRange);
@@ -46,6 +50,7 @@ const mockMark = vi.mocked(markAppointmentReminded);
 const mockGoogle = vi.mocked(googleCalendarConfigured);
 const mockPostgres = vi.mocked(postgresConfigured);
 const mockSend = vi.mocked(sendEmailBestEffort);
+const mockText = vi.mocked(textCustomer);
 
 const NOW = new Date("2026-08-21T08:00:00Z"); // 3am Central
 const START = new Date("2026-08-22T15:00:00Z"); // 10am Central, tomorrow
@@ -78,6 +83,8 @@ beforeEach(() => {
   mockGoogle.mockReturnValue(true);
   mockPostgres.mockReturnValue(true);
   mockList.mockResolvedValue([]);
+  // Most customers haven't opted in to texts; the SMS cases opt in explicitly.
+  mockText.mockResolvedValue("no-consent");
 });
 
 describe("notifyUpcomingAppointments", () => {
@@ -207,5 +214,103 @@ describe("notifyUpcomingAppointments", () => {
 
     expect(result.status).toBe("unconfigured");
     expect(mockList).not.toHaveBeenCalled();
+  });
+});
+
+// --- The second channel -----------------------------------------------------
+//
+// The two markers are read independently, which is what the per-channel scheme
+// was built for: every booking taken before texts existed already carries an
+// email marker, so a shared "have we reminded them?" test would have found the
+// whole back catalogue answered and sent nobody a first text.
+
+describe("notifyUpcomingAppointments: texts", () => {
+  it("texts a consenting customer and marks the SMS channel separately", async () => {
+    mockText.mockResolvedValue("sent");
+    mockList.mockResolvedValue([booking()]);
+
+    const result = await notifyUpcomingAppointments(NOW);
+
+    expect(result).toMatchObject({ status: "sent", sent: 1, texted: 1 });
+    expect(mockText).toHaveBeenCalledTimes(1);
+    expect(mockText.mock.calls[0][0]).toBe("skater@example.com");
+    // Its own marker, holding the same start the email's does.
+    expect(mockMark).toHaveBeenCalledWith(
+      "Alayna",
+      "evt-1",
+      expect.anything(),
+      { key: "aptRemindedSms", value: reminderMarkerValue(START) },
+    );
+  });
+
+  it("still texts a booking that was already emailed about", async () => {
+    mockText.mockResolvedValue("sent");
+    mockList.mockResolvedValue([
+      booking({ extended: { aptRemindedEmail: reminderMarkerValue(START) } }),
+    ]);
+
+    const result = await notifyUpcomingAppointments(NOW);
+
+    expect(result).toMatchObject({ status: "sent", sent: 0, texted: 1 });
+    expect(mockSend).not.toHaveBeenCalled();
+    expect(mockText).toHaveBeenCalledTimes(1);
+  });
+
+  it("does nothing when both channels have answered this start time", async () => {
+    mockText.mockResolvedValue("sent");
+    mockList.mockResolvedValue([
+      booking({
+        extended: {
+          aptRemindedEmail: reminderMarkerValue(START),
+          aptRemindedSms: reminderMarkerValue(START),
+        },
+      }),
+    ]);
+
+    const result = await notifyUpcomingAppointments(NOW);
+
+    expect(result).toMatchObject({ status: "skipped", alreadyReminded: 1 });
+    expect(mockSend).not.toHaveBeenCalled();
+    expect(mockText).not.toHaveBeenCalled();
+  });
+
+  it("leaves the SMS marker unwritten when no text went out, so a later opt-in still earns one", async () => {
+    mockText.mockResolvedValue("no-consent");
+    mockList.mockResolvedValue([booking()]);
+
+    const result = await notifyUpcomingAppointments(NOW);
+
+    expect(result).toMatchObject({ sent: 1, texted: 0 });
+    const markedChannels = mockMark.mock.calls.map((call) => call[3].key);
+    expect(markedChannels).toEqual(["aptRemindedEmail"]);
+  });
+
+  it("counts a booking with nothing new to say as already reminded", async () => {
+    // Emailed last night, and the customer has never opted in to texts. It is
+    // not a failure and not a skip — there was simply nothing left to send.
+    mockList.mockResolvedValue([
+      booking({ extended: { aptRemindedEmail: reminderMarkerValue(START) } }),
+    ]);
+
+    const result = await notifyUpcomingAppointments(NOW);
+
+    expect(result).toMatchObject({
+      status: "skipped",
+      sent: 0,
+      texted: 0,
+      alreadyReminded: 1,
+      skipped: 0,
+    });
+  });
+
+  it("never texts instead of emailing: a failed email stops the booking there", async () => {
+    mockText.mockResolvedValue("sent");
+    mockSend.mockRejectedValueOnce(new Error("resend down"));
+    mockList.mockResolvedValue([booking()]);
+
+    const result = await notifyUpcomingAppointments(NOW);
+
+    expect(result).toMatchObject({ sent: 0, texted: 0, skipped: 1 });
+    expect(mockText).not.toHaveBeenCalled();
   });
 });
