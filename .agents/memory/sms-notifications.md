@@ -32,13 +32,29 @@ revocable — and that, not Twilio, is most of what this is.
    atelier's record of what was ticked at intake — exactly the relationship
    `Referral Code` on the order has with the reward engine's CRM state.
 
-2. **`preferredContact: "text"` does NOT imply consent.** It says how the
+2. **There are two capture surfaces, because there are two ways in.** The order
+   form covers anyone who has commissioned something. The booking form covers
+   the rest — and it is the one that makes the day-before reminder work as
+   advertised, because a consultation customer has never placed an order and so
+   had no box to tick. A booking that creates a CRM row creates it as a `Lead`,
+   since a consultation is not a purchase.
+
+   A tick with **no phone number** is not an opt-in: `phone` is optional on a
+   booking, so `recordSmsConsent` refuses one rather than leaving a ticked box
+   on a row nothing can reach, and the form asks for the number instead of
+   silently dropping what the customer just asked for. Nothing is stamped on
+   the calendar event — `aptPhone` exists because a number cannot be
+   retro-fitted onto a booking already taken, but an extended property is
+   invisible in Google's own UI, so a consent copy there would be read by
+   nobody and drift from the row that decides.
+
+3. **`preferredContact: "text"` does NOT imply consent.** It says how the
    atelier should reach somebody, which is not permission to send automated
    messages, and the memory note this card grew out of says so explicitly. The
    box starts unticked and is never pre-ticked from it — the same rule the
    newsletter opt-in follows, and a frontend test pins it.
 
-3. **Everything fails closed.** No Twilio, no CRM, no row, no tick, no readable
+4. **Everything fails closed.** No Twilio, no CRM, no row, no tick, no readable
    number — all of them mean "no text", quietly. This is the opposite of
    `services/capacity.ts`, which fails open, and for the opposite reason: there,
    turning away a customer you could have served is the costly mistake; here,
@@ -46,7 +62,7 @@ revocable — and that, not Twilio, is most of what this is.
    number it can't read yields `""` and nothing is sent, because a number we
    guess at is a text sent to a stranger.
 
-4. **The carrier's record of an opt-out beats ours.** Twilio refuses a send to a
+5. **The carrier's record of an opt-out beats ours.** Twilio refuses a send to a
    number that has replied STOP (error 21610). That refusal is not a failure —
    it is the opt-out arriving through the only channel the customer has — so the
    transport reports it as its own outcome and `textCustomer` clears the consent
@@ -55,14 +71,14 @@ revocable — and that, not Twilio, is most of what this is.
    permission. Same instinct as "Stripe is the source of truth for money — the
    Notion markers are not".
 
-5. **A text can never be the reason a notification failed.** Every send is
+6. **A text can never be the reason a notification failed.** Every send is
    best-effort and swallowed, and always follows the email rather than replacing
    it. That is also the reason a rejected text is deliberately **not** escalated
    to the alert inbox where a rejected email is: the news reached the customer
    either way, so a dropped text costs a notification its second channel, never
    the notification itself. The alerting section's bar for staying high-signal.
 
-6. **One stage earns the "order ready" text, not fourteen.** `isShippedStage`
+7. **One stage earns the "order ready" text, not fourteen.** `isShippedStage`
    (default `Ready for delivery/pickup`, `SMS_SHIPPED_STAGES` to override) — a
    targeted business rule naming live Notion option values, like
    `FITTING_REMINDER_STAGES`. The customer is _emailed_ at every forward step;
@@ -76,7 +92,7 @@ revocable — and that, not Twilio, is most of what this is.
    links to already answers whichever applies. Saying "shipped" would be wrong
    for every skater who collects in person.
 
-7. **The appointment sweep now reads its two markers INDEPENDENTLY**, which is
+8. **The appointment sweep now reads its two markers INDEPENDENTLY**, which is
    what the per-channel scheme was built for and the one genuinely delicate part
    of this change. Every booking taken before texts existed already carries an
    `aptRemindedEmail`, so a shared "have we reminded them?" test would have found
@@ -84,7 +100,7 @@ revocable — and that, not Twilio, is most of what this is.
    `aptRemindedSms` marker is written **only on a real send**, so consent given
    between two nightly runs still earns a text before the appointment.
 
-8. **The payment reminder shares one marker across both channels**, unlike the
+9. **The payment reminder shares one marker across both channels**, unlike the
    appointment. The stage's existing `Reminded` checkbox gates the whole block,
    and that is right here: there is no reschedule that could make the same
    payment stage worth saying twice, so "told them once" is one fact. Both
@@ -130,7 +146,8 @@ says one date in the inbox and the day before it on the phone. Same trap
    gate on every send path), so the app behaves exactly as it did before.
 
 2. **Two Client CRM properties:** `SMS Consent` (checkbox) and `SMS Consent At`
-   (date). Optionally `SMS Consent` (checkbox) on the Order Tracking Pipeline —
+   (date). A booking-form opt-in from a brand-new customer creates the CRM row
+   itself, so nothing else is needed for consultations. Optionally `SMS Consent` (checkbox) on the Order Tracking Pipeline —
    missing, it is dropped by `createPageDroppingUnknownProperties` with a
    pointed warn and the value still appears in the order's page body.
 
@@ -139,12 +156,10 @@ says one date in the inbox and the day before it on the phone. Same trap
 
 ## Known limits
 
-- **Capture is the order form only.** A customer who has only ever booked a
-  consultation has no opt-in on file and is never texted. Fittings and design
-  reviews require a verified order number, so a fitting customer has consent
-  from intake — which is why the card's "fitting tomorrow" works without
-  widening the booking contract. Adding a tick to the booking form is the
-  obvious next step if consultations turn out to matter.
+- **Capture is the two forms that collect a phone number** — intake and
+  booking. A customer whose only contact has been the contact form or a
+  back-in-stock request has no opt-in surface; the atelier can tick the box on
+  their CRM row by hand if they ask.
 - **Revoking is STOP, or the atelier unticking the box.** There is no self-serve
   toggle in the account portal. STOP is the channel customers actually use, and
   it is honoured — but somebody who wants to keep texts off while opting back
@@ -176,4 +191,5 @@ says one date in the inbox and the day before it on the phone. Same trap
 - `services/schedule.service.ts` — the payment-due text.
 - `services/appointment-reminder.service.ts` — the two-channel sweep.
 - `services/order-notification.service.ts` — the order-ready text.
-- `web-app/src/pages/order-form.tsx` — the opt-in.
+- `services/appointments.service.ts` — records consent from a booking.
+- `web-app/src/pages/order-form.tsx` + `pages/appointments.tsx` — the two opt-ins.

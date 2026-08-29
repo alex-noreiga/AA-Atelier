@@ -1644,6 +1644,30 @@ export interface AppointmentEmailDetails {
    * PUBLIC_BASE_URL are configured); falls back to "reply to us" copy when
    * absent. */
   manageUrl?: string;
+  /** True when the customer opted in to text alerts while booking. The
+   * confirmation says so — an opt-in the customer can read back is the
+   * tripwire if they didn't mean to give it. */
+  smsConsent?: boolean;
+}
+
+/** One line confirming a text opt-in, in the customer's own confirmation. It is
+ * deliberately here and not only on the atelier's copy: a permission the person
+ * who gave it can read back is what catches a box ticked by accident. */
+function smsHtml(details: AppointmentEmailDetails): string {
+  return details.smsConsent
+    ? `<p>You've asked us to text you as well, so we'll send a reminder the day
+        before. Reply STOP to any of those messages to stop them.</p>`
+    : "";
+}
+
+function smsText(details: AppointmentEmailDetails): string[] {
+  return details.smsConsent
+    ? [
+        `You've asked us to text you as well, so we'll send a reminder the day`,
+        `before. Reply STOP to any of those messages to stop them.`,
+        ``,
+      ]
+    : [];
 }
 
 /** A styled "Manage your appointment" button, matching the sign-in link's look. */
@@ -1701,6 +1725,7 @@ export function appointmentConfirmationEmail(
      ${meetHtml}
      <p>A calendar invitation is on its way to your inbox. Your confirmation code
         is <strong>${details.confirmationCode}</strong>.</p>
+     ${smsHtml(details)}
      ${manageHtml(details)}
      <p>We look forward to seeing you.</p>`,
   );
@@ -1717,6 +1742,7 @@ export function appointmentConfirmationEmail(
     `A calendar invitation is on its way to your inbox. Your confirmation code is`,
     `${details.confirmationCode}.`,
     ``,
+    ...smsText(details),
     ...manageText(details),
     ``,
     `We look forward to seeing you.`,

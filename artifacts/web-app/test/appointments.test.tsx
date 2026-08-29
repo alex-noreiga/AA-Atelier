@@ -198,4 +198,67 @@ describe("Appointments booking flow", () => {
       orderNumber: "000123",
     });
   });
+
+  // --- The text-alert opt-in ------------------------------------------------
+  //
+  // The capture surface for a customer who has never placed an order.
+
+  it("sends no smsConsent when the box is left unticked", async () => {
+    const user = userEvent.setup();
+    render(<Appointments />);
+
+    await user.click(screen.getByTestId("type-fitting"));
+    await user.click(await screen.findByTestId(`slot-${SLOT_ISO}`));
+    await screen.findByTestId("step-details");
+    await user.type(document.getElementById("fullName")!, "Ada Lovelace");
+    await user.type(document.getElementById("email")!, "ada@example.com");
+    await user.type(document.getElementById("orderNumber")!, "000123");
+    await user.click(screen.getByRole("button", { name: "Confirm Booking" }));
+
+    await waitFor(() => expect(mutate).toHaveBeenCalledTimes(1));
+    expect(mutate.mock.calls[0][0].data).not.toHaveProperty("smsConsent");
+  });
+
+  it("sends smsConsent with the number when ticked", async () => {
+    const user = userEvent.setup();
+    render(<Appointments />);
+
+    await user.click(screen.getByTestId("type-fitting"));
+    await user.click(await screen.findByTestId(`slot-${SLOT_ISO}`));
+    await screen.findByTestId("step-details");
+    await user.type(document.getElementById("fullName")!, "Ada Lovelace");
+    await user.type(document.getElementById("email")!, "ada@example.com");
+    await user.type(document.getElementById("orderNumber")!, "000123");
+    await user.type(document.getElementById("phone")!, "512-555-0123");
+    await user.click(screen.getByTestId("appointment-sms-consent"));
+    await user.click(screen.getByRole("button", { name: "Confirm Booking" }));
+
+    await waitFor(() => expect(mutate).toHaveBeenCalledTimes(1));
+    expect(mutate.mock.calls[0][0].data).toMatchObject({
+      smsConsent: true,
+      phone: "512-555-0123",
+    });
+  });
+
+  it("asks for a number rather than booking an opt-in it can't act on", async () => {
+    const user = userEvent.setup();
+    render(<Appointments />);
+
+    await user.click(screen.getByTestId("type-fitting"));
+    await user.click(await screen.findByTestId(`slot-${SLOT_ISO}`));
+    await screen.findByTestId("step-details");
+    await user.type(document.getElementById("fullName")!, "Ada Lovelace");
+    await user.type(document.getElementById("email")!, "ada@example.com");
+    await user.type(document.getElementById("orderNumber")!, "000123");
+    // Ticked, but the phone field is empty — the server would ignore it.
+    await user.click(screen.getByTestId("appointment-sms-consent"));
+    await user.click(screen.getByRole("button", { name: "Confirm Booking" }));
+
+    expect(
+      await screen.findByText(
+        "We need a mobile number to text you about this appointment.",
+      ),
+    ).toBeInTheDocument();
+    expect(mutate).not.toHaveBeenCalled();
+  });
 });

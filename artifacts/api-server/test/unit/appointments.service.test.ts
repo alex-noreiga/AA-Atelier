@@ -10,6 +10,12 @@ vi.mock("../../src/lib/notion/orders.repository.js", () => ({
   findOrderVerification: vi.fn(),
 }));
 
+// The text-alert opt-in records consent on the Client CRM. Mocked so the test
+// drives the booking service's own decision about when to record it.
+vi.mock("../../src/services/sms.service.js", () => ({
+  recordSmsConsent: vi.fn(),
+}));
+
 import {
   bookAppointment,
   getAppointmentAvailability,
@@ -26,12 +32,14 @@ import {
   createCalendarEvent,
 } from "../../src/lib/google/calendar.repository.js";
 import { findOrderVerification } from "../../src/lib/notion/orders.repository.js";
+import { recordSmsConsent } from "../../src/services/sms.service.js";
 import type { WeeklyHours } from "../../src/lib/appointments/availability.js";
 
 const mockSchedule = vi.mocked(getScheduleConfig);
 const mockBusy = vi.mocked(listBusyInRange);
 const mockCreate = vi.mocked(createCalendarEvent);
 const mockVerify = vi.mocked(findOrderVerification);
+const mockConsent = vi.mocked(recordSmsConsent);
 
 // A Monday 09:00–11:00 in-person + virtual block for Alexandra and Alayna, in UTC.
 const weeklyHours: WeeklyHours[] = [
@@ -348,5 +356,62 @@ describe("bookAppointment", () => {
       expect(result.confirmationCode).toMatch(/^APT-/);
       expect(mockCreate).toHaveBeenCalledOnce();
     });
+  });
+});
+
+// --- The text-alert opt-in ---------------------------------------------------
+//
+// This is the capture surface for a customer who has never placed an order: a
+// consultation has no intake form to tick a box on, so without it they could
+// never be texted the reminder the day before the appointment they just made.
+
+describe("bookAppointment: the text-alert opt-in", () => {
+  const withConsent = {
+    typeId: "consultation",
+    location: "in-person" as const,
+    start: new Date("2026-07-20T09:00:00.000Z"),
+    fullName: "Ada Lovelace",
+    email: "ada@example.com",
+    phone: "512-555-0123",
+    projectDetails: "A competition dress in navy for December.",
+    smsConsent: true,
+  };
+
+  it("records consent on the customer's CRM row as a Lead", async () => {
+    await bookAppointment(withConsent as never);
+
+    expect(mockConsent).toHaveBeenCalledWith({
+      email: "ada@example.com",
+      phone: "512-555-0123",
+      fullName: "Ada Lovelace",
+      // A booking is not a purchase — someone whose first contact is a
+      // consultation hasn't bought anything yet.
+      status: "Lead",
+    });
+  });
+
+  it("records nothing when the box wasn't ticked", async () => {
+    await bookAppointment({ ...withConsent, smsConsent: false } as never);
+    expect(mockConsent).not.toHaveBeenCalled();
+  });
+
+  it("records nothing when there is no number to text", async () => {
+    // A permission we could never act on, and a ticked box on a row nothing
+    // can reach. The frontend asks for the number; this is the server's own
+    // fail-closed half.
+    await bookAppointment({
+      ...withConsent,
+      phone: "   ",
+    } as never);
+    expect(mockConsent).not.toHaveBeenCalled();
+  });
+
+  it("still books the appointment when recording consent fails", async () => {
+    mockConsent.mockRejectedValueOnce(new Error("notion down"));
+
+    const result = await bookAppointment(withConsent as never);
+
+    expect(result.confirmationCode).toBeTruthy();
+    expect(mockCreate).toHaveBeenCalled();
   });
 });

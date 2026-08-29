@@ -79,7 +79,22 @@ export async function recordSmsConsent(input: {
    * The order flow has: it upserts the client before creating the order, so
    * passing it here saves a second query for the row we just looked up. */
   clientPageId?: string;
+  /** Status for a CRM row this creates. Defaults to the upsert's own "Active",
+   * which is right for someone who has just placed an order; a booking passes
+   * "Lead", since a consultation is somebody who hasn't bought anything yet.
+   * Ignored for a row that already exists, like every other status write. */
+  status?: string;
 }): Promise<void> {
+  // A consent with no number to attach it to records a permission we could
+  // never act on — and would leave a ticked box on a row nothing can text.
+  // Fail closed, like every other gate on this path.
+  if (!input.phone.trim()) {
+    logger.warn(
+      "SMS consent given with no phone number; not recording it (there would be nothing to text)",
+    );
+    return;
+  }
+
   try {
     const pageId =
       input.clientPageId ??
@@ -87,6 +102,7 @@ export async function recordSmsConsent(input: {
         fullName: input.fullName ?? "",
         email: input.email,
         phone: input.phone,
+        ...(input.status ? { status: input.status } : {}),
       }));
     if (!pageId) return; // No CRM configured — nothing to record consent on.
     await setClientSmsConsent(pageId, {

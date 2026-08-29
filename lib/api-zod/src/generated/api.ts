@@ -675,7 +675,8 @@ export const CreateAppointmentBody = zod.object({
   "preferredContact": zod.enum(['email', 'phone', 'text']).optional(),
   "notes": zod.string().optional(),
   "orderNumber": zod.string().optional().describe('The customer\'s order number. Required for order-scoped types (requiresOrder) — the server verifies it against a real order whose email matches the booking email. Ignored for other types.'),
-  "projectDetails": zod.string().optional().describe('A short description of what the customer wants made. Required for new-customer types (requiresProjectDetails); ignored otherwise.')
+  "projectDetails": zod.string().optional().describe('A short description of what the customer wants made. Required for new-customer types (requiresProjectDetails); ignored otherwise.'),
+  "smsConsent": zod.boolean().optional().describe('True when the customer ticked the opt-in to receive transactional text alerts on the phone number above, alongside the emails they get either way. Requires `phone` — a consent with no number to attach it to is ignored. Recorded on their Client CRM row, which is the one place every send path asks whether they may be texted, so an opt-in given here also covers their orders. Deliberately independent of `preferredContact`: that says how the atelier should reach them, which is not the same permission. Optional; omitted or false means no texts.')
 })
 
 export const CreateAppointmentResponse = zod.object({
