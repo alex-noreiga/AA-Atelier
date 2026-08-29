@@ -13,6 +13,8 @@ import {
   summarizeConsignment,
   type ConsignmentOverview,
 } from "../../src/services/consignment.service.js";
+import type { PaymentRecord } from "../../src/lib/db/payments.repository.js";
+import type { InvoiceLineAnalyticsRecord } from "../../src/lib/notion/invoice.schema.js";
 
 /** A shelf with nothing on it, wired up. Built through the real summarizer so
  * the fixture can't drift from the shape the service actually returns. */
@@ -80,6 +82,41 @@ function invoice(
   };
 }
 
+/** One invoice line, as the analytics scan reads it. */
+function line(
+  invoicePageId: string,
+  amount: number,
+  type = "Material",
+): InvoiceLineAnalyticsRecord {
+  return { invoicePageId, type, amount };
+}
+
+/** One ledger row. Amounts are SIGNED cents, as the table stores them. */
+function payment(overrides: Partial<PaymentRecord> = {}): PaymentRecord {
+  seq += 1;
+  return {
+    id: `payment-${seq}`,
+    orderNumber: "ORD-000002",
+    orderKind: "custom",
+    stage: "first_deposit",
+    kind: "charge",
+    amountCents: 25000,
+    currency: "usd",
+    method: "stripe",
+    paidAt: new Date("2026-08-14T17:00:00.000Z"),
+    externalId: "",
+    paymentIntentId: "",
+    note: "",
+    recordedBy: "",
+    ...overrides,
+  };
+}
+
+/** The ledger source, with rows. */
+function ledger(rows: PaymentRecord[] = []) {
+  return { configured: true, unavailable: false, rows };
+}
+
 function aggregate(input: Partial<StudioAnalyticsInput> = {}) {
   return aggregateStudioAnalytics({
     orders: [],
@@ -89,6 +126,11 @@ function aggregate(input: Partial<StudioAnalyticsInput> = {}) {
     shopChannels: SHOP_CHANNELS,
     consignment: emptyConsignment(),
     invoices: [],
+    invoiceLines: { rows: [], complete: true },
+    creditsByInvoice: new Map(),
+    // Default: a configured ledger holding nothing, which is what an install
+    // that hasn't been backfilled looks like. Tests that care supply rows.
+    payments: { configured: true, unavailable: false, rows: [] },
     itemNames: new Map(),
     now: NOW,
     timeZone: "UTC",
@@ -665,5 +707,330 @@ describe("aggregateStudioAnalytics — envelope", () => {
     expect(result.production.activeOrders).toBe(0);
     expect(result.payments.outstandingTotal).toBe(0);
     expect(result.topItems).toEqual([]);
+  });
+});
+
+describe("aggregateStudioAnalytics — collected revenue from the ledger", () => {
+  it("buckets a payment by the month the MONEY moved, not the order's", () => {
+    // The whole point of the ledger. A commission placed in June and paid in
+    // August is June's booked figure and August's collected one.
+    const { revenue } = aggregate({
+      payments: ledger([
+        payment({ paidAt: new Date("2026-08-14T17:00:00.000Z") }),
+        payment({
+          amountCents: 100000,
+          paidAt: new Date("2026-07-02T17:00:00.000Z"),
+        }),
+      ]),
+    });
+
+    const byMonth = new Map(revenue.map((m) => [m.month, m]));
+    expect(byMonth.get("2026-08")?.customCollected).toBe(250);
+    expect(byMonth.get("2026-07")?.customCollected).toBe(1000);
+  });
+
+  it("nets refunds out of the month they were issued in", () => {
+    // A refund is a negative row, so a refunded order stops counting as
+    // collected — which the Notion paid-checkbox never did.
+    const { revenue } = aggregate({
+      payments: ledger([
+        payment({ amountCents: 25000 }),
+        payment({ kind: "refund", amountCents: -10000 }),
+      ]),
+    });
+
+    const august = revenue.find((m) => m.month === "2026-08");
+    expect(august?.customCollected).toBe(150);
+  });
+
+  it("reports a month that gave back more than it took as negative", () => {
+    // Honest rather than clamped: flooring it at zero would hide the refund
+    // somewhere nobody could find it.
+    const { revenue } = aggregate({
+      payments: ledger([payment({ kind: "refund", amountCents: -10000 })]),
+    });
+
+    expect(revenue.find((m) => m.month === "2026-08")?.customCollected).toBe(
+      -100,
+    );
+  });
+
+  it("SKIPS a foreign-currency payment rather than adding it to dollars", () => {
+    // Nothing can write such a row today; an aggregate that would be wrong if
+    // one existed is one nobody would catch. See lib/currency.ts.
+    const { revenue } = aggregate({
+      payments: ledger([
+        payment({ amountCents: 25000 }),
+        payment({ amountCents: 90000, currency: "eur" }),
+      ]),
+    });
+
+    expect(revenue.find((m) => m.month === "2026-08")?.customCollected).toBe(
+      250,
+    );
+  });
+
+  it("counts a row whose currency is blank — it predates the column", () => {
+    const { revenue } = aggregate({
+      payments: ledger([payment({ amountCents: 25000, currency: "" })]),
+    });
+
+    expect(revenue.find((m) => m.month === "2026-08")?.customCollected).toBe(
+      250,
+    );
+  });
+
+  it("ignores SHOP rows — shopRevenue already counts that money", () => {
+    // Drawing the same number from two places is how the two come to disagree.
+    const { revenue } = aggregate({
+      payments: ledger([
+        payment({ orderKind: "shop", orderNumber: "SHP-1", amountCents: 8800 }),
+      ]),
+    });
+
+    expect(revenue.find((m) => m.month === "2026-08")?.customCollected).toBe(0);
+  });
+
+  it("ignores a payment outside the reporting window", () => {
+    const { revenue } = aggregate({
+      payments: ledger([
+        payment({ paidAt: new Date("2020-01-01T12:00:00.000Z") }),
+      ]),
+    });
+
+    expect(revenue.every((m) => m.customCollected === 0)).toBe(true);
+  });
+
+  it("keeps booked and collected as separate answers about one order", () => {
+    const { revenue } = aggregate({
+      orders: [
+        order({ pageId: "page-a", createdTime: "2026-06-10T10:00:00.000Z" }),
+      ],
+      invoices: [invoice({ orderPageId: "page-a", finalBalance: 1200 })],
+      payments: ledger([
+        payment({ paidAt: new Date("2026-08-01T17:00:00.000Z") }),
+      ]),
+    });
+
+    const byMonth = new Map(revenue.map((m) => [m.month, m]));
+    expect(byMonth.get("2026-06")?.customBooked).toBe(1200);
+    expect(byMonth.get("2026-06")?.customCollected).toBe(0);
+    expect(byMonth.get("2026-08")?.customBooked).toBe(0);
+    expect(byMonth.get("2026-08")?.customCollected).toBe(250);
+  });
+
+  it("settles float noise so a sum of cents reads as dollars", () => {
+    const { revenue } = aggregate({
+      payments: ledger([
+        payment({ amountCents: 1 }),
+        payment({ amountCents: 2 }),
+      ]),
+    });
+
+    expect(revenue.find((m) => m.month === "2026-08")?.customCollected).toBe(
+      0.03,
+    );
+  });
+});
+
+describe("aggregateStudioAnalytics — what the ledger could tell us", () => {
+  it("reports an unconfigured ledger, so a nought can't read as no takings", () => {
+    const { paymentLedger } = aggregate({
+      payments: { configured: false, unavailable: false, rows: [] },
+    });
+
+    expect(paymentLedger).toEqual({ configured: false, payments: 0 });
+  });
+
+  it("reports an unreadable ledger as unavailable, not as empty", () => {
+    const { paymentLedger } = aggregate({
+      payments: { configured: true, unavailable: true, rows: [] },
+    });
+
+    expect(paymentLedger).toMatchObject({
+      configured: true,
+      unavailable: true,
+      payments: 0,
+    });
+  });
+
+  it("names the earliest month holding a payment — the backfill's watermark", () => {
+    // Months before this show 0 because nothing is recorded there, which is what
+    // an install that hasn't been backfilled looks like.
+    const { paymentLedger } = aggregate({
+      payments: ledger([
+        payment({ paidAt: new Date("2026-08-14T17:00:00.000Z") }),
+        payment({ paidAt: new Date("2026-06-02T17:00:00.000Z") }),
+      ]),
+    });
+
+    expect(paymentLedger).toEqual({
+      configured: true,
+      payments: 2,
+      recordedFrom: "2026-06",
+    });
+  });
+
+  it("omits recordedFrom when the window holds nothing", () => {
+    const { paymentLedger } = aggregate({ payments: ledger([]) });
+
+    expect(paymentLedger).toEqual({ configured: true, payments: 0 });
+  });
+});
+
+describe("aggregateStudioAnalytics — what an invoice is worth", () => {
+  it("values an invoice from its LINES, not from Notion's Final Balance", () => {
+    // The two used to be derived separately and agreed only by convention. A
+    // Final Balance that disagrees with the lines now loses to the lines, which
+    // is what the customer is actually shown.
+    const { revenue, payments } = aggregate({
+      orders: [
+        order({ pageId: "page-a", createdTime: "2026-08-04T10:00:00.000Z" }),
+      ],
+      invoices: [
+        invoice({
+          pageId: "inv-a",
+          orderPageId: "page-a",
+          finalBalance: 9999,
+        }),
+      ],
+      invoiceLines: {
+        rows: [line("inv-a", 400), line("inv-a", 350, "Labor")],
+        complete: true,
+      },
+    });
+
+    expect(revenue.find((m) => m.month === "2026-08")?.customBooked).toBe(750);
+    expect(payments.invoicedTotal).toBe(750);
+  });
+
+  it("excludes a Deposit line, which is a credit and not a charge", () => {
+    // Notion's Final Balance applies no such filter, so a Deposit line would
+    // inflate the atelier's view while the customer's stayed correct. This is
+    // the divergence the shared rule closes.
+    const { payments } = aggregate({
+      invoices: [invoice({ pageId: "inv-a", finalBalance: 900 })],
+      invoiceLines: {
+        rows: [line("inv-a", 700), line("inv-a", 200, "Deposit")],
+        complete: true,
+      },
+    });
+
+    expect(payments.invoicedTotal).toBe(700);
+  });
+
+  it("falls back to Final Balance for an invoice with no lines at all", () => {
+    // Which is what a failed or truncated line scan looks like: the previous
+    // behaviour, degraded rather than a page of noughts.
+    const { payments } = aggregate({
+      invoices: [invoice({ pageId: "inv-a", finalBalance: 900 })],
+      invoiceLines: { rows: [], complete: true },
+    });
+
+    expect(payments.invoicedTotal).toBe(900);
+  });
+
+  it("reads 0 for an invoice with neither lines nor a Final Balance", () => {
+    const { payments } = aggregate({
+      invoices: [invoice({ pageId: "inv-a" })],
+      invoiceLines: { rows: [], complete: true },
+    });
+
+    expect(payments.invoicedTotal).toBe(0);
+  });
+
+  it("takes credit notes off what an invoice is worth", () => {
+    // Otherwise the figures go on reporting money the studio has told a
+    // customer it will not be asking for.
+    const { payments } = aggregate({
+      invoices: [invoice({ pageId: "inv-a" })],
+      invoiceLines: { rows: [line("inv-a", 1000)], complete: true },
+      creditsByInvoice: new Map([["inv-a", 15000]]),
+    });
+
+    expect(payments.invoicedTotal).toBe(850);
+  });
+
+  it("floors a fully-credited invoice at zero rather than going negative", () => {
+    const { payments } = aggregate({
+      invoices: [invoice({ pageId: "inv-a" })],
+      invoiceLines: { rows: [line("inv-a", 1000)], complete: true },
+      creditsByInvoice: new Map([["inv-a", 200000]]),
+    });
+
+    expect(payments.invoicedTotal).toBe(0);
+  });
+
+  it("reports uncredited values when the credits read found nothing", () => {
+    // A failed read is an empty map, which overstates rather than erases — the
+    // safe direction for a figure that stands without it.
+    const { payments } = aggregate({
+      invoices: [invoice({ pageId: "inv-a" })],
+      invoiceLines: { rows: [line("inv-a", 1000)], complete: true },
+      creditsByInvoice: new Map(),
+    });
+
+    expect(payments.invoicedTotal).toBe(1000);
+  });
+
+  it("falls the WHOLE pass back to Final Balance on a truncated scan", () => {
+    // The rows are grouped by invoice, so a cut-short read doesn't drop an
+    // invoice, it halves one. An invoice quietly worth less than it is would be
+    // the worst way for this to be wrong, so a partial read is treated as no
+    // read at all — the previous behaviour, degraded rather than incorrect.
+    const { payments } = aggregate({
+      invoices: [invoice({ pageId: "inv-a", finalBalance: 900 })],
+      invoiceLines: { rows: [line("inv-a", 100)], complete: false },
+    });
+
+    expect(payments.invoicedTotal).toBe(900);
+  });
+
+  it("does not let one invoice's lines reach another", () => {
+    const { payments } = aggregate({
+      invoices: [
+        invoice({ pageId: "inv-a", finalBalance: 111 }),
+        invoice({ pageId: "inv-b", finalBalance: 222 }),
+      ],
+      invoiceLines: {
+        rows: [line("inv-a", 500), line("inv-b", 40)],
+        complete: true,
+      },
+    });
+
+    expect(payments.invoicedTotal).toBe(540);
+  });
+
+  it("skips an orphaned line rather than guessing which invoice it belongs to", () => {
+    // Attributing it would put money on an order that never charged it.
+    const { payments } = aggregate({
+      invoices: [invoice({ pageId: "inv-a" })],
+      invoiceLines: {
+        rows: [line("inv-a", 100), line("", 5000)],
+        complete: true,
+      },
+    });
+
+    expect(payments.invoicedTotal).toBe(100);
+  });
+
+  it("nets the derived value against deposits when splitting the balance", () => {
+    // The value flows into the outstanding split too, not just the headline.
+    const { payments } = aggregate({
+      invoices: [
+        invoice({
+          pageId: "inv-a",
+          finalBalance: 9999,
+          depositsPaid: 200,
+          depositsUnpaid: 100,
+        }),
+      ],
+      invoiceLines: { rows: [line("inv-a", 800)], complete: true },
+    });
+
+    expect(payments.invoicedTotal).toBe(800);
+    expect(payments.depositsCollected).toBe(200);
+    expect(payments.depositsOutstanding).toBe(100);
+    expect(payments.balancesOutstanding).toBe(500);
   });
 });

@@ -36,6 +36,8 @@ import {
 } from "../lib/notion/invoice-line-items.blocks.js";
 import { resolveStoredOrderService } from "../lib/service-catalog.js";
 import { rushSurchargeRate, rushSurchargeLineName } from "./rush.js";
+import { issueOrderInvoice } from "./invoice-issue.service.js";
+import { logger } from "../lib/logger.js";
 import { BadRequestError, NotFoundError } from "../lib/errors.js";
 
 /** Round a dollar amount to whole cents, killing float noise from the rate. */
@@ -70,6 +72,8 @@ export interface QuoteResult {
 
 export interface QuoteInput {
   orderNumber: string;
+  /** The staff member quoting, carried through to the issued invoice. */
+  issuedBy?: string;
   /** Dollars. Must be a finite number above zero. */
   amount: number;
   /** What the work is, as the customer reads it. Blank ⇒ the order's service
@@ -163,9 +167,26 @@ export async function quoteOrder(input: QuoteInput): Promise<QuoteResult> {
   }
 
   // A quote is a finished invoice by construction — there is nothing further to
-  // itemize — so tick the gate rather than leaving a step to forget. Last, so a
-  // failure part-way through never exposes a half-written invoice to pay.
-  await setInvoiceReady(invoicePageId, true);
+  // itemize — so it is ISSUED here rather than leaving a step to forget: the
+  // snapshot is written and the gate ticked in one go. Last, so a failure
+  // part-way through never exposes a half-written invoice to pay.
+  //
+  // Best-effort on the ISSUING half only. The line is already written, so a
+  // database outage must not lose the quote; it degrades to the pre-6b
+  // behaviour — ready to pay, computed live, with no invoice number — and the
+  // atelier can press "Issue an invoice" once the database is back.
+  try {
+    await issueOrderInvoice({
+      orderNumber: order.orderNumber,
+      ...(input.issuedBy ? { issuedBy: input.issuedBy } : {}),
+    });
+  } catch (err) {
+    logger.error(
+      { err, orderNumber: order.orderNumber },
+      "Wrote the quote but could not issue the invoice; ticking Invoice Ready directly",
+    );
+    await setInvoiceReady(invoicePageId, true);
+  }
 
   return {
     orderNumber: order.orderNumber,

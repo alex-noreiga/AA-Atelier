@@ -427,6 +427,182 @@ export function fittingReminderEmail(
 // `CreateXInput`; the caller hands this builder an already-formatted struct.
 // ---------------------------------------------------------------------------
 
+/** One charged line, as the issued invoice recorded it. */
+export interface IssuedInvoiceEmailLine {
+  name: string;
+  amount: number;
+}
+
+/** One staged deposit, as it stood when the invoice was issued. */
+export interface IssuedInvoiceEmailDeposit {
+  label: string;
+  amount: number;
+  paid: boolean;
+}
+
+/** The details needed to render an issued-invoice email. */
+export interface IssuedInvoiceEmailDetails {
+  email: string;
+  orderNumber: string;
+  orderName: string;
+  /** The studio's invoice number (`INV-…`). */
+  invoiceNumber: string;
+  /** When it was issued (ISO instant). */
+  issuedAt: string;
+  lines: IssuedInvoiceEmailLine[];
+  subtotal: number;
+  deposits: IssuedInvoiceEmailDeposit[];
+  /** What is left to pay after the deposits already paid. */
+  balanceDue: number;
+  /** True when the balance is taxed at checkout — the invoice cannot state the
+   * amount, because Stripe computes it from an address collected there. */
+  taxed: boolean;
+  /** The invoice's payment-due date (ISO `yyyy-mm-dd`), if the atelier set one. */
+  paymentDeadline?: string;
+  /** Absolute URL to the invoice page, when PUBLIC_BASE_URL is configured. */
+  invoiceUrl?: string;
+}
+
+/**
+ * Sent to the customer when the atelier ISSUES their invoice — the moment the
+ * charges are frozen into a numbered document.
+ *
+ * Until this existed the app never sent anyone their invoice: the payment
+ * reminders linked to the tracking page, and a customer only saw the document if
+ * they went looking. So this is the invoice arriving, not a nudge — the reminders
+ * remain the nudge, and they still say what is due and when.
+ */
+export function issuedInvoiceEmail(
+  details: IssuedInvoiceEmailDetails,
+): EmailMessage {
+  const {
+    orderNumber,
+    orderName,
+    invoiceNumber,
+    issuedAt,
+    lines,
+    subtotal,
+    deposits,
+    balanceDue,
+    taxed,
+    paymentDeadline,
+    invoiceUrl,
+  } = details;
+
+  const issuedLabel = formatCalendarDate(issuedAt.slice(0, 10));
+
+  const lineRowsHtml = lines
+    .map(
+      (line) =>
+        `<tr>
+           <td style="padding:6px 0;font-size:15px;">${escapeHtml(line.name)}</td>
+           <td style="padding:6px 0;font-size:15px;text-align:right;white-space:nowrap;">${formatUsd(line.amount)}</td>
+         </tr>`,
+    )
+    .join("");
+
+  // Deposits already paid are shown as credits; ones still to come are shown at
+  // zero, so the customer can see the schedule without thinking they have been
+  // charged for it twice. Same presentation as the invoice page and the PDF.
+  const depositRowsHtml = deposits
+    .map(
+      (deposit) =>
+        `<tr>
+           <td style="padding:4px 0;font-size:14px;color:#8a7f74;">${escapeHtml(deposit.label)}${deposit.paid ? "" : " (not yet paid)"}</td>
+           <td style="padding:4px 0;font-size:14px;color:#8a7f74;text-align:right;white-space:nowrap;">${
+             deposit.paid ? `&minus;${formatUsd(deposit.amount)}` : formatUsd(0)
+           }</td>
+         </tr>`,
+    )
+    .join("");
+
+  const deadlineHtml = paymentDeadline
+    ? `<p style="color:#8a7f74;margin:0 0 6px;">Payment due by <strong>${escapeHtml(formatCalendarDate(paymentDeadline))}</strong></p>`
+    : "";
+
+  const taxHtml = taxed
+    ? `<p style="font-size:13px;color:#8a7f74;">Any sales tax is calculated at checkout, from the billing address you enter there.</p>`
+    : "";
+
+  const ctaHtml = invoiceUrl
+    ? `<p style="margin:28px 0;">
+         <a href="${encodeURI(invoiceUrl)}" style="display:inline-block;background:#2b2622;color:#faf8f5;
+            text-decoration:none;padding:12px 24px;border-radius:2px;font-size:15px;">View your invoice</a>
+       </p>
+       <p style="font-size:13px;color:#8a7f74;word-break:break-all;">Or paste this link
+          into your browser:<br/>${escapeHtml(invoiceUrl)}</p>`
+    : `<p>You can view and pay this invoice from your order page at any time — just
+          look up your order number.</p>`;
+
+  const html = layout(
+    "Your invoice",
+    `<p>Hi there,</p>
+     <p>Here is your invoice for <strong>${escapeHtml(orderName)}</strong>.</p>
+     <p style="color:#8a7f74;margin:0 0 6px;">Invoice <strong>${escapeHtml(invoiceNumber)}</strong> &middot; issued ${escapeHtml(issuedLabel)}</p>
+     ${deadlineHtml}
+     <table style="width:100%;border-collapse:collapse;margin:22px 0 0;">
+       ${lineRowsHtml}
+       <tr><td colspan="2" style="border-top:1px solid #e7e0d8;padding-top:10px;"></td></tr>
+       <tr>
+         <td style="padding:4px 0;font-size:14px;color:#8a7f74;">Subtotal</td>
+         <td style="padding:4px 0;font-size:14px;color:#8a7f74;text-align:right;">${formatUsd(subtotal)}</td>
+       </tr>
+       ${depositRowsHtml}
+       <tr>
+         <td style="padding:12px 0 0;font-size:17px;">Balance due</td>
+         <td style="padding:12px 0 0;font-size:17px;text-align:right;white-space:nowrap;">${formatUsd(balanceDue)}</td>
+       </tr>
+     </table>
+     ${taxHtml}
+     ${ctaHtml}
+     <p>If anything here looks wrong, just reply to this email and we'll put it right.</p>
+     <p style="color:#8a7f74;margin:0;">Order number: <strong>${escapeHtml(orderNumber)}</strong></p>`,
+  );
+
+  const text = [
+    `Hi there,`,
+    ``,
+    `Here is your invoice for ${orderName}.`,
+    ``,
+    `Invoice ${invoiceNumber} — issued ${issuedLabel}`,
+    ...(paymentDeadline
+      ? [`Payment due by ${formatCalendarDate(paymentDeadline)}`]
+      : []),
+    ``,
+    ...lines.map((line) => `  ${line.name}: ${formatUsd(line.amount)}`),
+    `  Subtotal: ${formatUsd(subtotal)}`,
+    ...deposits.map(
+      (deposit) =>
+        `  ${deposit.label}${deposit.paid ? "" : " (not yet paid)"}: ${
+          deposit.paid ? `-${formatUsd(deposit.amount)}` : formatUsd(0)
+        }`,
+    ),
+    `  Balance due: ${formatUsd(balanceDue)}`,
+    ...(taxed
+      ? [
+          ``,
+          `Any sales tax is calculated at checkout, from the billing address you`,
+          `enter there.`,
+        ]
+      : []),
+    ...(invoiceUrl ? [``, `View your invoice: ${invoiceUrl}`] : []),
+    ``,
+    `If anything here looks wrong, just reply to this email and we'll put it right.`,
+    ``,
+    `Order number: ${orderNumber}`,
+    ``,
+    `Thank you,`,
+    `The ${ATELIER_NAME} team`,
+  ].join("\n");
+
+  return {
+    to: details.email,
+    subject: `Your invoice ${invoiceNumber} (${orderNumber})`,
+    html,
+    text,
+  };
+}
+
 /** The details needed to render a payment-reminder email. */
 export interface PaymentReminderEmailDetails {
   email: string;

@@ -53,11 +53,29 @@ export interface InvoiceLineItem {
 }
 
 /**
+ * One credit note against an issued invoice: its own numbered, dated document reducing what the invoice charges.
+ */
+export interface InvoiceCredit {
+  /** The studio's credit-note number (`CN-…`). */
+  creditNumber: string;
+  /** When it was raised (ISO). */
+  issuedAt: string;
+  /** How much it takes off the invoice, in dollars (positive). */
+  amount: number;
+  /** Why it was raised, in the atelier's words. Shown to the customer, so it is part of the document rather than an internal note. */
+  reason: string;
+}
+
+/**
  * The customer's invoice for a custom order, present only once the atelier has itemized it and flipped the "Invoice Ready" gate. Line items and deposits are dollars; balanceDue is what's charged online.
  */
 export interface Invoice {
   /** The atelier's invoice identifier (its Notion title). */
   invoiceId: string;
+  /** The studio's own invoice number (`INV-…`), assigned when the invoice was ISSUED. From that moment the line items and subtotal below are a frozen snapshot of what the customer was shown, not a live read of editable rows — so the document can't change under someone who has already seen it. Absent on an invoice issued before this existed, or while the record can't be read, in which case the figures are computed live as they always were. */
+  invoiceNumber?: string;
+  /** When the invoice was issued (ISO). Absent when it wasn't. A plain string rather than `format: date-time`, matching `paymentDeadline` below: the two zod/client generators disagree on that format (one emits `Date`, the other `string`), which makes the two packages' own `Invoice` types mutually unassignable — see `.agents/memory/orval-zod-codegen-drift.md`. */
+  issuedAt?: string;
   /** Whether the final balance has already been paid. */
   paid: boolean;
   /** The itemized charges (deposit lines excluded — deposits are credited via OrderStatus.deposits, not itemized here). */
@@ -66,7 +84,11 @@ export interface Invoice {
   subtotal: number;
   /** Sum of the deposits already paid, in dollars. */
   depositsCreditedTotal: number;
-  /** subtotal − depositsCreditedTotal, floored at 0, in dollars. */
+  /** Credit notes raised against this invoice — the way an ISSUED invoice changes, since the document itself can never be rewritten. Absent when there are none. A credit reduces what is OWED; it is not a refund, so on an invoice the customer has already settled it leaves them owed money rather than sending any. */
+  credits?: InvoiceCredit[];
+  /** What the credit notes come to, in dollars. Absent when there are none. */
+  creditsTotal?: number;
+  /** subtotal − creditsTotal − depositsCreditedTotal, floored at 0, in dollars. This is what the balance checkout charges. */
   balanceDue: number;
   /** The invoice's payment-due date (ISO), if the atelier set one. */
   paymentDeadline?: string;
@@ -381,40 +403,6 @@ export interface NewReviewRequest {
   photoIds?: string[];
 }
 
-/**
- * A review of one ready-to-wear piece from a shop order. The same shape as NewReviewRequest plus the piece it is about — a shop order can hold several pieces, and an average belongs to a piece rather than to the order, so the review has to say which one.
- */
-export interface NewShopReviewRequest {
-  /** The email to verify against the one on the order. A review whose email doesn't match the order is rejected. */
-  email: string;
-  /**
-     * The inventory row id of the piece being reviewed — one of the `id`s on the order's `items`. The server checks it against the order's own pieces, so a review can only ever be left for something the customer actually bought.
-     * @minLength 1
-     */
-  productId: string;
-  /**
-     * The star rating, 1 (poor) to 5 (excellent).
-     * @minimum 1
-     * @maximum 5
-     */
-  rating: number;
-  /**
-     * The customer's testimonial about the piece.
-     * @minLength 1
-     * @maxLength 2000
-     */
-  comment: string;
-  /**
-     * How the customer would like to be credited if the review is featured (e.g. "Ada L." or "Ada, Chicago"). Optional.
-     * @maxLength 120
-     */
-  displayName?: string;
-  /** Whether the customer gives permission to show this review publicly. Defaults to false — and, because the same two gates decide everything public, a review without it is never counted into the piece's average either. */
-  consentToPublish?: boolean;
-  /** Notion file_upload ids for photos of the piece, uploaded ahead of time via POST /orders/reference-images. Attached to the review's Notion page as image blocks. */
-  photoIds?: string[];
-}
-
 export interface NewReviewResponse {
   received: boolean;
 }
@@ -484,44 +472,6 @@ export interface PortfolioFilter {
 export interface PortfolioList {
   pieces: PortfolioPiece[];
   filters: PortfolioFilter[];
-}
-
-/**
- * What kind of post this is, lowercased from Instagram's own IMAGE / VIDEO / CAROUSEL_ALBUM. Clients use it only to badge the thumbnail (a play glyph on a video, a stack glyph on a carousel) — every post carries a still `imageUrl` whatever its type, so a client that ignores this renders correctly.
- */
-export type InstagramMediaType = typeof InstagramMediaType[keyof typeof InstagramMediaType];
-
-
-export const InstagramMediaType = {
-  image: 'image',
-  video: 'video',
-  carousel: 'carousel',
-} as const;
-
-/**
- * One post from the studio's Instagram account. Deliberately narrow: no like or comment counts, no author, and no video file — the strip is a grid of stills that link out to Instagram.
- */
-export interface InstagramPost {
-  /** Instagram's own media id, used only as a render key. */
-  id: string;
-  /** The post's public Instagram URL, opened in a new tab. */
-  permalink: string;
-  /** The still to render. Instagram's image for a photo or carousel, and the poster frame for a video. These are CDN URLs that expire, which is why this response's edge cache is deliberately short — the same reasoning as the portfolio's Notion-signed images. Never empty: a post Instagram returned no usable image for is dropped rather than served as a broken tile. */
-  imageUrl: string;
-  mediaType: InstagramMediaType;
-  /** The post's caption, verbatim and untruncated. Omitted when the post has none. Clients clamp it for display and derive the image's alternative text from it. */
-  caption?: string;
-  /** When the post was published. Omitted when Instagram returned no timestamp; the list is already in Instagram's own newest-first order, so this is for display only. */
-  postedAt?: string;
-  /** The `Product.id` of the shop card this post shows, when the atelier has recorded this post's URL against an inventory row. Present only for a piece currently published to the shop, so the client can link straight to `/shop/{productId}` without checking. Absent — the common case — means the post is not tied to a purchasable piece and the tile links to Instagram alone. */
-  productId?: string;
-  /** The name of the piece this post shows, as the atelier names it in the inventory — what the "Shop this piece" link is labelled with. Always present alongside `productId`, and absent without it. */
-  productTitle?: string;
-}
-
-export interface InstagramFeed {
-  /** The studio's recent posts, newest first. Empty when the integration is unconfigured or the feed could not be read — the two are deliberately indistinguishable to the client, which renders nothing either way. */
-  posts: InstagramPost[];
 }
 
 /**
@@ -675,6 +625,159 @@ export interface StudioGuideList {
   unreachable?: boolean;
   /** True when more rows exist than the server will read in one page, so the dashboard can say the list is partial instead of looking complete. */
   truncated?: boolean;
+}
+
+/**
+ * One of the five stages of making a piece. The ids are the app's own; the Notion property naming who did each and the Category Pay Splits column holding its share are listed beside them in `lib/notion/work-distribution.schema.ts`.
+ */
+export type ProductionStage = typeof ProductionStage[keyof typeof ProductionStage];
+
+
+export const ProductionStage = {
+  consult: 'consult',
+  sourcing: 'sourcing',
+  cutting: 'cutting',
+  sewing: 'sewing',
+  detailing: 'detailing',
+} as const;
+
+/**
+ * What one maker earned on one stage of one item.
+ */
+export interface ProductionStagePay {
+  stage: ProductionStage;
+  /** Money attributed to this maker for this stage of this row. */
+  amount: number;
+  /** True when the stage was marked `Split`, so this is a share of it rather than the whole. Reported so a half-size sewing share reads as shared work rather than as a wrong number. */
+  shared: boolean;
+}
+
+/**
+ * One maker's share of one item.
+ */
+export interface ProductionItemMakerPay {
+  /** The maker's name, exactly as typed into the Notion select. */
+  maker: string;
+  /** What they are due for this item, across every stage they worked on. */
+  amount: number;
+  /** Whether this row's `Paid <name>` checkbox is ticked. A maker with no such column reads as false — the panel may overstate what is owed, but must never hide it. */
+  paid: boolean;
+  /** Which stages that money is for. */
+  stages: ProductionStagePay[];
+}
+
+/**
+ * One item being made, and what it owes whom.
+ */
+export interface ProductionPayItem {
+  /** The Notion page id of the work-distribution row. */
+  id: string;
+  /** The item's title, e.g. "Knight of Midnight Dress". */
+  item: string;
+  /** Size, colour or variation, when the atelier noted one. */
+  product?: string;
+  /** The category the pay splits came from, by name. */
+  category?: string;
+  /** The related order's current stage, when the row belongs to a commission. Shown so the atelier can see what they are settling up on; it never decides whether pay is owed. */
+  orderStage?: string;
+  /** `Sale price` × `Units` — the pot the five stage shares divide. */
+  value: number;
+  /** How many pieces the row covers. A blank `Units` reads as one: the row is an item, and folding it to nought would value real work at nothing. */
+  units: number;
+  /** Per maker, most owed first. */
+  makers: ProductionItemMakerPay[];
+  /** Value belonging to stages nobody is assigned to. Attributed to no one and in no total, but reported so the row's shares visibly don't add up to its value rather than invisibly not adding up. */
+  unassigned: number;
+}
+
+/**
+ * `no-sale-price` — nothing to divide. `no-pay-split` — no category relation, or one pointing at a row the splits database doesn't hold. `unassigned-stages` — priced and categorised, but part of the work has no name against it, so part of its value is owed to nobody.
+ */
+export type ProductionPayAttentionReason = typeof ProductionPayAttentionReason[keyof typeof ProductionPayAttentionReason];
+
+
+export const ProductionPayAttentionReason = {
+  'no-sale-price': 'no-sale-price',
+  'no-pay-split': 'no-pay-split',
+  'unassigned-stages': 'unassigned-stages',
+} as const;
+
+/**
+ * A row no pay could be computed from, and why.
+ */
+export interface ProductionPayAttention {
+  id: string;
+  item: string;
+  /** `no-sale-price` — nothing to divide. `no-pay-split` — no category relation, or one pointing at a row the splits database doesn't hold. `unassigned-stages` — priced and categorised, but part of the work has no name against it, so part of its value is owed to nobody. */
+  reason: ProductionPayAttentionReason;
+  /** For `unassigned-stages`, the money hanging on those stages. */
+  unassigned?: number;
+}
+
+export type MakerPayOwedByStageItem = {
+  stage: ProductionStage;
+  amount: number;
+};
+
+/**
+ * One maker's totals across the whole book.
+ */
+export interface MakerPay {
+  maker: string;
+  /** Due and not yet ticked paid. The figure the panel leads with. */
+  owed: number;
+  /** Due and ticked paid — what has already been settled. */
+  paid: number;
+  /** Everything they have earned, owed and settled together. */
+  total: number;
+  /** How many item rows still owe them something. */
+  owedItems: number;
+  /** What the outstanding money is for, most owed first. A breakdown of `owed`, not of `total` — this is what the atelier settles against. */
+  owedByStage: MakerPayOwedByStageItem[];
+}
+
+/**
+ * A category whose five shares don't add up to the whole piece. A mistyped split silently underpays whoever did the missing stage, and this is the only place that is visible.
+ */
+export interface UnbalancedPaySplit {
+  category: string;
+  /** What the five shares actually total, as a fraction of one. */
+  total: number;
+}
+
+export type ProductionPayOverviewMissingItem = typeof ProductionPayOverviewMissingItem[keyof typeof ProductionPayOverviewMissingItem];
+
+
+export const ProductionPayOverviewMissingItem = {
+  'work-distribution': 'work-distribution',
+  'pay-splits': 'pay-splits',
+} as const;
+
+/**
+ * Production pay — who is owed what, the items behind it, and the rows nothing could be computed from.
+ */
+export interface ProductionPayOverview {
+  /** False when either database isn't wired up, in which case everything is empty and the panel says which one is missing — rather than reporting nought owed, which reads as "everyone has been paid". */
+  configured: boolean;
+  /** Which of the two databases are unset, when `configured` is false. */
+  missing?: ProductionPayOverviewMissingItem[];
+  /** True when an id IS set but Notion answered 404 — the integration has not been shared, or the id is wrong. Same kind of state as unset: configuration a human has to clear, not an outage worth erroring the panel over. Absent when the read worked. */
+  unreachable?: boolean;
+  /** Per maker, most owed first. Includes a maker with nothing outstanding, so this reads as the roster rather than as a list of who happens to be owed money. */
+  makers: MakerPay[];
+  /** Owed across every maker — what the studio owes its people now. */
+  totalOwed: number;
+  /** Settled across every maker. */
+  totalPaid: number;
+  /** Item rows, most owed first, capped by the server. */
+  items: ProductionPayItem[];
+  /** How many item rows there are in all, so a capped list can say so. */
+  itemCount: number;
+  /** Rows no pay could be computed from, and why. */
+  needsAttention: ProductionPayAttention[];
+  /** How many such rows there are in all. */
+  attentionCount: number;
+  unbalancedSplits: UnbalancedPaySplit[];
 }
 
 /**
@@ -895,6 +998,9 @@ export const StudioTool = {
   'cancellation-refund': 'cancellation-refund',
   'return-refund': 'return-refund',
   'restock-alert': 'restock-alert',
+  'record-payment': 'record-payment',
+  'issue-invoice': 'issue-invoice',
+  'credit-note': 'credit-note',
 } as const;
 
 /**
@@ -1951,7 +2057,7 @@ export interface StudioProductionLoad {
 }
 
 /**
- * A month of trade. The two money figures are deliberately NOT summed: shop revenue is money actually collected, while the custom figure is work booked (Notion holds no per-payment dates, so a custom payment can't be attributed to the month it was made).
+ * A month of trade, carrying two different questions about custom work that must not be added together. `customBooked` is what was WON that month — the value of the orders placed in it. `customCollected` is what came IN that month, from the payment ledger. A commission booked in March and paid across April and June appears once in March's booked figure and twice in the collected one, which is correct for both and nonsense if summed. `shopRevenue` is a collected figure, so it is the one that adds cleanly to `customCollected`.
  */
 export interface StudioRevenueMonth {
   /** The month as YYYY-MM. */
@@ -1962,6 +2068,8 @@ export interface StudioRevenueMonth {
   shopOrders: number;
   /** Dollars invoiced on custom orders placed that month (each order's invoice Final Balance). Zero for orders not yet itemized. */
   customBooked: number;
+  /** Dollars actually collected on custom orders that month, from the payment ledger — every payment dated by when the money moved, net of refunds, whether it came through Stripe or was recorded by hand. Read `paymentLedger` before trusting a zero: a month before the ledger holds anything reads as 0 because nothing is recorded, not because nothing was collected. */
+  customCollected: number;
   /** Custom orders placed that month (cancelled excluded). */
   customOrders: number;
 }
@@ -1986,6 +2094,20 @@ export interface StudioPaymentTotals {
   invoiceCount: number;
   /** Invoices with money still outstanding. */
   unpaidInvoiceCount: number;
+}
+
+/**
+ * What the payment ledger could tell us about the reported window — the context `customCollected` has to be read against. A zero in a month is ambiguous on its own: it means "nothing came in" only if the ledger was actually holding payments for that month, and "we have no record" if it wasn't. The ledger is filled going forward by every Stripe payment and every payment recorded by hand, and backwards by a one-time backfill from Stripe, so an install that hasn't run the backfill has a real start date before which every collected figure is a nought.
+ */
+export interface StudioPaymentLedgerStatus {
+  /** Whether there is a ledger at all (Postgres configured). False ⇒ every `customCollected` is 0 and means nothing. */
+  configured: boolean;
+  /** Set when the ledger is configured but could not be read on this run. The rest of the figures are unaffected — they come from Notion — so this degrades the collected column rather than failing the dashboard. */
+  unavailable?: boolean;
+  /** How many ledger movements fall inside the reported window (charges and refunds alike). Zero with `configured` true is the signature of a ledger nobody has backfilled yet. */
+  payments: number;
+  /** The earliest month (YYYY-MM) inside the window that has any recorded payment. Months before it show 0 because nothing is recorded there, not because nothing was collected. Absent when the window holds no payments at all. */
+  recordedFrom?: string;
 }
 
 /**
@@ -2091,6 +2213,7 @@ export interface StudioAnalytics {
   /** One entry per month over the trailing window, oldest first. Months with no activity are included as zeroes so a chart has no gaps. */
   revenue: StudioRevenueMonth[];
   payments: StudioPaymentTotals;
+  paymentLedger: StudioPaymentLedgerStatus;
   /** The shop's best sellers, most-ordered first, across every sales channel. Empty when no shop order carries its inventory relation (legacy orders, hand-filed ones, or the relation-links flag being off) — item-level figures are only as good as that link, and `topItemCoverage` says how many orders it misses. */
   topItems: StudioTopItem[];
   topItemCoverage: StudioTopItemCoverage;
@@ -2101,97 +2224,57 @@ export interface StudioAnalytics {
 }
 
 /**
- * One order's position in its pipeline, and what can be done about it.
+ * `record-payment` only. How the money arrived. Deliberately has no `card` option: a card payment goes through Stripe and records itself, so offering one here would only ever produce a second row for money already in the ledger.
  */
-export interface StudioOrderStage {
-  /** The order's number — its address in every studio operation. */
-  orderNumber: string;
-  /** The Notion page title, e.g. "Ada – Custom Costume". */
-  orderName: string;
-  /** The stage the order is at now. Empty when the `Stage` property has never been set, which is the one case the board cannot advance from. */
-  currentStage: string;
-  /** The stages this order's own service walks, in order — not the whole live list, so a repair is never offered `Sketching`. Includes the current stage even if it has since been renamed out of the live options. */
-  stages: string[];
-  /** The stage after the current one, i.e. what "advance" means for this order. Absent at the final stage, or when the current stage isn't in the list. */
-  nextStage?: string;
-  /** The furthest stage the customer has already been emailed about (the `Last Notified Stage` high-water marker). Absent when they have never been emailed. */
-  lastNotifiedStage?: string;
-  /** The service the order was placed for, as stored on it. */
-  service?: string;
-  /** The order's `Due Date` as an ISO date (yyyy-mm-dd), when the atelier has set one. A pass-through string (no `format: date`) so it isn't coerced to a Date and reserialized as a UTC timestamp — a due date is a calendar day, and an instant read in a western zone lands on the day before. */
-  dueDate?: string;
-  /** Whether the order carries a customer email to write to. The address itself is never returned — a stage board has no use for it, and this endpoint is not the place to publish one. */
-  notifiable: boolean;
-}
-
-/**
- * The open custom orders, for the dashboard's stage board. Nearest due date first, then by order number — the order the atelier works them in.
- */
-export interface StudioOrderBoard {
-  orders: StudioOrderStage[];
-}
-
-/**
- * One stage change, as asked for from the dashboard.
- */
-export interface OrderStageRequest {
-  /**
-     * The stage to move the order to. Must be one of the order's own `stages`; a Notion `status` option cannot be created through the API, so a name that isn't already an option would fail the write.
-     * @maxLength 120
-     */
-  stage: string;
-  /** Whether to email the customer. Default true — sending on the action is the point of advancing here rather than in Notion. False marks the stage as already announced without sending, so the change stays quiet even where the Notion automation is still wired. */
-  notify?: boolean;
-}
-
-/**
- * `sent` — the customer was emailed. `skipped` — a send was attempted and declined (the move wasn't forward, or the order carries no email or no stage). `suppressed` — the atelier asked not to email.
- */
-export type OrderStageChangeNotification = typeof OrderStageChangeNotification[keyof typeof OrderStageChangeNotification];
+export type StudioToolRequestMethod = typeof StudioToolRequestMethod[keyof typeof StudioToolRequestMethod];
 
 
-export const OrderStageChangeNotification = {
-  sent: 'sent',
-  skipped: 'skipped',
-  suppressed: 'suppressed',
+export const StudioToolRequestMethod = {
+  cash: 'cash',
+  check: 'check',
+  transfer: 'transfer',
+  other: 'other',
 } as const;
 
 /**
- * What one stage change did.
+ * `record-payment` on a custom order only, where it is REQUIRED once the order has an invoice — an unattributed payment can settle nothing. Which of the invoice's three staged payments the money covers. Ignored for a shop order, which has no stages.
  */
-export interface OrderStageChange {
-  order: StudioOrderStage;
-  /** The stage the order was at before this ran. */
-  previousStage: string;
-  /** False when the order was already at that stage, in which case nothing was written and nothing was sent. */
-  changed: boolean;
-  /** `sent` — the customer was emailed. `skipped` — a send was attempted and declined (the move wasn't forward, or the order carries no email or no stage). `suppressed` — the atelier asked not to email. */
-  notification: OrderStageChangeNotification;
-  /** Why nothing was sent, in the atelier's terms. Present on `skipped` and `suppressed`. */
-  notificationReason?: string;
-}
+export type StudioToolRequestStage = typeof StudioToolRequestStage[keyof typeof StudioToolRequestStage];
+
+
+export const StudioToolRequestStage = {
+  first_deposit: 'first_deposit',
+  second_deposit: 'second_deposit',
+  balance: 'balance',
+} as const;
 
 /**
  * The arguments for one internal tool run. Every field is optional here because each tool takes a different subset; the server rejects a run that is missing what its own tool needs. This replaces the query string of the retired `?secret=` links, so the argument names mirror them.
  */
 export interface StudioToolRequest {
   /**
-     * The order the tool acts on — `ORD-…` for a custom order, `SHP-…` for a shop order. Required by `invoice-lines`, `quote`, `status-email` and the two refunds; `milestones` sweeps the whole pipeline and `restock-alert` takes an optional `item` instead.
+     * The order the tool acts on — `ORD-…` for a custom order, `SHP-…` for a shop order. Required by `invoice-lines`, `quote`, `issue-invoice`, `credit-note`, `status-email`, `record-payment` and the two refunds; `milestones` sweeps the whole pipeline and `restock-alert` takes an optional `item` instead.
      * @maxLength 64
      */
   orderNumber?: string;
   /** `status-email` only. Resend the status update even when the order hasn't moved forward since the customer was last emailed. A forced resend never rewinds the high-water marker. */
   force?: boolean;
   /**
-     * Dollars, read by two tools. For `return-refund` it is the TARGET total to have refunded on the order — not an increment, so a repeated run can't double-refund; omit to refund in full. For `quote` it is the price of the work and is REQUIRED, since a quote with no amount is nothing to pay.
+     * Dollars, read by four tools, meaning something different in each — which is why the wording lives with the tool rather than here. For `return-refund` it is the TARGET total to have refunded on the order — not an increment, so a repeated run can't double-refund; omit to refund in full. For `quote` it is the price of the work and is REQUIRED, since a quote with no amount is nothing to pay. For `record-payment` it is REQUIRED and is how much actually changed hands. For `credit-note` it is REQUIRED and is how much to take off the invoice.
      * @minimum 0
      */
   amount?: number;
   /**
-     * `quote` only, and optional even there. What the work is, as the customer should read it on their invoice — "Re-stone bodice", "Replace shoulder elastic". Omitted ⇒ the line is named after the order's service ("Repair", "Rhinestoning", "Alterations").
+     * Optional free text, read by two tools. For `quote` it is what the work is, as the customer should read it on their invoice — "Re-stone bodice", "Replace shoulder elastic"; omitted ⇒ the line is named after the order's service ("Repair", "Rhinestoning", "Alterations"). For `record-payment` it is an internal note kept on the ledger row ("cash at the fitting", "check #204") — the customer never sees it. For `credit-note` it is REQUIRED and is the reason the credit was raised ("rhinestoning not completed"), which the customer DOES see on their invoice.
      * @maxLength 200
      */
   description?: string;
+  /** `record-payment` only. How the money arrived. Deliberately has no `card` option: a card payment goes through Stripe and records itself, so offering one here would only ever produce a second row for money already in the ledger. */
+  method?: StudioToolRequestMethod;
+  /** `record-payment` only. The calendar date (`YYYY-MM-DD`) the money actually changed hands, which is the whole reason the tool exists — cash handed over at a fitting is typed up whenever the atelier next sits down, and the ledger must date it to the day it arrived rather than the day it was recorded. Interpreted as midday in the studio's timezone, so it can't slip to the neighbouring day when read back. Omitted ⇒ today. A future date is rejected as a typo. */
+  paidOn?: string;
+  /** `record-payment` on a custom order only, where it is REQUIRED once the order has an invoice — an unattributed payment can settle nothing. Which of the invoice's three staged payments the money covers. Ignored for a shop order, which has no stages. */
+  stage?: StudioToolRequestStage;
   /**
      * `restock-alert` only, and optional even there. The exact `Item Name` of one inventory row to alert on, as it appears in Notion — the same text a back-in-stock request stores. Omit it to sweep every piece that is currently in stock, which is what the nightly run does.
      * @maxLength 200
@@ -2226,6 +2309,154 @@ export interface StudioToolRun {
   details: string[];
 }
 
+export interface BuyShippingLabelRequest {
+  /** @maxLength 64 */
+  orderNumber: string;
+  /**
+     * The `id` of the rate to buy, from the rates operation.
+     * @maxLength 128
+     */
+  rateId: string;
+  /** Buy a second label for an order that already has tracking on it — for when the first was voided. Without it such an order is refused with 409, since the vendor will sell a duplicate as happily as the first and has nothing to read back that says otherwise. */
+  replace?: boolean;
+}
+
+/**
+ * What kind of post this is, lowercased from Instagram's own IMAGE / VIDEO / CAROUSEL_ALBUM. Clients use it only to badge the thumbnail (a play glyph on a video, a stack glyph on a carousel) — every post carries a still `imageUrl` whatever its type, so a client that ignores this renders correctly.
+ */
+export type InstagramMediaType = typeof InstagramMediaType[keyof typeof InstagramMediaType];
+
+
+export const InstagramMediaType = {
+  image: 'image',
+  video: 'video',
+  carousel: 'carousel',
+} as const;
+
+/**
+ * One post from the studio's Instagram account. Deliberately narrow: no like or comment counts, no author, and no video file — the strip is a grid of stills that link out to Instagram.
+ */
+export interface InstagramPost {
+  /** Instagram's own media id, used only as a render key. */
+  id: string;
+  /** The post's public Instagram URL, opened in a new tab. */
+  permalink: string;
+  /** The still to render. Instagram's image for a photo or carousel, and the poster frame for a video. These are CDN URLs that expire, which is why this response's edge cache is deliberately short — the same reasoning as the portfolio's Notion-signed images. Never empty: a post Instagram returned no usable image for is dropped rather than served as a broken tile. */
+  imageUrl: string;
+  mediaType: InstagramMediaType;
+  /** The post's caption, verbatim and untruncated. Omitted when the post has none. Clients clamp it for display and derive the image's alternative text from it. */
+  caption?: string;
+  /** When the post was published. Omitted when Instagram returned no timestamp; the list is already in Instagram's own newest-first order, so this is for display only. */
+  postedAt?: string;
+  /** The `Product.id` of the shop card this post shows, when the atelier has recorded this post's URL against an inventory row. Present only for a piece currently published to the shop, so the client can link straight to `/shop/{productId}` without checking. Absent — the common case — means the post is not tied to a purchasable piece and the tile links to Instagram alone. */
+  productId?: string;
+  /** The name of the piece this post shows, as the atelier names it in the inventory — what the "Shop this piece" link is labelled with. Always present alongside `productId`, and absent without it. */
+  productTitle?: string;
+}
+
+export interface InstagramFeed {
+  /** The studio's recent posts, newest first. Empty when the integration is unconfigured or the feed could not be read — the two are deliberately indistinguishable to the client, which renders nothing either way. */
+  posts: InstagramPost[];
+}
+
+/**
+ * A review of one ready-to-wear piece from a shop order. The same shape as NewReviewRequest plus the piece it is about — a shop order can hold several pieces, and an average belongs to a piece rather than to the order, so the review has to say which one.
+ */
+export interface NewShopReviewRequest {
+  /** The email to verify against the one on the order. A review whose email doesn't match the order is rejected. */
+  email: string;
+  /**
+     * The inventory row id of the piece being reviewed — one of the `id`s on the order's `items`. The server checks it against the order's own pieces, so a review can only ever be left for something the customer actually bought.
+     * @minLength 1
+     */
+  productId: string;
+  /**
+     * The star rating, 1 (poor) to 5 (excellent).
+     * @minimum 1
+     * @maximum 5
+     */
+  rating: number;
+  /**
+     * The customer's testimonial about the piece.
+     * @minLength 1
+     * @maxLength 2000
+     */
+  comment: string;
+  /**
+     * How the customer would like to be credited if the review is featured (e.g. "Ada L." or "Ada, Chicago"). Optional.
+     * @maxLength 120
+     */
+  displayName?: string;
+  /** Whether the customer gives permission to show this review publicly. Defaults to false — and, because the same two gates decide everything public, a review without it is never counted into the piece's average either. */
+  consentToPublish?: boolean;
+  /** Notion file_upload ids for photos of the piece, uploaded ahead of time via POST /orders/reference-images. Attached to the review's Notion page as image blocks. */
+  photoIds?: string[];
+}
+
+/**
+ * `sent` — the customer was emailed. `skipped` — a send was attempted and declined (the move wasn't forward, or the order carries no email or no stage). `suppressed` — the atelier asked not to email.
+ */
+export type OrderStageChangeNotification = typeof OrderStageChangeNotification[keyof typeof OrderStageChangeNotification];
+
+
+export const OrderStageChangeNotification = {
+  sent: 'sent',
+  skipped: 'skipped',
+  suppressed: 'suppressed',
+} as const;
+
+/**
+ * One order's position in its pipeline, and what can be done about it.
+ */
+export interface StudioOrderStage {
+  /** The order's number — its address in every studio operation. */
+  orderNumber: string;
+  /** The Notion page title, e.g. "Ada – Custom Costume". */
+  orderName: string;
+  /** The stage the order is at now. Empty when the `Stage` property has never been set, which is the one case the board cannot advance from. */
+  currentStage: string;
+  /** The stages this order's own service walks, in order — not the whole live list, so a repair is never offered `Sketching`. Includes the current stage even if it has since been renamed out of the live options. */
+  stages: string[];
+  /** The stage after the current one, i.e. what "advance" means for this order. Absent at the final stage, or when the current stage isn't in the list. */
+  nextStage?: string;
+  /** The furthest stage the customer has already been emailed about (the `Last Notified Stage` high-water marker). Absent when they have never been emailed. */
+  lastNotifiedStage?: string;
+  /** The service the order was placed for, as stored on it. */
+  service?: string;
+  /** The order's `Due Date` as an ISO date (yyyy-mm-dd), when the atelier has set one. A pass-through string (no `format: date`) so it isn't coerced to a Date and reserialized as a UTC timestamp — a due date is a calendar day, and an instant read in a western zone lands on the day before. */
+  dueDate?: string;
+  /** Whether the order carries a customer email to write to. The address itself is never returned — a stage board has no use for it, and this endpoint is not the place to publish one. */
+  notifiable: boolean;
+}
+
+/**
+ * What one stage change did.
+ */
+export interface OrderStageChange {
+  order: StudioOrderStage;
+  /** The stage the order was at before this ran. */
+  previousStage: string;
+  /** False when the order was already at that stage, in which case nothing was written and nothing was sent. */
+  changed: boolean;
+  /** `sent` — the customer was emailed. `skipped` — a send was attempted and declined (the move wasn't forward, or the order carries no email or no stage). `suppressed` — the atelier asked not to email. */
+  notification: OrderStageChangeNotification;
+  /** Why nothing was sent, in the atelier's terms. Present on `skipped` and `suppressed`. */
+  notificationReason?: string;
+}
+
+/**
+ * One stage change, as asked for from the dashboard.
+ */
+export interface OrderStageRequest {
+  /**
+     * The stage to move the order to. Must be one of the order's own `stages`; a Notion `status` option cannot be created through the API, so a name that isn't already an option would fail the write.
+     * @maxLength 120
+     */
+  stage: string;
+  /** Whether to email the customer. Default true — sending on the action is the point of advancing here rather than in Notion. False marks the stage as already announced without sending, so the change stays quiet even where the Notion automation is still wired. */
+  notify?: boolean;
+}
+
 /**
  * One of the studio's packaging sizes, in inches. A code catalog served rather than duplicated in the frontend, like the appointment and service catalogs — a size the form offers that the server can't rate would be a dead option nobody could diagnose. Dimensions are the catalog's; the WEIGHT is not, because what goes in a box is a dress one day and a pair of soakers the next.
  */
@@ -2241,6 +2472,24 @@ export interface ParcelPreset {
   height: number;
 }
 
+export interface PurchasedLabel {
+  orderNumber: string;
+  carrier: string;
+  service: string;
+  /** What the studio was charged for the label. */
+  amount: number;
+  currency: string;
+  trackingNumber: string;
+  /** The carrier's own tracking page, when it gave one. */
+  trackingUrl?: string;
+  /** The label PDF to print. Served from a signed vendor URL that expires, so it is fetched fresh rather than stored. */
+  labelUrl?: string;
+  /** Whether the tracking was written onto the Notion order. False ⇒ the label is bought and paid for but the write failed, so the number above has to be pasted on by hand — reporting that beats throwing, which would lose the label entirely. */
+  recorded: boolean;
+  /** This label is a test one and no carrier will carry it. */
+  testMode: boolean;
+}
+
 /**
  * Whether a label can be bought, what's stopping it, and the packaging the studio keeps.
  */
@@ -2254,25 +2503,6 @@ export interface ShippingOptions {
   /** Everything standing between the atelier and a label, each phrased with its own fix. Empty ⇒ the panel is ready to use. */
   problems: string[];
   parcels: ParcelPreset[];
-}
-
-export interface ShippingRatesRequest {
-  /**
-     * The shop order to post, e.g. `SHP-M2X4K1-AB12`.
-     * @maxLength 64
-     */
-  orderNumber: string;
-  /**
-     * The id of one of the studio's packaging sizes.
-     * @maxLength 64
-     */
-  parcelId: string;
-  /**
-     * The parcel's weight in OUNCES, off the scale. Zero is refused rather than treated as unset — a carrier rating a 0 oz package prices a document envelope — and the 800 oz (50 lb) ceiling is there to catch the typo that matters: pounds typed where ounces were wanted.
-     * @maximum 800
-     * @exclusiveMinimum 0
-     */
-  weightOz: number;
 }
 
 /**
@@ -2303,34 +2533,30 @@ export interface ShippingRates {
   notes: string[];
 }
 
-export interface BuyShippingLabelRequest {
-  /** @maxLength 64 */
+export interface ShippingRatesRequest {
+  /**
+     * The shop order to post, e.g. `SHP-M2X4K1-AB12`.
+     * @maxLength 64
+     */
   orderNumber: string;
   /**
-     * The `id` of the rate to buy, from the rates operation.
-     * @maxLength 128
+     * The id of one of the studio's packaging sizes.
+     * @maxLength 64
      */
-  rateId: string;
-  /** Buy a second label for an order that already has tracking on it — for when the first was voided. Without it such an order is refused with 409, since the vendor will sell a duplicate as happily as the first and has nothing to read back that says otherwise. */
-  replace?: boolean;
+  parcelId: string;
+  /**
+     * The parcel's weight in OUNCES, off the scale. Zero is refused rather than treated as unset — a carrier rating a 0 oz package prices a document envelope — and the 800 oz (50 lb) ceiling is there to catch the typo that matters: pounds typed where ounces were wanted.
+     * @maximum 800
+     * @exclusiveMinimum 0
+     */
+  weightOz: number;
 }
 
-export interface PurchasedLabel {
-  orderNumber: string;
-  carrier: string;
-  service: string;
-  /** What the studio was charged for the label. */
-  amount: number;
-  currency: string;
-  trackingNumber: string;
-  /** The carrier's own tracking page, when it gave one. */
-  trackingUrl?: string;
-  /** The label PDF to print. Served from a signed vendor URL that expires, so it is fetched fresh rather than stored. */
-  labelUrl?: string;
-  /** Whether the tracking was written onto the Notion order. False ⇒ the label is bought and paid for but the write failed, so the number above has to be pasted on by hand — reporting that beats throwing, which would lose the label entirely. */
-  recorded: boolean;
-  /** This label is a test one and no carrier will carry it. */
-  testMode: boolean;
+/**
+ * The open custom orders, for the dashboard's stage board. Nearest due date first, then by order number — the order the atelier works them in.
+ */
+export interface StudioOrderBoard {
+  orders: StudioOrderStage[];
 }
 
 export type GetPublishedReviewsParams = {

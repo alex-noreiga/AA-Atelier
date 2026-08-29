@@ -573,3 +573,141 @@ describe("a hand-off from the request queue", () => {
     );
   });
 });
+
+describe("recording a payment taken outside Stripe", () => {
+  it("sends the amount, method, date and stage", async () => {
+    const user = userEvent.setup();
+    render(<StudioTools />);
+
+    await user.type(
+      screen.getByTestId("tool-record-payment-order"),
+      "ORD-000002",
+    );
+    await user.type(screen.getByTestId("tool-record-payment-amount"), "250");
+    await user.selectOptions(
+      screen.getByTestId("tool-record-payment-method"),
+      "check",
+    );
+    await user.type(
+      screen.getByTestId("tool-record-payment-paid-on"),
+      "2026-08-14",
+    );
+    await user.selectOptions(
+      screen.getByTestId("tool-record-payment-stage"),
+      "first_deposit",
+    );
+    await user.click(screen.getByTestId("tool-record-payment-run"));
+
+    expect(mutate).toHaveBeenCalledWith(
+      {
+        tool: "record-payment",
+        data: {
+          orderNumber: "ORD-000002",
+          amount: 250,
+          method: "check",
+          paidOn: "2026-08-14",
+          stage: "first_deposit",
+        },
+      },
+      expect.anything(),
+    );
+  });
+
+  it("won't run until a stage is chosen for a custom order", async () => {
+    // Defaulting the picker would attribute money to a stage nobody chose, so
+    // it starts blank and the button stays shut until it isn't.
+    const user = userEvent.setup();
+    render(<StudioTools />);
+
+    await user.type(
+      screen.getByTestId("tool-record-payment-order"),
+      "ORD-000002",
+    );
+    await user.type(screen.getByTestId("tool-record-payment-amount"), "250");
+
+    expect(screen.getByTestId("tool-record-payment-run")).toBeDisabled();
+
+    await user.selectOptions(
+      screen.getByTestId("tool-record-payment-stage"),
+      "balance",
+    );
+    expect(screen.getByTestId("tool-record-payment-run")).toBeEnabled();
+  });
+
+  it("hides the stage picker for a shop order, which has no stages", async () => {
+    // The prefix test mirrors the server's, so the card asks for exactly what
+    // the run will use — never for something that would be ignored.
+    const user = userEvent.setup();
+    render(<StudioTools />);
+
+    await user.type(
+      screen.getByTestId("tool-record-payment-order"),
+      "SHP-000042",
+    );
+    await user.type(screen.getByTestId("tool-record-payment-amount"), "88");
+
+    expect(screen.queryByTestId("tool-record-payment-stage")).toBeNull();
+    expect(screen.getByTestId("tool-record-payment-run")).toBeEnabled();
+
+    await user.click(screen.getByTestId("tool-record-payment-run"));
+
+    expect(mutate).toHaveBeenCalledWith(
+      {
+        tool: "record-payment",
+        data: {
+          orderNumber: "SHP-000042",
+          amount: 88,
+          method: "cash",
+        },
+      },
+      expect.anything(),
+    );
+  });
+
+  it("omits a blank date so the server dates it in the studio's timezone", async () => {
+    const user = userEvent.setup();
+    render(<StudioTools />);
+
+    await user.type(
+      screen.getByTestId("tool-record-payment-order"),
+      "ORD-000002",
+    );
+    await user.type(screen.getByTestId("tool-record-payment-amount"), "250");
+    await user.selectOptions(
+      screen.getByTestId("tool-record-payment-stage"),
+      "balance",
+    );
+    await user.click(screen.getByTestId("tool-record-payment-run"));
+
+    expect(mutate.mock.calls[0]?.[0].data).not.toHaveProperty("paidOn");
+  });
+
+  it("runs without a second confirmation — it moves no money", async () => {
+    // Unlike the two refunds: recording a payment writes a row, it does not
+    // send anything to a customer's card.
+    const user = userEvent.setup();
+    succeedWith({
+      tool: "record-payment",
+      status: "ok",
+      title: "Payment recorded",
+      message: "Recorded $250.00 paid by cash on ORD-000002.",
+    });
+    render(<StudioTools />);
+
+    await user.type(
+      screen.getByTestId("tool-record-payment-order"),
+      "ORD-000002",
+    );
+    await user.type(screen.getByTestId("tool-record-payment-amount"), "250");
+    await user.selectOptions(
+      screen.getByTestId("tool-record-payment-stage"),
+      "balance",
+    );
+    await user.click(screen.getByTestId("tool-record-payment-run"));
+
+    expect(screen.queryByTestId("tool-record-payment-confirm")).toBeNull();
+    expect(
+      screen.getByTestId("tool-record-payment-result"),
+    ).toBeInTheDocument();
+  });
+});

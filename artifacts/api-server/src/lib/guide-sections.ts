@@ -10,7 +10,7 @@
 // the guides rather than duplicated in the frontend. A tool renamed here is a
 // tool renamed in the one place that says so.
 //
-// The seven tool ids are deliberately the SAME strings as `StudioToolName`. A
+// The tool ids are deliberately the SAME strings as `StudioToolName`. A
 // guide filed against `invoice-lines` renders inside the "Itemize an invoice"
 // card, which is what the roadmap card asked for — a guide next to the tool it
 // describes, not in a manual somewhere else on the page.
@@ -49,6 +49,7 @@ export const GUIDE_SECTIONS: readonly GuideSection[] = [
   { id: "figures", label: "Figures" },
   { id: "orders", label: "Order stages" },
   { id: "materials", label: "Materials" },
+  { id: "pay", label: "Production pay" },
   { id: "shipping", label: "Shipping labels" },
   { id: "reviews", label: "Reviews" },
   { id: "availability", label: "Working hours" },
@@ -59,10 +60,13 @@ export const GUIDE_SECTIONS: readonly GuideSection[] = [
   { id: "milestones", label: "Reconcile production milestones" },
   { id: "invoice-lines", label: "Itemize an invoice" },
   { id: "quote", label: "Quote a flat price" },
+  { id: "issue-invoice", label: "Issue an invoice" },
+  { id: "credit-note", label: "Credit an invoice" },
   { id: "status-email", label: "Send a status update" },
   { id: "cancellation-refund", label: "Cancel & refund an order" },
   { id: "return-refund", label: "Refund a return" },
   { id: "restock-alert", label: "Send back-in-stock alerts" },
+  { id: "record-payment", label: "Record a payment" },
   { id: GENERAL_GUIDE_SECTION, label: "General" },
 ];
 

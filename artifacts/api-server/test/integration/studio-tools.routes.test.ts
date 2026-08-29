@@ -116,7 +116,8 @@ describe("POST /api/studio/tools/:tool — running a tool", () => {
 
     expect(res.status).toBe(200);
     expect(res.body).toEqual(OK_RUN);
-    expect(mockRun).toHaveBeenCalledWith("milestones", {});
+    // Every run carries who ran it, stamped from the verified session.
+    expect(mockRun).toHaveBeenCalledWith("milestones", { recordedBy: STAFF });
   });
 
   it("passes the order number and options through", async () => {
@@ -131,7 +132,32 @@ describe("POST /api/studio/tools/:tool — running a tool", () => {
     expect(mockRun).toHaveBeenCalledWith("status-email", {
       orderNumber: "ORD-000002",
       force: true,
+      recordedBy: STAFF,
     });
+  });
+
+  it("stamps `recordedBy` from the session, overriding anything the body claims", async () => {
+    // A payment row names who recorded it. Reading that off the body would let
+    // a caller sign somebody else's name to money they entered, so the session
+    // wins — the body's value is not merged, it is replaced.
+    mockRun.mockResolvedValue({ ...OK_RUN, tool: "record-payment" });
+
+    const res = await request(app)
+      .post("/api/studio/tools/record-payment")
+      .set("Authorization", `Bearer ${TOKEN}`)
+      .send({
+        orderNumber: "ORD-000002",
+        amount: 250,
+        method: "cash",
+        stage: "first_deposit",
+        recordedBy: "someone.else@example.com",
+      });
+
+    expect(res.status).toBe(200);
+    expect(mockRun).toHaveBeenCalledWith(
+      "record-payment",
+      expect.objectContaining({ recordedBy: STAFF }),
+    );
   });
 
   it("400s an unknown tool name rather than running anything", async () => {

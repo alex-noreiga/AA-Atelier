@@ -16,6 +16,12 @@ vi.mock("../../src/lib/notion/invoice.repository.js", () => ({
 vi.mock("../../src/lib/resend/send.js", () => ({
   sendEmailBestEffort: vi.fn(),
 }));
+// The payment ledger records each issued refund as a negative movement. Its own
+// mapping is covered in payment-ledger.service.test.ts; mock it here and assert
+// only that each refund is attributed to the right order (and stage).
+vi.mock("../../src/services/payment-ledger.service.js", () => ({
+  recordStripeRefund: vi.fn(),
+}));
 
 import type Stripe from "stripe";
 import { processCancellation } from "../../src/services/order-cancellation.service.js";
@@ -29,6 +35,7 @@ import {
 } from "../../src/lib/notion/shop-orders.repository.js";
 import { findInvoice } from "../../src/lib/notion/invoice.repository.js";
 import { sendEmailBestEffort } from "../../src/lib/resend/send.js";
+import { recordStripeRefund } from "../../src/services/payment-ledger.service.js";
 import { NotFoundError } from "../../src/lib/errors.js";
 import { logger } from "../../src/lib/logger.js";
 
@@ -350,5 +357,90 @@ describe("processCancellation — shop order", () => {
     await expect(
       processCancellation("SHP-NOPE", stripe),
     ).rejects.toBeInstanceOf(NotFoundError);
+  });
+});
+
+describe("the payment ledger", () => {
+  it("records each refunded stage against its own order and stage", async () => {
+    // Until this existed a cancellation moved the money through Stripe and left
+    // the invoice's `… Paid` checkbox ticked, so the studio figures went on
+    // counting a refunded order as collected revenue.
+    mockFindOrder.mockResolvedValue(customOrder());
+    mockFindInvoice.mockResolvedValue(
+      invoice({
+        balancePaid: true,
+        balanceSessionId: "cs_bal",
+        deposits: [
+          {
+            stage: "first_deposit",
+            label: "First deposit",
+            amount: 100,
+            paid: true,
+            sessionId: "cs_d1",
+          },
+        ],
+      }),
+    );
+    const { stripe } = fakeStripe({
+      sessions: { cs_d1: "pi_1", cs_bal: "pi_bal" },
+      amounts: { pi_1: 10000, pi_bal: 30000 },
+    });
+
+    await processCancellation("ORD-1", stripe);
+
+    const calls = vi.mocked(recordStripeRefund).mock.calls.map((c) => c[0]);
+    expect(calls).toEqual([
+      expect.objectContaining({
+        orderNumber: "ORD-1",
+        orderKind: "custom",
+        stage: "first_deposit",
+      }),
+      expect.objectContaining({
+        orderNumber: "ORD-1",
+        orderKind: "custom",
+        stage: "balance",
+      }),
+    ]);
+  });
+
+  it("records a shop refund with no stage", async () => {
+    mockFindShop.mockResolvedValue({
+      pageId: "shop-page",
+      orderNumber: "SHP-1",
+      email: "ada@example.com",
+      sessionId: "cs_shop",
+      status: "Payment Confirmed",
+      cancelled: false,
+      refundedAmount: 0,
+    });
+    const { stripe } = fakeStripe({
+      sessions: { cs_shop: "pi_shop" },
+      amounts: { pi_shop: 8800 },
+    });
+
+    await processCancellation("SHP-1", stripe);
+
+    const entry = vi.mocked(recordStripeRefund).mock.calls[0]?.[0];
+    expect(entry).toEqual(
+      expect.objectContaining({ orderNumber: "SHP-1", orderKind: "shop" }),
+    );
+    expect(entry).not.toHaveProperty("stage");
+  });
+
+  it("does not record anything when there was nothing to refund", async () => {
+    mockFindShop.mockResolvedValue({
+      pageId: "shop-page",
+      orderNumber: "SHP-2",
+      email: "ada@example.com",
+      sessionId: "",
+      status: "Payment Confirmed",
+      cancelled: false,
+      refundedAmount: 0,
+    });
+    const { stripe } = fakeStripe({});
+
+    await processCancellation("SHP-2", stripe);
+
+    expect(vi.mocked(recordStripeRefund)).not.toHaveBeenCalled();
   });
 });

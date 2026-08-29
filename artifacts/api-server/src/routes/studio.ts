@@ -16,6 +16,7 @@ import {
   GetStudioGuideContentResponse,
   GetStudioGuidesResponse,
   GetStudioMaterialsResponse,
+  GetStudioProductionPayResponse,
   GetStudioSettingsResponse,
   ListStaffAvailabilityResponse,
   ListStudioOrdersResponse,
@@ -50,6 +51,7 @@ import { studioRateLimiter } from "../middlewares/rate-limit.js";
 import { validate } from "../middlewares/validate.js";
 import { getStudioAnalytics } from "../services/studio-analytics.service.js";
 import { getMaterialsOverview } from "../services/materials.service.js";
+import { getProductionPayOverview } from "../services/production-pay.service.js";
 import {
   buyShippingLabel,
   getShippingOptions,
@@ -134,6 +136,24 @@ router.get(
   },
 );
 
+// What the studio owes its own people — the other side of the figures above.
+//
+// `/studio/analytics` reports money coming in: revenue by month, deposits
+// against balances, what customers still owe. This is the money going out, and
+// it is deliberately a SEPARATE read rather than another block on the analytics
+// response: the dashboard mounts one section at a time, so folding two bounded
+// full-database scans into the figures would make everyone opening the figures
+// pay for a payroll question they didn't ask.
+router.get(
+  "/studio/production-pay",
+  studioRateLimiter,
+  requireStaff,
+  async (_req, res) => {
+    const pay = await getProductionPayOverview();
+    res.json(GetStudioProductionPayResponse.parse(pay));
+  },
+);
+
 // Where every open order has got to, and moving one along.
 //
 // Advancing a stage was the last routine atelier action that could only be done
@@ -194,7 +214,13 @@ router.post(
   validate({ params: RunStudioToolParams, body: RunStudioToolBody }),
   async (_req, res) => {
     const { tool } = res.locals.params as { tool: StudioToolName };
-    const result = await runStudioTool(tool, res.locals.body as StudioToolArgs);
+    // `recordedBy` is stamped from the verified staff session, never taken off
+    // the body: a payment row names who recorded it, and a caller must not be
+    // able to sign somebody else's name to one.
+    const result = await runStudioTool(tool, {
+      ...(res.locals.body as StudioToolArgs),
+      recordedBy: res.locals.customer?.email ?? "",
+    });
     res.json(RunStudioToolResponse.parse(result));
   },
 );

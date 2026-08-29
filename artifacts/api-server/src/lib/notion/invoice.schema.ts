@@ -174,11 +174,28 @@ export interface InvoiceDepositView {
  * items. Deposits are surfaced separately (OrderStatus.deposits) because they're
  * payable before the itemized invoice is flipped "ready".
  */
+/** One credit note as the customer's invoice shows it. */
+export interface InvoiceCreditView {
+  creditNumber: string;
+  issuedAt: string;
+  amount: number;
+  reason: string;
+}
+
 export interface InvoiceView {
   invoiceId: string;
+  /** The studio's own invoice number (`INV-…`), once the invoice has been
+   * issued. Absent on a legacy invoice, or while the database can't be read. */
+  invoiceNumber?: string;
+  /** When it was issued (ISO). Absent for the same reasons. */
+  issuedAt?: string;
   paid: boolean;
   lineItems: InvoiceLineItemRecord[];
   subtotal: number;
+  /** Credit notes raised against this invoice, when there are any. */
+  credits?: InvoiceCreditView[];
+  /** What they come to, in dollars. Omitted when there are none. */
+  creditsTotal?: number;
   depositsCreditedTotal: number;
   balanceDue: number;
   paymentDeadline?: string;
@@ -400,7 +417,7 @@ export function extractInvoice(page: NotionInvoicePage): InvoiceRecord {
 
 /** The first linked page id of a relation property, or undefined when empty. */
 function extractRelationFirstId(
-  page: NotionInvoicePage,
+  page: NotionInvoicePage | NotionLineItemPage,
   name: string,
 ): string | undefined {
   const p = page.properties[name];
@@ -480,6 +497,69 @@ export function extractLineItem(
 ): InvoiceLineItemRecord {
   return {
     name: extractTitle(page, LINE_ITEM_TITLE_PROPERTY),
+    type: extractSelectName(page, LINE_ITEM_TYPE_PROPERTY),
+    amount: extractNumericValue(page, LINE_ITEM_TOTAL_PROPERTY) ?? 0,
+  };
+}
+
+/** The only two things the charge rules read off a line, so the customer's
+ * display record and the studio's leaner analytics record both satisfy it. */
+export interface ChargeableLine {
+  type: string;
+  amount: number;
+}
+
+/**
+ * The lines that are CHARGES — everything except a `Deposit`, which is a credit
+ * against the total and lives on the invoice head, never as a line.
+ *
+ * Split out because two readers need the same rule and used to state it
+ * separately: the customer's invoice (`buildInvoiceView`) and the studio's own
+ * figures. One function, so the two totals can differ only if the inputs do.
+ */
+export function chargedLines<T extends ChargeableLine>(
+  lineItems: readonly T[],
+): T[] {
+  return lineItems.filter((line) => line.type !== LINE_TYPE_DEPOSIT);
+}
+
+/**
+ * What an invoice charges, in dollars — the sum of its charged lines, rounded to
+ * whole cents so a float tail can't leak into a figure.
+ *
+ * This IS the invoice total as far as the app is concerned, for the customer and
+ * the atelier alike. Notion's own `Final Balance` sums the same `Line Total`s but
+ * applies no Deposit filter and, being a formula, reads as absent when it errors
+ * — so deriving the number here rather than reading that property is what keeps
+ * the two views of one invoice from disagreeing.
+ */
+export function invoiceChargedTotal(
+  lineItems: readonly ChargeableLine[],
+): number {
+  const total = chargedLines(lineItems).reduce(
+    (sum, line) => sum + line.amount,
+    0,
+  );
+  return Math.round(total * 100) / 100;
+}
+
+/** One line as the studio analytics reads it: which invoice it belongs to, and
+ * what it charges. The name isn't read — the figures are sums, not a document. */
+export interface InvoiceLineAnalyticsRecord {
+  /** Notion page id of the `Invoice` relation. Blank when the line is orphaned,
+   * which the aggregation skips rather than guessing at. */
+  invoicePageId: string;
+  type: string;
+  amount: number;
+}
+
+/** Map an "Invoice Line Items" page into the analytics record above. */
+export function extractInvoiceLineAnalytics(
+  page: NotionLineItemPage,
+): InvoiceLineAnalyticsRecord {
+  return {
+    invoicePageId:
+      extractRelationFirstId(page, LINE_ITEM_INVOICE_RELATION_PROPERTY) ?? "",
     type: extractSelectName(page, LINE_ITEM_TYPE_PROPERTY),
     amount: extractNumericValue(page, LINE_ITEM_TOTAL_PROPERTY) ?? 0,
   };

@@ -1,5 +1,9 @@
 import { describe, it, expect } from "vitest";
-import { scanDatabase, MAX_SCAN_PAGES } from "../../src/lib/notion/scan.js";
+import {
+  scanDatabase,
+  scanDatabaseChecked,
+  MAX_SCAN_PAGES,
+} from "../../src/lib/notion/scan.js";
 import {
   NotionRequestError,
   isNotionNotFound,
@@ -124,5 +128,32 @@ describe("scanDatabase", () => {
 
     expect(isNotionNotFound(error)).toBe(false);
     expect((error as Error).message).toContain("bad gateway");
+  });
+});
+
+describe("scanDatabaseChecked", () => {
+  it("reports a whole read as complete", async () => {
+    let call = 0;
+    const client = makeFakeClient(() => {
+      call += 1;
+      return jsonResponse(page(2, call === 1 ? "cursor-1" : null, 0));
+    });
+
+    const scan = await scanDatabaseChecked<{ id: string }>(client, "test");
+
+    expect(scan.complete).toBe(true);
+    expect(scan.rows).toHaveLength(4);
+  });
+
+  it("reports a capped read as INCOMPLETE, so a caller can refuse it", async () => {
+    // The point of the variant: a caller whose arithmetic groups rows (the
+    // invoice-line scan groups by invoice) is made wrong by a partial read, not
+    // merely short, and needs to be able to tell.
+    const client = makeFakeClient(() => jsonResponse(page(1, "next", 0)));
+
+    const scan = await scanDatabaseChecked<{ id: string }>(client, "test");
+
+    expect(scan.complete).toBe(false);
+    expect(scan.rows).toHaveLength(MAX_SCAN_PAGES);
   });
 });

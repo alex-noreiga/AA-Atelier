@@ -54,6 +54,14 @@ import {
   notifyRestock,
   type RestockNotificationResult,
 } from "./restock-notification.service.js";
+import {
+  recordOfflinePayment,
+  type RecordPaymentResult,
+} from "./payment-record.service.js";
+import { issueOrderInvoice } from "./invoice-issue.service.js";
+import { creditOrderInvoice } from "./credit-note.service.js";
+import type { PaymentMethod } from "../lib/db/payments.repository.js";
+import type { PaymentStage } from "../lib/notion/invoice.schema.js";
 import { BadRequestError, NotFoundError } from "../lib/errors.js";
 import { logger } from "../lib/logger.js";
 
@@ -65,7 +73,10 @@ export type StudioToolName =
   | "status-email"
   | "cancellation-refund"
   | "return-refund"
-  | "restock-alert";
+  | "restock-alert"
+  | "record-payment"
+  | "issue-invoice"
+  | "credit-note";
 
 /** What a run did. See the spec's `StudioToolRun.status` for the contract. */
 export type StudioToolStatus = "ok" | "noop" | "attention";
@@ -79,6 +90,13 @@ export interface StudioToolArgs {
   amount?: number;
   item?: string;
   description?: string;
+  method?: PaymentMethod;
+  paidOn?: string;
+  stage?: PaymentStage;
+  /** Who is running the tool. Set by the ROUTE from the verified staff session,
+   * never read off the request body — otherwise a caller could sign somebody
+   * else's name to a payment they recorded. Not on the wire contract. */
+  recordedBy?: string;
 }
 
 /** One run's outcome, already composed for display. */
@@ -218,6 +236,8 @@ async function runInvoiceLines(
 async function runQuote(args: StudioToolArgs): Promise<StudioToolRunResult> {
   const result = await quoteOrder({
     orderNumber: requireOrderNumber(args),
+    // A quote issues the invoice it writes, so the issuer records who did it.
+    ...(args.recordedBy ? { issuedBy: args.recordedBy } : {}),
     // `amount` is optional on the shared request body (each tool takes a
     // different subset), so an omitted price arrives here as NaN and the
     // service rejects it with the message the atelier needs to read.
@@ -483,6 +503,176 @@ async function runRestockAlert(
  * schema-validated; what's left is the per-tool requirement check, which lives
  * inside each runner because only it knows what it needs.
  */
+/** Record a payment that arrived outside Stripe — cash at a fitting, a check, a
+ * transfer. The one tool that WRITES to the payment ledger rather than mirroring
+ * Stripe into it, and so the only one whose whole output is a row. */
+async function runRecordPayment(
+  args: StudioToolArgs,
+): Promise<StudioToolRunResult> {
+  const orderNumber = requireOrderNumber(args);
+  const method = args.method;
+  if (!method) {
+    throw new BadRequestError("Choose how the payment was made.");
+  }
+
+  let result: RecordPaymentResult;
+  try {
+    result = await recordOfflinePayment({
+      orderNumber,
+      // `amount` is optional on the shared request body, so an omitted figure
+      // arrives as NaN and the service rejects it with its own wording — the
+      // same handling as the quote tool.
+      amount: args.amount ?? Number.NaN,
+      method,
+      ...(args.paidOn ? { paidOn: args.paidOn } : {}),
+      ...(args.stage ? { stage: args.stage } : {}),
+      ...(args.description ? { note: args.description } : {}),
+      ...(args.recordedBy ? { recordedBy: args.recordedBy } : {}),
+    });
+  } catch (err) {
+    // The ledger being unconfigured is the one failure worth reporting as a run
+    // rather than a 400: nothing is wrong with what the atelier typed, and the
+    // fix is a deployment setting they need to see named.
+    if (
+      err instanceof BadRequestError &&
+      err.message.includes("payment ledger isn't configured")
+    ) {
+      return {
+        tool: "record-payment",
+        status: "attention",
+        title: "Nothing to record it in",
+        message: err.message,
+        details: [],
+      };
+    }
+    throw err;
+  }
+
+  const where =
+    result.stageLabel !== undefined
+      ? ` against the ${result.stageLabel.toLowerCase()}`
+      : "";
+
+  const details: string[] = [];
+  if (result.stageMarkedPaid) {
+    details.push(`Marked the ${result.stageLabel} paid on the invoice.`);
+  } else if (
+    result.stageOutstanding !== undefined &&
+    result.stageOutstanding > 0
+  ) {
+    details.push(
+      `${money(result.stageOutstanding)} of the ${result.stageLabel?.toLowerCase() ?? "stage"} is still outstanding, so it stays unpaid on the invoice.`,
+    );
+  }
+  if (result.orderKind === "shop") {
+    details.push(
+      "A shop order has no payment stages, so this was recorded against the order itself.",
+    );
+  }
+  if (result.history.length > 0) {
+    details.push(`Payments on this order: ${result.history.join("; ")}.`);
+  }
+
+  return {
+    tool: "record-payment",
+    status: "ok",
+    title: "Payment recorded",
+    message: `Recorded ${money(result.amount)} paid by ${method} on ${result.orderNumber}${where}.`,
+    details,
+  };
+}
+
+/** Issue an invoice: freeze its charges into a numbered, dated document and open
+ * it for payment. The one tool whose whole point is that its output can never be
+ * rewritten — so a re-press reports what already stands rather than doing it
+ * again. */
+async function runIssueInvoice(
+  args: StudioToolArgs,
+): Promise<StudioToolRunResult> {
+  const orderNumber = requireOrderNumber(args);
+  const result = await issueOrderInvoice({
+    orderNumber,
+    ...(args.recordedBy ? { issuedBy: args.recordedBy } : {}),
+  });
+
+  const issuedOn = result.issuedAt.toISOString().slice(0, 10);
+
+  if (result.alreadyIssued) {
+    return {
+      tool: "issue-invoice",
+      status: "noop",
+      title: "Already issued",
+      message: `${result.orderNumber} was issued as ${result.invoiceNumber} on ${issuedOn}, so nothing changed.`,
+      details: [
+        "An issued invoice can't be re-issued — that's what makes it the document the customer was shown. To change what is charged, raise a credit note or a new invoice.",
+        ...(result.markedReady
+          ? ["Ticked Invoice Ready, which had been left unset."]
+          : []),
+      ],
+    };
+  }
+
+  return {
+    tool: "issue-invoice",
+    // The document is written either way, but an invoice the customer was never
+    // sent is half an outcome — say so rather than reporting a clean success.
+    status: result.emailed ? "ok" : "attention",
+    title: "Invoice issued",
+    message: `${result.orderNumber} is issued as ${result.invoiceNumber} — ${plural(result.lineCount, "line")} totalling ${money(result.subtotal)}.`,
+    details: [
+      result.emailed
+        ? "Emailed the invoice to the customer."
+        : `The invoice was NOT emailed — ${result.emailSkipped ?? "no reason given"}. Send it by hand, or add an email to the order and issue the next one.`,
+      "The charges are now frozen: the customer's invoice, its PDF and the balance checkout all read this document rather than the Notion rows, so editing a line won't change what they were shown or what they're charged.",
+      ...(result.markedReady
+        ? ["Ticked Invoice Ready, so the customer can pay the balance."]
+        : ["Invoice Ready was already set."]),
+      "Tax on the balance is calculated by Stripe at checkout, from the address collected there — so it isn't on the document.",
+    ],
+  };
+}
+
+/** Credit an issued invoice: the way a document that can never be rewritten
+ * changes. Reduces what is OWED — it moves no money, which is the distinction
+ * the result is careful to make when the balance has already been settled. */
+async function runCreditNote(
+  args: StudioToolArgs,
+): Promise<StudioToolRunResult> {
+  const orderNumber = requireOrderNumber(args);
+  const result = await creditOrderInvoice({
+    orderNumber,
+    // `amount` is optional on the shared body, so an omitted figure arrives as
+    // NaN and the service rejects it with its own wording.
+    amount: args.amount ?? Number.NaN,
+    reason: args.description ?? "",
+    ...(args.recordedBy ? { issuedBy: args.recordedBy } : {}),
+  });
+
+  const details: string[] = [];
+  if (result.alreadyPaid) {
+    // The one thing that must not be misread: a credit is not a refund.
+    details.push(
+      `This balance was already paid, so ${money(result.amount)} is now owed back to the customer — a credit note doesn't move any money. Use "Refund a return" or "Cancel & refund an order" to send it.`,
+    );
+  }
+  details.push(
+    result.remaining > 0
+      ? `${money(result.remaining)} of the ${money(result.invoiceSubtotal)} invoice is left to charge.`
+      : "The invoice is now fully credited — there's nothing left to charge.",
+  );
+  if (result.history.length > 1) {
+    details.push(`Credit notes on this invoice: ${result.history.join("; ")}.`);
+  }
+
+  return {
+    tool: "credit-note",
+    status: "ok",
+    title: "Credit note raised",
+    message: `${result.creditNumber} credits ${money(result.amount)} against ${result.orderNumber} — ${result.reason}.`,
+    details,
+  };
+}
+
 export async function runStudioTool(
   tool: StudioToolName,
   args: StudioToolArgs = {},
@@ -519,5 +709,11 @@ function dispatch(
       return runReturnRefund(args);
     case "restock-alert":
       return runRestockAlert(args);
+    case "record-payment":
+      return runRecordPayment(args);
+    case "issue-invoice":
+      return runIssueInvoice(args);
+    case "credit-note":
+      return runCreditNote(args);
   }
 }

@@ -14,6 +14,28 @@ vi.mock("../../src/lib/notion/invoice.repository.js", () => ({
 vi.mock("../../src/services/rewards.service.js", () => ({
   runPaidOrderRewards: vi.fn(),
 }));
+// The payment ledger is the other best-effort side effect on the recorder; its
+// own mapping is covered in payment-ledger.service.test.ts, so mock the service
+// here and assert only that the payment is handed to it with the right context.
+vi.mock(
+  "../../src/services/invoice-issue.service.js",
+  async (importOriginal) => {
+    // The pure helpers (`chargedLinesOf`, `issuedIdentity`) stay real — they ARE
+    // the "which document is this?" rule under test. Only the database read is
+    // stubbed.
+    const actual =
+      await importOriginal<
+        typeof import("../../src/services/invoice-issue.service.js")
+      >();
+    return { ...actual, readIssuedInvoice: vi.fn() };
+  },
+);
+vi.mock("../../src/services/credit-note.service.js", () => ({
+  readCreditNotes: vi.fn(),
+}));
+vi.mock("../../src/services/payment-ledger.service.js", () => ({
+  recordStripeCharge: vi.fn(),
+}));
 
 import type Stripe from "stripe";
 import {
@@ -33,12 +55,31 @@ import {
   markInvoicePaid,
 } from "../../src/lib/notion/invoice.repository.js";
 import { runPaidOrderRewards } from "../../src/services/rewards.service.js";
+import { recordStripeCharge } from "../../src/services/payment-ledger.service.js";
 import type { OrderRecord } from "../../src/lib/notion/orders.schema.js";
 import type {
   InvoiceRecord,
   InvoiceLineItemRecord,
   InvoiceDepositView,
 } from "../../src/lib/notion/invoice.schema.js";
+import { readIssuedInvoice } from "../../src/services/invoice-issue.service.js";
+import type { IssuedInvoice } from "../../src/lib/db/issued-invoices.repository.js";
+import { readCreditNotes } from "../../src/services/credit-note.service.js";
+
+/** An issued document whose charges deliberately DIFFER from the live rows, so a
+ * test can tell which one a reader used. */
+const ISSUED: IssuedInvoice = {
+  invoiceNumber: "INV-000007",
+  invoicePageId: "invoice-page",
+  orderNumber: "ORD-1",
+  issuedAt: new Date("2026-08-14T15:04:05.000Z"),
+  issuedBy: "",
+  currency: "usd",
+  subtotalCents: 100000,
+  taxed: true,
+  lines: [{ name: "As issued", type: "Garment", amountCents: 100000 }],
+  deposits: [],
+};
 
 const mockFindOrder = vi.mocked(findOrderByNumber);
 const mockFindForNotify = vi.mocked(findOrderForStageNotification);
@@ -46,6 +87,22 @@ const mockFindInvoice = vi.mocked(findInvoice);
 const mockListLines = vi.mocked(listInvoiceLineItems);
 const mockMark = vi.mocked(markInvoicePaid);
 const mockRewards = vi.mocked(runPaidOrderRewards);
+const mockReadIssued = vi.mocked(readIssuedInvoice);
+const mockReadCredits = vi.mocked(readCreditNotes);
+
+/** One credit note against the fixture invoice. */
+function credit(amountCents = 15000, creditNumber = "CN-000001") {
+  return {
+    creditNumber,
+    invoicePageId: "invoice-page",
+    orderNumber: "ORD-1",
+    issuedAt: new Date("2026-08-14T15:04:05.000Z"),
+    issuedBy: "",
+    currency: "usd",
+    amountCents,
+    reason: "Rhinestoning not completed",
+  };
+}
 
 function order(overrides: Partial<OrderRecord> = {}): OrderRecord {
   return {
@@ -96,6 +153,13 @@ function fakeStripe(url = "https://checkout.stripe.test/pay") {
 beforeEach(() => {
   process.env.PUBLIC_BASE_URL = "https://shop.test";
   delete process.env.STRIPE_BNPL_METHODS;
+});
+
+// `clearMocks` resets implementations between tests, and every path through
+// `getInvoicePaymentInfo` / `createPaymentCheckout` now asks about credit notes.
+// Default to "none, and we could ask"; the tests that care override it.
+beforeEach(() => {
+  mockReadCredits.mockResolvedValue({ credits: [], unavailable: false });
 });
 
 describe("buildInvoiceView", () => {
@@ -406,6 +470,43 @@ describe("recordPayment", () => {
     expect(mockMark).toHaveBeenCalledWith("inv-1", "second_deposit", "cs_9");
   });
 
+  it("records the payment in the ledger, with its order and stage", async () => {
+    // The invoice checkbox says THAT the stage was paid; the ledger is the only
+    // place that will say when, and for how much.
+    await recordPayment({
+      id: "cs_9",
+      payment_status: "paid",
+      metadata: {
+        kind: "custom_payment",
+        stage: "second_deposit",
+        invoicePageId: "inv-1",
+        orderNumber: "ORD-000002",
+      },
+    } as unknown as Stripe.Checkout.Session);
+
+    expect(vi.mocked(recordStripeCharge)).toHaveBeenCalledWith(
+      expect.objectContaining({
+        orderNumber: "ORD-000002",
+        orderKind: "custom",
+        stage: "second_deposit",
+      }),
+    );
+  });
+
+  it("does not reach the ledger for an unpaid session", async () => {
+    await recordPayment({
+      id: "cs_x",
+      payment_status: "unpaid",
+      metadata: {
+        stage: "balance",
+        invoicePageId: "inv-1",
+        orderNumber: "ORD-000002",
+      },
+    } as unknown as Stripe.Checkout.Session);
+
+    expect(vi.mocked(recordStripeCharge)).not.toHaveBeenCalled();
+  });
+
   it("does nothing for an unpaid session", async () => {
     await recordPayment({
       id: "cs_10",
@@ -482,5 +583,189 @@ describe("recordPayment", () => {
       } as unknown as Stripe.Checkout.Session),
     ).resolves.toBeUndefined();
     expect(mockMark).toHaveBeenCalledWith("inv-1", "balance", "cs_rw3");
+  });
+});
+
+describe("an ISSUED invoice is the document", () => {
+  it("subtotals from the snapshot, not from the live rows", () => {
+    // The whole point of 6b: editing a line in Notion after issuing must not
+    // change what the customer was shown.
+    const view = buildInvoiceView(invoice(), LINES, ISSUED);
+
+    expect(view.subtotal).toBe(1000);
+    expect(view.lineItems).toEqual([
+      { name: "As issued", type: "Garment", amount: 1000 },
+    ]);
+  });
+
+  it("carries the invoice number and issue date", () => {
+    const view = buildInvoiceView(invoice(), LINES, ISSUED);
+
+    expect(view.invoiceNumber).toBe("INV-000007");
+    expect(view.issuedAt).toBe("2026-08-14T15:04:05.000Z");
+  });
+
+  it("still credits deposits LIVE — paying one legitimately reduces the balance", () => {
+    // Deposits are deliberately not frozen: that is the invoice working, not
+    // drifting.
+    const view = buildInvoiceView(
+      invoice({
+        deposits: [
+          {
+            stage: "first_deposit",
+            label: "First deposit",
+            amount: 250,
+            paid: true,
+          },
+        ],
+      }),
+      LINES,
+      ISSUED,
+    );
+
+    expect(view.subtotal).toBe(1000);
+    expect(view.depositsCreditedTotal).toBe(250);
+    expect(view.balanceDue).toBe(750);
+  });
+
+  it("computes live, with no number, for an invoice never issued", () => {
+    const view = buildInvoiceView(invoice(), LINES, null);
+
+    expect(view.subtotal).toBe(215.5);
+    expect(view.invoiceNumber).toBeUndefined();
+    expect(view.issuedAt).toBeUndefined();
+  });
+});
+
+describe("the balance checkout prices the document it showed", () => {
+  beforeEach(() => {
+    mockReadIssued.mockResolvedValue(null);
+    mockReadCredits.mockResolvedValue({ credits: [], unavailable: false });
+  });
+
+  it("charges the ISSUED subtotal, not a live recomputation", async () => {
+    // Shown one total and charged another is the sharpest form of the bug this
+    // card closes, so the checkout reads the same document the page does.
+    mockFindOrder.mockResolvedValue(order());
+    mockFindInvoice.mockResolvedValue(invoice({ ready: true }));
+    mockListLines.mockResolvedValue(LINES);
+    mockReadIssued.mockResolvedValue(ISSUED);
+    const { stripe, create } = fakeStripe();
+
+    await createPaymentCheckout("ORD-1", "balance", stripe);
+
+    // The issued subtotal ($1,000) less the $100 deposit already paid — the
+    // charges come from the document, the credit stays live.
+    expect(create.mock.calls[0]?.[0].line_items[0].price_data.unit_amount).toBe(
+      90000,
+    );
+  });
+
+  it("falls back to the live rows when the invoice was never issued", async () => {
+    mockFindOrder.mockResolvedValue(order());
+    mockFindInvoice.mockResolvedValue(invoice({ ready: true }));
+    mockListLines.mockResolvedValue(LINES);
+    const { stripe, create } = fakeStripe();
+
+    await createPaymentCheckout("ORD-1", "balance", stripe);
+
+    // The live subtotal ($215.50, Deposit line excluded) less the same $100.
+    expect(create.mock.calls[0]?.[0].line_items[0].price_data.unit_amount).toBe(
+      11550,
+    );
+  });
+});
+
+describe("credit notes reduce what an invoice charges", () => {
+  it("comes off the subtotal before the deposits already paid", () => {
+    const view = buildInvoiceView(invoice(), LINES, null, [credit()]);
+
+    // 215.50 charged, less a 150 credit, less the 100 deposit already paid.
+    expect(view.subtotal).toBe(215.5);
+    expect(view.creditsTotal).toBe(150);
+    expect(view.depositsCreditedTotal).toBe(100);
+    // 215.50 − 150 − 100 is negative, so the balance floors at 0.
+    expect(view.balanceDue).toBe(0);
+  });
+
+  it("floors at zero rather than owing the customer through the balance", () => {
+    const view = buildInvoiceView(invoice(), LINES, null, [credit(21550)]);
+
+    expect(view.balanceDue).toBe(0);
+  });
+
+  it("carries each credit for the customer to read", () => {
+    const view = buildInvoiceView(invoice(), LINES, null, [
+      credit(5000, "CN-000001"),
+      credit(2500, "CN-000002"),
+    ]);
+
+    expect(view.creditsTotal).toBe(75);
+    expect(view.credits).toEqual([
+      expect.objectContaining({ creditNumber: "CN-000001", amount: 50 }),
+      expect.objectContaining({ creditNumber: "CN-000002", amount: 25 }),
+    ]);
+  });
+
+  it("omits the credit fields entirely when there are none", () => {
+    const view = buildInvoiceView(invoice(), LINES, null, []);
+
+    expect(view.credits).toBeUndefined();
+    expect(view.creditsTotal).toBeUndefined();
+  });
+});
+
+describe("the balance checkout and credit notes", () => {
+  beforeEach(() => {
+    mockReadIssued.mockResolvedValue(null);
+    mockReadCredits.mockResolvedValue({ credits: [], unavailable: false });
+  });
+
+  it("charges net of credits", async () => {
+    mockFindOrder.mockResolvedValue(order());
+    mockFindInvoice.mockResolvedValue(invoice({ ready: true }));
+    mockListLines.mockResolvedValue(LINES);
+    mockReadCredits.mockResolvedValue({
+      credits: [credit(5000)],
+      unavailable: false,
+    });
+    const { stripe, create } = fakeStripe();
+
+    await createPaymentCheckout("ORD-1", "balance", stripe);
+
+    // 215.50 − 50 credited − 100 deposit = 65.50.
+    expect(create.mock.calls[0]?.[0].line_items[0].price_data.unit_amount).toBe(
+      6550,
+    );
+  });
+
+  it("REFUSES to price a balance whose credits couldn't be read", async () => {
+    // An uncredited invoice charges its full amount, so flattening the failure
+    // would take money from a customer who had been credited. Retriable, and
+    // deliberately not a silent overcharge.
+    mockFindOrder.mockResolvedValue(order());
+    mockFindInvoice.mockResolvedValue(invoice({ ready: true }));
+    mockListLines.mockResolvedValue(LINES);
+    mockReadCredits.mockResolvedValue({ credits: [], unavailable: true });
+    const { stripe, create } = fakeStripe();
+
+    await expect(
+      createPaymentCheckout("ORD-1", "balance", stripe),
+    ).rejects.toThrow(/try again/);
+    expect(create).not.toHaveBeenCalled();
+  });
+
+  it("still charges a DEPOSIT while credits are unreadable", async () => {
+    // A deposit is priced from the invoice head, not from the document, so it
+    // is unaffected — refusing it too would be caution with no reason behind it.
+    mockFindOrder.mockResolvedValue(order());
+    mockFindInvoice.mockResolvedValue(invoice({ ready: true }));
+    mockReadCredits.mockResolvedValue({ credits: [], unavailable: true });
+    const { stripe, create } = fakeStripe();
+
+    // The second deposit — the first is already paid in the fixture.
+    await createPaymentCheckout("ORD-1", "second_deposit", stripe);
+
+    expect(create).toHaveBeenCalled();
   });
 });

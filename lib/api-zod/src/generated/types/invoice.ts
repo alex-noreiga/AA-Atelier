@@ -5,6 +5,7 @@
  * API specification
  * OpenAPI spec version: 0.1.0
  */
+import type { InvoiceCredit } from './invoiceCredit';
 import type { InvoiceLineItem } from './invoiceLineItem';
 
 /**
@@ -13,6 +14,10 @@ import type { InvoiceLineItem } from './invoiceLineItem';
 export interface Invoice {
   /** The atelier's invoice identifier (its Notion title). */
   invoiceId: string;
+  /** The studio's own invoice number (`INV-…`), assigned when the invoice was ISSUED. From that moment the line items and subtotal below are a frozen snapshot of what the customer was shown, not a live read of editable rows — so the document can't change under someone who has already seen it. Absent on an invoice issued before this existed, or while the record can't be read, in which case the figures are computed live as they always were. */
+  invoiceNumber?: string;
+  /** When the invoice was issued (ISO). Absent when it wasn't. A plain string rather than `format: date-time`, matching `paymentDeadline` below: the two zod/client generators disagree on that format (one emits `Date`, the other `string`), which makes the two packages' own `Invoice` types mutually unassignable — see `.agents/memory/orval-zod-codegen-drift.md`. */
+  issuedAt?: string;
   /** Whether the final balance has already been paid. */
   paid: boolean;
   /** The itemized charges (deposit lines excluded — deposits are credited via OrderStatus.deposits, not itemized here). */
@@ -21,7 +26,11 @@ export interface Invoice {
   subtotal: number;
   /** Sum of the deposits already paid, in dollars. */
   depositsCreditedTotal: number;
-  /** subtotal − depositsCreditedTotal, floored at 0, in dollars. */
+  /** Credit notes raised against this invoice — the way an ISSUED invoice changes, since the document itself can never be rewritten. Absent when there are none. A credit reduces what is OWED; it is not a refund, so on an invoice the customer has already settled it leaves them owed money rather than sending any. */
+  credits?: InvoiceCredit[];
+  /** What the credit notes come to, in dollars. Absent when there are none. */
+  creditsTotal?: number;
+  /** subtotal − creditsTotal − depositsCreditedTotal, floored at 0, in dollars. This is what the balance checkout charges. */
   balanceDue: number;
   /** The invoice's payment-due date (ISO), if the atelier set one. */
   paymentDeadline?: string;

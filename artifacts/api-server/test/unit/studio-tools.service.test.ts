@@ -21,6 +21,15 @@ vi.mock("../../src/services/order-notification.service.js", () => ({
 vi.mock("../../src/services/order-cancellation.service.js", () => ({
   processCancellation: vi.fn(),
 }));
+vi.mock("../../src/services/payment-record.service.js", () => ({
+  recordOfflinePayment: vi.fn(),
+}));
+vi.mock("../../src/services/invoice-issue.service.js", () => ({
+  issueOrderInvoice: vi.fn(),
+}));
+vi.mock("../../src/services/credit-note.service.js", () => ({
+  creditOrderInvoice: vi.fn(),
+}));
 vi.mock("../../src/services/restock-notification.service.js", () => ({
   notifyRestock: vi.fn(),
 }));
@@ -40,6 +49,9 @@ import { notifyOrderStageChange } from "../../src/services/order-notification.se
 import { processCancellation } from "../../src/services/order-cancellation.service.js";
 import { processReturnRefund } from "../../src/services/return-refund.service.js";
 import { notifyRestock } from "../../src/services/restock-notification.service.js";
+import { recordOfflinePayment } from "../../src/services/payment-record.service.js";
+import { issueOrderInvoice } from "../../src/services/invoice-issue.service.js";
+import { creditOrderInvoice } from "../../src/services/credit-note.service.js";
 import { BadRequestError, NotFoundError } from "../../src/lib/errors.js";
 
 const mockMilestones = vi.mocked(reconcileMilestones);
@@ -48,6 +60,9 @@ const mockNotify = vi.mocked(notifyOrderStageChange);
 const mockCancel = vi.mocked(processCancellation);
 const mockReturn = vi.mocked(processReturnRefund);
 const mockRestock = vi.mocked(notifyRestock);
+const mockRecordPayment = vi.mocked(recordOfflinePayment);
+const mockIssue = vi.mocked(issueOrderInvoice);
+const mockCredit = vi.mocked(creditOrderInvoice);
 
 describe("runStudioTool — milestones", () => {
   it("reports what the reconciliation did, including the reminder passes", async () => {
@@ -555,5 +570,298 @@ describe("runStudioTool — restock-alert", () => {
     await expect(
       runStudioTool("restock-alert", { item: "Nothing" }),
     ).rejects.toBeInstanceOf(NotFoundError);
+  });
+});
+
+describe("runStudioTool — record-payment", () => {
+  const recorded = {
+    orderNumber: "ORD-000002",
+    orderKind: "custom" as const,
+    amount: 250,
+    method: "cash" as const,
+    paidAt: new Date("2026-08-14T17:00:00.000Z"),
+    stageLabel: "First deposit",
+    written: true,
+    stageMarkedPaid: true,
+    stageOutstanding: 0,
+    history: ["2026-08-14 · $250.00 paid · cash · first deposit"],
+  };
+
+  it("passes the typed figures through and reports what was recorded", async () => {
+    mockRecordPayment.mockResolvedValue(recorded);
+
+    const result = await runStudioTool("record-payment", {
+      orderNumber: "ORD-000002",
+      amount: 250,
+      method: "cash",
+      paidOn: "2026-08-14",
+      stage: "first_deposit",
+      description: "cash at the fitting",
+      recordedBy: "alexandra@example.com",
+    });
+
+    expect(mockRecordPayment).toHaveBeenCalledWith(
+      expect.objectContaining({
+        orderNumber: "ORD-000002",
+        amount: 250,
+        method: "cash",
+        paidOn: "2026-08-14",
+        stage: "first_deposit",
+        // The tool's free-text field is an INTERNAL note here, not the
+        // customer-facing line name it is for the quote.
+        note: "cash at the fitting",
+        recordedBy: "alexandra@example.com",
+      }),
+    );
+    expect(result.status).toBe("ok");
+    expect(result.message).toMatch(/\$250\.00 paid by cash on ORD-000002/);
+    expect(result.details.join(" ")).toMatch(/Marked the First deposit paid/);
+  });
+
+  it("says what a stage still needs when the payment didn't cover it", async () => {
+    mockRecordPayment.mockResolvedValue({
+      ...recorded,
+      amount: 100,
+      stageMarkedPaid: false,
+      stageOutstanding: 150,
+    });
+
+    const result = await runStudioTool("record-payment", {
+      orderNumber: "ORD-000002",
+      amount: 100,
+      method: "cash",
+      stage: "first_deposit",
+    });
+
+    expect(result.details.join(" ")).toMatch(/\$150\.00 of the first deposit/);
+  });
+
+  it("refuses a run that doesn't say how the money arrived", async () => {
+    await expect(
+      runStudioTool("record-payment", {
+        orderNumber: "ORD-000002",
+        amount: 20,
+      }),
+    ).rejects.toBeInstanceOf(BadRequestError);
+    expect(mockRecordPayment).not.toHaveBeenCalled();
+  });
+
+  it("requires an order number", async () => {
+    await expect(
+      runStudioTool("record-payment", { amount: 20, method: "cash" }),
+    ).rejects.toBeInstanceOf(BadRequestError);
+  });
+
+  it("reports an unconfigured ledger as attention, not as a bad request", async () => {
+    // Nothing is wrong with what the atelier typed; the fix is a deployment
+    // setting they need to see named.
+    mockRecordPayment.mockRejectedValue(
+      new BadRequestError(
+        "The payment ledger isn't configured — set POSTGRES_URL and run the migrations, then record this again.",
+      ),
+    );
+
+    const result = await runStudioTool("record-payment", {
+      orderNumber: "ORD-000002",
+      amount: 250,
+      method: "cash",
+      stage: "first_deposit",
+    });
+
+    expect(result.status).toBe("attention");
+    expect(result.message).toMatch(/POSTGRES_URL/);
+  });
+
+  it("still surfaces an ordinary validation failure as a 400", async () => {
+    mockRecordPayment.mockRejectedValue(
+      new BadRequestError("Enter how much was paid."),
+    );
+
+    await expect(
+      runStudioTool("record-payment", {
+        orderNumber: "ORD-000002",
+        method: "cash",
+      }),
+    ).rejects.toBeInstanceOf(BadRequestError);
+  });
+
+  it("notes that a shop order has no stages", async () => {
+    mockRecordPayment.mockResolvedValue({
+      orderNumber: "SHP-000042",
+      orderKind: "shop",
+      amount: 88,
+      method: "cash",
+      paidAt: new Date("2026-08-14T17:00:00.000Z"),
+      written: true,
+      stageMarkedPaid: false,
+      history: [],
+    });
+
+    const result = await runStudioTool("record-payment", {
+      orderNumber: "SHP-000042",
+      amount: 88,
+      method: "cash",
+    });
+
+    expect(result.details.join(" ")).toMatch(/no payment stages/);
+  });
+});
+
+describe("runStudioTool — issue-invoice", () => {
+  const issued = {
+    orderNumber: "ORD-000002",
+    invoiceNumber: "INV-000007",
+    issuedAt: new Date("2026-08-14T15:04:05.000Z"),
+    subtotal: 1250,
+    lineCount: 4,
+    alreadyIssued: false,
+    markedReady: true,
+    emailed: true,
+  };
+
+  it("reports the number, the date and what was frozen", async () => {
+    mockIssue.mockResolvedValue(issued);
+
+    const result = await runStudioTool("issue-invoice", {
+      orderNumber: "ORD-000002",
+      recordedBy: "alexandra@example.com",
+    });
+
+    expect(mockIssue).toHaveBeenCalledWith({
+      orderNumber: "ORD-000002",
+      issuedBy: "alexandra@example.com",
+    });
+    expect(result.status).toBe("ok");
+    expect(result.message).toMatch(/INV-000007/);
+    expect(result.details.join(" ")).toMatch(/frozen/);
+    expect(result.details.join(" ")).toMatch(/Tax on the balance/);
+  });
+
+  it("says the invoice was emailed", async () => {
+    mockIssue.mockResolvedValue(issued);
+
+    const result = await runStudioTool("issue-invoice", {
+      orderNumber: "ORD-000002",
+    });
+
+    expect(result.details.join(" ")).toMatch(/Emailed the invoice/);
+  });
+
+  it("flags an invoice that was issued but NOT sent", async () => {
+    // The document is written either way, but an invoice the customer never
+    // received is half an outcome.
+    mockIssue.mockResolvedValue({
+      ...issued,
+      emailed: false,
+      emailSkipped: "this order has no email address on file",
+    });
+
+    const result = await runStudioTool("issue-invoice", {
+      orderNumber: "ORD-000002",
+    });
+
+    expect(result.status).toBe("attention");
+    expect(result.details.join(" ")).toMatch(/was NOT emailed/);
+    expect(result.details.join(" ")).toMatch(/no email address on file/);
+  });
+
+  it("reports a re-press as a no-op naming the standing document", async () => {
+    // An issued invoice can't be re-issued — that is what makes it the document
+    // the customer was shown.
+    mockIssue.mockResolvedValue({
+      ...issued,
+      alreadyIssued: true,
+      markedReady: false,
+      emailed: false,
+      emailSkipped: "already issued — no email sent",
+    });
+
+    const result = await runStudioTool("issue-invoice", {
+      orderNumber: "ORD-000002",
+    });
+
+    expect(result.status).toBe("noop");
+    expect(result.message).toMatch(/INV-000007 on 2026-08-14/);
+    expect(result.details.join(" ")).toMatch(/can't be re-issued/);
+  });
+
+  it("requires an order number", async () => {
+    await expect(runStudioTool("issue-invoice", {})).rejects.toBeInstanceOf(
+      BadRequestError,
+    );
+    expect(mockIssue).not.toHaveBeenCalled();
+  });
+});
+
+describe("runStudioTool — credit-note", () => {
+  const credited = {
+    orderNumber: "ORD-000002",
+    creditNumber: "CN-000001",
+    issuedAt: new Date("2026-08-14T15:04:05.000Z"),
+    amount: 150,
+    reason: "Rhinestoning not completed",
+    invoiceSubtotal: 1000,
+    creditedTotal: 150,
+    remaining: 850,
+    alreadyPaid: false,
+    history: ["CN-000001 · 2026-08-14 · $150.00 · Rhinestoning not completed"],
+  };
+
+  it("reports the credit and what is left to charge", async () => {
+    mockCredit.mockResolvedValue(credited);
+
+    const result = await runStudioTool("credit-note", {
+      orderNumber: "ORD-000002",
+      amount: 150,
+      description: "Rhinestoning not completed",
+      recordedBy: "alexandra@example.com",
+    });
+
+    expect(mockCredit).toHaveBeenCalledWith({
+      orderNumber: "ORD-000002",
+      amount: 150,
+      reason: "Rhinestoning not completed",
+      issuedBy: "alexandra@example.com",
+    });
+    expect(result.status).toBe("ok");
+    expect(result.message).toMatch(/CN-000001 credits \$150\.00/);
+    expect(result.details.join(" ")).toMatch(/\$850\.00 of the \$1000\.00/);
+  });
+
+  it("says outright that a credit on a PAID balance is money owed back", async () => {
+    // The distinction the whole feature turns on: a credit note moves no money.
+    mockCredit.mockResolvedValue({ ...credited, alreadyPaid: true });
+
+    const result = await runStudioTool("credit-note", {
+      orderNumber: "ORD-000002",
+      amount: 150,
+      description: "Rhinestoning not completed",
+    });
+
+    expect(result.details.join(" ")).toMatch(/owed back to the customer/);
+    expect(result.details.join(" ")).toMatch(/doesn't move any money/);
+  });
+
+  it("says so when an invoice ends up fully credited", async () => {
+    mockCredit.mockResolvedValue({
+      ...credited,
+      remaining: 0,
+      creditedTotal: 1000,
+    });
+
+    const result = await runStudioTool("credit-note", {
+      orderNumber: "ORD-000002",
+      amount: 1000,
+      description: "Order cancelled",
+    });
+
+    expect(result.details.join(" ")).toMatch(/fully credited/);
+  });
+
+  it("requires an order number", async () => {
+    await expect(runStudioTool("credit-note", {})).rejects.toBeInstanceOf(
+      BadRequestError,
+    );
+    expect(mockCredit).not.toHaveBeenCalled();
   });
 });

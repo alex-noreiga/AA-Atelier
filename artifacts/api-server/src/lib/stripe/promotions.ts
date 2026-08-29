@@ -17,8 +17,9 @@
 // coupon behind.
 
 import Stripe from "stripe";
+import { STUDIO_CURRENCY } from "../currency.js";
 
-const CURRENCY = "usd";
+const CURRENCY = STUDIO_CURRENCY;
 
 export interface DiscountCodeSpec {
   /** The human-readable, globally-unique promotion code (also the dedupe key). */

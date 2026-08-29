@@ -108,15 +108,28 @@ Express app (artifacts/api-server)  ──►  Notion REST API (orders database)
   │                                  the handler IS the answer
   ├─ GET  /api/studio/analytics    → the INTERNAL studio dashboard's figures:
   │                                  custom + shop orders by stage, production
-  │                                  load against due dates, revenue by month,
-  │                                  deposits vs. balances, and best-selling
-  │                                  shop pieces. Aggregated live from Notion
+  │                                  load against due dates, revenue by month
+  │                                  (shop takings and custom work both booked
+  │                                  and collected, the latter from the payment
+  │                                  ledger), deposits vs. balances, and
+  │                                  best-selling shop pieces. Aggregated live from Notion
   │                                  (bounded full-database scans, 60s cached).
   │                                  Same Bearer JWT as the portal PLUS a staff
   │                                  allowlist: 401 not signed in, 404 signed in
   │                                  but not staff (indistinguishable from a URL
   │                                  that doesn't exist, by design), 403 staff
   │                                  but not signed in with Google
+  ├─ GET  /api/studio/production-pay
+  │                                → the other side of the figures: what the
+  │                                  studio owes its own PEOPLE. Joins the
+  │                                  atelier's "work distribution" rows (who did
+  │                                  the consult / sourcing / cutting / sewing /
+  │                                  detailing on each item) to the "Category Pay
+  │                                  Splits" rows (what each stage is worth as a
+  │                                  share of the piece), and reports owed vs.
+  │                                  settled per maker, the items behind it, and
+  │                                  the rows nothing could be worked out from.
+  │                                  Same staff gate as the figures above
   ├─ GET  /api/studio/orders       → the dashboard's stage board: every custom
   │                                  order still being made, with the stage it
   │                                  is at, the pipeline its own service walks,
@@ -424,12 +437,22 @@ Express app (artifacts/api-server)  ──►  Notion REST API (orders database)
                                      (`invoice-lines`), a flat service quote
                                      (`quote` — a required `amount` + an optional
                                      `description`, for work with no costing
-                                     behind it; see "Flat-price quotes"), an order
+                                     behind it; see "Flat-price quotes"), issuing
+                                     an invoice (`issue-invoice` — freezing its
+                                     charges into a numbered, dated document that
+                                     can never be rewritten), crediting one
+                                     (`credit-note` — a second document reducing
+                                     what the first charges; it moves no money),
+                                     an order
                                      status-change email (`status-email`, with a
                                      `force` resend), the cancellation refund
                                      (`cancellation-refund`), the return /
                                      exchange refund (`return-refund`, with an
-                                     optional `amount` TARGET total) and the
+                                     optional `amount` TARGET total), a payment
+                                     taken outside Stripe (`record-payment` —
+                                     cash, check or transfer, which appends to
+                                     the payment ledger and settles the invoice
+                                     stage once the ledger covers it) and the
                                      back-in-stock sweep (`restock-alert`).
                                      Staff-gated (`requireStaff`) — see "Internal
                                      tools on the studio dashboard". Each returns a
@@ -4102,6 +4125,96 @@ limits, including why `Skate Shop (opening)` isn't counted and why consignment
 units stay out of `topItems`, are in
 `.agents/memory/sales-channels-and-consignment.md`.
 
+## Production pay (what the studio owes its own people)
+
+Every figure on the dashboard until this one was money coming **in** — revenue by
+month, deposits against balances, what customers still owe. The atelier has
+recorded what goes **out** by hand since long before the app existed: a **"work
+distribution"** row per item naming who did the consult, the sourcing, the
+cutting, the sewing and the detailing, and a **"Category Pay Splits"** row saying
+what each of those stages is worth as a share of the piece. Nothing had ever read
+either. `GET /api/studio/production-pay` is that read, rendered at `/studio/pay`.
+Code: `lib/notion/work-distribution.{schema,repository}.ts`,
+`lib/notion/pay-splits.{schema,repository}.ts`, the two lazy clients in
+`notion/client.ts`, `services/production-pay.service.ts`, the handler in
+`routes/studio.ts`, and `web-app/src/components/studio-production-pay.tsx`.
+
+1. **The splits are READ; the money is derived from them — and the per-person
+   `… owed` formulas are deliberately NOT read.** Notion carries an
+   `Alexandra owed` and an `Alayna owed` formula doing this same multiplication,
+   and reading those two numbers the way the consignment reader reads
+   `Your Payout` would have been less code. It loses on three counts: those
+   property names **hardcode today's two makers** (a third would need two
+   formulas and two columns before the app could see any of their pay), a single
+   number per person **cannot be broken down** into the sewing-vs-sourcing split
+   that is the whole reason to open the panel, and the formula bodies aren't
+   readable through the API anyway. So the assignee is read out of each select —
+   making the roster **data** — and what is read rather than invented is the
+   thing that genuinely is a commercial term: the category's pay splits, which
+   the two of them renegotiate. The standing cost is a **duplicated rule**: the
+   owed arithmetic now lives in those Notion formulas and in
+   `production-pay.service.ts` — **change one and change the other**, exactly
+   like `classifyMaterials` against the `Restock Alert` formula.
+
+2. **`Split` divides a stage evenly across the whole roster.** With the studio's
+   two makers that is the plain 50/50 everyone means by it. Were a third added it
+   would divide three ways — stated rather than guessed, because the alternative
+   (picking two names out of the roster) would be the app deciding who worked on
+   a piece. A targeted business rule naming one live option value, like
+   `STATUS_IN_STOCK`. The roster itself comes from the five `… by` select
+   **options** on the live schema (so a maker with no work still gets a nought
+   row and the panel reads as the payroll rather than as a list of who is owed);
+   that read is **best-effort**, because `summarizeProductionPay` widens whatever
+   roster it is handed with the names the rows carry — a failed schema read costs
+   a nought row, never anybody's pay.
+
+3. **A blank `Units` is ONE; a blank `Sale price` is UNKNOWN.** The row is an
+   item, so a count nobody typed is one piece — folding it to zero would value
+   real work at nothing, which is the one way a payroll figure must not be wrong.
+   There is no such default for a price, so an unpriced row is **named** instead
+   of guessed at. Likewise a maker with no `Paid <name>` column reads as
+   **unpaid**: the panel may overstate what is owed, which is visible, never hide
+   it, which is not. Settlement checkboxes are read by the `Paid ` **prefix** so
+   they follow the roster rather than two names in code.
+
+4. **Nothing uncomputable is dropped — it is named.** No sale price, no category,
+   or a stage nobody is assigned to all produce a `needsAttention` row carrying
+   the reason, the same shape as the materials panel's `untracked` list. A
+   payroll number that reads as complete while it is short is the worst way for
+   this to be wrong. A category whose five shares don't total 100% is flagged for
+   the same reason: in Notion a mistyped split looks exactly like a correct one
+   and silently underpays whoever did the missing stage, and this panel is the
+   only place it is visible.
+
+5. **Owed means "not ticked paid", and nothing else.** The order's `Order Stage`
+   rollup rides along on each row so the atelier can see what they are settling
+   on, but the app never gates pay on it. Whether work on a half-sewn dress has
+   been earned is their judgement, recorded by ticking the box; inventing an
+   earned-at-delivery rule here would contradict a table they already keep.
+
+6. **Its own section, and its own endpoint.** `/studio/pay` is a `STUDIO_SECTIONS`
+   entry, so only opening it runs the read. Folding two more bounded
+   full-database scans into `GET /studio/analytics` would make everyone opening
+   the **figures** pay for a payroll question they didn't ask — the exact cost
+   "The dashboard's sections" exists to remove. Contract-first and behind the
+   same `requireStaff` gate (401 / 404 / 403) as the rest of the studio surface.
+
+Degrades exactly like the materials and consignment panels: either database
+unset ⇒ `configured: false` **naming which one** (nought owed would read as
+"everyone has been paid"), a Notion 404 ⇒ `unreachable` with the sharing fix in
+the panel, anything else still throws.
+
+The atelier's one-time setup: share the Notion integration with **work
+distribution** and **Category Pay Splits**, and set
+**`NOTION_WORK_DISTRIBUTION_DATABASE_ID`** + **`NOTION_PAY_SPLITS_DATABASE_ID`**.
+**Nothing to add in Notion** — every property read already exists. Two data-entry
+habits make it useful: give each row a `Sale price` and a `Category`, and fill in
+the five `… by` selects as the work is done (the existing **"Needs stage
+entries"** view is the same idea from the other side). Known limits — both makers
+see each other's pay, ticking `Paid` is still done in Notion, and the figures are
+the whole book rather than a period — are in
+`.agents/memory/production-pay-dashboard.md`.
+
 ## Studio analytics dashboard (internal, staff-gated)
 
 The atelier's own numbers in one place — `pages/studio.tsx` at **`/studio`**, fed
@@ -4176,19 +4289,48 @@ Load-bearing decisions:
    cached for 60s (the same TTL as every other live Notion read), so a refreshed
    dashboard doesn't re-scan.
 
-4. **Shop revenue and custom bookings are side by side, never summed.** A shop
+4. **An invoice is worth what its LINES say, not what a formula says.** The
+   studio's figures derive each invoice's value with the shared
+   `invoiceChargedTotal` over the invoice's own lines — the same function
+   `buildInvoiceView` uses for the customer — rather than reading Notion's
+   `Final Balance`. Two readers computing one invoice's value separately agree
+   only by convention, and that convention had two ways to break: `Final
+Balance` applies no `Deposit` filter (so a Deposit line, were the option
+   re-added, would inflate the atelier's view while the customer's stayed
+   correct), and it is a **formula**, which reads as absent when it errors — as
+   `Payment Status` silently did for months — dropping that invoice to $0 across
+   `customBooked`, `invoicedTotal` and the outstanding split at once. It costs a
+   fourth bounded scan (`listInvoiceLinesForAnalytics`). An **incomplete** scan
+   falls the whole pass back to `Final Balance`: these rows are grouped by
+   invoice, so hitting the page cap doesn't drop an invoice, it halves one —
+   which is why `scanDatabaseChecked` (returning `{ rows, complete }`) exists
+   beside `scanDatabase`. `services/payment-reminder.ts` still reads `Final
+Balance`, deliberately: it is a filtered query, so deriving the figure there
+   would be a line fetch per invoice on the nightly cron.
+
+5. **Shop revenue and custom bookings are side by side, never summed.** A shop
    order records what was collected and when (Stripe took it, Notion stamped the
    page `created_time`). A custom order's payments carry **no dates at all** — the
    invoice holds a paid _checkbox_ per stage — so the only honest monthly figure
    for bespoke work is what was **booked**: the invoice's `Final Balance`,
    attributed to the month the order came in. The contract carries them as two
-   fields (`shopRevenue` / `customBooked`) and the UI labels them apart. Dating
-   custom payments properly needs a real payment ledger — the roadmap's "move real
-   invoicing to a finance tool". Months and "today" are read in the studio's
+   fields (`shopRevenue` / `customBooked`) and the UI labels them apart.
+   **`customCollected` now sits beside them**, read from the payment ledger by
+   each payment's own `paid_at` and net of refunds — so bespoke work is finally
+   reportable as money _in_ as well as work _won_. The two custom figures are
+   deliberately not summed (a commission booked in March and paid across April
+   and June is once in March's booked figure and twice in the collected one) and
+   `customBooked` was **kept rather than replaced**: it answers a question the
+   collected figure can't, and it is the figure that still works on an install
+   whose ledger hasn't been backfilled. Shop revenue is deliberately NOT
+   re-sourced from the ledger even though the ledger holds shop charges — it is
+   already collected and correctly dated, and drawing one number from two places
+   is how the two come to disagree. A collected nought is ambiguous, so it always
+   travels with the `paymentLedger` block (see below). Months and "today" are read in the studio's
    timezone (`APPOINTMENT_TIMEZONE`), so a 9pm order on the 31st lands in the month
    the atelier worked it.
 
-5. **Deposits vs. balances split without double counting.** Across every invoice
+6. **Deposits vs. balances split without double counting.** Across every invoice
    on a live (non-cancelled) order: an unpaid deposit counts once as
    `depositsOutstanding`, and `balancesOutstanding` is what's left **beyond every
    deposit scheduled against the invoice** — so the two add to `outstandingTotal`
@@ -4197,13 +4339,13 @@ Load-bearing decisions:
    deposit), so it leaves nothing outstanding. An invoice whose `Order` relation is
    empty still counts; one on a cancelled order doesn't.
 
-6. **Completion is positional, as everywhere else.** Both pipelines classify with
+7. **Completion is positional, as everywhere else.** Both pipelines classify with
    the shared `orderLifecycleState` (`services/delivery.ts`) against the live
    stage / fulfilment-status lists, so an atelier rename never miscounts. An active
    order whose stage isn't in the live list still counts as active — it just has no
    bucket.
 
-7. **Best sellers ride the inventory relation, and can legitimately be empty.**
+8. **Best sellers ride the inventory relation, and can legitimately be empty.**
    Top items are counted from each shop order's `Inventory Items` relation (the
    Phase-2 "relate shop orders to inventory rows" card), deduped per order and
    resolved to names via `listVariants()`. That relation records _which_ pieces
@@ -4214,7 +4356,7 @@ Load-bearing decisions:
    sellers); the orders / shop orders / invoices scans **are** the dashboard, so a
    failure there surfaces as a 500 rather than quietly rendering zeroes.
 
-8. **No charting dependency.** The panels are plain CSS bars. A charting library
+9. **No charting dependency.** The panels are plain CSS bars. A charting library
    would be the largest dependency in the app for six panels of numbers, against
    the repo's pruned-dependencies rule. The page is `noindex` (so it's out of
    the sitemap and the prerender pass) — the gate that matters is server-side,
@@ -4222,31 +4364,31 @@ Load-bearing decisions:
    dashboard rather than the whole page, and the page's access gate is no longer
    this endpoint — see "The dashboard's sections" below.
 
-9. **The way in is a staff-only nav link, gated by the server's own answer —
-   and it takes Account's place.** `/studio` was originally reachable _only_ by
-   typing the URL, which is what made it invisible in practice — a staff member
-   on a preview deployment had no way to find it. It is still **not in
-   `NAV_LINKS`** (the public array stays flat and unconditional):
-   `useNavLinks()` in `navbar.tsx` swaps the `/account` entry for a separate
-   `DASHBOARD_LINK` when — and only when — `useStudioAccess()`
-   (`web-app/src/lib/studio-access.ts`) says so. That hook asks
-   **`GET /api/studio/access`**, which is mounted behind the **same
-   `requireStaff`** as the figures rather than re-deriving the answer
-   client-side — one decision, so the link can never be offered to an account
-   the dashboard would then refuse. The allowlist is deliberately never shipped
-   to the browser, so asking the server is the only honest test. It **fails
-   closed**: signed out it doesn't ask at all (an anonymous probe can only be a
-   401), a 401/403/outage renders no link, and a refusal is **not retried**
-   (`retry: false`) — a 403 is an answer. It counts against the shared
-   `studioRateLimiter` budget, which is separate from (and much looser than) the
-   account overview's: past the staff gate the ceiling exists to stop a runaway
-   client, not to deter a stranger, and a dashboard load is already six reads. The answer is cached for
-   the session (`staleTime: Infinity`; staff membership changes when an env var
-   does, not mid-browse) and dropped on **any** auth-state change in
-   `lib/auth-context.tsx` alongside the overview — otherwise a customer signing
-   in after a staff member on the same tab would keep being offered the link.
+10. **The way in is a staff-only nav link, gated by the server's own answer —
+    and it takes Account's place.** `/studio` was originally reachable _only_ by
+    typing the URL, which is what made it invisible in practice — a staff member
+    on a preview deployment had no way to find it. It is still **not in
+    `NAV_LINKS`** (the public array stays flat and unconditional):
+    `useNavLinks()` in `navbar.tsx` swaps the `/account` entry for a separate
+    `DASHBOARD_LINK` when — and only when — `useStudioAccess()`
+    (`web-app/src/lib/studio-access.ts`) says so. That hook asks
+    **`GET /api/studio/access`**, which is mounted behind the **same
+    `requireStaff`** as the figures rather than re-deriving the answer
+    client-side — one decision, so the link can never be offered to an account
+    the dashboard would then refuse. The allowlist is deliberately never shipped
+    to the browser, so asking the server is the only honest test. It **fails
+    closed**: signed out it doesn't ask at all (an anonymous probe can only be a
+    401), a 401/403/outage renders no link, and a refusal is **not retried**
+    (`retry: false`) — a 403 is an answer. It counts against the shared
+    `studioRateLimiter` budget, which is separate from (and much looser than) the
+    account overview's: past the staff gate the ceiling exists to stop a runaway
+    client, not to deter a stranger, and a dashboard load is already six reads. The answer is cached for
+    the session (`staleTime: Infinity`; staff membership changes when an env var
+    does, not mid-browse) and dropped on **any** auth-state change in
+    `lib/auth-context.tsx` alongside the overview — otherwise a customer signing
+    in after a staff member on the same tab would keep being offered the link.
 
-10. **For staff the dashboard REPLACES the account portal, and is labelled
+11. **For staff the dashboard REPLACES the account portal, and is labelled
     "Dashboard".** A staff member doesn't place orders through the shop, so the
     customer portal is empty by construction for them — offering both only ever
     led somewhere blank. So `pages/account.tsx` hands a confirmed staff session
@@ -4355,19 +4497,21 @@ two `/studio` routes in `App.tsx`.
    most likely to need them.
 
 The sections are **Figures / Orders / Requests / Shipping / Reviews / Bookings /
-Materials / Settings / Guides**, in that order — what needs doing first.
+Materials / Pay / Settings / Guides**, in that order — what needs doing first.
 (**Orders** is second because advancing a stage is the action taken most often;
 see "Advancing an order's stage from the dashboard".) Splitting them changed
-nothing about a panel: each is the same component, with
-the same `data-testid`, doing the same reads, and that move needed **no API
-change, no new env var and no atelier setup**. (**Shipping** was added later, by
-the label-buying card above; it is the one section whose panel did not already
-exist somewhere on the page.)
+nothing about a panel: each is the same component, with the same `data-testid`,
+doing the same reads, and that move needed **no API change, no new env var and
+no atelier setup**.
 
 ## Internal tools on the studio dashboard
 
 The atelier's internal actions — **reconcile production milestones**, **itemize
-an invoice**, **quote a flat price**, **send a status update**, **cancel &
+an invoice**, **quote a flat price**, **issue an invoice** (freezing its charges
+into a numbered document — see "Issuing an invoice" above), **credit an invoice**
+(a second document reducing what an issued one charges), **record a payment**
+(one taken outside Stripe — see "The payment ledger" above), **send a status
+update**, **cancel &
 refund an order**, **refund a return**, **send back-in-stock alerts** — are run
 from the signed-in `/studio` page, through `POST /api/studio/tools/:tool`. None of the underlying work changed; who is
 allowed to trigger it did. This is the roadmap's "Staff authentication for
@@ -4727,6 +4871,244 @@ Google Calendar integration (unset ⇒ they just don't appear); measurements nee
 Supabase auth email copy is version-controlled in
 `.agents/memory/supabase-auth-emails.md` and pasted into the Supabase dashboard.
 
+## Issuing an invoice (the document, not the rows)
+
+`Invoice Ready` was a checkbox, not an event: ticking it published an invoice
+whose line items stayed fully editable in Notion, so the charges could move under
+a customer who had already been shown them — and already paid a deposit against
+them — with nothing recording what the document used to say. It carried no number
+and no date of its own either (`Invoice ID` is the order's `ORD-` number,
+display-only).
+
+`/studio` → **Issue an invoice** (`POST /api/studio/tools/issue-invoice`)
+snapshots the charges into the write-once **`issued_invoices`** table and ticks
+the gate. Code: `supabase/migrations/0006_issued_invoices.sql`,
+`lib/db/issued-invoices.repository.ts`, `services/invoice-issue.service.ts`, and
+the readers in `services/invoice.service.ts`.
+
+1. **What is frozen and what is not is the whole design.** FROZEN: the lines and
+   their subtotal — a charge that moves after the customer has seen it is the
+   defect. LIVE: which deposits have been **paid**, and so the balance due,
+   because paying a deposit legitimately reduces what is owed. The deposit
+   schedule is snapshotted for the record, but the live invoice head still
+   decides what is payable — deposits are payable before an invoice is itemized
+   at all.
+
+2. **The unique index on `invoice_page_id` IS the immutability guarantee** — an
+   invoice can be issued exactly once, enforced by the database rather than by a
+   caller remembering to check. A re-press reports the number and date already on
+   file. There is deliberately **no re-issue**: an invoice that genuinely needs
+   to change after being shown to a customer is a credit note, not an edit.
+
+3. **Snapshot first, gate second.** `setInvoiceReady` runs only after the
+   snapshot exists, so a failure part-way can never publish an invoice with no
+   document behind it. A failed gate write afterwards is reported, not thrown —
+   the document is already immutable, and throwing would invite a re-press that
+   could only find it issued.
+
+4. **One place decides which document is read.** `chargedLinesOf` picks the
+   snapshot over the live rows, and the invoice page, its PDF and the **balance
+   checkout** all go through it. Shown one total and charged another is the
+   sharpest form of this bug.
+
+5. **The read is best-effort; the write is not.** No database ⇒ readers fall back
+   to computing live (the old behaviour, so a customer can still pay during an
+   outage), while issuing refuses to run — ticking the gate with no snapshot
+   would publish exactly the mutable document this replaces.
+
+6. **A quote issues the invoice it writes** (it was already ticking the gate), so
+   a service order becomes a numbered document in one press. Best-effort on the
+   issuing half only — the line is written by then. `invoice-lines` still does
+   NOT tick the gate: an itemized commission is reviewed first, and that review
+   is now "issue it".
+
+7. **Issuing emails the customer their invoice** — the app never sent anyone
+   one before; the payment reminders link to the tracking page, and a customer
+   only saw the document if they went looking. Sent on issue and only when the
+   run actually issued something (a re-press reads as a chase, not a delivery),
+   so a quote sends it too. A failed send or an order with no email is reported
+   and the tool answers `attention` rather than a clean `ok` — the document is
+   written either way, but an invoice nobody received is half an outcome.
+   `PUBLIC_BASE_URL` unset omits the link rather than failing the send (note
+   `siteBaseUrl()` throws when it's unset — don't use it on a mail path).
+
+8. **Tax is NOT on the document, honestly rather than silently.** Stripe computes
+   it from an address collected at checkout, which the invoice does not have at
+   issue time, so the amount cannot be known here. The snapshot records only THAT
+   the balance is taxed, and the tool's result says tax is calculated at
+   checkout.
+
+### Credit notes — how an issued invoice changes
+
+Issuing deliberately left no re-issue, which also left no way to REDUCE an
+invoice: one issued for too much, work that was dropped, a goodwill discount.
+`/studio` → **Credit an invoice** (`POST /api/studio/tools/credit-note`) writes a
+second document against the first, into the append-only **`credit_notes`** table.
+Code: `supabase/migrations/0007_credit_notes.sql`,
+`lib/db/credit-notes.repository.ts`, `services/credit-note.service.ts`.
+
+1. **A credit note reduces what is OWED — it is NOT a refund.** If the customer
+   has already paid, moving money back is a separate act with its own tools
+   (`cancellation-refund` / `return-refund`). Crediting a settled invoice leaves
+   them owed money and the result says so outright; it never quietly sends any.
+
+2. **It requires an ISSUED invoice, and that refusal is the feature.** An invoice
+   never issued is still editable rows — change them and issue it instead.
+
+3. **The credits on an invoice may never exceed what it charges**, which is also
+   what bounds a double press: the second is refused once the two would
+   overshoot. The card is `destructive` (it asks again, like the refunds) and the
+   result echoes every credit note on the invoice.
+
+4. **Amounts are stored POSITIVE**, unlike the ledger's signed cents — the sign
+   is in the word "credit" and every consumer subtracts explicitly, so nobody can
+   add one to a subtotal and be right by accident.
+
+5. **The reason is part of the document.** Required, and rendered on the
+   customer's invoice and PDF beside the credit number.
+
+6. **The credits read is three-valued and the balance checkout refuses what it
+   can't confirm.** Flattening a database failure into "no credits" would charge
+   the FULL amount, taking money from a customer who had been credited — so
+   `readCreditNotes` carries `unavailable`, the page still renders, and
+   `createPaymentCheckout` throws a retriable 503. A deposit is unaffected (it is
+   priced from the invoice head, not the document).
+
+7. **The studio's figures subtract credits too** (`sumCreditsByInvoice`, one
+   query folded into `invoiceValues`), best-effort — a failure reports invoices
+   at their uncredited value, overstating rather than erasing.
+
+**Atelier setup: none beyond `db:migrate`.** No env var, no new vendor, no Notion
+property. Known limits: a credit note can't be voided (append-only, no reverse
+entry — a credit raised in error is a SQL fix); credits are a single amount plus
+a reason rather than itemized against specific lines; and `Invoice Ready` remains
+hand-tickable — an invoice published that way reads live, as before, with no
+number.
+
+## The payment ledger (what came in, and when)
+
+An **append-only `payments` table** in Postgres holding one row per movement of
+money against an order: a charge is positive cents, a refund is negative, rows
+are never updated or deleted, and an order's position is their sum. Code:
+`supabase/migrations/0005_payments.sql`, `lib/db/payments.repository.ts` (I/O),
+`services/payment-ledger.service.ts` (the best-effort layer the money paths
+call), and `src/scripts/backfill-payments.ts`.
+
+It exists because the Notion invoice records **that** a stage was paid and never
+**when**. Three defects followed from that, and each was a wrong number somebody
+had already read: bespoke work could only ever be reported as _booked_ in the
+month the order came in (`studio-analytics.service.ts` says so in its own
+header); an order could hold exactly three payments forever, so a deposit split
+across two cards or half a balance was unrepresentable; and a refund issued
+through Stripe wrote nothing back, so `Balance Paid` stayed ticked on a
+fully-refunded order and the dashboard counted it as collected. This is the
+first slice of the roadmap's "move real invoicing to a finance tool" — see
+`.agents/memory/payment-ledger.md` for why the ledger came before the vendor.
+
+1. **The sign is applied from `kind`, in one place.** Callers pass a positive
+   magnitude and `recordPaymentEntry` negates a refund, so no call site can
+   write a refund as income. The database repeats the rule as a check
+   constraint, so a hand-run `insert` can't invert a month's takings either.
+
+2. **`external_id` is the idempotency key, and its unique index is PARTIAL.** It
+   holds the Stripe object that identifies the movement — the Checkout session
+   for a charge, the refund for a refund. The webhook is at-least-once, so
+   without it a redelivery would append a second row and double-count revenue,
+   the exact failure the table exists to prevent. The index is
+   `where external_id <> ''` so a hand-recorded payment (which has none) stays
+   repeatable — a deposit paid as two piles of cash is two rows. **The insert's
+   `on conflict` clause must repeat that predicate**, or Postgres can't infer
+   the index and the statement errors. A **$0** movement is refused outright:
+   it would change no total and would burn a fully-promo session's id so a
+   later real charge on it could never be recorded.
+
+3. **`paid_at` is not `recorded_at`, and that IS the feature.** A payment
+   backfilled months later still lands in the month it was collected. Where the
+   payment intent is already expanded (the shop path and the backfill) `paid_at`
+   is the instant of the charge; otherwise it's the instant checkout was
+   opened. The difference is the minutes spent typing a card, which decides one
+   thing — an order paid either side of midnight on the last of the month — so
+   the exact value is taken where it's free (the shop path added
+   `payment_intent` to an expand list it was already sending) and not bought
+   with an extra round-trip where it isn't.
+
+4. **Every write is best-effort and never throws, and failures log at `error`.**
+   Each caller is either the Stripe webhook — where a throw makes Stripe
+   redeliver into the dedupe guard, losing the very write it retried for — or a
+   refund that has **already moved real money**, where a throw would report a
+   success as a failure. `error` rather than `warn` because a missed row doesn't
+   announce itself: it understates a month, and nothing downstream can tell "no
+   payment" from "a payment we failed to write". Same call as the shop's
+   order-lines write. Unset `POSTGRES_URL` ⇒ the whole thing no-ops (unlike
+   `restock_alerts` and `staff_availability`, which hard-require it).
+
+5. **Refunds key on the refund's own id, not the payment intent**, so a return
+   refunded in two parts (a restocking fee, later topped up to full) lands as
+   two rows summing to what the customer actually got back — which the single
+   `Refunded Amount` on the Notion order can't show. The order context rides on
+   `RefundTarget`, because only the caller knows which order a session was.
+
+6. **The backfill is not optional.** The ledger starts empty and **Stripe is the
+   only place the history exists** — the Notion invoice has no dates at all,
+   which is the whole problem — so without it every month before deploy day
+   reads as zero. `db:backfill-payments` sweeps Checkout sessions (attributed
+   from the same session metadata the live webhook reads) then refunds
+   (attributed via the payment-intent map built during the first sweep); a
+   refund matching no swept session is **reported, never guessed at**.
+   Idempotent by the same `external_id` index, so it's safe to re-run and safe
+   against a ledger the live path is already writing. Run it with the **live**
+   Stripe key — it reads whichever mode the key belongs to.
+
+7. **Money that never went near a card is recorded by hand**, from `/studio` →
+   **Record a payment** (`POST /api/studio/tools/record-payment`) — cash at a
+   fitting, a check, a transfer. Without it the ledger would miss exactly the
+   payments it was built to date, since the atelier records those by ticking a
+   Notion checkbox that says nothing about when or how much. Four things about
+   it are load-bearing. It **fails loudly** where the Stripe writes are
+   best-effort (the row is the entire output, so an unconfigured ledger is
+   reported and an unknown order number is a 404). The stage **settles from the
+   ledger**, not on sight: the service sums every row for that stage — the
+   Stripe charge as readily as the cash — and ticks the invoice only once they
+   cover its amount, so a deposit taken as two piles of cash flips the checkbox
+   on the second and the result says what is still outstanding after the first.
+   It marks the stage paid with a **blank session id**, the established encoding
+   for "paid outside Stripe" that `refundCheckoutSession` already reads as
+   "refund manually". And the date is anchored at **midday in the studio's
+   timezone** (the same date-only trap `orderedOn` documents), with a future date
+   refused as a typo. `recordedBy` is stamped by the route from the verified
+   staff session and is deliberately not on the wire contract. There is no `card`
+   method — a card payment records itself — and no refunds, which the two refund
+   tools already handle.
+
+8. **The dashboard reads it as `customCollected`**, alongside a `paymentLedger`
+   status block on `GET /studio/analytics`. Four things make that honest. The
+   read is **best-effort**, unlike the three Notion scans beside it — those ARE
+   the dashboard, so a failure there is a 500, whereas this adds a column to
+   figures that stand without it and a Postgres blip reports `unavailable`
+   instead of taking the page down. Only **custom** rows are counted, since
+   `shopRevenue` already covers the shop's money. A month can go **negative**,
+   because refunds are negative rows and are netted — which is what finally stops
+   a refunded order counting as collected revenue — and the figure is left signed
+   rather than clamped. And the status block carries **`recordedFrom`**, the
+   earliest month in the window holding a payment: the only thing that separates
+   "nothing came in that month" from "the ledger's records start later than
+   that", which is precisely what an install looks like before the backfill runs.
+   The panel **hides** the collected bar rather than drawing it at nought when
+   the ledger can't answer, and says which of the four states it is in.
+
+**Atelier setup: none beyond `db:migrate` + one backfill run.** No env var of its
+own (it rides `POSTGRES_URL`), no new vendor, no Notion property.
+
+**Known limits, all deliberate and all listed in the memory note:** the
+deposits-vs-balances panel still reads the Notion checkboxes (that is an
+_outstanding_ figure, which the ledger doesn't hold — the invoice's schedule is
+what says what was expected); shop revenue isn't netted of return refunds the way
+`customCollected` is; there is no ledger view beyond the history the
+`record-payment` result echoes back; a hand-recorded payment can't be corrected in
+the app (the table is append-only and there is no reversing entry); and the Notion
+`… Paid` checkboxes remain a second, hand-tickable writer of the same fact — the
+intended end state is that they become app-written mirrors of the ledger.
+
 ## Postgres (payment idempotency + the account order index)
 
 A **Postgres layer**, provided by the same Supabase project. Notion stays the record for
@@ -4744,7 +5126,10 @@ say so plainly rather than degrading to empty — see "Automated back-in-stock a
 injectable `DbClient` seam — `query` + `end` — so repos are driver-agnostic and fakeable
 like `NotionClient`; test seams `__setDbForTests` / `__resetDb`).
 
-1. **Three data tables in the initial migration, all wired.** `supabase/migrations/0001_init.sql` provisions
+1. **Three data tables in 0001, all wired** (plus `restock_alerts`,
+   `staff_availability`, `payments`, `issued_invoices` and `credit_notes`, each
+   documented in its own section above).
+   `supabase/migrations/0001_init.sql` provisions
    `schema_migrations`, `clients`, `order_index`, and `processed_payments`.
    `processed_payments` is Stripe idempotency (below); `clients` + `order_index` are the
    email-keyed customer/order discovery index for the account portal — written
@@ -5551,6 +5936,8 @@ scope went with the working-hours sheet.
 | `NOTION_STUDIO_GUIDES_DATABASE_ID`                                                                                | No how-to guides; the dashboard panel says it isn't connected       |
 | `NOTION_PORTFOLIO_DATABASE_ID`                                                                                    | No portfolio pieces; `/portfolio` shows its empty state             |
 | `NOTION_CONSIGNMENT_DATABASE_ID`                                                                                  | No consignment panel; the shelf at the skate shop isn't counted     |
+| `NOTION_WORK_DISTRIBUTION_DATABASE_ID`                                                                            | No production-pay panel; what the studio owes its makers isn't read |
+| `NOTION_PAY_SPLITS_DATABASE_ID`                                                                                   | No production-pay panel; there is nothing to divide a piece by      |
 | `COMMISSION_CAPACITY`                                                                                             | `0` — no cap, so the books never close on the count                 |
 | `COMMISSION_INTAKE`                                                                                               | `auto` — the cap decides (`open` / `closed` override it)            |
 | `COMMISSION_CLOSED_MESSAGE`                                                                                       | A built-in "our books are full, join the waitlist" sentence         |
@@ -5753,10 +6140,17 @@ Three things about it are load-bearing:
 | Change the customer account portal (Supabase Auth)       | `artifacts/web-app/src/pages/account.tsx` (+ `components/appointment-manage-panel.tsx`, shared with `pages/appointment-manage.tsx`) + `pages/account-login.tsx` / `account-callback.tsx` / `account-reset.tsx` + `lib/supabase.ts` + `lib/auth-context.tsx` (frontend); `api-server/src/services/account.service.ts` + `routes/account.ts` + `middlewares/auth.ts` + `lib/supabase/client.ts`; queries `findOrdersByEmail` / `findShopOrdersByEmail` + `listUpcomingAppointmentsByEmail` (`lib/google/calendar.repository.ts`, mapped via `lib/appointments/event-details.ts`) + `extractMeasurements` (`lib/notion/orders.schema.ts`). Auth emails: `.agents/memory/supabase-auth-emails.md`                                                                                                                                       |
 | Change the customer data export / deletion request       | `web-app/src/components/account-data.tsx` (rendered by `pages/account.tsx`) + the "Your choices" section of `pages/privacy.tsx`; `api-server/src/services/account-data.service.ts` + the two `/account` handlers in `routes/account.ts` + `lib/notion/data-deletion.{blocks,repository}.ts` + the by-email reads (`listRequestsByEmail`, `listReviewsByEmail`, `findClientProfileByEmail`) + `unsubscribeAudienceContact` in `lib/resend/audience.ts` + the two `dataDeletionRequest*Email` builders. The dashboard side is the `data-deletion` kind in `lib/notion/requests.schema.ts` + `components/studio-requests.tsx`                                                                                                                                                                                                          |
 | Change how the dashboard is laid out / add a section     | `web-app/src/lib/studio-sections.ts` (the registry — id, label, summary) + the `SECTION_VIEWS` map and `SectionNav` in `pages/studio.tsx` + the two `/studio` routes in `App.tsx`. Only the open section mounts, so a view fetches what it shows; the gate is `useStudioAccess` (`lib/studio-access.ts`), not the figures. Read "The dashboard's sections" before splitting the request queue from the tools                                                                                                                                                                                                                                                                                                                                                                                                                        |
+| Change production pay (what the studio owes its makers)  | `api-server/src/lib/notion/work-distribution.{schema,repository}.ts` (the rows + the live maker roster; `PRODUCTION_STAGES` and `SPLIT_ASSIGNEE` live there) + `lib/notion/pay-splits.{schema,repository}.ts` (the commercial term, read never invented) + `services/production-pay.service.ts` (the pure `attributeItem` / `summarizeProductionPay` + the cached use-case) + the `/studio/production-pay` route in `routes/studio.ts`; panel in `web-app/src/components/studio-production-pay.tsx`, mounted by the `pay` section in `pages/studio.tsx`. The owed arithmetic is DUPLICATED in Notion's `Alexandra owed` / `Alayna owed` formulas — read `.agents/memory/production-pay-dashboard.md` before changing either                                                                                                         |
 | Change sales-channel / consignment figures               | `SHOP_ORDER_CHANNEL_PROPERTY` / `SHOP_ORDER_ONLINE_STORE_CHANNEL` / `SHOP_ORDER_DATE_PROPERTY` in `api-server/src/lib/notion/shop-orders.blocks.ts` (what the app stamps) + the channel/date reads and `fetchLiveShopOrderChannels` in `shop-orders.repository.ts`; the aggregation is `buildChannels` / `orderedOn` / `buildTopItemCoverage` in `services/studio-analytics.service.ts`. The skate-shop shelf is `lib/notion/consignment.{schema,repository}.ts` + `services/consignment.service.ts` (`unitsAtShop` / `summarizeConsignment`) + `getConsignmentNotionClient`; panels in `web-app/src/pages/studio.tsx` (`ChannelsPanel` / `ConsignmentPanel`). Read the date-only gotcha in `.agents/memory/sales-channels-and-consignment.md` before touching `orderedOn`                                                          |
 | Change the internal studio dashboard                     | `artifacts/web-app/src/pages/studio.tsx` (+ the `/studio` route in `App.tsx`, `noindex` entry in `lib/seo-routes.ts`); `api-server/src/services/studio-analytics.service.ts` (the pure `aggregateStudioAnalytics` + the cached use-case) + `routes/studio.ts` + `requireStaff` in `middlewares/auth.ts` + `lib/staff.ts` (the `STUDIO_STAFF_EMAILS` allowlist + the `amr` Google check); the 403 panel's re-sign-in lands back via `web-app/src/lib/post-signin.ts` (read by `pages/account-callback.tsx`); reads via `lib/notion/scan.ts` + `listOrdersForAnalytics` / `listShopOrdersForAnalytics` / `listInvoicesForAnalytics`                                                                                                                                                                                                   |
 | Change the studio's how-to guides                        | `api-server/src/lib/guide-sections.ts` (the sections a guide can be filed against — a tool's id is its `StudioToolName`) + `lib/notion/guides.{schema,repository}.ts` (the Notion row + the file download) + `services/studio-guides.service.ts` (assembly, the HTML check, the 60s cache) + the `/studio/guides` route in `routes/studio.ts`; frontend `web-app/src/components/studio-guides.tsx` (`StudioGuides` panel + the `GuidesFor` slots), mounted by `pages/studio.tsx` and per tool by `components/studio-tools.tsx`. The sandboxed frame in that component is a security boundary — see the section above                                                                                                                                                                                                                |
 | Change the studio's internal tools (generators, refunds) | `api-server/src/services/studio-tools.service.ts` (the dispatcher + the composed result wording) + `routes/studio.ts` (`POST /studio/tools/:tool`, `requireStaff`) + `web-app/src/components/studio-tools.tsx` (rendered by `pages/studio.tsx`); the underlying work stays in `services/{schedule,invoice-generator,order-notification,order-cancellation,return-refund}.service.ts`. Contract in `openapi.yaml` (`StudioTool` / `StudioToolRequest` / `StudioToolRun`)                                                                                                                                                                                                                                                                                                                                                             |
+| Record a payment taken outside Stripe                    | `api-server/src/services/payment-record.service.ts` (the gates, the midday-in-studio-timezone date rule, and the settle-from-the-ledger check) + the `record-payment` runner in `services/studio-tools.service.ts` + the card in `web-app/src/components/studio-tools.tsx`. `recordedBy` is stamped by the route in `routes/studio.ts`, never read off the body                                                                                                                                                                                                                                                                                                                                                                                                                                                                     |
+| Credit an issued invoice                                 | `api-server/src/services/credit-note.service.ts` (the issued-invoice requirement, the credits-can't-exceed-the-charges ceiling, and `readCreditNotes` — three-valued so the balance checkout can refuse what it can't confirm) + `lib/db/credit-notes.repository.ts` + the `credit-note` runner in `services/studio-tools.service.ts`. Schema in `supabase/migrations/0007_credit_notes.sql`. Subtracted in `buildInvoiceView` (the customer) and `invoiceValues` (the figures). A credit note is NOT a refund — see `.agents/memory/payment-ledger.md`                                                                                                                                                                                                                                                                             |
+| Issue an invoice (freeze the document)                   | `api-server/src/services/invoice-issue.service.ts` (`issueOrderInvoice`, and `chargedLinesOf` — the ONE place that decides whether a reader sees the snapshot or the live rows) + `lib/db/issued-invoices.repository.ts` + the `issue-invoice` runner in `services/studio-tools.service.ts`. Schema in `supabase/migrations/0006_issued_invoices.sql`. The customer's side is `buildInvoiceView` / `createPaymentCheckout` in `services/invoice.service.ts`, `pages/invoice.tsx` and `lib/pdf/invoice-pdf.ts`                                                                                                                                                                                                                                                                                                                       |
+| Change what an invoice is worth                          | `invoiceChargedTotal` / `chargedLines` in `api-server/src/lib/notion/invoice.schema.ts` — ONE rule, used by `buildInvoiceView` (the customer's invoice) and `invoiceValues` in `services/studio-analytics.service.ts` (the studio's figures), so the two can't drift. The studio's copy is fed by `listInvoiceLinesForAnalytics` (a fourth bounded scan) and falls back to Notion's `Final Balance` when that scan is incomplete — see `scanDatabaseChecked` in `lib/notion/scan.ts` and the note in `.agents/memory/payment-ledger.md`                                                                                                                                                                                                                                                                                             |
+| Change what currency the studio trades in                | `api-server/src/lib/currency.ts` (`STUDIO_CURRENCY` / `isStudioCurrency`) — one declaration, read by both checkout paths, `lib/stripe/promotions`, the three money repositories, and the two aggregations that would otherwise sum across currencies (`buildRevenue`, `sumCreditsByInvoice`). NOT a multi-currency implementation: read the currency section of `.agents/memory/payment-ledger.md` before treating it as one                                                                                                                                                                                                                                                                                                                                                                                                        |
+| Change the payment ledger (what came in, and when)       | `api-server/src/lib/db/payments.repository.ts` (the append-only table's I/O; the sign is applied from `kind` here) + `services/payment-ledger.service.ts` (`recordStripeCharge` / `recordStripeRefund` — best-effort, never throwing), called from `recordPayment` (`invoice.service.ts`), `processPaidShopOrder` (`checkout.service.ts`), `refundCheckoutSession` (`order-cancellation.service.ts`) and `return-refund.service.ts`. Schema in `supabase/migrations/0005_payments.sql`; history recovered by `db:backfill-payments`. Read `.agents/memory/payment-ledger.md` before changing the `external_id` index or the sign rule                                                                                                                                                                                               |
 | Change the Postgres integrity layer / payment dedup      | `api-server/src/lib/db/client.ts` (`DbClient` seam + `postgresConfigured`) + `lib/db/processed-payments.repository.ts` (`claimPayment` / `confirmPayment` / `releasePayment`); consumed by `services/checkout.service.ts` (`recordPaidOrder`). Schema in `supabase/migrations/*.sql`, applied by `src/scripts/migrate.ts` (`pnpm db:migrate`, `.github/workflows/migrate.yml`)                                                                                                                                                                                                                                                                                                                                                                                                                                                      |
 | Change the newsletter opt-in                             | `artifacts/web-app/src/components/newsletter-signup.tsx` (footer field, in `footer.tsx`) + the intake checkbox in `pages/order-form.tsx`; `api-server/src/services/newsletter.service.ts` + `routes/newsletter.ts` + `lib/notion/newsletter.{blocks,repository}.ts` (writes to the **contact** database) + `newsletterWelcomeEmail` in `lib/resend/emails.ts`                                                                                                                                                                                                                                                                                                                                                                                                                                                                       |
 | Change invisible anti-spam (honeypot/timing/limit)       | `api-server/src/middlewares/spam-filter.ts` (`isLikelySpam` + `spamFilter`) + `submissionRateLimiter` in `middlewares/rate-limit.ts`; applied in `routes/{contact,notify,newsletter}.ts`; frontend `web-app/src/lib/anti-spam.tsx` (`HoneypotField` / `honeypotSchema` / `useSubmitTimer`) wired into `pages/contact.tsx` + `components/{notify-dialog,newsletter-signup}.tsx` + `pages/order-form.tsx`. Fields `website` + `elapsedMs` on the contact/notify/newsletter request schemas in `openapi.yaml`                                                                                                                                                                                                                                                                                                                          |

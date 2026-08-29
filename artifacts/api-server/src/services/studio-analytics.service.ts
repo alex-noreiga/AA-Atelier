@@ -11,14 +11,32 @@
 //     pipeline. The same rule classifies shop orders against their live
 //     fulfilment statuses.
 //
-//  2. **Shop revenue and custom bookings are reported side by side, not
-//     summed.** A shop order records what was collected and when (Stripe paid
-//     it, Notion stamped the page). A custom order's payments carry no dates at
-//     all — the invoice holds a paid *checkbox* per stage — so the only honest
-//     monthly figure for bespoke work is what was *booked* (the invoice's Final
-//     Balance, attributed to the month the order was placed). Adding those two
-//     together would read as revenue and be wrong; a real per-payment ledger is
-//     the roadmap's "move real invoicing to a finance tool".
+//  2. **Custom work is reported twice, as two different questions, and the two
+//     must never be summed.** `customBooked` is what was WON in a month — the
+//     invoiced value of the orders placed in it, attributed to the month they
+//     came in. `customCollected` is what came IN that month, read from the
+//     payment ledger by each payment's own `paid_at`, net of refunds. A
+//     commission booked in March and paid across April and June appears once in
+//     March's booked figure and twice in the collected one; both are right, and
+//     their sum is nonsense. `shopRevenue` is a collected figure, so it is the
+//     one that adds cleanly to `customCollected`.
+//
+//     Until the ledger existed there was only `customBooked`, because a custom
+//     order's payments carried no dates at all — the invoice holds a paid
+//     *checkbox* per stage. `customBooked` is deliberately KEPT rather than
+//     replaced: it answers a question the collected figure can't (how much work
+//     was won), and it is the figure that still works on an install whose ledger
+//     has not been backfilled. Which is why the collected column always travels
+//     with `paymentLedger` — a nought means "nothing came in" only where the
+//     ledger was actually holding payments for that month.
+//
+//     The SHOP figure is deliberately NOT re-sourced from the ledger, even
+//     though the ledger holds shop charges too. It is already a collected,
+//     correctly-dated figure (Stripe took the money; the order carries its own
+//     `Order Date`), and drawing the same number from two places is how the two
+//     come to disagree. Known cost: shop revenue is not netted of return refunds
+//     the way `customCollected` is — a cancelled order drops out, a returned one
+//     does not.
 //
 //  3. **Every channel the studio sells through is counted, and each one is
 //     named.** The atelier has always filed Etsy receipts, skate-shop sales and
@@ -29,7 +47,21 @@
 //     folded into a channel it might not belong to. The consignment shelf is
 //     the one channel with no orders at all, and has a reader of its own.
 //
-//  4. **The aggregation is a pure function.** `aggregateStudioAnalytics` takes
+//  4. **An invoice is worth what its LINES say, not what a formula says.** The
+//     value of an invoice is derived here exactly as `buildInvoiceView` derives
+//     it for the customer — `invoiceChargedTotal` over the invoice's lines, one
+//     shared function — rather than read from Notion's `Final Balance`. Two
+//     readers of one invoice that compute its value separately agree only by
+//     convention, and that convention had two ways to break: `Final Balance`
+//     applies no Deposit filter (so a Deposit line, were the option ever
+//     re-added, would inflate the atelier's view while the customer's stayed
+//     correct), and it is a FORMULA, which reads as absent when it errors — as
+//     `Payment Status` silently did for months — dropping that invoice to $0 in
+//     every money figure here with nothing to see. `Final Balance` remains the
+//     fallback for an invoice the line scan found nothing for, so a failed scan
+//     degrades to the previous behavior rather than to noughts.
+//
+//  5. **The aggregation is a pure function.** `aggregateStudioAnalytics` takes
 //     records and a clock and returns the response, so every rule above is unit
 //     testable without Notion; the exported use-case just fetches, caches, and
 //     calls it.
@@ -41,10 +73,29 @@ import {
   type ShopOrderAnalyticsRecord,
 } from "../lib/notion/shop-orders.repository.js";
 import { SHOP_ORDER_ONLINE_STORE_CHANNEL } from "../lib/notion/shop-orders.blocks.js";
-import { listInvoicesForAnalytics } from "../lib/notion/invoice.repository.js";
-import type { InvoiceAnalyticsRecord } from "../lib/notion/invoice.schema.js";
+import {
+  listInvoicesForAnalytics,
+  listInvoiceLinesForAnalytics,
+  type InvoiceLineScan,
+} from "../lib/notion/invoice.repository.js";
+import {
+  invoiceChargedTotal,
+  type InvoiceAnalyticsRecord,
+  type InvoiceLineAnalyticsRecord,
+} from "../lib/notion/invoice.schema.js";
 import { listVariants } from "../lib/notion/products.repository.js";
-import { dateInZone, addCalendarDays } from "../lib/appointments/time.js";
+import { postgresConfigured } from "../lib/db/client.js";
+import {
+  listPaymentsInRange,
+  type PaymentRecord,
+} from "../lib/db/payments.repository.js";
+import { sumCreditsByInvoice } from "../lib/db/credit-notes.repository.js";
+import { isStudioCurrency } from "../lib/currency.js";
+import {
+  dateInZone,
+  addCalendarDays,
+  zonedWallClockToInstant,
+} from "../lib/appointments/time.js";
 import { appointmentTimezone } from "../lib/appointments/settings.js";
 import { orderLifecycleState } from "./delivery.js";
 import { resolveStoredOrderService } from "../lib/service-catalog.js";
@@ -114,7 +165,28 @@ export interface StudioRevenueMonth {
   shopRevenue: number;
   shopOrders: number;
   customBooked: number;
+  customCollected: number;
   customOrders: number;
+}
+
+/** What the payment ledger could tell us about the window — the context the
+ * collected column has to be read against. See the contract's
+ * `StudioPaymentLedgerStatus`. */
+export interface StudioPaymentLedgerStatus {
+  configured: boolean;
+  unavailable?: boolean;
+  payments: number;
+  recordedFrom?: string;
+}
+
+/** The ledger rows for the window, plus how the read went. Modelled as a source
+ * rather than a bare array so "no ledger", "couldn't read it" and "read it, it
+ * was empty" stay three distinct states all the way to the panel — the same
+ * absent-is-not-zero rule the materials and consignment readers keep. */
+export interface StudioPaymentLedgerSource {
+  configured: boolean;
+  unavailable: boolean;
+  rows: PaymentRecord[];
 }
 
 export interface StudioPaymentTotals {
@@ -175,6 +247,7 @@ export interface StudioAnalyticsResult {
   production: StudioProductionLoad;
   revenue: StudioRevenueMonth[];
   payments: StudioPaymentTotals;
+  paymentLedger: StudioPaymentLedgerStatus;
   topItems: StudioTopItem[];
   topItemCoverage: StudioTopItemCoverage;
   channels: StudioChannelSales[];
@@ -205,6 +278,17 @@ export interface StudioAnalyticsInput {
   /** The consignment shelf, read separately (it has no orders to scan). */
   consignment: ConsignmentOverview;
   invoices: InvoiceAnalyticsRecord[];
+  /** Every invoice line, for deriving each invoice's value the way the
+   * customer's own invoice derives it, plus whether the scan read them all.
+   * Incomplete (a failed or truncated scan) falls every invoice back to Notion's
+   * `Final Balance` — see `invoiceValues`. */
+  invoiceLines: InvoiceLineScan;
+  /** Credited cents per invoice page id. An invoice carrying a credit note is
+   * worth less than its lines say — see `invoiceValues`. Empty when the read
+   * failed, which reports every invoice at its uncredited value. */
+  creditsByInvoice: Map<string, number>;
+  /** The payment ledger over the reporting window, and how the read went. */
+  payments: StudioPaymentLedgerSource;
   /** Inventory page id → piece name, for the best-seller list. */
   itemNames: Map<string, string>;
   /** The instant the figures are computed for. */
@@ -412,11 +496,63 @@ function inWindow(date: string, window: { from: string; to: string }): boolean {
   return date >= window.from && date <= window.to;
 }
 
+/**
+ * What each invoice is worth, keyed on its page id.
+ *
+ * Derived from the invoice's own lines with `invoiceChargedTotal` — the same
+ * function the customer's invoice page uses — so the two can differ only if the
+ * inputs do. Two fallbacks to Notion's `Final Balance`, both degrading to the
+ * behaviour these figures had before rather than to noughts: the whole pass
+ * falls back when the line scan is incomplete (see below), and an individual
+ * invoice falls back when the scan found no lines for it — which in the ordinary
+ * case is an un-itemized invoice, worth 0 either way.
+ *
+ * A line with no `Invoice` relation is skipped rather than guessed at — an
+ * orphaned row belongs to no invoice, and attributing it to one would put money
+ * on an order that never charged it.
+ */
+function invoiceValues(
+  invoices: InvoiceAnalyticsRecord[],
+  scan: InvoiceLineScan,
+  creditsByInvoice: Map<string, number>,
+): Map<string, number> {
+  // An INCOMPLETE scan is not a partial answer, it is no answer: the rows are
+  // grouped by invoice, so a truncated read doesn't drop an invoice, it halves
+  // one — and an invoice quietly worth less than it is would be the worst kind
+  // of wrong here. So the whole pass falls back to `Final Balance`, which is
+  // exactly the behaviour these figures had before.
+  const linesByInvoice = new Map<string, InvoiceLineAnalyticsRecord[]>();
+  for (const line of scan.complete ? scan.rows : []) {
+    if (!line.invoicePageId) continue;
+    const bucket = linesByInvoice.get(line.invoicePageId);
+    if (bucket) bucket.push(line);
+    else linesByInvoice.set(line.invoicePageId, [line]);
+  }
+
+  const values = new Map<string, number>();
+  for (const invoice of invoices) {
+    const own = linesByInvoice.get(invoice.pageId);
+    const charged = own
+      ? invoiceChargedTotal(own)
+      : (invoice.finalBalance ?? 0);
+    // Credit notes reduce what an invoice charges, so they reduce what it is
+    // worth here too — otherwise the figures would go on reporting money the
+    // studio has told a customer it will not be asking for. Floored at 0 for
+    // the same reason the customer's view floors it: the service caps credits
+    // at the invoice's own subtotal, but an invariant enforced elsewhere is one
+    // nobody reads.
+    const credited = (creditsByInvoice.get(invoice.pageId) ?? 0) / 100;
+    values.set(invoice.pageId, Math.max(0, round2(charged - credited)));
+  }
+  return values;
+}
+
 /** The trailing revenue series — shop money collected beside custom work
  * booked, one entry per month with no gaps (see decision 2 in the header). */
 function buildRevenue(
   input: StudioAnalyticsInput,
   invoiceByOrderPage: Map<string, InvoiceAnalyticsRecord>,
+  invoiceValueByPage: Map<string, number>,
 ): StudioRevenueMonth[] {
   const thisMonth = monthOf(input.now, input.timeZone);
   const months = new Map<string, StudioRevenueMonth>();
@@ -427,6 +563,7 @@ function buildRevenue(
       shopRevenue: 0,
       shopOrders: 0,
       customBooked: 0,
+      customCollected: 0,
       customOrders: 0,
     });
   }
@@ -449,10 +586,70 @@ function buildRevenue(
     if (!entry) continue;
     entry.customOrders += 1;
     const invoice = invoiceByOrderPage.get(order.pageId);
-    entry.customBooked += invoice?.finalBalance ?? 0;
+    entry.customBooked += invoice
+      ? (invoiceValueByPage.get(invoice.pageId) ?? 0)
+      : 0;
+  }
+
+  // What actually came in, by the month the money moved. CUSTOM ROWS ONLY — the
+  // ledger holds shop charges too, and adding them here would double-count
+  // against `shopRevenue`, which is already a collected figure from the orders
+  // themselves.
+  //
+  // `amountCents` is signed, so a refund subtracts and a month that gave more
+  // back than it took reads negative. That is the honest figure and is left as
+  // it is: clamping it to zero would hide the refund somewhere nobody could find
+  // it.
+  for (const payment of input.payments.rows) {
+    if (payment.orderKind !== "custom") continue;
+    // A foreign-currency row is SKIPPED, not summed. The ledger records whatever
+    // currency Stripe reports, and adding euros to dollars would understate or
+    // overstate a month with nothing on the page to show for it. Nothing can
+    // produce such a row today — both checkout paths pin `STUDIO_CURRENCY` — so
+    // one appearing means somebody has started selling in a second currency
+    // without teaching these figures to convert. That wants an error in the log,
+    // not a quietly wrong number.
+    if (!isStudioCurrency(payment.currency)) {
+      logger.error(
+        { paymentId: payment.id, currency: payment.currency },
+        "Studio analytics: skipping a payment in a currency the figures don't report in",
+      );
+      continue;
+    }
+    const entry = months.get(monthOf(payment.paidAt, input.timeZone));
+    if (!entry) continue; // outside the window
+    entry.customCollected += payment.amountCents / 100;
+  }
+  for (const entry of months.values()) {
+    // Cents summed as dollars accumulate float noise; settle it once per month
+    // rather than per row.
+    entry.customCollected = round2(entry.customCollected);
   }
 
   return [...months.values()];
+}
+
+/**
+ * What the ledger could say about this window.
+ *
+ * `recordedFrom` is the earliest month IN THE WINDOW holding a payment, which is
+ * what lets the panel distinguish a genuine nought from a month that predates
+ * everything the ledger holds — the signature of an install whose backfill
+ * hasn't been run. It is deliberately not "the earliest payment ever": the
+ * window is what the reader is looking at, and a claim about anything outside it
+ * would be one this function has not read.
+ */
+function buildPaymentLedger(
+  source: StudioPaymentLedgerSource,
+  timeZone: string,
+): StudioPaymentLedgerStatus {
+  const months = source.rows.map((row) => monthOf(row.paidAt, timeZone)).sort();
+  return {
+    configured: source.configured,
+    ...(source.unavailable ? { unavailable: true } : {}),
+    payments: source.rows.length,
+    ...(months.length > 0 ? { recordedFrom: months[0] } : {}),
+  };
 }
 
 /**
@@ -467,6 +664,7 @@ function buildRevenue(
  */
 function buildPayments(
   invoices: InvoiceAnalyticsRecord[],
+  invoiceValueByPage: Map<string, number>,
   cancelledOrderPages: Set<string>,
 ): StudioPaymentTotals {
   let invoicedTotal = 0;
@@ -485,7 +683,7 @@ function buildPayments(
       continue;
     }
     invoiceCount += 1;
-    const total = invoice.finalBalance ?? 0;
+    const total = invoiceValueByPage.get(invoice.pageId) ?? 0;
     invoicedTotal += total;
     depositsCollected += invoice.depositsPaid;
 
@@ -667,6 +865,11 @@ export function aggregateStudioAnalytics(
   const today = dateInZone(input.now, input.timeZone);
   const window = reportingWindow(input.now, input.timeZone);
 
+  const invoiceValueByPage = invoiceValues(
+    input.invoices,
+    input.invoiceLines,
+    input.creditsByInvoice,
+  );
   const invoiceByOrderPage = new Map<string, InvoiceAnalyticsRecord>();
   for (const invoice of input.invoices) {
     if (invoice.orderPageId)
@@ -704,8 +907,13 @@ export function aggregateStudioAnalytics(
       input.shopStatuses,
     ),
     production: buildProductionLoad(activeOrders, today),
-    revenue: buildRevenue(input, invoiceByOrderPage),
-    payments: buildPayments(input.invoices, cancelledOrderPages),
+    revenue: buildRevenue(input, invoiceByOrderPage, invoiceValueByPage),
+    payments: buildPayments(
+      input.invoices,
+      invoiceValueByPage,
+      cancelledOrderPages,
+    ),
+    paymentLedger: buildPaymentLedger(input.payments, input.timeZone),
     topItems: buildTopItems(input.shopOrders, input.itemNames),
     topItemCoverage: buildTopItemCoverage(
       input.shopOrders,
@@ -776,6 +984,58 @@ export function __resetStudioAnalyticsCache(): void {
  * atelier can't see. A failure there surfaces as a 500, which the alert mailer
  * reports like any other.
  */
+/**
+ * Read the payment ledger over the reporting window.
+ *
+ * BEST-EFFORT, unlike the three Notion scans beside it. Those ARE the dashboard,
+ * so a failure there is a 500 rather than a page of quiet zeroes. This one adds
+ * a column to figures that stand without it, so a Postgres blip degrades the
+ * collected numbers — reported as `unavailable`, never as nought — rather than
+ * taking the whole page down with it.
+ *
+ * The window is the revenue series' own months, converted from the studio's
+ * calendar days to instants: the first moment of the first month through the
+ * first moment of the day after the last, half-open so the boundary day is
+ * counted once.
+ */
+async function readPaymentLedger(
+  window: { from: string; to: string },
+  timeZone: string,
+): Promise<StudioPaymentLedgerSource> {
+  if (!postgresConfigured()) {
+    return { configured: false, unavailable: false, rows: [] };
+  }
+  try {
+    const rows = await listPaymentsInRange(
+      zonedWallClockToInstant(window.from, 0, timeZone),
+      zonedWallClockToInstant(addCalendarDays(window.to, 1), 0, timeZone),
+    );
+    return { configured: true, unavailable: false, rows };
+  } catch (err) {
+    logger.warn(
+      { err },
+      "Studio analytics: could not read the payment ledger; collected revenue will be reported as unavailable",
+    );
+    return { configured: true, unavailable: true, rows: [] };
+  }
+}
+
+/** Credited cents per invoice. Best-effort: an unconfigured or unreachable
+ * database reports nothing credited, which overstates the invoices rather than
+ * erasing them — the safe direction for a figure that stands without it. */
+async function readCredits(): Promise<Map<string, number>> {
+  if (!postgresConfigured()) return new Map();
+  try {
+    return await sumCreditsByInvoice();
+  } catch (err) {
+    logger.warn(
+      { err },
+      "Studio analytics: could not read credit notes; invoices are reported at their uncredited value",
+    );
+    return new Map();
+  }
+}
+
 export async function getStudioAnalytics(): Promise<StudioAnalyticsResult> {
   if (cached && Date.now() - cached.fetchedAt < CACHE_TTL_MS) {
     return cached.result;
@@ -787,10 +1047,32 @@ export async function getStudioAnalytics(): Promise<StudioAnalyticsResult> {
   // mean what the studio means by them.
   const timeZone = appointmentTimezone();
 
-  const [orders, shop, invoices, variants, consignment] = await Promise.all([
+  const window = reportingWindow(now, timeZone);
+
+  const [
+    orders,
+    shop,
+    invoices,
+    invoiceLines,
+    variants,
+    consignment,
+    payments,
+    creditsByInvoice,
+  ] = await Promise.all([
     listOrdersForAnalytics(),
     listShopOrdersForAnalytics(),
     listInvoicesForAnalytics(),
+    // Best-effort, unlike the invoice heads beside it: a failed line scan
+    // falls every invoice back to its `Final Balance`, which is exactly the
+    // behavior these figures had before — degraded, not wrong, and never a
+    // page of noughts.
+    listInvoiceLinesForAnalytics().catch((err) => {
+      logger.warn(
+        { err },
+        "Studio analytics: could not read invoice lines; invoice values fall back to Notion's Final Balance",
+      );
+      return { rows: [], complete: false };
+    }),
     listVariants().catch((err) => {
       logger.warn(
         { err },
@@ -798,10 +1080,16 @@ export async function getStudioAnalytics(): Promise<StudioAnalyticsResult> {
       );
       return [];
     }),
-    // Reports its own unconfigured / unreachable states rather than throwing, so
-    // a shelf nobody has wired up costs the panel its numbers and not the
+    // Reports its own unconfigured / unreachable states rather than throwing,
+    // so a shelf nobody has wired up costs the panel its numbers and not the
     // dashboard its figures.
-    getConsignmentOverview(reportingWindow(now, timeZone)),
+    getConsignmentOverview(window),
+    readPaymentLedger(window, timeZone),
+    // Best-effort, like the ledger: a failure reports every invoice at its
+    // UNCREDITED value, which overstates rather than erasing the figures — and
+    // the three Notion scans beside it are what the dashboard actually is, so a
+    // Postgres blip must not take the page down.
+    readCredits(),
   ]);
 
   const result = aggregateStudioAnalytics({
@@ -812,6 +1100,9 @@ export async function getStudioAnalytics(): Promise<StudioAnalyticsResult> {
     shopChannels: shop.channels,
     consignment,
     invoices,
+    invoiceLines,
+    payments,
+    creditsByInvoice,
     itemNames: new Map(variants.map((variant) => [variant.id, variant.name])),
     now,
     timeZone,
