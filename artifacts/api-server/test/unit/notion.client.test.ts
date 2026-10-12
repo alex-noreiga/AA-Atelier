@@ -10,6 +10,7 @@ const ENV_KEYS = [
   "NOTION_CONTACT_DATABASE_ID",
   "NOTION_INVENTORY_DATABASE_ID",
   "NOTION_SHOP_ORDERS_DATABASE_ID",
+  "NOTION_INVOICE_LINE_ITEMS_DATABASE_ID",
 ] as const;
 
 let saved: Record<string, string | undefined>;
@@ -40,6 +41,25 @@ describe("Notion client factories", () => {
     expect(mod.getContactNotionClient().databaseId).toBe("contact-db");
     expect(mod.getInventoryNotionClient().databaseId).toBe("inventory-db");
     expect(mod.getShopOrdersNotionClient().databaseId).toBe("shop-orders-db");
+  });
+
+  it("trims whitespace a pasted env value carries", () => {
+    // The production failure: a trailing newline survives a URL (the parser
+    // strips it) but not a page create's `parent.database_id`, which Notion
+    // rejects as an invalid uuid.
+    process.env.NOTION_INVOICE_LINE_ITEMS_DATABASE_ID =
+      "ed446cbc-a004-43db-b53e-c0765ef86621\n";
+    process.env.NOTION_ORDERS_DATABASE_ID = "  orders-db\t";
+
+    expect(mod.getInvoiceLineItemsNotionClient().databaseId).toBe(
+      "ed446cbc-a004-43db-b53e-c0765ef86621",
+    );
+    expect(mod.getNotionClient().databaseId).toBe("orders-db");
+  });
+
+  it("reads a whitespace-only database id as unset", () => {
+    process.env.NOTION_ORDERS_DATABASE_ID = "\n";
+    expect(mod.getNotionClient().databaseId).toBe("");
   });
 
   it("defaults the database id to an empty string when the env var is unset", () => {
@@ -87,6 +107,18 @@ describe("NotionClient.fetch", () => {
     expect(fetchMock.mock.calls[0][1].headers).toMatchObject({
       Authorization: "Bearer secret-key",
       "X-Custom": "1",
+    });
+  });
+
+  it("trims a trailing newline off the API key before sending it", async () => {
+    const fetchMock = vi.fn().mockResolvedValue(new Response("{}"));
+    vi.stubGlobal("fetch", fetchMock);
+    process.env.NOTION_API_KEY = "secret-key\n";
+
+    await mod.getNotionClient().fetch("/v1/pages");
+
+    expect(fetchMock.mock.calls[0][1].headers).toMatchObject({
+      Authorization: "Bearer secret-key",
     });
   });
 
