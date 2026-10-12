@@ -35,7 +35,14 @@ export function assertDatabaseConfigured(
 }
 
 function createNotionClient(config: NotionClientConfig): NotionClient {
-  const { apiKey, databaseId } = config;
+  // Trimmed because a value pasted into the Vercel dashboard can carry a
+  // trailing newline. A URL hides it — the WHATWG parser strips tabs and
+  // newlines, so every query against the id still works — but a page create
+  // sends the id in the JSON body as `parent.database_id`, where Notion rejects
+  // it as "not a valid uuid". So the reads looked fine and only the first write
+  // failed (the invoice line-item generator, in production).
+  const apiKey = config.apiKey.trim();
+  const databaseId = config.databaseId.trim();
 
   return {
     databaseId,

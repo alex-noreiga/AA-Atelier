@@ -28,7 +28,9 @@ export interface NotionImageUpload {
 }
 
 function requireApiKey(): string {
-  const key = process.env.NOTION_API_KEY;
+  // Trimmed for the same reason as `createNotionClient`: a pasted env value can
+  // carry a trailing newline, which is an invalid header value.
+  const key = process.env.NOTION_API_KEY?.trim();
   if (!key) {
     throw new Error("NOTION_API_KEY environment variable is not set");
   }
