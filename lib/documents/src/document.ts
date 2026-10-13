@@ -25,6 +25,10 @@ const SANS = "helvetica";
  * documents (invoice + receipt). It owns the page geometry, the serif/sans
  * split, and the palette so the two documents read as one system; callers just
  * push sections down the page and the helper handles wrapping and page breaks.
+ *
+ * Runs in the browser (where `save()` triggers a download) and in Node (where
+ * `bytes()` hands the server the finished file) — jsPDF ships a build for each
+ * and this class touches nothing DOM-specific.
  */
 export class PdfDocument {
   readonly doc: jsPDF;
@@ -209,12 +213,15 @@ export class PdfDocument {
     }
   }
 
+  /** Trigger a browser download of the finished document. */
   save(filename: string) {
     this.doc.save(filename);
   }
+
+  /** The finished document's bytes — what the server uploads or serves. */
+  bytes(): ArrayBuffer {
+    return this.doc.output("arraybuffer");
+  }
 }
 
-/** Make a value safe to drop into a download filename. */
-export function fileSafe(value: string): string {
-  return value.replace(/[^\w.-]+/g, "-").replace(/^-+|-+$/g, "");
-}
+export { fileSafe } from "./file-safe";

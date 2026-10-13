@@ -24,6 +24,9 @@ vi.mock("../../src/services/order-cancellation.service.js", () => ({
 vi.mock("../../src/services/restock-notification.service.js", () => ({
   notifyRestock: vi.fn(),
 }));
+vi.mock("../../src/services/invoice-pdf.service.js", () => ({
+  saveInvoicePdfToNotion: vi.fn(),
+}));
 vi.mock("../../src/services/return-refund.service.js", async () => {
   const actual = await vi.importActual<
     typeof import("../../src/services/return-refund.service.js")
@@ -40,6 +43,7 @@ import { notifyOrderStageChange } from "../../src/services/order-notification.se
 import { processCancellation } from "../../src/services/order-cancellation.service.js";
 import { processReturnRefund } from "../../src/services/return-refund.service.js";
 import { notifyRestock } from "../../src/services/restock-notification.service.js";
+import { saveInvoicePdfToNotion } from "../../src/services/invoice-pdf.service.js";
 import { BadRequestError, NotFoundError } from "../../src/lib/errors.js";
 
 const mockMilestones = vi.mocked(reconcileMilestones);
@@ -48,6 +52,7 @@ const mockNotify = vi.mocked(notifyOrderStageChange);
 const mockCancel = vi.mocked(processCancellation);
 const mockReturn = vi.mocked(processReturnRefund);
 const mockRestock = vi.mocked(notifyRestock);
+const mockSavePdf = vi.mocked(saveInvoicePdfToNotion);
 
 describe("runStudioTool — milestones", () => {
   it("reports what the reconciliation did, including the reminder passes", async () => {
@@ -550,5 +555,54 @@ describe("runStudioTool — restock-alert", () => {
     await expect(
       runStudioTool("restock-alert", { item: "Nothing" }),
     ).rejects.toBeInstanceOf(NotFoundError);
+  });
+});
+
+describe("runStudioTool — invoice-pdf", () => {
+  const saved = {
+    orderNumber: "ORD-000002",
+    orderName: "Ada – Custom Costume",
+    invoiceId: "ORD-000002",
+    filename: "AA-Atelier-Invoice-ORD-000002.pdf",
+    contentType: "application/pdf" as const,
+    bytes: Buffer.from("%PDF-1.3"),
+    lineCount: 3,
+    balanceDue: 145,
+    paid: false,
+    placement: "property" as const,
+  };
+
+  it("saves the PDF and says it replaced the copy on the property", async () => {
+    mockSavePdf.mockResolvedValue(saved);
+
+    const result = await runStudioTool("invoice-pdf", {
+      orderNumber: " ORD-000002 ",
+    });
+
+    expect(mockSavePdf).toHaveBeenCalledWith("ORD-000002");
+    expect(result.status).toBe("ok");
+    expect(result.title).toBe("Invoice PDF saved");
+    expect(result.message).toContain("AA-Atelier-Invoice-ORD-000002.pdf");
+    expect(result.details[0]).toMatch(/"Invoice PDF" property/);
+    expect(result.details[1]).toContain("$145.00 due");
+  });
+
+  it("says where the file went when the property is missing", async () => {
+    mockSavePdf.mockResolvedValue({ ...saved, placement: "page", paid: true });
+
+    const result = await runStudioTool("invoice-pdf", {
+      orderNumber: "ORD-000002",
+    });
+
+    expect(result.status).toBe("ok");
+    expect(result.details[0]).toMatch(/bottom of the invoice page/);
+    expect(result.details[1]).toMatch(/balance as paid/);
+  });
+
+  it("refuses to run without an order number", async () => {
+    await expect(runStudioTool("invoice-pdf", {})).rejects.toBeInstanceOf(
+      BadRequestError,
+    );
+    expect(mockSavePdf).not.toHaveBeenCalled();
   });
 });

@@ -1,4 +1,5 @@
 import { Router } from "express";
+import { z } from "zod";
 import {
   CreateStaffAvailabilityBody,
   CreateStaffAvailabilityResponse,
@@ -52,6 +53,7 @@ import {
   type StudioToolArgs,
   type StudioToolName,
 } from "../services/studio-tools.service.js";
+import { renderInvoicePdf } from "../services/invoice-pdf.service.js";
 import {
   getReviewQueue,
   setReviewModeration,
@@ -154,6 +156,35 @@ router.post(
     const { tool } = res.locals.params as { tool: StudioToolName };
     const result = await runStudioTool(tool, res.locals.body as StudioToolArgs);
     res.json(RunStudioToolResponse.parse(result));
+  },
+);
+
+// The customer's invoice PDF, rendered on the server for the dashboard.
+//
+// This is the preview half of the `invoice-pdf` tool: the same bytes the tool
+// saves to Notion, served to the signed-in atelier to look at or download. It
+// is a binary response, so — like the reference-image upload — it sits
+// deliberately OUTSIDE the OpenAPI contract and the generated client (which are
+// JSON-only); the dashboard fetches it with a plain `fetch` carrying the same
+// Bearer token. The gate is the same `requireStaff` as everything else here. A
+// `no-store` cache header keeps a document with a customer's name and balance
+// out of any shared cache, and `inline` lets the browser render it in place.
+const InvoicePdfParams = z.object({
+  orderNumber: z.string().trim().min(1).max(64),
+});
+
+router.get(
+  "/studio/invoices/:orderNumber/pdf",
+  studioRateLimiter,
+  requireStaff,
+  validate({ params: InvoicePdfParams }),
+  async (_req, res) => {
+    const { orderNumber } = res.locals.params as { orderNumber: string };
+    const pdf = await renderInvoicePdf(orderNumber);
+    res.setHeader("Content-Type", pdf.contentType);
+    res.setHeader("Content-Disposition", `inline; filename="${pdf.filename}"`);
+    res.setHeader("Cache-Control", "private, no-store");
+    res.send(pdf.bytes);
   },
 );
 

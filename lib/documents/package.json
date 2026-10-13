@@ -1,0 +1,18 @@
+{
+  "name": "@workspace/documents",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "sideEffects": false,
+  "exports": {
+    ".": "./src/index.ts",
+    "./format": "./src/format.ts",
+    "./invoice-format": "./src/invoice-format.ts",
+    "./studio": "./src/studio.ts",
+    "./filenames": "./src/filenames.ts"
+  },
+  "dependencies": {
+    "@workspace/api-zod": "workspace:*",
+    "jspdf": "^4.2.1"
+  }
+}

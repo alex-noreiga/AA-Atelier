@@ -1,8 +1,12 @@
 // The atelier's public contact details, shared by the Contact page and the
-// global footer so the two can't drift. These are the single source of truth
-// for the studio's email, location, and Instagram — to change any of them,
-// edit here and both surfaces update.
-export const CONTACT_EMAIL = "hello@a3iceanddance.com";
-export const CONTACT_LOCATION = "Huntsville, Alabama · by appointment";
+// global footer so the two can't drift. The email and location come from
+// `@workspace/documents`, which prints them on the PDF invoice and receipt —
+// one source of truth for the studio's address on screen and on paper. To change
+// any of them, edit there (or the Instagram handle here) and every surface
+// updates.
+import { STUDIO_EMAIL, STUDIO_LOCATION } from "@workspace/documents/studio";
+
+export const CONTACT_EMAIL = STUDIO_EMAIL;
+export const CONTACT_LOCATION = STUDIO_LOCATION;
 export const INSTAGRAM_HANDLE = "@a3iceanddance";
 export const INSTAGRAM_URL = "https://instagram.com/a3iceanddance";

@@ -15,6 +15,7 @@ import {
   findInvoicesNeedingPaymentReminder,
   markPaymentStageReminded,
   listInvoicesForAnalytics,
+  attachInvoicePdf,
 } from "../../src/lib/notion/invoice.repository.js";
 
 const isQuery = (path: string) => path.endsWith("/query");
@@ -360,6 +361,104 @@ describe("listInvoicesForAnalytics", () => {
     const client = makeFakeClient(() => jsonResponse({}), "");
     await expect(listInvoicesForAnalytics(client)).rejects.toThrow(
       /NOTION_INVOICES_DATABASE_ID is not configured/,
+    );
+  });
+});
+
+describe("attachInvoicePdf", () => {
+  const file = {
+    fileUploadId: "upload-1",
+    filename: "AA-Atelier-Invoice-ORD-000002.pdf",
+  };
+
+  it("puts the upload on the Invoice PDF files property", async () => {
+    const client = makeFakeClient(() => jsonResponse({ id: "inv-1" }));
+
+    const placement = await attachInvoicePdf("inv-1", file, client);
+
+    expect(placement).toBe("property");
+    expect(client.calls).toHaveLength(1);
+    expect(client.calls[0].path).toBe("/v1/pages/inv-1");
+    expect(client.calls[0].init?.method).toBe("PATCH");
+    expect(JSON.parse(client.calls[0].init?.body as string)).toEqual({
+      properties: {
+        "Invoice PDF": {
+          files: [
+            {
+              type: "file_upload",
+              file_upload: { id: "upload-1" },
+              name: "AA-Atelier-Invoice-ORD-000002.pdf",
+            },
+          ],
+        },
+      },
+    });
+  });
+
+  it("falls back to a pdf block on the page when the property doesn't exist", async () => {
+    const client = makeFakeClient((path) =>
+      path === "/v1/pages/inv-1"
+        ? jsonResponse(
+            {
+              object: "error",
+              status: 400,
+              code: "validation_error",
+              message: "Invoice PDF is not a property that exists.",
+            },
+            400,
+          )
+        : jsonResponse({ results: [] }),
+    );
+
+    const placement = await attachInvoicePdf("inv-1", file, client);
+
+    expect(placement).toBe("page");
+    expect(client.calls.map((c) => c.path)).toEqual([
+      "/v1/pages/inv-1",
+      "/v1/blocks/inv-1/children",
+    ]);
+    expect(JSON.parse(client.calls[1].init?.body as string)).toEqual({
+      children: [
+        {
+          object: "block",
+          type: "pdf",
+          pdf: { type: "file_upload", file_upload: { id: "upload-1" } },
+        },
+      ],
+    });
+  });
+
+  it("throws on any other rejection rather than guessing at a fallback", async () => {
+    const client = makeFakeClient(() =>
+      jsonResponse(
+        {
+          object: "error",
+          status: 400,
+          code: "validation_error",
+          message: "body failed validation: file_upload is not completed.",
+        },
+        400,
+      ),
+    );
+
+    await expect(attachInvoicePdf("inv-1", file, client)).rejects.toThrow(
+      /attach failed with status 400/,
+    );
+    expect(client.calls).toHaveLength(1);
+  });
+
+  it("throws when the page append fails too", async () => {
+    const client = makeFakeClient((path) =>
+      path === "/v1/pages/inv-1"
+        ? jsonResponse(
+            { message: "Invoice PDF is not a property that exists." },
+            400,
+          )
+        : errorResponse(500, "boom"),
+    );
+
+    await expect(attachInvoicePdf("inv-1", file, client)).rejects.toThrow(
+      /append failed with status 500/,
     );
   });
 });

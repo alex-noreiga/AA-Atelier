@@ -11,7 +11,7 @@
  */
 export interface StudioToolRequest {
   /**
-     * The order the tool acts on — `ORD-…` for a custom order, `SHP-…` for a shop order. Required by `invoice-lines`, `quote`, `status-email` and the two refunds; `milestones` sweeps the whole pipeline and `restock-alert` takes an optional `item` instead.
+     * The order the tool acts on — `ORD-…` for a custom order, `SHP-…` for a shop order. Required by `invoice-lines`, `quote`, `invoice-pdf`, `status-email` and the two refunds; `milestones` sweeps the whole pipeline and `restock-alert` takes an optional `item` instead.
      * @maxLength 64
      */
   orderNumber?: string;

@@ -51,6 +51,10 @@ lib/
   api-spec/          OpenAPI spec (openapi.yaml) + orval codegen config — SOURCE OF TRUTH
   api-zod/           GENERATED zod schemas from the spec (server-side validation)
   api-client-react/  GENERATED react-query hooks + typed fetch client (frontend)
+  documents/         The printed documents (the invoice PDF's jsPDF layout, the
+                     line-item grouping, price/date formatting, the studio's
+                     contact line) — ONE implementation the browser and the
+                     server both render from. See "Invoice PDFs"
   test-fixtures/     Shared domain fixtures for all three test suites
 supabase/migrations/ Postgres schema (SQL applied by `db:migrate`)
 scripts/             Bash tooling: cleanup.sh (`pnpm clean`), install-hooks.sh
@@ -371,6 +375,17 @@ Express app (artifacts/api-server)  ──►  Notion REST API (orders database)
   │                                  away; refused (409) with no audience
   │                                  configured or no address. Dismissing without
   │                                  adding is the request-state operation above
+  ├─ GET  /api/studio/invoices/:n/pdf
+  │                                → the customer's invoice PDF for custom order
+  │                                  :n, rendered on the server by the SAME
+  │                                  layout code the customer's download runs
+  │                                  (`lib/documents`), for the dashboard to show
+  │                                  in place. Raw `application/pdf` bytes, so
+  │                                  NOT part of the OpenAPI contract (like the
+  │                                  reference-image upload); same `requireStaff`
+  │                                  gate as the figures. Refused with the reason
+  │                                  (400) when the invoice isn't `Invoice Ready`
+  │                                  — the customer has no PDF then either
   └─ POST /api/studio/tools/:tool  → the atelier's internal actions, run from the
                                      signed-in studio dashboard: milestone
                                      reconciliation (`milestones`, the same sweep
@@ -379,7 +394,10 @@ Express app (artifacts/api-server)  ──►  Notion REST API (orders database)
                                      (`invoice-lines`), a flat service quote
                                      (`quote` — a required `amount` + an optional
                                      `description`, for work with no costing
-                                     behind it; see "Flat-price quotes"), an order
+                                     behind it; see "Flat-price quotes"), saving
+                                     the customer's invoice PDF onto the invoice's
+                                     Notion page (`invoice-pdf`; see "Invoice
+                                     PDFs"), an order
                                      status-change email (`status-email`, with a
                                      `force` resend), the cancellation refund
                                      (`cancellation-refund`), the return /
@@ -1179,6 +1197,88 @@ the `quote` runner in `services/studio-tools.service.ts`, `LINE_TYPE_SERVICE` in
 **Atelier setup: none.** No env var, no new database, no Notion property — it
 writes the `Invoice Line Items` and `Invoice Ready` that already exist, and
 Notion creates the `Service` option itself.
+
+### Invoice PDFs: on the dashboard and in Notion
+
+A customer downloads a branded PDF of their invoice from `/invoice/:orderNumber`
+(`components/download-pdf-button.tsx` → `lib/pdf/invoice-pdf.ts`). The atelier
+wants to see that same document without pretending to be the customer — on the
+studio dashboard, and as a copy kept on the invoice's own Notion page — and the
+only way for "the PDF the customer is shown" to mean exactly that is for the
+server to run the same layout code. So the layout moved into a shared workspace
+package, **`lib/documents`** (`@workspace/documents`), which both the browser and
+the api-server import; jsPDF is isomorphic (it ships a Node build), and
+`PdfDocument` touches nothing DOM-specific. Code: `lib/documents/src/*`,
+`services/invoice-pdf.service.ts` (`renderInvoicePdf` / `saveInvoicePdfToNotion`),
+`attachInvoicePdf` in `lib/notion/invoice.repository.ts`, `uploadFileToNotion` in
+`lib/notion/file-uploads.repository.ts` (the reference-image relay, generalized),
+the `GET /studio/invoices/:orderNumber/pdf` route and the `invoice-pdf` tool, and on
+the frontend `components/studio-invoice-pdf.tsx` + `lib/studio-invoice-pdf.ts`
+(the **Invoice PDF** card in `components/studio-tools.tsx`).
+
+1. **One layout, three renderings.** `buildInvoiceDoc` is called by the
+   customer's download (browser), the dashboard preview (server) and the Notion
+   save (server), always fed the same `Invoice` + `InvoiceDeposit` view —
+   `invoicePaymentInfoFor` in `invoice.service.ts` is the one place that view is
+   assembled, and `GET /orders/:n` reads it through the same function. There is
+   deliberately no second template: a layout that lives twice drifts a line at a
+   time, and this feature exists precisely so the atelier is looking at the
+   customer's document.
+
+2. **The server renders what the customer can see, and nothing earlier.** An
+   invoice that isn't `Invoice Ready` has no customer-facing PDF (the tracking
+   page shows nothing to pay), so both the preview and the save answer with a
+   400 saying so — tick `Invoice Ready` (a flat quote ticks it for you) — rather
+   than with a draft the customer couldn't have downloaded. The itemize →
+   review → tick-ready flow is unchanged; reviewing an itemization before it
+   goes out is still done on the invoice itself.
+
+3. **The preview is a binary route outside the contract; the save is a tool.**
+   `GET /studio/invoices/:orderNumber/pdf` answers with `application/pdf` bytes
+   (`inline`, `Cache-Control: private, no-store`), so like the reference-image
+   upload it is hand-mounted and fetched with a plain `fetch` carrying the same
+   Bearer token (`lib/studio-invoice-pdf.ts`); the generated client is
+   JSON-only. The dashboard shows the bytes in a frame through an object URL
+   (released when replaced or unmounted) with download / open-in-tab links. A
+   preview changes nothing, which is why it is not a tool with a result;
+   `POST /studio/tools/invoice-pdf` is, because it writes.
+
+4. **In Notion the copy goes on an `Invoice PDF` files property, replacing the
+   previous one — and degrades to the page body.** The PDF is a rendering of
+   the invoice as it stands, so the row should carry the current copy rather
+   than a history of every press (Notion's own page history keeps the rest).
+   When the database has no such property, Notion rejects the whole PATCH over
+   the one unknown property (the same 400 `createPageDroppingUnknownProperties`
+   parses, via `findUnknownProperty`), and `attachInvoicePdf` appends a `pdf`
+   block to the invoice page instead, warns naming the property, and the tool's
+   result says where the file went. Any other failure throws: a completed
+   upload can only be attached once and within an hour, so there is nothing to
+   retry quietly. Upload and attach are two Notion calls; the upload goes first,
+   and a failed upload never attaches.
+
+5. **The Notion copy is a snapshot, and the result says so.** The customer's
+   download is always built live; the file in Notion is the invoice as it stood
+   when the atelier pressed Save. Save it again after the invoice changes.
+
+6. **The package is split into sub-paths so jsPDF stays code-split in the
+   browser.** The root export (`@workspace/documents`) pulls in jsPDF; the
+   pieces the web app needs on every page — `formatPrice` / `formatDate`, the
+   line-item grouping, the studio contact line, the filename — are published
+   as `@workspace/documents/format`, `/invoice-format`, `/studio` and
+   `/filenames`, which import none of it, and the web app's `lib/format.ts`,
+   `lib/invoice-format.ts` and `lib/contact-info.ts` re-export from those.
+   Import the root only from code that is itself behind the download's dynamic
+   import. On the server, jsPDF's optional `canvg` / `html2canvas` / `dompurify`
+   (lazily `require`d inside a try/catch for the HTML-to-PDF path this app never
+   calls) are marked `external` in `api-server/build.mjs`, which keeps ~1.5 MB
+   of DOM emulation out of the serverless bundle.
+
+**Atelier setup (optional, additive):** add an **`Invoice PDF`** (files & media)
+property to **invoices & payments**. Until it exists each save lands as a block
+at the bottom of the invoice page instead — still kept, just not one current
+copy per row. No env var, no new database. Known limits: the PDF is text-only
+(no reference images), one copy per press on the page-body fallback, and no
+automatic save on itemize or quote — a review step the atelier owns.
 
 ### What a payment stage is CALLED, per service
 
@@ -5359,6 +5459,7 @@ Three things about it are load-bearing:
 | Change the footer / legal pages                          | `artifacts/web-app/src/components/footer.tsx` (global, in `App.tsx`) + `pages/{privacy,terms,shipping-returns}.tsx` + `components/legal-page.tsx`; shared studio contact details in `lib/contact-info.ts`                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                           |
 | Change custom-order payments (deposits + balance)        | `artifacts/web-app/src/components/custom-order-result.tsx` (`DepositsSection`, rendered by `pages/track.tsx`) + `pages/invoice.tsx`; `api-server/src/services/invoice.service.ts` (`createPaymentCheckout`/`recordPayment`) + `routes/orders.ts` (`POST /orders/:n/payments/:stage`) + `lib/notion/invoice.{schema,repository}.ts` + `routes/stripe-webhook.ts`                                                                                                                                                                                                                                                                                                                                                                                                                                                                     |
 | Quote a flat price for work with no costing              | `api-server/src/services/quote.service.ts` + the `quote` runner in `services/studio-tools.service.ts` + `LINE_TYPE_SERVICE` in `lib/notion/invoice-line-items.blocks.ts` + `setInvoiceReady` in `lib/notion/invoice.repository.ts`; the card is in `web-app/src/components/studio-tools.tsx` and the display heading in `web-app/src/lib/invoice-format.ts`                                                                                                                                                                                                                                                                                                                                                                                                                                                                         |
+| See or save the customer's invoice PDF                   | `lib/documents/src/invoice-pdf.ts` (the layout — ONE copy, rendered by the browser's download and the server alike) + `api-server/src/services/invoice-pdf.service.ts` (`renderInvoicePdf` / `saveInvoicePdfToNotion`) + `attachInvoicePdf` in `lib/notion/invoice.repository.ts` + the `GET /studio/invoices/:orderNumber/pdf` route and the `invoice-pdf` runner in `services/studio-tools.service.ts`; frontend `web-app/src/components/studio-invoice-pdf.tsx` + `lib/studio-invoice-pdf.ts` (the preview on the **Invoice PDF** tool card). Import `@workspace/documents` root only behind a dynamic import — see "Invoice PDFs"                                                                                                                                                                                               |
 | Change what a payment stage is called                    | `OrderServiceDef.payment` in `api-server/src/lib/service-catalog.ts` (which service is `staged` vs `single`) + `services/payment-labels.ts` (the pure relabeller); applied in `getInvoicePaymentInfo` (`services/invoice.service.ts`) and `sendDuePaymentReminders` (`services/schedule.service.ts`)                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                |
 | Change invoice line-item generation (from costing)       | `api-server/src/services/invoice-generator.service.ts` + the `invoice-lines` studio tool (`services/studio-tools.service.ts`) + `lib/notion/costing.{schema,repository}.ts` + `lib/notion/invoice-line-items.blocks.ts` + `createInvoiceLineItem`/`setInvoiceTitle` in `lib/notion/invoice.repository.ts`                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                           |
 | Change production-schedule milestones                    | `api-server/src/services/schedule.service.ts` + `routes/cron.ts` + `lib/notion/production-schedule.{blocks,repository}.ts` + `lib/notion/orders.repository.ts` (`findOrdersNeedingMilestones`/`markMilestonesGenerated`); cron in `vercel.json`                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                     |

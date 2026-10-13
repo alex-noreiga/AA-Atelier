@@ -37,6 +37,7 @@
 import { reconcileMilestones } from "./schedule.service.js";
 import { generateInvoiceLineItems } from "./invoice-generator.service.js";
 import { quoteOrder } from "./quote.service.js";
+import { saveInvoicePdfToNotion } from "./invoice-pdf.service.js";
 import {
   notifyOrderStageChange,
   type StageChangeNotificationResult,
@@ -62,6 +63,7 @@ export type StudioToolName =
   | "milestones"
   | "invoice-lines"
   | "quote"
+  | "invoice-pdf"
   | "status-email"
   | "cancellation-refund"
   | "return-refund"
@@ -209,6 +211,34 @@ async function runInvoiceLines(
     title: "Invoice itemized",
     message: `Added ${listPhrase(parts)} to invoice ${result.orderNumber}, totalling ${money(result.invoiceTotal)}.`,
     details: [],
+  };
+}
+
+/** Keep a copy of the customer's invoice PDF on the invoice's Notion page — the
+ * same document the customer downloads, rendered by the server. Previewing it
+ * on the dashboard is `GET /studio/invoices/:orderNumber/pdf`, not a tool run:
+ * a preview changes nothing, so it has no result to compose. */
+async function runInvoicePdf(
+  args: StudioToolArgs,
+): Promise<StudioToolRunResult> {
+  const result = await saveInvoicePdfToNotion(requireOrderNumber(args));
+
+  const details = [
+    result.placement === "property"
+      ? `It's on the invoice's "Invoice PDF" property, replacing any earlier copy.`
+      : `The invoices database has no "Invoice PDF" files property yet, so the file was added to the bottom of the invoice page instead. Add that property to keep one current copy per invoice.`,
+    result.paid
+      ? `The document shows the balance as paid.`
+      : `The document shows ${money(result.balanceDue)} due.`,
+    "This is a snapshot — save it again after the invoice changes.",
+  ];
+
+  return {
+    tool: "invoice-pdf",
+    status: "ok",
+    title: "Invoice PDF saved",
+    message: `Saved ${result.filename} to invoice ${result.orderNumber} in Notion — the same PDF the customer downloads from their invoice page.`,
+    details,
   };
 }
 
@@ -511,6 +541,8 @@ function dispatch(
       return runInvoiceLines(args);
     case "quote":
       return runQuote(args);
+    case "invoice-pdf":
+      return runInvoicePdf(args);
     case "status-email":
       return runStatusEmail(args);
     case "cancellation-refund":
