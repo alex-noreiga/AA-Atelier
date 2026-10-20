@@ -102,10 +102,30 @@ export function buildInvoiceView(
  */
 export async function getInvoicePaymentInfo(
   order: OrderRecord,
-): Promise<{ deposits: InvoiceDepositView[]; invoice: InvoiceView | null }> {
+): Promise<InvoicePaymentInfo> {
   if (!order.invoicePageId) return { deposits: [], invoice: null };
   const invoice = await findInvoice(order.invoicePageId);
   if (!invoice) return { deposits: [], invoice: null };
+  return invoicePaymentInfoFor(order, invoice);
+}
+
+/** What the status page shows for an order's payments. */
+export interface InvoicePaymentInfo {
+  deposits: InvoiceDepositView[];
+  invoice: InvoiceView | null;
+}
+
+/**
+ * The same derivation, for a caller that has already read the invoice head —
+ * the invoice PDF tool, which needs to look at `ready` itself to say WHY there
+ * is nothing to render. Kept as the one place the customer-facing view is
+ * assembled, so the PDF the atelier sees is built from exactly what the
+ * customer is shown.
+ */
+export async function invoicePaymentInfoFor(
+  order: OrderRecord,
+  invoice: InvoiceRecord,
+): Promise<InvoicePaymentInfo> {
   // The invoice holds the same three stages for every order; the order's service
   // decides what they're CALLED. A repair paid in one go reads "Deposit", not
   // "First deposit" — see `services/payment-labels.ts`. Nothing about the

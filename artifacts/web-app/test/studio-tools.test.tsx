@@ -12,6 +12,11 @@ import userEvent from "@testing-library/user-event";
 import type { Mock } from "vitest";
 
 const h = vi.hoisted(() => ({ mutate: vi.fn(), isPending: false }));
+// The invoice PDF card carries a preview that fetches bytes outside the
+// generated client; that component has its own test, so it only needs to not
+// touch the network here.
+vi.mock("@/lib/studio-invoice-pdf", () => ({ fetchInvoicePdf: vi.fn() }));
+
 vi.mock("@workspace/api-client-react", () => ({
   useRunStudioTool: () => ({ mutate: h.mutate, isPending: h.isPending }),
   // Each tool card carries the guides filed against it; that panel has its own
@@ -570,6 +575,38 @@ describe("a hand-off from the request queue", () => {
     expect(screen.queryByTestId("tool-cancellation-refund-result")).toBeNull();
     expect(screen.getByTestId("tool-cancellation-refund-order")).toHaveValue(
       "ORD-000009",
+    );
+  });
+});
+
+describe("StudioTools — invoice PDF", () => {
+  it("saves the PDF to Notion for the typed order, and offers a preview beside it", async () => {
+    succeedWith({
+      tool: "invoice-pdf",
+      status: "ok",
+      title: "Invoice PDF saved",
+      message:
+        "Saved AA-Atelier-Invoice-ORD-000002.pdf to invoice ORD-000002 in Notion — the same PDF the customer downloads from their invoice page.",
+    });
+    render(<StudioTools />);
+
+    expect(screen.getByTestId("tool-invoice-pdf-run")).toBeDisabled();
+    expect(screen.getByTestId("invoice-pdf-preview-open")).toBeDisabled();
+
+    await userEvent.type(
+      screen.getByTestId("tool-invoice-pdf-order"),
+      "ORD-000002",
+    );
+    expect(screen.getByTestId("invoice-pdf-preview-open")).toBeEnabled();
+
+    await userEvent.click(screen.getByTestId("tool-invoice-pdf-run"));
+
+    expect(mutate).toHaveBeenCalledWith(
+      { tool: "invoice-pdf", data: { orderNumber: "ORD-000002" } },
+      expect.anything(),
+    );
+    expect(screen.getByTestId("tool-invoice-pdf-result")).toHaveTextContent(
+      "Invoice PDF saved",
     );
   });
 });

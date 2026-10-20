@@ -29,6 +29,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { serverErrorMessage } from "@/lib/api-error";
 import { GuidesFor } from "@/components/studio-guides";
+import { InvoicePdfPreview } from "@/components/studio-invoice-pdf";
 import type { ToolHandoff } from "@/lib/studio-handoff";
 import {
   Loader2,
@@ -83,6 +84,9 @@ interface ToolSpec {
   };
   /** Offer a free-text line describing the work (the quote only). */
   offersDescription?: { label: string; placeholder: string };
+  /** Show the server-rendered invoice PDF for the order in the field (the
+   * invoice PDF tool only) — the look-at-it half of a card whose run saves it. */
+  offersPreview?: boolean;
   /** Ask again before running — the tools that move money. */
   destructive?: boolean;
   /** The button's verb. */
@@ -118,6 +122,15 @@ const TOOLS: ToolSpec[] = [
       placeholder: "Re-stone bodice",
     },
     action: "Send quote",
+  },
+  {
+    tool: "invoice-pdf",
+    name: "Invoice PDF",
+    description:
+      "The invoice exactly as the customer downloads it from their invoice page. Preview it here, or save a copy onto the invoice's page in Notion.",
+    field: orderField("ORD-000002"),
+    offersPreview: true,
+    action: "Save to Notion",
   },
   {
     tool: "status-email",
@@ -384,6 +397,8 @@ function ToolCard({
           {spec.action}
         </Button>
       </div>
+
+      {spec.offersPreview && <InvoicePdfPreview orderNumber={subject} />}
 
       {spec.offersForce && (
         <label

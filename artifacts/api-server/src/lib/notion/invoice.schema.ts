@@ -19,6 +19,11 @@ export const INVOICE_READY_PROPERTY = "Invoice Ready"; // checkbox (the balance 
 export const INVOICE_BALANCE_PAID_PROPERTY = "Balance Paid"; // checkbox
 export const INVOICE_BALANCE_SESSION_PROPERTY = "Balance Payment Session Id"; // rich_text
 export const INVOICE_PAYMENT_DEADLINE_PROPERTY = "Payment Deadline"; // date (the balance due date)
+// Where the server keeps its rendered copy of the customer's invoice PDF — a
+// `files` property the atelier adds (optional: without it the copy lands on the
+// page body instead, see `attachInvoicePdf`). Replaced on every save, so the
+// row always holds the latest rendering rather than a history.
+export const INVOICE_PDF_PROPERTY = "Invoice PDF"; // files
 // The relation back to the order in the Order Tracking Pipeline (one invoice per
 // order). Read by the payment-reminder pass to resolve the customer email off the
 // order — the app looks an invoice up FROM an order everywhere else (the order's

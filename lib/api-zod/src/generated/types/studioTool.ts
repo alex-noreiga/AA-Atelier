@@ -7,7 +7,7 @@
  */
 
 /**
- * Which internal tool to run. Each names an action the atelier used to trigger by opening a shared-secret link from Notion — or, for `restock-alert`, one that would have needed such a link.
+ * Which internal tool to run. Each names an action the atelier used to trigger by opening a shared-secret link from Notion — or, for `restock-alert`, `quote` and `invoice-pdf`, one that would have needed such a link. `invoice-pdf` renders the invoice exactly as the customer downloads it and keeps a copy on the invoice's Notion page; the preview of the same document is `GET /studio/invoices/{orderNumber}/pdf`, a binary route outside this contract.
  */
 export type StudioTool = typeof StudioTool[keyof typeof StudioTool];
 
@@ -16,6 +16,7 @@ export const StudioTool = {
   milestones: 'milestones',
   'invoice-lines': 'invoice-lines',
   quote: 'quote',
+  'invoice-pdf': 'invoice-pdf',
   'status-email': 'status-email',
   'cancellation-refund': 'cancellation-refund',
   'return-refund': 'return-refund',

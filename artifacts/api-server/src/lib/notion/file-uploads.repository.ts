@@ -1,6 +1,9 @@
-// Relays a single small image to Notion's File Upload API and returns the
-// resulting `file_upload` id, which callers attach to a page (see
-// `orders.blocks.ts`, which references it from an `image` block).
+// Relays a single small file to Notion's File Upload API and returns the
+// resulting `file_upload` id, which callers attach to a page: a customer's
+// reference image (see `orders.blocks.ts`, which references it from an `image`
+// block) or the invoice PDF the server renders for the atelier (see
+// `attachInvoicePdf` in `invoice.repository.ts`, which puts it on a `files`
+// property).
 //
 // This deliberately does NOT go through the shared `NotionClient` (client.ts):
 // that client hardcodes `Content-Type: application/json`, but the upload "send"
@@ -17,15 +20,18 @@
 const NOTION_VERSION = "2022-06-28";
 const NOTION_BASE_URL = "https://api.notion.com";
 
-/** A prepared image ready to relay to Notion. */
-export interface NotionImageUpload {
-  /** The raw image bytes. */
+/** A prepared file ready to relay to Notion. */
+export interface NotionFileUpload {
+  /** The raw file bytes. */
   data: Buffer;
   /** A filename for the upload (shown in Notion). */
   filename: string;
-  /** The image MIME type, e.g. "image/jpeg". */
+  /** The file's MIME type, e.g. "image/jpeg" or "application/pdf". */
   contentType: string;
 }
+
+/** The image case, kept under its original name for the upload route. */
+export type NotionImageUpload = NotionFileUpload;
 
 function requireApiKey(): string {
   // Trimmed for the same reason as `createNotionClient`: a pasted env value can
@@ -44,12 +50,12 @@ interface CreatedFileUpload {
 }
 
 /**
- * Upload one image to Notion and return its `file_upload` id. Throws on any
- * non-2xx from either step so the caller (the upload route) can turn it into an
- * error response.
+ * Upload one file to Notion and return its `file_upload` id. Throws on any
+ * non-2xx from either step so the caller (the upload route, or the invoice
+ * PDF tool) can turn it into an error response.
  */
-export async function uploadImageToNotion(
-  image: NotionImageUpload,
+export async function uploadFileToNotion(
+  image: NotionFileUpload,
 ): Promise<string> {
   const apiKey = requireApiKey();
   const authHeaders = {
@@ -100,3 +106,6 @@ export async function uploadImageToNotion(
 
   return created.id;
 }
+
+/** The image case, kept under its original name for the upload route. */
+export const uploadImageToNotion = uploadFileToNotion;

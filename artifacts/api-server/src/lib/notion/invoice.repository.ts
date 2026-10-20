@@ -15,6 +15,7 @@ import { scanDatabase } from "./scan.js";
 import {
   LINE_ITEM_INVOICE_RELATION_PROPERTY,
   INVOICE_ID_PROPERTY,
+  INVOICE_PDF_PROPERTY,
   INVOICE_READY_PROPERTY,
   PAYMENT_STAGES,
   PAYMENT_STAGE_REMINDER_FIELDS,
@@ -35,6 +36,7 @@ import {
   buildInvoiceLineItemProperties,
   type InvoiceLineItemInput,
 } from "./invoice-line-items.blocks.js";
+import { findUnknownProperty } from "./create-page.js";
 
 function assertConfigured(client: NotionClient, envVar: string): void {
   assertDatabaseConfigured(
@@ -365,6 +367,84 @@ export async function setInvoiceReady(
       `Notion invoice ready update failed with status ${response.status}: ${errorText}`,
     );
   }
+}
+
+/** Where `attachInvoicePdf` managed to put the file. */
+export type InvoicePdfPlacement = "property" | "page";
+
+/**
+ * Attach a rendered invoice PDF — already relayed to Notion's File Upload API
+ * by `uploadFileToNotion` — to the invoice page.
+ *
+ * It goes on the `Invoice PDF` files property first, REPLACING whatever that
+ * property held: the PDF is a rendering of the invoice as it stands, so the row
+ * should carry the current one, not a history of every press. When the
+ * database has no such property (Notion rejects the whole PATCH over one
+ * unknown property, the same 400 `createPageDroppingUnknownProperties` parses),
+ * the file is appended to the page body as a `pdf` block instead, so the copy is
+ * kept with zero atelier setup and the caller can say where it went. Any other
+ * failure throws — a completed upload can only be attached once and within an
+ * hour, so there is nothing to retry quietly.
+ */
+export async function attachInvoicePdf(
+  invoicePageId: string,
+  file: { fileUploadId: string; filename: string },
+  client: NotionClient = getInvoicesNotionClient(),
+): Promise<InvoicePdfPlacement> {
+  assertConfigured(client, "NOTION_INVOICES_DATABASE_ID");
+
+  const properties = {
+    [INVOICE_PDF_PROPERTY]: {
+      files: [
+        {
+          type: "file_upload",
+          file_upload: { id: file.fileUploadId },
+          name: file.filename,
+        },
+      ],
+    },
+  };
+  const onProperty = await client.fetch(`/v1/pages/${invoicePageId}`, {
+    method: "PATCH",
+    body: JSON.stringify({ properties }),
+  });
+  if (onProperty.ok) return "property";
+
+  const errorText = await onProperty.text();
+  if (
+    onProperty.status !== 400 ||
+    findUnknownProperty(errorText, properties) !== INVOICE_PDF_PROPERTY
+  ) {
+    throw new Error(
+      `Notion invoice PDF attach failed with status ${onProperty.status}: ${errorText}`,
+    );
+  }
+
+  logger.warn(
+    { invoicePageId, property: INVOICE_PDF_PROPERTY },
+    "The invoices database has no files property for the PDF; appending it to the invoice page body instead. Add the property to keep one current copy per invoice.",
+  );
+  const onPage = await client.fetch(`/v1/blocks/${invoicePageId}/children`, {
+    method: "PATCH",
+    body: JSON.stringify({
+      children: [
+        {
+          object: "block",
+          type: "pdf",
+          pdf: {
+            type: "file_upload",
+            file_upload: { id: file.fileUploadId },
+          },
+        },
+      ],
+    }),
+  });
+  if (!onPage.ok) {
+    throw new Error(
+      `Notion invoice PDF append failed with status ${onPage.status}: ${await onPage.text()}`,
+    );
+  }
+  return "page";
 }
 
 /**

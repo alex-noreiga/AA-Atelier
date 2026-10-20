@@ -47,6 +47,14 @@ async function buildAll() {
     // - use path traversal to read files (e.g. @google-cloud/secret-manager loads sibling .proto files)
     external: [
       "*.node",
+      // jsPDF (via @workspace/documents, which renders the invoice PDF) lazily
+      // `require`s these three inside a try/catch for its HTML-to-PDF and SVG
+      // paths, which this app never calls. Bundled, they add ~1.5 MB of DOM
+      // emulation to a serverless function that only draws text; external, the
+      // require is never reached and the try/catch covers it if it ever were.
+      "canvg",
+      "html2canvas",
+      "dompurify",
       "sharp",
       "better-sqlite3",
       "sqlite3",

@@ -1,7 +1,10 @@
 import type { CheckoutSessionStatus } from "@workspace/api-client-react";
-import { formatPrice } from "@/lib/format";
-import { PdfDocument, fileSafe } from "./document";
-import { STUDIO_CONTACT_LINES } from "./studio";
+import {
+  PdfDocument,
+  fileSafe,
+  formatPrice,
+  STUDIO_CONTACT_LINES,
+} from "@workspace/documents";
 
 /** The download filename for a session's receipt PDF. */
 export function receiptFilename(session: CheckoutSessionStatus): string {
